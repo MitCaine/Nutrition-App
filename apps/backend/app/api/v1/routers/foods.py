@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
+from app.dependencies.database import get_db
+from app.dependencies.user import ensure_dev_user
+from app.schemas.food import FoodCreateRequest, FoodListResponse, FoodResponse, FoodUpdateRequest
+from app.services.food_service import FoodService
+
+router = APIRouter()
+
+
+def _service(db: Session) -> FoodService:
+    return FoodService(db)
+
+
+@router.post("", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
+def create_food(payload: FoodCreateRequest, db: Session = Depends(get_db)) -> FoodResponse:
+    user = ensure_dev_user(db)
+    return FoodResponse.model_validate(_service(db).create_manual_food(user.id, payload))
+
+
+@router.get("", response_model=FoodListResponse)
+def list_foods(
+    q: str | None = Query(default=None, min_length=1),
+    db: Session = Depends(get_db),
+) -> FoodListResponse:
+    user = ensure_dev_user(db)
+    return FoodListResponse(foods=_service(db).list_foods(user.id, q))
+
+
+@router.get("/{food_id}", response_model=FoodResponse)
+def get_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
+    user = ensure_dev_user(db)
+    try:
+        return FoodResponse.model_validate(_service(db).get_food(user.id, food_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/{food_id}", response_model=FoodResponse)
+def update_food(
+    food_id: UUID,
+    payload: FoodUpdateRequest,
+    db: Session = Depends(get_db),
+) -> FoodResponse:
+    user = ensure_dev_user(db)
+    try:
+        return FoodResponse.model_validate(_service(db).update_food(user.id, food_id, payload))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_food(food_id: UUID, db: Session = Depends(get_db)) -> None:
+    user = ensure_dev_user(db)
+    try:
+        _service(db).soft_delete_food(user.id, food_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{food_id}/duplicate", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
+def duplicate_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
+    user = ensure_dev_user(db)
+    try:
+        return FoodResponse.model_validate(_service(db).duplicate_food(user.id, food_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -23,11 +23,23 @@ def test_aggregation_separates_known_estimated_unknown_and_zero() -> None:
     assert totals[0].unknown_contributor_count == 1
 
 
-def test_aggregation_rejects_mixed_units_for_same_nutrient() -> None:
+def test_aggregation_normalizes_compatible_units() -> None:
+    totals = aggregate_snapshots(
+        [
+            NutrientSnapshot("sodium", Decimal("100"), "mg", NutrientDataStatus.KNOWN),
+            NutrientSnapshot("sodium", Decimal("1"), "g", NutrientDataStatus.KNOWN),
+        ]
+    )
+
+    assert totals[0].unit == "mg"
+    assert totals[0].amount_known == Decimal("1100")
+
+
+def test_aggregation_rejects_incompatible_units_for_same_nutrient() -> None:
     with pytest.raises(ValueError):
         aggregate_snapshots(
             [
                 NutrientSnapshot("sodium", Decimal("100"), "mg", NutrientDataStatus.KNOWN),
-                NutrientSnapshot("sodium", Decimal("1"), "g", NutrientDataStatus.KNOWN),
+                NutrientSnapshot("sodium", Decimal("1"), "kcal", NutrientDataStatus.KNOWN),
             ]
         )

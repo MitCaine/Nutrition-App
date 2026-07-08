@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from app.domain.nutrients import NUTRIENT_CATALOG
