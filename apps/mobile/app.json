@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Nutrition App",
+    "slug": "nutrition-app",
+    "scheme": "nutritionapp",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "com.portfolio.nutritionapp"
+    }
+  }
+}
