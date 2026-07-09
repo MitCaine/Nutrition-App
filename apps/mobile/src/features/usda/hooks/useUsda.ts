@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 
 import { getUsdaFoodPreview, importUsdaFood, searchUsdaFoods } from "../api/usdaApi";
+import type { UsdaImportResult } from "../api/types";
+
+export function applyUsdaImportToFoodCache(queryClient: QueryClient, food: UsdaImportResult) {
+  queryClient.invalidateQueries({ queryKey: ["foods"] });
+  queryClient.setQueryData(["foods", food.id], food);
+}
 
 export function useUsdaSearch(query: string) {
   const trimmed = query.trim();
@@ -24,8 +31,7 @@ export function useUsdaImport() {
   return useMutation({
     mutationFn: importUsdaFood,
     onSuccess: (food) => {
-      queryClient.invalidateQueries({ queryKey: ["foods"] });
-      queryClient.setQueryData(["foods", food.id], food);
+      applyUsdaImportToFoodCache(queryClient, food);
     },
   });
 }
