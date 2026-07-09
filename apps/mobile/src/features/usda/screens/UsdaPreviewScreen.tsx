@@ -58,7 +58,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
           <Text style={styles.sectionTitle}>Servings</Text>
           {preview.data.serving_definitions.map((serving) => (
             <View key={serving.candidate_id} style={styles.row}>
-              <Text>{serving.label}</Text>
+              <Text style={styles.rowLabel}>{serving.label}</Text>
               <Text style={styles.value}>
                 {serving.gram_weight ? `${serving.gram_weight}g` : "No gram weight"}
               </Text>
@@ -70,7 +70,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
           <Text style={styles.sectionTitle}>Nutrients per 100 g</Text>
           {preview.data.nutrients.map((nutrient) => (
             <View key={nutrient.nutrient_id} style={styles.row}>
-              <Text>{nutrient.display_name ?? nutrient.nutrient_id}</Text>
+              <Text style={styles.rowLabel}>{nutrient.display_name ?? nutrient.nutrient_id}</Text>
               <Text style={styles.value}>{formatUsdaNutrient(nutrient)}</Text>
             </View>
           ))}
@@ -104,9 +104,10 @@ const styles = StyleSheet.create({
   primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 12 },
   primaryText: { color: "white", fontWeight: "700" },
   row: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
+  rowLabel: { flex: 1, paddingRight: 12 },
   screen: { flex: 1, gap: 12, padding: 16 },
   section: { gap: 4 },
   sectionTitle: { fontSize: 18, fontWeight: "700" },
   title: { fontSize: 24, fontWeight: "700" },
-  value: { color: "#333", fontWeight: "600" },
+  value: { color: "#333", flexShrink: 0, fontWeight: "600", maxWidth: "45%", textAlign: "right" },
 });

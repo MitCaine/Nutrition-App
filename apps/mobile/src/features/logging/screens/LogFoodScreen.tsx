@@ -3,6 +3,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -59,50 +60,52 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={styles.keyboard}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={12}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>{log ? "Edit Log" : "Log Food"}</Text>
-        <Pressable onPress={onCancel}>
-          <Text>Cancel</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.foodName}>{food.data?.name ?? "Food"}</Text>
-      <TextInput
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="decimal-pad"
-        placeholder="Amount"
-        style={styles.input}
-      />
-      <View style={styles.segment}>
-        <Pressable onPress={() => setUnit("serving")} style={[styles.segmentButton, unit === "serving" && styles.active]}>
-          <Text>Servings</Text>
-        </Pressable>
-        <Pressable onPress={() => setUnit("g")} style={[styles.segmentButton, unit === "g" && styles.active]}>
-          <Text>Grams</Text>
-        </Pressable>
-      </View>
-      {unit === "serving" && servings.length > 0 ? (
-        <View style={styles.servingList}>
-          {servings.map((serving) => (
-            <Pressable
-              key={serving.id}
-              onPress={() => setSelectedServingId(serving.id)}
-              style={[styles.servingButton, selectedServingId === serving.id && styles.active]}
-            >
-              <Text>{serving.label}</Text>
-              {serving.gram_weight ? <Text style={styles.servingMeta}>{serving.gram_weight}g</Text> : null}
-            </Pressable>
-          ))}
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{log ? "Edit Log" : "Log Food"}</Text>
+          <Pressable onPress={onCancel}>
+            <Text>Cancel</Text>
+          </Pressable>
         </View>
-      ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable onPress={save} style={styles.primaryButton}>
-        <Text style={styles.primaryText}>{log ? "Save Changes" : "Save Log"}</Text>
-      </Pressable>
+        <Text style={styles.foodName}>{food.data?.name ?? "Food"}</Text>
+        <TextInput
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="decimal-pad"
+          placeholder="Amount"
+          style={styles.input}
+        />
+        <View style={styles.segment}>
+          <Pressable onPress={() => setUnit("serving")} style={[styles.segmentButton, unit === "serving" && styles.active]}>
+            <Text>Servings</Text>
+          </Pressable>
+          <Pressable onPress={() => setUnit("g")} style={[styles.segmentButton, unit === "g" && styles.active]}>
+            <Text>Grams</Text>
+          </Pressable>
+        </View>
+        {unit === "serving" && servings.length > 0 ? (
+          <View style={styles.servingList}>
+            {servings.map((serving) => (
+              <Pressable
+                key={serving.id}
+                onPress={() => setSelectedServingId(serving.id)}
+                style={[styles.servingButton, selectedServingId === serving.id && styles.active]}
+              >
+                <Text>{serving.label}</Text>
+                {serving.gram_weight ? <Text style={styles.servingMeta}>{serving.gram_weight}g</Text> : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable onPress={save} style={styles.primaryButton}>
+          <Text style={styles.primaryText}>{log ? "Save Changes" : "Save Log"}</Text>
+        </Pressable>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -113,9 +116,10 @@ const styles = StyleSheet.create({
   foodName: { fontSize: 18, fontWeight: "600" },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   input: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 12 },
+  keyboard: { flex: 1 },
   primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 14 },
   primaryText: { color: "white", fontWeight: "700" },
-  screen: { flex: 1, gap: 14, padding: 16 },
+  screen: { gap: 14, padding: 16, paddingBottom: 32 },
   segment: { flexDirection: "row", gap: 8 },
   segmentButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 10 },
   servingButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, gap: 2, padding: 10 },
