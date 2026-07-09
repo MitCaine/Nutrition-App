@@ -63,6 +63,38 @@ def test_usda_import_persists_source_metadata_and_prevents_active_duplicates(
     assert any(nutrient.nutrient_id == "vitamin_d" and nutrient.data_status == "unknown" for nutrient in food.nutrients)
 
 
+def test_usda_import_persists_normalized_nutrients_exactly_as_mapped(
+    db_session: Session,
+) -> None:
+    user = ensure_dev_user(db_session)
+    db_session.commit()
+    food, duplicate = UsdaService(db_session, FakeUsdaClient(usda_banana_payload())).import_food(user.id, 1105314)
+    nutrients = {nutrient.nutrient_id: nutrient for nutrient in food.nutrients}
+
+    assert duplicate is False
+    assert nutrients["calories"].amount == Decimal("89.000000")
+    assert nutrients["calories"].unit == "kcal"
+    assert nutrients["calories"].basis == "per_100g"
+    assert nutrients["calories"].data_status == "known"
+    assert nutrients["calories"].source == "usda_fdc"
+    assert nutrients["calories"].is_user_confirmed is False
+    assert nutrients["calories"].original_amount == Decimal("89.000000")
+    assert nutrients["calories"].original_unit == "KCAL"
+    assert nutrients["calories"].original_text == "1008"
+
+    assert nutrients["cholesterol"].amount == Decimal("0.000000")
+    assert nutrients["cholesterol"].data_status == "zero"
+    assert nutrients["cholesterol"].source == "usda_fdc"
+    assert nutrients["cholesterol"].is_user_confirmed is False
+
+    assert nutrients["vitamin_d"].amount is None
+    assert nutrients["vitamin_d"].unit == "mcg"
+    assert nutrients["vitamin_d"].basis == "per_100g"
+    assert nutrients["vitamin_d"].data_status == "unknown"
+    assert nutrients["vitamin_d"].source == "usda_fdc"
+    assert nutrients["vitamin_d"].is_user_confirmed is False
+
+
 def test_soft_deleted_usda_import_can_be_reimported(db_session: Session) -> None:
     user = ensure_dev_user(db_session)
     db_session.commit()
@@ -142,6 +174,24 @@ def test_imported_branded_usda_food_logs_by_selected_default_serving(
     assert calories.serving_definition_id == default_serving.id
     assert calories.consumed_gram_amount == Decimal("40.000000")
     assert calories.amount == Decimal("100.000000")
+
+
+def test_imported_branded_default_serving_survives_repository_retrieval(
+    db_session: Session,
+) -> None:
+    user = ensure_dev_user(db_session)
+    db_session.commit()
+    food, _duplicate = UsdaService(db_session, FakeUsdaClient(usda_branded_bar_payload())).import_food(user.id, 555000)
+
+    retrieved = FoodRepository(db_session).get_required(food.id, user.id)
+    defaults = [serving for serving in retrieved.serving_definitions if serving.is_default]
+
+    assert len(defaults) == 1
+    assert defaults[0].label == "1 bar"
+    assert defaults[0].gram_weight == Decimal("40.000000")
+    assert defaults[0].source == "usda_fdc"
+    assert defaults[0].is_user_confirmed is False
+    assert any(serving.label == "100 g" and not serving.is_default for serving in retrieved.serving_definitions)
 
 
 def test_imported_branded_serving_preserves_per_100g_nutrient_basis(
