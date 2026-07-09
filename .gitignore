@@ -28,3 +28,21 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Project generated files ###
+node_modules/
+.pycache/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.pyc
+
+apps/mobile/.expo/
+apps/mobile/ios/
+apps/mobile/android/
+*.egg-info/
+-x "*/.egg-info/*" \
+-x "*.egg-info/*"
