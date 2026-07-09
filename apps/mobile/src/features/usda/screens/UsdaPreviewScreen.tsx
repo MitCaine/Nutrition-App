@@ -1,6 +1,12 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useUsdaImport, useUsdaPreview } from "../hooks/useUsda";
+import {
+  canStartUsdaImport,
+  formatUsdaNutrient,
+  usdaImportErrorMessage,
+  usdaPreviewMessage,
+} from "../utils/usdaDisplay";
 
 type Props = {
   fdcId: number;
@@ -11,6 +17,7 @@ type Props = {
 export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
   const preview = useUsdaPreview(fdcId);
   const importer = useUsdaImport();
+  const previewMessage = usdaPreviewMessage(preview.isLoading, preview.isError);
 
   if (!preview.data) {
     return (
@@ -18,12 +25,15 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
         <Pressable onPress={onBack}>
           <Text>Back</Text>
         </Pressable>
-        <Text>Loading...</Text>
+        <Text style={preview.isError ? styles.error : styles.meta}>{previewMessage}</Text>
       </View>
     );
   }
 
   const importFood = () => {
+    if (!canStartUsdaImport(importer.isPending)) {
+      return;
+    }
     importer.mutate(fdcId, {
       onSuccess: (food) => onImported(food.id),
     });
@@ -61,11 +71,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
           {preview.data.nutrients.map((nutrient) => (
             <View key={nutrient.nutrient_id} style={styles.row}>
               <Text>{nutrient.display_name ?? nutrient.nutrient_id}</Text>
-              <Text style={styles.value}>
-                {nutrient.data_status === "unknown"
-                  ? "Unavailable"
-                  : `${nutrient.amount ?? "0"}${nutrient.unit}`}
-              </Text>
+              <Text style={styles.value}>{formatUsdaNutrient(nutrient)}</Text>
             </View>
           ))}
         </View>
@@ -81,7 +87,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
           </View>
         ) : null}
 
-        {importer.isError ? <Text style={styles.error}>Import failed.</Text> : null}
+        {importer.isError ? <Text style={styles.error}>{usdaImportErrorMessage()}</Text> : null}
         <Pressable onPress={importFood} disabled={importer.isPending} style={styles.primaryButton}>
           <Text style={styles.primaryText}>{importer.isPending ? "Importing..." : "Import Food"}</Text>
         </Pressable>

@@ -105,6 +105,20 @@ test("duplicate USDA import response reuses existing food in the same cache path
   queryClient.clear();
 });
 
+test("USDA import failure rejects without seeding food detail cache", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: false,
+    status: 503,
+    text: async () => "USDA search is unavailable",
+  });
+  const queryClient = new QueryClient();
+
+  await expect(importUsdaFood(555000)).rejects.toThrow("USDA search is unavailable");
+
+  expect(queryClient.getQueryData(["foods", "food-usda"])).toBeUndefined();
+  queryClient.clear();
+});
+
 test("imported USDA food can be logged with default serving and refreshes daily totals", async () => {
   global.fetch = jest
     .fn()
