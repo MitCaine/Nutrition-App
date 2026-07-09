@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from app.integrations.usda.mappers import map_food_preview, map_search_response
 
 
@@ -66,6 +68,34 @@ def usda_branded_bar_payload() -> dict:
     }
 
 
+def usda_branded_full_macro_payload() -> dict:
+    return {
+        "fdcId": 555001,
+        "description": "Complete Protein Bar",
+        "dataType": "Branded",
+        "brandOwner": "Example Foods",
+        "servingSize": 50,
+        "servingSizeUnit": "g",
+        "householdServingFullText": "1 bar",
+        "foodNutrients": [
+            {"nutrient": {"id": 1008, "number": "208", "name": "Energy", "unitName": "KCAL"}, "amount": 300},
+            {"nutrient": {"id": 1003, "number": "203", "name": "Protein", "unitName": "G"}, "amount": 18},
+            {"nutrient": {"id": 1005, "number": "205", "name": "Carbohydrate, by difference", "unitName": "G"}, "amount": 40},
+            {"nutrient": {"id": 1004, "number": "204", "name": "Total lipid (fat)", "unitName": "G"}, "amount": 10},
+            {"nutrient": {"id": 1079, "number": "291", "name": "Fiber, total dietary", "unitName": "G"}, "amount": 7},
+            {"nutrient": {"id": 2000, "number": "269", "name": "Total Sugars", "unitName": "G"}, "amount": 12},
+            {"nutrient": {"id": 1258, "number": "606", "name": "Fatty acids, total saturated", "unitName": "G"}, "amount": 2},
+            {"nutrient": {"id": 1093, "number": "307", "name": "Sodium, Na", "unitName": "MG"}, "amount": 250},
+            {"nutrient": {"id": 1253, "number": "601", "name": "Cholesterol", "unitName": "MG"}, "amount": 5},
+            {"nutrient": {"id": 1114, "number": "328", "name": "Vitamin D (D2 + D3)", "unitName": "UG"}, "amount": 1.5},
+            {"nutrient": {"id": 1087, "number": "301", "name": "Calcium, Ca", "unitName": "G"}, "amount": 0.2},
+            {"nutrient": {"id": 1089, "number": "303", "name": "Iron, Fe", "unitName": "MG"}, "amount": 4},
+            {"nutrient": {"id": 1092, "number": "306", "name": "Potassium, K", "unitName": "MG"}, "amount": 300},
+            {"nutrient": {"id": 1090, "number": "304", "name": "Magnesium, Mg", "unitName": "MG"}, "amount": 60},
+        ],
+    }
+
+
 def test_usda_detail_mapping_preserves_basis_portions_and_missing_nutrients() -> None:
     preview = map_food_preview(usda_banana_payload())
     nutrients = {nutrient.nutrient_id: nutrient for nutrient in preview.nutrients}
@@ -89,6 +119,55 @@ def test_usda_detail_mapping_preserves_basis_portions_and_missing_nutrients() ->
         for serving in preview.serving_definitions
     )
     assert any("unsupported unit" in diagnostic for diagnostic in preview.diagnostics)
+
+
+def test_usda_branded_full_macro_mapping_uses_per_100g_basis_and_catalog_units() -> None:
+    preview = map_food_preview(usda_branded_full_macro_payload())
+    nutrients = {nutrient.nutrient_id: nutrient for nutrient in preview.nutrients}
+
+    assert nutrients["calories"].amount == 300
+    assert nutrients["protein"].amount == 18
+    assert nutrients["total_carbohydrate"].amount == 40
+    assert nutrients["total_fat"].amount == 10
+    assert nutrients["dietary_fiber"].amount == 7
+    assert nutrients["total_sugars"].amount == 12
+    assert nutrients["saturated_fat"].amount == 2
+    assert nutrients["sodium"].amount == 250
+    assert nutrients["cholesterol"].amount == 5
+    assert nutrients["vitamin_d"].amount == Decimal("1.5")
+    assert nutrients["calcium"].amount == 200
+    assert nutrients["iron"].amount == 4
+    assert nutrients["potassium"].amount == 300
+    assert nutrients["magnesium"].amount == 60
+    assert {nutrient.basis for nutrient in nutrients.values()} == {"per_100g"}
+
+
+def test_usda_missing_null_duplicate_and_unsupported_nutrients_are_defensive() -> None:
+    payload = {
+        "fdcId": 777001,
+        "description": "Defensive Mapping Food",
+        "dataType": "Branded",
+        "foodNutrients": [
+            {"nutrientName": "Protein", "unitName": "G", "value": 99},
+            {"nutrient": {"id": 1003, "number": "203", "name": "Protein", "unitName": "G"}, "amount": 12},
+            {"nutrient": {"id": 1005, "number": "205", "name": "Carbohydrate, by difference", "unitName": "G"}, "amount": None},
+            {"nutrient": {"id": 1008, "number": "208", "name": "Energy", "unitName": "MG"}, "amount": 10},
+            {"nutrient": {"id": 9999, "number": "999", "name": "Unsupported", "unitName": "G"}, "amount": 1},
+        ],
+    }
+
+    preview = map_food_preview(payload)
+    nutrients = {nutrient.nutrient_id: nutrient for nutrient in preview.nutrients}
+
+    assert nutrients["protein"].amount == 12
+    assert nutrients["protein"].external_nutrient_id == "1003"
+    assert nutrients["total_carbohydrate"].data_status == "unknown"
+    assert nutrients["total_carbohydrate"].amount is None
+    assert nutrients["calories"].data_status == "unknown"
+    assert nutrients["calories"].amount is None
+    assert nutrients["total_fat"].data_status == "unknown"
+    assert any("protein appeared more than once" in diagnostic for diagnostic in preview.diagnostics)
+    assert any("calories uses unsupported unit" in diagnostic for diagnostic in preview.diagnostics)
 
 
 def test_usda_branded_serving_is_default_when_valid() -> None:

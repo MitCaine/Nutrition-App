@@ -2,17 +2,22 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.dependencies.user import ensure_dev_user
-from app.models.food import FoodItem, ServingDefinition
+from app.models.food import FoodItem, FoodNutrient, ServingDefinition
 from app.repositories.food_repository import FoodRepository
 from app.schemas.log import DailyLogCreateRequest
 from app.services.log_service import LogService
 from app.services.usda_service import UsdaService
-from tests.test_stage3_usda_mapper import usda_banana_payload, usda_branded_bar_payload
+from tests.test_stage3_usda_mapper import (
+    usda_banana_payload,
+    usda_branded_bar_payload,
+    usda_branded_full_macro_payload,
+)
 
 
 class FakeUsdaClient:
@@ -137,6 +142,90 @@ def test_imported_branded_usda_food_logs_by_selected_default_serving(
     assert calories.serving_definition_id == default_serving.id
     assert calories.consumed_gram_amount == Decimal("40.000000")
     assert calories.amount == Decimal("100.000000")
+
+
+def test_imported_branded_serving_preserves_per_100g_nutrient_basis(
+    db_session: Session,
+) -> None:
+    user = ensure_dev_user(db_session)
+    db_session.commit()
+    food, _duplicate = UsdaService(db_session, FakeUsdaClient(usda_branded_full_macro_payload())).import_food(user.id, 555001)
+    default_serving = next(serving for serving in food.serving_definitions if serving.is_default)
+
+    log = LogService(db_session).create_log(
+        user.id,
+        DailyLogCreateRequest(
+            food_item_id=food.id,
+            logged_date=date(2026, 7, 8),
+            amount_quantity="1",
+            amount_unit="serving",
+        ),
+    )
+    nutrients = {snapshot.nutrient_id: snapshot for snapshot in log.snapshots}
+
+    assert default_serving.label == "1 bar"
+    assert default_serving.gram_weight == Decimal("50.000000")
+    assert next(nutrient for nutrient in food.nutrients if nutrient.nutrient_id == "calories").basis == "per_100g"
+    assert nutrients["calories"].amount == Decimal("150.000000")
+    assert nutrients["protein"].amount == Decimal("9.000000")
+    assert nutrients["calcium"].amount == Decimal("100.000000")
+
+
+def test_generic_food_logging_uses_default_serving_grams_with_per_100g_nutrients(
+    db_session: Session,
+) -> None:
+    user = ensure_dev_user(db_session)
+    db_session.commit()
+    food = FoodItem(
+        id=uuid4(),
+        user_id=user.id,
+        name="Generic Per 100g Food",
+        brand=None,
+        notes=None,
+        source_type="manual",
+        source_id=None,
+        is_recipe=False,
+    )
+    food.serving_definitions.append(
+        ServingDefinition(
+            id=uuid4(),
+            label="1 slice",
+            quantity=Decimal("1"),
+            unit="slice",
+            gram_weight=Decimal("30"),
+            is_default=True,
+            source="manual",
+            is_user_confirmed=True,
+        )
+    )
+    food.nutrients.append(
+        FoodNutrient(
+            id=uuid4(),
+            nutrient_id="protein",
+            amount=Decimal("10"),
+            unit="g",
+            basis="per_100g",
+            data_status="known",
+            source="manual",
+            is_user_confirmed=True,
+        )
+    )
+    db_session.add(food)
+    db_session.commit()
+
+    log = LogService(db_session).create_log(
+        user.id,
+        DailyLogCreateRequest(
+            food_item_id=food.id,
+            logged_date=date(2026, 7, 8),
+            amount_quantity="2",
+            amount_unit="serving",
+        ),
+    )
+    protein = next(snapshot for snapshot in log.snapshots if snapshot.nutrient_id == "protein")
+
+    assert protein.consumed_gram_amount == Decimal("60.000000")
+    assert protein.amount == Decimal("6.000000")
 
 
 def test_imported_usda_food_retrieves_through_normal_food_repository(db_session: Session) -> None:

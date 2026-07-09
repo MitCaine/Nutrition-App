@@ -134,12 +134,24 @@ def _map_nutrients(
     include_unknown: bool = True,
 ) -> list[UsdaNutrientCandidate]:
     mapped: dict[str, UsdaNutrientCandidate] = {}
+    mapped_priority: dict[str, int] = {}
     if isinstance(raw_nutrients, list):
         for raw in raw_nutrients:
             if isinstance(raw, dict):
-                candidate = _map_nutrient(raw, diagnostics)
-                if candidate is not None and candidate.nutrient_id not in mapped:
+                mapped_item = _map_nutrient(raw, diagnostics)
+                if mapped_item is None:
+                    continue
+                candidate, priority = mapped_item
+                existing = mapped.get(candidate.nutrient_id)
+                if existing is None:
                     mapped[candidate.nutrient_id] = candidate
+                    mapped_priority[candidate.nutrient_id] = priority
+                    continue
+                existing_priority = mapped_priority[candidate.nutrient_id]
+                if _should_replace_duplicate(existing, existing_priority, candidate, priority):
+                    mapped[candidate.nutrient_id] = candidate
+                    mapped_priority[candidate.nutrient_id] = priority
+                diagnostics.append(f"USDA nutrient {candidate.nutrient_id} appeared more than once; one value was used")
 
     if include_unknown:
         for nutrient in NUTRIENT_CATALOG:
@@ -156,7 +168,7 @@ def _map_nutrients(
     return sorted(mapped.values(), key=lambda item: NUTRIENTS_BY_ID[item.nutrient_id].display_order)
 
 
-def _map_nutrient(raw: dict[str, Any], diagnostics: list[str]) -> UsdaNutrientCandidate | None:
+def _map_nutrient(raw: dict[str, Any], diagnostics: list[str]) -> tuple[UsdaNutrientCandidate, int] | None:
     nutrient_payload = raw.get("nutrient") if isinstance(raw.get("nutrient"), dict) else raw
     external_id = _str_or_none(nutrient_payload.get("id") or raw.get("nutrientId"))
     external_number = _str_or_none(nutrient_payload.get("number") or raw.get("nutrientNumber"))
@@ -177,31 +189,37 @@ def _map_nutrient(raw: dict[str, Any], diagnostics: list[str]) -> UsdaNutrientCa
 
     original_amount = _decimal_or_none(raw.get("amount") if "amount" in raw else raw.get("value"))
     if original_amount is None:
-        return UsdaNutrientCandidate(
-            nutrient_id=canonical_id,
-            amount=None,
-            unit=definition.default_unit,
-            basis=NutrientBasis.PER_100G.value,
-            data_status=NutrientDataStatus.UNKNOWN.value,
-            external_nutrient_id=external_id,
-            external_nutrient_number=external_number,
-            original_unit=original_unit,
-            display_name=definition.display_name,
+        return (
+            UsdaNutrientCandidate(
+                nutrient_id=canonical_id,
+                amount=None,
+                unit=definition.default_unit,
+                basis=NutrientBasis.PER_100G.value,
+                data_status=NutrientDataStatus.UNKNOWN.value,
+                external_nutrient_id=external_id,
+                external_nutrient_number=external_number,
+                original_unit=original_unit,
+                display_name=definition.display_name,
+            ),
+            _nutrient_match_priority(external_id, external_number, external_name),
         )
 
     amount = convert_nutrition_amount(original_amount, unit, definition.default_unit)
     status = NutrientDataStatus.ZERO if amount == 0 else NutrientDataStatus.KNOWN
-    return UsdaNutrientCandidate(
-        nutrient_id=canonical_id,
-        amount=amount,
-        unit=definition.default_unit,
-        basis=NutrientBasis.PER_100G.value,
-        data_status=status.value,
-        external_nutrient_id=external_id,
-        external_nutrient_number=external_number,
-        original_amount=original_amount,
-        original_unit=original_unit,
-        display_name=definition.display_name,
+    return (
+        UsdaNutrientCandidate(
+            nutrient_id=canonical_id,
+            amount=amount,
+            unit=definition.default_unit,
+            basis=NutrientBasis.PER_100G.value,
+            data_status=status.value,
+            external_nutrient_id=external_id,
+            external_nutrient_number=external_number,
+            original_amount=original_amount,
+            original_unit=original_unit,
+            display_name=definition.display_name,
+        ),
+        _nutrient_match_priority(external_id, external_number, external_name),
     )
 
 
@@ -312,6 +330,29 @@ def _canonical_nutrient_id(external_id: str | None, external_number: str | None,
     if name:
         return USDA_NAME_FALLBACK_MAP.get(name.strip().lower())
     return None
+
+
+def _nutrient_match_priority(external_id: str | None, external_number: str | None, name: str | None) -> int:
+    if external_id and external_id in USDA_NUTRIENT_ID_MAP:
+        return 0
+    if external_number and external_number in USDA_NUTRIENT_NUMBER_MAP:
+        return 1
+    if name and name.strip().lower() in USDA_NAME_FALLBACK_MAP:
+        return 2
+    return 3
+
+
+def _should_replace_duplicate(
+    existing: UsdaNutrientCandidate,
+    existing_priority: int,
+    candidate: UsdaNutrientCandidate,
+    candidate_priority: int,
+) -> bool:
+    if candidate_priority != existing_priority:
+        return candidate_priority < existing_priority
+    if existing.data_status == NutrientDataStatus.UNKNOWN.value and candidate.data_status != NutrientDataStatus.UNKNOWN.value:
+        return True
+    return False
 
 
 def _brand(payload: dict[str, Any]) -> str | None:
