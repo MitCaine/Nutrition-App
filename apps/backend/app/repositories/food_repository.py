@@ -22,7 +22,7 @@ class FoodRepository:
         statement = (
             select(FoodItem)
             .where(FoodItem.id == food_id, FoodItem.user_id == user_id, FoodItem.deleted_at.is_(None))
-            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions))
+            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
         )
         return self.db.scalars(statement).first()
 
@@ -38,10 +38,23 @@ class FoodRepository:
         statement = (
             select(FoodItem)
             .where(FoodItem.user_id == user_id, FoodItem.deleted_at.is_(None))
-            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions))
+            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
             .order_by(FoodItem.name)
         )
         if query:
             pattern = f"%{query.strip()}%"
             statement = statement.where(or_(FoodItem.name.ilike(pattern), FoodItem.brand.ilike(pattern)))
         return list(self.db.scalars(statement).all())
+
+    def find_active_by_source(self, user_id: UUID, source_type: str, source_id: str) -> FoodItem | None:
+        statement = (
+            select(FoodItem)
+            .where(
+                FoodItem.user_id == user_id,
+                FoodItem.source_type == source_type,
+                FoodItem.source_id == source_id,
+                FoodItem.deleted_at.is_(None),
+            )
+            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
+        )
+        return self.db.scalars(statement).first()

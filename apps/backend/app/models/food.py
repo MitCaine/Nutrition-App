@@ -37,6 +37,10 @@ class FoodItem(Base):
         cascade="all, delete-orphan",
         order_by="ServingDefinition.label",
     )
+    sources: Mapped[list[FoodSource]] = relationship(
+        back_populates="food_item",
+        cascade="all, delete-orphan",
+    )
 
 
 class FoodSource(Base):
@@ -49,6 +53,8 @@ class FoodSource(Base):
     raw_payload: Mapped[Optional[dict]] = mapped_column(JSON)
     source_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    food_item: Mapped[FoodItem] = relationship(back_populates="sources")
 
 
 class FoodNutrient(Base):

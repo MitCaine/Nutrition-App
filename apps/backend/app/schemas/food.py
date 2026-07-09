@@ -140,6 +140,7 @@ class FoodResponse(BaseModel):
     brand: str | None
     notes: str | None
     source_type: str
+    source_id: str | None
     is_recipe: bool
     created_at: datetime
     updated_at: datetime

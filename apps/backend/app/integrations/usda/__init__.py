@@ -1,0 +1,1 @@
+"""FoodData Central integration boundary."""
