@@ -1,6 +1,7 @@
 import {
   canStartUsdaImport,
   formatUsdaNutrient,
+  formatUsdaNutrientLabel,
   formatUsdaNutrientPreview,
   usdaImportErrorMessage,
   usdaPreviewMessage,
@@ -69,6 +70,29 @@ test("USDA result formatting includes brand and useful nutrient preview", () => 
     "Calories: 300kcal - Cholesterol: 0mg",
   );
   expect(formatUsdaNutrient(searchResult.nutrient_preview[2])).toBe("unknown");
+});
+
+test("USDA nutrient formatting trims raw decimals and formats raw ids", () => {
+  expect(
+    formatUsdaNutrient({
+      nutrient_id: "saturated_fat",
+      amount: "2.350000",
+      unit: "g",
+      basis: "per_100g",
+      data_status: "known",
+      source: "usda_fdc",
+    }),
+  ).toBe("2.35g");
+  expect(
+    formatUsdaNutrientLabel({
+      nutrient_id: "total_carbohydrate",
+      amount: "12.000000",
+      unit: "g",
+      basis: "per_100g",
+      data_status: "known",
+      source: "usda_fdc",
+    }),
+  ).toBe("Total Carbohydrate");
 });
 
 test("USDA preview and import states use clear user-facing messages", () => {

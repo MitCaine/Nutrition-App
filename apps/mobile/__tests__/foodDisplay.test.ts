@@ -1,6 +1,7 @@
 import type { Food } from "../src/features/foods/api/types";
 import {
   defaultServing,
+  formatFoodNutrientLabel,
   formatNutrientAmount,
   formatNutrientBasis,
   primaryServingLabel,
@@ -75,9 +76,10 @@ const usdaFood: Food = {
 test("USDA food detail helpers render known zero and unknown nutrients distinctly", () => {
   const nutrients = Object.fromEntries(usdaFood.nutrients.map((nutrient) => [nutrient.nutrient_id, nutrient]));
 
-  expect(formatNutrientAmount(nutrients.calories)).toBe("300.000000kcal");
-  expect(formatNutrientAmount(nutrients.cholesterol)).toBe("0.000000mg");
+  expect(formatNutrientAmount(nutrients.calories)).toBe("300kcal");
+  expect(formatNutrientAmount(nutrients.cholesterol)).toBe("0mg");
   expect(formatNutrientAmount(nutrients.vitamin_d)).toBe("unknown");
+  expect(formatFoodNutrientLabel(nutrients.vitamin_d)).toBe("Vitamin D");
   expect(formatNutrientBasis(nutrients.calories.basis)).toBe("per 100 g");
 });
 
@@ -122,6 +124,6 @@ test("manual food detail helpers keep existing serving and nutrient behavior", (
   };
 
   expect(primaryServingLabel(manualFood)).toBe("1 cup");
-  expect(formatNutrientAmount(manualFood.nutrients[0])).toBe("20.000000g");
+  expect(formatNutrientAmount(manualFood.nutrients[0])).toBe("20g");
   expect(formatNutrientBasis(manualFood.nutrients[0].basis)).toBe("per serving");
 });

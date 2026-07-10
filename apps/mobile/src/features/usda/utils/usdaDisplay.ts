@@ -1,4 +1,5 @@
 import type { UsdaNutrientCandidate, UsdaSearchResult } from "../api/types";
+import { formatAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
 
 export type UsdaSearchStateInput = {
   query: string;
@@ -41,14 +42,18 @@ export function formatUsdaNutrient(nutrient: UsdaNutrientCandidate): string {
   if (nutrient.data_status === "unknown") {
     return "unknown";
   }
-  return `${nutrient.amount ?? "0"}${nutrient.unit}`;
+  return formatAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
+}
+
+export function formatUsdaNutrientLabel(nutrient: UsdaNutrientCandidate): string {
+  return formatNutrientLabel(nutrient.nutrient_id, nutrient.display_name);
 }
 
 export function formatUsdaNutrientPreview(nutrients: UsdaNutrientCandidate[]): string | null {
   const preview = nutrients
     .filter((nutrient) => nutrient.data_status !== "unknown")
     .slice(0, 3)
-    .map((nutrient) => `${nutrient.display_name ?? nutrient.nutrient_id}: ${formatUsdaNutrient(nutrient)}`);
+    .map((nutrient) => `${formatUsdaNutrientLabel(nutrient)}: ${formatUsdaNutrient(nutrient)}`);
   return preview.length > 0 ? preview.join(" - ") : null;
 }
 

@@ -4,9 +4,11 @@ import { useUsdaImport, useUsdaPreview } from "../hooks/useUsda";
 import {
   canStartUsdaImport,
   formatUsdaNutrient,
+  formatUsdaNutrientLabel,
   usdaImportErrorMessage,
   usdaPreviewMessage,
 } from "../utils/usdaDisplay";
+import { formatAmountWithUnit } from "../../../shared/nutrition/display";
 
 type Props = {
   fdcId: number;
@@ -44,7 +46,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
       <Pressable onPress={onBack}>
         <Text>Back</Text>
       </Pressable>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
         <View style={styles.header}>
           <Text style={styles.title}>{preview.data.name}</Text>
           <Text style={styles.meta}>
@@ -60,7 +62,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
             <View key={serving.candidate_id} style={styles.row}>
               <Text style={styles.rowLabel}>{serving.label}</Text>
               <Text style={styles.value}>
-                {serving.gram_weight ? `${serving.gram_weight}g` : "No gram weight"}
+                {serving.gram_weight ? formatAmountWithUnit(serving.gram_weight, "g") : "No gram weight"}
               </Text>
             </View>
           ))}
@@ -70,7 +72,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
           <Text style={styles.sectionTitle}>Nutrients per 100 g</Text>
           {preview.data.nutrients.map((nutrient) => (
             <View key={nutrient.nutrient_id} style={styles.row}>
-              <Text style={styles.rowLabel}>{nutrient.display_name ?? nutrient.nutrient_id}</Text>
+              <Text style={styles.rowLabel}>{formatUsdaNutrientLabel(nutrient)}</Text>
               <Text style={styles.value}>{formatUsdaNutrient(nutrient)}</Text>
             </View>
           ))}
@@ -97,7 +99,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
 }
 
 const styles = StyleSheet.create({
-  content: { gap: 18, paddingBottom: 32 },
+  content: { gap: 18, paddingBottom: 32, paddingRight: 28 },
   error: { color: "#b42318" },
   header: { gap: 6 },
   meta: { color: "#666" },

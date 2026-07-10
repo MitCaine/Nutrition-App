@@ -13,7 +13,7 @@ import {
 import { useFood } from "../../foods/hooks/useFoods";
 import type { DailyLog } from "../api/types";
 import { useLogMutations } from "../hooks/useLogs";
-import { buildLogInput, initialServingId } from "../utils/logFoodForm";
+import { buildLogInput, formatInitialLogAmount, formatServingGramWeight, initialServingId } from "../utils/logFoodForm";
 import { logInputSchema } from "../validation/logValidation";
 
 type Props = {
@@ -27,7 +27,7 @@ type Props = {
 export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
   const food = useFood(foodId);
   const mutations = useLogMutations(date);
-  const [amount, setAmount] = useState(log?.amount_quantity ? String(log.amount_quantity) : "1");
+  const [amount, setAmount] = useState(formatInitialLogAmount(log?.amount_quantity));
   const [unit, setUnit] = useState<"serving" | "g">(log?.amount_unit ?? "serving");
   const [selectedServingId, setSelectedServingId] = useState<string | null>(
     initialServingId(food.data, log?.serving_definition_id),
@@ -96,7 +96,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
                 style={[styles.servingButton, selectedServingId === serving.id && styles.active]}
               >
                 <Text>{serving.label}</Text>
-                {serving.gram_weight ? <Text style={styles.servingMeta}>{serving.gram_weight}g</Text> : null}
+                {serving.gram_weight ? <Text style={styles.servingMeta}>{formatServingGramWeight(serving.gram_weight)}</Text> : null}
               </Pressable>
             ))}
           </View>

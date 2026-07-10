@@ -3,9 +3,15 @@
     "name": "Nutrition App",
     "slug": "nutrition-app",
     "scheme": "nutritionapp",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "bundleIdentifier": "com.portfolio.nutritionapp"
+    },
+    "android": {
+      "package": "com.portfolio.nutritionapp"
     }
   }
 }

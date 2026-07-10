@@ -7,10 +7,23 @@ import type {
   NutrientDefinition,
   ServingDefinitionInput,
 } from "../api/types";
+import { formatDisplayNumber } from "../../../shared/nutrition/display";
 import { foodMutationSchema, validationMessage } from "../validation/foodValidation";
 
-export type ServingFormValue = ServingDefinitionInput & { key: string };
+export type ServingFormValue = ServingDefinitionInput & {
+  key: string;
+  originalQuantity?: string;
+  originalGramWeight?: string;
+};
 type InitialServing = ServingDefinitionInput & { id?: string };
+
+export function formatServingFormNumber(value: string | number | null | undefined): string {
+  return value == null || value === "" ? "" : formatDisplayNumber(value);
+}
+
+export function servingPayloadNumber(displayValue: string, originalValue?: string): string {
+  return originalValue && displayValue === formatServingFormNumber(originalValue) ? originalValue : displayValue;
+}
 
 export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinition[]) {
   const servingKeyCounter = useRef(0);
@@ -27,14 +40,20 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     const source: InitialServing[] = food?.serving_definitions.length
       ? food.serving_definitions
       : [{ label: "1 serving", quantity: "1", unit: "serving", gram_weight: null, is_default: true }];
-    return source.map((serving, index) => ({
-      key: serving.id ?? `serving-new-${index}`,
-      label: serving.label,
-      quantity: String(serving.quantity),
-      unit: serving.unit,
-      gram_weight: serving.gram_weight == null ? "" : String(serving.gram_weight),
-      is_default: serving.is_default,
-    }));
+    return source.map((serving, index) => {
+      const quantity = String(serving.quantity);
+      const gramWeight = serving.gram_weight == null ? "" : String(serving.gram_weight);
+      return {
+        key: serving.id ?? `serving-new-${index}`,
+        label: serving.label,
+        quantity: formatServingFormNumber(quantity),
+        unit: serving.unit,
+        gram_weight: formatServingFormNumber(gramWeight),
+        is_default: serving.is_default,
+        originalQuantity: quantity,
+        originalGramWeight: gramWeight,
+      };
+    });
   });
   const [values, setValues] = useState<FoodNutrientInput[]>(() => {
     if (!food) {
@@ -104,10 +123,18 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
       name,
       brand: brand || null,
       notes: notes || null,
-      serving_definitions: servings.map(({ key: _key, ...serving }) => ({
-        ...serving,
-        gram_weight: serving.gram_weight || null,
-      })),
+      serving_definitions: servings.map((serving) => {
+        const { key: _key, originalQuantity, originalGramWeight, ...payloadServing } = serving;
+        return {
+          ...payloadServing,
+          quantity:
+            originalQuantity ? servingPayloadNumber(payloadServing.quantity, originalQuantity) : payloadServing.quantity,
+          gram_weight:
+            originalGramWeight && payloadServing.gram_weight
+              ? servingPayloadNumber(payloadServing.gram_weight, originalGramWeight)
+              : payloadServing.gram_weight || null,
+        };
+      }),
       nutrients: mergedValues,
     };
     const parsed = foodMutationSchema.safeParse(input);

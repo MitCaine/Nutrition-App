@@ -1,7 +1,12 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useFood, useFoodMutations } from "../hooks/useFoods";
-import { formatNutrientAmount, formatNutrientBasis, primaryServingLabel } from "../utils/foodDisplay";
+import {
+  formatFoodNutrientLabel,
+  formatNutrientAmount,
+  formatNutrientBasis,
+  primaryServingLabel,
+} from "../utils/foodDisplay";
 
 type Props = {
   foodId: string;
@@ -23,7 +28,7 @@ export function FoodDetailsScreen({ foodId, onBack, onEdit, onLog }: Props) {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
+    <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
       <Pressable onPress={onBack}>
         <Text>Back</Text>
       </Pressable>
@@ -46,7 +51,7 @@ export function FoodDetailsScreen({ foodId, onBack, onEdit, onLog }: Props) {
       </View>
       {food.data.nutrients.map((nutrient) => (
         <View key={nutrient.id} style={styles.nutrientRow}>
-          <Text style={styles.nutrientName}>{nutrient.nutrient_id}</Text>
+          <Text style={styles.nutrientName}>{formatFoodNutrientLabel(nutrient)}</Text>
           <Text style={styles.nutrientValue}>
             {formatNutrientAmount(nutrient)} - {formatNutrientBasis(nutrient.basis)}
           </Text>
@@ -65,7 +70,7 @@ const styles = StyleSheet.create({
   nutrientValue: { color: "#333", flexShrink: 0, fontWeight: "600", maxWidth: "55%", textAlign: "right" },
   primaryButton: { backgroundColor: "#1f6fb2", borderRadius: 6, padding: 10 },
   primaryText: { color: "white", fontWeight: "700" },
-  screen: { gap: 12, padding: 16, paddingBottom: 32 },
+  screen: { gap: 12, padding: 16, paddingBottom: 32, paddingRight: 28 },
   secondaryButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 10 },
   title: { fontSize: 24, fontWeight: "700" },
 });

@@ -44,5 +44,6 @@ apps/mobile/.expo/
 apps/mobile/ios/
 apps/mobile/android/
 *.egg-info/
--x "*/.egg-info/*" \
--x "*.egg-info/*"
+.env
+.env.*
+!.env.example

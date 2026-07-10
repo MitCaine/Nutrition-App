@@ -1,5 +1,10 @@
 import type { Food } from "../src/features/foods/api/types";
-import { buildLogInput, initialServingId } from "../src/features/logging/utils/logFoodForm";
+import {
+  buildLogInput,
+  formatInitialLogAmount,
+  formatServingGramWeight,
+  initialServingId,
+} from "../src/features/logging/utils/logFoodForm";
 
 const importedFood: Food = {
   id: "food-usda",
@@ -98,4 +103,13 @@ test("manual food logging uses the same default-serving path", () => {
       selectedServingId: initialServingId(manualFood),
     }).serving_definition_id,
   ).toBe("manual-serving");
+});
+
+test("log form display formatting trims initial amounts and serving gram weights", () => {
+  expect(formatInitialLogAmount("9.000000")).toBe("9");
+  expect(formatInitialLogAmount("1.250000")).toBe("1.25");
+  expect(formatInitialLogAmount(null)).toBe("1");
+  expect(formatServingGramWeight("100.000000")).toBe("100g");
+  expect(formatServingGramWeight("85.500000")).toBe("85.5g");
+  expect(formatServingGramWeight(null)).toBeNull();
 });
