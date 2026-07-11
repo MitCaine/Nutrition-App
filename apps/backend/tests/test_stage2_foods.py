@@ -148,6 +148,26 @@ def test_food_validation_requires_exactly_one_default_serving(client: TestClient
     assert client.post("/api/v1/foods", json=two_defaults).status_code == 422
 
 
+def test_add_custom_serving_definition_to_existing_food(client: TestClient) -> None:
+    food = create_food(client)
+    response = client.post(
+        f"/api/v1/foods/{food['id']}/serving-definitions",
+        json={
+            "label": "1 medium",
+            "quantity": "1",
+            "unit": "medium",
+            "gram_weight": "110",
+            "is_default": False,
+        },
+    )
+    assert response.status_code == 201, response.text
+    servings = response.json()["serving_definitions"]
+    custom = next(serving for serving in servings if serving["label"] == "1 medium")
+    assert custom["gram_weight"] == "110.000000"
+    assert custom["source"] == "manual"
+    assert custom["is_default"] is False
+
+
 def _create_recipe_using_food(client: TestClient, food: dict, name: str, positions: list[int] | None = None) -> dict:
     positions = positions or [0]
     payload = {

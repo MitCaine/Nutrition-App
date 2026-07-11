@@ -13,6 +13,7 @@ from app.schemas.food import (
     FoodListResponse,
     FoodResponse,
     FoodUpdateRequest,
+    ServingDefinitionInput,
 )
 from app.services.food_service import FoodDependencyError, FoodService
 
@@ -80,5 +81,18 @@ def duplicate_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse
     user = ensure_dev_user(db)
     try:
         return FoodResponse.model_validate(_service(db).duplicate_food(user.id, food_id))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{food_id}/serving-definitions", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
+def add_serving_definition(
+    food_id: UUID,
+    payload: ServingDefinitionInput,
+    db: Session = Depends(get_db),
+) -> FoodResponse:
+    user = ensure_dev_user(db)
+    try:
+        return FoodResponse.model_validate(_service(db).add_serving_definition(user.id, food_id, payload))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

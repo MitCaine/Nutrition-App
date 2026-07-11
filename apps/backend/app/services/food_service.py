@@ -16,6 +16,7 @@ from app.schemas.food import (
     FoodDeleteResultResponse,
     FoodRecipeDependencyResponse,
     FoodUpdateRequest,
+    ServingDefinitionInput,
 )
 
 
@@ -147,6 +148,32 @@ class FoodService:
         created = self.foods.add(duplicate)
         self.db.commit()
         return created
+
+    def add_serving_definition(
+        self,
+        user_id: UUID,
+        food_id: UUID,
+        payload: ServingDefinitionInput,
+    ) -> FoodItem:
+        food = self.foods.get_required(food_id, user_id)
+        if payload.is_default:
+            for serving in food.serving_definitions:
+                serving.is_default = False
+        food.serving_definitions.append(
+            ServingDefinition(
+                id=uuid4(),
+                label=payload.label.strip(),
+                quantity=payload.quantity,
+                unit=payload.unit,
+                gram_weight=payload.gram_weight,
+                is_default=payload.is_default,
+                source="manual",
+                is_user_confirmed=True,
+            )
+        )
+        food.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return self.foods.get_required(food_id, user_id)
 
     def _food_recipe_dependencies(self, user_id: UUID, food_id: UUID) -> FoodDeleteDependencyResponse:
         statement = (
