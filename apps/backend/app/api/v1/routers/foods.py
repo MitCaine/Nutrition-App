@@ -7,8 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
 from app.dependencies.user import ensure_dev_user
-from app.schemas.food import FoodCreateRequest, FoodListResponse, FoodResponse, FoodUpdateRequest
-from app.services.food_service import FoodService
+from app.schemas.food import (
+    FoodCreateRequest,
+    FoodDeleteResultResponse,
+    FoodListResponse,
+    FoodResponse,
+    FoodUpdateRequest,
+)
+from app.services.food_service import FoodDependencyError, FoodService
 
 router = APIRouter()
 
@@ -54,11 +60,17 @@ def update_food(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.delete("/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_food(food_id: UUID, db: Session = Depends(get_db)) -> None:
+@router.delete("/{food_id}", response_model=FoodDeleteResultResponse)
+def delete_food(
+    food_id: UUID,
+    remove_from_recipes: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> FoodDeleteResultResponse:
     user = ensure_dev_user(db)
     try:
-        _service(db).soft_delete_food(user.id, food_id)
+        return _service(db).soft_delete_food(user.id, food_id, remove_from_recipes=remove_from_recipes)
+    except FoodDependencyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.dependency.model_dump(mode="json")) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

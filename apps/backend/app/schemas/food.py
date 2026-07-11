@@ -152,3 +152,32 @@ class FoodResponse(BaseModel):
 
 class FoodListResponse(BaseModel):
     foods: list[FoodResponse]
+
+
+class FoodRecipeDependencyResponse(BaseModel):
+    recipe_id: UUID
+    recipe_name: str
+    ingredient_occurrence_count: int
+    is_published: bool
+    needs_republish: bool
+
+
+class FoodDeleteDependencyResponse(BaseModel):
+    food_id: UUID
+    active_recipe_count: int
+    affected_recipes: list[FoodRecipeDependencyResponse]
+    total_ingredient_rows_affected: int
+
+
+class FoodDeleteAffectedRecipeResponse(BaseModel):
+    recipe_id: UUID
+    recipe_name: str
+    removed_ingredient_count: int
+    needs_republish: bool
+
+
+class FoodDeleteResultResponse(BaseModel):
+    food_id: UUID
+    deleted: bool
+    removed_ingredient_count: int
+    affected_recipes: list[FoodDeleteAffectedRecipeResponse]
