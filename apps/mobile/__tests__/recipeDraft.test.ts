@@ -15,7 +15,7 @@ import {
   validateRecipeDraft,
 } from "../src/features/recipes/utils/recipeDraft";
 import { formatRecipeTotal } from "../src/features/recipes/utils/recipeDisplay";
-import { convertedGramsPreview, massToGrams } from "../src/features/recipes/utils/massUnits";
+import { convertedGramsPreview, massToGrams, normalizeDecimalInput } from "../src/features/recipes/utils/massUnits";
 
 const food: Food = {
   id: "food-1",
@@ -63,8 +63,8 @@ test("recipe payload maps ordered gram and serving ingredients", () => {
     name: "Bean Bowl",
     notes: "batch",
     serving_count_yield: "4",
-    final_cooked_weight_grams: "900",
-    final_cooked_weight_display_quantity: "900",
+    final_cooked_weight_grams: 900,
+    final_cooked_weight_display_quantity: 900,
     final_cooked_weight_display_unit: "g",
     ingredients: [
       {
@@ -98,6 +98,18 @@ test("mass conversion normalizes grams ounces and pounds without float arithmeti
   expect(convertedGramsPreview("2", "lb")).toBe("907.18474 g");
 });
 
+test("mass parser accepts strict comma grouping and rejects malformed values", () => {
+  expect(normalizeDecimalInput("1500")).toBe("1500");
+  expect(normalizeDecimalInput("1,500")).toBe("1500");
+  expect(normalizeDecimalInput("1,500.5")).toBe("1500.5");
+  expect(normalizeDecimalInput(" 1,500 ")).toBe("1500");
+  expect(normalizeDecimalInput("15,00")).toBeNull();
+  expect(normalizeDecimalInput("1,,500")).toBeNull();
+  expect(normalizeDecimalInput(",1500")).toBeNull();
+  expect(normalizeDecimalInput("1500,")).toBeNull();
+  expect(normalizeDecimalInput("abc")).toBeNull();
+});
+
 test("recipe payload normalizes ingredient and final cooked mass units to grams", () => {
   const ingredient = { ...ingredientForFood(food), amountUnit: "g" as const, amountQuantity: "28", massUnit: "oz" as const };
   const payload = buildRecipePayload({
@@ -107,8 +119,32 @@ test("recipe payload normalizes ingredient and final cooked mass units to grams"
     finalCookedWeightUnit: "lb",
     ingredients: [ingredient],
   });
-  expect(payload?.final_cooked_weight_grams).toBe("907.18474");
+  expect(payload?.final_cooked_weight_grams).toBe(907.18474);
   expect(payload?.ingredients[0].amount_quantity).toBe("793.786648");
+});
+
+test("recipe payload sends cooked weight as numeric values after comma parsing", () => {
+  const payload = buildRecipePayload({
+    ...emptyRecipeDraft(),
+    name: "Batch",
+    finalCookedWeightGrams: "1,500.5",
+    finalCookedWeightUnit: "g",
+    ingredients: [],
+  });
+  expect(payload?.final_cooked_weight_grams).toBe(1500.5);
+  expect(payload?.final_cooked_weight_display_quantity).toBe(1500.5);
+});
+
+test("recipe validation rejects malformed nonpositive cooked weight", () => {
+  expect(validateRecipeDraft({ ...emptyRecipeDraft(), name: "Bad", finalCookedWeightGrams: "15,00" })).toBe(
+    "Cooked weight must be a valid number greater than zero.",
+  );
+  expect(validateRecipeDraft({ ...emptyRecipeDraft(), name: "Bad", finalCookedWeightGrams: "0" })).toBe(
+    "Cooked weight must be a valid number greater than zero.",
+  );
+  expect(validateRecipeDraft({ ...emptyRecipeDraft(), name: "Bad", finalCookedWeightGrams: "-1" })).toBe(
+    "Cooked weight must be a valid number greater than zero.",
+  );
 });
 
 test("switching ingredient modes clears incompatible serving state and formats amounts", () => {

@@ -9,6 +9,30 @@ from app.models.log import DailyLogNutrientSnapshot
 from app.nutrition.serving_resolution import ResolvedConsumedAmount
 
 
+def nutrients_for_resolved_amount(
+    food: FoodItem,
+    resolved: ResolvedConsumedAmount,
+) -> list[FoodNutrient]:
+    grouped: dict[str, list[FoodNutrient]] = {}
+    for nutrient in food.nutrients:
+        grouped.setdefault(nutrient.nutrient_id, []).append(nutrient)
+
+    selected: list[FoodNutrient] = []
+    for nutrient_id in sorted(grouped):
+        nutrients = grouped[nutrient_id]
+        if resolved.amount_unit == "serving":
+            preferred = [nutrient for nutrient in nutrients if nutrient.basis == NutrientBasis.PER_SERVING.value]
+            selected.extend(preferred or nutrients)
+            continue
+        gram_based = [
+            nutrient
+            for nutrient in nutrients
+            if nutrient.basis in {NutrientBasis.PER_100G.value, NutrientBasis.PER_GRAM.value}
+        ]
+        selected.extend(gram_based or nutrients)
+    return selected
+
+
 def scale_nutrient_amount(
     nutrient: FoodNutrient,
     resolved: ResolvedConsumedAmount,
@@ -43,7 +67,7 @@ def build_log_snapshots(
     resolved: ResolvedConsumedAmount,
 ) -> list[DailyLogNutrientSnapshot]:
     snapshots: list[DailyLogNutrientSnapshot] = []
-    for nutrient in food.nutrients:
+    for nutrient in nutrients_for_resolved_amount(food, resolved):
         snapshots.append(
             DailyLogNutrientSnapshot(
                 id=uuid4(),

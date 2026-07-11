@@ -7,12 +7,20 @@ const UNIT_GRAMS = {
 
 export type MassUnit = keyof typeof UNIT_GRAMS;
 
-function parseScaledDecimal(value: string): bigint | null {
+export function normalizeDecimalInput(value: string): string | null {
   const trimmed = value.trim();
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(trimmed)) {
     return null;
   }
-  const [whole, fraction = ""] = trimmed.split(".");
+  return trimmed.replace(/,/g, "");
+}
+
+function parseScaledDecimal(value: string): bigint | null {
+  const normalized = normalizeDecimalInput(value);
+  if (normalized === null) {
+    return null;
+  }
+  const [whole, fraction = ""] = normalized.split(".");
   const padded = `${fraction}000000000`.slice(0, 9);
   return BigInt(whole) * SCALE + BigInt(padded);
 }

@@ -41,6 +41,12 @@ class FoodItem(Base):
         back_populates="food_item",
         cascade="all, delete-orphan",
     )
+    published_recipe: Mapped[Optional[object]] = relationship(
+        "Recipe",
+        back_populates="published_food_item",
+        uselist=False,
+        foreign_keys="Recipe.published_food_item_id",
+    )
 
 
 class FoodSource(Base):

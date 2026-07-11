@@ -2,7 +2,7 @@ import type { Food } from "../../foods/api/types";
 import { defaultServing } from "../../foods/utils/foodDisplay";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
 import type { Recipe, RecipeIngredientInput, RecipeMutationInput } from "../api/types";
-import { formatMassAmount, massToGrams, type MassUnit } from "./massUnits";
+import { formatMassAmount, massToGrams, normalizeDecimalInput, type MassUnit } from "./massUnits";
 
 export type DraftIngredient = {
   localId: string;
@@ -112,16 +112,17 @@ export function buildRecipePayload(draft: RecipeDraft): RecipeMutationInput | nu
   if (validateRecipeDraft(draft)) {
     return null;
   }
+  const cookedWeightInput = normalizeDecimalInput(draft.finalCookedWeightGrams);
+  const cookedWeightGrams = cookedWeightInput
+    ? massToGrams(cookedWeightInput, draft.finalCookedWeightUnit)
+    : null;
   return {
     name: draft.name.trim(),
     notes: draft.notes.trim() || null,
     serving_count_yield: draft.servingCountYield.trim() || null,
-    final_cooked_weight_grams:
-      draft.finalCookedWeightGrams.trim()
-        ? massToGrams(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit)
-        : null,
-    final_cooked_weight_display_quantity: draft.finalCookedWeightGrams.trim() || null,
-    final_cooked_weight_display_unit: draft.finalCookedWeightGrams.trim() ? draft.finalCookedWeightUnit : null,
+    final_cooked_weight_grams: cookedWeightGrams ? Number(cookedWeightGrams) : null,
+    final_cooked_weight_display_quantity: cookedWeightInput ? Number(cookedWeightInput) : null,
+    final_cooked_weight_display_unit: cookedWeightInput ? draft.finalCookedWeightUnit : null,
     ingredients: draft.ingredients.map<RecipeIngredientInput>((ingredient, position) => ({
       food_item_id: ingredient.food.id,
       position,
@@ -168,16 +169,16 @@ export function validateRecipeDraft(draft: RecipeDraft): string | null {
   }
   if (
     draft.finalCookedWeightGrams.trim() &&
-    (!(Number(draft.finalCookedWeightGrams) > 0) ||
+    (!(Number(normalizeDecimalInput(draft.finalCookedWeightGrams)) > 0) ||
       !massToGrams(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit))
   ) {
-    return "Cooked weight must be greater than zero.";
+    return "Cooked weight must be a valid number greater than zero.";
   }
   return null;
 }
 
 export function canPublishRecipe(draft: Pick<RecipeDraft, "servingCountYield" | "finalCookedWeightGrams">) {
-  return Number(draft.servingCountYield) > 0 || Number(draft.finalCookedWeightGrams) > 0;
+  return Number(draft.servingCountYield) > 0 || Number(normalizeDecimalInput(draft.finalCookedWeightGrams)) > 0;
 }
 
 export function formatIngredientAmount(ingredient: DraftIngredient): string {

@@ -15,9 +15,9 @@ export type RecipeIngredientInput = {
 export type RecipeMutationInput = {
   name: string;
   notes?: string | null;
-  serving_count_yield?: string | null;
-  final_cooked_weight_grams?: string | null;
-  final_cooked_weight_display_quantity?: string | null;
+  serving_count_yield?: string | number | null;
+  final_cooked_weight_grams?: string | number | null;
+  final_cooked_weight_display_quantity?: string | number | null;
   final_cooked_weight_display_unit?: string | null;
   ingredients: RecipeIngredientInput[];
 };
