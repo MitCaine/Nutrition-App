@@ -48,7 +48,6 @@ test("log update API sends PATCH payload", async () => {
   });
 
   await updateLog("log-1", {
-    food_item_id: "food-1",
     logged_date: "2026-07-08",
     amount_quantity: "2",
     amount_unit: "g",
@@ -58,7 +57,11 @@ test("log update API sends PATCH payload", async () => {
     "http://localhost:8000/api/v1/logs/log-1",
     expect.objectContaining({
       method: "PATCH",
-      body: expect.stringContaining('"amount_unit":"g"'),
+      body: JSON.stringify({
+        logged_date: "2026-07-08",
+        amount_quantity: "2",
+        amount_unit: "g",
+      }),
     }),
   );
 });

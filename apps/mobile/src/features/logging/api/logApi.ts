@@ -1,5 +1,5 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { DailyLog, DailyLogInput, DailySummary, DailySummaryResponse } from "./types";
+import type { DailyLog, DailyLogInput, DailyLogUpdateInput, DailySummary, DailySummaryResponse } from "./types";
 
 export async function listLogs(date: string): Promise<DailyLog[]> {
   const response = await apiRequest<{ logs: DailyLog[] }>(`/logs?date=${encodeURIComponent(date)}`);
@@ -10,7 +10,7 @@ export function createLog(input: DailyLogInput): Promise<DailyLog> {
   return apiRequest<DailyLog>("/logs", { method: "POST", body: JSON.stringify(input) });
 }
 
-export function updateLog(logId: string, input: Partial<DailyLogInput>): Promise<DailyLog> {
+export function updateLog(logId: string, input: Partial<DailyLogUpdateInput>): Promise<DailyLog> {
   return apiRequest<DailyLog>(`/logs/${logId}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 

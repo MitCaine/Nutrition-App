@@ -23,7 +23,7 @@ class LogRepository:
         statement = (
             select(DailyLog)
             .where(DailyLog.id == log_id, DailyLog.user_id == user_id)
-            .options(selectinload(DailyLog.snapshots))
+            .options(selectinload(DailyLog.snapshots), selectinload(DailyLog.food_item))
         )
         return self.db.scalars(statement).first()
 
@@ -37,7 +37,7 @@ class LogRepository:
         statement = (
             select(DailyLog)
             .where(DailyLog.user_id == user_id, DailyLog.logged_date == logged_date)
-            .options(selectinload(DailyLog.snapshots))
+            .options(selectinload(DailyLog.snapshots), selectinload(DailyLog.food_item))
             .order_by(DailyLog.created_at, DailyLog.id)
         )
         return list(self.db.scalars(statement).all())

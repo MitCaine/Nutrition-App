@@ -7,6 +7,7 @@ import {
   todayLocalDateString,
   visibleDailyTotals,
   loggedFoodDisplayName,
+  dailyLogEntryState,
 } from "../src/features/logging/utils/dailyLogDisplay";
 import type { AggregatedNutrientTotal } from "../src/shared/nutrition/types";
 
@@ -48,6 +49,24 @@ test("historical log display prefers snapshot name with sensible fallbacks", () 
   expect(loggedFoodDisplayName({ food_item_id: "food-1", food_name_snapshot: "Original Name" }, names)).toBe("Original Name");
   expect(loggedFoodDisplayName({ food_item_id: "food-1", food_name_snapshot: null }, names)).toBe("Current Name");
   expect(loggedFoodDisplayName({ food_item_id: "deleted-food", food_name_snapshot: null }, names)).toBe("Deleted food");
+});
+
+test("deleted-source log presentation is read-only but remains deletable", () => {
+  expect(dailyLogEntryState({ is_editable: false, edit_block_reason: "source_food_deleted" })).toEqual({
+    canDelete: true,
+    canEdit: false,
+    canOpenFood: false,
+    sourceStatusLabel: "Source food deleted",
+  });
+});
+
+test("active-source log presentation retains edit and food navigation", () => {
+  expect(dailyLogEntryState({ is_editable: true, edit_block_reason: null })).toEqual({
+    canDelete: true,
+    canEdit: true,
+    canOpenFood: true,
+    sourceStatusLabel: null,
+  });
 });
 
 test("local date helpers preserve calendar dates without UTC shifting", () => {

@@ -1,7 +1,7 @@
 import type { Food } from "../../foods/api/types";
 import { defaultServing } from "../../foods/utils/foodDisplay";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
-import type { DailyLogInput } from "../api/types";
+import type { DailyLogInput, DailyLogUpdateInput } from "../api/types";
 
 export function initialServingId(food?: Food, logServingId?: string | null): string | null {
   if (logServingId) {
@@ -24,6 +24,11 @@ export function buildLogInput(params: {
     amount_unit: params.unit,
     serving_definition_id: params.unit === "serving" ? params.selectedServingId : null,
   };
+}
+
+export function buildLogUpdateInput(input: DailyLogInput): DailyLogUpdateInput {
+  const { food_item_id: _foodItemId, ...supportedFields } = input;
+  return supportedFields;
 }
 
 export function formatInitialLogAmount(amount?: string | null): string {

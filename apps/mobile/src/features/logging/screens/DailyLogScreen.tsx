@@ -10,6 +10,7 @@ import {
 import { useFoods } from "../../foods/hooks/useFoods";
 import { useDailyLogs, useDailySummary, useLogMutations } from "../hooks/useLogs";
 import {
+  dailyLogEntryState,
   formatReadableDate,
   localDateToApiDate,
   parseLocalDateString,
@@ -63,22 +64,35 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog }: Props) 
         </View>
       ))}
       <Text style={styles.sectionTitle}>Entries</Text>
-      {logs.data?.map((log) => (
-        <View key={log.id} style={styles.logRow}>
-          <Pressable onPress={() => onOpenFood(log.food_item_id)}>
+      {logs.data?.map((log) => {
+        const entryState = dailyLogEntryState(log);
+        const details = (
+          <>
             <Text style={styles.foodName}>{loggedFoodDisplayName(log, foodNames)}</Text>
+            {entryState.sourceStatusLabel ? <Text style={styles.sourceStatus}>{entryState.sourceStatusLabel}</Text> : null}
             <Text>
               {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}
             </Text>
-          </Pressable>
-          <Pressable onPress={() => mutations.deleteLog.mutate(log.id)}>
-            <Text style={styles.deleteText}>Delete</Text>
-          </Pressable>
-          <Pressable onPress={() => onEditLog(log.id)}>
-            <Text>Edit</Text>
-          </Pressable>
-        </View>
-      ))}
+          </>
+        );
+        return (
+          <View key={log.id} style={styles.logRow}>
+            {entryState.canOpenFood ? (
+              <Pressable onPress={() => onOpenFood(log.food_item_id)}>{details}</Pressable>
+            ) : (
+              <View>{details}</View>
+            )}
+            <Pressable onPress={() => mutations.deleteLog.mutate(log.id)}>
+              <Text style={styles.deleteText}>Delete</Text>
+            </Pressable>
+            {entryState.canEdit ? (
+              <Pressable onPress={() => onEditLog(log.id)}>
+                <Text>Edit</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      })}
     </ScrollView>
   );
 }
@@ -164,6 +178,7 @@ const styles = StyleSheet.create({
   screen: { gap: 12, padding: 16, paddingRight: 28 },
   secondaryButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   sectionTitle: { fontSize: 18, fontWeight: "700" },
+  sourceStatus: { color: "#666", fontSize: 13 },
   title: { fontSize: 24, fontWeight: "700" },
   totalRow: { flexDirection: "row", justifyContent: "space-between" },
 });

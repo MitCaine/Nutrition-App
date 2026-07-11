@@ -13,7 +13,8 @@ import {
 import { useFood } from "../../foods/hooks/useFoods";
 import type { DailyLog } from "../api/types";
 import { useLogMutations } from "../hooks/useLogs";
-import { buildLogInput, formatInitialLogAmount, formatServingGramWeight, initialServingId } from "../utils/logFoodForm";
+import { buildLogInput, buildLogUpdateInput, formatInitialLogAmount, formatServingGramWeight, initialServingId } from "../utils/logFoodForm";
+import { logEditErrorMessage } from "../utils/logEditErrors";
 import { logInputSchema } from "../validation/logValidation";
 
 type Props = {
@@ -50,12 +51,16 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
       return;
     }
     setError(null);
-    if (log) {
-      await mutations.updateLog.mutateAsync({ logId: log.id, input: parsed.data });
-    } else {
-      await mutations.createLog.mutateAsync(parsed.data);
+    try {
+      if (log) {
+        await mutations.updateLog.mutateAsync({ logId: log.id, input: buildLogUpdateInput(parsed.data) });
+      } else {
+        await mutations.createLog.mutateAsync(parsed.data);
+      }
+      onSaved();
+    } catch (saveError) {
+      setError(logEditErrorMessage(saveError));
     }
-    onSaved();
   }
 
   return (
@@ -71,7 +76,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
             <Text>Cancel</Text>
           </Pressable>
         </View>
-        <Text style={styles.foodName}>{food.data?.name ?? "Food"}</Text>
+        <Text style={styles.foodName}>{food.data?.name ?? log?.food_name_snapshot ?? "Food"}</Text>
         <TextInput
           value={amount}
           onChangeText={setAmount}

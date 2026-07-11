@@ -13,7 +13,7 @@ from app.schemas.log import (
     DailyLogUpdateRequest,
     DailySummaryResponse,
 )
-from app.services.log_service import LogService
+from app.services.log_service import LogEditConflictError, LogService
 
 router = APIRouter()
 
@@ -58,6 +58,11 @@ def update_log(
     user = ensure_dev_user(db)
     try:
         return DailyLogResponse.model_validate(_service(db).update_log(user.id, log_id, payload))
+    except LogEditConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

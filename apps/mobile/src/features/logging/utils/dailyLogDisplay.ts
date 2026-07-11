@@ -18,6 +18,18 @@ export function loggedFoodDisplayName(log: Pick<DailyLog, "food_item_id" | "food
   return log.food_name_snapshot?.trim() || foodNames.get(log.food_item_id) || "Deleted food";
 }
 
+export function dailyLogEntryState(
+  log: Pick<DailyLog, "is_editable" | "edit_block_reason">,
+): { canDelete: true; canEdit: boolean; canOpenFood: boolean; sourceStatusLabel: string | null } {
+  const sourceDeleted = log.is_editable === false && log.edit_block_reason === "source_food_deleted";
+  return {
+    canDelete: true,
+    canEdit: !sourceDeleted,
+    canOpenFood: !sourceDeleted,
+    sourceStatusLabel: sourceDeleted ? "Source food deleted" : null,
+  };
+}
+
 export function todayLocalDateString(date = new Date()): string {
   return formatLocalDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
 }

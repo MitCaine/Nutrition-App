@@ -62,6 +62,8 @@ class DailyLogResponse(BaseModel):
     id: UUID
     food_item_id: UUID
     food_name_snapshot: str | None
+    is_editable: bool
+    edit_block_reason: str | None
     logged_date: date
     meal_type: str | None
     amount_quantity: Decimal

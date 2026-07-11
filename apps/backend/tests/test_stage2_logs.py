@@ -1,7 +1,12 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from app.dependencies.user import ensure_dev_user
 from app.models.log import DailyLog
+from app.repositories.log_repository import LogRepository
 from tests.test_stage2_foods import create_food, food_payload
 
 
@@ -19,6 +24,8 @@ def test_serving_logging_creates_snapshots_and_daily_summary(client: TestClient)
     assert response.status_code == 201, response.text
     log = response.json()
     assert log["food_name_snapshot"] == "Greek Yogurt"
+    assert log["is_editable"] is True
+    assert log["edit_block_reason"] is None
     protein = next(s for s in log["snapshots"] if s["nutrient_id"] == "protein")
     vitamin_d = next(s for s in log["snapshots"] if s["nutrient_id"] == "vitamin_d")
     added_sugars = next(s for s in log["snapshots"] if s["nutrient_id"] == "added_sugars")
@@ -139,8 +146,27 @@ def test_food_delete_does_not_remove_historical_log_name_or_snapshots(client: Te
     logs = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"]
     historical = next(item for item in logs if item["id"] == log["id"])
     assert historical["food_name_snapshot"] == "Distinct Food"
+    assert historical["is_editable"] is False
+    assert historical["edit_block_reason"] == "source_food_deleted"
     assert historical["snapshots"] == log["snapshots"]
     assert client.get("/api/v1/logs/daily-summary", params={"date": "2026-07-08"}).json() == before_summary
+
+    failed_update = client.patch(
+        f"/api/v1/logs/{log['id']}",
+        json={"amount_quantity": "2", "amount_unit": "serving"},
+    )
+    assert failed_update.status_code == 409
+    assert failed_update.json() == {
+        "detail": {
+            "code": "source_food_deleted",
+            "message": "This historical entry cannot be edited because its source food was deleted.",
+        }
+    }
+
+    unchanged = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"][0]
+    assert unchanged["amount_quantity"] == log["amount_quantity"]
+    assert unchanged["food_name_snapshot"] == log["food_name_snapshot"]
+    assert unchanged["snapshots"] == log["snapshots"]
     assert client.delete(f"/api/v1/logs/{log['id']}").status_code == 204
 
 
@@ -162,6 +188,44 @@ def test_older_log_without_food_name_snapshot_still_serializes(client: TestClien
 
     historical = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"][0]
     assert historical["food_name_snapshot"] is None
+
+
+def test_log_list_batches_source_food_editability_lookup(client: TestClient, db_session: Session) -> None:
+    for name in ("First Food", "Second Food"):
+        food = create_food(client, name)
+        response = client.post(
+            "/api/v1/logs",
+            json={
+                "food_item_id": food["id"],
+                "logged_date": "2026-07-08",
+                "amount_quantity": "1",
+                "amount_unit": "serving",
+            },
+        )
+        assert response.status_code == 201
+
+    db_session.expire_all()
+    user_id = ensure_dev_user(db_session).id
+    select_count = 0
+
+    def count_selects(_connection, _cursor, statement, _parameters, _context, _executemany) -> None:
+        nonlocal select_count
+        if statement.lstrip().upper().startswith("SELECT"):
+            select_count += 1
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", count_selects)
+    try:
+        logs = LogRepository(db_session).list_for_date(
+            user_id,
+            date(2026, 7, 8),
+        )
+        editability = [log.is_editable for log in logs]
+    finally:
+        event.remove(engine, "before_cursor_execute", count_selects)
+
+    assert editability == [True, True]
+    assert select_count == 3
 
 
 def test_editing_logged_food_preserves_snapshots_with_nullable_deleted_provenance(

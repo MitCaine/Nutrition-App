@@ -15,6 +15,11 @@ from app.repositories.log_repository import LogRepository
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 
 
+class LogEditConflictError(ValueError):
+    code = "source_food_deleted"
+    message = "This historical entry cannot be edited because its source food was deleted."
+
+
 class LogService:
     def __init__(self, db: Session):
         self.db = db
@@ -55,6 +60,8 @@ class LogService:
 
     def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
         log = self.logs.get_required(log_id, user_id)
+        if not log.is_editable:
+            raise LogEditConflictError(LogEditConflictError.message)
         food = self.foods.get_required(log.food_item_id, user_id)
         amount_quantity = payload.amount_quantity if payload.amount_quantity is not None else log.amount_quantity
         amount_unit = payload.amount_unit if payload.amount_unit is not None else log.amount_unit

@@ -16,6 +16,7 @@ import {
   formatFoodDeleteSuccess,
   parseFoodDeleteDependency,
 } from "../utils/foodDelete";
+import { foodDetailLoadState } from "../utils/foodDetailState";
 
 type Props = {
   foodId: string;
@@ -31,6 +32,12 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
   const [error, setError] = useState<string | null>(null);
   const deletePending = mutations.deleteFood.isPending;
+  const loadState = foodDetailLoadState({
+    hasData: Boolean(food.data),
+    isLoading: food.isLoading,
+    isError: food.isError,
+    error: food.error,
+  });
 
   const requestDelete = (removeFromRecipes: boolean) => {
     if (deletePending) {
@@ -56,10 +63,22 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     );
   };
 
-  if (!food.data) {
+  if (loadState.kind !== "ready" || !food.data) {
     return (
       <View style={styles.screen}>
-        <Text>Loading...</Text>
+        <Pressable onPress={onBack}>
+          <Text>Back</Text>
+        </Pressable>
+        <Text style={loadState.kind === "error" ? styles.error : undefined}>
+          {loadState.kind === "unavailable" || loadState.kind === "error"
+            ? loadState.message
+            : "Loading..."}
+        </Text>
+        {loadState.kind === "error" ? (
+          <Pressable onPress={() => food.refetch()} style={styles.secondaryButton}>
+            <Text>Retry</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }

@@ -39,6 +39,14 @@ class DailyLog(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def is_editable(self) -> bool:
+        return self.food_item.deleted_at is None
+
+    @property
+    def edit_block_reason(self) -> str | None:
+        return None if self.is_editable else "source_food_deleted"
+
 
 class DailyLogNutrientSnapshot(Base):
     __tablename__ = "daily_log_nutrient_snapshots"

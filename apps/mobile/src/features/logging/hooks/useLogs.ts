@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { createLog, deleteLog, getDailySummary, listLogs, updateLog } from "../api/logApi";
-import type { DailyLogInput } from "../api/types";
+import type { DailyLogUpdateInput } from "../api/types";
 
 export function invalidateLogDateCaches(queryClient: QueryClient, date: string) {
   queryClient.invalidateQueries({ queryKey: ["logs", date] });
@@ -23,7 +23,7 @@ export function useLogMutations(date: string) {
   return {
     createLog: useMutation({ mutationFn: createLog, onSuccess: invalidate }),
     updateLog: useMutation({
-      mutationFn: ({ logId, input }: { logId: string; input: Partial<DailyLogInput> }) =>
+      mutationFn: ({ logId, input }: { logId: string; input: Partial<DailyLogUpdateInput> }) =>
         updateLog(logId, input),
       onSuccess: invalidate,
     }),

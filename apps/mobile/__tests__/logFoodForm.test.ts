@@ -1,6 +1,7 @@
 import type { Food } from "../src/features/foods/api/types";
 import {
   buildLogInput,
+  buildLogUpdateInput,
   formatInitialLogAmount,
   formatServingGramWeight,
   initialServingId,
@@ -112,4 +113,19 @@ test("log form display formatting trims initial amounts and serving gram weights
   expect(formatServingGramWeight("100.000000")).toBe("100g");
   expect(formatServingGramWeight("85.500000")).toBe("85.5g");
   expect(formatServingGramWeight(null)).toBeNull();
+});
+
+test("log update input omits creation-only food item id", () => {
+  expect(buildLogUpdateInput({
+    food_item_id: "food-1",
+    logged_date: "2026-07-08",
+    amount_quantity: "2",
+    amount_unit: "g",
+    serving_definition_id: null,
+  })).toEqual({
+    logged_date: "2026-07-08",
+    amount_quantity: "2",
+    amount_unit: "g",
+    serving_definition_id: null,
+  });
 });
