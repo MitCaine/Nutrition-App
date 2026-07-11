@@ -1,0 +1,58 @@
+import {
+  addLocalDays,
+  formatReadableDate,
+  localDateToApiDate,
+  parseLocalDateString,
+  setLocalDatePart,
+  todayLocalDateString,
+  visibleDailyTotals,
+} from "../src/features/logging/utils/dailyLogDisplay";
+import type { AggregatedNutrientTotal } from "../src/shared/nutrition/types";
+
+function total(
+  nutrientId: string,
+  amountKnown: string,
+  hasUnknownContributors = false,
+): AggregatedNutrientTotal {
+  return {
+    nutrientId,
+    amountKnown,
+    amountEstimated: "0.000000",
+    unit: nutrientId === "calories" ? "kcal" : "g",
+    hasUnknownContributors,
+    unknownContributorCount: hasUnknownContributors ? 1 : 0,
+  };
+}
+
+test("daily log hides unknown-only totals but keeps known and partial totals", () => {
+  const visible = visibleDailyTotals([
+    total("vitamin_d", "0.000000", true),
+    total("protein", "2.720000", true),
+    total("calories", "120.000000", false),
+  ]);
+
+  expect(visible.map((item) => item.nutrientId)).toEqual(["calories", "protein"]);
+  expect(visible[1].hasUnknownContributors).toBe(true);
+});
+
+test("daily log totals keep calories first", () => {
+  expect(visibleDailyTotals([total("protein", "10"), total("calories", "50")]).map((item) => item.nutrientId)).toEqual([
+    "calories",
+    "protein",
+  ]);
+});
+
+test("local date helpers preserve calendar dates without UTC shifting", () => {
+  expect(todayLocalDateString(new Date(2026, 6, 11, 23, 30))).toBe("2026-07-11");
+  expect(todayLocalDateString(new Date(2026, 6, 11, 0, 30))).toBe("2026-07-11");
+  expect(localDateToApiDate(new Date(2026, 6, 11, 23, 30))).toBe("2026-07-11");
+  expect(parseLocalDateString("2026-07-11")?.getFullYear()).toBe(2026);
+  expect(parseLocalDateString("2026-02-31")).toBeNull();
+});
+
+test("date selector helpers update date parts and readable labels", () => {
+  expect(addLocalDays("2026-07-11", -1)).toBe("2026-07-10");
+  expect(setLocalDatePart("2026-07-11", "month", 1)).toBe("2026-08-11");
+  expect(setLocalDatePart("2026-01-31", "month", 1)).toBe("2026-02-28");
+  expect(formatReadableDate("2026-07-11")).toContain("2026");
+});

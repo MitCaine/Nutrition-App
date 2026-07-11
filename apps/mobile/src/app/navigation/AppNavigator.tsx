@@ -1,13 +1,30 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
+import type { Food } from "../../features/foods/api/types";
 import { FoodDetailsScreen } from "../../features/foods/screens/FoodDetailsScreen";
 import { FoodFormScreen } from "../../features/foods/screens/FoodFormScreen";
 import { SavedFoodsScreen } from "../../features/foods/screens/SavedFoodsScreen";
+import { useQueries } from "@tanstack/react-query";
+
+import { getFood } from "../../features/foods/api/foodApi";
 import { useFood } from "../../features/foods/hooks/useFoods";
 import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { LogFoodScreen } from "../../features/logging/screens/LogFoodScreen";
+import { todayLocalDateString } from "../../features/logging/utils/dailyLogDisplay";
+import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
+import { RecipeDetailScreen } from "../../features/recipes/screens/RecipeDetailScreen";
+import { RecipeFormScreen } from "../../features/recipes/screens/RecipeFormScreen";
+import { RecipeListScreen } from "../../features/recipes/screens/RecipeListScreen";
+import { useRecipe } from "../../features/recipes/hooks/useRecipes";
+import {
+  applyImportedIngredient,
+  emptyRecipeDraft,
+  ingredientForFood,
+  recipeToDraft,
+} from "../../features/recipes/utils/recipeDraft";
+import type { RecipeDraft } from "../../features/recipes/utils/recipeDraft";
 import { UsdaPreviewScreen } from "../../features/usda/screens/UsdaPreviewScreen";
 import { UsdaSearchScreen } from "../../features/usda/screens/UsdaSearchScreen";
 
@@ -20,13 +37,26 @@ type Route =
   | { name: "edit-log"; logId: string }
   | { name: "usda-search" }
   | { name: "usda-preview"; fdcId: number }
+  | { name: "recipes" }
+  | { name: "new-recipe" }
+  | { name: "recipe-detail"; recipeId: string }
+  | { name: "edit-recipe"; recipeId: string }
+  | { name: "ingredient-picker" }
+  | { name: "recipe-usda-search" }
+  | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" };
 
 export function AppNavigator() {
   const [route, setRoute] = useState<Route>({ name: "foods" });
   const [foodQuery, setFoodQuery] = useState("");
+  const [recipeQuery, setRecipeQuery] = useState("");
+  const [ingredientQuery, setIngredientQuery] = useState("");
   const [usdaQuery, setUsdaQuery] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [recipeUsdaQuery, setRecipeUsdaQuery] = useState("");
+  const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(emptyRecipeDraft());
+  const [foodMessage, setFoodMessage] = useState<string | null>(null);
+  const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
+  const [date, setDate] = useState(todayLocalDateString());
 
   let content;
   if (route.name === "new-food") {
@@ -36,6 +66,10 @@ export function AppNavigator() {
       <FoodDetailsScreen
         foodId={route.foodId}
         onBack={() => setRoute({ name: "foods" })}
+        onDeleted={(message) => {
+          setFoodMessage(message);
+          setRoute({ name: "foods" });
+        }}
         onEdit={() => setRoute({ name: "edit-food", foodId: route.foodId })}
         onLog={() => setRoute({ name: "log-food", foodId: route.foodId })}
       />
@@ -60,7 +94,94 @@ export function AppNavigator() {
       <UsdaPreviewScreen
         fdcId={route.fdcId}
         onBack={() => setRoute({ name: "usda-search" })}
-        onImported={(foodId) => setRoute({ name: "food-detail", foodId })}
+        onImported={(food) => setRoute({ name: "food-detail", foodId: food.id })}
+      />
+    );
+  } else if (route.name === "recipes") {
+    content = (
+      <RecipeListScreen
+        query={recipeQuery}
+        setQuery={setRecipeQuery}
+        onCreate={() => {
+          setRecipeMessage(null);
+          setRecipeDraft(emptyRecipeDraft());
+          setRoute({ name: "new-recipe" });
+        }}
+        onOpenRecipe={(recipeId) => {
+          setRecipeMessage(null);
+          setRoute({ name: "recipe-detail", recipeId });
+        }}
+        message={recipeMessage}
+      />
+    );
+  } else if (route.name === "new-recipe") {
+    content = (
+      <RecipeFormScreen
+        draft={recipeDraft}
+        setDraft={setRecipeDraft}
+        onCancel={() => setRoute({ name: "recipes" })}
+        onSaved={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
+        onAddIngredient={() => setRoute({ name: "ingredient-picker" })}
+      />
+    );
+  } else if (route.name === "recipe-detail") {
+    content = (
+      <RecipeDetailRoute
+        recipeId={route.recipeId}
+        onBack={() => setRoute({ name: "recipes" })}
+        onEdit={(draft) => {
+          setRecipeDraft(draft);
+          setRoute({ name: "edit-recipe", recipeId: route.recipeId });
+        }}
+        onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
+        onDeleted={() => {
+          setRecipeMessage("Recipe deleted");
+          setRoute({ name: "recipes" });
+        }}
+      />
+    );
+  } else if (route.name === "edit-recipe") {
+    content = (
+      <RecipeFormScreen
+        draft={recipeDraft}
+        setDraft={setRecipeDraft}
+        onCancel={() => setRoute({ name: "recipe-detail", recipeId: route.recipeId })}
+        onSaved={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
+        onAddIngredient={() => setRoute({ name: "ingredient-picker" })}
+      />
+    );
+  } else if (route.name === "ingredient-picker") {
+    content = (
+      <IngredientPickerScreen
+        query={ingredientQuery}
+        setQuery={setIngredientQuery}
+        currentPublishedFoodItemId={recipeDraft.publishedFoodItemId}
+        onBack={() => setRoute(recipeDraft.recipeId ? { name: "edit-recipe", recipeId: recipeDraft.recipeId } : { name: "new-recipe" })}
+        onSelectFood={(food) => {
+          setRecipeDraft({ ...recipeDraft, ingredients: [...recipeDraft.ingredients, ingredientForFood(food)] });
+          setRoute(recipeDraft.recipeId ? { name: "edit-recipe", recipeId: recipeDraft.recipeId } : { name: "new-recipe" });
+        }}
+        onSearchUsda={() => setRoute({ name: "recipe-usda-search" })}
+      />
+    );
+  } else if (route.name === "recipe-usda-search") {
+    content = (
+      <UsdaSearchScreen
+        query={recipeUsdaQuery}
+        setQuery={setRecipeUsdaQuery}
+        onBack={() => setRoute({ name: "ingredient-picker" })}
+        onOpenPreview={(fdcId) => setRoute({ name: "recipe-usda-preview", fdcId })}
+      />
+    );
+  } else if (route.name === "recipe-usda-preview") {
+    content = (
+      <UsdaPreviewScreen
+        fdcId={route.fdcId}
+        onBack={() => setRoute({ name: "recipe-usda-search" })}
+        onImported={(food: Food) => {
+          setRecipeDraft(applyImportedIngredient(recipeDraft, food));
+          setRoute(recipeDraft.recipeId ? { name: "edit-recipe", recipeId: recipeDraft.recipeId } : { name: "new-recipe" });
+        }}
       />
     );
   } else if (route.name === "daily-log") {
@@ -70,9 +191,20 @@ export function AppNavigator() {
       <SavedFoodsScreen
         query={foodQuery}
         setQuery={setFoodQuery}
-        onCreate={() => setRoute({ name: "new-food" })}
-        onSearchUsda={() => setRoute({ name: "usda-search" })}
-        onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
+        onCreate={() => {
+          setFoodMessage(null);
+          setRoute({ name: "new-food" });
+        }}
+        onSearchUsda={() => {
+          setFoodMessage(null);
+          setRoute({ name: "usda-search" });
+        }}
+        onOpenFood={(foodId) => {
+          setFoodMessage(null);
+          setRoute({ name: "food-detail", foodId });
+        }}
+        message={foodMessage}
+        onMessageExpired={() => setFoodMessage(null)}
       />
     );
   }
@@ -80,15 +212,84 @@ export function AppNavigator() {
   return (
     <View style={styles.shell}>
       <View style={styles.content}>{content}</View>
-      <View style={styles.tabs}>
-        <Pressable onPress={() => setRoute({ name: "foods" })} style={styles.tab}>
-          <Text>Foods</Text>
-        </Pressable>
-        <Pressable onPress={() => setRoute({ name: "daily-log" })} style={styles.tab}>
-          <Text>Daily Log</Text>
-        </Pressable>
-      </View>
+      <SafeAreaView style={styles.tabsSafeArea}>
+        <View style={styles.tabs}>
+          <Pressable onPress={() => setRoute({ name: "foods" })} style={styles.tab}>
+            <Text>Foods</Text>
+          </Pressable>
+          <Pressable onPress={() => {
+            setFoodMessage(null);
+            setRoute({ name: "daily-log" });
+          }} style={styles.tab}>
+            <Text>Daily Log</Text>
+          </Pressable>
+          <Pressable onPress={() => {
+            setFoodMessage(null);
+            setRoute({ name: "recipes" });
+          }} style={styles.tab}>
+            <Text>Recipes</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
     </View>
+  );
+}
+
+function RecipeDetailRoute({
+  recipeId,
+  onBack,
+  onEdit,
+  onOpenFood,
+  onDeleted,
+}: {
+  recipeId: string;
+  onBack: () => void;
+  onEdit: (draft: RecipeDraft) => void;
+  onOpenFood: (foodId: string) => void;
+  onDeleted: () => void;
+}) {
+  const recipe = useRecipe(recipeId);
+  const ingredientFoodIds = Array.from(
+    new Set(recipe.data?.ingredients.map((ingredient) => ingredient.food_item_id) ?? []),
+  );
+  const ingredientFoods = useQueries({
+    queries: ingredientFoodIds.map((foodId) => ({
+      queryKey: ["foods", foodId],
+      queryFn: () => getFood(foodId),
+      enabled: Boolean(recipe.data),
+    })),
+  });
+  const isLoadingFoods = ingredientFoods.some((query) => query.isLoading);
+  const hasFoodError = ingredientFoods.some((query) => query.isError);
+
+  if (!recipe.data || isLoadingFoods) {
+    return (
+      <View style={styles.loading}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+  const loadedFoods = ingredientFoods.map((query) => query.data).filter((food): food is Food => Boolean(food));
+  const draftResult = recipeToDraft(recipe.data, loadedFoods);
+  const canEdit = !hasFoodError && draftResult.ok;
+  return (
+    <RecipeDetailScreen
+      recipe={recipe.data}
+      onBack={onBack}
+      onEdit={() => {
+        if (draftResult.ok) {
+          onEdit(draftResult.draft);
+        }
+      }}
+      onOpenFood={onOpenFood}
+      onDeleted={onDeleted}
+      ingredientFoods={loadedFoods}
+      editBlockedMessage={
+        canEdit
+          ? null
+          : "This recipe references an ingredient food that could not be loaded. Editing is blocked to avoid losing ingredients."
+      }
+    />
   );
 }
 
@@ -141,4 +342,5 @@ const styles = StyleSheet.create({
   shell: { flex: 1, paddingTop: 48 },
   tab: { alignItems: "center", flex: 1, padding: 12 },
   tabs: { borderTopColor: "#e7e7e7", borderTopWidth: 1, flexDirection: "row" },
+  tabsSafeArea: { backgroundColor: "white" },
 });

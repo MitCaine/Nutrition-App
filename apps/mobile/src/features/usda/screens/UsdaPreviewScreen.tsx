@@ -9,11 +9,12 @@ import {
   usdaPreviewMessage,
 } from "../utils/usdaDisplay";
 import { formatAmountWithUnit } from "../../../shared/nutrition/display";
+import type { Food } from "../../foods/api/types";
 
 type Props = {
   fdcId: number;
   onBack: () => void;
-  onImported: (foodId: string) => void;
+  onImported: (food: Food) => void;
 };
 
 export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
@@ -37,7 +38,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
       return;
     }
     importer.mutate(fdcId, {
-      onSuccess: (food) => onImported(food.id),
+      onSuccess: (food) => onImported(food),
     });
   };
 

@@ -61,3 +61,32 @@ export type NutrientDefinition = {
   parent_nutrient_id?: string | null;
   display_order: number;
 };
+
+export type FoodDeleteAffectedRecipe = {
+  recipe_id: string;
+  recipe_name: string;
+  removed_ingredient_count: number;
+  needs_republish: boolean;
+};
+
+export type FoodDeleteResult = {
+  food_id: string;
+  deleted: boolean;
+  removed_ingredient_count: number;
+  affected_recipes: FoodDeleteAffectedRecipe[];
+};
+
+export type FoodRecipeDependency = {
+  recipe_id: string;
+  recipe_name: string;
+  ingredient_occurrence_count: number;
+  is_published: boolean;
+  needs_republish: boolean;
+};
+
+export type FoodDeleteDependency = {
+  food_id: string;
+  active_recipe_count: number;
+  affected_recipes: FoodRecipeDependency[];
+  total_ingredient_rows_affected: number;
+};

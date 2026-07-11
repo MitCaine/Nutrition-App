@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useFoods } from "../hooks/useFoods";
@@ -8,10 +9,19 @@ type Props = {
   onOpenFood: (foodId: string) => void;
   query: string;
   setQuery: (query: string) => void;
+  message?: string | null;
+  onMessageExpired?: () => void;
 };
 
-export function SavedFoodsScreen({ onCreate, onSearchUsda, onOpenFood, query, setQuery }: Props) {
+export function SavedFoodsScreen({ onCreate, onSearchUsda, onOpenFood, query, setQuery, message, onMessageExpired }: Props) {
   const foods = useFoods(query);
+  useEffect(() => {
+    if (!message || !onMessageExpired) {
+      return;
+    }
+    const timeout = setTimeout(onMessageExpired, 5000);
+    return () => clearTimeout(timeout);
+  }, [message, onMessageExpired]);
 
   return (
     <View style={styles.screen}>
@@ -32,6 +42,11 @@ export function SavedFoodsScreen({ onCreate, onSearchUsda, onOpenFood, query, se
         placeholder="Search name or brand"
         style={styles.search}
       />
+      {message ? (
+        <View style={styles.successBanner}>
+          <Text style={styles.successText}>{message}</Text>
+        </View>
+      ) : null}
       {foods.data?.map((food) => (
         <Pressable key={food.id} onPress={() => onOpenFood(food.id)} style={styles.foodRow}>
           <Text style={styles.foodName}>{food.name}</Text>
@@ -54,6 +69,8 @@ const styles = StyleSheet.create({
   secondaryButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   screen: { flex: 1, gap: 14, padding: 16 },
   search: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 12 },
+  successBanner: { backgroundColor: "#e6f4ea", borderColor: "#137333", borderRadius: 6, borderWidth: 1, padding: 12 },
+  successText: { color: "#0b5c2f", fontWeight: "700" },
   title: { fontSize: 24, fontWeight: "700" },
 });
 
