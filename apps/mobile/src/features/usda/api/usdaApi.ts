@@ -1,9 +1,11 @@
 import { apiRequest } from "../../../shared/api/client";
 import type { UsdaFoodPreview, UsdaImportResult, UsdaSearchResponse } from "./types";
+import { normalizeUsdaSearchQuery } from "../utils/usdaSearchQuery";
 
 export function searchUsdaFoods(query: string): Promise<UsdaSearchResponse> {
+  const outboundQuery = normalizeUsdaSearchQuery(query);
   return apiRequest<UsdaSearchResponse>(
-    `/usda/foods/search?query=${encodeURIComponent(query)}&page_size=20`,
+    `/usda/foods/search?query=${encodeURIComponent(outboundQuery)}&page_size=20`,
   );
 }
 

@@ -31,6 +31,50 @@ test("USDA search API encodes query and returns normalized response", async () =
   expect(response.foods[0].data_type).toBe("Foundation");
 });
 
+test("USDA search API normalizes only outbound lean fat ratio query", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      query: "ground beef 80% lean 20% fat",
+      page_number: 1,
+      page_size: 20,
+      total_hits: 0,
+      foods: [],
+    }),
+  });
+  const displayedQuery = "ground beef 80/20";
+
+  await searchUsdaFoods(displayedQuery);
+
+  expect(displayedQuery).toBe("ground beef 80/20");
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://localhost:8000/api/v1/usda/foods/search?query=ground%20beef%2080%25%20lean%2020%25%20fat&page_size=20",
+    expect.any(Object),
+  );
+});
+
+test("USDA search API sends unchanged queries without unnecessary rewriting", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      query: "1/2 cup milk",
+      page_number: 1,
+      page_size: 20,
+      total_hits: 0,
+      foods: [],
+    }),
+  });
+
+  await searchUsdaFoods("1/2 cup milk");
+
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://localhost:8000/api/v1/usda/foods/search?query=1%2F2%20cup%20milk&page_size=20",
+    expect.any(Object),
+  );
+});
+
 test("USDA import API posts to import endpoint and returns local food", async () => {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
