@@ -1,12 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 OUTPUT="$PROJECT_DIR/../${PROJECT_NAME}.zip"
 
 rm -f "$OUTPUT"
 
-cd "$PROJECT_DIR" || exit 1
+cd "$PROJECT_DIR"
 
 zip -r "$OUTPUT" . \
   -x ".git/*" \
@@ -25,9 +28,17 @@ zip -r "$OUTPUT" . \
   -x "*/.pycache/*" \
   -x ".expo/*" \
   -x "*/.expo/*" \
+  -x "apps/mobile/ios/*" \
+  -x "apps/mobile/android/*" \
+  -x ".env" \
+  -x "*/.env" \
+  -x ".env.*" \
+  -x "*/.env.*" \
   -x "*.pyc" \
   -x ".DS_Store" \
-  -x "*/.DS_Store"
+  -x "*/.DS_Store" \
+  -x "*.egg-info/*" \
+  -x "*/.egg-info/*"
 
 echo
 echo "Created: $OUTPUT"
