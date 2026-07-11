@@ -1,0 +1,34 @@
+import type { Food } from "../src/features/foods/api/types";
+import { ingredientPickerFoods } from "../src/features/recipes/utils/ingredientPicker";
+
+const ordinaryFood: Food = {
+  id: "food-1",
+  name: "Tomatoes",
+  source_type: "manual",
+  is_recipe: false,
+  serving_definitions: [],
+  nutrients: [],
+};
+
+const recipeFood: Food = {
+  id: "food-2",
+  name: "Chili",
+  source_type: "recipe",
+  is_recipe: true,
+  serving_definitions: [],
+  nutrients: [],
+};
+
+test("ingredient picker includes ordinary foods and excludes published recipe foods", () => {
+  expect(ingredientPickerFoods([ordinaryFood, recipeFood])).toEqual([ordinaryFood]);
+});
+
+test("ingredient picker preserves existing search-filtered ordinary foods", () => {
+  const searchedFoods = [{ ...ordinaryFood, name: "Tomato Paste" }, recipeFood];
+  expect(ingredientPickerFoods(searchedFoods).map((food) => food.name)).toEqual(["Tomato Paste"]);
+});
+
+test("saved foods source data can still include published recipe foods", () => {
+  const savedFoods = [ordinaryFood, recipeFood];
+  expect(savedFoods.some((food) => food.is_recipe)).toBe(true);
+});

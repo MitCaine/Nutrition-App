@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { useFoods } from "../../foods/hooks/useFoods";
 import type { Food } from "../../foods/api/types";
 import { foodMeta } from "../utils/recipeDraft";
+import { ingredientPickerFoods } from "../utils/ingredientPicker";
 
 type Props = {
   query: string;
@@ -22,6 +23,7 @@ export function IngredientPickerScreen({
   onSearchUsda,
 }: Props) {
   const foods = useFoods(query);
+  const selectableFoods = ingredientPickerFoods(foods.data);
 
   return (
     <View style={styles.screen}>
@@ -44,8 +46,8 @@ export function IngredientPickerScreen({
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}>
         {foods.isLoading ? <Text style={styles.meta}>Loading...</Text> : null}
         {foods.isError ? <Text style={styles.error}>Could not load foods.</Text> : null}
-        {foods.data?.length === 0 ? <Text style={styles.meta}>No saved foods found.</Text> : null}
-        {foods.data?.map((food) => {
+        {selectableFoods.length === 0 && !foods.isLoading ? <Text style={styles.meta}>No saved foods found.</Text> : null}
+        {selectableFoods.map((food) => {
           const disabled = food.id === currentPublishedFoodItemId;
           return (
             <Pressable
