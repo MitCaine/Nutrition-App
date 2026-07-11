@@ -13,6 +13,7 @@ export type DailyLogInput = {
 export type DailyLog = {
   id: string;
   food_item_id: string;
+  food_name_snapshot?: string | null;
   logged_date: string;
   amount_quantity: string;
   amount_unit: "serving" | "g";

@@ -33,6 +33,7 @@ class LogService:
             id=uuid4(),
             user_id=user_id,
             food_item_id=food.id,
+            food_name_snapshot=food.name,
             logged_date=payload.logged_date,
             meal_type=payload.meal_type,
             amount_quantity=payload.amount_quantity,

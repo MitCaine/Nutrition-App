@@ -4,6 +4,7 @@ import {
 } from "../../../shared/nutrition/display";
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
 import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
+import type { DailyLog } from "../api/types";
 
 export function visibleDailyTotals(totals: AggregatedNutrientTotal[]): AggregatedNutrientTotal[] {
   return sortNutrientsByDisplayOrder(
@@ -11,6 +12,10 @@ export function visibleDailyTotals(totals: AggregatedNutrientTotal[]): Aggregate
     (total) => total.nutrientId,
     isUnknownOnlyAggregatedTotal,
   );
+}
+
+export function loggedFoodDisplayName(log: Pick<DailyLog, "food_item_id" | "food_name_snapshot">, foodNames: Map<string, string>): string {
+  return log.food_name_snapshot?.trim() || foodNames.get(log.food_item_id) || "Deleted food";
 }
 
 export function todayLocalDateString(date = new Date()): string {

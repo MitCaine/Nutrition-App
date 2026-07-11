@@ -61,6 +61,7 @@ class DailyLogSnapshotResponse(BaseModel):
 class DailyLogResponse(BaseModel):
     id: UUID
     food_item_id: UUID
+    food_name_snapshot: str | None
     logged_date: date
     meal_type: str | None
     amount_quantity: Decimal

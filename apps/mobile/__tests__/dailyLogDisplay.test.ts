@@ -6,6 +6,7 @@ import {
   setLocalDatePart,
   todayLocalDateString,
   visibleDailyTotals,
+  loggedFoodDisplayName,
 } from "../src/features/logging/utils/dailyLogDisplay";
 import type { AggregatedNutrientTotal } from "../src/shared/nutrition/types";
 
@@ -40,6 +41,13 @@ test("daily log totals keep calories first", () => {
     "calories",
     "protein",
   ]);
+});
+
+test("historical log display prefers snapshot name with sensible fallbacks", () => {
+  const names = new Map([["food-1", "Current Name"]]);
+  expect(loggedFoodDisplayName({ food_item_id: "food-1", food_name_snapshot: "Original Name" }, names)).toBe("Original Name");
+  expect(loggedFoodDisplayName({ food_item_id: "food-1", food_name_snapshot: null }, names)).toBe("Current Name");
+  expect(loggedFoodDisplayName({ food_item_id: "deleted-food", food_name_snapshot: null }, names)).toBe("Deleted food");
 });
 
 test("local date helpers preserve calendar dates without UTC shifting", () => {

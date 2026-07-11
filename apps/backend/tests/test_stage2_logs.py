@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from app.models.log import DailyLog
 from tests.test_stage2_foods import create_food, food_payload
 
 
@@ -16,6 +18,7 @@ def test_serving_logging_creates_snapshots_and_daily_summary(client: TestClient)
     )
     assert response.status_code == 201, response.text
     log = response.json()
+    assert log["food_name_snapshot"] == "Greek Yogurt"
     protein = next(s for s in log["snapshots"] if s["nutrient_id"] == "protein")
     vitamin_d = next(s for s in log["snapshots"] if s["nutrient_id"] == "vitamin_d")
     added_sugars = next(s for s in log["snapshots"] if s["nutrient_id"] == "added_sugars")
@@ -89,6 +92,8 @@ def test_food_edits_do_not_change_historical_totals_and_log_update_rebuilds_snap
     edited = food_payload("Greek Yogurt")
     edited["nutrients"][1]["amount"] = "30"
     assert client.patch(f"/api/v1/foods/{food['id']}", json=edited).status_code == 200
+    logs_after_rename = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"]
+    assert next(item for item in logs_after_rename if item["id"] == log["id"])["food_name_snapshot"] == "Greek Yogurt"
 
     summary = client.get("/api/v1/logs/daily-summary", params={"date": "2026-07-08"}).json()
     protein = next(total for total in summary["totals"] if total["nutrient_id"] == "protein")
@@ -111,6 +116,52 @@ def test_food_edits_do_not_change_historical_totals_and_log_update_rebuilds_snap
         total for total in summary_after_update["totals"] if total["nutrient_id"] == "protein"
     )
     assert protein_after_update["amount_known"] == "60.000000"
+
+
+def test_food_delete_does_not_remove_historical_log_name_or_snapshots(client: TestClient) -> None:
+    food = create_food(client, "Distinct Food")
+    log_response = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-08",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+        },
+    )
+    assert log_response.status_code == 201, log_response.text
+    log = log_response.json()
+    before_summary = client.get("/api/v1/logs/daily-summary", params={"date": "2026-07-08"}).json()
+
+    delete = client.delete(f"/api/v1/foods/{food['id']}")
+    assert delete.status_code == 200, delete.text
+
+    logs = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"]
+    historical = next(item for item in logs if item["id"] == log["id"])
+    assert historical["food_name_snapshot"] == "Distinct Food"
+    assert historical["snapshots"] == log["snapshots"]
+    assert client.get("/api/v1/logs/daily-summary", params={"date": "2026-07-08"}).json() == before_summary
+    assert client.delete(f"/api/v1/logs/{log['id']}").status_code == 204
+
+
+def test_older_log_without_food_name_snapshot_still_serializes(client: TestClient, db_session: Session) -> None:
+    food = create_food(client, "Legacy Food")
+    log = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-08",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+        },
+    ).json()
+    db_log = db_session.get(DailyLog, log["id"])
+    assert db_log is not None
+    db_log.food_name_snapshot = None
+    db_session.commit()
+
+    historical = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"][0]
+    assert historical["food_name_snapshot"] is None
 
 
 def test_editing_logged_food_preserves_snapshots_with_nullable_deleted_provenance(

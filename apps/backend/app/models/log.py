@@ -18,6 +18,7 @@ class DailyLog(Base):
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("users.id"))
     food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"))
+    food_name_snapshot: Mapped[Optional[str]] = mapped_column(Text)
     logged_date: Mapped[date] = mapped_column(Date)
     meal_type: Mapped[Optional[str]] = mapped_column(Text)
     amount_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 6))

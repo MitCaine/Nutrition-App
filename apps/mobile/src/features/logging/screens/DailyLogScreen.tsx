@@ -13,6 +13,7 @@ import {
   formatReadableDate,
   localDateToApiDate,
   parseLocalDateString,
+  loggedFoodDisplayName,
   visibleDailyTotals,
 } from "../utils/dailyLogDisplay";
 
@@ -65,7 +66,7 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog }: Props) 
       {logs.data?.map((log) => (
         <View key={log.id} style={styles.logRow}>
           <Pressable onPress={() => onOpenFood(log.food_item_id)}>
-            <Text style={styles.foodName}>{foodNames.get(log.food_item_id) ?? "Food"}</Text>
+            <Text style={styles.foodName}>{loggedFoodDisplayName(log, foodNames)}</Text>
             <Text>
               {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}
             </Text>
