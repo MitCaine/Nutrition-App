@@ -8,6 +8,10 @@ import { unifiedFoodSearchSections } from "../utils/unifiedFoodSearch";
 import { isCurrentSearchQuery } from "../utils/unifiedFoodSearch";
 import { useDebouncedSearchQuery } from "../hooks/useDebouncedSearchQuery";
 
+// AppNavigator places screen content below a fixed 48-point top shell inset.
+// KeyboardAvoidingView needs the same screen-relative offset on iOS.
+const IOS_KEYBOARD_VERTICAL_OFFSET = 48;
+
 type Props = {
   onCreate: () => void;
   onOpenFood: (foodId: string) => void;
@@ -55,14 +59,13 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={8}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? IOS_KEYBOARD_VERTICAL_OFFSET : 0}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Saved Foods</Text>
-        <View style={styles.actions}>
-          <Pressable onPress={onCreate} style={styles.primaryButton}>
-            <Text style={styles.primaryText}>Add Custom Food</Text>
-          </Pressable>
-        </View>
       </View>
       {message ? (
         <View style={styles.successBanner}>
@@ -73,6 +76,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
         ref={resultsRef}
         style={styles.resultScroller}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         contentContainerStyle={styles.results}
         scrollEventThrottle={100}
         onScroll={(event) => onScrollSessionChange(query, event.nativeEvent.contentOffset.y)}
@@ -118,21 +122,33 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
         ) : null}
         {sections.showNoFoodsFound ? <Text style={styles.foodMeta}>No foods found.</Text> : null}
       </ScrollView>
-      <View style={styles.searchContainer}>
-        <View style={styles.searchRow}>
-          <TextInput
-            value={query}
-            onChangeText={updateQuery}
-            placeholder="Search saved and USDA foods"
-            style={styles.search}
-            autoCapitalize="none"
-            returnKeyType="search"
-          />
-          {query ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => updateQuery("")} style={styles.clearButton}>
-              <Text style={styles.clearText}>×</Text>
-            </Pressable>
-          ) : null}
+      <View style={styles.bottomControls}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add custom food"
+          accessibilityHint="Opens the custom food form"
+          onPress={onCreate}
+          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+        >
+          <Text style={styles.fabIcon}>+</Text>
+          <Text numberOfLines={1} style={styles.fabLabel}>Custom Food</Text>
+        </Pressable>
+        <View style={styles.searchContainer}>
+          <View style={styles.searchRow}>
+            <TextInput
+              value={query}
+              onChangeText={updateQuery}
+              placeholder="Search saved and USDA foods"
+              style={styles.search}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {query ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => updateQuery("")} style={styles.clearButton}>
+                <Text style={styles.clearText}>×</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -140,20 +156,40 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
 }
 
 const styles = StyleSheet.create({
-  actions: { flexDirection: "row", gap: 8 },
+  bottomControls: { backgroundColor: "white", position: "relative", zIndex: 2 },
   clearButton: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 44 },
   clearText: { color: "#555", fontSize: 26, lineHeight: 28 },
   foodMeta: { color: "#666" },
   error: { color: "#b42318" },
+  fab: {
+    alignItems: "center",
+    backgroundColor: "#1f6fb2",
+    borderRadius: 25,
+    bottom: 76,
+    elevation: 5,
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 50,
+    paddingHorizontal: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    zIndex: 3,
+  },
+  fabIcon: { color: "white", fontSize: 27, fontWeight: "300", lineHeight: 29, marginTop: -1 },
+  fabLabel: { color: "white", fontSize: 16, fontWeight: "700" },
+  fabPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
   foodName: { fontSize: 16, fontWeight: "600" },
   foodRow: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
-  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  primaryButton: { backgroundColor: "#1f6fb2", borderRadius: 6, paddingHorizontal: 14, paddingVertical: 10 },
-  primaryText: { color: "white", fontWeight: "700" },
+  header: { justifyContent: "center" },
   preview: { color: "#333", fontWeight: "600" },
-  resultScroller: { flex: 1 },
-  results: { paddingBottom: 24 },
-  screen: { flex: 1, gap: 12, paddingHorizontal: 16, paddingTop: 16 },
+  resultScroller: { flex: 1, minHeight: 0 },
+  results: { paddingBottom: 88 },
+  screen: { flex: 1, gap: 12, minHeight: 0, paddingHorizontal: 16, paddingTop: 16 },
   search: { flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
   searchContainer: { backgroundColor: "white", borderTopColor: "#e7e7e7", borderTopWidth: 1, paddingBottom: 8, paddingTop: 10 },
   searchRow: { alignItems: "center", borderColor: "#c7c7c7", borderRadius: 8, borderWidth: 1, flexDirection: "row" },
