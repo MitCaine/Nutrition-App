@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api.v1.routers.usda import get_usda_service
-from app.integrations.usda.client import UsdaConfigurationError
+from app.integrations.usda.client import UsdaConfigurationError, UsdaUpstreamError
 from app.main import app
 from app.services.usda_service import UsdaService
 from tests.test_stage3_usda_import import FakeUsdaClient
@@ -17,6 +17,16 @@ class MissingKeyService:
         raise UsdaConfigurationError("USDA_FDC_API_KEY is required for FoodData Central features")
 
 
+class QueryRejectingService:
+    def search(self, query: str, *, page_size: int = 25, page_number: int = 1):
+        raise UsdaUpstreamError("FoodData Central returned HTTP 400", status_code=400)
+
+
+class UnavailableService:
+    def search(self, query: str, *, page_size: int = 25, page_number: int = 1):
+        raise UsdaUpstreamError("FoodData Central request timed out")
+
+
 def test_usda_search_endpoint_fails_clearly_without_api_key(client: TestClient) -> None:
     app.dependency_overrides[get_usda_service] = lambda: MissingKeyService()
     response = client.get("/api/v1/usda/foods/search", params={"query": "banana"})
@@ -24,6 +34,29 @@ def test_usda_search_endpoint_fails_clearly_without_api_key(client: TestClient) 
 
     assert response.status_code == 503
     assert "USDA_FDC_API_KEY" in response.json()["detail"]
+
+
+def test_usda_search_query_rejection_is_returned_as_empty_results(client: TestClient) -> None:
+    app.dependency_overrides[get_usda_service] = lambda: QueryRejectingService()
+    response = client.get("/api/v1/usda/foods/search", params={"query": "ground beef 80/30"})
+    app.dependency_overrides.pop(get_usda_service, None)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "query": "ground beef 80/30",
+        "page_number": 1,
+        "page_size": 25,
+        "total_hits": 0,
+        "foods": [],
+    }
+
+
+def test_usda_search_transport_failure_remains_unavailable(client: TestClient) -> None:
+    app.dependency_overrides[get_usda_service] = lambda: UnavailableService()
+    response = client.get("/api/v1/usda/foods/search", params={"query": "banana"})
+    app.dependency_overrides.pop(get_usda_service, None)
+
+    assert response.status_code == 502
 
 
 def test_usda_import_endpoint_returns_existing_active_duplicate(

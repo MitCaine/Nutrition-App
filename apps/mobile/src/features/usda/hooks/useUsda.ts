@@ -12,8 +12,8 @@ export function applyUsdaImportToFoodCache(queryClient: QueryClient, food: UsdaI
 export function useUsdaSearch(query: string) {
   const trimmed = query.trim();
   return useQuery({
-    queryKey: ["usda-search", trimmed],
-    queryFn: () => searchUsdaFoods(trimmed),
+    queryKey: ["usda-search", query],
+    queryFn: () => searchUsdaFoods(query),
     enabled: trimmed.length >= 2,
   });
 }

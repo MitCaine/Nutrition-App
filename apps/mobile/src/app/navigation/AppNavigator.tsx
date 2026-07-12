@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import type { Food } from "../../features/foods/api/types";
 import { FoodDetailsScreen } from "../../features/foods/screens/FoodDetailsScreen";
 import { FoodFormScreen } from "../../features/foods/screens/FoodFormScreen";
 import { SavedFoodsScreen } from "../../features/foods/screens/SavedFoodsScreen";
+import { restoredSearchOffset } from "../../features/foods/utils/unifiedFoodSearch";
 import { useQueries } from "@tanstack/react-query";
 
 import { getFood } from "../../features/foods/api/foodApi";
@@ -35,7 +36,6 @@ type Route =
   | { name: "edit-food"; foodId: string }
   | { name: "log-food"; foodId: string }
   | { name: "edit-log"; logId: string }
-  | { name: "usda-search" }
   | { name: "usda-preview"; fdcId: number }
   | { name: "recipes" }
   | { name: "new-recipe" }
@@ -51,12 +51,12 @@ export function AppNavigator() {
   const [foodQuery, setFoodQuery] = useState("");
   const [recipeQuery, setRecipeQuery] = useState("");
   const [ingredientQuery, setIngredientQuery] = useState("");
-  const [usdaQuery, setUsdaQuery] = useState("");
   const [recipeUsdaQuery, setRecipeUsdaQuery] = useState("");
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(emptyRecipeDraft());
   const [foodMessage, setFoodMessage] = useState<string | null>(null);
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
   const [date, setDate] = useState(todayLocalDateString());
+  const foodSearchScroll = useRef({ query: "", offset: 0 });
 
   let content;
   if (route.name === "new-food") {
@@ -80,21 +80,16 @@ export function AppNavigator() {
     content = <LogFoodScreen foodId={route.foodId} date={date} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} />;
   } else if (route.name === "edit-log") {
     content = <EditLogRoute logId={route.logId} date={date} onCancel={() => setRoute({ name: "daily-log" })} onSaved={() => setRoute({ name: "daily-log" })} />;
-  } else if (route.name === "usda-search") {
-    content = (
-      <UsdaSearchScreen
-        query={usdaQuery}
-        setQuery={setUsdaQuery}
-        onBack={() => setRoute({ name: "foods" })}
-        onOpenPreview={(fdcId) => setRoute({ name: "usda-preview", fdcId })}
-      />
-    );
   } else if (route.name === "usda-preview") {
     content = (
       <UsdaPreviewScreen
         fdcId={route.fdcId}
-        onBack={() => setRoute({ name: "usda-search" })}
-        onImported={(food) => setRoute({ name: "food-detail", foodId: food.id })}
+        onBack={() => setRoute({ name: "foods" })}
+        onImported={(food) => {
+          setFoodQuery("");
+          foodSearchScroll.current = { query: "", offset: 0 };
+          setRoute({ name: "food-detail", foodId: food.id });
+        }}
       />
     );
   } else if (route.name === "recipes") {
@@ -191,13 +186,17 @@ export function AppNavigator() {
       <SavedFoodsScreen
         query={foodQuery}
         setQuery={setFoodQuery}
+        initialScrollOffset={restoredSearchOffset(foodQuery, foodSearchScroll.current)}
+        onScrollSessionChange={(query, offset) => {
+          foodSearchScroll.current = { query, offset };
+        }}
         onCreate={() => {
           setFoodMessage(null);
           setRoute({ name: "new-food" });
         }}
-        onSearchUsda={() => {
+        onOpenUsdaPreview={(fdcId) => {
           setFoodMessage(null);
-          setRoute({ name: "usda-search" });
+          setRoute({ name: "usda-preview", fdcId });
         }}
         onOpenFood={(foodId) => {
           setFoodMessage(null);

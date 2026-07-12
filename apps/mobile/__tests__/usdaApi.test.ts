@@ -75,6 +75,26 @@ test("USDA search API sends unchanged queries without unnecessary rewriting", as
   );
 });
 
+test("invalid lean fat ratio passes through unchanged and accepts empty results", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      query: "ground beef 80/30",
+      page_number: 1,
+      page_size: 20,
+      total_hits: 0,
+      foods: [],
+    }),
+  });
+
+  await expect(searchUsdaFoods("ground beef 80/30")).resolves.toMatchObject({ foods: [] });
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://localhost:8000/api/v1/usda/foods/search?query=ground%20beef%2080%2F30&page_size=20",
+    expect.any(Object),
+  );
+});
+
 test("USDA import API posts to import endpoint and returns local food", async () => {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,

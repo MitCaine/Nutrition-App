@@ -31,6 +31,14 @@ def search_usda_foods(
     except UsdaConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except UsdaUpstreamError as exc:
+        if exc.status_code == status.HTTP_400_BAD_REQUEST:
+            return UsdaSearchResponse(
+                query=query.strip(),
+                page_number=page_number,
+                page_size=page_size,
+                total_hits=0,
+                foods=[],
+            )
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
