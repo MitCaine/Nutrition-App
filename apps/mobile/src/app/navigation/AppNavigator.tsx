@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { PanResponder, StyleSheet, Text, View } from "react-native";
 
 import type { Food } from "../../features/foods/api/types";
 import { FoodDetailsScreen } from "../../features/foods/screens/FoodDetailsScreen";
@@ -28,6 +28,8 @@ import {
 import type { RecipeDraft } from "../../features/recipes/utils/recipeDraft";
 import { UsdaPreviewScreen } from "../../features/usda/screens/UsdaPreviewScreen";
 import { UsdaSearchScreen } from "../../features/usda/screens/UsdaSearchScreen";
+import { BottomNavigation } from "./BottomNavigation";
+import { isMainTabRoot, mainTabForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
 
 type Route =
   | { name: "foods" }
@@ -46,6 +48,16 @@ type Route =
   | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" };
 
+function routeForMainTab(tab: MainTab): Route {
+  if (tab === "foods") {
+    return { name: "foods" };
+  }
+  if (tab === "daily-log") {
+    return { name: "daily-log" };
+  }
+  return { name: "recipes" };
+}
+
 export function AppNavigator() {
   const [route, setRoute] = useState<Route>({ name: "foods" });
   const [foodQuery, setFoodQuery] = useState("");
@@ -57,6 +69,34 @@ export function AppNavigator() {
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
   const [date, setDate] = useState(todayLocalDateString());
   const foodSearchScroll = useRef({ query: "", offset: 0 });
+  const activeTab = mainTabForRoute(route.name);
+  const swipeEnabled = isMainTabRoot(route.name);
+
+  const selectMainTab = (tab: MainTab) => {
+    const destination = tabSelectionDestination(activeTab, tab);
+    if (!destination) {
+      return;
+    }
+    setFoodMessage(null);
+    setRoute(routeForMainTab(destination));
+  };
+
+  const mainSwipeResponder = useMemo(
+    () => PanResponder.create({
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        isMainTabRoot(route.name) &&
+        Math.abs(gesture.dx) > 12 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_event, gesture) => {
+        const destination = swipeDestination(activeTab, gesture.dx);
+        if (destination !== activeTab) {
+          setFoodMessage(null);
+          setRoute(routeForMainTab(destination));
+        }
+      },
+    }),
+    [activeTab, route.name],
+  );
 
   let content;
   if (route.name === "new-food") {
@@ -210,26 +250,8 @@ export function AppNavigator() {
 
   return (
     <View style={styles.shell}>
-      <View style={styles.content}>{content}</View>
-      <SafeAreaView style={styles.tabsSafeArea}>
-        <View style={styles.tabs}>
-          <Pressable onPress={() => setRoute({ name: "foods" })} style={styles.tab}>
-            <Text>Foods</Text>
-          </Pressable>
-          <Pressable onPress={() => {
-            setFoodMessage(null);
-            setRoute({ name: "daily-log" });
-          }} style={styles.tab}>
-            <Text>Daily Log</Text>
-          </Pressable>
-          <Pressable onPress={() => {
-            setFoodMessage(null);
-            setRoute({ name: "recipes" });
-          }} style={styles.tab}>
-            <Text>Recipes</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+      <View style={styles.content} {...(swipeEnabled ? mainSwipeResponder.panHandlers : {})}>{content}</View>
+      <BottomNavigation activeTab={activeTab} onSelect={selectMainTab} />
     </View>
   );
 }
@@ -339,7 +361,4 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   loading: { flex: 1, padding: 16 },
   shell: { flex: 1, paddingTop: 48 },
-  tab: { alignItems: "center", flex: 1, padding: 12 },
-  tabs: { borderTopColor: "#e7e7e7", borderTopWidth: 1, flexDirection: "row" },
-  tabsSafeArea: { backgroundColor: "white" },
 });
