@@ -1,17 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useMemo } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { useAppTheme } from "../theme/AppTheme";
 
 import { MAIN_TAB_ACCESSIBILITY_LABELS, type MainTab } from "./mainTabs";
-
-const NAV_COLORS = {
-  surface: "#ffffff",
-  container: "#f2f4f7",
-  activeBackground: "#dbeafe",
-  activeForeground: "#155fa0",
-  inactiveForeground: "#5f6875",
-  pressedBackground: "#e5e9ef",
-  border: "#e1e5ea",
-} as const;
 
 const TAB_ITEMS: Array<{
   id: MainTab;
@@ -32,6 +24,8 @@ export function BottomNavigation({
   activeTab: MainTab;
   onSelect: (tab: MainTab) => void;
 }) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container} accessibilityRole="tablist">
@@ -53,7 +47,7 @@ export function BottomNavigation({
               <Ionicons
                 name={selected ? item.activeIcon : item.icon}
                 size={18}
-                color={selected ? NAV_COLORS.activeForeground : NAV_COLORS.inactiveForeground}
+                color={selected ? theme.colors.selectedNavigationForeground : theme.colors.inactiveForeground}
               />
               <Text style={[styles.label, selected ? styles.activeLabel : styles.inactiveLabel]}>
                 {item.label}
@@ -66,22 +60,22 @@ export function BottomNavigation({
   );
 }
 
-const styles = StyleSheet.create({
-  activeLabel: { color: NAV_COLORS.activeForeground, fontWeight: "700" },
-  activeTab: { backgroundColor: NAV_COLORS.activeBackground },
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  activeLabel: { color: theme.colors.selectedNavigationForeground, fontWeight: "700" },
+  activeTab: { backgroundColor: theme.colors.selectedNavigationBackground },
   container: {
-    backgroundColor: NAV_COLORS.container,
-    borderColor: NAV_COLORS.border,
+    backgroundColor: theme.colors.navigationSurface,
+    borderColor: theme.colors.navigationBorder,
     borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     marginHorizontal: 12,
     padding: 4,
   },
-  inactiveLabel: { color: NAV_COLORS.inactiveForeground, fontWeight: "500" },
+  inactiveLabel: { color: theme.colors.inactiveForeground, fontWeight: "500" },
   label: { fontSize: 12 },
-  pressedTab: { backgroundColor: NAV_COLORS.pressedBackground },
-  safeArea: { backgroundColor: NAV_COLORS.surface, paddingBottom: 4, paddingTop: 4 },
+  pressedTab: { backgroundColor: theme.colors.pressedBackground },
+  safeArea: { backgroundColor: theme.colors.background, paddingBottom: 4, paddingTop: 4 },
   tab: {
     alignItems: "center",
     borderRadius: 18,
@@ -92,4 +86,4 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 8,
   },
-});
+}); }

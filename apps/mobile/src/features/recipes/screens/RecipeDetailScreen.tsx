@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
@@ -9,6 +10,7 @@ import { canPublishRecipe, formatRecipeIngredientDetail } from "../utils/recipeD
 import { formatRecipeTotal, recipeNutrientLabel, recipeTotalIsUnknownOnly } from "../utils/recipeDisplay";
 import type { Recipe } from "../api/types";
 import type { Food } from "../../foods/api/types";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
   recipe: Recipe;
@@ -21,6 +23,7 @@ type Props = {
 };
 
 export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDeleted, ingredientFoods = [], editBlockedMessage }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrition = useRecipeNutrition(recipe.id);
   const mutations = useRecipeMutations();
   const canPublish = canPublishRecipe({
@@ -58,10 +61,10 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
     <View style={styles.screen}>
       <View style={styles.header}>
         <Pressable onPress={onBack}>
-          <Text>Back</Text>
+          <Text style={styles.text}>Back</Text>
         </Pressable>
         <Pressable onPress={onEdit} disabled={Boolean(editBlockedMessage)}>
-          <Text>Edit</Text>
+          <Text style={styles.text}>Edit</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
@@ -123,6 +126,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
 }
 
 function NutritionSection({ title, totals }: { title: string; totals?: AggregatedNutrientTotal[] }) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   if (!totals) {
     return null;
   }
@@ -136,7 +140,7 @@ function NutritionSection({ title, totals }: { title: string; totals?: Aggregate
         isUnknownOnlyAggregatedTotal,
       ).map((total) => (
         <View key={total.nutrientId} style={styles.nutrientRow}>
-          <Text style={recipeTotalIsUnknownOnly(total) ? styles.unknown : undefined}>
+          <Text style={recipeTotalIsUnknownOnly(total) ? styles.unknown : styles.text}>
             {recipeNutrientLabel(total)}
           </Text>
           <Text style={[styles.nutrientValue, recipeTotalIsUnknownOnly(total) && styles.unknown]}>
@@ -148,24 +152,24 @@ function NutritionSection({ title, totals }: { title: string; totals?: Aggregate
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
   content: { gap: 18, paddingBottom: 32, paddingRight: 28 },
-  deleteButton: { alignItems: "center", borderColor: "#b42318", borderRadius: 6, borderWidth: 1, padding: 12 },
-  deleteText: { color: "#b42318", fontWeight: "700" },
+  deleteButton: { alignItems: "center", borderColor: theme.colors.destructive, borderRadius: 6, borderWidth: 1, padding: 12 },
+  deleteText: { color: theme.colors.destructive, fontWeight: "700" },
   disabledButton: { opacity: 0.55 },
-  error: { color: "#b42318" },
+  error: { color: theme.colors.errorText },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   ingredientLine: { gap: 3 },
-  meta: { color: "#666" },
-  nutrientRow: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 8 },
+  meta: { color: theme.colors.secondaryText },
+  nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 8 },
   nutrientValue: { flexShrink: 1, fontWeight: "600", textAlign: "right" },
-  primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 14 },
-  primaryText: { color: "white", fontWeight: "700" },
-  screen: { flex: 1, gap: 12, padding: 16 },
+  primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
+  primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
   section: { gap: 8 },
-  sectionTitle: { fontSize: 18, fontWeight: "700" },
-  success: { color: "#137333", fontWeight: "600" },
-  title: { fontSize: 24, fontWeight: "700" },
-  unknown: { color: "#666" },
-  warning: { color: "#9a5b00", fontWeight: "600" },
-});
+  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
+  success: { color: theme.colors.successText, fontWeight: "600" },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+  unknown: { color: theme.colors.secondaryText }, warning: { color: theme.colors.warningText, fontWeight: "600" },
+}); }

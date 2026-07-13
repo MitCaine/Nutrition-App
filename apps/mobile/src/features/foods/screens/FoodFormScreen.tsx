@@ -7,6 +7,7 @@ import { NutrientEntryList } from "../components/NutrientEntryList";
 import { ServingDefinitionsEditor } from "../components/ServingDefinitionsEditor";
 import { useFoodForm } from "../hooks/useFoodForm";
 import { useFoodMutations, useNutrients } from "../hooks/useFoods";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
   food?: Food;
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrientQuery = useNutrients();
   const mutations = useFoodMutations();
   const nutrientDefinitions = useMemo(
@@ -42,19 +44,19 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             <View style={styles.header}>
               <Text style={styles.title}>{food ? "Edit Food" : "New Food"}</Text>
               <Pressable onPress={onCancel}>
-                <Text>Cancel</Text>
+                <Text style={styles.text}>Cancel</Text>
               </Pressable>
             </View>
 
             <Text style={styles.sectionTitle}>Food</Text>
             <View {...focusProps("name")}>
-              <TextInput value={form.fields.name} onChangeText={form.setters.setName} onFocus={focusProps("name").onFocus} placeholder="Name" style={styles.input} />
+              <TextInput value={form.fields.name} onChangeText={form.setters.setName} onFocus={focusProps("name").onFocus} placeholder="Name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View {...focusProps("brand")}>
-              <TextInput value={form.fields.brand} onChangeText={form.setters.setBrand} onFocus={focusProps("brand").onFocus} placeholder="Brand" style={styles.input} />
+              <TextInput value={form.fields.brand} onChangeText={form.setters.setBrand} onFocus={focusProps("brand").onFocus} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View {...focusProps("notes")}>
-              <TextInput value={form.fields.notes} onChangeText={form.setters.setNotes} onFocus={focusProps("notes").onFocus} placeholder="Notes" style={styles.input} />
+              <TextInput value={form.fields.notes} onChangeText={form.setters.setNotes} onFocus={focusProps("notes").onFocus} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
 
             <Text style={styles.sectionTitle}>Servings</Text>
@@ -81,15 +83,14 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
   content: { padding: 16, paddingBottom: 120 },
-  error: { color: "#b42318", marginTop: 12 },
-  flex: { flex: 1 },
+  error: { color: theme.colors.errorText, marginTop: 12 }, flex: { backgroundColor: theme.colors.background, flex: 1 },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  input: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, marginBottom: 12, padding: 12 },
-  primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 14 },
-  primaryText: { color: "white", fontWeight: "700" },
-  saveBar: { borderTopColor: "#e7e7e7", borderTopWidth: 1, padding: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },
-  title: { fontSize: 24, fontWeight: "700" },
-});
+  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
+  primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 },
+  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+}); }

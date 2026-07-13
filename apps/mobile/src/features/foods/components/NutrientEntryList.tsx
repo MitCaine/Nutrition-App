@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import type { FoodNutrientInput, NutrientDefinition } from "../api/types";
 
@@ -15,6 +17,7 @@ type Props = {
 const statuses: FoodNutrientInput["data_status"][] = ["known", "zero", "estimated", "unknown"];
 
 export function NutrientEntryList({ nutrients, values, onChange, focusProps }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const byId = new Map(values.map((value) => [value.nutrient_id, value]));
 
   function update(nutrientId: string, patch: Partial<FoodNutrientInput>) {
@@ -49,6 +52,7 @@ export function NutrientEntryList({ nutrients, values, onChange, focusProps }: P
             <Text style={styles.label}>{nutrient.display_name}</Text>
             <View style={styles.valueRow} {...(focusProps ? focusProps(`${nutrient.id}-amount`) : {})}>
               <TextInput
+                placeholderTextColor={theme.colors.placeholder}
                 value={value.amount ?? ""}
                 onChangeText={(text) => update(nutrient.id, { amount: text })}
                 onFocus={focusProps ? focusProps(`${nutrient.id}-amount`).onFocus : undefined}
@@ -82,9 +86,9 @@ export function NutrientEntryList({ nutrients, values, onChange, focusProps }: P
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   amountInput: {
-    borderColor: "#c7c7c7",
+    backgroundColor: theme.colors.input, borderColor: theme.colors.border, color: theme.colors.text,
     borderRadius: 6,
     borderWidth: 1,
     minWidth: 88,
@@ -97,21 +101,21 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   label: {
+    color: theme.colors.text,
     fontSize: 15,
     fontWeight: "600",
   },
   row: {
-    borderBottomColor: "#e7e7e7",
+    borderBottomColor: theme.colors.border,
     borderBottomWidth: 1,
     gap: 8,
     paddingBottom: 12,
   },
   statusActive: {
-    backgroundColor: "#dfefff",
-    borderColor: "#2878c8",
+    backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent,
   },
   statusButton: {
-    borderColor: "#c7c7c7",
+    borderColor: theme.colors.border,
     borderRadius: 6,
     borderWidth: 1,
     paddingHorizontal: 8,
@@ -123,9 +127,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   statusText: {
+    color: theme.colors.text,
     fontSize: 12,
   },
   unit: {
+    color: theme.colors.text,
     paddingTop: 10,
   },
   valueRow: {
@@ -133,4 +139,4 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-});
+}); }

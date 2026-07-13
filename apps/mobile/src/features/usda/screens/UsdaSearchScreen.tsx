@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import { useUsdaSearch } from "../hooks/useUsda";
 import { formatUsdaNutrientPreview, usdaResultMeta, usdaSearchMessage } from "../utils/usdaDisplay";
@@ -11,6 +13,7 @@ type Props = {
 };
 
 export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const results = useUsdaSearch(query);
   const message = usdaSearchMessage({
     query,
@@ -23,7 +26,7 @@ export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Pro
     <View style={styles.screen}>
       <View style={styles.header}>
         <Pressable onPress={onBack}>
-          <Text>Back</Text>
+          <Text style={styles.text}>Back</Text>
         </Pressable>
         <Text style={styles.title}>Search USDA</Text>
       </View>
@@ -34,6 +37,7 @@ export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Pro
         style={styles.search}
         autoCapitalize="none"
         returnKeyType="search"
+        placeholderTextColor={theme.colors.placeholder}
       />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.results}>
         {message ? <Text style={results.isError ? styles.error : styles.meta}>{message}</Text> : null}
@@ -53,15 +57,15 @@ export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Pro
   );
 }
 
-const styles = StyleSheet.create({
-  error: { color: "#b42318" },
-  foodName: { fontSize: 16, fontWeight: "600" },
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
+  error: { color: theme.colors.errorText },
+  foodName: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
   header: { gap: 8 },
-  meta: { color: "#666" },
-  preview: { color: "#333", fontWeight: "600" },
-  resultRow: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
+  meta: { color: theme.colors.secondaryText }, preview: { color: theme.colors.text, fontWeight: "600" },
+  resultRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
   results: { paddingBottom: 24 },
-  screen: { flex: 1, gap: 14, padding: 16 },
-  search: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 12 },
-  title: { fontSize: 24, fontWeight: "700" },
-});
+  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 14, padding: 16 },
+  search: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+}); }

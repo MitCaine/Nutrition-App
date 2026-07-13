@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import { useUsdaImport, useUsdaPreview } from "../hooks/useUsda";
 import {
@@ -18,6 +20,7 @@ type Props = {
 };
 
 export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const preview = useUsdaPreview(fdcId);
   const importer = useUsdaImport();
   const previewMessage = usdaPreviewMessage(preview.isLoading, preview.isError);
@@ -26,7 +29,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
     return (
       <View style={styles.screen}>
         <Pressable onPress={onBack}>
-          <Text>Back</Text>
+          <Text style={styles.text}>Back</Text>
         </Pressable>
         <Text style={preview.isError ? styles.error : styles.meta}>{previewMessage}</Text>
       </View>
@@ -45,7 +48,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
   return (
     <View style={styles.screen}>
       <Pressable onPress={onBack}>
-        <Text>Back</Text>
+        <Text style={styles.text}>Back</Text>
       </Pressable>
       <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
         <View style={styles.header}>
@@ -99,18 +102,18 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
   content: { gap: 18, paddingBottom: 32, paddingRight: 28 },
-  error: { color: "#b42318" },
+  error: { color: theme.colors.errorText },
   header: { gap: 6 },
-  meta: { color: "#666" },
-  primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 12 },
-  primaryText: { color: "white", fontWeight: "700" },
-  row: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
-  rowLabel: { flex: 1, paddingRight: 12 },
-  screen: { flex: 1, gap: 12, padding: 16 },
+  meta: { color: theme.colors.secondaryText }, primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 12 },
+  primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  row: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
+  rowLabel: { color: theme.colors.text, flex: 1, paddingRight: 12 },
+  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
   section: { gap: 4 },
-  sectionTitle: { fontSize: 18, fontWeight: "700" },
-  title: { fontSize: 24, fontWeight: "700" },
-  value: { color: "#333", flexShrink: 0, fontWeight: "600", maxWidth: "45%", textAlign: "right" },
-});
+  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+  value: { color: theme.colors.text, flexShrink: 0, fontWeight: "600", maxWidth: "45%", textAlign: "right" },
+}); }

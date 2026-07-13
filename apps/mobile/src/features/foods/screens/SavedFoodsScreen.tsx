@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useFoods } from "../hooks/useFoods";
@@ -7,6 +7,9 @@ import { formatUsdaNutrientPreview, usdaResultMeta } from "../../usda/utils/usda
 import { unifiedFoodSearchSections } from "../utils/unifiedFoodSearch";
 import { isCurrentSearchQuery } from "../utils/unifiedFoodSearch";
 import { useDebouncedSearchQuery } from "../hooks/useDebouncedSearchQuery";
+import { useAppTheme } from "../../../app/theme/AppTheme";
+import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
+import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 
 // AppNavigator places screen content below a fixed 48-point top shell inset.
 // KeyboardAvoidingView needs the same screen-relative offset on iOS.
@@ -22,9 +25,12 @@ type Props = {
   onMessageExpired?: () => void;
   initialScrollOffset: number;
   onScrollSessionChange: (query: string, offset: number) => void;
+  onOpenSettings: () => void;
 };
 
-export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, query, setQuery, message, onMessageExpired, initialScrollOffset, onScrollSessionChange }: Props) {
+export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, query, setQuery, message, onMessageExpired, initialScrollOffset, onScrollSessionChange, onOpenSettings }: Props) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const searchQuery = useDebouncedSearchQuery(query);
   const isCurrent = isCurrentSearchQuery(query, searchQuery);
   const foods = useFoods(searchQuery);
@@ -44,13 +50,6 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
   useEffect(() => {
     restoredRef.current = false;
   }, [initialScrollOffset, query]);
-  useEffect(() => {
-    if (!message || !onMessageExpired) {
-      return;
-    }
-    const timeout = setTimeout(onMessageExpired, 5000);
-    return () => clearTimeout(timeout);
-  }, [message, onMessageExpired]);
 
   const updateQuery = (nextQuery: string) => {
     setQuery(nextQuery);
@@ -64,14 +63,8 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? IOS_KEYBOARD_VERTICAL_OFFSET : 0}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>Saved Foods</Text>
-      </View>
-      {message ? (
-        <View style={styles.successBanner}>
-          <Text style={styles.successText}>{message}</Text>
-        </View>
-      ) : null}
+      <RootScreenHeader title="Saved Foods" onOpenSettings={onOpenSettings} />
+      <TransientSuccessBanner message={message} onExpired={onMessageExpired} />
       <ScrollView
         ref={resultsRef}
         style={styles.resultScroller}
@@ -142,12 +135,19 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
               style={styles.search}
               autoCapitalize="none"
               returnKeyType="search"
+              placeholderTextColor={theme.colors.controlSecondaryForeground}
             />
-            {query ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => updateQuery("")} style={styles.clearButton}>
-                <Text style={styles.clearText}>×</Text>
-              </Pressable>
-            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              accessible={Boolean(query)}
+              disabled={!query}
+              onPress={() => updateQuery("")}
+              pointerEvents={query ? "auto" : "none"}
+              style={[styles.clearButton, !query && styles.clearButtonHidden]}
+            >
+              <Text style={styles.clearText}>×</Text>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -155,22 +155,25 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
   );
 }
 
-const styles = StyleSheet.create({
-  bottomControls: { backgroundColor: "white", position: "relative", zIndex: 2 },
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  bottomControls: { position: "relative", zIndex: 2 },
   clearButton: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 44 },
-  clearText: { color: "#555", fontSize: 26, lineHeight: 28 },
-  foodMeta: { color: "#666" },
-  error: { color: "#b42318" },
+  clearButtonHidden: { opacity: 0 },
+  clearText: { color: theme.colors.controlSecondaryForeground, fontSize: 26, lineHeight: 28 },
+  foodMeta: { color: theme.colors.secondaryText },
+  error: { color: theme.colors.errorText },
   fab: {
     alignItems: "center",
-    backgroundColor: "#1f6fb2",
+    backgroundColor: theme.colors.primaryActionBackground,
+    borderColor: theme.colors.primaryActionBorder,
     borderRadius: 25,
-    bottom: 76,
+    borderWidth: 1,
+    bottom: 69,
     elevation: 5,
     flexDirection: "row",
     gap: 8,
     minHeight: 50,
-    paddingHorizontal: 18,
+    paddingHorizontal: 10,
     justifyContent: "center",
     position: "absolute",
     right: 0,
@@ -180,25 +183,21 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     zIndex: 3,
   },
-  fabIcon: { color: "white", fontSize: 27, fontWeight: "300", lineHeight: 29, marginTop: -1 },
-  fabLabel: { color: "white", fontSize: 16, fontWeight: "700" },
+  fabIcon: { color: theme.colors.primaryActionForeground, fontSize: 27, fontWeight: "300", lineHeight: 29, marginTop: -1 },
+  fabLabel: { color: theme.colors.primaryActionForeground, fontSize: 16, fontWeight: "700" },
   fabPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
-  foodName: { fontSize: 16, fontWeight: "600" },
-  foodRow: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
-  header: { justifyContent: "center" },
-  preview: { color: "#333", fontWeight: "600" },
+  foodName: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
+  foodRow: { borderBottomColor: theme.colors.listDivider, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
+  preview: { color: theme.colors.text, fontWeight: "600" },
   resultScroller: { flex: 1, minHeight: 0 },
   results: { paddingBottom: 88 },
-  screen: { flex: 1, gap: 12, minHeight: 0, paddingHorizontal: 16, paddingTop: 16 },
-  search: { flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
-  searchContainer: { backgroundColor: "white", borderTopColor: "#e7e7e7", borderTopWidth: 1, paddingBottom: 8, paddingTop: 10 },
-  searchRow: { alignItems: "center", borderColor: "#c7c7c7", borderRadius: 8, borderWidth: 1, flexDirection: "row" },
+  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, minHeight: 0, paddingHorizontal: 16, paddingTop: 16 },
+  search: { color: theme.colors.text, flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
+  searchContainer: { paddingBottom: 8, paddingTop: 10 },
+  searchRow: { alignItems: "center", backgroundColor: theme.colors.searchInputSurface, borderColor: theme.colors.searchInputBorder, borderRadius: 8, borderWidth: 1, flexDirection: "row" },
   section: { gap: 4, marginTop: 10 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", marginTop: 6 },
-  successBanner: { backgroundColor: "#e6f4ea", borderColor: "#137333", borderRadius: 6, borderWidth: 1, padding: 12 },
-  successText: { color: "#0b5c2f", fontWeight: "700" },
-  title: { fontSize: 24, fontWeight: "700" },
-});
+  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginTop: 6 },
+}); }
 
 function sourceLabel(sourceType: string): string {
   if (sourceType === "usda") {

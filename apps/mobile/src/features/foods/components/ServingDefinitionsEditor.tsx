@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import type { ServingFormValue } from "../hooks/useFoodForm";
 
@@ -17,12 +19,14 @@ export function ServingDefinitionsEditor({
   removeServing,
   focusProps,
 }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.container}>
       {servings.map((serving) => (
         <View key={serving.key} style={styles.servingBlock}>
           <View {...focusProps(`${serving.key}-label`)}>
             <TextInput
+              placeholderTextColor={theme.colors.placeholder}
               value={serving.label}
               onChangeText={(label) => updateServing(serving.key, { label })}
               onFocus={focusProps(`${serving.key}-label`).onFocus}
@@ -33,6 +37,7 @@ export function ServingDefinitionsEditor({
           <View style={styles.row}>
             <View style={styles.flex} {...focusProps(`${serving.key}-quantity`)}>
               <TextInput
+                placeholderTextColor={theme.colors.placeholder}
                 value={serving.quantity}
                 onChangeText={(quantity) => updateServing(serving.key, { quantity })}
                 onFocus={focusProps(`${serving.key}-quantity`).onFocus}
@@ -43,6 +48,7 @@ export function ServingDefinitionsEditor({
             </View>
             <View style={styles.flex} {...focusProps(`${serving.key}-unit`)}>
               <TextInput
+                placeholderTextColor={theme.colors.placeholder}
                 value={serving.unit}
                 onChangeText={(unit) => updateServing(serving.key, { unit })}
                 onFocus={focusProps(`${serving.key}-unit`).onFocus}
@@ -53,6 +59,7 @@ export function ServingDefinitionsEditor({
           </View>
           <View {...focusProps(`${serving.key}-grams`)}>
             <TextInput
+              placeholderTextColor={theme.colors.placeholder}
               value={serving.gram_weight ?? ""}
               onChangeText={(gram_weight) => updateServing(serving.key, { gram_weight })}
               onFocus={focusProps(`${serving.key}-grams`).onFocus}
@@ -63,10 +70,10 @@ export function ServingDefinitionsEditor({
           </View>
           <View style={styles.actions}>
             <Pressable onPress={() => updateServing(serving.key, { is_default: true })} style={[styles.button, serving.is_default && styles.active]}>
-              <Text>{serving.is_default ? "Default" : "Set default"}</Text>
+              <Text style={styles.text}>{serving.is_default ? "Default" : "Set default"}</Text>
             </Pressable>
             <Pressable onPress={() => removeServing(serving.key)} style={styles.button}>
-              <Text>Remove</Text>
+              <Text style={styles.text}>Remove</Text>
             </Pressable>
           </View>
         </View>
@@ -78,15 +85,15 @@ export function ServingDefinitionsEditor({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
   actions: { flexDirection: "row", gap: 8 },
-  active: { backgroundColor: "#dfefff", borderColor: "#2878c8" },
-  addButton: { alignItems: "center", borderColor: "#1f6fb2", borderRadius: 6, borderWidth: 1, padding: 12 },
-  addText: { color: "#1f6fb2", fontWeight: "700" },
-  button: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 10 },
+  active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  addButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 12 }, addText: { color: theme.colors.accent, fontWeight: "700" },
+  button: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   container: { gap: 12 },
   flex: { flex: 1 },
-  input: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 12 },
+  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
   row: { flexDirection: "row", gap: 8 },
-  servingBlock: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, gap: 8, paddingBottom: 12 },
-});
+  servingBlock: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 8, paddingBottom: 12 },
+}); }

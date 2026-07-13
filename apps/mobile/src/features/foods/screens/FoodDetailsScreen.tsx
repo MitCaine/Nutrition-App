@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
@@ -17,6 +17,7 @@ import {
   parseFoodDeleteDependency,
 } from "../utils/foodDelete";
 import { foodDetailLoadState } from "../utils/foodDetailState";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
   foodId: string;
@@ -27,6 +28,8 @@ type Props = {
 };
 
 export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: Props) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const food = useFood(foodId);
   const mutations = useFoodMutations();
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
@@ -67,16 +70,16 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     return (
       <View style={styles.screen}>
         <Pressable onPress={onBack}>
-          <Text>Back</Text>
+          <Text style={styles.text}>Back</Text>
         </Pressable>
-        <Text style={loadState.kind === "error" ? styles.error : undefined}>
+        <Text style={loadState.kind === "error" ? styles.error : styles.text}>
           {loadState.kind === "unavailable" || loadState.kind === "error"
             ? loadState.message
             : "Loading..."}
         </Text>
         {loadState.kind === "error" ? (
           <Pressable onPress={() => food.refetch()} style={styles.secondaryButton}>
-            <Text>Retry</Text>
+            <Text style={styles.text}>Retry</Text>
           </Pressable>
         ) : null}
       </View>
@@ -86,20 +89,20 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
       <Pressable onPress={onBack}>
-        <Text>Back</Text>
+        <Text style={styles.text}>Back</Text>
       </Pressable>
       <Text style={styles.title}>{food.data.name}</Text>
-      <Text>{food.data.brand ?? sourceLabel(food.data.source_type)}</Text>
-      <Text>{primaryServingLabel(food.data)}</Text>
+      <Text style={styles.text}>{food.data.brand ?? sourceLabel(food.data.source_type)}</Text>
+      <Text style={styles.text}>{primaryServingLabel(food.data)}</Text>
       <View style={styles.actions}>
         <Pressable onPress={onLog} style={styles.primaryButton}>
           <Text style={styles.primaryText}>Log</Text>
         </Pressable>
         <Pressable onPress={onEdit} style={styles.secondaryButton}>
-          <Text>Edit</Text>
+          <Text style={styles.text}>Edit</Text>
         </Pressable>
         <Pressable onPress={() => mutations.duplicateFood.mutate(foodId)} style={styles.secondaryButton}>
-          <Text>Duplicate</Text>
+          <Text style={styles.text}>Duplicate</Text>
         </Pressable>
         <Pressable onPress={() => requestDelete(false)} style={styles.deleteButton}>
           <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
@@ -142,6 +145,8 @@ function FoodDeleteDependencyModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const publishedRecipes = dependency?.affected_recipes.filter((recipe) => recipe.is_published) ?? [];
   const close = isDeleting ? undefined : onCancel;
   return (
@@ -149,7 +154,7 @@ function FoodDeleteDependencyModal({
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
           <Text style={styles.warningTitle}>Delete food from recipes?</Text>
-          <Text>
+          <Text style={styles.text}>
             Deleting this food will also remove every occurrence from the following recipes.
           </Text>
           <ScrollView style={styles.modalList} contentContainerStyle={styles.modalListContent}>
@@ -172,7 +177,7 @@ function FoodDeleteDependencyModal({
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.modalActions}>
             <Pressable onPress={onCancel} disabled={isDeleting} style={styles.secondaryButton}>
-              <Text>Cancel</Text>
+              <Text style={styles.text}>Cancel</Text>
             </Pressable>
             <Pressable onPress={onConfirm} disabled={isDeleting} style={[styles.deleteButton, styles.destructiveAction]}>
               <Text style={styles.destructiveActionText}>{isDeleting ? "Deleting..." : "Delete Anyway"}</Text>
@@ -184,32 +189,30 @@ function FoodDeleteDependencyModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  deleteButton: { borderColor: "#b42318", borderRadius: 6, borderWidth: 1, padding: 10 },
-  deleteText: { color: "#b42318" },
-  error: { color: "#b42318", fontWeight: "600" },
-  destructiveAction: { backgroundColor: "#b42318" },
-  destructiveActionText: { color: "white", fontWeight: "700" },
+  deleteButton: { borderColor: theme.colors.destructive, borderRadius: 6, borderWidth: 1, padding: 10 },
+  deleteText: { color: theme.colors.destructive }, error: { color: theme.colors.errorText, fontWeight: "600" },
+  destructiveAction: { backgroundColor: theme.colors.destructive }, destructiveActionText: { color: theme.colors.accentForeground, fontWeight: "700" },
   modalActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" },
-  modalBackdrop: { alignItems: "center", backgroundColor: "rgba(0, 0, 0, 0.35)", flex: 1, justifyContent: "center", padding: 18 },
-  modalCard: { backgroundColor: "white", borderRadius: 8, gap: 12, maxHeight: "78%", padding: 16, width: "100%" },
+  modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },
+  modalCard: { backgroundColor: theme.colors.surface, borderRadius: 8, gap: 12, maxHeight: "78%", padding: 16, width: "100%" },
   modalList: { maxHeight: 260 },
   modalListContent: { gap: 8 },
-  nutrientName: { flex: 1, paddingRight: 12 },
-  nutrientRow: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
-  nutrientValue: { color: "#333", flexShrink: 0, fontWeight: "600", maxWidth: "55%", textAlign: "right" },
-  primaryButton: { backgroundColor: "#1f6fb2", borderRadius: 6, padding: 10 },
-  primaryText: { color: "white", fontWeight: "700" },
-  recipeDependencyMeta: { color: "#666" },
-  recipeDependencyName: { fontWeight: "700" },
-  recipeDependencyRow: { borderBottomColor: "#e7e7e7", borderBottomWidth: 1, gap: 3, paddingBottom: 8 },
-  screen: { gap: 12, padding: 16, paddingBottom: 32, paddingRight: 28 },
-  secondaryButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 10 },
-  title: { fontSize: 24, fontWeight: "700" },
-  warningTitle: { fontWeight: "700" },
-  warningText: { color: "#9a5b00", fontWeight: "600" },
-});
+  nutrientName: { color: theme.colors.text, flex: 1, paddingRight: 12 },
+  nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
+  nutrientValue: { color: theme.colors.text, flexShrink: 0, fontWeight: "600", maxWidth: "55%", textAlign: "right" },
+  primaryButton: { backgroundColor: theme.colors.accent, borderRadius: 6, padding: 10 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  recipeDependencyMeta: { color: theme.colors.secondaryText },
+  recipeDependencyName: { color: theme.colors.text, fontWeight: "700" },
+  recipeDependencyRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 3, paddingBottom: 8 },
+  screen: { backgroundColor: theme.colors.background, gap: 12, padding: 16, paddingBottom: 32, paddingRight: 28 },
+  secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+  warningTitle: { color: theme.colors.text, fontWeight: "700" },
+  warningText: { color: theme.colors.warningText, fontWeight: "600" },
+}); }
 
 function sourceLabel(sourceType: string): string {
   if (sourceType === "usda") {

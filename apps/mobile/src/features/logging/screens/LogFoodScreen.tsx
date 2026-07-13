@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +16,7 @@ import { useLogMutations } from "../hooks/useLogs";
 import { buildLogInput, buildLogUpdateInput, formatInitialLogAmount, formatServingGramWeight, initialServingId } from "../utils/logFoodForm";
 import { logEditErrorMessage } from "../utils/logEditErrors";
 import { logInputSchema } from "../validation/logValidation";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
   foodId: string;
@@ -26,6 +27,8 @@ type Props = {
 };
 
 export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const food = useFood(foodId);
   const mutations = useLogMutations(date);
   const [amount, setAmount] = useState(formatInitialLogAmount(log?.amount_quantity));
@@ -73,11 +76,12 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
         <View style={styles.header}>
           <Text style={styles.title}>{log ? "Edit Log" : "Log Food"}</Text>
           <Pressable onPress={onCancel}>
-            <Text>Cancel</Text>
+            <Text style={styles.text}>Cancel</Text>
           </Pressable>
         </View>
         <Text style={styles.foodName}>{food.data?.name ?? log?.food_name_snapshot ?? "Food"}</Text>
         <TextInput
+          placeholderTextColor={theme.colors.placeholder}
           value={amount}
           onChangeText={setAmount}
           keyboardType="decimal-pad"
@@ -86,10 +90,10 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
         />
         <View style={styles.segment}>
           <Pressable onPress={() => setUnit("serving")} style={[styles.segmentButton, unit === "serving" && styles.active]}>
-            <Text>Servings</Text>
+            <Text style={styles.text}>Servings</Text>
           </Pressable>
           <Pressable onPress={() => setUnit("g")} style={[styles.segmentButton, unit === "g" && styles.active]}>
-            <Text>Grams</Text>
+            <Text style={styles.text}>Grams</Text>
           </Pressable>
         </View>
         {unit === "serving" && servings.length > 0 ? (
@@ -100,7 +104,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
                 onPress={() => setSelectedServingId(serving.id)}
                 style={[styles.servingButton, selectedServingId === serving.id && styles.active]}
               >
-                <Text>{serving.label}</Text>
+                <Text style={styles.text}>{serving.label}</Text>
                 {serving.gram_weight ? <Text style={styles.servingMeta}>{formatServingGramWeight(serving.gram_weight)}</Text> : null}
               </Pressable>
             ))}
@@ -115,20 +119,21 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  active: { backgroundColor: "#dfefff", borderColor: "#2878c8" },
-  error: { color: "#b42318" },
-  foodName: { fontSize: 18, fontWeight: "600" },
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
+  active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  error: { color: theme.colors.errorText },
+  foodName: { color: theme.colors.text, fontSize: 18, fontWeight: "600" },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  input: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 12 },
-  keyboard: { flex: 1 },
-  primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 14 },
-  primaryText: { color: "white", fontWeight: "700" },
+  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
+  keyboard: { backgroundColor: theme.colors.background, flex: 1 },
+  primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
+  primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   screen: { gap: 14, padding: 16, paddingBottom: 32 },
   segment: { flexDirection: "row", gap: 8 },
-  segmentButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 10 },
-  servingButton: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, gap: 2, padding: 10 },
+  segmentButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
+  servingButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 2, padding: 10 },
   servingList: { gap: 8 },
-  servingMeta: { color: "#666" },
-  title: { fontSize: 24, fontWeight: "700" },
-});
+  servingMeta: { color: theme.colors.secondaryText },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+}); }

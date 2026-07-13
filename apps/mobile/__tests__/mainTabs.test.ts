@@ -2,6 +2,7 @@ import {
   isMainTabRoot,
   mainTabForRoute,
   MAIN_TAB_ACCESSIBILITY_LABELS,
+  settingsOriginForRoute,
   swipeDestination,
   tabSelectionDestination,
 } from "../src/app/navigation/mainTabs";
@@ -39,6 +40,13 @@ test("top-level swipes are enabled only on root tab screens", () => {
   expect(isMainTabRoot("food-detail")).toBe(false);
   expect(isMainTabRoot("recipe-detail")).toBe(false);
   expect(isMainTabRoot("edit-log")).toBe(false);
+  expect(isMainTabRoot("settings")).toBe(false);
+});
+
+test("Settings preserves the root tab that opened it", () => {
+  expect(settingsOriginForRoute("foods")).toBe("foods");
+  expect(settingsOriginForRoute("daily-log")).toBe("daily-log");
+  expect(settingsOriginForRoute("recipes")).toBe("recipes");
 });
 
 test("each tab has an explicit accessibility label", () => {

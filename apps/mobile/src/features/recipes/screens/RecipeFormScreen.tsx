@@ -1,5 +1,6 @@
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
 import { useRecipeMutations } from "../hooks/useRecipes";
@@ -34,6 +35,7 @@ type Props = {
 };
 
 export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngredient }: Props) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const mutations = useRecipeMutations();
   const [error, setError] = useState<string | null>(null);
   const [customServingForms, setCustomServingForms] = useState<Record<string, CustomServingForm>>({});
@@ -108,24 +110,24 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
             <View style={styles.header}>
               <Text style={styles.title}>{draft.recipeId ? "Edit Recipe" : "New Recipe"}</Text>
               <Pressable onPress={onCancel}>
-                <Text>Cancel</Text>
+                <Text style={styles.text}>Cancel</Text>
               </Pressable>
             </View>
             <View {...focusProps("recipe-name")}>
-              <TextInput value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} onFocus={focusProps("recipe-name").onFocus} placeholder="Recipe name" style={styles.input} />
+              <TextInput value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} onFocus={focusProps("recipe-name").onFocus} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View {...focusProps("recipe-notes")}>
-              <TextInput value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} onFocus={focusProps("recipe-notes").onFocus} placeholder="Notes" style={styles.input} />
+              <TextInput value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} onFocus={focusProps("recipe-notes").onFocus} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <Text style={styles.sectionTitle}>Yield</Text>
             <Text style={styles.meta}>Enter either one or both.</Text>
             <Text style={styles.meta}>Serving count defines portions such as 6 bowls or 12 muffins.</Text>
             <Text style={styles.meta}>Final cooked weight supports precise logging by mass.</Text>
             <Text style={styles.label}>Number of servings</Text>
-            <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" keyboardType="decimal-pad" style={styles.input} />
+            <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
             <Text style={styles.label}>Final cooked weight</Text>
             <View style={styles.twoColumn}>
-              <TextInput value={draft.finalCookedWeightGrams} onChangeText={(finalCookedWeightGrams) => setDraft({ ...draft, finalCookedWeightGrams })} placeholder="1240" keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+              <TextInput value={draft.finalCookedWeightGrams} onChangeText={(finalCookedWeightGrams) => setDraft({ ...draft, finalCookedWeightGrams })} placeholder="1240" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
               <MassUnitSelector value={draft.finalCookedWeightUnit} onChange={(finalCookedWeightUnit) => setDraft({ ...draft, finalCookedWeightUnit })} />
             </View>
             {convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit) ? <Text style={styles.meta}>{convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit)}</Text> : null}
@@ -156,14 +158,14 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     }}
                     style={[styles.segment, ingredient.amountUnit === "g" && styles.segmentActive]}
                   >
-                    <Text>Grams</Text>
+                    <Text style={styles.text}>Grams</Text>
                   </Pressable>
                   <Pressable onPress={() => updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "serving"))} style={[styles.segment, ingredient.amountUnit === "serving" && styles.segmentActive]}>
-                    <Text>Serving</Text>
+                    <Text style={styles.text}>Serving</Text>
                   </Pressable>
                 </View>
                 <View style={styles.twoColumn}>
-                  <TextInput value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+                  <TextInput value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
                   {ingredient.amountUnit === "g" ? <MassUnitSelector value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} /> : null}
                 </View>
                 {ingredient.amountUnit === "g" && convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit) ? <Text style={styles.meta}>{convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit)}</Text> : null}
@@ -172,7 +174,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     <View style={styles.servings}>
                       {usefulServingDefinitions(ingredient.food.serving_definitions).map((serving) => (
                         <Pressable key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive]}>
-                          <Text>{formatServingChoiceLabel(serving)}</Text>
+                          <Text style={styles.text}>{formatServingChoiceLabel(serving)}</Text>
                         </Pressable>
                       ))}
                     </View>
@@ -189,7 +191,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     />
                   </>
                 ) : null}
-                <TextInput value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" style={styles.input} />
+                <TextInput value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
                 <View style={styles.reorder}>
                   <Pressable onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, -1) })}>
                     <Text style={styles.link}>Up</Text>
@@ -248,6 +250,7 @@ function CustomServingEditor({
   onChange: (value: CustomServingForm) => void;
   onAdd: () => void;
 }) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   if (!expanded) {
     return (
       <Pressable onPress={onExpand} style={styles.addServingButton}>
@@ -259,63 +262,62 @@ function CustomServingEditor({
   return (
     <View style={styles.customServing}>
       <Text style={styles.label}>Add custom serving</Text>
-      <TextInput value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" style={styles.input} />
+      <TextInput value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
       <View style={styles.twoColumn}>
-        <TextInput value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-        <TextInput value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" style={[styles.input, styles.flex]} />
+        <TextInput value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+        <TextInput value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]} />
       </View>
-      <TextInput value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" keyboardType="decimal-pad" style={styles.input} />
+      <TextInput value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
       <Pressable onPress={onAdd} style={styles.addServingButton}>
         <Text style={styles.link}>Add custom serving</Text>
       </Pressable>
       <Pressable onPress={onCancel} style={styles.secondaryButton}>
-        <Text>Cancel</Text>
+        <Text style={styles.text}>Cancel</Text>
       </Pressable>
     </View>
   );
 }
 
 function MassUnitSelector({ value, onChange }: { value: MassUnit; onChange: (unit: MassUnit) => void }) {
+  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.unitSelector}>
       {(["g", "oz", "lb"] as MassUnit[]).map((unit) => (
         <Pressable key={unit} onPress={() => onChange(unit)} style={[styles.unitChoice, value === unit && styles.segmentActive]}>
-          <Text>{unit}</Text>
+          <Text style={styles.text}>{unit}</Text>
         </Pressable>
       ))}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  text: { color: theme.colors.text },
   content: { padding: 16, paddingBottom: 120 },
-  addServingButton: { alignItems: "center", borderColor: "#1f6fb2", borderRadius: 6, borderWidth: 1, padding: 10 },
-  customServing: { borderColor: "#e7e7e7", borderRadius: 6, borderWidth: 1, gap: 8, padding: 10 },
+  addServingButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 10 },
+  customServing: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 8, padding: 10 },
   disabledButton: { opacity: 0.55 },
-  error: { color: "#b42318" },
-  flex: { flex: 1 },
+  error: { color: theme.colors.errorText }, flex: { backgroundColor: theme.colors.background, flex: 1 },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  ingredientCard: { borderBottomColor: "#d7d7d7", borderBottomWidth: 1, gap: 10, paddingVertical: 12 },
-  ingredientName: { fontSize: 16, fontWeight: "700" },
-  input: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, marginBottom: 12, padding: 12 },
-  label: { fontWeight: "700", marginTop: 10 },
-  link: { color: "#1f6fb2", fontWeight: "700" },
-  meta: { color: "#666" },
-  primaryButton: { alignItems: "center", backgroundColor: "#1f6fb2", borderRadius: 6, padding: 14 },
-  primaryText: { color: "white", fontWeight: "700" },
+  ingredientCard: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 10, paddingVertical: 12 },
+  ingredientName: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
+  label: { color: theme.colors.text, fontWeight: "700", marginTop: 10 },
+  link: { color: theme.colors.accent, fontWeight: "700" }, meta: { color: theme.colors.secondaryText },
+  primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   reorder: { flexDirection: "row", gap: 16 },
   rowHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
-  saveBar: { borderTopColor: "#e7e7e7", borderTopWidth: 1, padding: 12 },
+  saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 },
   sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  sectionTitle: { fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },
-  secondaryButton: { alignItems: "center", borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 10 },
+  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },
+  secondaryButton: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   segmented: { flexDirection: "row", gap: 8 },
-  segment: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, flex: 1, padding: 10 },
-  segmentActive: { backgroundColor: "#e8f1fb", borderColor: "#1f6fb2" },
-  servingChoice: { borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, padding: 8 },
+  segment: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flex: 1, padding: 10 },
+  segmentActive: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  servingChoice: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 8 },
   servings: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  title: { fontSize: 24, fontWeight: "700" },
+  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   twoColumn: { flexDirection: "row", gap: 10 },
-  unitChoice: { alignItems: "center", borderColor: "#c7c7c7", borderRadius: 6, borderWidth: 1, minWidth: 42, padding: 10 },
+  unitChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minWidth: 42, padding: 10 },
   unitSelector: { flexDirection: "row", gap: 6, marginBottom: 12 },
-});
+}); }

@@ -36,6 +36,10 @@ export function isMainTabRoot(routeName: string): routeName is MainTab {
   return MAIN_TABS.includes(routeName as MainTab);
 }
 
+export function settingsOriginForRoute(routeName: string): MainTab {
+  return mainTabForRoute(routeName);
+}
+
 export function tabSelectionDestination(current: MainTab, selected: MainTab): MainTab | null {
   return current === selected ? null : selected;
 }

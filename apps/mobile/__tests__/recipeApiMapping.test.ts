@@ -1,4 +1,24 @@
-import { createRecipe, getRecipeNutrition, publishRecipe } from "../src/features/recipes/api/recipeApi";
+import { createRecipe, getRecipeNutrition, listRecipes, publishRecipe } from "../src/features/recipes/api/recipeApi";
+
+test("recipe list uses the full list for an empty query and filters non-empty queries", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ recipes: [] }),
+  });
+
+  await listRecipes("");
+  expect(global.fetch).toHaveBeenLastCalledWith(
+    "http://localhost:8000/api/v1/recipes",
+    expect.any(Object),
+  );
+
+  await listRecipes("soup");
+  expect(global.fetch).toHaveBeenLastCalledWith(
+    "http://localhost:8000/api/v1/recipes?q=soup",
+    expect.any(Object),
+  );
+});
 
 test("recipe create API sends ingredient payload", async () => {
   global.fetch = jest.fn().mockResolvedValue({

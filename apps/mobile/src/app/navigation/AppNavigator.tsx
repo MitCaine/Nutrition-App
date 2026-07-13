@@ -29,7 +29,9 @@ import type { RecipeDraft } from "../../features/recipes/utils/recipeDraft";
 import { UsdaPreviewScreen } from "../../features/usda/screens/UsdaPreviewScreen";
 import { UsdaSearchScreen } from "../../features/usda/screens/UsdaSearchScreen";
 import { BottomNavigation } from "./BottomNavigation";
-import { isMainTabRoot, mainTabForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
+import { useAppTheme } from "../theme/AppTheme";
+import { SettingsScreen } from "../settings/SettingsScreen";
+import { isMainTabRoot, mainTabForRoute, settingsOriginForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
 
 type Route =
   | { name: "foods" }
@@ -46,7 +48,8 @@ type Route =
   | { name: "ingredient-picker" }
   | { name: "recipe-usda-search" }
   | { name: "recipe-usda-preview"; fdcId: number }
-  | { name: "daily-log" };
+  | { name: "daily-log" }
+  | { name: "settings"; origin: MainTab };
 
 function routeForMainTab(tab: MainTab): Route {
   if (tab === "foods") {
@@ -59,6 +62,7 @@ function routeForMainTab(tab: MainTab): Route {
 }
 
 export function AppNavigator() {
+  const theme = useAppTheme();
   const [route, setRoute] = useState<Route>({ name: "foods" });
   const [foodQuery, setFoodQuery] = useState("");
   const [recipeQuery, setRecipeQuery] = useState("");
@@ -69,7 +73,9 @@ export function AppNavigator() {
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
   const [date, setDate] = useState(todayLocalDateString());
   const foodSearchScroll = useRef({ query: "", offset: 0 });
-  const activeTab = mainTabForRoute(route.name);
+  const recipeSearchScroll = useRef({ query: "", offset: 0 });
+  const dailyLogScroll = useRef({ date, offset: 0 });
+  const activeTab = route.name === "settings" ? route.origin : mainTabForRoute(route.name);
   const swipeEnabled = isMainTabRoot(route.name);
 
   const selectMainTab = (tab: MainTab) => {
@@ -78,6 +84,7 @@ export function AppNavigator() {
       return;
     }
     setFoodMessage(null);
+    setRecipeMessage(null);
     setRoute(routeForMainTab(destination));
   };
 
@@ -91,6 +98,7 @@ export function AppNavigator() {
         const destination = swipeDestination(activeTab, gesture.dx);
         if (destination !== activeTab) {
           setFoodMessage(null);
+          setRecipeMessage(null);
           setRoute(routeForMainTab(destination));
         }
       },
@@ -99,7 +107,9 @@ export function AppNavigator() {
   );
 
   let content;
-  if (route.name === "new-food") {
+  if (route.name === "settings") {
+    content = <SettingsScreen onBack={() => setRoute(routeForMainTab(route.origin))} />;
+  } else if (route.name === "new-food") {
     content = <FoodFormScreen onCancel={() => setRoute({ name: "foods" })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "food-detail") {
     content = (
@@ -137,6 +147,10 @@ export function AppNavigator() {
       <RecipeListScreen
         query={recipeQuery}
         setQuery={setRecipeQuery}
+        initialScrollOffset={restoredSearchOffset(recipeQuery, recipeSearchScroll.current)}
+        onScrollSessionChange={(query, offset) => {
+          recipeSearchScroll.current = { query, offset };
+        }}
         onCreate={() => {
           setRecipeMessage(null);
           setRecipeDraft(emptyRecipeDraft());
@@ -147,6 +161,8 @@ export function AppNavigator() {
           setRoute({ name: "recipe-detail", recipeId });
         }}
         message={recipeMessage}
+        onMessageExpired={() => setRecipeMessage(null)}
+        onOpenSettings={() => setRoute({ name: "settings", origin: settingsOriginForRoute(route.name) })}
       />
     );
   } else if (route.name === "new-recipe") {
@@ -220,7 +236,18 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "daily-log") {
-    content = <DailyLogScreen date={date} setDate={setDate} onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })} onEditLog={(logId) => setRoute({ name: "edit-log", logId })} />;
+    content = <DailyLogScreen
+      date={date}
+      setDate={(nextDate) => {
+        dailyLogScroll.current = { date: nextDate, offset: 0 };
+        setDate(nextDate);
+      }}
+      initialScrollOffset={dailyLogScroll.current.date === date ? dailyLogScroll.current.offset : 0}
+      onScrollOffsetChange={(offset) => { dailyLogScroll.current = { date, offset }; }}
+      onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
+      onEditLog={(logId) => setRoute({ name: "edit-log", logId })}
+      onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
+    />;
   } else {
     content = (
       <SavedFoodsScreen
@@ -244,12 +271,13 @@ export function AppNavigator() {
         }}
         message={foodMessage}
         onMessageExpired={() => setFoodMessage(null)}
+        onOpenSettings={() => setRoute({ name: "settings", origin: settingsOriginForRoute(route.name) })}
       />
     );
   }
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { backgroundColor: theme.colors.background }]}>
       <View style={styles.content} {...(swipeEnabled ? mainSwipeResponder.panHandlers : {})}>{content}</View>
       <BottomNavigation activeTab={activeTab} onSelect={selectMainTab} />
     </View>
@@ -284,11 +312,7 @@ function RecipeDetailRoute({
   const hasFoodError = ingredientFoods.some((query) => query.isError);
 
   if (!recipe.data || isLoadingFoods) {
-    return (
-      <View style={styles.loading}>
-        <Text>Loading...</Text>
-      </View>
-    );
+    return <LoadingState />;
   }
   const loadedFoods = ingredientFoods.map((query) => query.data).filter((food): food is Food => Boolean(food));
   const draftResult = recipeToDraft(recipe.data, loadedFoods);
@@ -328,11 +352,7 @@ function EditLogRoute({
   const logs = useDailyLogs(date);
   const log = logs.data?.find((item) => item.id === logId);
   if (!log) {
-    return (
-      <View style={styles.loading}>
-        <Text>Loading...</Text>
-      </View>
-    );
+    return <LoadingState />;
   }
   return <LogFoodScreen foodId={log.food_item_id} date={date} log={log} onCancel={onCancel} onSaved={onSaved} />;
 }
@@ -348,13 +368,18 @@ function EditFoodRoute({
 }) {
   const food = useFood(foodId);
   if (!food.data) {
-    return (
-      <View style={styles.loading}>
-        <Text>Loading...</Text>
-      </View>
-    );
+    return <LoadingState />;
   }
   return <FoodFormScreen food={food.data} onCancel={onCancel} onSaved={onSaved} />;
+}
+
+function LoadingState() {
+  const theme = useAppTheme();
+  return (
+    <View style={[styles.loading, { backgroundColor: theme.colors.background }]}>
+      <Text style={{ color: theme.colors.text }}>Loading...</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
