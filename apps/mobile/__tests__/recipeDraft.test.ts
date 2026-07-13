@@ -5,6 +5,7 @@ import {
   canPublishRecipe,
   emptyRecipeDraft,
   formatIngredientAmount,
+  formatLegacyCookedWeight,
   formatRecipeIngredientDetail,
   formatServingChoiceLabel,
   ingredientForFood,
@@ -55,7 +56,6 @@ test("recipe payload maps ordered gram and serving ingredients", () => {
     name: "Bean Bowl",
     notes: "batch",
     servingCountYield: "4",
-    finalCookedWeightGrams: "900",
     ingredients: [gramIngredient, servingIngredient],
   });
 
@@ -63,9 +63,6 @@ test("recipe payload maps ordered gram and serving ingredients", () => {
     name: "Bean Bowl",
     notes: "batch",
     serving_count_yield: "4",
-    final_cooked_weight_grams: 900,
-    final_cooked_weight_display_quantity: 900,
-    final_cooked_weight_display_unit: "g",
     ingredients: [
       {
         food_item_id: "food-1",
@@ -110,41 +107,25 @@ test("mass parser accepts strict comma grouping and rejects malformed values", (
   expect(normalizeDecimalInput("abc")).toBeNull();
 });
 
-test("recipe payload normalizes ingredient and final cooked mass units to grams", () => {
+test("recipe payload normalizes ingredient mass units to grams", () => {
   const ingredient = { ...ingredientForFood(food), amountUnit: "g" as const, amountQuantity: "28", massUnit: "oz" as const };
   const payload = buildRecipePayload({
     ...emptyRecipeDraft(),
     name: "Tomatoes",
-    finalCookedWeightGrams: "2",
-    finalCookedWeightUnit: "lb",
     ingredients: [ingredient],
   });
-  expect(payload?.final_cooked_weight_grams).toBe(907.18474);
   expect(payload?.ingredients[0].amount_quantity).toBe("793.786648");
 });
 
-test("recipe payload sends cooked weight as numeric values after comma parsing", () => {
+test("new recipe payload omits legacy cooked-weight fields", () => {
   const payload = buildRecipePayload({
     ...emptyRecipeDraft(),
     name: "Batch",
-    finalCookedWeightGrams: "1,500.5",
-    finalCookedWeightUnit: "g",
     ingredients: [],
   });
-  expect(payload?.final_cooked_weight_grams).toBe(1500.5);
-  expect(payload?.final_cooked_weight_display_quantity).toBe(1500.5);
-});
-
-test("recipe validation rejects malformed nonpositive cooked weight", () => {
-  expect(validateRecipeDraft({ ...emptyRecipeDraft(), name: "Bad", finalCookedWeightGrams: "15,00" })).toBe(
-    "Cooked weight must be a valid number greater than zero.",
-  );
-  expect(validateRecipeDraft({ ...emptyRecipeDraft(), name: "Bad", finalCookedWeightGrams: "0" })).toBe(
-    "Cooked weight must be a valid number greater than zero.",
-  );
-  expect(validateRecipeDraft({ ...emptyRecipeDraft(), name: "Bad", finalCookedWeightGrams: "-1" })).toBe(
-    "Cooked weight must be a valid number greater than zero.",
-  );
+  expect(payload).not.toHaveProperty("final_cooked_weight_grams");
+  expect(payload).not.toHaveProperty("final_cooked_weight_display_quantity");
+  expect(payload).not.toHaveProperty("final_cooked_weight_display_unit");
 });
 
 test("switching ingredient modes clears incompatible serving state and formats amounts", () => {
@@ -236,16 +217,13 @@ test("recipe draft preserves selected mass unit while editing before persistence
   const draft = {
     ...emptyRecipeDraft(),
     name: "Round trip",
-    finalCookedWeightGrams: "2",
-    finalCookedWeightUnit: "lb" as const,
     ingredients: [ingredient],
   };
-  expect(draft.finalCookedWeightUnit).toBe("lb");
   expect(draft.ingredients[0].massUnit).toBe("oz");
   expect(formatIngredientAmount(draft.ingredients[0])).toBe("28 oz");
 });
 
-test("recipe draft restores persisted display mass units when present", () => {
+test("recipe draft preserves legacy cooked-weight metadata exactly", () => {
   const result = recipeToDraft(
     {
       id: "recipe-1",
@@ -274,11 +252,41 @@ test("recipe draft restores persisted display mass units when present", () => {
   );
   expect(result.ok).toBe(true);
   if (result.ok) {
-    expect(result.draft.finalCookedWeightGrams).toBe("2");
-    expect(result.draft.finalCookedWeightUnit).toBe("lb");
+    expect(result.draft.legacyCookedWeight).toEqual({
+      normalizedGrams: "907.184740",
+      displayQuantity: "2.000000",
+      displayUnit: "lb",
+    });
+    expect(formatLegacyCookedWeight(result.draft.legacyCookedWeight!)).toBe("2 lb");
     expect(result.draft.ingredients[0].amountQuantity).toBe("28");
     expect(result.draft.ingredients[0].massUnit).toBe("oz");
   }
+});
+
+test("recipe draft has no legacy cooked-weight presentation when no value is stored", () => {
+  const result = recipeToDraft(
+    {
+      id: "recipe-1",
+      user_id: "user-1",
+      name: "No cooked weight",
+      final_cooked_weight_grams: null,
+      final_cooked_weight_display_quantity: null,
+      final_cooked_weight_display_unit: null,
+      created_at: "2026-07-10T00:00:00Z",
+      updated_at: "2026-07-10T00:00:00Z",
+      ingredients: [],
+    },
+    [],
+  );
+
+  expect(result.ok).toBe(true);
+  if (result.ok) {
+    expect(result.draft.legacyCookedWeight).toBeNull();
+  }
+});
+
+test("legacy cooked-weight presentation falls back to the exact normalized gram value", () => {
+  expect(formatLegacyCookedWeight({ normalizedGrams: "1240.000000" })).toBe("1,240 g");
 });
 
 test("serving and ingredient detail display include labels and gram weights", () => {
@@ -349,12 +357,45 @@ test("recipe draft initialization reports missing food IDs instead of filtering 
 });
 
 test("USDA import result is returned through same ingredient selection path", () => {
-  const draft = { ...emptyRecipeDraft(), name: "Soup", ingredients: [ingredientForFood(food)] };
+  const legacyCookedWeight = {
+    normalizedGrams: "907.184740",
+    displayQuantity: "2.000000",
+    displayUnit: "lb",
+  };
+  const draft = { ...emptyRecipeDraft(), name: "Soup", legacyCookedWeight, ingredients: [ingredientForFood(food)] };
   const updated = applyImportedIngredient(draft, usdaFood);
   expect(updated.ingredients.map((ingredient) => ingredient.food.id)).toEqual(["food-1", "food-2"]);
+  expect(updated.legacyCookedWeight).toBe(legacyCookedWeight);
 
   const duplicateImport = applyImportedIngredient(draft, food);
   expect(duplicateImport.ingredients[1].food.id).toBe("food-1");
+});
+
+test.each([
+  { name: "Renamed" },
+  { notes: "Updated notes" },
+  { servingCountYield: "8" },
+  { ingredients: [ingredientForFood(food)] },
+])("unrelated recipe edit omits untouched legacy cooked weight: %o", (change) => {
+  const legacyCookedWeight = {
+    normalizedGrams: "907.184740",
+    displayQuantity: "2.000000",
+    displayUnit: "lb",
+  };
+  const draft = {
+    ...emptyRecipeDraft(),
+    recipeId: "recipe-1",
+    name: "Original",
+    legacyCookedWeight,
+    ...change,
+  };
+
+  const payload = buildRecipePayload(draft);
+
+  expect(draft.legacyCookedWeight).toBe(legacyCookedWeight);
+  expect(payload).not.toHaveProperty("final_cooked_weight_grams");
+  expect(payload).not.toHaveProperty("final_cooked_weight_display_quantity");
+  expect(payload).not.toHaveProperty("final_cooked_weight_display_unit");
 });
 
 test("publish eligibility requires at least one usable yield", () => {

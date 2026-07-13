@@ -14,14 +14,19 @@ export type DraftIngredient = {
   preparationNote: string;
 };
 
+export type LegacyCookedWeight = {
+  normalizedGrams: string;
+  displayQuantity?: string | null;
+  displayUnit?: string | null;
+};
+
 export type RecipeDraft = {
   recipeId?: string;
   publishedFoodItemId?: string | null;
   name: string;
   notes: string;
   servingCountYield: string;
-  finalCookedWeightGrams: string;
-  finalCookedWeightUnit: MassUnit;
+  legacyCookedWeight: LegacyCookedWeight | null;
   ingredients: DraftIngredient[];
 };
 
@@ -34,8 +39,7 @@ export function emptyRecipeDraft(): RecipeDraft {
     name: "",
     notes: "",
     servingCountYield: "",
-    finalCookedWeightGrams: "",
-    finalCookedWeightUnit: "g",
+    legacyCookedWeight: null,
     ingredients: [],
   };
 }
@@ -59,12 +63,7 @@ export function recipeToDraft(recipe: Recipe, foods: Food[]): RecipeDraftInitRes
       name: recipe.name,
       notes: recipe.notes ?? "",
       servingCountYield: recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "",
-      finalCookedWeightGrams: recipe.final_cooked_weight_display_quantity
-        ? formatDisplayNumber(recipe.final_cooked_weight_display_quantity)
-        : recipe.final_cooked_weight_grams
-          ? formatDisplayNumber(recipe.final_cooked_weight_grams)
-          : "",
-      finalCookedWeightUnit: (recipe.final_cooked_weight_display_unit as MassUnit | null) ?? "g",
+      legacyCookedWeight: legacyCookedWeightForRecipe(recipe),
       ingredients: sortedIngredients.map((ingredient) => ({
         localId: ingredient.id,
         food: foodsById.get(ingredient.food_item_id) as Food,
@@ -112,17 +111,10 @@ export function buildRecipePayload(draft: RecipeDraft): RecipeMutationInput | nu
   if (validateRecipeDraft(draft)) {
     return null;
   }
-  const cookedWeightInput = normalizeDecimalInput(draft.finalCookedWeightGrams);
-  const cookedWeightGrams = cookedWeightInput
-    ? massToGrams(cookedWeightInput, draft.finalCookedWeightUnit)
-    : null;
   return {
     name: draft.name.trim(),
     notes: draft.notes.trim() || null,
     serving_count_yield: draft.servingCountYield.trim() || null,
-    final_cooked_weight_grams: cookedWeightGrams ? Number(cookedWeightGrams) : null,
-    final_cooked_weight_display_quantity: cookedWeightInput ? Number(cookedWeightInput) : null,
-    final_cooked_weight_display_unit: cookedWeightInput ? draft.finalCookedWeightUnit : null,
     ingredients: draft.ingredients.map<RecipeIngredientInput>((ingredient, position) => ({
       food_item_id: ingredient.food.id,
       position,
@@ -167,18 +159,36 @@ export function validateRecipeDraft(draft: RecipeDraft): string | null {
   if (draft.servingCountYield.trim() && !(Number(draft.servingCountYield) > 0)) {
     return "Serving yield must be greater than zero.";
   }
-  if (
-    draft.finalCookedWeightGrams.trim() &&
-    (!(Number(normalizeDecimalInput(draft.finalCookedWeightGrams)) > 0) ||
-      !massToGrams(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit))
-  ) {
-    return "Cooked weight must be a valid number greater than zero.";
-  }
   return null;
 }
 
-export function canPublishRecipe(draft: Pick<RecipeDraft, "servingCountYield" | "finalCookedWeightGrams">) {
+export function canPublishRecipe(draft: { servingCountYield: string; finalCookedWeightGrams: string }) {
   return Number(draft.servingCountYield) > 0 || Number(normalizeDecimalInput(draft.finalCookedWeightGrams)) > 0;
+}
+
+export function legacyCookedWeightForRecipe(
+  recipe: Pick<
+    Recipe,
+    | "final_cooked_weight_grams"
+    | "final_cooked_weight_display_quantity"
+    | "final_cooked_weight_display_unit"
+  >,
+): LegacyCookedWeight | null {
+  if (!recipe.final_cooked_weight_grams) {
+    return null;
+  }
+  return {
+    normalizedGrams: recipe.final_cooked_weight_grams,
+    displayQuantity: recipe.final_cooked_weight_display_quantity,
+    displayUnit: recipe.final_cooked_weight_display_unit,
+  };
+}
+
+export function formatLegacyCookedWeight(value: LegacyCookedWeight): string {
+  if (value.displayQuantity && value.displayUnit) {
+    return `${formatDisplayNumber(value.displayQuantity)} ${value.displayUnit}`;
+  }
+  return `${formatDisplayNumber(value.normalizedGrams)} g`;
 }
 
 export function formatIngredientAmount(ingredient: DraftIngredient): string {

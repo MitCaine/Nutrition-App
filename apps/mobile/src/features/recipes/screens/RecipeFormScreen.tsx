@@ -10,6 +10,7 @@ import type { ServingDefinition } from "../../foods/api/types";
 import {
   buildRecipePayload,
   formatIngredientAmount,
+  formatLegacyCookedWeight,
   formatServingChoiceLabel,
   moveIngredient,
   switchIngredientMode,
@@ -194,12 +195,13 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
             <Text style={styles.optionalSectionTitle}>Yield (optional)</Text>
             <Text style={styles.formLabel}>Number of servings</Text>
             <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-            <Text style={styles.formLabel}>Final cooked weight</Text>
-            <View style={styles.twoColumn}>
-              <TextInput value={draft.finalCookedWeightGrams} onChangeText={(finalCookedWeightGrams) => setDraft({ ...draft, finalCookedWeightGrams })} placeholder="1240" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-              <MassUnitSelector value={draft.finalCookedWeightUnit} onChange={(finalCookedWeightUnit) => setDraft({ ...draft, finalCookedWeightUnit })} />
-            </View>
-            {convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit) ? <Text style={styles.meta}>{convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit)}</Text> : null}
+            {draft.legacyCookedWeight ? (
+              <View style={styles.legacyCompatibility}>
+                <Text style={styles.formLabel}>Legacy cooked weight</Text>
+                <Text style={styles.text}>{formatLegacyCookedWeight(draft.legacyCookedWeight)}</Text>
+                <Text style={styles.meta}>Stored for compatibility with existing recipe data.</Text>
+              </View>
+            ) : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {mutations.createRecipe.isError || mutations.updateRecipe.isError ? <Text style={styles.error}>{error ?? "Could not save recipe."}</Text> : null}
           </>
@@ -302,6 +304,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   ingredientName: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
   label: { color: theme.colors.text, fontWeight: "700", marginTop: 10 },
+  legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, marginTop: 10, padding: 12 },
   link: { color: theme.colors.accent, fontWeight: "700" }, meta: { color: theme.colors.secondaryText },
   optionalSectionTitle: { color: theme.colors.secondaryText, fontSize: 17, fontWeight: "700", marginBottom: 5, marginTop: 22 },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },

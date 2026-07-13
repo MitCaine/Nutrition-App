@@ -1,12 +1,17 @@
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
+import { formatDisplayNumber } from "../../../shared/nutrition/display";
 import { isUnknownOnlyAggregatedTotal } from "../../../shared/nutrition/display";
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
 import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
 import { useRecipeMutations, useRecipeNutrition } from "../hooks/useRecipes";
-import { canPublishRecipe, formatRecipeIngredientDetail } from "../utils/recipeDraft";
+import {
+  canPublishRecipe,
+  formatLegacyCookedWeight,
+  formatRecipeIngredientDetail,
+  legacyCookedWeightForRecipe,
+} from "../utils/recipeDraft";
 import { formatRecipeTotal, recipeNutrientLabel, recipeTotalIsUnknownOnly } from "../utils/recipeDisplay";
 import type { Recipe } from "../api/types";
 import type { Food } from "../../foods/api/types";
@@ -30,6 +35,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
     servingCountYield: recipe.serving_count_yield ?? "",
     finalCookedWeightGrams: recipe.final_cooked_weight_grams ?? "",
   });
+  const legacyCookedWeight = legacyCookedWeightForRecipe(recipe);
 
   async function publish() {
     if (!canPublish || mutations.publishRecipe.isPending) {
@@ -75,13 +81,14 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
           <Text style={styles.meta}>
             Servings: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Draft"}
           </Text>
-          <Text style={styles.meta}>
-            Cooked weight:{" "}
-            {recipe.final_cooked_weight_grams
-              ? formatAmountWithUnit(recipe.final_cooked_weight_grams, "g")
-              : "Draft"}
-          </Text>
         </View>
+        {legacyCookedWeight ? (
+          <View style={styles.legacyCompatibility}>
+            <Text style={styles.sectionTitle}>Legacy cooked weight</Text>
+            <Text style={styles.text}>{formatLegacyCookedWeight(legacyCookedWeight)}</Text>
+            <Text style={styles.meta}>Stored for compatibility with existing recipe data.</Text>
+          </View>
+        ) : null}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Ingredients</Text>
           {recipe.ingredients.map((ingredient) => (
@@ -161,6 +168,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   error: { color: theme.colors.errorText },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   ingredientLine: { gap: 3 },
+  legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, padding: 12 },
   meta: { color: theme.colors.secondaryText },
   nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 8 },
   nutrientValue: { flexShrink: 1, fontWeight: "600", textAlign: "right" },
