@@ -1,6 +1,6 @@
 import type { AggregatedNutrientTotal } from "./types";
 
-export function formatDisplayNumber(value: string | number | null | undefined, options?: { maxFractionDigits?: number }): string {
+export function formatDisplayNumber(value: string | number | null | undefined, options?: { maxFractionDigits?: number; useGrouping?: boolean }): string {
   if (value === null || value === undefined || value === "") {
     return "unknown";
   }
@@ -14,13 +14,14 @@ export function formatDisplayNumber(value: string | number | null | undefined, o
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: maxFractionDigits,
     minimumFractionDigits: 0,
+    useGrouping: options?.useGrouping ?? true,
   }).format(numericValue);
 }
 
 export function formatAmountWithUnit(
   amount: string | number | null | undefined,
   unit: string,
-  options?: { maxFractionDigits?: number },
+  options?: { maxFractionDigits?: number; useGrouping?: boolean },
 ): string {
   const formattedAmount = formatDisplayNumber(amount, options);
   return formattedAmount === "unknown" ? "unknown" : `${formattedAmount}${unit}`;

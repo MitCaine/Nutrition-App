@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+import re
 from typing import Any
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
@@ -265,13 +266,26 @@ def _branded_serving(payload: dict[str, Any]) -> UsdaServingCandidate | None:
     if normalized != "g":
         return None
     label = _str_or_none(payload.get("householdServingFullText")) or f"{size.normalize()} g"
+    household_amount = _simple_household_amount(label)
+    quantity, serving_unit = household_amount if household_amount is not None else (size, "g")
     return UsdaServingCandidate(
         candidate_id="branded:serving-size",
         label=label,
-        quantity=size,
-        unit="g",
+        quantity=quantity,
+        unit=serving_unit,
         gram_weight=size,
     )
+
+
+def _simple_household_amount(label: str) -> tuple[Decimal, str] | None:
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*", label)
+    if match is None:
+        return None
+    raw_unit = match.group(2).strip().lower()
+    known_units = {"g", "kg", "oz", "lb", "tsp", "tbsp", "fl oz", "cup", "ml", "l", "serving", "piece", "slice", "container", "package"}
+    if " " in raw_unit and raw_unit not in known_units:
+        return None
+    return Decimal(match.group(1)), raw_unit
 
 
 def _portion_serving(portion: dict[str, Any]) -> UsdaServingCandidate | None:

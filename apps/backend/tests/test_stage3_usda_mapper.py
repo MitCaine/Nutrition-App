@@ -177,8 +177,23 @@ def test_usda_branded_serving_is_default_when_valid() -> None:
     assert len(defaults) == 1
     assert defaults[0].candidate_id == "branded:serving-size"
     assert defaults[0].label == "1 bar"
+    assert defaults[0].quantity == 1
+    assert defaults[0].unit == "bar"
     assert defaults[0].gram_weight == 40
     assert any(serving.candidate_id == "basis:100g" and not serving.is_default for serving in preview.serving_definitions)
+
+
+def test_usda_branded_household_measure_stays_separate_from_gram_equivalent() -> None:
+    payload = usda_branded_bar_payload() | {
+        "servingSize": 32,
+        "servingSizeUnit": "g",
+        "householdServingFullText": "2 Tbsp",
+    }
+    serving = next(item for item in map_food_preview(payload).serving_definitions if item.candidate_id == "branded:serving-size")
+    assert serving.label == "2 Tbsp"
+    assert serving.quantity == 2
+    assert serving.unit == "tbsp"
+    assert serving.gram_weight == 32
 
 
 def test_usda_search_mapping_returns_normalized_summary() -> None:

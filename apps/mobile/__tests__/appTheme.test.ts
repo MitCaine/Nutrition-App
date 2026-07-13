@@ -1,4 +1,4 @@
-import { DARK_THEME, LIGHT_THEME, navigationCapsuleBorder, statusBarStyle, themeForColorScheme } from "../src/app/theme/AppTheme";
+import { DARK_THEME, inactiveNavigationLabelColor, LIGHT_THEME, navigationCapsuleBorder, statusBarStyle, themeForColorScheme } from "../src/app/theme/AppTheme";
 
 function perceptualLightness(hex: string): number {
   const channels = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16) / 255);
@@ -67,6 +67,11 @@ test("dark fitted controls remain visibly raised from the screen", () => {
 test("navigation reuses the FAB edge highlight only in dark mode", () => {
   expect(navigationCapsuleBorder(DARK_THEME)).toBe(DARK_THEME.colors.primaryActionBorder);
   expect(navigationCapsuleBorder(LIGHT_THEME)).toBe(LIGHT_THEME.colors.navigationBorder);
+});
+
+test("inactive navigation labels use the FAB foreground in dark mode without losing light contrast", () => {
+  expect(inactiveNavigationLabelColor(DARK_THEME)).toBe(DARK_THEME.colors.primaryActionForeground);
+  expect(inactiveNavigationLabelColor(LIGHT_THEME)).toBe(LIGHT_THEME.colors.inactiveForeground);
 });
 
 test("light mode retains its established primary action blue", () => {

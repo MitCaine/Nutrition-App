@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
-import { useAppTheme } from "../theme/AppTheme";
+import { inactiveNavigationLabelColor, useAppTheme } from "../theme/AppTheme";
 
 import { MAIN_TAB_ACCESSIBILITY_LABELS, type MainTab } from "./mainTabs";
 
@@ -81,7 +81,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
 
     inactiveLabel: {
-      color: theme.colors.inactiveForeground,
+      color: inactiveNavigationLabelColor(theme),
       fontWeight: "500",
     },
 

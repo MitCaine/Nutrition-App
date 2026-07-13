@@ -14,7 +14,7 @@ export const servingSchema = z
     if (Number(serving.quantity) <= 0) {
       ctx.addIssue({ code: "custom", message: "Serving quantity must be greater than zero" });
     }
-    if (serving.gram_weight && Number(serving.gram_weight) <= 0) {
+    if (serving.gram_weight && (!Number.isFinite(Number(serving.gram_weight)) || Number(serving.gram_weight) <= 0)) {
       ctx.addIssue({ code: "custom", message: "Gram weight must be greater than zero" });
     }
   });
@@ -51,6 +51,17 @@ export const foodMutationSchema = z
     const defaultCount = food.serving_definitions.filter((serving) => serving.is_default).length;
     if (defaultCount !== 1) {
       ctx.addIssue({ code: "custom", message: "Choose exactly one default serving" });
+    }
+    const defaultIndex = food.serving_definitions.findIndex((serving) => serving.is_default);
+    const defaultGramWeight = defaultIndex >= 0 ? Number(food.serving_definitions[defaultIndex].gram_weight) : Number.NaN;
+    if (defaultIndex >= 0 && (!Number.isFinite(defaultGramWeight) || defaultGramWeight <= 0)) {
+      ctx.addIssue({ code: "custom", path: ["serving_definitions", defaultIndex, "gram_weight"], message: "Add an equivalent weight before setting this as the default amount." });
+    }
+    const baseAmounts = food.serving_definitions.filter(
+      (serving) => Number(serving.quantity) === 100 && serving.unit.trim().toLowerCase() === "g" && Number(serving.gram_weight) === 100,
+    );
+    if (baseAmounts.length !== 1 || baseAmounts[0].label.trim().toLowerCase().replace(/\s+/g, "") !== "100g") {
+      ctx.addIssue({ code: "custom", message: "Foods must include one fixed 100 g base amount" });
     }
   });
 

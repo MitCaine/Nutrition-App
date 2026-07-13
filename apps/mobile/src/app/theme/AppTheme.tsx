@@ -67,6 +67,10 @@ export function themeForColorScheme(scheme: "light" | "dark" | null | undefined)
   return scheme === "dark" ? DARK_THEME : LIGHT_THEME;
 }
 
+export function inactiveNavigationLabelColor(theme: AppTheme): string {
+  return theme.mode === "dark" ? theme.colors.primaryActionForeground : theme.colors.inactiveForeground;
+}
+
 export type AppThemeContextValue = AppTheme & {
   preference: ThemePreference;
   effectiveScheme: ColorScheme;

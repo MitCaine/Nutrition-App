@@ -60,13 +60,15 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
               <TextInput {...focusProps(foodFocusKey("notes"))} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
 
-            <Text style={styles.sectionTitle}>Servings</Text>
+            <Text style={styles.sectionTitle}>Amounts</Text>
             <ServingDefinitionsEditor
               servings={form.servings}
               updateServing={form.updateServing}
               addServing={form.addServing}
               removeServing={form.removeServing}
               focusProps={focusProps}
+              invalidServingKey={form.invalidServingKey}
+              defaultAmountError={form.defaultAmountError}
             />
 
             <Text style={styles.sectionTitle}>Nutrients</Text>

@@ -114,19 +114,21 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                 <Text style={styles.text}>Cancel</Text>
               </Pressable>
             </View>
-            <View>
+            <View style={styles.topField}>
+              <Text style={styles.formLabel}>Recipe name</Text>
               <TextInput {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
-            <View>
+            <View style={styles.topField}>
+              <Text style={styles.formLabel}>Notes</Text>
               <TextInput {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <Text style={styles.sectionTitle}>Yield</Text>
             <Text style={styles.meta}>Enter either one or both.</Text>
             <Text style={styles.meta}>Serving count defines portions such as 6 bowls or 12 muffins.</Text>
             <Text style={styles.meta}>Final cooked weight supports precise logging by mass.</Text>
-            <Text style={styles.label}>Number of servings</Text>
+            <Text style={styles.formLabel}>Number of servings</Text>
             <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-            <Text style={styles.label}>Final cooked weight</Text>
+            <Text style={styles.formLabel}>Final cooked weight</Text>
             <View style={styles.twoColumn}>
               <TextInput value={draft.finalCookedWeightGrams} onChangeText={(finalCookedWeightGrams) => setDraft({ ...draft, finalCookedWeightGrams })} placeholder="1240" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
               <MassUnitSelector value={draft.finalCookedWeightUnit} onChange={(finalCookedWeightUnit) => setDraft({ ...draft, finalCookedWeightUnit })} />
@@ -299,7 +301,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   customServing: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 8, padding: 10 },
   disabledButton: { opacity: 0.55 },
   error: { color: theme.colors.errorText }, flex: { backgroundColor: theme.colors.background, flex: 1 },
-  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  formLabel: { color: theme.colors.text, fontWeight: "700", marginBottom: 7, marginTop: 10 },
+  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
   ingredientCard: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 10, paddingVertical: 12 },
   ingredientName: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
@@ -318,6 +321,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   servingChoice: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 8 },
   servings: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+  topField: { marginBottom: 2 },
   twoColumn: { flexDirection: "row", gap: 10 },
   unitChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minWidth: 42, padding: 10 },
   unitSelector: { flexDirection: "row", gap: 6, marginBottom: 12 },
