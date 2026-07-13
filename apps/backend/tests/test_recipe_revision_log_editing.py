@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.dependencies.user import ensure_dev_user
 from app.models.log import DailyLog
 from app.models.recipe import Recipe
+from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
@@ -211,6 +212,121 @@ def test_edit_after_republish_uses_original_revision_not_active_revision(
     assert _protein_amount(updated) == Decimal("5")
 
 
+def test_edit_context_uses_only_stored_revision_amounts_after_multiple_republishes(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    recipe_id, _, log = _create_serving_log(client, db_session)
+    stored_revision_id = log.recipe_publication_revision_id
+    stored_amount_id = log.recipe_publication_amount_definition_id
+    stored_revision = RecipePublicationRepository(db_session).get_required(
+        stored_revision_id,
+        db_session.get(Recipe, recipe_id).user_id,
+    )
+    stored_amount_ids = {amount.id for amount in stored_revision.amount_definitions}
+
+    for serving_count in ("4", "8"):
+        assert client.patch(
+            f"/api/v1/recipes/{recipe_id}",
+            json={"serving_count_yield": serving_count},
+        ).status_code == 200
+        assert client.post(f"/api/v1/recipes/{recipe_id}/publish").status_code == 200
+
+    context = client.get(f"/api/v1/logs/{log.id}/edit-context")
+
+    assert context.status_code == 200, context.text
+    payload = context.json()
+    assert payload["is_revision_backed"] is True
+    assert payload["recipe_publication_revision_id"] == str(stored_revision_id)
+    assert payload["selected_amount_definition_id"] == str(stored_amount_id)
+    assert {UUID(amount["amount_definition_id"]) for amount in payload["amount_choices"]} == (
+        stored_amount_ids
+    )
+    assert sum(amount["is_selected"] for amount in payload["amount_choices"]) == 1
+
+    db_session.expire_all()
+    current_recipe = db_session.get(Recipe, recipe_id)
+    current_projection = current_recipe.published_food_item
+    current_serving_ids = {serving.id for serving in current_projection.serving_definitions}
+    current_revision = RecipePublicationRepository(db_session).get_required(
+        current_recipe.active_publication_revision_id,
+        current_recipe.user_id,
+    )
+    assert stored_amount_ids.isdisjoint(current_serving_ids)
+    assert stored_amount_ids.isdisjoint(
+        {amount.id for amount in current_revision.amount_definitions}
+    )
+
+
+def test_historical_amount_choice_from_edit_context_can_be_selected_after_republish(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    recipe_id, _, log = _create_serving_log(client, db_session)
+    assert client.patch(
+        f"/api/v1/recipes/{recipe_id}",
+        json={"serving_count_yield": "4"},
+    ).status_code == 200
+    republished = client.post(f"/api/v1/recipes/{recipe_id}/publish")
+    assert republished.status_code == 200
+
+    context = client.get(f"/api/v1/logs/{log.id}/edit-context").json()
+    historical_100g = next(
+        amount for amount in context["amount_choices"] if amount["display_label"] == "100 g"
+    )
+    current_100g = next(
+        serving
+        for serving in republished.json()["food"]["serving_definitions"]
+        if serving["label"] == "100 g"
+    )
+    assert historical_100g["amount_definition_id"] != current_100g["id"]
+
+    rejected = client.patch(
+        f"/api/v1/logs/{log.id}",
+        json={
+            "amount_quantity": "1.5",
+            "amount_unit": "serving",
+            "serving_definition_id": current_100g["id"],
+        },
+    )
+    assert rejected.status_code == 400
+    assert rejected.json()["detail"]["code"] == "recipe_log_serving_not_in_revision"
+
+    response = client.patch(
+        f"/api/v1/logs/{log.id}",
+        json={
+            "amount_quantity": "1.5",
+            "amount_unit": "serving",
+            "serving_definition_id": historical_100g["amount_definition_id"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    updated = _stored_log(db_session, response)
+    assert updated.recipe_publication_revision_id == log.recipe_publication_revision_id
+    assert updated.recipe_publication_amount_definition_id == UUID(
+        historical_100g["amount_definition_id"]
+    )
+    assert updated.gram_amount == Decimal("150")
+
+
+def test_log_edit_context_is_user_scoped(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _, _, log = _create_serving_log(client, db_session)
+    other_user = User(
+        id=uuid4(),
+        email="other-log-owner@example.com",
+        display_name="Other Log Owner",
+    )
+    db_session.add(other_user)
+    db_session.commit()
+
+    with pytest.raises(LookupError, match="Daily log not found"):
+        LogService(db_session).edit_context(other_user.id, log.id)
+
+
 def test_projection_serving_rename_and_republish_do_not_affect_historical_edit(
     client: TestClient,
     db_session: Session,
@@ -249,6 +365,69 @@ def test_deleted_projection_does_not_block_revision_aware_edit(
     updated = _stored_log(db_session, response)
     assert updated.recipe_publication_revision_id == log.recipe_publication_revision_id
     assert updated.amount_quantity == Decimal("2")
+
+
+def test_deleted_projection_reports_source_availability_separately_from_editability(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    recipe_id, _, log = _create_serving_log(client, db_session)
+    assert client.delete(f"/api/v1/recipes/{recipe_id}").status_code == 204
+
+    listed = client.get("/api/v1/logs", params={"date": log.logged_date.isoformat()})
+    context = client.get(f"/api/v1/logs/{log.id}/edit-context")
+
+    assert listed.status_code == 200
+    listed_log = next(value for value in listed.json()["logs"] if value["id"] == str(log.id))
+    assert listed_log["is_editable"] is True
+    assert listed_log["source_food_available"] is False
+    assert context.status_code == 200
+    assert context.json()["source_food_available"] is False
+    assert context.json()["amount_choices"]
+
+
+def test_manual_log_edit_context_preserves_compatibility_contract(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    food = client.post(
+        "/api/v1/foods",
+        json={
+            "name": "Manual Context Food",
+            "serving_definitions": [
+                {
+                    "label": "1 bowl",
+                    "quantity": "1",
+                    "unit": "bowl",
+                    "gram_weight": "120",
+                    "is_default": True,
+                }
+            ],
+        },
+    ).json()
+    logged = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-13",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+            "serving_definition_id": food["serving_definitions"][0]["id"],
+        },
+    )
+    log = _stored_log(db_session, logged)
+
+    context = client.get(f"/api/v1/logs/{log.id}/edit-context")
+
+    assert context.status_code == 200
+    assert context.json() == {
+        "log_id": str(log.id),
+        "source_food_available": True,
+        "is_revision_backed": False,
+        "recipe_publication_revision_id": None,
+        "selected_amount_definition_id": None,
+        "amount_choices": [],
+    }
 
 
 def test_missing_stored_revision_returns_structured_validation(

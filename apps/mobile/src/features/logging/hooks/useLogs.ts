@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { createLog, deleteLog, getDailySummary, listLogs, updateLog } from "../api/logApi";
+import { createLog, deleteLog, getDailySummary, getLogEditContext, listLogs, updateLog } from "../api/logApi";
 import type { DailyLogUpdateInput } from "../api/types";
 
 export function invalidateLogDateCaches(queryClient: QueryClient, date: string) {
@@ -15,6 +15,14 @@ export function useDailyLogs(date: string) {
 
 export function useDailySummary(date: string) {
   return useQuery({ queryKey: ["daily-summary", date], queryFn: () => getDailySummary(date) });
+}
+
+export function useLogEditContext(logId: string | null) {
+  return useQuery({
+    queryKey: ["logs", logId, "edit-context"],
+    queryFn: () => getLogEditContext(logId as string),
+    enabled: Boolean(logId),
+  });
 }
 
 export function useLogMutations(date: string) {

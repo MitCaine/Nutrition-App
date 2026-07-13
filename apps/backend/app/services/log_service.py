@@ -29,7 +29,12 @@ from app.repositories.food_repository import FoodRepository
 from app.repositories.log_repository import LogRepository
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
-from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
+from app.schemas.log import (
+    DailyLogCreateRequest,
+    DailyLogEditAmountResponse,
+    DailyLogEditContextResponse,
+    DailyLogUpdateRequest,
+)
 
 
 class LogEditConflictError(ValueError):
@@ -184,6 +189,52 @@ class LogService:
 
     def list_logs(self, user_id: UUID, logged_date: date) -> list[DailyLog]:
         return self.logs.list_for_date(user_id, logged_date)
+
+    def edit_context(self, user_id: UUID, log_id: UUID) -> DailyLogEditContextResponse:
+        log = self.logs.get_required(log_id, user_id)
+        revision_id = log.recipe_publication_revision_id
+        if revision_id is None:
+            return DailyLogEditContextResponse(
+                log_id=log.id,
+                source_food_available=log.source_food_available,
+                is_revision_backed=False,
+                recipe_publication_revision_id=None,
+                selected_amount_definition_id=None,
+                amount_choices=[],
+            )
+
+        revision = self.publications.get(revision_id, user_id)
+        if revision is None:
+            raise RecipeNutritionValidationError(
+                "recipe_log_revision_missing",
+                "This entry's publication revision is no longer available.",
+            )
+        selected_id = log.recipe_publication_amount_definition_id
+        if not any(amount.id == selected_id for amount in revision.amount_definitions):
+            raise RecipeNutritionValidationError(
+                "recipe_log_amount_definition_missing",
+                "This entry's saved amount is no longer available in its publication revision.",
+            )
+        return DailyLogEditContextResponse(
+            log_id=log.id,
+            source_food_available=log.source_food_available,
+            is_revision_backed=True,
+            recipe_publication_revision_id=revision.id,
+            selected_amount_definition_id=selected_id,
+            amount_choices=[
+                DailyLogEditAmountResponse(
+                    amount_definition_id=amount.id,
+                    display_label=amount.display_label,
+                    semantic_mode=amount.semantic_mode,
+                    display_quantity=amount.display_quantity,
+                    display_unit=amount.display_unit,
+                    gram_equivalent=amount.gram_equivalent,
+                    is_default=amount.is_default,
+                    is_selected=amount.id == selected_id,
+                )
+                for amount in revision.amount_definitions
+            ],
+        )
 
     def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
         try:

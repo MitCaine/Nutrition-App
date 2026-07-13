@@ -24,3 +24,20 @@ test("log edit errors use useful API messages and safe fallbacks", () => {
   );
   expect(logEditErrorMessage(new Error("network"))).toBe("Could not save changes.");
 });
+
+test.each([
+  "recipe_log_revision_missing",
+  "recipe_log_amount_definition_missing",
+  "recipe_log_serving_not_in_revision",
+  "recipe_log_conversion_unsupported",
+  "recipe_log_nutrient_basis_ambiguous",
+  "recipe_log_nutrition_invalid",
+])("structured %s validation returns the backend message", (code) => {
+  const error = new ApiError({
+    status: 400,
+    body: { detail: { code, message: `Actionable ${code}` } },
+    message: "Request failed with status 400",
+  });
+
+  expect(logEditErrorMessage(error)).toBe(`Actionable ${code}`);
+});

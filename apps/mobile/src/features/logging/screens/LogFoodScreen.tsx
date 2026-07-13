@@ -12,8 +12,16 @@ import {
 
 import { useFood } from "../../foods/hooks/useFoods";
 import type { DailyLog } from "../api/types";
-import { useLogMutations } from "../hooks/useLogs";
-import { buildLogInput, buildLogUpdateInput, formatInitialLogAmount, formatServingGramWeight, initialServingId } from "../utils/logFoodForm";
+import { useLogEditContext, useLogMutations } from "../hooks/useLogs";
+import {
+  buildLogInput,
+  buildLogUpdateInput,
+  editServingChoices,
+  formatInitialLogAmount,
+  formatServingGramWeight,
+  initialEditAmountId,
+  initialServingId,
+} from "../utils/logFoodForm";
 import { logEditErrorMessage } from "../utils/logEditErrors";
 import { logInputSchema } from "../validation/logValidation";
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -29,23 +37,51 @@ type Props = {
 export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const food = useFood(foodId);
+  const editContext = useLogEditContext(log?.id ?? null);
+  const revisionBacked = editContext.data?.is_revision_backed === true;
+  const food = useFood(!log || editContext.data?.is_revision_backed === false ? foodId : null);
   const mutations = useLogMutations(date);
   const [amount, setAmount] = useState(formatInitialLogAmount(log?.amount_quantity));
   const [unit, setUnit] = useState<"serving" | "g">(log?.amount_unit ?? "serving");
   const [selectedServingId, setSelectedServingId] = useState<string | null>(
-    initialServingId(food.data, log?.serving_definition_id),
+    initialEditAmountId(food.data, log),
   );
   const [error, setError] = useState<string | null>(null);
-  const servings = food.data?.serving_definitions ?? [];
+  const servings = useMemo(
+    () => editServingChoices(food.data, editContext.data),
+    [editContext.data, food.data],
+  );
 
   useEffect(() => {
     if (!selectedServingId) {
-      setSelectedServingId(initialServingId(food.data, log?.serving_definition_id));
+      setSelectedServingId(
+        initialEditAmountId(food.data, log, editContext.data) ??
+          servings.find((serving) => serving.is_default)?.id ??
+          initialServingId(food.data, log?.serving_definition_id),
+      );
     }
-  }, [food.data, log?.serving_definition_id, selectedServingId]);
+  }, [editContext.data, food.data, log?.serving_definition_id, selectedServingId, servings]);
+
+  function selectUnit(nextUnit: "serving" | "g") {
+    setUnit(nextUnit);
+    if (nextUnit === "serving" && !servings.some((serving) => serving.id === selectedServingId)) {
+      setSelectedServingId(servings.find((serving) => serving.is_default)?.id ?? servings[0]?.id ?? null);
+    }
+  }
 
   async function save() {
+    if (log && !editContext.data) {
+      setError(
+        editContext.isError
+          ? logEditErrorMessage(editContext.error)
+          : "Loading log edit choices.",
+      );
+      return;
+    }
+    if (log && !revisionBacked && !food.data) {
+      setError(food.isError ? logEditErrorMessage(food.error) : "Loading food amount choices.");
+      return;
+    }
     const resolvedServingId = selectedServingId ?? initialServingId(food.data, log?.serving_definition_id);
     const input = buildLogInput({ foodId, date, amount, unit, selectedServingId: resolvedServingId });
     const parsed = logInputSchema.safeParse(input);
@@ -79,7 +115,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
             <Text style={styles.text}>Cancel</Text>
           </Pressable>
         </View>
-        <Text style={styles.foodName}>{food.data?.name ?? log?.food_name_snapshot ?? "Food"}</Text>
+        <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
         <TextInput
           placeholderTextColor={theme.colors.placeholder}
           value={amount}
@@ -89,10 +125,10 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
           style={styles.input}
         />
         <View style={styles.segment}>
-          <Pressable onPress={() => setUnit("serving")} style={[styles.segmentButton, unit === "serving" && styles.active]}>
+          <Pressable onPress={() => selectUnit("serving")} style={[styles.segmentButton, unit === "serving" && styles.active]}>
             <Text style={styles.text}>Servings</Text>
           </Pressable>
-          <Pressable onPress={() => setUnit("g")} style={[styles.segmentButton, unit === "g" && styles.active]}>
+          <Pressable onPress={() => selectUnit("g")} style={[styles.segmentButton, unit === "g" && styles.active]}>
             <Text style={styles.text}>Grams</Text>
           </Pressable>
         </View>
@@ -109,6 +145,12 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
               </Pressable>
             ))}
           </View>
+        ) : null}
+        {log && editContext.isLoading ? (
+          <Text style={styles.servingMeta}>Loading log edit choices...</Text>
+        ) : null}
+        {log && editContext.isError ? (
+          <Text style={styles.error}>{logEditErrorMessage(editContext.error)}</Text>
         ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable onPress={save} style={styles.primaryButton}>

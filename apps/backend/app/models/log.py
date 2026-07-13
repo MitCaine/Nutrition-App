@@ -83,6 +83,10 @@ class DailyLog(Base):
         )
 
     @property
+    def source_food_available(self) -> bool:
+        return self.food_item.deleted_at is None
+
+    @property
     def edit_block_reason(self) -> str | None:
         return None if self.is_editable else "source_food_deleted"
 

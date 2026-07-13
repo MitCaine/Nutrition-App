@@ -20,6 +20,7 @@ export type DailyLog = {
   food_item_id: string;
   food_name_snapshot?: string | null;
   is_editable?: boolean;
+  source_food_available: boolean;
   edit_block_reason?: "source_food_deleted" | null;
   logged_date: string;
   amount_quantity: string;
@@ -27,6 +28,26 @@ export type DailyLog = {
   serving_definition_id?: string | null;
   gram_amount?: string | null;
   notes?: string | null;
+};
+
+export type DailyLogEditAmount = {
+  amount_definition_id: string;
+  display_label: string;
+  semantic_mode: "serving" | "g";
+  display_quantity: string | null;
+  display_unit: string;
+  gram_equivalent: string | null;
+  is_default: boolean;
+  is_selected: boolean;
+};
+
+export type DailyLogEditContext = {
+  log_id: string;
+  source_food_available: boolean;
+  is_revision_backed: boolean;
+  recipe_publication_revision_id: string | null;
+  selected_amount_definition_id: string | null;
+  amount_choices: DailyLogEditAmount[];
 };
 
 export type DailySummary = {

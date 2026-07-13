@@ -2,10 +2,13 @@ import type { Food } from "../src/features/foods/api/types";
 import {
   buildLogInput,
   buildLogUpdateInput,
+  editServingChoices,
   formatInitialLogAmount,
   formatServingGramWeight,
   initialServingId,
+  initialEditAmountId,
 } from "../src/features/logging/utils/logFoodForm";
+import type { DailyLog, DailyLogEditContext } from "../src/features/logging/api/types";
 
 const importedFood: Food = {
   id: "food-usda",
@@ -178,4 +181,102 @@ test("log update input omits creation-only food item id", () => {
     amount_unit: "g",
     serving_definition_id: null,
   });
+});
+
+test("revision-backed edit choices ignore current projection servings", () => {
+  const log: DailyLog = {
+    id: "log-1",
+    food_item_id: "recipe-food",
+    food_name_snapshot: "Historical Recipe",
+    is_editable: true,
+    source_food_available: true,
+    edit_block_reason: null,
+    logged_date: "2026-07-13",
+    amount_quantity: "1",
+    amount_unit: "serving",
+    serving_definition_id: null,
+  };
+  const context: DailyLogEditContext = {
+    log_id: log.id,
+    source_food_available: true,
+    is_revision_backed: true,
+    recipe_publication_revision_id: "revision-1",
+    selected_amount_definition_id: "historical-amount",
+    amount_choices: [
+      {
+        amount_definition_id: "historical-amount",
+        display_label: "1 historical serving",
+        semantic_mode: "serving",
+        display_quantity: "1",
+        display_unit: "serving",
+        gram_equivalent: "120",
+        is_default: true,
+        is_selected: true,
+      },
+      {
+        amount_definition_id: "historical-grams",
+        display_label: "g",
+        semantic_mode: "g",
+        display_quantity: null,
+        display_unit: "g",
+        gram_equivalent: null,
+        is_default: false,
+        is_selected: false,
+      },
+    ],
+  };
+  const currentProjection: Food = {
+    ...importedFood,
+    id: log.food_item_id,
+    source_type: "recipe",
+    source_id: "recipe-1",
+    is_recipe: true,
+    serving_definitions: [
+      {
+        ...importedFood.serving_definitions[0],
+        id: "current-projection-serving",
+        label: "1 current serving",
+      },
+    ],
+  };
+
+  expect(initialEditAmountId(currentProjection, log, context)).toBe("historical-amount");
+  expect(editServingChoices(currentProjection, context)).toEqual([
+    {
+      id: "historical-amount",
+      label: "1 historical serving",
+      gram_weight: "120",
+      is_default: true,
+    },
+  ]);
+  expect(editServingChoices(currentProjection, context).map((choice) => choice.id)).not.toContain(
+    "current-projection-serving",
+  );
+  expect(buildLogUpdateInput(buildLogInput({
+    foodId: log.food_item_id,
+    date: log.logged_date,
+    amount: "2",
+    unit: "serving",
+    selectedServingId: initialEditAmountId(currentProjection, log, context),
+  }))).toEqual({
+    logged_date: log.logged_date,
+    amount_quantity: "2",
+    amount_unit: "serving",
+    serving_definition_id: "historical-amount",
+  });
+});
+
+test("legacy and Manual Food edits retain projection serving choices", () => {
+  const compatibilityContext: DailyLogEditContext = {
+    log_id: "manual-log",
+    source_food_available: true,
+    is_revision_backed: false,
+    recipe_publication_revision_id: null,
+    selected_amount_definition_id: null,
+    amount_choices: [],
+  };
+  expect(editServingChoices(importedFood, compatibilityContext).map((choice) => choice.id)).toEqual([
+    "serving-100g",
+    "serving-bar",
+  ]);
 });

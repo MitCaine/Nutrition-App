@@ -6,15 +6,15 @@ export function logEditErrorMessage(error: unknown): string {
   if (!(error instanceof ApiError)) {
     return FALLBACK;
   }
-  if (error.status === 409 && isSourceFoodDeletedBody(error.body)) {
+  if (isStructuredLogErrorBody(error.body)) {
     return error.body.detail.message;
   }
   return error.message || FALLBACK;
 }
 
-function isSourceFoodDeletedBody(
+function isStructuredLogErrorBody(
   body: unknown,
-): body is { detail: { code: "source_food_deleted"; message: string } } {
+): body is { detail: { code: string; message: string } } {
   if (typeof body !== "object" || body === null || !("detail" in body)) {
     return false;
   }
@@ -23,7 +23,8 @@ function isSourceFoodDeletedBody(
     typeof detail === "object" &&
     detail !== null &&
     "code" in detail &&
-    detail.code === "source_food_deleted" &&
+    typeof detail.code === "string" &&
+    (detail.code === "source_food_deleted" || detail.code.startsWith("recipe_log_")) &&
     "message" in detail &&
     typeof detail.message === "string" &&
     Boolean(detail.message.trim())

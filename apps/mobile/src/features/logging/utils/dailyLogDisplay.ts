@@ -19,13 +19,13 @@ export function loggedFoodDisplayName(log: Pick<DailyLog, "food_item_id" | "food
 }
 
 export function dailyLogEntryState(
-  log: Pick<DailyLog, "is_editable" | "edit_block_reason">,
+  log: Pick<DailyLog, "is_editable" | "source_food_available" | "edit_block_reason">,
 ): { canDelete: true; canEdit: boolean; canOpenFood: boolean; sourceStatusLabel: string | null } {
-  const sourceDeleted = log.is_editable === false && log.edit_block_reason === "source_food_deleted";
+  const sourceDeleted = !log.source_food_available;
   return {
     canDelete: true,
-    canEdit: !sourceDeleted,
-    canOpenFood: !sourceDeleted,
+    canEdit: log.is_editable !== false,
+    canOpenFood: log.source_food_available,
     sourceStatusLabel: sourceDeleted ? "Source food deleted" : null,
   };
 }

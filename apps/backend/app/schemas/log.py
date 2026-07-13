@@ -63,6 +63,7 @@ class DailyLogResponse(BaseModel):
     food_item_id: UUID
     food_name_snapshot: str | None
     is_editable: bool
+    source_food_available: bool
     edit_block_reason: str | None
     logged_date: date
     meal_type: str | None
@@ -77,6 +78,26 @@ class DailyLogResponse(BaseModel):
     snapshots: list[DailyLogSnapshotResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DailyLogEditAmountResponse(BaseModel):
+    amount_definition_id: UUID
+    display_label: str
+    semantic_mode: str
+    display_quantity: Decimal | None
+    display_unit: str
+    gram_equivalent: Decimal | None
+    is_default: bool
+    is_selected: bool
+
+
+class DailyLogEditContextResponse(BaseModel):
+    log_id: UUID
+    source_food_available: bool
+    is_revision_backed: bool
+    recipe_publication_revision_id: UUID | None
+    selected_amount_definition_id: UUID | None
+    amount_choices: list[DailyLogEditAmountResponse]
 
 
 class DailyLogListResponse(BaseModel):

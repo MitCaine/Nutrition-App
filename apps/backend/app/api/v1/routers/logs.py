@@ -9,6 +9,7 @@ from app.dependencies.user import ensure_dev_user
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.schemas.log import (
     DailyLogCreateRequest,
+    DailyLogEditContextResponse,
     DailyLogListResponse,
     DailyLogResponse,
     DailyLogUpdateRequest,
@@ -48,6 +49,20 @@ def daily_summary(
 ) -> DailySummaryResponse:
     user = ensure_dev_user(db)
     return DailySummaryResponse(logged_date=date, totals=_service(db).daily_summary(user.id, date))
+
+
+@router.get("/{log_id}/edit-context", response_model=DailyLogEditContextResponse)
+def log_edit_context(
+    log_id: UUID,
+    db: Session = Depends(get_db),
+) -> DailyLogEditContextResponse:
+    user = ensure_dev_user(db)
+    try:
+        return _service(db).edit_context(user.id, log_id)
+    except RecipeNutritionValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail()) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.patch("/{log_id}", response_model=DailyLogResponse)
