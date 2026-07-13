@@ -364,6 +364,21 @@ test("API error message extracts concise backend detail and falls back", () => {
       "Could not delete food",
     ),
   ).toBe("Value error, ingredient amount_quantity must be greater than zero");
+  expect(
+    apiErrorMessage(
+      new ApiError({
+        status: 409,
+        body: {
+          detail: {
+            code: "recipe_projection_read_only",
+            message: "Edit and republish the Recipe to change this food.",
+          },
+        },
+        message: "Request failed with status 409",
+      }),
+      "Could not save food",
+    ),
+  ).toBe("Edit and republish the Recipe to change this food.");
   expect(apiErrorMessage(new Error("{bad json"), "Could not delete food")).toBe("Could not delete food");
 });
 

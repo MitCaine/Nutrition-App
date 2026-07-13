@@ -17,6 +17,7 @@ import {
   parseFoodDeleteDependency,
 } from "../utils/foodDelete";
 import { foodDetailLoadState } from "../utils/foodDetailState";
+import { isRecipeProjection } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
@@ -90,6 +91,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
 
   const availableAmounts = resolvedNutrition.data?.amounts ?? [];
   const selectedAmount = selectedResolvedFoodAmount(availableAmounts, selectedAmountId);
+  const managedByRecipe = isRecipeProjection(food.data);
 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
@@ -126,15 +128,19 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         <Pressable onPress={onLog} style={styles.primaryButton}>
           <Text style={styles.primaryText}>Log</Text>
         </Pressable>
-        <Pressable onPress={onEdit} style={styles.secondaryButton}>
-          <Text style={styles.text}>Edit</Text>
-        </Pressable>
+        {!managedByRecipe ? (
+          <Pressable onPress={onEdit} style={styles.secondaryButton}>
+            <Text style={styles.text}>Edit</Text>
+          </Pressable>
+        ) : null}
         <Pressable onPress={() => mutations.duplicateFood.mutate(foodId)} style={styles.secondaryButton}>
           <Text style={styles.text}>Duplicate</Text>
         </Pressable>
-        <Pressable onPress={() => requestDelete(false)} style={styles.deleteButton}>
-          <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
-        </Pressable>
+        {!managedByRecipe ? (
+          <Pressable onPress={() => requestDelete(false)} style={styles.deleteButton}>
+            <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
+          </Pressable>
+        ) : null}
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <FoodDeleteDependencyModal

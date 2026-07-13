@@ -13,6 +13,19 @@ export function parseFoodDeleteDependency(error: unknown): FoodDeleteDependency 
 
 export function apiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
+    const detail =
+      typeof error.body === "object" && error.body !== null && "detail" in error.body
+        ? (error.body as { detail?: unknown }).detail
+        : null;
+    if (
+      typeof detail === "object" &&
+      detail !== null &&
+      "message" in detail &&
+      typeof detail.message === "string" &&
+      detail.message.trim()
+    ) {
+      return detail.message;
+    }
     return error.message || fallback;
   }
   const message = error instanceof Error ? error.message : String(error ?? "");

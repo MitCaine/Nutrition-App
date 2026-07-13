@@ -6,6 +6,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.domain.recipe_projection import (
+    RecipeProjectionKind,
+    classify_recipe_projection,
+    projection_mutation_error,
+)
 from app.models.food import FoodItem, FoodNutrient, ServingDefinition
 from app.models.recipe import Recipe, RecipeIngredient
 from app.repositories.food_repository import FoodRepository
@@ -64,6 +69,7 @@ class FoodService:
 
     def update_food(self, user_id: UUID, food_id: UUID, payload: FoodUpdateRequest) -> FoodItem:
         food = self.foods.get_required(food_id, user_id)
+        self._assert_generic_mutation_allowed(food, user_id, "update")
         if payload.name is not None:
             food.name = payload.name.strip()
         if payload.brand is not None:
@@ -88,6 +94,7 @@ class FoodService:
         remove_from_recipes: bool = False,
     ) -> FoodDeleteResultResponse:
         food = self.foods.get_required(food_id, user_id)
+        self._assert_generic_mutation_allowed(food, user_id, "delete")
         dependencies = self._food_recipe_dependencies(user_id, food_id)
         if dependencies.affected_recipes and not remove_from_recipes:
             raise FoodDependencyError(dependencies)
@@ -164,6 +171,7 @@ class FoodService:
         payload: ServingDefinitionInput,
     ) -> FoodItem:
         food = self.foods.get_required(food_id, user_id)
+        self._assert_generic_mutation_allowed(food, user_id, "add_serving")
         if payload.is_default:
             for serving in food.serving_definitions:
                 serving.is_default = False
@@ -182,6 +190,22 @@ class FoodService:
         food.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         return self.foods.get_required(food_id, user_id)
+
+    def _assert_generic_mutation_allowed(
+        self,
+        food: FoodItem,
+        user_id: UUID,
+        operation: str,
+    ) -> None:
+        linked_recipe = self.db.scalars(
+            select(Recipe).where(
+                Recipe.user_id == user_id,
+                Recipe.published_food_item_id == food.id,
+            )
+        ).first()
+        classification = classify_recipe_projection(food, linked_recipe)
+        if classification.kind != RecipeProjectionKind.MANUAL:
+            raise projection_mutation_error(food, classification, operation)
 
     def _food_recipe_dependencies(self, user_id: UUID, food_id: UUID) -> FoodDeleteDependencyResponse:
         statement = (

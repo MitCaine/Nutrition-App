@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
@@ -9,6 +9,7 @@ import { useFoodForm } from "../hooks/useFoodForm";
 import { useFoodMutations, useNutrients } from "../hooks/useFoods";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { foodFocusKey } from "../../../shared/forms/focusTargets";
+import { apiErrorMessage } from "../utils/foodDelete";
 
 type Props = {
   food?: Food;
@@ -20,6 +21,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrientQuery = useNutrients();
   const mutations = useFoodMutations();
+  const [saveError, setSaveError] = useState<string | null>(null);
   const nutrientDefinitions = useMemo(
     () => [...(nutrientQuery.data ?? [])].sort((a, b) => a.display_order - b.display_order),
     [nutrientQuery.data],
@@ -27,14 +29,19 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   const form = useFoodForm(food, nutrientDefinitions);
 
   async function save() {
+    setSaveError(null);
     const input = form.buildPayload();
     if (!input) {
       return;
     }
-    const saved = food
-      ? await mutations.updateFood.mutateAsync({ foodId: food.id, input })
-      : await mutations.createFood.mutateAsync(input);
-    onSaved(saved.id);
+    try {
+      const saved = food
+        ? await mutations.updateFood.mutateAsync({ foodId: food.id, input })
+        : await mutations.createFood.mutateAsync(input);
+      onSaved(saved.id);
+    } catch (error) {
+      setSaveError(apiErrorMessage(error, "Could not save food"));
+    }
   }
 
   return (
@@ -74,6 +81,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             <Text style={styles.sectionTitle}>Nutrients</Text>
             <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} />
             {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
+            {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
           </>
         )}
       </KeyboardSafeScrollView>

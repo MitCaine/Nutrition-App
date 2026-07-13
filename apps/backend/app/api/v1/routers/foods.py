@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
 from app.dependencies.user import ensure_dev_user
+from app.domain.recipe_projection import RecipeProjectionMutationError
 from app.schemas.food import (
     FoodCreateRequest,
     FoodDeleteResultResponse,
@@ -104,6 +105,8 @@ def update_food(
         return FoodResponse.model_validate(_service(db).update_food(user.id, food_id, payload))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeProjectionMutationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
 @router.delete("/{food_id}", response_model=FoodDeleteResultResponse)
@@ -119,6 +122,8 @@ def delete_food(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.dependency.model_dump(mode="json")) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeProjectionMutationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
 @router.post("/{food_id}/duplicate", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
@@ -141,3 +146,5 @@ def add_serving_definition(
         return FoodResponse.model_validate(_service(db).add_serving_definition(user.id, food_id, payload))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeProjectionMutationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
