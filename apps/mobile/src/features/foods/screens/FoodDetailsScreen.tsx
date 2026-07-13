@@ -2,14 +2,13 @@ import { useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
-import { useFood, useFoodMutations } from "../hooks/useFoods";
+import { useFood, useFoodMutations, useFoodResolvedNutrition } from "../hooks/useFoods";
 import type { FoodDeleteDependency } from "../api/types";
 import {
   formatFoodNutrientLabel,
-  formatNutrientAmountForServing,
-  formatNutritionServing,
-  nutritionServings,
-  selectedNutritionServing,
+  formatResolvedFoodAmount,
+  formatResolvedFoodNutrient,
+  selectedResolvedFoodAmount,
 } from "../utils/foodDisplay";
 import {
   apiErrorMessage,
@@ -32,10 +31,11 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const food = useFood(foodId);
+  const resolvedNutrition = useFoodResolvedNutrition(foodId);
   const mutations = useFoodMutations();
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedServingId, setSelectedServingId] = useState<string | null>(null);
+  const [selectedAmountId, setSelectedAmountId] = useState<string | null>(null);
   const deletePending = mutations.deleteFood.isPending;
   const loadState = foodDetailLoadState({
     hasData: Boolean(food.data),
@@ -88,8 +88,8 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     );
   }
 
-  const availableServings = nutritionServings(food.data.serving_definitions);
-  const selectedServing = selectedNutritionServing(food.data.serving_definitions, selectedServingId);
+  const availableAmounts = resolvedNutrition.data?.amounts ?? [];
+  const selectedAmount = selectedResolvedFoodAmount(availableAmounts, selectedAmountId);
 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
@@ -98,21 +98,21 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
       </Pressable>
       <Text style={styles.title}>{food.data.name}</Text>
       <Text style={styles.text}>{food.data.brand ?? sourceLabel(food.data.source_type)}</Text>
-      {selectedServing ? (
+      {selectedAmount ? (
         <View style={styles.servingSection}>
           <Text style={styles.servingHeading}>Amount</Text>
           <View accessibilityLabel="Amount" accessibilityRole="radiogroup" style={styles.servingOptions}>
-            {availableServings.map((serving) => {
-              const selected = serving.id === selectedServing.id;
-              const formattedAmount = formatNutritionServing(serving);
+            {availableAmounts.map((amount) => {
+              const selected = amount.amount_definition_id === selectedAmount.amount_definition_id;
+              const formattedAmount = formatResolvedFoodAmount(amount);
               return (
                 <Pressable
-                  key={serving.id}
+                  key={amount.amount_definition_id}
                   accessibilityHint="Updates nutrition values below"
                   accessibilityLabel={formattedAmount}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: selected, selected }}
-                  onPress={() => setSelectedServingId(serving.id)}
+                  onPress={() => setSelectedAmountId(amount.amount_definition_id)}
                   style={[styles.servingOption, selected && styles.servingOptionSelected]}
                 >
                   <Text style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{formattedAmount}</Text>
@@ -144,14 +144,16 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         onCancel={() => setDependency(null)}
         onConfirm={() => requestDelete(true)}
       />
+      {resolvedNutrition.isLoading ? <Text style={styles.text}>Loading nutrition...</Text> : null}
+      {resolvedNutrition.isError ? <Text style={styles.error}>Could not resolve nutrition for this food.</Text> : null}
       {sortNutrientsByDisplayOrder(
-        food.data.nutrients,
+        selectedAmount?.nutrients ?? [],
         (nutrient) => nutrient.nutrient_id,
         (nutrient) => nutrient.data_status === "unknown",
       ).map((nutrient) => (
-        <View key={nutrient.id} style={styles.nutrientRow}>
+        <View key={nutrient.nutrient_id} style={styles.nutrientRow}>
           <Text style={styles.nutrientName}>{formatFoodNutrientLabel(nutrient)}</Text>
-          <Text style={styles.nutrientValue}>{selectedServing ? formatNutrientAmountForServing(nutrient, selectedServing) : "unknown"}</Text>
+          <Text style={styles.nutrientValue}>{formatResolvedFoodNutrient(nutrient)}</Text>
         </View>
       ))}
     </ScrollView>

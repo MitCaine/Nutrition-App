@@ -53,6 +53,29 @@ export type Food = {
   nutrients: FoodNutrient[];
 };
 
+export type ResolvedFoodNutrient = {
+  nutrient_id: string;
+  amount: string | null;
+  unit: NutrientUnit;
+  data_status: NutrientDataStatus;
+  source_basis: NutrientBasis;
+};
+
+export type ResolvedFoodAmount = {
+  amount_definition_id: string;
+  display_label: string;
+  is_default: boolean;
+  entered_quantity: string;
+  semantic_amount_mode: "serving" | "g";
+  resolved_grams: string | null;
+  valid_for_logging: boolean;
+  nutrients: ResolvedFoodNutrient[];
+};
+
+export type FoodResolvedNutrition = {
+  amounts: ResolvedFoodAmount[];
+};
+
 export type NutrientDefinition = {
   id: string;
   display_name: string;

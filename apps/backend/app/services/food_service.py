@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 from app.models.food import FoodItem, FoodNutrient, ServingDefinition
 from app.models.recipe import Recipe, RecipeIngredient
 from app.repositories.food_repository import FoodRepository
+from app.nutrition.resolution import (
+    ResolvedNutrition,
+    resolve_food_amount_definitions,
+)
 from app.schemas.food import (
     FoodCreateRequest,
     FoodDeleteAffectedRecipeResponse,
@@ -53,6 +57,10 @@ class FoodService:
 
     def get_food(self, user_id: UUID, food_id: UUID) -> FoodItem:
         return self.foods.get_required(food_id, user_id)
+
+    def resolved_nutrition(self, user_id: UUID, food_id: UUID) -> list[ResolvedNutrition]:
+        food = self.foods.get_required(food_id, user_id)
+        return resolve_food_amount_definitions(food)
 
     def update_food(self, user_id: UUID, food_id: UUID, payload: FoodUpdateRequest) -> FoodItem:
         food = self.foods.get_required(food_id, user_id)

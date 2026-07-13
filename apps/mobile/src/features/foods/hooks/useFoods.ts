@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createFood, deleteFood, duplicateFood, getFood, listFoods, listNutrients, updateFood } from "../api/foodApi";
+import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutrition, listFoods, listNutrients, updateFood } from "../api/foodApi";
 import type { FoodDeleteResult, FoodMutationInput } from "../api/types";
 
 export function useNutrients() {
@@ -15,6 +15,14 @@ export function useFood(foodId: string | null) {
   return useQuery({
     queryKey: ["foods", foodId],
     queryFn: () => getFood(foodId as string),
+    enabled: Boolean(foodId),
+  });
+}
+
+export function useFoodResolvedNutrition(foodId: string | null) {
+  return useQuery({
+    queryKey: ["foods", foodId, "resolved-nutrition"],
+    queryFn: () => getFoodResolvedNutrition(foodId as string),
     enabled: Boolean(foodId),
   });
 }

@@ -476,6 +476,12 @@ def test_published_recipe_with_both_bases_logs_serving_and_grams_once(client: Te
     serving = next(item for item in food["serving_definitions"] if item["label"] == "1 serving")
     hundred_grams = next(item for item in food["serving_definitions"] if item["label"] == "100 g")
 
+    resolved_detail = client.get(f"/api/v1/foods/{food['id']}/resolved-nutrition")
+    assert resolved_detail.status_code == 200, resolved_detail.text
+    for amount in resolved_detail.json()["amounts"]:
+        nutrient_ids = [nutrient["nutrient_id"] for nutrient in amount["nutrients"]]
+        assert len(nutrient_ids) == len(set(nutrient_ids))
+
     serving_log = client.post(
         "/api/v1/logs",
         json={
@@ -502,6 +508,42 @@ def test_published_recipe_with_both_bases_logs_serving_and_grams_once(client: Te
     assert len([s for s in grams_log.json()["snapshots"] if s["nutrient_id"] == "protein"]) == 1
     assert next(s for s in serving_log.json()["snapshots"] if s["nutrient_id"] == "protein")["amount"] == "12.500000"
     assert next(s for s in grams_log.json()["snapshots"] if s["nutrient_id"] == "protein")["amount"] == "5.000000"
+
+
+def test_count_only_published_recipe_resolves_for_detail_and_logging(client: TestClient) -> None:
+    rice = _per_100g_food(client)
+    recipe = client.post(
+        "/api/v1/recipes",
+        json={
+            "name": "Count Only Recipe",
+            "serving_count_yield": "2",
+            "ingredients": [
+                {"food_item_id": rice["id"], "position": 0, "amount_quantity": "100", "amount_unit": "g"}
+            ],
+        },
+    ).json()
+    food = client.post(f"/api/v1/recipes/{recipe['id']}/publish").json()["food"]
+
+    detail = client.get(f"/api/v1/foods/{food['id']}/resolved-nutrition")
+    assert detail.status_code == 200, detail.text
+    assert len(detail.json()["amounts"]) == 1
+    amount = detail.json()["amounts"][0]
+    assert amount["display_label"] == "1 serving"
+    assert amount["resolved_grams"] is None
+
+    log = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-11",
+            "amount_quantity": "0.5",
+            "amount_unit": "serving",
+            "serving_definition_id": amount["amount_definition_id"],
+        },
+    )
+    assert log.status_code == 201, log.text
+    protein = next(snapshot for snapshot in log.json()["snapshots"] if snapshot["nutrient_id"] == "protein")
+    assert protein["amount"] == "0.625000"
 
 
 def test_recipe_publish_requires_yield_and_soft_delete_hides_recipe(client: TestClient) -> None:

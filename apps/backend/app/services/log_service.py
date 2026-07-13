@@ -9,7 +9,7 @@ from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
 from app.models.log import DailyLog
 from app.nutrition.aggregation import aggregate_snapshots
 from app.nutrition.calculations import build_log_snapshots
-from app.nutrition.serving_resolution import resolve_consumed_amount
+from app.nutrition.resolution import resolve_nutrition
 from app.repositories.food_repository import FoodRepository
 from app.repositories.log_repository import LogRepository
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
@@ -28,7 +28,7 @@ class LogService:
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
         food = self.foods.get_required(payload.food_item_id, user_id)
-        resolved = resolve_consumed_amount(
+        resolved = resolve_nutrition(
             food,
             payload.amount_quantity,
             payload.amount_unit,
@@ -44,9 +44,11 @@ class LogService:
             amount_quantity=payload.amount_quantity,
             amount_unit=payload.amount_unit,
             serving_definition_id=(
-                resolved.serving_definition.id if resolved.serving_definition is not None else None
+                resolved.amount.serving_definition.id
+                if resolved.amount.serving_definition is not None
+                else None
             ),
-            gram_amount=resolved.gram_amount,
+            gram_amount=resolved.amount.gram_amount,
             package_fraction=None,
             notes=payload.notes,
         )
@@ -65,8 +67,14 @@ class LogService:
         food = self.foods.get_required(log.food_item_id, user_id)
         amount_quantity = payload.amount_quantity if payload.amount_quantity is not None else log.amount_quantity
         amount_unit = payload.amount_unit if payload.amount_unit is not None else log.amount_unit
-        serving_definition_id = payload.serving_definition_id
-        resolved = resolve_consumed_amount(food, amount_quantity, amount_unit, serving_definition_id)
+        serving_definition_id = (
+            payload.serving_definition_id
+            if "serving_definition_id" in payload.model_fields_set
+            else log.serving_definition_id
+        )
+        # Compatibility limitation: until publication revisions are associated
+        # with logs, editing intentionally resolves against the current source.
+        resolved = resolve_nutrition(food, amount_quantity, amount_unit, serving_definition_id)
 
         self.logs.delete_snapshots(log.id)
         log.logged_date = payload.logged_date if payload.logged_date is not None else log.logged_date
@@ -75,9 +83,11 @@ class LogService:
         log.amount_quantity = amount_quantity
         log.amount_unit = amount_unit
         log.serving_definition_id = (
-            resolved.serving_definition.id if resolved.serving_definition is not None else None
+            resolved.amount.serving_definition.id
+            if resolved.amount.serving_definition is not None
+            else None
         )
-        log.gram_amount = resolved.gram_amount
+        log.gram_amount = resolved.amount.gram_amount
         log.package_fraction = None
         log.updated_at = datetime.now(timezone.utc)
         log.snapshots = build_log_snapshots(food, resolved)

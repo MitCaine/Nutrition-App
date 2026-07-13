@@ -1,5 +1,5 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { Food, FoodDeleteResult, FoodMutationInput, NutrientDefinition, ServingDefinitionInput } from "./types";
+import type { Food, FoodDeleteResult, FoodMutationInput, FoodResolvedNutrition, NutrientDefinition, ServingDefinitionInput } from "./types";
 
 export function listNutrients(): Promise<NutrientDefinition[]> {
   return apiRequest<NutrientDefinition[]>("/nutrients");
@@ -13,6 +13,10 @@ export async function listFoods(query?: string): Promise<Food[]> {
 
 export function getFood(foodId: string): Promise<Food> {
   return apiRequest<Food>(`/foods/${foodId}`);
+}
+
+export function getFoodResolvedNutrition(foodId: string): Promise<FoodResolvedNutrition> {
+  return apiRequest<FoodResolvedNutrition>(`/foods/${foodId}/resolved-nutrition`);
 }
 
 export function createFood(input: FoodMutationInput): Promise<Food> {

@@ -11,9 +11,12 @@ from app.schemas.food import (
     FoodCreateRequest,
     FoodDeleteResultResponse,
     FoodListResponse,
+    FoodResolvedNutritionResponse,
     FoodResponse,
     FoodUpdateRequest,
     ServingDefinitionInput,
+    ResolvedFoodAmountResponse,
+    ResolvedFoodNutrientResponse,
 )
 from app.services.food_service import FoodDependencyError, FoodService
 
@@ -46,6 +49,48 @@ def get_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
         return FoodResponse.model_validate(_service(db).get_food(user.id, food_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{food_id}/resolved-nutrition", response_model=FoodResolvedNutritionResponse)
+def resolved_food_nutrition(
+    food_id: UUID,
+    db: Session = Depends(get_db),
+) -> FoodResolvedNutritionResponse:
+    user = ensure_dev_user(db)
+    try:
+        amounts = _service(db).resolved_nutrition(user.id, food_id)
+        return FoodResolvedNutritionResponse(
+            amounts=[
+                ResolvedFoodAmountResponse(
+                    amount_definition_id=amount.amount_definition_id,
+                    display_label=amount.display_label,
+                    is_default=bool(
+                        amount.amount.serving_definition
+                        and amount.amount.serving_definition.is_default
+                    ),
+                    entered_quantity=amount.amount.amount_quantity,
+                    semantic_amount_mode=amount.amount.amount_unit,
+                    resolved_grams=amount.amount.gram_amount,
+                    valid_for_logging=amount.valid_for_logging,
+                    nutrients=[
+                        ResolvedFoodNutrientResponse(
+                            nutrient_id=nutrient.nutrient_id,
+                            amount=nutrient.amount,
+                            unit=nutrient.unit,
+                            data_status=nutrient.data_status.value,
+                            source_basis=nutrient.source_basis.value,
+                        )
+                        for nutrient in amount.nutrients
+                    ],
+                )
+                for amount in amounts
+                if amount.amount_definition_id is not None
+            ]
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch("/{food_id}", response_model=FoodResponse)

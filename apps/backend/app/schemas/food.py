@@ -154,6 +154,29 @@ class FoodListResponse(BaseModel):
     foods: list[FoodResponse]
 
 
+class ResolvedFoodNutrientResponse(BaseModel):
+    nutrient_id: str
+    amount: Decimal | None
+    unit: str
+    data_status: str
+    source_basis: str
+
+
+class ResolvedFoodAmountResponse(BaseModel):
+    amount_definition_id: UUID
+    display_label: str
+    is_default: bool
+    entered_quantity: Decimal
+    semantic_amount_mode: str
+    resolved_grams: Decimal | None
+    valid_for_logging: bool
+    nutrients: list[ResolvedFoodNutrientResponse]
+
+
+class FoodResolvedNutritionResponse(BaseModel):
+    amounts: list[ResolvedFoodAmountResponse]
+
+
 class FoodRecipeDependencyResponse(BaseModel):
     recipe_id: UUID
     recipe_name: str

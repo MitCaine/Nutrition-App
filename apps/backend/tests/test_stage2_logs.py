@@ -10,6 +10,31 @@ from app.repositories.log_repository import LogRepository
 from tests.test_stage2_foods import create_food, food_payload
 
 
+def create_food_with_distinct_servings(client: TestClient) -> dict:
+    payload = food_payload("Two Serving Food")
+    payload["serving_definitions"] = [
+        {
+            "label": "1 container",
+            "quantity": "1",
+            "unit": "container",
+            "gram_weight": "200",
+            "is_default": True,
+        },
+        {
+            "label": "1 small container",
+            "quantity": "1",
+            "unit": "container",
+            "gram_weight": "100",
+            "is_default": False,
+        },
+    ]
+    for nutrient in payload["nutrients"]:
+        nutrient["basis"] = "per_100g"
+    response = client.post("/api/v1/foods", json=payload)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def test_serving_logging_creates_snapshots_and_daily_summary(client: TestClient) -> None:
     food = create_food(client)
     response = client.post(
@@ -80,6 +105,148 @@ def test_gram_logging_allowed_with_serving_gram_weight_and_rejected_without_conv
         },
     )
     assert rejected.status_code == 400
+
+
+def test_resolved_food_detail_and_log_share_count_only_serving_interpretation(
+    client: TestClient,
+) -> None:
+    payload = food_payload("Count Only")
+    payload["serving_definitions"][0].pop("gram_weight")
+    food = client.post("/api/v1/foods", json=payload).json()
+
+    detail = client.get(f"/api/v1/foods/{food['id']}/resolved-nutrition")
+    assert detail.status_code == 200, detail.text
+    amount = detail.json()["amounts"][0]
+    detail_protein = next(
+        nutrient for nutrient in amount["nutrients"] if nutrient["nutrient_id"] == "protein"
+    )
+    assert amount["semantic_amount_mode"] == "serving"
+    assert amount["amount_definition_id"] == food["serving_definitions"][0]["id"]
+    assert amount["entered_quantity"] == "1"
+    assert amount["resolved_grams"] is None
+    assert detail_protein["amount"] == "20.000000"
+
+    log = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-08",
+            "amount_quantity": amount["entered_quantity"],
+            "amount_unit": amount["semantic_amount_mode"],
+            "serving_definition_id": amount["amount_definition_id"],
+        },
+    )
+    assert log.status_code == 201, log.text
+    snapshot = next(
+        snapshot for snapshot in log.json()["snapshots"] if snapshot["nutrient_id"] == "protein"
+    )
+    assert snapshot["amount"] == detail_protein["amount"] == "20.000000"
+    assert snapshot["unit"] == detail_protein["unit"] == "g"
+    assert snapshot["data_status"] == detail_protein["data_status"] == "known"
+
+
+def test_log_patch_omitting_serving_definition_preserves_non_default_selection(
+    client: TestClient,
+) -> None:
+    food = create_food_with_distinct_servings(client)
+    non_default = next(
+        serving for serving in food["serving_definitions"] if not serving["is_default"]
+    )
+    log = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-08",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+            "serving_definition_id": non_default["id"],
+        },
+    ).json()
+
+    updated = client.patch(f"/api/v1/logs/{log['id']}", json={"notes": "still the small one"})
+
+    assert updated.status_code == 200, updated.text
+    result = updated.json()
+    protein = next(
+        snapshot for snapshot in result["snapshots"] if snapshot["nutrient_id"] == "protein"
+    )
+    assert result["notes"] == "still the small one"
+    assert result["serving_definition_id"] == non_default["id"]
+    assert result["gram_amount"] == "100.000000"
+    assert protein["serving_definition_id"] == non_default["id"]
+    assert protein["consumed_gram_amount"] == "100.000000"
+    assert protein["amount"] == "20.000000"
+
+
+def test_log_patch_explicit_serving_definition_recalculates_snapshots(
+    client: TestClient,
+) -> None:
+    food = create_food_with_distinct_servings(client)
+    default = next(serving for serving in food["serving_definitions"] if serving["is_default"])
+    non_default = next(
+        serving for serving in food["serving_definitions"] if not serving["is_default"]
+    )
+    log = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-08",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+            "serving_definition_id": non_default["id"],
+        },
+    ).json()
+
+    updated = client.patch(
+        f"/api/v1/logs/{log['id']}",
+        json={"serving_definition_id": default["id"]},
+    )
+
+    assert updated.status_code == 200, updated.text
+    result = updated.json()
+    protein = next(
+        snapshot for snapshot in result["snapshots"] if snapshot["nutrient_id"] == "protein"
+    )
+    assert result["serving_definition_id"] == default["id"]
+    assert result["gram_amount"] == "200.000000"
+    assert protein["serving_definition_id"] == default["id"]
+    assert protein["consumed_gram_amount"] == "200.000000"
+    assert protein["amount"] == "40.000000"
+
+
+def test_log_patch_explicit_null_is_not_treated_as_omitted(client: TestClient) -> None:
+    food = create_food_with_distinct_servings(client)
+    default = next(serving for serving in food["serving_definitions"] if serving["is_default"])
+    non_default = next(
+        serving for serving in food["serving_definitions"] if not serving["is_default"]
+    )
+    log = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-08",
+            "amount_quantity": "1",
+            "amount_unit": "serving",
+            "serving_definition_id": non_default["id"],
+        },
+    ).json()
+
+    updated = client.patch(
+        f"/api/v1/logs/{log['id']}",
+        json={"serving_definition_id": None},
+    )
+
+    assert updated.status_code == 200, updated.text
+    result = updated.json()
+    protein = next(
+        snapshot for snapshot in result["snapshots"] if snapshot["nutrient_id"] == "protein"
+    )
+    # Existing resolver semantics interpret an explicit null as selecting the
+    # food's default serving; omission is what preserves the logged serving.
+    assert result["serving_definition_id"] == default["id"]
+    assert result["gram_amount"] == "200.000000"
+    assert protein["serving_definition_id"] == default["id"]
+    assert protein["amount"] == "40.000000"
 
 
 def test_food_edits_do_not_change_historical_totals_and_log_update_rebuilds_snapshots(

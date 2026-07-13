@@ -3,14 +3,12 @@ import {
   defaultServing,
   formatFoodNutrientLabel,
   formatNutrientAmount,
-  formatNutrientAmountForServing,
-  formatNutrientBasis,
-  formatNutritionServing,
-  initialNutritionServing,
-  nutritionServings,
+  formatResolvedFoodAmount,
+  formatResolvedFoodNutrient,
   primaryServingLabel,
-  selectedNutritionServing,
+  selectedResolvedFoodAmount,
 } from "../src/features/foods/utils/foodDisplay";
+import type { ResolvedFoodAmount } from "../src/features/foods/api/types";
 
 const usdaFood: Food = {
   id: "food-usda",
@@ -85,7 +83,6 @@ test("USDA food detail helpers render known zero and unknown nutrients distinctl
   expect(formatNutrientAmount(nutrients.cholesterol)).toBe("0mg");
   expect(formatNutrientAmount(nutrients.vitamin_d)).toBe("unknown");
   expect(formatFoodNutrientLabel(nutrients.vitamin_d)).toBe("Vitamin D");
-  expect(formatNutrientBasis(nutrients.calories.basis)).toBe("per 100 g");
 });
 
 test("USDA branded default serving is preferred and 100 g remains available", () => {
@@ -94,50 +91,47 @@ test("USDA branded default serving is preferred and 100 g remains available", ()
   expect(usdaFood.serving_definitions.some((serving) => serving.label === "100 g")).toBe(true);
 });
 
-test("food detail nutrition scales known values to the selected serving", () => {
-  const bar = usdaFood.serving_definitions[1];
-  const hundredGrams = usdaFood.serving_definitions[0];
-  expect(initialNutritionServing(usdaFood.serving_definitions)?.id).toBe("serving-bar");
-  expect(formatNutritionServing(bar)).toBe("1 bar (50 g)");
-  expect(formatNutritionServing(hundredGrams)).toBe("100 g");
-  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], bar)).toBe("150kcal");
-  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], hundredGrams)).toBe("300kcal");
-  expect(formatNutrientAmountForServing(usdaFood.nutrients[2], bar)).toBe("unknown");
-});
-
-test("food detail amount selection defaults correctly and moves with the selected chip", () => {
-  const defaultAmount = selectedNutritionServing(usdaFood.serving_definitions, null);
-  const hundredGrams = selectedNutritionServing(usdaFood.serving_definitions, "serving-100g");
-
-  expect(defaultAmount?.id).toBe("serving-bar");
-  expect(formatNutritionServing(defaultAmount!)).toBe("1 bar (50 g)");
-  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], defaultAmount!)).toBe("150kcal");
-  expect(hundredGrams?.id).toBe("serving-100g");
-  expect(formatNutritionServing(hundredGrams!)).toBe("100 g");
-  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], hundredGrams!)).toBe("300kcal");
-});
-
-test("food detail keeps a single nutrition-eligible amount selected and formatted", () => {
-  const singleServingFood = {
-    ...usdaFood,
-    serving_definitions: [
-      { ...usdaFood.serving_definitions[1], label: "2 Tbsp", gram_weight: "32.000000" },
-      { ...usdaFood.serving_definitions[0], id: "unknown-weight", label: "1 scoop", gram_weight: null },
+const resolvedAmounts: ResolvedFoodAmount[] = [
+  {
+    amount_definition_id: "serving-bar",
+    display_label: "1 bar",
+    is_default: true,
+    entered_quantity: "1",
+    semantic_amount_mode: "serving",
+    resolved_grams: "50.000000",
+    valid_for_logging: true,
+    nutrients: [
+      { nutrient_id: "calories", amount: "150.000000", unit: "kcal", data_status: "known", source_basis: "per_100g" },
+      { nutrient_id: "vitamin_d", amount: null, unit: "mcg", data_status: "unknown", source_basis: "per_100g" },
     ],
-  };
-  const eligible = nutritionServings(singleServingFood.serving_definitions);
-  const selected = selectedNutritionServing(singleServingFood.serving_definitions, null);
+  },
+  {
+    amount_definition_id: "count-only",
+    display_label: "1 serving",
+    is_default: false,
+    entered_quantity: "1",
+    semantic_amount_mode: "serving",
+    resolved_grams: null,
+    valid_for_logging: true,
+    nutrients: [
+      { nutrient_id: "calories", amount: "240.000000", unit: "kcal", data_status: "estimated", source_basis: "per_serving" },
+    ],
+  },
+];
 
-  expect(eligible).toHaveLength(1);
-  expect(selected?.id).toBe("serving-bar");
-  expect(formatNutritionServing(selected!)).toBe("2 Tbsp (32 g)");
+test("food detail formats backend-resolved nutrients without scaling raw basis values", () => {
+  expect(formatResolvedFoodAmount(resolvedAmounts[0])).toBe("1 bar (50 g)");
+  expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[0])).toBe("150kcal");
+  expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[1])).toBe("unknown");
 });
 
-test("food detail only offers servings with valid gram weights", () => {
-  expect(nutritionServings([
-    ...usdaFood.serving_definitions,
-    { ...usdaFood.serving_definitions[0], id: "missing", label: "1 scoop", gram_weight: null },
-  ]).map((serving) => serving.id)).toEqual(["serving-100g", "serving-bar"]);
+test("food detail amount selection uses resolved options and keeps count-only servings", () => {
+  expect(selectedResolvedFoodAmount(resolvedAmounts, null)?.amount_definition_id).toBe("serving-bar");
+  const countOnly = selectedResolvedFoodAmount(resolvedAmounts, "count-only");
+  expect(countOnly?.resolved_grams).toBeNull();
+  expect(countOnly?.nutrients[0].data_status).toBe("estimated");
+  expect(formatResolvedFoodAmount(countOnly!)).toBe("1 serving");
+  expect(formatResolvedFoodNutrient(countOnly!.nutrients[0])).toBe("240kcal");
 });
 
 test("manual food detail helpers keep existing serving and nutrient behavior", () => {
@@ -176,5 +170,4 @@ test("manual food detail helpers keep existing serving and nutrient behavior", (
 
   expect(primaryServingLabel(manualFood)).toBe("1 cup");
   expect(formatNutrientAmount(manualFood.nutrients[0])).toBe("20g");
-  expect(formatNutrientBasis(manualFood.nutrients[0].basis)).toBe("per serving");
 });

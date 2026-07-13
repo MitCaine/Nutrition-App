@@ -11,8 +11,7 @@ from app.domain.nutrition import AggregatedNutrientTotal, NutrientBasis, Nutrien
 from app.models.food import FoodItem, FoodNutrient, ServingDefinition
 from app.models.recipe import Recipe, RecipeIngredient
 from app.nutrition.aggregation import aggregate_snapshots
-from app.nutrition.calculations import nutrients_for_resolved_amount, scale_nutrient_amount
-from app.nutrition.serving_resolution import resolve_consumed_amount
+from app.nutrition.resolution import resolve_amount, resolve_nutrition
 from app.repositories.food_repository import FoodRepository
 from app.repositories.recipe_repository import RecipeRepository
 from app.schemas.recipe import (
@@ -230,7 +229,7 @@ class RecipeService:
                 )
                 if serving is None:
                     raise ValueError("Serving definition does not belong to ingredient food")
-            resolved = resolve_consumed_amount(
+            resolved = resolve_amount(
                 food,
                 ingredient.amount_quantity,
                 ingredient.amount_unit,
@@ -294,20 +293,20 @@ class RecipeService:
     def _calculate_totals(self, recipe: Recipe) -> list[AggregatedNutrientTotal]:
         snapshots: list[NutrientSnapshot] = []
         for ingredient in recipe.ingredients:
-            resolved = resolve_consumed_amount(
+            resolved = resolve_nutrition(
                 ingredient.food_item,
                 ingredient.amount_quantity,
                 ingredient.amount_unit,
                 ingredient.serving_definition_id,
             )
-            ingredient.resolved_gram_amount = resolved.gram_amount
-            for nutrient in nutrients_for_resolved_amount(ingredient.food_item, resolved):
+            ingredient.resolved_gram_amount = resolved.amount.gram_amount
+            for nutrient in resolved.nutrients:
                 snapshots.append(
                     NutrientSnapshot(
                         nutrient_id=nutrient.nutrient_id,
-                        amount=scale_nutrient_amount(nutrient, resolved),
+                        amount=nutrient.amount,
                         unit=nutrient.unit,
-                        data_status=NutrientDataStatus(nutrient.data_status),
+                        data_status=nutrient.data_status,
                     )
                 )
         return [self._quantize_total(total) for total in aggregate_snapshots(snapshots)]
