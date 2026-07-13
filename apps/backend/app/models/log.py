@@ -77,7 +77,10 @@ class DailyLog(Base):
 
     @property
     def is_editable(self) -> bool:
-        return self.food_item.deleted_at is None
+        return (
+            self.recipe_publication_revision_id is not None
+            or self.food_item.deleted_at is None
+        )
 
     @property
     def edit_block_reason(self) -> str | None:

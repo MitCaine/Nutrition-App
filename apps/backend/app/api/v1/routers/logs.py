@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
 from app.dependencies.user import ensure_dev_user
+from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.schemas.log import (
     DailyLogCreateRequest,
     DailyLogListResponse,
@@ -63,6 +64,8 @@ def update_log(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": str(exc)},
         ) from exc
+    except RecipeNutritionValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail()) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
