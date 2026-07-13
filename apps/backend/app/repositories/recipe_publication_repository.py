@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.recipe import Recipe
@@ -54,6 +54,15 @@ class RecipePublicationRepository:
             .order_by(RecipePublicationRevision.revision_number)
         )
         return list(self.db.scalars(statement).all())
+
+    def next_revision_number(self, recipe_id: UUID, user_id: UUID) -> int:
+        latest = self.db.scalar(
+            select(func.max(RecipePublicationRevision.revision_number)).where(
+                RecipePublicationRevision.recipe_id == recipe_id,
+                RecipePublicationRevision.user_id == user_id,
+            )
+        )
+        return (latest or 0) + 1
 
     def get_active_for_recipe(
         self, recipe_id: UUID, user_id: UUID

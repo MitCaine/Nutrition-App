@@ -16,6 +16,12 @@ from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
 from app.nutrition.resolution import resolve_nutrition
 from app.nutrition.revision_resolution import resolve_revision_nutrition
+from app.publication.recipe_revision import (
+    apply_revision_to_projection,
+    build_revision,
+    content_from_recipe_output,
+)
+from app.services.recipe_service import RecipeService
 from app.services.recipe_revision_capture_service import (
     CAPTURE_CONFIDENCE,
     CAPTURE_ORIGIN,
@@ -32,6 +38,7 @@ def _published_recipe(
     name: str = "Captured Soup",
     serving_count: str | None = "2",
     cooked_grams: str | None = "400",
+    runtime_publish: bool = False,
 ) -> tuple[Recipe, FoodItem]:
     ingredient = _per_100g_food(client, name=f"{name} ingredient")
     payload = {
@@ -51,8 +58,59 @@ def _published_recipe(
     created = client.post("/api/v1/recipes", json=payload)
     assert created.status_code == 201, created.text
     recipe_id = UUID(created.json()["id"])
-    published = client.post(f"/api/v1/recipes/{recipe_id}/publish")
-    assert published.status_code == 200, published.text
+    if runtime_publish:
+        published = client.post(f"/api/v1/recipes/{recipe_id}/publish")
+        assert published.status_code == 200, published.text
+    else:
+        db.expire_all()
+        recipe = db.get(Recipe, recipe_id)
+        service = RecipeService(db)
+        totals = service._calculate_totals(recipe)
+        per_serving = service._divide_totals(totals, recipe.serving_count_yield)
+        per_100g = service._divide_totals(
+            totals,
+            (
+                recipe.final_cooked_weight_grams / Decimal("100")
+                if recipe.final_cooked_weight_grams
+                else None
+            ),
+        )
+        transient_revision = build_revision(
+            recipe_id=recipe.id,
+            user_id=recipe.user_id,
+            revision_number=1,
+            creation_origin="legacy_projection_capture",
+            provenance_confidence="transition_baseline",
+            content=content_from_recipe_output(
+                published_name=recipe.name,
+                published_notes=recipe.notes,
+                serving_count_yield=recipe.serving_count_yield,
+                final_cooked_weight_grams=recipe.final_cooked_weight_grams,
+                per_serving=per_serving,
+                per_100g=per_100g,
+            ),
+        )
+        projection = FoodItem(
+            id=uuid4(),
+            user_id=recipe.user_id,
+            name=recipe.name,
+            source_type="recipe",
+            source_id=str(recipe.id),
+            is_recipe=True,
+        )
+        projection_time = datetime.now(timezone.utc)
+        apply_revision_to_projection(
+            projection,
+            transient_revision,
+            recipe_id=recipe.id,
+            user_id=recipe.user_id,
+            updated_at=projection_time,
+        )
+        db.add(projection)
+        recipe.published_food_item = projection
+        recipe.needs_republish = False
+        recipe.updated_at = datetime.now(timezone.utc)
+        db.commit()
     db.expire_all()
     recipe = db.get(Recipe, recipe_id)
     assert recipe is not None and recipe.published_food_item_id is not None
@@ -458,16 +516,13 @@ def test_dry_run_report_is_structured_stable_and_writes_nothing(
     assert _revision_count(db_session) == 0
 
 
-def test_current_publish_and_log_runtime_remain_revision_unaware(
+def test_runtime_publish_and_new_logs_are_revision_backed(
     client: TestClient, db_session: Session
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    assert recipe.active_publication_revision_id is None
-    assert projection.recipe_publication_revision_id is None
-    assert _revision_count(db_session) == 0
-
-    captured = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-    assert captured.captured is True
+    recipe, projection = _published_recipe(client, db_session, runtime_publish=True)
+    assert recipe.active_publication_revision_id is not None
+    assert projection.recipe_publication_revision_id == recipe.active_publication_revision_id
+    assert _revision_count(db_session) == 1
     serving = next(serving for serving in projection.serving_definitions if serving.is_default)
     response = client.post(
         "/api/v1/logs",
@@ -483,5 +538,5 @@ def test_current_publish_and_log_runtime_remain_revision_unaware(
     from app.models.log import DailyLog
 
     log = db_session.get(DailyLog, UUID(response.json()["id"]))
-    assert log.recipe_publication_revision_id is None
-    assert log.recipe_publication_amount_definition_id is None
+    assert log.recipe_publication_revision_id == recipe.active_publication_revision_id
+    assert log.recipe_publication_amount_definition_id is not None

@@ -58,3 +58,25 @@ class FoodRepository:
             .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
         )
         return self.db.scalars(statement).first()
+
+    def list_active_by_source(
+        self,
+        user_id: UUID,
+        source_type: str,
+        source_id: str,
+    ) -> list[FoodItem]:
+        statement = (
+            select(FoodItem)
+            .where(
+                FoodItem.user_id == user_id,
+                FoodItem.source_type == source_type,
+                FoodItem.source_id == source_id,
+                FoodItem.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+            )
+        )
+        return list(self.db.scalars(statement).all())

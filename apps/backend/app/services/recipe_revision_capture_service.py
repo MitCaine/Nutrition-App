@@ -4,10 +4,8 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from hashlib import sha256
-import json
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -15,10 +13,11 @@ from sqlalchemy.orm import Session, selectinload
 from app.domain.nutrition import NutrientBasis, NutrientDataStatus
 from app.models.food import FoodItem
 from app.models.recipe import Recipe
-from app.models.recipe_publication import (
-    RecipePublicationAmountDefinition,
-    RecipePublicationNutrient,
-    RecipePublicationRevision,
+from app.models.recipe_publication import RecipePublicationRevision
+from app.publication.recipe_revision import (
+    build_revision,
+    content_from_projection,
+    revision_content_digest,
 )
 from app.nutrition.resolution import NutritionResolutionError, resolve_nutrition
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
@@ -500,73 +499,18 @@ class RecipeRevisionCaptureService:
         *,
         revision_number: int,
     ) -> _CaptureProposal:
-        revision = RecipePublicationRevision(
-            id=uuid4(),
+        revision = build_revision(
             recipe_id=recipe.id,
             user_id=recipe.user_id,
             revision_number=revision_number,
             creation_origin=CAPTURE_ORIGIN,
             provenance_confidence=CAPTURE_CONFIDENCE,
-            published_name=projection.name,
-            published_notes=projection.notes,
-            content_digest="pending",
+            content=content_from_projection(projection),
         )
-        sorted_servings = sorted(
-            projection.serving_definitions,
-            key=lambda serving: (
-                serving.label.casefold(),
-                serving.unit.casefold(),
-                _decimal_text(serving.quantity),
-                _decimal_text(serving.gram_weight),
-            ),
-        )
-        for order, serving in enumerate(sorted_servings):
-            revision.amount_definitions.append(
-                RecipePublicationAmountDefinition(
-                    id=uuid4(),
-                    display_order=order,
-                    display_label=serving.label,
-                    semantic_mode="serving",
-                    display_quantity=serving.quantity,
-                    display_unit=serving.unit,
-                    gram_equivalent=serving.gram_weight,
-                    is_default=serving.is_default,
-                )
-            )
-        if _supports_gram_resolution(projection):
-            revision.amount_definitions.append(
-                RecipePublicationAmountDefinition(
-                    id=uuid4(),
-                    display_order=len(revision.amount_definitions),
-                    display_label="g",
-                    semantic_mode="g",
-                    display_quantity=None,
-                    display_unit="g",
-                    gram_equivalent=None,
-                    is_default=False,
-                )
-            )
-
-        for nutrient in sorted(
-            projection.nutrients,
-            key=lambda row: (row.nutrient_id, row.basis, row.unit, row.data_status),
-        ):
-            revision.nutrients.append(
-                RecipePublicationNutrient(
-                    id=uuid4(),
-                    nutrient_id=nutrient.nutrient_id,
-                    amount=nutrient.amount,
-                    unit=nutrient.unit,
-                    basis=nutrient.basis,
-                    data_status=nutrient.data_status,
-                )
-            )
-        digest = revision_content_digest(revision)
-        revision.content_digest = digest
         return _CaptureProposal(
             revision=revision,
             revision_number=revision_number,
-            content_digest=digest,
+            content_digest=revision.content_digest,
         )
 
     def _assign_links(
@@ -591,68 +535,6 @@ class RecipeRevisionCaptureService:
             recipe=recipe,
             projection=projection,
         )
-
-
-def revision_content_digest(revision: RecipePublicationRevision) -> str:
-    """Hash canonical content for diagnostics/comparison, never request idempotency."""
-    content = {
-        "published_name": revision.published_name,
-        "published_notes": revision.published_notes,
-        "amount_definitions": [
-            {
-                "display_order": amount.display_order,
-                "display_label": amount.display_label,
-                "semantic_mode": amount.semantic_mode,
-                "display_quantity": _decimal_text(amount.display_quantity),
-                "display_unit": amount.display_unit,
-                "gram_equivalent": _decimal_text(amount.gram_equivalent),
-                "is_default": amount.is_default,
-                "conversion_metadata": amount.conversion_metadata,
-            }
-            for amount in sorted(
-                revision.amount_definitions,
-                key=lambda value: value.display_order,
-            )
-        ],
-        "nutrients": [
-            {
-                "nutrient_id": nutrient.nutrient_id,
-                "amount": _decimal_text(nutrient.amount),
-                "unit": nutrient.unit,
-                "basis": nutrient.basis,
-                "data_status": nutrient.data_status,
-                "diagnostic_provenance": nutrient.diagnostic_provenance,
-            }
-            for nutrient in sorted(
-                revision.nutrients,
-                key=lambda value: (
-                    value.nutrient_id,
-                    value.basis,
-                    value.unit,
-                    value.data_status,
-                ),
-            )
-        ],
-    }
-    encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _supports_gram_resolution(projection: FoodItem) -> bool:
-    try:
-        resolve_nutrition(projection, Decimal("1"), "g")
-    except (NutritionResolutionError, ValueError):
-        return False
-    return True
-
-
-def _decimal_text(value: Decimal | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.normalize()
-    if normalized == 0:
-        return "0"
-    return format(normalized, "f")
 
 
 def _timestamp_is_after(left: datetime | None, right: datetime | None) -> bool:
