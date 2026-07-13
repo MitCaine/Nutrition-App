@@ -1,4 +1,4 @@
-import { DARK_THEME, LIGHT_THEME, statusBarStyle, themeForColorScheme } from "../src/app/theme/AppTheme";
+import { DARK_THEME, LIGHT_THEME, navigationCapsuleBorder, statusBarStyle, themeForColorScheme } from "../src/app/theme/AppTheme";
 
 function perceptualLightness(hex: string): number {
   const channels = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16) / 255);
@@ -34,7 +34,6 @@ test("semantic state colors remain distinct in both themes", () => {
     expect(theme.colors.inactiveForeground).not.toBe(theme.colors.surface);
     expect(theme.colors.searchInputSurface).not.toBe(theme.colors.background);
     expect(theme.colors.searchInputBorder).not.toBe(theme.colors.searchInputSurface);
-    expect(theme.colors.navigationSurface).not.toBe(theme.colors.searchInputSurface);
     expect(theme.colors.navigationBorder).not.toBe(theme.colors.navigationSurface);
     expect(theme.colors.listDivider).not.toBe(theme.colors.background);
     expect(theme.colors.controlSecondaryForeground).not.toBe(theme.colors.searchInputSurface);
@@ -46,12 +45,11 @@ test("semantic state colors remain distinct in both themes", () => {
 
 test("the dark FAB remains distinct from lower-emphasis selected navigation", () => {
   expect(DARK_THEME.colors.primaryActionBackground).not.toBe(DARK_THEME.colors.background);
-  expect(DARK_THEME.colors.primaryActionBackground).not.toBe(DARK_THEME.colors.selectedNavigationBackground);
   expect(DARK_THEME.colors.primaryActionForeground).not.toBe(DARK_THEME.colors.selectedNavigationForeground);
   expect(DARK_THEME.colors.primaryActionBorder).not.toBe(DARK_THEME.colors.primaryActionBackground);
-  expect(DARK_THEME.colors.navigationSurface).toBe("#2b3744");
+  expect(DARK_THEME.colors.navigationSurface).toBe("#38414d");
   expect(DARK_THEME.colors.navigationBorder).toBe("#43576d");
-  expect(DARK_THEME.colors.searchInputSurface).toBe("#303b49");
+  expect(DARK_THEME.colors.searchInputSurface).toBe("#38414d");
   expect(DARK_THEME.colors.searchInputBorder).toBe("#4a6078");
   expect(DARK_THEME.colors.inactiveForeground).toBe("#c0c9d4");
   expect(DARK_THEME.colors.listDivider).toBe("#465361");
@@ -63,7 +61,12 @@ test("dark fitted controls remain visibly raised from the screen", () => {
   const navigationLightness = perceptualLightness(DARK_THEME.colors.navigationSurface);
   expect(searchLightness - screenLightness).toBeGreaterThan(12);
   expect(navigationLightness - screenLightness).toBeGreaterThan(12);
-  expect(searchLightness).toBeGreaterThan(navigationLightness);
+  expect(searchLightness).toBe(navigationLightness);
+});
+
+test("navigation reuses the FAB edge highlight only in dark mode", () => {
+  expect(navigationCapsuleBorder(DARK_THEME)).toBe(DARK_THEME.colors.primaryActionBorder);
+  expect(navigationCapsuleBorder(LIGHT_THEME)).toBe(LIGHT_THEME.colors.navigationBorder);
 });
 
 test("light mode retains its established primary action blue", () => {

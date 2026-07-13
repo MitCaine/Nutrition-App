@@ -60,30 +60,55 @@ export function BottomNavigation({
   );
 }
 
-function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  activeLabel: { color: theme.colors.selectedNavigationForeground, fontWeight: "700" },
-  activeTab: { backgroundColor: theme.colors.selectedNavigationBackground },
-  container: {
-    backgroundColor: theme.colors.navigationSurface,
-    borderColor: theme.colors.navigationBorder,
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    marginHorizontal: 12,
-    padding: 4,
-  },
-  inactiveLabel: { color: theme.colors.inactiveForeground, fontWeight: "500" },
-  label: { fontSize: 12 },
-  pressedTab: { backgroundColor: theme.colors.pressedBackground },
-  safeArea: { backgroundColor: theme.colors.background, paddingBottom: 4, paddingTop: 4 },
-  tab: {
-    alignItems: "center",
-    borderRadius: 18,
-    flex: 1,
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 8,
-  },
-}); }
+function createStyles(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
+    activeLabel: {
+      color: theme.colors.selectedNavigationForeground,
+      fontWeight: "700",
+    },
+
+    activeTab: {
+      backgroundColor: theme.colors.selectedNavigationBackground,
+      borderColor: theme.colors.primaryActionBorder,
+      borderWidth: 1,
+    },
+
+    container: {
+      backgroundColor: theme.colors.navigationSurface,
+      borderRadius: 22,
+      flexDirection: "row",
+      marginHorizontal: 12,
+    },
+
+    inactiveLabel: {
+      color: theme.colors.inactiveForeground,
+      fontWeight: "500",
+    },
+
+    label: {
+      fontSize: 12,
+    },
+
+    pressedTab: {
+      backgroundColor: theme.colors.pressedBackground,
+    },
+
+    safeArea: {
+      backgroundColor: theme.colors.background,
+      paddingBottom: 4,
+      paddingTop: 4,
+    },
+
+    tab: {
+      alignItems: "center",
+      borderRadius: 22,
+      borderWidth: 0,
+      flex: 1,
+      flexDirection: "row",
+      gap: 6,
+      justifyContent: "center",
+      minHeight: 44,
+      paddingHorizontal: 8,
+    },
+  });
+}

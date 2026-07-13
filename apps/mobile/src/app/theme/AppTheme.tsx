@@ -52,12 +52,12 @@ const darkColors: AppTheme["colors"] = {
   successText: "#9ce0b5", warningBackground: "#463813", warningText: "#f4cf71",
   errorText: "#ff9b94", destructive: "#ff766e", modalBackdrop: "rgba(0, 0, 0, 0.65)",
   disabledBackground: "#2a313b", disabledText: "#77818d", pressedBackground: "#303946",
-  placeholder: "#87929f",
-  searchInputSurface: "#303b49", searchInputBorder: "#4a6078",
-  navigationSurface: "#2b3744", navigationBorder: "#43576d", controlSecondaryForeground: "#b9c4d0",
+  placeholder: "#b3bec9",
+  searchInputSurface: "#38414d", searchInputBorder: "#4a6078",
+  navigationSurface: "#38414d", navigationBorder: "#43576d", controlSecondaryForeground: "#b9c4d0",
   listDivider: "#465361",
-  primaryActionBackground: "#1a5fae", primaryActionForeground: "#ffffff", primaryActionBorder: "#4b84bf",
-  selectedNavigationBackground: "#173d5d", selectedNavigationForeground: "#65aef2",
+  primaryActionBackground: "#194170", primaryActionForeground: "#ffffff", primaryActionBorder: "#4b84bf",
+  selectedNavigationBackground: "#194170", selectedNavigationForeground: "#65aef2",
 };
 
 export const LIGHT_THEME: AppTheme = { mode: "light", colors: lightColors };
@@ -120,4 +120,8 @@ export function useAppTheme(): AppThemeContextValue {
 
 export function statusBarStyle(theme: AppTheme): "light-content" | "dark-content" {
   return theme.mode === "dark" ? "light-content" : "dark-content";
+}
+
+export function navigationCapsuleBorder(theme: AppTheme): string {
+  return theme.mode === "dark" ? theme.colors.primaryActionBorder : theme.colors.navigationBorder;
 }
