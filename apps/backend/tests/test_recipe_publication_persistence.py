@@ -24,7 +24,7 @@ from app.models.recipe_publication import (
 )
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 
-publication_migration = import_module("app.migrations.versions.0008_recipe_publication_revisions")
+publication_migration = import_module("app.migrations.versions.0008_recipe_pub_revisions")
 
 
 def _recipe(db: Session, *, name: str = "Soup") -> Recipe:

@@ -1,6 +1,6 @@
 """Add dormant Recipe publication revision persistence.
 
-Revision ID: 0008_recipe_publication_revisions
+Revision ID: 0008_recipe_pub_revisions
 Revises: 0007_log_food_name_snapshot
 Create Date: 2026-07-13
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 from app.db.types import GUID
 
-revision = "0008_recipe_publication_revisions"
+revision = "0008_recipe_pub_revisions"
 down_revision = "0007_log_food_name_snapshot"
 branch_labels = None
 depends_on = None
