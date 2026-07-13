@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
 from app.dependencies.user import ensure_dev_user
+from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.schemas.recipe import (
     RecipeCreateRequest,
     RecipeListResponse,
@@ -82,6 +83,8 @@ def recipe_nutrition(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipeNu
         return RecipeNutritionResponse(**_service(db).nutrition(user.id, recipe_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeNutritionValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail()) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -97,5 +100,7 @@ def publish_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipePubl
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeNutritionValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail()) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

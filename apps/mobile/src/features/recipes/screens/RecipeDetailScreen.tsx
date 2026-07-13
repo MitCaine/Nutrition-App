@@ -13,6 +13,11 @@ import {
   legacyCookedWeightForRecipe,
 } from "../utils/recipeDraft";
 import { formatRecipeTotal, recipeNutrientLabel, recipeTotalIsUnknownOnly } from "../utils/recipeDisplay";
+import {
+  recipeNutrientValueColor,
+  recipeNutritionErrorMessage,
+  visibleRecipeNutrition,
+} from "../utils/recipeNutritionPreview";
 import type { Recipe } from "../api/types";
 import type { Food } from "../../foods/api/types";
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -31,6 +36,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrition = useRecipeNutrition(recipe.id);
   const mutations = useRecipeMutations();
+  const nutritionPreview = visibleRecipeNutrition(nutrition.data, nutrition.isError);
   const canPublish = canPublishRecipe({
     servingCountYield: recipe.serving_count_yield ?? "",
     finalCookedWeightGrams: recipe.final_cooked_weight_grams ?? "",
@@ -105,13 +111,24 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
             </View>
           ))}
         </View>
-        <NutritionSection title="Total Recipe" totals={nutrition.data?.totals} />
-        <NutritionSection title="Per Serving" totals={nutrition.data?.perServing ?? undefined} />
-        <NutritionSection title="Per 100 g" totals={nutrition.data?.per100g ?? undefined} />
-        {nutrition.isError ? <Text style={styles.error}>Could not load nutrition preview.</Text> : null}
+        <NutritionSection title="Total Recipe" totals={nutritionPreview?.totals} />
+        <NutritionSection title="Per Serving" totals={nutritionPreview?.perServing ?? undefined} />
+        <NutritionSection title="Per 100 g" totals={nutritionPreview?.per100g ?? undefined} />
+        {nutrition.isError ? (
+          <Text style={styles.error}>
+            {recipeNutritionErrorMessage(nutrition.error, "Could not load nutrition preview.")}
+          </Text>
+        ) : null}
         {editBlockedMessage ? <Text style={styles.error}>{editBlockedMessage}</Text> : null}
         {!canPublish ? <Text style={styles.error}>Add servings or cooked weight before publishing.</Text> : null}
-        {mutations.publishRecipe.isError ? <Text style={styles.error}>Could not publish recipe.</Text> : null}
+        {mutations.publishRecipe.isError ? (
+          <Text style={styles.error}>
+            {recipeNutritionErrorMessage(
+              mutations.publishRecipe.error,
+              "Could not publish recipe.",
+            )}
+          </Text>
+        ) : null}
         {recipe.published_food_item_id ? <Text style={styles.success}>Available as a saved food.</Text> : null}
         {recipe.needs_republish ? <Text style={styles.warning}>Recipe changed since publishing. Republish to update the saved food.</Text> : null}
         <Pressable
@@ -171,7 +188,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, padding: 12 },
   meta: { color: theme.colors.secondaryText },
   nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 8 },
-  nutrientValue: { flexShrink: 1, fontWeight: "600", textAlign: "right" },
+  nutrientValue: { color: recipeNutrientValueColor(theme), flexShrink: 1, fontWeight: "600", textAlign: "right" },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
