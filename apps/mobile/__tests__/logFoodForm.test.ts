@@ -106,6 +106,56 @@ test("manual food logging uses the same default-serving path", () => {
   ).toBe("manual-serving");
 });
 
+test("count-only serving remains selectable for resolver-backed logging", () => {
+  const countOnlyFood: Food = {
+    ...importedFood,
+    id: "food-count-only",
+    name: "Count Only Food",
+    source_type: "recipe",
+    source_id: "recipe-1",
+    is_recipe: true,
+    serving_definitions: [
+      {
+        id: "count-serving",
+        label: "1 serving",
+        quantity: "1",
+        unit: "serving",
+        gram_weight: null,
+        is_default: true,
+        source: "recipe",
+        is_user_confirmed: true,
+      },
+    ],
+    nutrients: [
+      {
+        id: "count-protein",
+        nutrient_id: "protein",
+        amount: "12.5",
+        unit: "g",
+        basis: "per_serving",
+        data_status: "known",
+        source: "recipe",
+        is_user_confirmed: true,
+      },
+    ],
+  };
+
+  expect(initialServingId(countOnlyFood)).toBe("count-serving");
+  expect(buildLogInput({
+    foodId: countOnlyFood.id,
+    date: "2026-07-08",
+    amount: "0.5",
+    unit: "serving",
+    selectedServingId: initialServingId(countOnlyFood),
+  })).toEqual({
+    food_item_id: "food-count-only",
+    logged_date: "2026-07-08",
+    amount_quantity: "0.5",
+    amount_unit: "serving",
+    serving_definition_id: "count-serving",
+  });
+});
+
 test("log form display formatting trims initial amounts and serving gram weights", () => {
   expect(formatInitialLogAmount("9.000000")).toBe("9");
   expect(formatInitialLogAmount("1.250000")).toBe("1.25");

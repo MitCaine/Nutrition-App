@@ -1,10 +1,15 @@
+from decimal import Decimal
 from importlib import import_module
 
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from fastapi.testclient import TestClient
 from sqlalchemy import Column, Integer, MetaData, Numeric, Table, Text, create_engine, inspect
+from sqlalchemy.orm import Session
 
+from app.dependencies.user import ensure_dev_user
+from app.nutrition.resolution import resolve_nutrition
+from app.repositories.food_repository import FoodRepository
 from tests.test_stage2_foods import create_food, food_payload
 
 recipe_display_units_migration = import_module("app.migrations.versions.0005_recipe_display_units")
@@ -298,6 +303,49 @@ def test_recipe_creation_mixed_amount_modes_ordering_and_nutrition(client: TestC
     per_100g = {total["nutrient_id"]: total for total in nutrition.json()["per_100g"]}
     assert per_serving["calories"]["amount_known"] == "190.000000"
     assert per_100g["calories"]["amount_known"] == "76.000000"
+
+
+def test_recipe_ingredient_totals_map_direct_resolver_results(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    food = create_food(client, "Resolver Ingredient")
+    serving_id = food["serving_definitions"][0]["id"]
+    recipe = client.post(
+        "/api/v1/recipes",
+        json={
+            "name": "Resolver Boundary Recipe",
+            "ingredients": [
+                {
+                    "food_item_id": food["id"],
+                    "position": 0,
+                    "amount_quantity": "0.5",
+                    "amount_unit": "serving",
+                    "serving_definition_id": serving_id,
+                }
+            ],
+        },
+    )
+    assert recipe.status_code == 201, recipe.text
+
+    response = client.get(f"/api/v1/recipes/{recipe.json()['id']}/nutrition")
+    assert response.status_code == 200, response.text
+    totals = {total["nutrient_id"]: total for total in response.json()["totals"]}
+
+    user = ensure_dev_user(db_session)
+    source = FoodRepository(db_session).get_required(food["id"], user.id)
+    resolved = resolve_nutrition(source, Decimal("0.5"), "serving", source.serving_definitions[0].id)
+    values = {nutrient.nutrient_id: nutrient for nutrient in resolved.nutrients}
+
+    assert Decimal(totals["calories"]["amount_known"]) == values["calories"].amount
+    assert Decimal(totals["protein"]["amount_known"]) == values["protein"].amount
+    assert Decimal(totals["added_sugars"]["amount_known"]) == values["added_sugars"].amount
+    assert Decimal(totals["calcium"]["amount_estimated"]) == values["calcium"].amount
+    assert totals["vitamin_d"]["has_unknown_contributors"] is True
+    assert totals["vitamin_d"]["unknown_contributor_count"] == 1
+    assert {nutrient_id: total["unit"] for nutrient_id, total in totals.items()} == {
+        nutrient_id: nutrient.unit for nutrient_id, nutrient in values.items()
+    }
 
 
 def test_recipe_update_replaces_ingredients_and_validation_rejects_bad_references(client: TestClient) -> None:

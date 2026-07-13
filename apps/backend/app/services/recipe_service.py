@@ -222,13 +222,6 @@ class RecipeService:
         for ingredient in sorted(ingredients, key=lambda item: item.position):
             food = self.foods.get_required(ingredient.food_item_id, user_id)
             self._validate_no_recipe_cycle(user_id, recipe, food)
-            if ingredient.amount_unit == "serving":
-                serving = next(
-                    (serving for serving in food.serving_definitions if serving.id == ingredient.serving_definition_id),
-                    None,
-                )
-                if serving is None:
-                    raise ValueError("Serving definition does not belong to ingredient food")
             resolved = resolve_amount(
                 food,
                 ingredient.amount_quantity,
