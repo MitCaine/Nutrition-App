@@ -6,9 +6,10 @@ import { useFood, useFoodMutations } from "../hooks/useFoods";
 import type { FoodDeleteDependency } from "../api/types";
 import {
   formatFoodNutrientLabel,
-  formatNutrientAmount,
-  formatNutrientBasis,
-  primaryServingLabel,
+  formatNutrientAmountForServing,
+  formatNutritionServing,
+  initialNutritionServing,
+  nutritionServings,
 } from "../utils/foodDisplay";
 import {
   apiErrorMessage,
@@ -34,6 +35,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const mutations = useFoodMutations();
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedServingId, setSelectedServingId] = useState<string | null>(null);
   const deletePending = mutations.deleteFood.isPending;
   const loadState = foodDetailLoadState({
     hasData: Boolean(food.data),
@@ -86,6 +88,11 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     );
   }
 
+  const availableServings = nutritionServings(food.data.serving_definitions);
+  const selectedServing =
+    availableServings.find((serving) => serving.id === selectedServingId) ??
+    initialNutritionServing(food.data.serving_definitions);
+
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
       <Pressable onPress={onBack}>
@@ -93,7 +100,30 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
       </Pressable>
       <Text style={styles.title}>{food.data.name}</Text>
       <Text style={styles.text}>{food.data.brand ?? sourceLabel(food.data.source_type)}</Text>
-      <Text style={styles.text}>{primaryServingLabel(food.data)}</Text>
+      {selectedServing ? (
+        <View style={styles.servingSection}>
+          <Text style={styles.servingHeading}>Serving</Text>
+          <Text style={styles.servingValue}>{formatNutritionServing(selectedServing)}</Text>
+          {availableServings.length > 1 ? (
+            <View style={styles.servingOptions}>
+              {availableServings.map((serving) => {
+                const selected = serving.id === selectedServing.id;
+                return (
+                  <Pressable
+                    key={serving.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => setSelectedServingId(serving.id)}
+                    style={[styles.servingOption, selected && styles.servingOptionSelected]}
+                  >
+                    <Text style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{serving.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.actions}>
         <Pressable onPress={onLog} style={styles.primaryButton}>
           <Text style={styles.primaryText}>Log</Text>
@@ -123,9 +153,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
       ).map((nutrient) => (
         <View key={nutrient.id} style={styles.nutrientRow}>
           <Text style={styles.nutrientName}>{formatFoodNutrientLabel(nutrient)}</Text>
-          <Text style={styles.nutrientValue}>
-            {formatNutrientAmount(nutrient)} - {formatNutrientBasis(nutrient.basis)}
-          </Text>
+          <Text style={styles.nutrientValue}>{selectedServing ? formatNutrientAmountForServing(nutrient, selectedServing) : "unknown"}</Text>
         </View>
       ))}
     </ScrollView>
@@ -209,6 +237,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   recipeDependencyRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 3, paddingBottom: 8 },
   screen: { backgroundColor: theme.colors.background, gap: 12, padding: 16, paddingBottom: 32, paddingRight: 28 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
+  servingHeading: { color: theme.colors.secondaryText, fontSize: 13, fontWeight: "700", textTransform: "uppercase" },
+  servingOption: { borderColor: theme.colors.border, borderRadius: 16, borderWidth: 1, minHeight: 32, paddingHorizontal: 12, paddingVertical: 6 },
+  servingOptionSelected: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  servingOptionText: { color: theme.colors.secondaryText, fontWeight: "600" },
+  servingOptionTextSelected: { color: theme.colors.accent },
+  servingOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servingSection: { gap: 7 },
+  servingValue: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   warningTitle: { color: theme.colors.text, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },

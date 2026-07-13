@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type {
   Food,
@@ -16,6 +16,33 @@ export type ServingFormValue = ServingDefinitionInput & {
   originalGramWeight?: string;
 };
 type InitialServing = ServingDefinitionInput & { id?: string };
+let nextClientServingId = 0;
+
+export function createClientServingKey(): string {
+  const key = `client-serving-${nextClientServingId}`;
+  nextClientServingId += 1;
+  return key;
+}
+
+export function updateServingValues(
+  servings: ServingFormValue[],
+  key: string,
+  patch: Partial<ServingFormValue>,
+): ServingFormValue[] {
+  return servings.map((serving) => {
+    if (serving.key === key) {
+      return {
+        ...serving,
+        ...patch,
+        is_default: patch.is_default ? true : patch.is_default ?? serving.is_default,
+      };
+    }
+    if (patch.is_default && serving.is_default) {
+      return { ...serving, is_default: false };
+    }
+    return serving;
+  });
+}
 
 export function formatServingFormNumber(value: string | number | null | undefined): string {
   return value == null || value === "" ? "" : formatDisplayNumber(value);
@@ -26,12 +53,6 @@ export function servingPayloadNumber(displayValue: string, originalValue?: strin
 }
 
 export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinition[]) {
-  const servingKeyCounter = useRef(0);
-  function nextServingKey() {
-    const key = `serving-${servingKeyCounter.current}`;
-    servingKeyCounter.current += 1;
-    return key;
-  }
   const [name, setName] = useState(food?.name ?? "");
   const [brand, setBrand] = useState(food?.brand ?? "");
   const [notes, setNotes] = useState(food?.notes ?? "");
@@ -40,11 +61,11 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     const source: InitialServing[] = food?.serving_definitions.length
       ? food.serving_definitions
       : [{ label: "1 serving", quantity: "1", unit: "serving", gram_weight: null, is_default: true }];
-    return source.map((serving, index) => {
+    return source.map((serving) => {
       const quantity = String(serving.quantity);
       const gramWeight = serving.gram_weight == null ? "" : String(serving.gram_weight);
       return {
-        key: serving.id ?? `serving-new-${index}`,
+        key: serving.id ?? createClientServingKey(),
         label: serving.label,
         quantity: formatServingFormNumber(quantity),
         unit: serving.unit,
@@ -83,25 +104,13 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
   }, [nutrients, values]);
 
   function updateServing(key: string, patch: Partial<ServingFormValue>) {
-    setServings((current) =>
-      current.map((serving) =>
-        serving.key === key
-          ? {
-              ...serving,
-              ...patch,
-              is_default: patch.is_default ? true : patch.is_default ?? serving.is_default,
-            }
-          : patch.is_default
-            ? { ...serving, is_default: false }
-            : serving,
-      ),
-    );
+    setServings((current) => updateServingValues(current, key, patch));
   }
 
   function addServing() {
     setServings((current) => [
       ...current,
-      { key: nextServingKey(), label: "1 serving", quantity: "1", unit: "serving", gram_weight: "", is_default: false },
+      { key: createClientServingKey(), label: "1 serving", quantity: "1", unit: "serving", gram_weight: "", is_default: false },
     ]);
   }
 

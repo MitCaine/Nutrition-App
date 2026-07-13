@@ -3,13 +3,15 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import type { ServingFormValue } from "../hooks/useFoodForm";
+import { servingFocusKey } from "../../../shared/forms/focusTargets";
+import type { FocusTargetRegistration } from "../../../shared/forms/KeyboardSafeScrollView";
 
 type Props = {
   servings: ServingFormValue[];
   updateServing: (key: string, patch: Partial<ServingFormValue>) => void;
   addServing: () => void;
   removeServing: (key: string) => void;
-  focusProps: (key: string) => { onFocus: () => void; onLayout: (event: { nativeEvent: { layout: { y: number } } }) => void };
+  focusProps: (key: string) => FocusTargetRegistration;
 };
 
 export function ServingDefinitionsEditor({
@@ -24,45 +26,45 @@ export function ServingDefinitionsEditor({
     <View style={styles.container}>
       {servings.map((serving) => (
         <View key={serving.key} style={styles.servingBlock}>
-          <View {...focusProps(`${serving.key}-label`)}>
+          <View>
             <TextInput
+              {...focusProps(servingFocusKey(serving.key, "label"))}
               placeholderTextColor={theme.colors.placeholder}
               value={serving.label}
               onChangeText={(label) => updateServing(serving.key, { label })}
-              onFocus={focusProps(`${serving.key}-label`).onFocus}
               placeholder="Label"
               style={styles.input}
             />
           </View>
           <View style={styles.row}>
-            <View style={styles.flex} {...focusProps(`${serving.key}-quantity`)}>
+            <View style={styles.flex}>
               <TextInput
+                {...focusProps(servingFocusKey(serving.key, "quantity"))}
                 placeholderTextColor={theme.colors.placeholder}
                 value={serving.quantity}
                 onChangeText={(quantity) => updateServing(serving.key, { quantity })}
-                onFocus={focusProps(`${serving.key}-quantity`).onFocus}
                 keyboardType="decimal-pad"
                 placeholder="Quantity"
                 style={styles.input}
               />
             </View>
-            <View style={styles.flex} {...focusProps(`${serving.key}-unit`)}>
+            <View style={styles.flex}>
               <TextInput
+                {...focusProps(servingFocusKey(serving.key, "unit"))}
                 placeholderTextColor={theme.colors.placeholder}
                 value={serving.unit}
                 onChangeText={(unit) => updateServing(serving.key, { unit })}
-                onFocus={focusProps(`${serving.key}-unit`).onFocus}
                 placeholder="Unit"
                 style={styles.input}
               />
             </View>
           </View>
-          <View {...focusProps(`${serving.key}-grams`)}>
+          <View>
             <TextInput
+              {...focusProps(servingFocusKey(serving.key, "gramWeight"))}
               placeholderTextColor={theme.colors.placeholder}
               value={serving.gram_weight ?? ""}
               onChangeText={(gram_weight) => updateServing(serving.key, { gram_weight })}
-              onFocus={focusProps(`${serving.key}-grams`).onFocus}
               keyboardType="decimal-pad"
               placeholder="Gram weight, if known"
               style={styles.input}

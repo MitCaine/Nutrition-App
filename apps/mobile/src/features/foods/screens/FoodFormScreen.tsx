@@ -8,6 +8,7 @@ import { ServingDefinitionsEditor } from "../components/ServingDefinitionsEditor
 import { useFoodForm } from "../hooks/useFoodForm";
 import { useFoodMutations, useNutrients } from "../hooks/useFoods";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { foodFocusKey } from "../../../shared/forms/focusTargets";
 
 type Props = {
   food?: Food;
@@ -49,14 +50,14 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             </View>
 
             <Text style={styles.sectionTitle}>Food</Text>
-            <View {...focusProps("name")}>
-              <TextInput value={form.fields.name} onChangeText={form.setters.setName} onFocus={focusProps("name").onFocus} placeholder="Name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+            <View>
+              <TextInput {...focusProps(foodFocusKey("name"))} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
-            <View {...focusProps("brand")}>
-              <TextInput value={form.fields.brand} onChangeText={form.setters.setBrand} onFocus={focusProps("brand").onFocus} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+            <View>
+              <TextInput {...focusProps(foodFocusKey("brand"))} value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
-            <View {...focusProps("notes")}>
-              <TextInput value={form.fields.notes} onChangeText={form.setters.setNotes} onFocus={focusProps("notes").onFocus} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+            <View>
+              <TextInput {...focusProps(foodFocusKey("notes"))} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
 
             <Text style={styles.sectionTitle}>Servings</Text>

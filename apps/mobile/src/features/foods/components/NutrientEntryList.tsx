@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { nutrientFocusKey } from "../../../shared/forms/focusTargets";
+import type { FocusTargetRegistration } from "../../../shared/forms/KeyboardSafeScrollView";
 
 import type { FoodNutrientInput, NutrientDefinition } from "../api/types";
 
@@ -8,10 +10,7 @@ type Props = {
   nutrients: NutrientDefinition[];
   values: FoodNutrientInput[];
   onChange: (values: FoodNutrientInput[]) => void;
-  focusProps?: (key: string) => {
-    onFocus: () => void;
-    onLayout: (event: { nativeEvent: { layout: { y: number } } }) => void;
-  };
+  focusProps?: (key: string) => FocusTargetRegistration;
 };
 
 const statuses: FoodNutrientInput["data_status"][] = ["known", "zero", "estimated", "unknown"];
@@ -50,12 +49,12 @@ export function NutrientEntryList({ nutrients, values, onChange, focusProps }: P
         return (
           <View key={nutrient.id} style={[styles.row, indent]}>
             <Text style={styles.label}>{nutrient.display_name}</Text>
-            <View style={styles.valueRow} {...(focusProps ? focusProps(`${nutrient.id}-amount`) : {})}>
+            <View style={styles.valueRow}>
               <TextInput
+                {...(focusProps ? focusProps(nutrientFocusKey(nutrient.id)) : {})}
                 placeholderTextColor={theme.colors.placeholder}
                 value={value.amount ?? ""}
                 onChangeText={(text) => update(nutrient.id, { amount: text })}
-                onFocus={focusProps ? focusProps(`${nutrient.id}-amount`).onFocus : undefined}
                 editable={value.data_status !== "unknown" && value.data_status !== "zero"}
                 keyboardType="decimal-pad"
                 placeholder={value.data_status === "unknown" ? "unknown" : "0"}

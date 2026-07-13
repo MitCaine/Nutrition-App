@@ -1,5 +1,5 @@
 import type { Food, FoodNutrient, ServingDefinition } from "../api/types";
-import { formatAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
+import { formatAmountWithUnit, formatDisplayNumber, formatNutrientLabel } from "../../../shared/nutrition/display";
 
 export function defaultServing(servings: ServingDefinition[]): ServingDefinition | undefined {
   return servings.find((serving) => serving.is_default) ?? servings[0];
@@ -10,6 +10,49 @@ export function formatNutrientAmount(nutrient: FoodNutrient): string {
     return "unknown";
   }
   return formatAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
+}
+
+export function servingGramWeight(serving: ServingDefinition): number | null {
+  if (serving.gram_weight === null || serving.gram_weight === undefined || serving.gram_weight === "") {
+    return null;
+  }
+  const grams = Number(serving.gram_weight);
+  return Number.isFinite(grams) && grams > 0 ? grams : null;
+}
+
+export function nutritionServings(servings: ServingDefinition[]): ServingDefinition[] {
+  return servings.filter((serving) => servingGramWeight(serving) !== null);
+}
+
+export function initialNutritionServing(servings: ServingDefinition[]): ServingDefinition | undefined {
+  const available = nutritionServings(servings);
+  return available.find((serving) => serving.is_default) ?? available[0];
+}
+
+export function formatNutritionServing(serving: ServingDefinition): string {
+  const grams = servingGramWeight(serving);
+  if (grams === null) {
+    return serving.label;
+  }
+  const formattedGrams = `${formatDisplayNumber(grams)} g`;
+  return serving.label.trim().toLowerCase().replace(/\s+/g, "") === formattedGrams.toLowerCase().replace(/\s+/g, "")
+    ? serving.label
+    : `${serving.label} (${formattedGrams})`;
+}
+
+export function formatNutrientAmountForServing(
+  nutrient: FoodNutrient,
+  serving: ServingDefinition,
+): string {
+  if (nutrient.data_status === "unknown") {
+    return "unknown";
+  }
+  const grams = servingGramWeight(serving);
+  const amount = Number(nutrient.amount ?? "0");
+  if (grams === null || !Number.isFinite(amount)) {
+    return "unknown";
+  }
+  return formatAmountWithUnit(amount * grams / 100, nutrient.unit);
 }
 
 export function formatFoodNutrientLabel(nutrient: FoodNutrient): string {

@@ -3,7 +3,11 @@ import {
   defaultServing,
   formatFoodNutrientLabel,
   formatNutrientAmount,
+  formatNutrientAmountForServing,
   formatNutrientBasis,
+  formatNutritionServing,
+  initialNutritionServing,
+  nutritionServings,
   primaryServingLabel,
 } from "../src/features/foods/utils/foodDisplay";
 
@@ -87,6 +91,24 @@ test("USDA branded default serving is preferred and 100 g remains available", ()
   expect(defaultServing(usdaFood.serving_definitions)?.id).toBe("serving-bar");
   expect(primaryServingLabel(usdaFood)).toBe("1 bar");
   expect(usdaFood.serving_definitions.some((serving) => serving.label === "100 g")).toBe(true);
+});
+
+test("food detail nutrition scales known values to the selected serving", () => {
+  const bar = usdaFood.serving_definitions[1];
+  const hundredGrams = usdaFood.serving_definitions[0];
+  expect(initialNutritionServing(usdaFood.serving_definitions)?.id).toBe("serving-bar");
+  expect(formatNutritionServing(bar)).toBe("1 bar (50 g)");
+  expect(formatNutritionServing(hundredGrams)).toBe("100 g");
+  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], bar)).toBe("150kcal");
+  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], hundredGrams)).toBe("300kcal");
+  expect(formatNutrientAmountForServing(usdaFood.nutrients[2], bar)).toBe("unknown");
+});
+
+test("food detail only offers servings with valid gram weights", () => {
+  expect(nutritionServings([
+    ...usdaFood.serving_definitions,
+    { ...usdaFood.serving_definitions[0], id: "missing", label: "1 scoop", gram_weight: null },
+  ]).map((serving) => serving.id)).toEqual(["serving-100g", "serving-bar"]);
 });
 
 test("manual food detail helpers keep existing serving and nutrient behavior", () => {

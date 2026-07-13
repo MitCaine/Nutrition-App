@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
+import { recipeFocusKey } from "../../../shared/forms/focusTargets";
 import { useRecipeMutations } from "../hooks/useRecipes";
 import { createFoodServing } from "../../foods/api/foodApi";
 import type { ServingDefinition } from "../../foods/api/types";
@@ -113,11 +114,11 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                 <Text style={styles.text}>Cancel</Text>
               </Pressable>
             </View>
-            <View {...focusProps("recipe-name")}>
-              <TextInput value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} onFocus={focusProps("recipe-name").onFocus} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+            <View>
+              <TextInput {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
-            <View {...focusProps("recipe-notes")}>
-              <TextInput value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} onFocus={focusProps("recipe-notes").onFocus} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+            <View>
+              <TextInput {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <Text style={styles.sectionTitle}>Yield</Text>
             <Text style={styles.meta}>Enter either one or both.</Text>
