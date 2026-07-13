@@ -2,6 +2,11 @@ from app.models.food import FoodItem, FoodNutrient, FoodSource, ServingDefinitio
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe, RecipeIngredient
+from app.models.recipe_publication import (
+    RecipePublicationAmountDefinition,
+    RecipePublicationNutrient,
+    RecipePublicationRevision,
+)
 from app.models.user import User, UserProfile
 
 __all__ = [
@@ -13,6 +18,9 @@ __all__ = [
     "Nutrient",
     "Recipe",
     "RecipeIngredient",
+    "RecipePublicationAmountDefinition",
+    "RecipePublicationNutrient",
+    "RecipePublicationRevision",
     "ServingDefinition",
     "User",
     "UserProfile",

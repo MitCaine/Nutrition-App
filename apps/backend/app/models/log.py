@@ -5,7 +5,17 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Numeric, Text, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Numeric,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -14,6 +24,30 @@ from app.db.types import GUID
 
 class DailyLog(Base):
     __tablename__ = "daily_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "(recipe_publication_revision_id IS NULL AND "
+            "recipe_publication_amount_definition_id IS NULL) OR "
+            "(recipe_publication_revision_id IS NOT NULL AND "
+            "recipe_publication_amount_definition_id IS NOT NULL)",
+            name="ck_daily_logs_publication_links_paired",
+        ),
+        ForeignKeyConstraint(
+            ["recipe_publication_revision_id", "user_id"],
+            ["recipe_publication_revisions.id", "recipe_publication_revisions.user_id"],
+            name="fk_daily_logs_publication_revision_owner",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["recipe_publication_amount_definition_id", "recipe_publication_revision_id"],
+            [
+                "recipe_publication_amount_definitions.id",
+                "recipe_publication_amount_definitions.revision_id",
+            ],
+            name="fk_daily_logs_publication_amount_membership",
+            ondelete="RESTRICT",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("users.id"))
@@ -26,6 +60,8 @@ class DailyLog(Base):
     serving_definition_id: Mapped[Optional[UUID]] = mapped_column(
         GUID(), ForeignKey("serving_definitions.id", ondelete="SET NULL")
     )
+    recipe_publication_revision_id: Mapped[Optional[UUID]] = mapped_column(GUID())
+    recipe_publication_amount_definition_id: Mapped[Optional[UUID]] = mapped_column(GUID())
     gram_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
     package_fraction: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
     notes: Mapped[Optional[str]] = mapped_column(Text)
