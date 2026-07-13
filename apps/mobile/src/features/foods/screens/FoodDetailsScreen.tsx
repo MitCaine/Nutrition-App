@@ -8,8 +8,8 @@ import {
   formatFoodNutrientLabel,
   formatNutrientAmountForServing,
   formatNutritionServing,
-  initialNutritionServing,
   nutritionServings,
+  selectedNutritionServing,
 } from "../utils/foodDisplay";
 import {
   apiErrorMessage,
@@ -89,9 +89,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   }
 
   const availableServings = nutritionServings(food.data.serving_definitions);
-  const selectedServing =
-    availableServings.find((serving) => serving.id === selectedServingId) ??
-    initialNutritionServing(food.data.serving_definitions);
+  const selectedServing = selectedNutritionServing(food.data.serving_definitions, selectedServingId);
 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
@@ -102,26 +100,26 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
       <Text style={styles.text}>{food.data.brand ?? sourceLabel(food.data.source_type)}</Text>
       {selectedServing ? (
         <View style={styles.servingSection}>
-          <Text style={styles.servingHeading}>Serving</Text>
-          <Text style={styles.servingValue}>{formatNutritionServing(selectedServing)}</Text>
-          {availableServings.length > 1 ? (
-            <View style={styles.servingOptions}>
-              {availableServings.map((serving) => {
-                const selected = serving.id === selectedServing.id;
-                return (
-                  <Pressable
-                    key={serving.id}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: selected }}
-                    onPress={() => setSelectedServingId(serving.id)}
-                    style={[styles.servingOption, selected && styles.servingOptionSelected]}
-                  >
-                    <Text style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{serving.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
+          <Text style={styles.servingHeading}>Amount</Text>
+          <View accessibilityLabel="Amount" accessibilityRole="radiogroup" style={styles.servingOptions}>
+            {availableServings.map((serving) => {
+              const selected = serving.id === selectedServing.id;
+              const formattedAmount = formatNutritionServing(serving);
+              return (
+                <Pressable
+                  key={serving.id}
+                  accessibilityHint="Updates nutrition values below"
+                  accessibilityLabel={formattedAmount}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected, selected }}
+                  onPress={() => setSelectedServingId(serving.id)}
+                  style={[styles.servingOption, selected && styles.servingOptionSelected]}
+                >
+                  <Text style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{formattedAmount}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       ) : null}
       <View style={styles.actions}>
@@ -238,13 +236,12 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   screen: { backgroundColor: theme.colors.background, gap: 12, padding: 16, paddingBottom: 32, paddingRight: 28 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   servingHeading: { color: theme.colors.secondaryText, fontSize: 13, fontWeight: "700", textTransform: "uppercase" },
-  servingOption: { borderColor: theme.colors.border, borderRadius: 16, borderWidth: 1, minHeight: 32, paddingHorizontal: 12, paddingVertical: 6 },
+  servingOption: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 16, borderWidth: 1, maxWidth: "100%", minHeight: 32, paddingHorizontal: 12, paddingVertical: 6 },
   servingOptionSelected: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
-  servingOptionText: { color: theme.colors.secondaryText, fontWeight: "600" },
+  servingOptionText: { color: theme.colors.secondaryText, flexShrink: 1, fontWeight: "600" },
   servingOptionTextSelected: { color: theme.colors.accent },
   servingOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   servingSection: { gap: 7 },
-  servingValue: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   warningTitle: { color: theme.colors.text, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },

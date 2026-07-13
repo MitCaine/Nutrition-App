@@ -9,6 +9,7 @@ import {
   initialNutritionServing,
   nutritionServings,
   primaryServingLabel,
+  selectedNutritionServing,
 } from "../src/features/foods/utils/foodDisplay";
 
 const usdaFood: Food = {
@@ -102,6 +103,34 @@ test("food detail nutrition scales known values to the selected serving", () => 
   expect(formatNutrientAmountForServing(usdaFood.nutrients[0], bar)).toBe("150kcal");
   expect(formatNutrientAmountForServing(usdaFood.nutrients[0], hundredGrams)).toBe("300kcal");
   expect(formatNutrientAmountForServing(usdaFood.nutrients[2], bar)).toBe("unknown");
+});
+
+test("food detail amount selection defaults correctly and moves with the selected chip", () => {
+  const defaultAmount = selectedNutritionServing(usdaFood.serving_definitions, null);
+  const hundredGrams = selectedNutritionServing(usdaFood.serving_definitions, "serving-100g");
+
+  expect(defaultAmount?.id).toBe("serving-bar");
+  expect(formatNutritionServing(defaultAmount!)).toBe("1 bar (50 g)");
+  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], defaultAmount!)).toBe("150kcal");
+  expect(hundredGrams?.id).toBe("serving-100g");
+  expect(formatNutritionServing(hundredGrams!)).toBe("100 g");
+  expect(formatNutrientAmountForServing(usdaFood.nutrients[0], hundredGrams!)).toBe("300kcal");
+});
+
+test("food detail keeps a single nutrition-eligible amount selected and formatted", () => {
+  const singleServingFood = {
+    ...usdaFood,
+    serving_definitions: [
+      { ...usdaFood.serving_definitions[1], label: "2 Tbsp", gram_weight: "32.000000" },
+      { ...usdaFood.serving_definitions[0], id: "unknown-weight", label: "1 scoop", gram_weight: null },
+    ],
+  };
+  const eligible = nutritionServings(singleServingFood.serving_definitions);
+  const selected = selectedNutritionServing(singleServingFood.serving_definitions, null);
+
+  expect(eligible).toHaveLength(1);
+  expect(selected?.id).toBe("serving-bar");
+  expect(formatNutritionServing(selected!)).toBe("2 Tbsp (32 g)");
 });
 
 test("food detail only offers servings with valid gram weights", () => {

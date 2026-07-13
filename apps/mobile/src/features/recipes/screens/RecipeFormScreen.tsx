@@ -9,7 +9,6 @@ import { createFoodServing } from "../../foods/api/foodApi";
 import type { ServingDefinition } from "../../foods/api/types";
 import {
   buildRecipePayload,
-  canPublishRecipe,
   formatIngredientAmount,
   formatServingChoiceLabel,
   moveIngredient,
@@ -122,19 +121,6 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
               <Text style={styles.formLabel}>Notes</Text>
               <TextInput {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
-            <Text style={styles.sectionTitle}>Yield</Text>
-            <Text style={styles.meta}>Enter either one or both.</Text>
-            <Text style={styles.meta}>Serving count defines portions such as 6 bowls or 12 muffins.</Text>
-            <Text style={styles.meta}>Final cooked weight supports precise logging by mass.</Text>
-            <Text style={styles.formLabel}>Number of servings</Text>
-            <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-            <Text style={styles.formLabel}>Final cooked weight</Text>
-            <View style={styles.twoColumn}>
-              <TextInput value={draft.finalCookedWeightGrams} onChangeText={(finalCookedWeightGrams) => setDraft({ ...draft, finalCookedWeightGrams })} placeholder="1240" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-              <MassUnitSelector value={draft.finalCookedWeightUnit} onChange={(finalCookedWeightUnit) => setDraft({ ...draft, finalCookedWeightUnit })} />
-            </View>
-            {convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit) ? <Text style={styles.meta}>{convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit)}</Text> : null}
-            {!canPublishRecipe(draft) ? <Text style={styles.meta}>Drafts can be saved without yield. Publishing needs servings or cooked weight.</Text> : null}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Ingredients</Text>
               <Pressable onPress={onAddIngredient}>
@@ -205,6 +191,15 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                 </View>
               </View>
             ))}
+            <Text style={styles.optionalSectionTitle}>Yield (optional)</Text>
+            <Text style={styles.formLabel}>Number of servings</Text>
+            <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+            <Text style={styles.formLabel}>Final cooked weight</Text>
+            <View style={styles.twoColumn}>
+              <TextInput value={draft.finalCookedWeightGrams} onChangeText={(finalCookedWeightGrams) => setDraft({ ...draft, finalCookedWeightGrams })} placeholder="1240" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+              <MassUnitSelector value={draft.finalCookedWeightUnit} onChange={(finalCookedWeightUnit) => setDraft({ ...draft, finalCookedWeightUnit })} />
+            </View>
+            {convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit) ? <Text style={styles.meta}>{convertedGramsPreview(draft.finalCookedWeightGrams, draft.finalCookedWeightUnit)}</Text> : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {mutations.createRecipe.isError || mutations.updateRecipe.isError ? <Text style={styles.error}>{error ?? "Could not save recipe."}</Text> : null}
           </>
@@ -308,6 +303,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
   label: { color: theme.colors.text, fontWeight: "700", marginTop: 10 },
   link: { color: theme.colors.accent, fontWeight: "700" }, meta: { color: theme.colors.secondaryText },
+  optionalSectionTitle: { color: theme.colors.secondaryText, fontSize: 17, fontWeight: "700", marginBottom: 5, marginTop: 22 },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   reorder: { flexDirection: "row", gap: 16 },
   rowHeader: { alignItems: "center", flexDirection: "row", gap: 12 },

@@ -25,8 +25,17 @@ export function nutritionServings(servings: ServingDefinition[]): ServingDefinit
 }
 
 export function initialNutritionServing(servings: ServingDefinition[]): ServingDefinition | undefined {
+  return selectedNutritionServing(servings, null);
+}
+
+export function selectedNutritionServing(
+  servings: ServingDefinition[],
+  selectedServingId: string | null,
+): ServingDefinition | undefined {
   const available = nutritionServings(servings);
-  return available.find((serving) => serving.is_default) ?? available[0];
+  return available.find((serving) => serving.id === selectedServingId) ??
+    available.find((serving) => serving.is_default) ??
+    available[0];
 }
 
 export function formatNutritionServing(serving: ServingDefinition): string {
