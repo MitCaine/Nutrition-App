@@ -1,30 +1,40 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.domain.recipe_projection import (
+    RecipeProjectionClassification,
     RecipeProjectionKind,
     classify_recipe_projection,
     projection_mutation_error,
 )
 from app.models.food import FoodItem, FoodNutrient, ServingDefinition
 from app.models.recipe import Recipe, RecipeIngredient
-from app.repositories.food_repository import FoodRepository
+from app.models.recipe_publication import (
+    RecipePublicationAmountDefinition,
+    RecipePublicationRevision,
+)
 from app.nutrition.resolution import (
     ResolvedNutrition,
     resolve_food_amount_definitions,
 )
+from app.nutrition.revision_resolution import resolve_revision_nutrition
+from app.repositories.food_repository import FoodRepository
 from app.schemas.food import (
     FoodCreateRequest,
     FoodDeleteAffectedRecipeResponse,
     FoodDeleteDependencyResponse,
     FoodDeleteResultResponse,
     FoodRecipeDependencyResponse,
+    FoodResolvedNutritionResponse,
     FoodUpdateRequest,
+    ResolvedFoodAmountResponse,
+    ResolvedFoodNutrientResponse,
     ServingDefinitionInput,
 )
 
@@ -63,9 +73,142 @@ class FoodService:
     def get_food(self, user_id: UUID, food_id: UUID) -> FoodItem:
         return self.foods.get_required(food_id, user_id)
 
-    def resolved_nutrition(self, user_id: UUID, food_id: UUID) -> list[ResolvedNutrition]:
-        food = self.foods.get_required(food_id, user_id)
-        return resolve_food_amount_definitions(food)
+    def resolved_nutrition(
+        self,
+        user_id: UUID,
+        food_id: UUID,
+    ) -> FoodResolvedNutritionResponse:
+        food, linked_recipe, active_revision = self._food_detail_authorities(user_id, food_id)
+        classification = classify_recipe_projection(food, linked_recipe)
+        if classification.kind == RecipeProjectionKind.INTEGRITY_INVALID:
+            raise projection_mutation_error(food, classification, "read")
+        if classification.kind == RecipeProjectionKind.MANUAL:
+            return FoodResolvedNutritionResponse(
+                nutrition_authority="food_item",
+                recipe_id=None,
+                recipe_publication_revision_id=None,
+                amounts=[
+                    self._food_amount_response(amount)
+                    for amount in resolve_food_amount_definitions(food)
+                    if amount.amount_definition_id is not None
+                ],
+            )
+
+        if (
+            linked_recipe is None
+            or active_revision is None
+            or active_revision.id != linked_recipe.active_publication_revision_id
+            or active_revision.id != food.recipe_publication_revision_id
+            or active_revision.recipe_id != linked_recipe.id
+            or active_revision.user_id != user_id
+        ):
+            raise projection_mutation_error(
+                food,
+                RecipeProjectionClassification(
+                    RecipeProjectionKind.INTEGRITY_INVALID,
+                    classification.recipe_id,
+                ),
+                "read",
+            )
+
+        return FoodResolvedNutritionResponse(
+            nutrition_authority="recipe_publication_revision",
+            recipe_id=linked_recipe.id,
+            recipe_publication_revision_id=active_revision.id,
+            amounts=[
+                self._revision_amount_response(active_revision, amount)
+                for amount in active_revision.amount_definitions
+                if amount.semantic_mode == "serving"
+            ],
+        )
+
+    def _food_detail_authorities(
+        self,
+        user_id: UUID,
+        food_id: UUID,
+    ) -> tuple[FoodItem, Recipe | None, RecipePublicationRevision | None]:
+        statement = (
+            select(FoodItem, Recipe, RecipePublicationRevision)
+            .outerjoin(Recipe, Recipe.published_food_item_id == FoodItem.id)
+            .outerjoin(
+                RecipePublicationRevision,
+                and_(
+                    RecipePublicationRevision.id == Recipe.active_publication_revision_id,
+                    RecipePublicationRevision.recipe_id == Recipe.id,
+                ),
+            )
+            .where(
+                FoodItem.id == food_id,
+                FoodItem.user_id == user_id,
+                FoodItem.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(RecipePublicationRevision.amount_definitions),
+                selectinload(RecipePublicationRevision.nutrients),
+            )
+        )
+        row = self.db.execute(statement).first()
+        if row is None:
+            raise LookupError("Food not found")
+        return row._tuple()
+
+    @staticmethod
+    def _food_amount_response(amount: ResolvedNutrition) -> ResolvedFoodAmountResponse:
+        return ResolvedFoodAmountResponse(
+            amount_definition_id=amount.amount_definition_id,
+            display_label=amount.display_label,
+            is_default=bool(
+                amount.amount.serving_definition
+                and amount.amount.serving_definition.is_default
+            ),
+            entered_quantity=amount.amount.amount_quantity,
+            semantic_amount_mode=amount.amount.amount_unit,
+            resolved_grams=amount.amount.gram_amount,
+            valid_for_logging=amount.valid_for_logging,
+            nutrients=[
+                ResolvedFoodNutrientResponse(
+                    nutrient_id=nutrient.nutrient_id,
+                    amount=nutrient.amount,
+                    unit=nutrient.unit,
+                    data_status=nutrient.data_status.value,
+                    source_basis=nutrient.source_basis.value,
+                )
+                for nutrient in amount.nutrients
+            ],
+        )
+
+    @staticmethod
+    def _revision_amount_response(
+        revision: RecipePublicationRevision,
+        amount: RecipePublicationAmountDefinition,
+    ) -> ResolvedFoodAmountResponse:
+        resolved = resolve_revision_nutrition(
+            revision,
+            amount.id,
+            Decimal("1"),
+            semantic_amount_mode=amount.semantic_mode,
+        )
+        return ResolvedFoodAmountResponse(
+            amount_definition_id=amount.id,
+            display_label=amount.display_label,
+            is_default=amount.is_default,
+            entered_quantity=resolved.entered_quantity,
+            semantic_amount_mode=resolved.semantic_amount_mode,
+            resolved_grams=resolved.resolved_grams,
+            valid_for_logging=True,
+            nutrients=[
+                ResolvedFoodNutrientResponse(
+                    nutrient_id=nutrient.nutrient_id,
+                    amount=nutrient.amount,
+                    unit=nutrient.unit,
+                    data_status=nutrient.data_status.value,
+                    source_basis=nutrient.source_basis.value,
+                )
+                for nutrient in resolved.nutrients
+            ],
+        )
 
     def update_food(self, user_id: UUID, food_id: UUID, payload: FoodUpdateRequest) -> FoodItem:
         food = self.foods.get_required(food_id, user_id)

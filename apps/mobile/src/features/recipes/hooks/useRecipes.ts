@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 
 import {
   createRecipe,
@@ -31,12 +32,14 @@ export function useRecipeNutrition(recipeId: string | null) {
   });
 }
 
+export function invalidateRecipeCaches(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["recipes"] });
+  queryClient.invalidateQueries({ queryKey: ["foods"] });
+}
+
 export function useRecipeMutations() {
   const queryClient = useQueryClient();
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["recipes"] });
-    queryClient.invalidateQueries({ queryKey: ["foods"] });
-  };
+  const invalidate = () => invalidateRecipeCaches(queryClient);
 
   return {
     createRecipe: useMutation({ mutationFn: createRecipe, onSuccess: invalidate }),

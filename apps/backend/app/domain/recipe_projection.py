@@ -54,6 +54,7 @@ def classify_recipe_projection(
         and linked_recipe is not None
         and linked_recipe.id == source_recipe_id
         and linked_recipe.user_id == food.user_id
+        and linked_recipe.deleted_at is None
         and linked_recipe.published_food_item_id == food.id
         and food.recipe_publication_revision_id is not None
         and linked_recipe.active_publication_revision_id
@@ -79,9 +80,14 @@ def projection_mutation_error(
         "operation": operation,
     }
     if classification.kind == RecipeProjectionKind.INTEGRITY_INVALID:
+        message = (
+            "This food appears to be generated from a Recipe, but its ownership links are inconsistent. Republish the Recipe or repair the projection before viewing published nutrition."
+            if operation == "read"
+            else "This food appears to be generated from a Recipe, but its ownership links are inconsistent. Republish the Recipe or repair the projection before changing it."
+        )
         return RecipeProjectionMutationError(
             "recipe_projection_integrity_invalid",
-            "This food appears to be generated from a Recipe, but its ownership links are inconsistent. Republish the Recipe or repair the projection before changing it.",
+            message,
             **context,
         )
     if operation == "delete":

@@ -17,7 +17,7 @@ import {
   parseFoodDeleteDependency,
 } from "../utils/foodDelete";
 import { foodDetailLoadState } from "../utils/foodDetailState";
-import { isRecipeProjection } from "../utils/foodOwnership";
+import { foodDetailActions, isRevisionBackedRecipeDetail } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
@@ -89,9 +89,30 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     );
   }
 
-  const availableAmounts = resolvedNutrition.data?.amounts ?? [];
+  if (resolvedNutrition.isLoading || !resolvedNutrition.data) {
+    return (
+      <View style={styles.screen}>
+        <Pressable onPress={onBack}>
+          <Text style={styles.text}>Back</Text>
+        </Pressable>
+        <Text style={resolvedNutrition.isError ? styles.error : styles.text}>
+          {resolvedNutrition.isError
+            ? apiErrorMessage(resolvedNutrition.error, "Could not resolve nutrition for this food.")
+            : "Loading nutrition..."}
+        </Text>
+        {resolvedNutrition.isError ? (
+          <Pressable onPress={() => resolvedNutrition.refetch()} style={styles.secondaryButton}>
+            <Text style={styles.text}>Retry</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
+  const availableAmounts = resolvedNutrition.data.amounts;
   const selectedAmount = selectedResolvedFoodAmount(availableAmounts, selectedAmountId);
-  const managedByRecipe = isRecipeProjection(food.data);
+  const managedByRecipe = isRevisionBackedRecipeDetail(resolvedNutrition.data);
+  const actions = foodDetailActions(resolvedNutrition.data);
 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
@@ -99,7 +120,12 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         <Text style={styles.text}>Back</Text>
       </Pressable>
       <Text style={styles.title}>{food.data.name}</Text>
-      <Text style={styles.text}>{food.data.brand ?? sourceLabel(food.data.source_type)}</Text>
+      <Text style={styles.text}>
+        {food.data.brand ?? (managedByRecipe ? "Published Recipe" : sourceLabel(food.data.source_type))}
+      </Text>
+      {managedByRecipe ? (
+        <Text style={styles.publishedContext}>Current published Recipe nutrition</Text>
+      ) : null}
       {selectedAmount ? (
         <View style={styles.servingSection}>
           <Text style={styles.servingHeading}>Amount</Text>
@@ -128,7 +154,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         <Pressable onPress={onLog} style={styles.primaryButton}>
           <Text style={styles.primaryText}>Log</Text>
         </Pressable>
-        {!managedByRecipe ? (
+        {actions.canEdit ? (
           <Pressable onPress={onEdit} style={styles.secondaryButton}>
             <Text style={styles.text}>Edit</Text>
           </Pressable>
@@ -136,7 +162,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         <Pressable onPress={() => mutations.duplicateFood.mutate(foodId)} style={styles.secondaryButton}>
           <Text style={styles.text}>Duplicate</Text>
         </Pressable>
-        {!managedByRecipe ? (
+        {actions.canDelete ? (
           <Pressable onPress={() => requestDelete(false)} style={styles.deleteButton}>
             <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
           </Pressable>
@@ -150,8 +176,6 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         onCancel={() => setDependency(null)}
         onConfirm={() => requestDelete(true)}
       />
-      {resolvedNutrition.isLoading ? <Text style={styles.text}>Loading nutrition...</Text> : null}
-      {resolvedNutrition.isError ? <Text style={styles.error}>Could not resolve nutrition for this food.</Text> : null}
       {sortNutrientsByDisplayOrder(
         selectedAmount?.nutrients ?? [],
         (nutrient) => nutrient.nutrient_id,
@@ -238,6 +262,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
   nutrientValue: { color: theme.colors.text, flexShrink: 0, fontWeight: "600", maxWidth: "55%", textAlign: "right" },
   primaryButton: { backgroundColor: theme.colors.accent, borderRadius: 6, padding: 10 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  publishedContext: { color: theme.colors.secondaryText, fontSize: 13 },
   recipeDependencyMeta: { color: theme.colors.secondaryText },
   recipeDependencyName: { color: theme.colors.text, fontWeight: "700" },
   recipeDependencyRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 3, paddingBottom: 8 },

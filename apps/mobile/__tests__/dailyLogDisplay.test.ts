@@ -44,6 +44,16 @@ test("daily log totals keep calories first", () => {
   ]);
 });
 
+test("historical totals remain snapshot-summary values when current Food Detail differs", () => {
+  const historicalSummary = [total("protein", "5.000000")];
+  const currentPublishedFoodDetailAmount = "12.000000";
+
+  expect(visibleDailyTotals(historicalSummary)[0].amountKnown).toBe("5.000000");
+  expect(visibleDailyTotals(historicalSummary)[0].amountKnown).not.toBe(
+    currentPublishedFoodDetailAmount,
+  );
+});
+
 test("historical log display prefers snapshot name with sensible fallbacks", () => {
   const names = new Map([["food-1", "Current Name"]]);
   expect(loggedFoodDisplayName({ food_item_id: "food-1", food_name_snapshot: "Original Name" }, names)).toBe("Original Name");

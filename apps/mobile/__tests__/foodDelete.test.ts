@@ -379,6 +379,21 @@ test("API error message extracts concise backend detail and falls back", () => {
       "Could not save food",
     ),
   ).toBe("Edit and republish the Recipe to change this food.");
+  expect(
+    apiErrorMessage(
+      new ApiError({
+        status: 409,
+        body: {
+          detail: {
+            code: "recipe_projection_integrity_invalid",
+            message: "Republish the Recipe or repair the projection before viewing published nutrition.",
+          },
+        },
+        message: "Request failed with status 409",
+      }),
+      "Could not resolve nutrition for this food.",
+    ),
+  ).toBe("Republish the Recipe or repair the projection before viewing published nutrition.");
   expect(apiErrorMessage(new Error("{bad json"), "Could not delete food")).toBe("Could not delete food");
 });
 

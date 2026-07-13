@@ -117,6 +117,14 @@ def test_imported_usda_food_detail_api_preserves_nutrient_and_serving_distinctio
     assert servings["100 g"]["source"] == "usda_fdc"
     assert servings["100 g"]["is_user_confirmed"] is False
 
+    resolved = client.get(
+        f"/api/v1/foods/{imported.json()['id']}/resolved-nutrition"
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["nutrition_authority"] == "food_item"
+    assert resolved.json()["recipe_id"] is None
+    assert resolved.json()["recipe_publication_revision_id"] is None
+
 
 def test_manual_food_detail_api_uses_same_response_shape(client: TestClient) -> None:
     created = create_food(client)

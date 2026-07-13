@@ -117,8 +117,22 @@ def map_projection_log_amount(
     serving_definition_id: UUID | None,
 ) -> RevisionLogAmountSelection:
     """Map a compatibility selection to immutable revision-owned amount input."""
-    selected_serving = _projection_serving(projection, serving_definition_id)
     amount_unit = amount_unit.strip().lower()
+    revision_selection = next(
+        (
+            amount
+            for amount in revision.amount_definitions
+            if amount.id == serving_definition_id and amount.semantic_mode == amount_unit
+        ),
+        None,
+    )
+    if revision_selection is not None:
+        return RevisionLogAmountSelection(
+            revision_selection,
+            _matching_projection_serving(projection, revision_selection),
+        )
+
+    selected_serving = _projection_serving(projection, serving_definition_id)
     if amount_unit == "g":
         if selected_serving is None:
             selected_serving = next(
@@ -184,3 +198,20 @@ def _projection_serving(
     raise UnsupportedNutritionAmountError(
         "Serving definition does not belong to this food"
     )
+
+
+def _matching_projection_serving(
+    projection: FoodItem,
+    amount: RecipePublicationAmountDefinition,
+) -> ServingDefinition | None:
+    matches = [
+        serving
+        for serving in projection.serving_definitions
+        if amount.semantic_mode == "serving"
+        and amount.display_label == serving.label
+        and amount.display_quantity == serving.quantity
+        and amount.display_unit == serving.unit
+        and amount.gram_equivalent == serving.gram_weight
+        and amount.is_default == serving.is_default
+    ]
+    return matches[0] if len(matches) == 1 else None

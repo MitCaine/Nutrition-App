@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -174,6 +175,9 @@ class ResolvedFoodAmountResponse(BaseModel):
 
 
 class FoodResolvedNutritionResponse(BaseModel):
+    nutrition_authority: Literal["food_item", "recipe_publication_revision"]
+    recipe_id: UUID | None
+    recipe_publication_revision_id: UUID | None
     amounts: list[ResolvedFoodAmountResponse]
 
 

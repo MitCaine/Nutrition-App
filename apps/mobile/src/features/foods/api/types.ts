@@ -73,6 +73,9 @@ export type ResolvedFoodAmount = {
 };
 
 export type FoodResolvedNutrition = {
+  nutrition_authority: "food_item" | "recipe_publication_revision";
+  recipe_id: string | null;
+  recipe_publication_revision_id: string | null;
   amounts: ResolvedFoodAmount[];
 };
 
