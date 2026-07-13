@@ -6,8 +6,15 @@ from decimal import Decimal
 from uuid import UUID
 
 from app.domain.nutrition import NutrientBasis, NutrientDataStatus
-from app.models.food import FoodItem, FoodNutrient
-from app.nutrition.serving_resolution import ResolvedConsumedAmount, resolve_consumed_amount
+from app.models.food import FoodItem
+from app.nutrition.serving_resolution import (
+    AmountDefinitionInput,
+    InterpretedConsumedAmount,
+    ResolvedConsumedAmount,
+    food_amount_definition_inputs,
+    interpret_consumed_amount,
+    resolve_consumed_amount,
+)
 
 
 class NutritionResolutionError(ValueError):
@@ -20,6 +27,32 @@ class UnsupportedNutritionAmountError(NutritionResolutionError):
 
 class AmbiguousNutrientBasisError(NutritionResolutionError):
     """More than one persisted row could authoritatively resolve the same nutrient."""
+
+
+@dataclass(frozen=True)
+class NutrientResolverInput:
+    source_row_id: UUID
+    nutrient_id: str
+    amount: Decimal | None
+    unit: str
+    basis: str
+    data_status: str
+
+
+@dataclass(frozen=True)
+class InterpretedNutrientValue:
+    source_row_id: UUID
+    nutrient_id: str
+    amount: Decimal | None
+    unit: str
+    data_status: NutrientDataStatus
+    source_basis: NutrientBasis
+
+
+@dataclass(frozen=True)
+class InterpretedNutrition:
+    amount: InterpretedConsumedAmount
+    nutrients: tuple[InterpretedNutrientValue, ...]
 
 
 @dataclass(frozen=True)
@@ -61,23 +94,88 @@ def resolve_nutrition(
     amount_unit: str,
     serving_definition_id: UUID | None = None,
 ) -> ResolvedNutrition:
-    """Resolve one authoritative nutrient value per nutrient for a semantic amount.
-
-    This is the application boundary for nutrient-basis interpretation. Persistence
-    stores raw bases; consumers receive only values resolved for the requested amount.
-    """
-    resolved_amount = resolve_amount(food, amount_quantity, amount_unit, serving_definition_id)
-    serving = resolved_amount.serving_definition
-    values = tuple(
-        _resolve_nutrient(nutrient, resolved_amount)
-        for nutrient in _select_nutrients(food, resolved_amount)
+    """Resolve FoodItem persistence through the authoritative interpretation engine."""
+    interpreted = resolve_nutrition_inputs(
+        food_amount_definition_inputs(food),
+        food_nutrient_inputs(food),
+        amount_quantity,
+        amount_unit,
+        serving_definition_id,
+    )
+    serving = next(
+        (
+            value
+            for value in food.serving_definitions
+            if value.id == interpreted.amount.conversion_amount_definition_id
+        ),
+        None,
+    )
+    resolved_amount = ResolvedConsumedAmount(
+        amount_quantity=interpreted.amount.amount_quantity,
+        amount_unit=interpreted.amount.amount_unit,
+        serving_definition=serving,
+        serving_multiplier=interpreted.amount.serving_multiplier,
+        gram_amount=interpreted.amount.gram_amount,
     )
     return ResolvedNutrition(
         amount=resolved_amount,
-        amount_definition_id=serving.id if serving is not None else None,
-        display_label=serving.label if serving is not None else f"{amount_quantity} g",
+        amount_definition_id=interpreted.amount.amount_definition_id,
+        display_label=interpreted.amount.display_label,
         valid_for_logging=True,
-        nutrients=values,
+        nutrients=tuple(
+            ResolvedNutrientValue(
+                nutrient_id=nutrient.nutrient_id,
+                amount=nutrient.amount,
+                unit=nutrient.unit,
+                data_status=nutrient.data_status,
+                source_food_nutrient_id=nutrient.source_row_id,
+                source_basis=nutrient.source_basis,
+            )
+            for nutrient in interpreted.nutrients
+        ),
+    )
+
+
+def resolve_nutrition_inputs(
+    amount_definitions: tuple[AmountDefinitionInput, ...],
+    nutrients: tuple[NutrientResolverInput, ...],
+    amount_quantity: Decimal,
+    amount_unit: str,
+    amount_definition_id: UUID | None,
+) -> InterpretedNutrition:
+    """Sole authority for amount conversion, basis selection, status, and scaling."""
+    has_direct_gram_basis = any(
+        nutrient.basis in {NutrientBasis.PER_GRAM.value, NutrientBasis.PER_100G.value}
+        for nutrient in nutrients
+    )
+    try:
+        resolved_amount = interpret_consumed_amount(
+            amount_definitions,
+            amount_quantity,
+            amount_unit,
+            amount_definition_id,
+            has_direct_gram_basis=has_direct_gram_basis,
+        )
+    except ValueError as exc:
+        raise UnsupportedNutritionAmountError(str(exc)) from exc
+    values = tuple(
+        _interpret_nutrient(nutrient, resolved_amount)
+        for nutrient in _select_nutrients(nutrients, resolved_amount)
+    )
+    return InterpretedNutrition(amount=resolved_amount, nutrients=values)
+
+
+def food_nutrient_inputs(food: FoodItem) -> tuple[NutrientResolverInput, ...]:
+    return tuple(
+        NutrientResolverInput(
+            source_row_id=nutrient.id,
+            nutrient_id=nutrient.nutrient_id,
+            amount=nutrient.amount,
+            unit=nutrient.unit,
+            basis=nutrient.basis,
+            data_status=nutrient.data_status,
+        )
+        for nutrient in food.nutrients
     )
 
 
@@ -98,14 +196,14 @@ def resolve_food_amount_definitions(food: FoodItem) -> list[ResolvedNutrition]:
 
 
 def _select_nutrients(
-    food: FoodItem,
-    resolved: ResolvedConsumedAmount,
-) -> list[FoodNutrient]:
-    grouped: dict[str, list[FoodNutrient]] = defaultdict(list)
-    for nutrient in food.nutrients:
+    nutrients: tuple[NutrientResolverInput, ...],
+    resolved: InterpretedConsumedAmount,
+) -> list[NutrientResolverInput]:
+    grouped: dict[str, list[NutrientResolverInput]] = defaultdict(list)
+    for nutrient in nutrients:
         grouped[nutrient.nutrient_id].append(nutrient)
 
-    selected: list[FoodNutrient] = []
+    selected: list[NutrientResolverInput] = []
     for nutrient_id in sorted(grouped):
         rows = grouped[nutrient_id]
         if resolved.amount_unit == "serving":
@@ -126,10 +224,10 @@ def _select_nutrients(
     return selected
 
 
-def _resolve_nutrient(
-    nutrient: FoodNutrient,
-    resolved: ResolvedConsumedAmount,
-) -> ResolvedNutrientValue:
+def _interpret_nutrient(
+    nutrient: NutrientResolverInput,
+    resolved: InterpretedConsumedAmount,
+) -> InterpretedNutrientValue:
     status = NutrientDataStatus(nutrient.data_status)
     amount: Decimal | None
     if status == NutrientDataStatus.UNKNOWN:
@@ -163,11 +261,11 @@ def _resolve_nutrient(
         else:  # pragma: no cover - NutrientBasis validation owns this invariant.
             raise NutritionResolutionError(f"Unsupported nutrient basis: {nutrient.basis}")
 
-    return ResolvedNutrientValue(
+    return InterpretedNutrientValue(
+        source_row_id=nutrient.source_row_id,
         nutrient_id=nutrient.nutrient_id,
         amount=amount,
         unit=nutrient.unit,
         data_status=status,
-        source_food_nutrient_id=nutrient.id,
         source_basis=NutrientBasis(nutrient.basis),
     )
