@@ -75,6 +75,18 @@ async function renderScreen() {
   return renderer;
 }
 
+async function renderStrictScreen() {
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(React.StrictMode, null,
+        React.createElement(OcrDiagnosticsScreen, { onBack: jest.fn() })),
+      { unstable_strictMode: true } as unknown as TestRenderer.TestRendererOptions,
+    );
+  });
+  return renderer;
+}
+
 async function press(renderer: TestRenderer.ReactTestRenderer, label: string, waitForCompletion = true) {
   if (waitForCompletion) {
     await act(async () => buttonWithLabel(renderer.root, label).props.onPress());
@@ -94,6 +106,15 @@ beforeEach(() => {
   mockLaunchCamera.mockResolvedValue({ canceled: false, assets: [cameraAsset] });
   mockDeleteAsync.mockResolvedValue(undefined);
   mockRecognizeTextFromImage.mockResolvedValue(result);
+});
+
+test("Strict Mode setup-cleanup-setup replay keeps the mounted screen active", async () => {
+  const renderer = await renderStrictScreen();
+  await press(renderer, "Choose photo");
+  expect(renderer.root.findByType(Image).props.source).toEqual({ uri: photoAsset.uri });
+  await press(renderer, "Run OCR");
+  expect(hasText(renderer.root, "Calories 120")).toBe(true);
+  await act(async () => renderer.unmount());
 });
 
 test("choose photo and run OCR retains source, dimensions, and full text", async () => {

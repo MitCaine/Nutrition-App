@@ -123,7 +123,7 @@ The `nutrients` table defines nutrient identity and display hierarchy only.
 
 ## Parser Corrections
 
-Corrections are first-class data. A correction should identify:
+Stage 6A parsing is a pure backend operation over normalized OCR input. It does not accept images and does not persist requests, drafts, or corrections. Parser suggestions retain source text and observation IDs so a future Stage 6B correction can identify:
 
 - `ocr_scan_id`
 - `parse_result_id`

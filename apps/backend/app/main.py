@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.v1.routers import foods, health, logs, nutrients, recipes, usda
+from app.api.v1.routers import foods, health, logs, nutrients, ocr, recipes, usda
 
 
 def create_app() -> FastAPI:
@@ -11,6 +11,11 @@ def create_app() -> FastAPI:
     app.include_router(logs.router, prefix="/api/v1/logs", tags=["logs"])
     app.include_router(recipes.router, prefix="/api/v1/recipes", tags=["recipes"])
     app.include_router(usda.router, prefix="/api/v1/usda", tags=["usda"])
+    app.include_router(
+        ocr.router,
+        prefix="/api/v1/ocr/nutrition-label",
+        tags=["ocr"],
+    )
     return app
 
 

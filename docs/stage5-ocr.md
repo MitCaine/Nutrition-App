@@ -53,7 +53,7 @@ Camera/photo permission denial, cancellation, and acquisition failure are local 
 
 The diagnostics model records `source: "photo_library" | "camera"` alongside the picker URI, width, height, and optional filename. Photo and camera permissions are requested only by their corresponding actions. Both launch paths accept images only, disable editing/base64, request full quality, and return exactly one local file.
 
-Expo Image Picker 16.1.4 writes both camera and library results into its app cache under `ImagePicker`. For camera capture, its iOS implementation fixes the `UIImage` orientation, encodes a JPEG, and returns the cache URI. Camera files are therefore app-owned temporary copies. Stage 5B deletes replaced, cleared, and unmounted camera captures using idempotent `expo-file-system` deletion. Deletion is deferred while the same URI is being recognized and missing-file cleanup is tolerated. Photo-library originals are never deleted; their picker-created cache copies are left to Expo/iOS cache lifecycle.
+Expo Image Picker 16.1.4 writes both camera and library results into its app cache under `ImagePicker`. For camera capture, its iOS implementation fixes the `UIImage` orientation, encodes a JPEG, and returns the cache URI. Camera files are therefore app-owned temporary copies and are explicitly deleted by the diagnostics screen when replaced, cleared, or unmounted using idempotent `expo-file-system` deletion. Deletion is deferred while the same URI is being recognized and missing-file cleanup is tolerated. The app does not delete photo-library selections or originals; those remain under Expo Image Picker/iOS cache lifecycle.
 
 No selected or captured image is copied into application persistence.
 
@@ -68,7 +68,7 @@ No selected or captured image is copied into application persistence.
 
 No Stage 5A coordinate correction was required. The output remains normalized to the displayed, orientation-corrected image, with `x` increasing rightward and `y` downward.
 
-Pure Swift validation covers dimensions, applied status, lower-left conversion, clamp behavior, and deterministic ordering for all eight EXIF orientations. A second runtime executable generates an upright synthetic `TOP` fixture, inverse-encodes it for each EXIF orientation, writes/decodes the JPEG metadata, runs real Apple Vision OCR, and verifies that the recognized boxes align in the same displayed coordinate space for all rotated and mirrored variants.
+Pure Swift validation covers dimensions, applied status, lower-left conversion, clamp behavior, and deterministic ordering for all eight EXIF orientations. A second macOS test executable generates an upright synthetic `TOP` fixture, inverse-encodes it for each EXIF orientation, writes/decodes the JPEG metadata, runs the macOS Apple Vision runtime, and verifies that recognized boxes align in the same displayed coordinate space for all rotated and mirrored variants. This is fixture-based Apple Vision evidence, not physical-device validation.
 
 ## Diagnostics overlay and concurrency
 
@@ -109,6 +109,6 @@ cd ios && pod install
 xcodebuild -workspace NutritionApp.xcworkspace -scheme NutritionApp -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
-Automated Stage 5B runtime evidence: both Swift executables pass across all eight EXIF orientations, including mirrored variants. Focused TypeScript/mounted tests cover both acquisition sources, separate permissions, cancellation/failure, cache deletion, busy guards, stale result handling, aspect-fit overlay mapping, retries, and accessibility state.
+Automated Stage 5B evidence: both macOS Swift executables pass across all eight EXIF orientations, including mirrored variants. Focused TypeScript/mounted tests cover both acquisition sources, separate permissions, cancellation/failure, cache deletion, busy guards, stale result handling, aspect-fit overlay mapping, retries, Strict Mode lifecycle replay, and accessibility state.
 
-No physical-device session was available during implementation. Portrait/landscape capture, camera denial, high-resolution/low-contrast capture, and live overlay inspection on real camera output remain the manual release-QA checklist. Stage 5 implementation is complete; this device QA should be completed before Stage 6 begins relying on capture geometry.
+No physical-device session was available during implementation. Portrait/landscape capture, camera denial, high-resolution/low-contrast capture, and live overlay inspection on real camera output remain the manual release-QA checklist. Stage 5 implementation is complete; this device QA should be completed before future parser work relies on capture geometry.

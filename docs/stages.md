@@ -77,10 +77,9 @@ Implemented API surface:
 
 ## Stage 6: Parser + Confirmation Flow
 
-- Backend parser pipeline.
-- Golden parser fixtures.
-- User confirmation/edit screen.
-- Correction traceability.
+- Stage 6A: normalized backend parser pipeline and golden parser fixtures.
+- Stage 6A: deterministic provenance, warnings, confidence ranking, and parse API without persistence.
+- Stage 6B (future): user confirmation/edit screen, Food creation, and correction trace persistence.
 
 ## Stage 7: Targets + Dashboard Polish
 

@@ -1,0 +1,143 @@
+[
+  {
+    "name": "clean_modern_us_label",
+    "request": {
+      "full_text": "Nutrition Facts\nAbout 8 servings per container\nServing size 2/3 cup (55g)\nCalories 230\nTotal Fat 8g 10%\nSaturated Fat 1g 5%\nTrans Fat 0g\nCholesterol 0mg 0%\nSodium 160mg 7%\nTotal Carbohydrate 37g 13%\nDietary Fiber 4g 14%\nTotal Sugars 12g\nIncludes 10g Added Sugars 20%\nProtein 3g\nVitamin D 2mcg 10%\nCalcium 260mg 20%\nIron 8mg 45%\nPotassium 235mg 6%",
+      "observations": [
+        {"id":"c01","text":"Nutrition Facts","confidence":0.99},
+        {"id":"c02","text":"About 8 servings per container","confidence":0.98},
+        {"id":"c03","text":"Serving size 2/3 cup (55g)","confidence":0.98},
+        {"id":"c04","text":"Calories 230","confidence":0.99},
+        {"id":"c05","text":"Total Fat 8g 10%","confidence":0.97},
+        {"id":"c06","text":"Saturated Fat 1g 5%","confidence":0.96},
+        {"id":"c07","text":"Trans Fat 0g","confidence":0.96},
+        {"id":"c08","text":"Cholesterol 0mg 0%","confidence":0.97},
+        {"id":"c09","text":"Sodium 160mg 7%","confidence":0.98},
+        {"id":"c10","text":"Total Carbohydrate 37g 13%","confidence":0.97},
+        {"id":"c11","text":"Dietary Fiber 4g 14%","confidence":0.96},
+        {"id":"c12","text":"Total Sugars 12g","confidence":0.97},
+        {"id":"c13","text":"Includes 10g Added Sugars 20%","confidence":0.96},
+        {"id":"c14","text":"Protein 3g","confidence":0.98},
+        {"id":"c15","text":"Vitamin D 2mcg 10%","confidence":0.95},
+        {"id":"c16","text":"Calcium 260mg 20%","confidence":0.96},
+        {"id":"c17","text":"Iron 8mg 45%","confidence":0.95},
+        {"id":"c18","text":"Potassium 235mg 6%","confidence":0.96}
+      ]
+    },
+    "expected": {
+      "serving":{"count":"8","display":"2/3 cup (55g)","quantity":"0.666667","unit":"cup","grams":"55","approximate":true},
+      "calories":{"value":"230","status":"parsed"},
+      "nutrients":[
+        ["total_fat","8","g","10","parsed",null], ["saturated_fat","1","g","5","parsed",null],
+        ["trans_fat","0","g",null,"parsed",null], ["cholesterol","0","mg","0","parsed",null],
+        ["sodium","160","mg","7","parsed",null], ["total_carbohydrate","37","g","13","parsed",null],
+        ["dietary_fiber","4","g","14","parsed",null], ["total_sugars","12","g",null,"parsed",null],
+        ["added_sugars","10","g","20","parsed",null], ["protein","3","g",null,"parsed",null],
+        ["vitamin_d","2","mcg","10","parsed",null], ["calcium","260","mg","20","parsed",null],
+        ["iron","8","mg","45","parsed",null], ["potassium","235","mg","6","parsed",null]
+      ],
+      "warnings":[], "unparsed":[]
+    }
+  },
+  {
+    "name":"compact_single_column",
+    "request":{"full_text":"Nutrition Facts\nServing Size 1 bar (40 g)\nCalories 180\nTotal Fat 7g 9%\nSodium 90mg 4%\nProtein 5g","observations":[
+      {"id":"k1","text":"Nutrition Facts","confidence":0.98},{"id":"k2","text":"Serving Size 1 bar (40 g)","confidence":0.97},{"id":"k3","text":"Calories 180","confidence":0.98},{"id":"k4","text":"Total Fat 7g 9%","confidence":0.96},{"id":"k5","text":"Sodium 90mg 4%","confidence":0.96},{"id":"k6","text":"Protein 5g","confidence":0.97}]},
+    "expected":{"serving":{"count":null,"display":"1 bar (40 g)","quantity":"1","unit":"bar","grams":"40","approximate":false},"calories":{"value":"180","status":"parsed"},"nutrients":[["total_fat","7","g","9","parsed",null],["sodium","90","mg","4","parsed",null],["protein","5","g",null,"parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"serving_fraction",
+    "request":{"full_text":"Nutrition Facts\nServing size 2/3 cup (55g)\nCalories 100\nTotal Carbohydrate 20g 7%","observations":[{"id":"f1","text":"Nutrition Facts","confidence":0.99},{"id":"f2","text":"Serving size 2/3 cup (55g)","confidence":0.98},{"id":"f3","text":"Calories 100","confidence":0.98},{"id":"f4","text":"Total Carbohydrate 20g 7%","confidence":0.97}]},
+    "expected":{"serving":{"count":null,"display":"2/3 cup (55g)","quantity":"0.666667","unit":"cup","grams":"55","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[["total_carbohydrate","20","g","7","parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"multi_serving_package",
+    "request":{"full_text":"Nutrition Facts\nAbout 3 servings per container\nServing size 4 pieces (30g)\nCalories 140\nTotal Fat 6g 8%","observations":[{"id":"m1","text":"Nutrition Facts","confidence":0.98},{"id":"m2","text":"About 3 servings per container","confidence":0.96},{"id":"m3","text":"Serving size 4 pieces (30g)","confidence":0.97},{"id":"m4","text":"Calories 140","confidence":0.98},{"id":"m5","text":"Total Fat 6g 8%","confidence":0.96}]},
+    "expected":{"serving":{"count":"3","display":"4 pieces (30g)","quantity":"4","unit":"pieces","grams":"30","approximate":true},"calories":{"value":"140","status":"parsed"},"nutrients":[["total_fat","6","g","8","parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"explicit_zero_nutrients",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 package (25g)\nCalories 0\nTotal Fat 0g 0%\nCholesterol 0mg 0%\nProtein 0g","observations":[{"id":"z1","text":"Nutrition Facts","confidence":0.99},{"id":"z2","text":"Serving size 1 package (25g)","confidence":0.98},{"id":"z3","text":"Calories 0","confidence":0.99},{"id":"z4","text":"Total Fat 0g 0%","confidence":0.98},{"id":"z5","text":"Cholesterol 0mg 0%","confidence":0.98},{"id":"z6","text":"Protein 0g","confidence":0.98}]},
+    "expected":{"serving":{"count":null,"display":"1 package (25g)","quantity":"1","unit":"package","grams":"25","approximate":false},"calories":{"value":"0","status":"parsed"},"nutrients":[["total_fat","0","g","0","parsed",null],["cholesterol","0","mg","0","parsed",null],["protein","0","g",null,"parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"missing_optional_micronutrients",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 slice (28g)\nCalories 80\nTotal Fat 1g 1%\nProtein 4g","observations":[{"id":"m01","text":"Nutrition Facts","confidence":0.98},{"id":"m02","text":"Serving size 1 slice (28g)","confidence":0.97},{"id":"m03","text":"Calories 80","confidence":0.98},{"id":"m04","text":"Total Fat 1g 1%","confidence":0.96},{"id":"m05","text":"Protein 4g","confidence":0.97}]},
+    "expected":{"serving":{"count":null,"display":"1 slice (28g)","quantity":"1","unit":"slice","grams":"28","approximate":false},"calories":{"value":"80","status":"parsed"},"nutrients":[["total_fat","1","g","1","parsed",null],["protein","4","g",null,"parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"less_than_one_gram",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 tsp (5g)\nCalories 5\nTotal Carbohydrate <1g 0%","observations":[{"id":"l1","text":"Nutrition Facts","confidence":0.99},{"id":"l2","text":"Serving size 1 tsp (5g)","confidence":0.98},{"id":"l3","text":"Calories 5","confidence":0.98},{"id":"l4","text":"Total Carbohydrate <1g 0%","confidence":0.96}]},
+    "expected":{"serving":{"count":null,"display":"1 tsp (5g)","quantity":"1","unit":"tsp","grams":"5","approximate":false},"calories":{"value":"5","status":"parsed"},"nutrients":[["total_carbohydrate","1","g","0","parsed","less_than"]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"broken_ocr_lines",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cup (240g)\nCalories 120\nTotal Fat\n8g 10%\nSodium\n120 mg 5%","observations":[{"id":"b1","text":"Nutrition Facts","confidence":0.98},{"id":"b2","text":"Serving size 1 cup (240g)","confidence":0.97},{"id":"b3","text":"Calories 120","confidence":0.98},{"id":"b4","text":"Total Fat","confidence":0.96},{"id":"b5","text":"8g 10%","confidence":0.95},{"id":"b6","text":"Sodium","confidence":0.96},{"id":"b7","text":"120 mg 5%","confidence":0.94}]},
+    "expected":{"serving":{"count":null,"display":"1 cup (240g)","quantity":"1","unit":"cup","grams":"240","approximate":false},"calories":{"value":"120","status":"parsed"},"nutrients":[["total_fat","8","g","10","parsed",null],["sodium","120","mg","5","parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"split_amount_and_daily_value",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 bowl (50g)\nCalories 210\nTotal Fat 9g\n12%","observations":[{"id":"s1","text":"Nutrition Facts","confidence":0.99,"bounding_box":{"x":0.05,"y":0.05,"width":0.5,"height":0.05}},{"id":"s2","text":"Serving size 1 bowl (50g)","confidence":0.97},{"id":"s3","text":"Calories 210","confidence":0.98},{"id":"s4","text":"Total Fat 9g","confidence":0.96,"bounding_box":{"x":0.05,"y":0.5,"width":0.5,"height":0.04}},{"id":"s5","text":"12%","confidence":0.95,"bounding_box":{"x":0.8,"y":0.5,"width":0.1,"height":0.04}}]},
+    "expected":{"serving":{"count":null,"display":"1 bowl (50g)","quantity":"1","unit":"bowl","grams":"50","approximate":false},"calories":{"value":"210","status":"parsed"},"nutrients":[["total_fat","9","g","12","parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"g_q_confusion",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 bar (40g)\nCalories 180\nTotal Fat 8q 10%","observations":[{"id":"q1","text":"Nutrition Facts","confidence":0.98},{"id":"q2","text":"Serving size 1 bar (40g)","confidence":0.97},{"id":"q3","text":"Calories 180","confidence":0.98},{"id":"q4","text":"Total Fat 8q 10%","confidence":0.72}]},
+    "expected":{"serving":{"count":null,"display":"1 bar (40g)","quantity":"1","unit":"bar","grams":"40","approximate":false},"calories":{"value":"180","status":"parsed"},"nutrients":[["total_fat","8","g","10","parsed",null]],"warnings":["ocr_character_correction_applied"],"unparsed":[]}
+  },
+  {
+    "name":"duplicate_recognized_line",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cup (50g)\nCalories 100\nSodium 120mg 5%\nSodium 120mg 5%","observations":[{"id":"d1","text":"Nutrition Facts","confidence":0.99},{"id":"d2","text":"Serving size 1 cup (50g)","confidence":0.97},{"id":"d3","text":"Calories 100","confidence":0.98},{"id":"d4","text":"Sodium 120mg 5%","confidence":0.96},{"id":"d5","text":"Sodium 120mg 5%","confidence":0.94}]},
+    "expected":{"serving":{"count":null,"display":"1 cup (50g)","quantity":"1","unit":"cup","grams":"50","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[["sodium","120","mg","5","parsed",null]],"warnings":["duplicate_nutrient_row"],"unparsed":["Sodium 120mg 5%"]}
+  },
+  {
+    "name":"low_confidence_observation",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 pouch (30g)\nCalories 90\nProtein 6g","observations":[{"id":"lo1","text":"Nutrition Facts","confidence":0.98},{"id":"lo2","text":"Serving size 1 pouch (30g)","confidence":0.97},{"id":"lo3","text":"Calories 90","confidence":0.98},{"id":"lo4","text":"Protein 6g","confidence":0.31}]},
+    "expected":{"serving":{"count":null,"display":"1 pouch (30g)","quantity":"1","unit":"pouch","grams":"30","approximate":false},"calories":{"value":"90","status":"parsed"},"nutrients":[["protein","6","g",null,"parsed",null]],"warnings":[],"unparsed":[],"max_nutrient_confidence":0.31}
+  },
+  {
+    "name":"missing_serving_gram_weight",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cookie\nCalories 70\nTotal Fat 3g 4%","observations":[{"id":"g1","text":"Nutrition Facts","confidence":0.99},{"id":"g2","text":"Serving size 1 cookie","confidence":0.97},{"id":"g3","text":"Calories 70","confidence":0.98},{"id":"g4","text":"Total Fat 3g 4%","confidence":0.96}]},
+    "expected":{"serving":{"count":null,"display":"1 cookie","quantity":"1","unit":"cookie","grams":null,"approximate":false},"calories":{"value":"70","status":"parsed"},"nutrients":[["total_fat","3","g","4","parsed",null]],"warnings":["serving_grams_missing"],"unparsed":[]}
+  },
+  {
+    "name":"missing_calories",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 scoop (20g)\nProtein 15g","observations":[{"id":"x1","text":"Nutrition Facts","confidence":0.99},{"id":"x2","text":"Serving size 1 scoop (20g)","confidence":0.97},{"id":"x3","text":"Protein 15g","confidence":0.96}]},
+    "expected":{"serving":{"count":null,"display":"1 scoop (20g)","quantity":"1","unit":"scoop","grams":"20","approximate":false},"calories":{"value":null,"status":"missing"},"nutrients":[["protein","15","g",null,"parsed",null]],"warnings":["calories_missing"],"unparsed":[]}
+  },
+  {
+    "name":"unknown_nutrient_row",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 bottle (300g)\nCalories 40\nMystery Mineral 7mg 3%","observations":[{"id":"u1","text":"Nutrition Facts","confidence":0.99},{"id":"u2","text":"Serving size 1 bottle (300g)","confidence":0.97},{"id":"u3","text":"Calories 40","confidence":0.98},{"id":"u4","text":"Mystery Mineral 7mg 3%","confidence":0.91}]},
+    "expected":{"serving":{"count":null,"display":"1 bottle (300g)","quantity":"1","unit":"bottle","grams":"300","approximate":false},"calories":{"value":"40","status":"parsed"},"nutrients":[[null,"7","mg","3","parsed",null]],"warnings":["nutrient_name_unmatched"],"unparsed":[]}
+  },
+  {
+    "name":"conflicting_duplicate_values",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 tray (200g)\nCalories 300\nSodium 400mg 17%\nSodium 480mg 21%","observations":[{"id":"v1","text":"Nutrition Facts","confidence":0.99},{"id":"v2","text":"Serving size 1 tray (200g)","confidence":0.97},{"id":"v3","text":"Calories 300","confidence":0.98},{"id":"v4","text":"Sodium 400mg 17%","confidence":0.92},{"id":"v5","text":"Sodium 480mg 21%","confidence":0.89}]},
+    "expected":{"serving":{"count":null,"display":"1 tray (200g)","quantity":"1","unit":"tray","grams":"200","approximate":false},"calories":{"value":"300","status":"parsed"},"nutrients":[["sodium","400","mg","17","ambiguous",null],["sodium","480","mg","21","ambiguous",null]],"warnings":["conflicting_nutrient_values"],"unparsed":[]}
+  },
+  {
+    "name":"rotated_image_normal_reading_order",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 can (355g)\nCalories 150\nTotal Sugars 39g\nSodium 35mg 2%","observations":[{"id":"r1","text":"Nutrition Facts","confidence":0.98,"bounding_box":{"x":0.1,"y":0.05,"width":0.5,"height":0.05}},{"id":"r2","text":"Serving size 1 can (355g)","confidence":0.96,"bounding_box":{"x":0.1,"y":0.12,"width":0.7,"height":0.04}},{"id":"r3","text":"Calories 150","confidence":0.98,"bounding_box":{"x":0.1,"y":0.2,"width":0.4,"height":0.05}},{"id":"r4","text":"Total Sugars 39g","confidence":0.95,"bounding_box":{"x":0.1,"y":0.4,"width":0.5,"height":0.04}},{"id":"r5","text":"Sodium 35mg 2%","confidence":0.95,"bounding_box":{"x":0.1,"y":0.5,"width":0.5,"height":0.04}}]},
+    "expected":{"serving":{"count":null,"display":"1 can (355g)","quantity":"1","unit":"can","grams":"355","approximate":false},"calories":{"value":"150","status":"parsed"},"nutrients":[["total_sugars","39","g",null,"parsed",null],["sodium","35","mg","2","parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"noisy_marketing_text",
+    "request":{"full_text":"NEW LOOK\nNutrition Facts\nServing size 1 bag (28g)\nCalories 160\nTotal Fat 10g 13%\nCRUNCHY AND DELICIOUS","observations":[{"id":"n1","text":"NEW LOOK","confidence":0.88},{"id":"n2","text":"Nutrition Facts","confidence":0.99},{"id":"n3","text":"Serving size 1 bag (28g)","confidence":0.97},{"id":"n4","text":"Calories 160","confidence":0.98},{"id":"n5","text":"Total Fat 10g 13%","confidence":0.96},{"id":"n6","text":"CRUNCHY AND DELICIOUS","confidence":0.9}]},
+    "expected":{"serving":{"count":null,"display":"1 bag (28g)","quantity":"1","unit":"bag","grams":"28","approximate":false},"calories":{"value":"160","status":"parsed"},"nutrients":[["total_fat","10","g","13","parsed",null]],"warnings":[],"unparsed":["NEW LOOK","CRUNCHY AND DELICIOUS"]}
+  },
+  {
+    "name":"old_style_nutrition_facts",
+    "request":{"full_text":"Nutrition Facts\nServing Size 1 cup (228g)\nServings Per Container 2\nCalories 250 Calories from Fat 110\nTotal Fat 12g 18%\nSodium 470mg 20%\nTotal Carb. 31g 10%\nSugars 5g\nProtein 5g","observations":[{"id":"o1","text":"Nutrition Facts","confidence":0.98},{"id":"o2","text":"Serving Size 1 cup (228g)","confidence":0.97},{"id":"o3","text":"Servings Per Container 2","confidence":0.96},{"id":"o4","text":"Calories 250 Calories from Fat 110","confidence":0.96},{"id":"o5","text":"Total Fat 12g 18%","confidence":0.95},{"id":"o6","text":"Sodium 470mg 20%","confidence":0.95},{"id":"o7","text":"Total Carb. 31g 10%","confidence":0.94},{"id":"o8","text":"Sugars 5g","confidence":0.94},{"id":"o9","text":"Protein 5g","confidence":0.95}]},
+    "expected":{"serving":{"count":"2","display":"1 cup (228g)","quantity":"1","unit":"cup","grams":"228","approximate":false},"calories":{"value":"250","status":"parsed"},"nutrients":[["total_fat","12","g","18","parsed",null],["sodium","470","mg","20","parsed",null],["total_carbohydrate","31","g","10","parsed",null],["total_sugars","5","g",null,"parsed",null],["protein","5","g",null,"parsed",null]],"warnings":[],"unparsed":[]}
+  },
+  {
+    "name":"malformed_non_label_text",
+    "request":{"full_text":"Fresh every day\nCall 555 0100\nBest before Friday","observations":[{"id":"bad1","text":"Fresh every day","confidence":0.93},{"id":"bad2","text":"Call 555 0100","confidence":0.89},{"id":"bad3","text":"Best before Friday","confidence":0.91}]},
+    "expected":{"serving":null,"calories":{"value":null,"status":"missing"},"nutrients":[],"warnings":["nutrition_header_not_found","serving_size_missing","calories_missing"],"unparsed":["Fresh every day","Call 555 0100","Best before Friday"]}
+  },
+  {
+    "name":"malformed_decimal_punctuation",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 piece (20g)\nCalories 60\nTotal Fat 1..5g 2%","observations":[{"id":"p1","text":"Nutrition Facts","confidence":0.99},{"id":"p2","text":"Serving size 1 piece (20g)","confidence":0.97},{"id":"p3","text":"Calories 60","confidence":0.98},{"id":"p4","text":"Total Fat 1..5g 2%","confidence":0.71}]},
+    "expected":{"serving":{"count":null,"display":"1 piece (20g)","quantity":"1","unit":"piece","grams":"20","approximate":false},"calories":{"value":"60","status":"parsed"},"nutrients":[["total_fat",null,"g","2","ambiguous",null]],"warnings":["nutrient_amount_ambiguous"],"unparsed":[]}
+  }
+]

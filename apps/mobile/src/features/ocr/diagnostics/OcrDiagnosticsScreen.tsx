@@ -82,11 +82,16 @@ export function OcrDiagnosticsScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    scheduleCameraCleanup(selectionRef.current);
-    selectionRef.current = null;
-    flushPendingCameraCleanup();
+  useEffect(() => {
+    // React Strict Mode may replay setup -> cleanup -> setup while the screen is
+    // still mounted. Reasserting true here keeps async acquisition/OCR results live.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      scheduleCameraCleanup(selectionRef.current);
+      selectionRef.current = null;
+      flushPendingCameraCleanup();
+    };
   }, []);
 
   const acquireImage = async (source: OcrImageSource) => {
