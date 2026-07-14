@@ -17,6 +17,7 @@ from app.domain.recipe_projection import (
 )
 from app.models.food import FoodItem
 from app.models.recipe import Recipe, RecipeIngredient
+from app.models.user import User
 from app.nutrition.aggregation import aggregate_snapshots
 from app.nutrition.resolution import (
     AmbiguousNutrientBasisError,
@@ -77,6 +78,20 @@ class RecipePublicationDependenciesUnstableError(ValueError):
         return {"code": self.code, "message": self.message}
 
 
+class RecipeGraphCycleError(ValueError):
+    code = "recipe_graph_cycle_conflict"
+    message = (
+        "This ingredient change would create a circular Recipe dependency. "
+        "Remove the circular Recipe ingredient and try again."
+    )
+
+    def __init__(self):
+        super().__init__(self.message)
+
+    def detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.message}
+
+
 class RecipeService:
     def __init__(self, db: Session):
         self.db = db
@@ -85,6 +100,7 @@ class RecipeService:
         self.publications = RecipePublicationRepository(db)
 
     def create_recipe(self, user_id: UUID, payload: RecipeCreateRequest) -> Recipe:
+        self._lock_recipe_graph_owner(user_id)
         recipe = Recipe(
             id=uuid4(),
             user_id=user_id,
@@ -107,12 +123,16 @@ class RecipeService:
         return self.recipes.get_required(recipe_id, user_id)
 
     def update_recipe(self, user_id: UUID, recipe_id: UUID, payload: RecipeUpdateRequest) -> Recipe:
+        if payload.ingredients is not None:
+            self._lock_recipe_graph_owner(user_id)
         locked_foods = (
             self._lock_ingredient_foods(user_id, payload.ingredients)
             if payload.ingredients is not None
             else None
         )
         recipe = self.recipes.get_for_update(recipe_id, user_id)
+        if payload.ingredients is not None:
+            self._after_recipe_graph_initial_locks(recipe)
         fields = payload.model_fields_set
         if payload.name is not None:
             recipe.name = payload.name.strip()
@@ -136,6 +156,17 @@ class RecipeService:
         recipe.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         return self.recipes.get_required(recipe_id, user_id)
+
+    def _after_recipe_graph_initial_locks(self, _recipe: Recipe) -> None:
+        """Test seam after ingredient-update locks and before graph validation."""
+
+    def _lock_recipe_graph_owner(self, user_id: UUID) -> None:
+        """Serialize authored Recipe-edge mutations for one owner transaction."""
+        locked_user_id = self.db.scalar(
+            select(User.id).where(User.id == user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise LookupError("User not found")
 
     def _apply_final_cooked_weight_update(self, recipe: Recipe, payload: RecipeUpdateRequest) -> None:
         fields = payload.model_fields_set
@@ -634,7 +665,7 @@ class RecipeService:
 
     def _validate_no_recipe_cycle(self, user_id: UUID, recipe: Recipe, food: FoodItem) -> None:
         if recipe.published_food_item_id is not None and food.id == recipe.published_food_item_id:
-            raise ValueError("Recipe cannot include its own published food")
+            raise RecipeGraphCycleError()
         if food.source_type != "recipe" or food.source_id is None:
             return
         try:
@@ -642,9 +673,9 @@ class RecipeService:
         except ValueError as exc:
             raise ValueError("Ingredient recipe food has invalid source identity") from exc
         if ingredient_recipe_id == recipe.id:
-            raise ValueError("Recipe cannot include its own published food")
+            raise RecipeGraphCycleError()
         if self._recipe_references_recipe(user_id, ingredient_recipe_id, recipe.id, set()):
-            raise ValueError("Recipe ingredient would create a recipe cycle")
+            raise RecipeGraphCycleError()
 
     def _recipe_references_recipe(
         self,

@@ -690,5 +690,7 @@ def test_recipe_cycle_detection_rejects_direct_and_indirect_cycles(client: TestC
             ]
         },
     )
-    assert direct.status_code == 400
-    assert indirect.status_code == 400
+    assert direct.status_code == 409
+    assert indirect.status_code == 409
+    assert direct.json()["detail"]["code"] == "recipe_graph_cycle_conflict"
+    assert indirect.json()["detail"]["code"] == "recipe_graph_cycle_conflict"

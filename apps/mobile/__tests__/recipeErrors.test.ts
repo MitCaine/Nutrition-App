@@ -17,3 +17,21 @@ test("falls back for unusable errors", () => {
   expect(recipeApiErrorMessage(new Error("{not json"))).toBe("Could not save recipe.");
   expect(recipeApiErrorMessage("bad")).toBe("Could not save recipe.");
 });
+
+test("shows actionable structured Recipe graph conflicts", () => {
+  expect(
+    recipeApiErrorMessage(
+      new Error(
+        JSON.stringify({
+          detail: {
+            code: "recipe_graph_cycle_conflict",
+            message:
+              "This ingredient change would create a circular Recipe dependency. Remove the circular Recipe ingredient and try again.",
+          },
+        }),
+      ),
+    ),
+  ).toBe(
+    "This ingredient change would create a circular Recipe dependency. Remove the circular Recipe ingredient and try again.",
+  );
+});

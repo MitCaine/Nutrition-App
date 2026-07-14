@@ -70,6 +70,26 @@ Food logs reload resolver children after locking the Food, so a snapshot cannot 
 servings and nutrients from different committed Food generations. Immutable Recipe revision
 logging retains its revision lock path.
 
+Authored Recipe graph-edge creation and replacement add a narrower per-owner boundary before
+that order:
+
+1. Lock the owning `users` row for the transaction.
+2. Lock referenced Food rows in sorted UUID order.
+3. Lock the Recipe being updated.
+4. Traverse the now-current committed Recipe graph and validate ownership, activity, serving
+   membership, and cycles.
+5. Replace ingredients and commit.
+
+The owner row is a database lock, not a Python-process lock or a global application lock.
+Consequently, graph mutations for one owner serialize, different owners remain independent,
+and no advisory-key collision is possible. Under PostgreSQL `READ COMMITTED`, a waiter begins
+all graph reads only after the preceding owner transaction commits or rolls back, so graph
+membership discovery does not require a separate restart loop. SQLite's test strategy uses
+the same explicit query; its ordinary tests are single-writer, while concurrency guarantees
+are proven by the PostgreSQL suite. Ingredient removals during Food or child-Recipe deletion
+do not acquire this owner boundary because removing edges cannot introduce a cycle and their
+Food-before-Recipe locks already prevent concurrent dependency additions.
+
 ## Units
 
 Stage 2 supports `kcal`, `g`, `mg`, and `mcg`.

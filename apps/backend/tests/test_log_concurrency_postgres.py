@@ -39,7 +39,7 @@ from app.schemas.food import FoodUpdateRequest, ServingDefinitionInput
 from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.services.log_service import LogService
 from app.services.food_service import FoodService
-from app.services.recipe_service import RecipeService
+from app.services.recipe_service import RecipeGraphCycleError, RecipeService
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -267,6 +267,368 @@ def _manual_create_target(factory) -> tuple:
         db.add(food)
         db.commit()
         return user.id, food.id, serving.id
+
+
+def _published_recipe_pair(factory) -> tuple:
+    with factory() as db:
+        user = User(id=uuid4(), email=f"graph-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        service = RecipeService(db)
+        recipe_a = service.create_recipe(
+            user.id,
+            RecipeCreateRequest(name="Recipe A", serving_count_yield=Decimal("1")),
+        )
+        recipe_b = service.create_recipe(
+            user.id,
+            RecipeCreateRequest(name="Recipe B", serving_count_yield=Decimal("1")),
+        )
+        recipe_a, food_a = service.publish(user.id, recipe_a.id)
+        recipe_b, food_b = service.publish(user.id, recipe_b.id)
+        serving_a = next(row.id for row in food_a.serving_definitions if row.is_default)
+        serving_b = next(row.id for row in food_b.serving_definitions if row.is_default)
+        return (
+            user.id,
+            recipe_a.id,
+            food_a.id,
+            serving_a,
+            recipe_b.id,
+            food_b.id,
+            serving_b,
+        )
+
+
+def _recipe_ingredient_update(food_id, serving_id) -> RecipeUpdateRequest:
+    return RecipeUpdateRequest.model_validate(
+        {
+            "ingredients": [
+                {
+                    "food_item_id": str(food_id),
+                    "position": 0,
+                    "amount_quantity": "1",
+                    "amount_unit": "serving",
+                    "serving_definition_id": str(serving_id),
+                }
+            ]
+        }
+    )
+
+
+def _run_recipe_update(
+    factory,
+    user_id,
+    recipe_id,
+    payload,
+    result: list[object],
+    *,
+    after_locks=None,
+) -> None:
+    with factory() as db:
+        service = RecipeService(db)
+        if after_locks is not None:
+            service._after_recipe_graph_initial_locks = after_locks
+        try:
+            service.update_recipe(user_id, recipe_id, payload)
+            result.append("committed")
+        except Exception as exc:
+            result.append(exc)
+
+
+def test_concurrent_reciprocal_recipe_updates_cannot_commit_a_cycle(postgres_sessions) -> None:
+    factory = postgres_sessions
+    user_id, recipe_a, food_a, serving_a, recipe_b, food_b, serving_b = (
+        _published_recipe_pair(factory)
+    )
+    a_locked, b_locked, release = Event(), Event(), Event()
+    a_result: list[object] = []
+    b_result: list[object] = []
+
+    def update(
+        recipe_id,
+        ingredient_food_id,
+        serving_id,
+        locked: Event,
+        result: list[object],
+    ) -> None:
+        with factory() as db:
+            service = RecipeService(db)
+
+            def after_locks(_recipe):
+                locked.set()
+                assert release.wait(5)
+
+            service._after_recipe_graph_initial_locks = after_locks
+            try:
+                service.update_recipe(
+                    user_id,
+                    recipe_id,
+                    RecipeUpdateRequest.model_validate(
+                        {
+                            "ingredients": [
+                                {
+                                    "food_item_id": str(ingredient_food_id),
+                                    "position": 0,
+                                    "amount_quantity": "1",
+                                    "amount_unit": "serving",
+                                    "serving_definition_id": str(serving_id),
+                                }
+                            ]
+                        }
+                    ),
+                )
+                result.append("committed")
+            except Exception as exc:
+                result.append(exc)
+
+    first = Thread(target=update, args=(recipe_a, food_b, serving_b, a_locked, a_result))
+    second = Thread(target=update, args=(recipe_b, food_a, serving_a, b_locked, b_result))
+    first.start()
+    assert a_locked.wait(5)
+    second.start()
+    Event().wait(0.2)
+    assert not b_locked.is_set()
+    assert not b_result
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert a_result == ["committed"]
+    assert len(b_result) == 1
+    assert isinstance(b_result[0], RecipeGraphCycleError)
+    with factory() as db:
+        edges = {
+            recipe.id: {ingredient.food_item_id for ingredient in recipe.ingredients}
+            for recipe in db.scalars(
+                select(Recipe).where(Recipe.id.in_([recipe_a, recipe_b]))
+            ).unique()
+        }
+        assert edges[recipe_a] == {food_b}
+        assert edges[recipe_b] == set()
+
+
+def test_concurrent_indirect_recipe_cycle_cannot_commit(postgres_sessions) -> None:
+    factory = postgres_sessions
+    user_id, recipe_a, food_a, serving_a, recipe_b, food_b, serving_b = (
+        _published_recipe_pair(factory)
+    )
+    with factory() as db:
+        service = RecipeService(db)
+        recipe_c = service.create_recipe(
+            user_id,
+            RecipeCreateRequest(name="Recipe C", serving_count_yield=Decimal("1")),
+        )
+        recipe_c, food_c = service.publish(user_id, recipe_c.id)
+        serving_c = next(row.id for row in food_c.serving_definitions if row.is_default)
+        recipe_c_id = recipe_c.id
+        food_c_id = food_c.id
+        service.update_recipe(
+            user_id,
+            recipe_a,
+            _recipe_ingredient_update(food_b, serving_b),
+        )
+
+    first_locked, second_locked, release = Event(), Event(), Event()
+    first_result: list[object] = []
+    second_result: list[object] = []
+
+    def hold_first(_recipe):
+        first_locked.set()
+        assert release.wait(5)
+
+    def mark_second(_recipe):
+        second_locked.set()
+
+    first = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_id,
+            recipe_b,
+            _recipe_ingredient_update(food_c_id, serving_c),
+            first_result,
+        ),
+        kwargs={"after_locks": hold_first},
+    )
+    second = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_id,
+            recipe_c_id,
+            _recipe_ingredient_update(food_a, serving_a),
+            second_result,
+        ),
+        kwargs={"after_locks": mark_second},
+    )
+    first.start()
+    assert first_locked.wait(5)
+    second.start()
+    Event().wait(0.2)
+    assert not second_locked.is_set()
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert first_result == ["committed"]
+    assert len(second_result) == 1
+    assert isinstance(second_result[0], RecipeGraphCycleError)
+
+
+def test_valid_same_user_graph_mutations_serialize_and_both_commit(postgres_sessions) -> None:
+    factory = postgres_sessions
+    user_id, recipe_a, _food_a, _serving_a, recipe_b, food_b, serving_b = (
+        _published_recipe_pair(factory)
+    )
+    first_locked, second_locked, release = Event(), Event(), Event()
+    first_result: list[object] = []
+    second_result: list[object] = []
+
+    def hold_first(_recipe):
+        first_locked.set()
+        assert release.wait(5)
+
+    def mark_second(_recipe):
+        second_locked.set()
+
+    first = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_id,
+            recipe_a,
+            _recipe_ingredient_update(food_b, serving_b),
+            first_result,
+        ),
+        kwargs={"after_locks": hold_first},
+    )
+    second = Thread(
+        target=_run_recipe_update,
+        args=(factory, user_id, recipe_b, RecipeUpdateRequest(ingredients=[]), second_result),
+        kwargs={"after_locks": mark_second},
+    )
+    first.start()
+    assert first_locked.wait(5)
+    second.start()
+    Event().wait(0.2)
+    assert not second_locked.is_set()
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert first_result == ["committed"]
+    assert second_result == ["committed"]
+
+
+def test_different_user_graph_mutations_do_not_block_each_other(postgres_sessions) -> None:
+    factory = postgres_sessions
+    first_graph = _published_recipe_pair(factory)
+    second_graph = _published_recipe_pair(factory)
+    user_a, recipe_a, _food_a, _serving_a, _recipe_b, food_b, serving_b = first_graph
+    user_c, recipe_c, _food_c, _serving_c, _recipe_d, food_d, serving_d = second_graph
+    first_locked, second_locked, release = Event(), Event(), Event()
+    first_result: list[object] = []
+    second_result: list[object] = []
+
+    def hold_first(_recipe):
+        first_locked.set()
+        assert release.wait(5)
+
+    def mark_second(_recipe):
+        second_locked.set()
+
+    first = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_a,
+            recipe_a,
+            _recipe_ingredient_update(food_b, serving_b),
+            first_result,
+        ),
+        kwargs={"after_locks": hold_first},
+    )
+    second = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_c,
+            recipe_c,
+            _recipe_ingredient_update(food_d, serving_d),
+            second_result,
+        ),
+        kwargs={"after_locks": mark_second},
+    )
+    first.start()
+    assert first_locked.wait(5)
+    second.start()
+    assert second_locked.wait(5)
+    second.join(5)
+    assert second_result == ["committed"]
+    release.set()
+    first.join(5)
+    assert first_result == ["committed"]
+
+
+def test_waiting_graph_mutation_proceeds_after_first_transaction_rolls_back(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, recipe_a, food_a, serving_a, recipe_b, food_b, serving_b = (
+        _published_recipe_pair(factory)
+    )
+    first_locked, second_locked, release = Event(), Event(), Event()
+    first_result: list[object] = []
+    second_result: list[object] = []
+
+    def fail_first(_recipe):
+        first_locked.set()
+        assert release.wait(5)
+        raise RuntimeError("forced graph mutation rollback")
+
+    def mark_second(_recipe):
+        second_locked.set()
+
+    first = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_id,
+            recipe_a,
+            _recipe_ingredient_update(food_b, serving_b),
+            first_result,
+        ),
+        kwargs={"after_locks": fail_first},
+    )
+    second = Thread(
+        target=_run_recipe_update,
+        args=(
+            factory,
+            user_id,
+            recipe_b,
+            _recipe_ingredient_update(food_a, serving_a),
+            second_result,
+        ),
+        kwargs={"after_locks": mark_second},
+    )
+    first.start()
+    assert first_locked.wait(5)
+    second.start()
+    Event().wait(0.2)
+    assert not second_locked.is_set()
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert len(first_result) == 1
+    assert isinstance(first_result[0], RuntimeError)
+    assert second_result == ["committed"]
+    with factory() as db:
+        stored_a = db.get(Recipe, recipe_a)
+        stored_b = db.get(Recipe, recipe_b)
+        assert stored_a.ingredients == []
+        assert {row.food_item_id for row in stored_b.ingredients} == {food_a}
 
 
 def test_mutable_food_log_snapshot_and_food_update_are_serialized(

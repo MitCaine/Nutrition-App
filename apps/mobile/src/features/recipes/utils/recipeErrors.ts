@@ -15,6 +15,15 @@ function firstDetailMessage(detail: unknown): string | null {
       }
     }
   }
+  if (
+    typeof detail === "object" &&
+    detail !== null &&
+    "message" in detail &&
+    typeof detail.message === "string" &&
+    detail.message.trim()
+  ) {
+    return detail.message.trim();
+  }
   return null;
 }
 

@@ -20,6 +20,7 @@ from app.schemas.recipe import (
 )
 from app.services.recipe_service import (
     RecipeDependencyError,
+    RecipeGraphCycleError,
     RecipePublicationDependenciesUnstableError,
     RecipePublicationParentAmountConflictError,
     RecipeService,
@@ -41,6 +42,8 @@ def create_recipe(
 ) -> RecipeResponse:
     try:
         return RecipeResponse.model_validate(_service(db).create_recipe(user.id, payload))
+    except RecipeGraphCycleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
     except (LookupError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -79,6 +82,8 @@ def update_recipe(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeGraphCycleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
