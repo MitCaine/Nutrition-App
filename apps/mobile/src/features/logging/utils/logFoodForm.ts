@@ -139,7 +139,7 @@ export function createLogInitializationWarning(
     return "That amount changed. The current default was selected.";
   }
   if (outcome === "invalid_quantity") {
-    return "The amount quantity was invalid and was reset to 1.";
+    return "The quantity was invalid and was reset to 1.";
   }
   return null;
 }

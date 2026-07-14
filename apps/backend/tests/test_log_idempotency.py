@@ -135,7 +135,10 @@ def test_payload_mismatch_returns_structured_conflict_without_mutation(
     assert conflict.status_code == 409
     assert conflict.json()["detail"] == {
         "code": "log_idempotency_payload_conflict",
-        "message": "This request ID was already used for a different Daily Log creation.",
+        "message": (
+            "This logging attempt was already submitted with different details. "
+            "Start a new log and try again."
+        ),
     }
     assert db_session.scalar(select(func.count()).select_from(DailyLog)) == 1
 

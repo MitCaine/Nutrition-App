@@ -264,8 +264,16 @@ test("invalid quantity preserves selection, warns once, and user changes dismiss
     amountQuantity: "0",
     amountUnit: "serving",
   });
-  const warning = "The amount quantity was invalid and was reset to 1.";
+  const warning = "The quantity was invalid and was reset to 1.";
   expect(hasText(renderer.root, warning)).toBe(true);
+  expect(renderer.root.findAllByProps({ accessibilityLiveRegion: "polite" }).length).toBeGreaterThan(0);
+  const warningText = renderer.root.findAllByType(Text).find(
+    (node) => textContent(node) === warning,
+  ) as ReactTestInstance;
+  expect(warningText.props.accessibilityRole).toBeUndefined();
+  expect(renderer.root.findByProps({
+    accessibilityLabel: "Dismiss amount notice",
+  }).props.accessibilityRole).toBe("button");
   await act(async () => renderer.root.findByType(TextInput).props.onChangeText("6"));
   expect(hasText(renderer.root, warning)).toBe(false);
   await act(async () => pressableWithText(renderer.root, "Save Log").props.onPress());

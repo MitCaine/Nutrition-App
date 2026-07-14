@@ -232,6 +232,19 @@ test("create claims synchronously, disables submitted controls, and succeeds onc
   const onSaved = jest.fn();
   const renderer = await render(createScreen(onSaved));
   const save = pressableWithText(renderer.root, "Save Log");
+  expect(save.props.accessibilityRole).toBe("button");
+  expect(pressableWithText(renderer.root, "Cancel").props.accessibilityLabel).toBe("Cancel logging");
+  expect(renderer.root.findByType(TextInput).props.accessibilityLabel).toBe("Amount quantity");
+  expect(pressableWithText(renderer.root, "Servings").props.accessibilityState).toEqual({
+    checked: true,
+    disabled: false,
+    selected: true,
+  });
+  expect(pressableStartingWithText(renderer.root, "Selected serving").props.accessibilityState).toEqual({
+    checked: true,
+    disabled: false,
+    selected: true,
+  });
   act(() => {
     void save.props.onPress();
     void save.props.onPress();
@@ -253,7 +266,10 @@ test("create claims synchronously, disables submitted controls, and succeeds onc
   expect(pressableWithText(renderer.root, "Grams").props.disabled).toBe(true);
   expect(pressableStartingWithText(renderer.root, "Selected serving").props.disabled).toBe(true);
   expect(pressableWithText(renderer.root, "Cancel").props.disabled).toBe(true);
-  expect(hasText(renderer.root, "Could not save changes.")).toBe(false);
+  expect(hasText(
+    renderer.root,
+    "Could not save this log. Check your connection and try again.",
+  )).toBe(false);
 
   await act(async () => {
     mockCreateDeferred.resolve();
@@ -268,6 +284,7 @@ test("edit claims synchronously, preserves revision amount identity, and succeed
   const onSaved = jest.fn();
   const renderer = await render(editScreen(onSaved));
   const save = pressableWithText(renderer.root, "Save Changes");
+  expect(pressableWithText(renderer.root, "Cancel").props.accessibilityLabel).toBe("Cancel editing");
   act(() => {
     void save.props.onPress();
     void save.props.onPress();
@@ -326,7 +343,14 @@ test("failed create preserves form and warning dismissal, then permits one retry
   expect(renderer.root.findByType(TextInput).props.value).toBe("6");
   expect(renderer.root.findByType(TextInput).props.editable).toBe(true);
   expect(hasText(renderer.root, warning)).toBe(false);
-  expect(hasText(renderer.root, "Could not save changes.")).toBe(true);
+  expect(hasText(
+    renderer.root,
+    "Could not save this log. Check your connection and try again.",
+  )).toBe(true);
+  const error = renderer.root.findAllByProps({ accessibilityRole: "alert" }).find(
+    (node) => textContent(node) === "Could not save this log. Check your connection and try again.",
+  ) as ReactTestInstance;
+  expect(error.props.accessibilityLiveRegion).toBe("assertive");
   expect(pressableWithText(renderer.root, "Save Log").props.disabled).toBe(false);
 
   mockCreateDeferred = deferred();

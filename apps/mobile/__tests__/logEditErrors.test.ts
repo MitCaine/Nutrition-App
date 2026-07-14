@@ -23,6 +23,9 @@ test("log edit errors use useful API messages and safe fallbacks", () => {
     "Server unavailable",
   );
   expect(logEditErrorMessage(new Error("network"))).toBe("Could not save changes.");
+  expect(logEditErrorMessage(new Error("network"), "Check your connection and try again.")).toBe(
+    "Check your connection and try again.",
+  );
 });
 
 test.each([

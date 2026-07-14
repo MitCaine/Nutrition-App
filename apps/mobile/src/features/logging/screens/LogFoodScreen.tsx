@@ -59,6 +59,8 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
   );
   const initializedCreateFoodId = useRef<string | null>(null);
   const cancelClaimedRef = useRef(false);
+  // This intent exists only for this mounted create screen. Unchanged retries reuse it;
+  // changed form payloads replace it, and remounting starts a separate logging action.
   const createIntentRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const mountedRef = useRef(true);
   const submissionClaimedRef = useRef(false);
@@ -195,7 +197,12 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       submissionClaimedRef.current = false;
       if (mountedRef.current) {
         setIsSubmitting(false);
-        setError(logEditErrorMessage(saveError));
+        setError(logEditErrorMessage(
+          saveError,
+          log
+            ? "Could not update this log. Check your connection and try again."
+            : "Could not save this log. Check your connection and try again.",
+        ));
       }
       return;
     }
@@ -212,8 +219,12 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
     >
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
         <View style={styles.header}>
-          <Text style={styles.title}>{log ? "Edit Log" : "Log Food"}</Text>
+          <Text accessibilityRole="header" style={styles.title}>
+            {log ? "Edit Log" : "Log Food"}
+          </Text>
           <Pressable
+            accessibilityLabel={log ? "Cancel editing" : "Cancel logging"}
+            accessibilityRole="button"
             accessibilityState={{ disabled: isSubmitting }}
             disabled={isSubmitting}
             onPress={cancel}
@@ -224,6 +235,8 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
         </View>
         <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
         <TextInput
+          accessibilityHint="Enter a quantity greater than zero"
+          accessibilityLabel="Amount quantity"
           placeholderTextColor={theme.colors.placeholder}
           value={amount}
           accessibilityState={{ disabled: isSubmitting }}
@@ -236,9 +249,15 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
           placeholder="Amount"
           style={[styles.input, isSubmitting && styles.disabled]}
         />
-        <View style={styles.segment}>
+        <View accessibilityLabel="Amount unit" accessibilityRole="radiogroup" style={styles.segment}>
           <Pressable
-            accessibilityState={{ disabled: isSubmitting }}
+            accessibilityLabel="Servings"
+            accessibilityRole="radio"
+            accessibilityState={{
+              checked: unit === "serving",
+              disabled: isSubmitting,
+              selected: unit === "serving",
+            }}
             disabled={isSubmitting}
             onPress={() => selectUnit("serving")}
             style={[styles.segmentButton, unit === "serving" && styles.active, isSubmitting && styles.disabled]}
@@ -246,7 +265,13 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
             <Text style={styles.text}>Servings</Text>
           </Pressable>
           <Pressable
-            accessibilityState={{ disabled: isSubmitting }}
+            accessibilityLabel="Grams"
+            accessibilityRole="radio"
+            accessibilityState={{
+              checked: unit === "g",
+              disabled: isSubmitting,
+              selected: unit === "g",
+            }}
             disabled={isSubmitting}
             onPress={() => selectUnit("g")}
             style={[styles.segmentButton, unit === "g" && styles.active, isSubmitting && styles.disabled]}
@@ -255,11 +280,21 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
           </Pressable>
         </View>
         {unit === "serving" && servings.length > 0 ? (
-          <View style={styles.servingList}>
+          <View accessibilityLabel="Serving amount" accessibilityRole="radiogroup" style={styles.servingList}>
             {servings.map((serving) => (
               <Pressable
                 key={serving.id}
-                accessibilityState={{ disabled: isSubmitting }}
+                accessibilityLabel={
+                  serving.gram_weight
+                    ? `${serving.label}, ${formatServingGramWeight(serving.gram_weight)}`
+                    : serving.label
+                }
+                accessibilityRole="radio"
+                accessibilityState={{
+                  checked: selectedServingId === serving.id,
+                  disabled: isSubmitting,
+                  selected: selectedServingId === serving.id,
+                }}
                 disabled={isSubmitting}
                 onPress={() => {
                   setInitializationWarning(null);
@@ -278,23 +313,36 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
           <Text style={styles.servingMeta}>Loading log edit choices...</Text>
         ) : null}
         {log && editContext.isError ? (
-          <Text style={styles.error}>{logEditErrorMessage(editContext.error)}</Text>
+          <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>
+            {logEditErrorMessage(editContext.error)}
+          </Text>
         ) : null}
         {initializationWarning ? (
-          <Pressable
-            accessibilityLabel="Dismiss amount notice"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: isSubmitting }}
-            disabled={isSubmitting}
-            onPress={() => setInitializationWarning(null)}
+          <View
+            accessibilityLiveRegion="polite"
             style={[styles.warning, isSubmitting && styles.disabled]}
           >
             <Text style={styles.warningText}>{initializationWarning}</Text>
-            <Text style={styles.warningDismiss}>Dismiss</Text>
-          </Pressable>
+            <Pressable
+              accessibilityLabel="Dismiss amount notice"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isSubmitting }}
+              disabled={isSubmitting}
+              onPress={() => setInitializationWarning(null)}
+            >
+              <Text style={styles.warningDismiss}>Dismiss</Text>
+            </Pressable>
+          </View>
         ) : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>
+            {error}
+          </Text>
+        ) : null}
         <Pressable
+          accessibilityHint={log ? "Updates this Daily Log entry" : "Adds this food to the Daily Log"}
+          accessibilityLabel={isSubmitting ? (log ? "Updating log" : "Saving log") : (log ? "Save changes" : "Save log")}
+          accessibilityRole="button"
           accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
           disabled={isSubmitting}
           onPress={save}

@@ -227,6 +227,6 @@ test("only fallback outcomes produce user-visible warning text", () => {
     "That amount changed. The current default was selected.",
   );
   expect(createLogInitializationWarning("invalid_quantity")).toBe(
-    "The amount quantity was invalid and was reset to 1.",
+    "The quantity was invalid and was reset to 1.",
   );
 });

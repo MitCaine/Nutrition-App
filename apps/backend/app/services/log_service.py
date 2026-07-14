@@ -87,7 +87,7 @@ class LogEditConflictError(ValueError):
 
 class LogIdempotencyConflictError(ValueError):
     code = "log_idempotency_payload_conflict"
-    message = "This request ID was already used for a different Daily Log creation."
+    message = "This logging attempt was already submitted with different details. Start a new log and try again."
 
 
 class LogService:

@@ -2,14 +2,14 @@ import { ApiError } from "../../../shared/api/client";
 
 const FALLBACK = "Could not save changes.";
 
-export function logEditErrorMessage(error: unknown): string {
+export function logEditErrorMessage(error: unknown, fallback = FALLBACK): string {
   if (!(error instanceof ApiError)) {
-    return FALLBACK;
+    return fallback;
   }
   if (isStructuredLogErrorBody(error.body)) {
     return error.body.detail.message;
   }
-  return error.message || FALLBACK;
+  return error.message || fallback;
 }
 
 function isStructuredLogErrorBody(
