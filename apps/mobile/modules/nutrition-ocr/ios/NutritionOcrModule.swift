@@ -15,12 +15,6 @@ private struct OcrRecognitionOptions: Record {
   @Field var minimumTextHeight: Double?
 }
 
-private struct NativeObservation {
-  let text: String
-  let confidence: Float
-  let boundingBox: CGRect
-}
-
 private enum OcrFailure {
   case invalidImageUri
   case imageNotFound
@@ -78,7 +72,7 @@ public final class NutritionOcrModule: Module {
     }
 
     let orientation = imageOrientation(from: source)
-    let dimensions = displayedDimensions(width: cgImage.width, height: cgImage.height, orientation: orientation)
+    let dimensions = NutritionOcrGeometry.displayedDimensions(width: cgImage.width, height: cgImage.height, orientation: orientation)
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = options.recognitionLevel == .fast ? .fast : .accurate
     request.recognitionLanguages = options.languages
@@ -103,10 +97,10 @@ public final class NutritionOcrModule: Module {
       return NativeObservation(
         text: candidate.string,
         confidence: min(max(candidate.confidence, 0), 1),
-        boundingBox: topLeftBoundingBox(from: observation.boundingBox)
+        boundingBox: NutritionOcrGeometry.topLeftBoundingBox(from: observation.boundingBox)
       )
     }
-    let ordered = observationsInReadingOrder(observations)
+    let ordered = NutritionOcrGeometry.observationsInReadingOrder(observations)
     let encoded = ordered.enumerated().map { index, observation in
       [
         "id": String(format: "observation-%04d", index + 1),
@@ -127,7 +121,7 @@ public final class NutritionOcrModule: Module {
       "image": [
         "width": dimensions.width,
         "height": dimensions.height,
-        "orientationApplied": orientation != .up
+        "orientationApplied": NutritionOcrGeometry.orientationApplied(orientation)
       ],
       "recognition": [
         "platform": "ios",
@@ -147,65 +141,4 @@ public final class NutritionOcrModule: Module {
     return orientation
   }
 
-  private static func displayedDimensions(
-    width: Int,
-    height: Int,
-    orientation: CGImagePropertyOrientation
-  ) -> (width: Int, height: Int) {
-    switch orientation {
-    case .left, .leftMirrored, .right, .rightMirrored:
-      return (height, width)
-    default:
-      return (width, height)
-    }
-  }
-
-  // Vision uses a lower-left origin. React Native consumers receive an upper-left
-  // origin in the displayed, orientation-corrected image coordinate space.
-  private static func topLeftBoundingBox(from visionBox: CGRect) -> CGRect {
-    CGRect(
-      x: clamp(visionBox.minX),
-      y: clamp(1 - visionBox.maxY),
-      width: clamp(visionBox.width),
-      height: clamp(visionBox.height)
-    )
-  }
-
-  private static func clamp(_ value: CGFloat) -> CGFloat {
-    min(max(value, 0), 1)
-  }
-
-  // Conservative row grouping followed by left-to-right ordering. This produces
-  // stable line joining without attempting nutrition-label layout interpretation.
-  private static func observationsInReadingOrder(_ observations: [NativeObservation]) -> [NativeObservation] {
-    let topToBottom = observations.sorted(by: stableTopToBottom)
-    var rows: [[NativeObservation]] = []
-
-    for observation in topToBottom {
-      guard let lastRow = rows.last, let anchor = lastRow.first else {
-        rows.append([observation])
-        continue
-      }
-      let threshold = max(anchor.boundingBox.height, observation.boundingBox.height) * 0.5
-      if abs(anchor.boundingBox.midY - observation.boundingBox.midY) <= threshold {
-        rows[rows.count - 1].append(observation)
-      } else {
-        rows.append([observation])
-      }
-    }
-
-    return rows.flatMap { row in
-      row.sorted {
-        if $0.boundingBox.minX != $1.boundingBox.minX { return $0.boundingBox.minX < $1.boundingBox.minX }
-        return stableTopToBottom($0, $1)
-      }
-    }
-  }
-
-  private static func stableTopToBottom(_ lhs: NativeObservation, _ rhs: NativeObservation) -> Bool {
-    if lhs.boundingBox.minY != rhs.boundingBox.minY { return lhs.boundingBox.minY < rhs.boundingBox.minY }
-    if lhs.boundingBox.minX != rhs.boundingBox.minX { return lhs.boundingBox.minX < rhs.boundingBox.minX }
-    if lhs.boundingBox.height != rhs.boundingBox.height { return lhs.boundingBox.height > rhs.boundingBox.height }
-    return lhs.text < rhs.text
-  }
 }
