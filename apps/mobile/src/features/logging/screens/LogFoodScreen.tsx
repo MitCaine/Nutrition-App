@@ -16,6 +16,7 @@ import { useLogEditContext, useLogMutations } from "../hooks/useLogs";
 import {
   buildLogInput,
   buildLogUpdateInput,
+  createLogInitializationWarning,
   createServingChoices,
   editServingChoices,
   formatInitialLogAmount,
@@ -57,6 +58,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
   );
   const initializedCreateFoodId = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [initializationWarning, setInitializationWarning] = useState<string | null>(null);
   const servings = useMemo(
     () =>
       log
@@ -81,10 +83,11 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       resolvedNutrition.data,
       initialAmount,
     );
-    setAmount(initialization.amount);
-    setUnit(initialization.unit);
-    setSelectedServingId(initialization.selectedAmountId);
-    setSelectedAmountMode(initialization.selectedAmountMode);
+    setAmount(initialization.form.amount);
+    setUnit(initialization.form.unit);
+    setSelectedServingId(initialization.form.selectedAmountId);
+    setSelectedAmountMode(initialization.form.selectedAmountMode);
+    setInitializationWarning(createLogInitializationWarning(initialization.outcome));
     initializedCreateFoodId.current = foodId;
   }, [food.data, foodId, initialAmount, log, resolvedNutrition.data, resolvedNutrition.isFetching]);
 
@@ -99,6 +102,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
   }, [editContext.data, food.data, log?.serving_definition_id, selectedServingId, servings]);
 
   function selectUnit(nextUnit: "serving" | "g") {
+    setInitializationWarning(null);
     setUnit(nextUnit);
     setSelectedAmountMode(null);
     if (nextUnit === "serving" && !servings.some((serving) => serving.id === selectedServingId)) {
@@ -171,7 +175,10 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
         <TextInput
           placeholderTextColor={theme.colors.placeholder}
           value={amount}
-          onChangeText={setAmount}
+          onChangeText={(value) => {
+            setInitializationWarning(null);
+            setAmount(value);
+          }}
           keyboardType="decimal-pad"
           placeholder="Amount"
           style={styles.input}
@@ -190,6 +197,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
               <Pressable
                 key={serving.id}
                 onPress={() => {
+                  setInitializationWarning(null);
                   setSelectedServingId(serving.id);
                   setSelectedAmountMode("serving");
                 }}
@@ -206,6 +214,17 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
         ) : null}
         {log && editContext.isError ? (
           <Text style={styles.error}>{logEditErrorMessage(editContext.error)}</Text>
+        ) : null}
+        {initializationWarning ? (
+          <Pressable
+            accessibilityLabel="Dismiss amount notice"
+            accessibilityRole="button"
+            onPress={() => setInitializationWarning(null)}
+            style={styles.warning}
+          >
+            <Text style={styles.warningText}>{initializationWarning}</Text>
+            <Text style={styles.warningDismiss}>Dismiss</Text>
+          </Pressable>
         ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable onPress={save} style={styles.primaryButton}>
@@ -233,4 +252,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   servingList: { gap: 8 },
   servingMeta: { color: theme.colors.secondaryText },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+  warning: { backgroundColor: theme.colors.warningBackground, borderRadius: 6, gap: 6, padding: 10 },
+  warningDismiss: { color: theme.colors.warningText, fontWeight: "700" },
+  warningText: { color: theme.colors.warningText, fontWeight: "600" },
 }); }

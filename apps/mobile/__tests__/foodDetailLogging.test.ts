@@ -5,6 +5,7 @@ import type {
 } from "../src/features/foods/api/types";
 import {
   buildLogInput,
+  createLogInitializationWarning,
   foodDetailLogInitialAmount,
   resolveCreateLogInitialization,
   shouldApplyCreateLogInitialization,
@@ -94,18 +95,21 @@ test("managed Recipe revision amount ID is passed and submitted unchanged", () =
   );
 
   expect(initialization).toEqual({
-    amount: "3",
-    unit: "serving",
-    selectedAmountId: "revision-amount-id",
-    selectedAmountMode: "serving",
+    form: {
+      amount: "3",
+      unit: "serving",
+      selectedAmountId: "revision-amount-id",
+      selectedAmountMode: "serving",
+    },
+    outcome: "applied",
   });
   expect(buildLogInput({
     foodId: "food-1",
     date: "2026-07-13",
-    amount: initialization.amount,
-    unit: initialization.unit,
-    selectedServingId: initialization.selectedAmountId,
-    selectedAmountMode: initialization.selectedAmountMode,
+    amount: initialization.form.amount,
+    unit: initialization.form.unit,
+    selectedServingId: initialization.form.selectedAmountId,
+    selectedAmountMode: initialization.form.selectedAmountMode,
   }).serving_definition_id).toBe("revision-amount-id");
 });
 
@@ -116,23 +120,27 @@ test("gram selection preserves its amount ID and normalized quantity", () => {
     resolved([selected]),
     foodDetailLogInitialAmount(selected),
   );
-  expect(initialization.amount).toBe("75.5");
+  expect(initialization.form.amount).toBe("75.5");
+  expect(initialization.outcome).toBe("applied");
   expect(buildLogInput({
     foodId: food.id,
     date: "2026-07-13",
-    amount: initialization.amount,
-    unit: initialization.unit,
-    selectedServingId: initialization.selectedAmountId,
-    selectedAmountMode: initialization.selectedAmountMode,
+    amount: initialization.form.amount,
+    unit: initialization.form.unit,
+    selectedServingId: initialization.form.selectedAmountId,
+    selectedAmountMode: initialization.form.selectedAmountMode,
   }).serving_definition_id).toBe("serving-grams");
 });
 
 test("missing selection retains existing Food default behavior", () => {
   expect(resolveCreateLogInitialization(food, resolved([amount("serving-default")]), undefined)).toEqual({
-    amount: "1",
-    unit: "serving",
-    selectedAmountId: "serving-default",
-    selectedAmountMode: "serving",
+    form: {
+      amount: "1",
+      unit: "serving",
+      selectedAmountId: "serving-default",
+      selectedAmountMode: "serving",
+    },
+    outcome: "no_initial_selection",
   });
 });
 
@@ -144,10 +152,13 @@ test.each(["stale-id", "another-food-id"])(
       resolved([amount("serving-default", "serving", "1", true)]),
       { amountDefinitionId, amountQuantity: "9", amountUnit: "serving" },
     )).toEqual({
-      amount: "1",
-      unit: "serving",
-      selectedAmountId: "serving-default",
-      selectedAmountMode: "serving",
+      form: {
+        amount: "1",
+        unit: "serving",
+        selectedAmountId: "serving-default",
+        selectedAmountMode: "serving",
+      },
+      outcome: "selection_unavailable",
     });
   },
 );
@@ -157,7 +168,7 @@ test("an amount ID with the wrong semantic mode is rejected locally", () => {
     food,
     resolved([amount("serving-default", "serving", "1", true)]),
     { amountDefinitionId: "serving-default", amountQuantity: "9", amountUnit: "g" },
-  ).amount).toBe("1");
+  )).toEqual(expect.objectContaining({ outcome: "selection_mode_mismatch" }));
 });
 
 test("invalid route quantity falls back without discarding a valid selection", () => {
@@ -166,10 +177,13 @@ test("invalid route quantity falls back without discarding a valid selection", (
     resolved([amount("serving-default", "serving", "1", true)]),
     { amountDefinitionId: "serving-default", amountQuantity: "-2", amountUnit: "serving" },
   )).toEqual({
-    amount: "1",
-    unit: "serving",
-    selectedAmountId: "serving-default",
-    selectedAmountMode: "serving",
+    form: {
+      amount: "1",
+      unit: "serving",
+      selectedAmountId: "serving-default",
+      selectedAmountMode: "serving",
+    },
+    outcome: "invalid_quantity",
   });
 });
 
@@ -179,8 +193,9 @@ test("republish removes revision A selection without reinterpreting it as revisi
     resolved([amount("revision-b-default", "serving", "1", true)], "recipe_publication_revision"),
     { amountDefinitionId: "revision-a-default", amountQuantity: "4", amountUnit: "serving" },
   );
-  expect(initialization.selectedAmountId).toBe("revision-b-default");
-  expect(initialization.amount).toBe("1");
+  expect(initialization.form.selectedAmountId).toBe("revision-b-default");
+  expect(initialization.form.amount).toBe("1");
+  expect(initialization.outcome).toBe("selection_unavailable");
 });
 
 test("edit mode and an already initialized create screen do not reapply route state", () => {
@@ -200,4 +215,18 @@ test("edit mode and an already initialized create screen do not reapply route st
 
 test("Food Detail omits invalid amount state", () => {
   expect(foodDetailLogInitialAmount({ ...amount("bad"), valid_for_logging: false })).toBeUndefined();
+});
+
+test("only fallback outcomes produce user-visible warning text", () => {
+  expect(createLogInitializationWarning("no_initial_selection")).toBeNull();
+  expect(createLogInitializationWarning("applied")).toBeNull();
+  expect(createLogInitializationWarning("selection_unavailable")).toBe(
+    "That amount is no longer available. The current default was selected.",
+  );
+  expect(createLogInitializationWarning("selection_mode_mismatch")).toBe(
+    "That amount changed. The current default was selected.",
+  );
+  expect(createLogInitializationWarning("invalid_quantity")).toBe(
+    "The amount quantity was invalid and was reset to 1.",
+  );
 });

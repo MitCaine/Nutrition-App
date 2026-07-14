@@ -14,7 +14,6 @@ import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { LogFoodScreen } from "../../features/logging/screens/LogFoodScreen";
 import { todayLocalDateString } from "../../features/logging/utils/dailyLogDisplay";
-import type { LogFoodInitialAmount } from "../../features/logging/utils/logFoodForm";
 import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
 import { RecipeDetailScreen } from "../../features/recipes/screens/RecipeDetailScreen";
 import { RecipeFormScreen } from "../../features/recipes/screens/RecipeFormScreen";
@@ -33,13 +32,14 @@ import { BottomNavigation } from "./BottomNavigation";
 import { useAppTheme } from "../theme/AppTheme";
 import { SettingsScreen } from "../settings/SettingsScreen";
 import { isMainTabRoot, mainTabForRoute, settingsOriginForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
+import { logFoodRoute, type LogFoodRoute } from "./logFoodRoute";
 
 type Route =
   | { name: "foods" }
   | { name: "new-food" }
   | { name: "food-detail"; foodId: string }
   | { name: "edit-food"; foodId: string }
-  | { name: "log-food"; foodId: string; initialAmount?: LogFoodInitialAmount }
+  | LogFoodRoute
   | { name: "edit-log"; logId: string }
   | { name: "usda-preview"; fdcId: number }
   | { name: "recipes" }
@@ -123,7 +123,7 @@ export function AppNavigator() {
         }}
         onEdit={() => setRoute({ name: "edit-food", foodId: route.foodId })}
         onLog={(initialAmount) =>
-          setRoute({ name: "log-food", foodId: route.foodId, initialAmount })
+          setRoute(logFoodRoute(route.foodId, initialAmount))
         }
       />
     );
@@ -188,7 +188,7 @@ export function AppNavigator() {
           setRoute({ name: "edit-recipe", recipeId: route.recipeId });
         }}
         onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
-        onLogFood={(foodId) => setRoute({ name: "log-food", foodId })}
+        onLogFood={(foodId) => setRoute(logFoodRoute(foodId))}
         onDeleted={() => {
           setRecipeMessage("Recipe deleted");
           setRoute({ name: "recipes" });

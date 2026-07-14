@@ -16,11 +16,23 @@ export type LogFoodInitialAmount = {
   amountUnit: "serving" | "g";
 };
 
-export type CreateLogInitialization = {
+export type CreateLogInitializationForm = {
   amount: string;
   unit: "serving" | "g";
   selectedAmountId: string | null;
   selectedAmountMode: "serving" | "g" | null;
+};
+
+export type CreateLogInitializationOutcome =
+  | "applied"
+  | "no_initial_selection"
+  | "selection_unavailable"
+  | "selection_mode_mismatch"
+  | "invalid_quantity";
+
+export type CreateLogInitializationResult = {
+  form: CreateLogInitializationForm;
+  outcome: CreateLogInitializationOutcome;
 };
 
 export function shouldApplyCreateLogInitialization({
@@ -54,24 +66,49 @@ export function resolveCreateLogInitialization(
   food: Food | undefined,
   resolvedNutrition: FoodResolvedNutrition | undefined,
   initialAmount: LogFoodInitialAmount | undefined,
-): CreateLogInitialization {
-  const passedChoice = initialAmount
-    ? resolvedNutrition?.amounts.find(
-        (choice) =>
-          choice.valid_for_logging &&
-          choice.amount_definition_id === initialAmount.amountDefinitionId &&
-          choice.semantic_amount_mode === initialAmount.amountUnit,
-      )
-    : undefined;
-  if (passedChoice && initialAmount) {
+): CreateLogInitializationResult {
+  const fallback = defaultCreateLogForm(food, resolvedNutrition);
+  if (!initialAmount) {
+    return { form: fallback, outcome: "no_initial_selection" };
+  }
+  const idChoice = resolvedNutrition?.amounts.find(
+    (choice) =>
+      choice.valid_for_logging &&
+      choice.amount_definition_id === initialAmount.amountDefinitionId,
+  );
+  if (!idChoice) {
+    return { form: fallback, outcome: "selection_unavailable" };
+  }
+  if (idChoice.semantic_amount_mode !== initialAmount.amountUnit) {
+    return { form: fallback, outcome: "selection_mode_mismatch" };
+  }
+  if (!isPositiveQuantity(initialAmount.amountQuantity)) {
     return {
-      amount: positiveInitialQuantity(initialAmount.amountQuantity),
-      unit: initialAmount.amountUnit,
-      selectedAmountId: passedChoice.amount_definition_id,
-      selectedAmountMode: passedChoice.semantic_amount_mode,
+      form: {
+        amount: "1",
+        unit: initialAmount.amountUnit,
+        selectedAmountId: idChoice.amount_definition_id,
+        selectedAmountMode: idChoice.semantic_amount_mode,
+      },
+      outcome: "invalid_quantity",
     };
   }
 
+  return {
+    form: {
+      amount: formatInitialLogAmount(initialAmount.amountQuantity),
+      unit: initialAmount.amountUnit,
+      selectedAmountId: idChoice.amount_definition_id,
+      selectedAmountMode: idChoice.semantic_amount_mode,
+    },
+    outcome: "applied",
+  };
+}
+
+function defaultCreateLogForm(
+  food: Food | undefined,
+  resolvedNutrition: FoodResolvedNutrition | undefined,
+): CreateLogInitializationForm {
   const revisionDefault =
     resolvedNutrition?.nutrition_authority === "recipe_publication_revision"
       ? resolvedNutrition.amounts.find(
@@ -92,6 +129,21 @@ export function resolveCreateLogInitialization(
   };
 }
 
+export function createLogInitializationWarning(
+  outcome: CreateLogInitializationOutcome,
+): string | null {
+  if (outcome === "selection_unavailable") {
+    return "That amount is no longer available. The current default was selected.";
+  }
+  if (outcome === "selection_mode_mismatch") {
+    return "That amount changed. The current default was selected.";
+  }
+  if (outcome === "invalid_quantity") {
+    return "The amount quantity was invalid and was reset to 1.";
+  }
+  return null;
+}
+
 export function createServingChoices(
   food: Food | undefined,
   resolvedNutrition: FoodResolvedNutrition | undefined,
@@ -109,9 +161,9 @@ export function createServingChoices(
   return editServingChoices(food, undefined);
 }
 
-function positiveInitialQuantity(value: string): string {
+function isPositiveQuantity(value: string): boolean {
   const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? formatInitialLogAmount(value) : "1";
+  return Number.isFinite(numeric) && numeric > 0;
 }
 
 export function initialServingId(food?: Food, logServingId?: string | null): string | null {
