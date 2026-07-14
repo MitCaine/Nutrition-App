@@ -57,8 +57,12 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
     log?.amount_unit ?? null,
   );
   const initializedCreateFoodId = useRef<string | null>(null);
+  const cancelClaimedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const submissionClaimedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [initializationWarning, setInitializationWarning] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const servings = useMemo(
     () =>
       log
@@ -66,6 +70,13 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
         : createServingChoices(food.data, resolvedNutrition.data),
     [editContext.data, food.data, log, resolvedNutrition.data],
   );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!shouldApplyCreateLogInitialization({
@@ -110,7 +121,18 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
     }
   }
 
+  function cancel() {
+    if (submissionClaimedRef.current || cancelClaimedRef.current) {
+      return;
+    }
+    cancelClaimedRef.current = true;
+    onCancel();
+  }
+
   async function save() {
+    if (submissionClaimedRef.current || cancelClaimedRef.current) {
+      return;
+    }
     if (!log && (!resolvedNutrition.data || resolvedNutrition.isFetching)) {
       setError(
         resolvedNutrition.isError
@@ -145,6 +167,11 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       setError(parsed.error.issues[0]?.message ?? "Invalid log");
       return;
     }
+    if (submissionClaimedRef.current) {
+      return;
+    }
+    submissionClaimedRef.current = true;
+    setIsSubmitting(true);
     setError(null);
     try {
       if (log) {
@@ -152,9 +179,16 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       } else {
         await mutations.createLog.mutateAsync(parsed.data);
       }
-      onSaved();
     } catch (saveError) {
-      setError(logEditErrorMessage(saveError));
+      submissionClaimedRef.current = false;
+      if (mountedRef.current) {
+        setIsSubmitting(false);
+        setError(logEditErrorMessage(saveError));
+      }
+      return;
+    }
+    if (mountedRef.current) {
+      onSaved();
     }
   }
 
@@ -167,7 +201,12 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
         <View style={styles.header}>
           <Text style={styles.title}>{log ? "Edit Log" : "Log Food"}</Text>
-          <Pressable onPress={onCancel}>
+          <Pressable
+            accessibilityState={{ disabled: isSubmitting }}
+            disabled={isSubmitting}
+            onPress={cancel}
+            style={isSubmitting && styles.disabled}
+          >
             <Text style={styles.text}>Cancel</Text>
           </Pressable>
         </View>
@@ -175,19 +214,31 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
         <TextInput
           placeholderTextColor={theme.colors.placeholder}
           value={amount}
+          accessibilityState={{ disabled: isSubmitting }}
+          editable={!isSubmitting}
           onChangeText={(value) => {
             setInitializationWarning(null);
             setAmount(value);
           }}
           keyboardType="decimal-pad"
           placeholder="Amount"
-          style={styles.input}
+          style={[styles.input, isSubmitting && styles.disabled]}
         />
         <View style={styles.segment}>
-          <Pressable onPress={() => selectUnit("serving")} style={[styles.segmentButton, unit === "serving" && styles.active]}>
+          <Pressable
+            accessibilityState={{ disabled: isSubmitting }}
+            disabled={isSubmitting}
+            onPress={() => selectUnit("serving")}
+            style={[styles.segmentButton, unit === "serving" && styles.active, isSubmitting && styles.disabled]}
+          >
             <Text style={styles.text}>Servings</Text>
           </Pressable>
-          <Pressable onPress={() => selectUnit("g")} style={[styles.segmentButton, unit === "g" && styles.active]}>
+          <Pressable
+            accessibilityState={{ disabled: isSubmitting }}
+            disabled={isSubmitting}
+            onPress={() => selectUnit("g")}
+            style={[styles.segmentButton, unit === "g" && styles.active, isSubmitting && styles.disabled]}
+          >
             <Text style={styles.text}>Grams</Text>
           </Pressable>
         </View>
@@ -196,12 +247,14 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
             {servings.map((serving) => (
               <Pressable
                 key={serving.id}
+                accessibilityState={{ disabled: isSubmitting }}
+                disabled={isSubmitting}
                 onPress={() => {
                   setInitializationWarning(null);
                   setSelectedServingId(serving.id);
                   setSelectedAmountMode("serving");
                 }}
-                style={[styles.servingButton, selectedServingId === serving.id && styles.active]}
+                style={[styles.servingButton, selectedServingId === serving.id && styles.active, isSubmitting && styles.disabled]}
               >
                 <Text style={styles.text}>{serving.label}</Text>
                 {serving.gram_weight ? <Text style={styles.servingMeta}>{formatServingGramWeight(serving.gram_weight)}</Text> : null}
@@ -219,16 +272,25 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
           <Pressable
             accessibilityLabel="Dismiss amount notice"
             accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting }}
+            disabled={isSubmitting}
             onPress={() => setInitializationWarning(null)}
-            style={styles.warning}
+            style={[styles.warning, isSubmitting && styles.disabled]}
           >
             <Text style={styles.warningText}>{initializationWarning}</Text>
             <Text style={styles.warningDismiss}>Dismiss</Text>
           </Pressable>
         ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable onPress={save} style={styles.primaryButton}>
-          <Text style={styles.primaryText}>{log ? "Save Changes" : "Save Log"}</Text>
+        <Pressable
+          accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+          disabled={isSubmitting}
+          onPress={save}
+          style={[styles.primaryButton, isSubmitting && styles.disabled]}
+        >
+          <Text style={styles.primaryText}>
+            {isSubmitting ? (log ? "Updating..." : "Saving...") : (log ? "Save Changes" : "Save Log")}
+          </Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -238,6 +300,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
   active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
   foodName: { color: theme.colors.text, fontSize: 18, fontWeight: "600" },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
