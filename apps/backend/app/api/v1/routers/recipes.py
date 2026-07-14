@@ -23,6 +23,7 @@ from app.services.recipe_service import (
     RecipePublicationParentAmountConflictError,
     RecipeService,
 )
+from app.services.food_service import FoodService
 
 router = APIRouter()
 
@@ -66,7 +67,9 @@ def update_recipe(
 ) -> RecipeResponse:
     user = ensure_dev_user(db)
     try:
-        return RecipeResponse.model_validate(_service(db).update_recipe(user.id, recipe_id, payload))
+        return RecipeResponse.model_validate(
+            _service(db).update_recipe(user.id, recipe_id, payload)
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -120,7 +123,7 @@ def publish_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipePubl
         recipe, food = _service(db).publish(user.id, recipe_id)
         return RecipePublishResponse(
             recipe=RecipeResponse.model_validate(recipe),
-            food=food,
+            food=FoodService(db).present_food(user.id, food),
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

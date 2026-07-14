@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { useSavedFoods } from "../hooks/useFoods";
+import { useFavoriteFoods, useRecentFoods, useSavedFoods } from "../hooks/useFoods";
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
 import { formatUsdaNutrientPreview, usdaResultMeta } from "../../usda/utils/usdaDisplay";
 import { unifiedFoodSearchSections } from "../utils/unifiedFoodSearch";
@@ -10,6 +10,7 @@ import { useDebouncedSearchQuery } from "../hooks/useDebouncedSearchQuery";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
+import { foodAccessibilityLabel, formatRecentUse, recentFoodsInOrder, visibleDiscoveryRows } from "../utils/foodDiscovery";
 
 // AppNavigator places screen content below a fixed 48-point top shell inset.
 // KeyboardAvoidingView needs the same screen-relative offset on iOS.
@@ -35,6 +36,8 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
   const searchQuery = useDebouncedSearchQuery(query);
   const isCurrent = isCurrentSearchQuery(query, searchQuery);
   const foods = useSavedFoods(searchQuery);
+  const favorites = useFavoriteFoods();
+  const recent = useRecentFoods();
   const usda = useUsdaSearch(searchQuery);
   const resultsRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);
@@ -48,6 +51,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
     usdaError: usda.isError,
     isCurrent,
   });
+  const showDiscovery = isCurrent && query.trim() === "";
   useEffect(() => {
     restoredRef.current = false;
   }, [initialScrollOffset, query]);
@@ -86,11 +90,25 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
         }}
       >
         {!isCurrent ? <Text style={styles.foodMeta}>Searching foods…</Text> : null}
-        {isCurrent && sections.showSavedHeading ? <Text style={styles.sectionTitle}>Saved Foods</Text> : null}
+        {showDiscovery ? <View style={styles.section}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Favorites</Text>
+          {favorites.isLoading ? <Text accessibilityLiveRegion="polite" style={styles.foodMeta}>Loading favorites…</Text> : null}
+          {favorites.isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>Favorites are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry favorites" onPress={() => favorites.refetch()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
+          {!favorites.isLoading && !favorites.isError && favorites.data?.length === 0 ? <Text style={styles.foodMeta}>No favorite foods yet.</Text> : null}
+          {visibleDiscoveryRows(favorites.data).map((food) => <Pressable accessible accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} key={`favorite-${food.id}`} onPress={() => onOpenFood(food.id)} style={styles.compactRow}><Text style={styles.foodName}>{food.name}</Text><Text style={styles.foodMeta}>{food.source_label} · Favorite</Text></Pressable>)}
+        </View> : null}
+        {showDiscovery ? <View style={styles.section}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Recent</Text>
+          {recent.isLoading ? <Text accessibilityLiveRegion="polite" style={styles.foodMeta}>Loading recent foods…</Text> : null}
+          {recent.isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>Recent foods are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry recent foods" onPress={() => recent.refetch()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
+          {!recent.isLoading && !recent.isError && recent.data?.length === 0 ? <Text style={styles.foodMeta}>No recently logged foods.</Text> : null}
+          {recentFoodsInOrder(recent.data).map((item) => <Pressable accessible accessibilityRole="button" accessibilityLabel={`${foodAccessibilityLabel(item.food)}, ${formatRecentUse(item.last_used_at)}`} key={`recent-${item.food.id}`} onPress={() => onOpenFood(item.food.id)} style={styles.compactRow}><Text style={styles.foodName}>{item.food.name}</Text><Text style={styles.foodMeta}>{item.food.source_label} · {formatRecentUse(item.last_used_at)}</Text></Pressable>)}
+        </View> : null}
+        {isCurrent && (showDiscovery || sections.showSavedHeading) ? <Text accessibilityRole="header" style={styles.sectionTitle}>{showDiscovery ? "All Saved Foods" : "Saved Foods"}</Text> : null}
         {isCurrent ? foods.data?.map((food) => (
-          <Pressable key={food.id} onPress={() => onOpenFood(food.id)} style={styles.foodRow}>
+          <Pressable accessible accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} key={food.id} onPress={() => onOpenFood(food.id)} style={styles.foodRow}>
             <Text style={styles.foodName}>{food.name}</Text>
-            <Text style={styles.foodMeta}>{food.brand ?? sourceLabel(food.source_type)}</Text>
+            <Text style={styles.foodMeta}>{food.brand ? `${food.brand} · ${food.source_label}` : food.source_label}{food.is_favorite ? " · Favorite" : ""}</Text>
           </Pressable>
         )) : null}
         {isCurrent && foods.isLoading ? <Text style={styles.foodMeta}>Loading saved foods…</Text> : null}
@@ -162,6 +180,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   clearButton: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 44 },
   clearButtonHidden: { opacity: 0 },
   clearText: { color: theme.colors.controlSecondaryForeground, fontSize: 26, lineHeight: 28 },
+  compactRow: { backgroundColor: theme.colors.surface, borderRadius: 6, gap: 2, paddingHorizontal: 10, paddingVertical: 8 },
+  errorRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   foodMeta: { color: theme.colors.secondaryText },
   error: { color: theme.colors.errorText },
   fab: {
@@ -191,6 +211,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   foodName: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
   foodRow: { borderBottomColor: theme.colors.listDivider, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
   preview: { color: theme.colors.text, fontWeight: "600" },
+  retry: { color: theme.colors.accent, fontWeight: "700", padding: 8 },
   resultScroller: { flex: 1, minHeight: 0 },
   results: { paddingBottom: 88 },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, minHeight: 0, paddingHorizontal: 16, paddingTop: 16 },
@@ -202,10 +223,3 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   section: { gap: 4, marginTop: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginTop: 6 },
 }); }
-
-function sourceLabel(sourceType: string): string {
-  if (sourceType === "usda") {
-    return "USDA FoodData Central";
-  }
-  return "Manual food";
-}

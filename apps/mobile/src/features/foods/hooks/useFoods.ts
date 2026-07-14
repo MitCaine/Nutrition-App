@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutrition, listFoods, listNutrients, updateFood } from "../api/foodApi";
+import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutrition, listFavoriteFoods, listFoods, listNutrients, listRecentFoods, setFoodFavorite, updateFood } from "../api/foodApi";
 import type { FoodDeleteResult, FoodMutationInput } from "../api/types";
 
 export function useNutrients() {
@@ -16,6 +16,14 @@ export function useSavedFoods(query: string) {
     queryKey: ["foods", "saved", query],
     queryFn: () => listFoods(query, "saved"),
   });
+}
+
+export function useFavoriteFoods() {
+  return useQuery({ queryKey: ["foods", "favorites"], queryFn: listFavoriteFoods });
+}
+
+export function useRecentFoods(limit = 10) {
+  return useQuery({ queryKey: ["foods", "recent", limit], queryFn: () => listRecentFoods(limit) });
 }
 
 export function useFood(foodId: string | null) {
@@ -59,5 +67,9 @@ export function useFoodMutations() {
     }),
     deleteFood: useMutation({ mutationFn: deleteFood, onSuccess: invalidateAfterDelete }),
     duplicateFood: useMutation({ mutationFn: duplicateFood, onSuccess: invalidate }),
+    setFavorite: useMutation({
+      mutationFn: ({ foodId, favorite }: { foodId: string; favorite: boolean }) => setFoodFavorite(foodId, favorite),
+      onSuccess: invalidate,
+    }),
   };
 }

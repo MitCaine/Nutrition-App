@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.domain.nutrition import NutrientBasis, NutrientDataStatus
-from app.nutrition.units import SUPPORTED_NUTRITION_UNITS, normalize_unit, nutrient_unit_is_compatible
+from app.nutrition.units import (
+    SUPPORTED_NUTRITION_UNITS,
+    normalize_unit,
+    nutrient_unit_is_compatible,
+)
 from app.schemas.common import DecimalInput
 
 VALID_NUTRIENT_IDS = {nutrient.id for nutrient in NUTRIENT_CATALOG}
@@ -102,7 +106,9 @@ class FoodUpdateRequest(BaseModel):
         if self.serving_definitions is not None:
             default_count = sum(1 for serving in self.serving_definitions if serving.is_default)
             if default_count != 1:
-                raise ValueError("foods with serving definitions must have exactly one default serving")
+                raise ValueError(
+                    "foods with serving definitions must have exactly one default serving"
+                )
         return self
 
 
@@ -143,6 +149,10 @@ class FoodResponse(BaseModel):
     source_type: str
     source_id: str | None
     is_recipe: bool
+    source_kind: Literal["manual", "ocr_confirmed", "usda", "recipe", "duplicate", "legacy"]
+    source_label: str
+    is_favorite: bool
+    can_favorite: bool
     created_at: datetime
     updated_at: datetime
     serving_definitions: list[ServingDefinitionResponse]
@@ -153,6 +163,15 @@ class FoodResponse(BaseModel):
 
 class FoodListResponse(BaseModel):
     foods: list[FoodResponse]
+
+
+class RecentFoodResponse(BaseModel):
+    food: FoodResponse
+    last_used_at: datetime
+
+
+class RecentFoodListResponse(BaseModel):
+    foods: list[RecentFoodResponse]
 
 
 class ResolvedFoodNutrientResponse(BaseModel):

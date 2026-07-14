@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.domain.recipe_projection import (
@@ -13,7 +14,8 @@ from app.domain.recipe_projection import (
     classify_recipe_projection,
     projection_mutation_error,
 )
-from app.models.food import FoodItem, FoodNutrient, ServingDefinition
+from app.domain.food_source import classify_food_source
+from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import (
     RecipePublicationAmountDefinition,
@@ -79,11 +81,10 @@ class FoodService:
         *,
         saved_view: bool = False,
     ) -> list[FoodItem]:
-        return (
-            self.foods.list_saved(user_id, query)
-            if saved_view
-            else self.foods.list(user_id, query)
+        foods = (
+            self.foods.list_saved(user_id, query) if saved_view else self.foods.list(user_id, query)
         )
+        return self.present_foods(user_id, foods, exclude_invalid=True)
 
     def get_food(self, user_id: UUID, food_id: UUID) -> FoodItem:
         food = self.foods.get_required(food_id, user_id)
@@ -93,7 +94,100 @@ class FoodService:
         )
         if classification.kind == RecipeProjectionKind.INTEGRITY_INVALID:
             raise projection_mutation_error(food, classification, "read")
-        return food
+        return self.present_food(user_id, food)
+
+    def present_food(self, user_id: UUID, food: FoodItem) -> FoodItem:
+        presented = self.present_foods(user_id, [food], exclude_invalid=False)
+        if not presented:
+            classification = classify_recipe_projection(food, self._linked_recipe(food.id, user_id))
+            raise projection_mutation_error(food, classification, "read")
+        return presented[0]
+
+    def present_foods(
+        self,
+        user_id: UUID,
+        foods: list[FoodItem],
+        *,
+        exclude_invalid: bool,
+    ) -> list[FoodItem]:
+        if not foods:
+            return []
+        food_ids = [food.id for food in foods]
+        linked_recipes = {
+            recipe.published_food_item_id: recipe
+            for recipe in self.db.scalars(
+                select(Recipe).where(
+                    Recipe.user_id == user_id,
+                    Recipe.published_food_item_id.in_(food_ids),
+                )
+            )
+            if recipe.published_food_item_id is not None
+        }
+        favorite_ids = set(
+            self.db.scalars(
+                select(FoodFavorite.food_item_id).where(
+                    FoodFavorite.user_id == user_id,
+                    FoodFavorite.food_item_id.in_(food_ids),
+                )
+            )
+        )
+        result = []
+        for food in foods:
+            trace = food.ocr_confirmation_trace
+            classification = classify_food_source(
+                food,
+                linked_recipes.get(food.id),
+                has_same_owner_ocr_trace=bool(
+                    trace is not None and trace.user_id == user_id and food.user_id == user_id
+                ),
+            )
+            if classification is None:
+                if exclude_invalid:
+                    continue
+                projection = classify_recipe_projection(food, linked_recipes.get(food.id))
+                raise projection_mutation_error(food, projection, "read")
+            food.source_kind = classification.kind
+            food.source_label = classification.label
+            food.can_favorite = classification.can_favorite
+            food.is_favorite = food.id in favorite_ids
+            result.append(food)
+        return result
+
+    def list_favorites(self, user_id: UUID) -> list[FoodItem]:
+        return self.present_foods(user_id, self.foods.list_favorites(user_id), exclude_invalid=True)
+
+    def list_recent(self, user_id: UUID, limit: int) -> list[dict]:
+        rows = self.foods.list_recent(user_id, limit)
+        foods = self.present_foods(
+            user_id, [food for food, _last_used_at in rows], exclude_invalid=True
+        )
+        by_id = {food.id: food for food in foods}
+        result = []
+        for food, last_used_at in rows:
+            presented = by_id.get(food.id)
+            if presented is None:
+                continue
+            if last_used_at.tzinfo is None:
+                last_used_at = last_used_at.replace(tzinfo=timezone.utc)
+            result.append({"food": presented, "last_used_at": last_used_at})
+        return result
+
+    def set_favorite(self, user_id: UUID, food_id: UUID, *, favorite: bool) -> FoodItem:
+        food = self.foods.get_saved(user_id, food_id)
+        if food is None:
+            raise LookupError("Food not found")
+        row = self.db.get(FoodFavorite, (user_id, food_id))
+        if favorite and row is None:
+            self.db.add(FoodFavorite(user_id=user_id, food_item_id=food_id))
+        elif not favorite and row is not None:
+            self.db.delete(row)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            if not favorite or self.db.get(FoodFavorite, (user_id, food_id)) is None:
+                raise
+        return self.present_food(user_id, self.foods.get_required(food_id, user_id))
 
     def resolved_nutrition(
         self,
@@ -189,8 +283,7 @@ class FoodService:
             amount_definition_id=amount.amount_definition_id,
             display_label=amount.display_label,
             is_default=bool(
-                amount.amount.serving_definition
-                and amount.amount.serving_definition.is_default
+                amount.amount.serving_definition and amount.amount.serving_definition.is_default
             ),
             entered_quantity=amount.amount.amount_quantity,
             semantic_amount_mode=amount.amount.amount_unit,
@@ -287,7 +380,9 @@ class FoodService:
         return FoodDeleteResultResponse(
             food_id=food_id,
             deleted=True,
-            removed_ingredient_count=sum(recipe.removed_ingredient_count for recipe in affected_recipes),
+            removed_ingredient_count=sum(
+                recipe.removed_ingredient_count for recipe in affected_recipes
+            ),
             affected_recipes=affected_recipes,
         )
 
@@ -382,7 +477,9 @@ class FoodService:
             )
         ).first()
 
-    def _food_recipe_dependencies(self, user_id: UUID, food_id: UUID) -> FoodDeleteDependencyResponse:
+    def _food_recipe_dependencies(
+        self, user_id: UUID, food_id: UUID
+    ) -> FoodDeleteDependencyResponse:
         statement = (
             select(
                 Recipe.id,
@@ -408,13 +505,17 @@ class FoodService:
                 is_published=published_food_item_id is not None,
                 needs_republish=needs_republish,
             )
-            for recipe_id, recipe_name, published_food_item_id, needs_republish, occurrence_count in self.db.execute(statement)
+            for recipe_id, recipe_name, published_food_item_id, needs_republish, occurrence_count in self.db.execute(
+                statement
+            )
         ]
         return FoodDeleteDependencyResponse(
             food_id=food_id,
             active_recipe_count=len(affected_recipes),
             affected_recipes=affected_recipes,
-            total_ingredient_rows_affected=sum(recipe.ingredient_occurrence_count for recipe in affected_recipes),
+            total_ingredient_rows_affected=sum(
+                recipe.ingredient_occurrence_count for recipe in affected_recipes
+            ),
         )
 
     def _remove_food_from_recipes(
@@ -437,10 +538,16 @@ class FoodService:
         recipes = list(self.db.scalars(statement).unique().all())
         affected_recipes: list[FoodDeleteAffectedRecipeResponse] = []
         for recipe in recipes:
-            removed_count = sum(1 for ingredient in recipe.ingredients if ingredient.food_item_id == food_id)
+            removed_count = sum(
+                1 for ingredient in recipe.ingredients if ingredient.food_item_id == food_id
+            )
             if removed_count == 0:
                 continue
-            remaining = [ingredient for ingredient in recipe.ingredients if ingredient.food_item_id != food_id]
+            remaining = [
+                ingredient
+                for ingredient in recipe.ingredients
+                if ingredient.food_item_id != food_id
+            ]
             recipe.ingredients[:] = remaining
             for offset, ingredient in enumerate(recipe.ingredients):
                 ingredient.position = 100_000 + offset

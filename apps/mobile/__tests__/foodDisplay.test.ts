@@ -17,6 +17,7 @@ const usdaFood: Food = {
   source_type: "usda",
   source_id: "555000",
   is_recipe: false,
+  source_kind: "usda", source_label: "USDA", is_favorite: false, can_favorite: true,
   serving_definitions: [
     {
       id: "serving-100g",

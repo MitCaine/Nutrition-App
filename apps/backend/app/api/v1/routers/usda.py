@@ -10,6 +10,7 @@ from app.integrations.usda.client import UsdaClient, UsdaConfigurationError, Usd
 from app.integrations.usda.schemas import UsdaFoodPreview, UsdaSearchResponse
 from app.models.user import User
 from app.schemas.food import FoodResponse
+from app.services.food_service import FoodService
 from app.services.usda_service import UsdaService
 
 router = APIRouter()
@@ -29,7 +30,9 @@ def search_usda_foods(
     try:
         return service.search(query.strip(), page_size=page_size, page_number=page_number)
     except UsdaConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except UsdaUpstreamError as exc:
         if exc.status_code == status.HTTP_400_BAD_REQUEST:
             return UsdaSearchResponse(
@@ -50,13 +53,19 @@ def preview_usda_food(
     try:
         return service.preview(fdc_id)
     except UsdaConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except UsdaUpstreamError as exc:
-        status_code = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        status_code = (
+            status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
-@router.post("/foods/{fdc_id}/import", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/foods/{fdc_id}/import", response_model=FoodResponse, status_code=status.HTTP_201_CREATED
+)
 def import_usda_food(
     fdc_id: int,
     response: Response,
@@ -67,13 +76,17 @@ def import_usda_food(
     try:
         food, duplicate = service.import_food(user.id, fdc_id)
     except UsdaConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except UsdaUpstreamError as exc:
-        status_code = status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        status_code = (
+            status.HTTP_404_NOT_FOUND if exc.status_code == 404 else status.HTTP_502_BAD_GATEWAY
+        )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
     if duplicate:
         response.status_code = status.HTTP_200_OK
         response.headers["X-Nutrition-App-Duplicate-Import"] = "true"
-        return FoodResponse.model_validate(food)
-    return FoodResponse.model_validate(food)
+        return FoodResponse.model_validate(FoodService(db).present_food(user.id, food))
+    return FoodResponse.model_validate(FoodService(db).present_food(user.id, food))

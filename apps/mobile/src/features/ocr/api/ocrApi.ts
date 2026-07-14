@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiRequest } from "../../../shared/api/client";
 import type { OcrRecognitionResult } from "../../../native/ocr/NutritionOcr";
 import type { OcrConfirmationInput, OcrConfirmationResponse, ParsedNutritionLabel } from "./types";
+import { validateFoodSourceContract } from "../../foods/api/foodApi";
 
 const decimalValue = z.union([z.string(), z.number()]).transform(String);
 const fieldSchema = z.object({
@@ -51,8 +52,9 @@ export async function parseNutritionLabel(result: OcrRecognitionResult): Promise
   return responseSchema.parse(raw) as ParsedNutritionLabel;
 }
 
-export function confirmNutritionLabel(input: OcrConfirmationInput): Promise<OcrConfirmationResponse> {
-  return apiRequest<OcrConfirmationResponse>("/ocr/nutrition-label/confirm", {
+export async function confirmNutritionLabel(input: OcrConfirmationInput): Promise<OcrConfirmationResponse> {
+  const response = await apiRequest<OcrConfirmationResponse>("/ocr/nutrition-label/confirm", {
     method: "POST", body: JSON.stringify(input),
   });
+  return { ...response, food: validateFoodSourceContract(response.food) };
 }

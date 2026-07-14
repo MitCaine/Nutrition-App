@@ -1,5 +1,6 @@
 from app.models.food import (
     FoodItem,
+    FoodFavorite,
     FoodNutrient,
     FoodSource,
     OcrNutritionConfirmationTrace,
@@ -20,6 +21,7 @@ __all__ = [
     "DailyLog",
     "DailyLogNutrientSnapshot",
     "FoodItem",
+    "FoodFavorite",
     "FoodNutrient",
     "FoodSource",
     "Nutrient",

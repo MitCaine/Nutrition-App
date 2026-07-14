@@ -24,6 +24,7 @@ const food: Food = {
   brand: "Pantry Co",
   source_type: "manual",
   is_recipe: false,
+  source_kind: "manual", source_label: "Manual", is_favorite: false, can_favorite: true,
   serving_definitions: [
     {
       id: "serving-1",

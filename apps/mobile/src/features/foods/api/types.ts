@@ -1,6 +1,7 @@
 import type { NutrientDataStatus, NutrientUnit } from "../../../shared/nutrition/types";
 
 export type NutrientBasis = "per_serving" | "per_100g" | "per_gram";
+export type FoodSourceKind = "manual" | "ocr_confirmed" | "usda" | "recipe" | "duplicate" | "legacy";
 
 export type ServingDefinitionInput = {
   label: string;
@@ -49,9 +50,15 @@ export type Food = {
   source_type: string;
   source_id?: string | null;
   is_recipe: boolean;
+  source_kind: FoodSourceKind;
+  source_label: string;
+  is_favorite: boolean;
+  can_favorite: boolean;
   serving_definitions: ServingDefinition[];
   nutrients: FoodNutrient[];
 };
+
+export type RecentFood = { food: Food; last_used_at: string };
 
 export type ResolvedFoodNutrient = {
   nutrient_id: string;

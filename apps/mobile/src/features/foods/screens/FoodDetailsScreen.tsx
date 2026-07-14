@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
@@ -41,7 +41,9 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAmountId, setSelectedAmountId] = useState<string | null>(null);
+  const favoriteClaimedRef = useRef(false);
   const deletePending = mutations.deleteFood.isPending;
+  const favoritePending = mutations.setFavorite.isPending;
   const loadState = foodDetailLoadState({
     hasData: Boolean(food.data),
     isLoading: food.isLoading,
@@ -69,6 +71,19 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
           }
           setError(apiErrorMessage(deleteError, "Could not delete food"));
         },
+      },
+    );
+  };
+
+  const toggleFavorite = () => {
+    if (favoriteClaimedRef.current || favoritePending || !food.data?.can_favorite) return;
+    favoriteClaimedRef.current = true;
+    setError(null);
+    mutations.setFavorite.mutate(
+      { foodId, favorite: !food.data.is_favorite },
+      {
+        onError: (favoriteError) => setError(apiErrorMessage(favoriteError, "Could not update favorite")),
+        onSettled: () => { favoriteClaimedRef.current = false; },
       },
     );
   };
@@ -124,9 +139,8 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         <Text style={styles.text}>Back</Text>
       </Pressable>
       <Text style={styles.title}>{food.data.name}</Text>
-      <Text style={styles.text}>
-        {food.data.brand ?? (managedByRecipe ? "Published Recipe" : sourceLabel(food.data.source_type))}
-      </Text>
+      {food.data.brand ? <Text style={styles.text}>{food.data.brand}</Text> : null}
+      <Text accessibilityLabel={`Food source ${food.data.source_label}`} style={styles.sourceLabel}>{food.data.source_label}</Text>
       {managedByRecipe ? (
         <Text style={styles.publishedContext}>Current published Recipe nutrition</Text>
       ) : null}
@@ -169,13 +183,14 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         <Pressable onPress={() => mutations.duplicateFood.mutate(foodId)} style={styles.secondaryButton}>
           <Text style={styles.text}>Duplicate</Text>
         </Pressable>
+        {food.data.can_favorite ? <Pressable accessibilityRole="button" accessibilityLabel={food.data.is_favorite ? "Unfavorite food" : "Favorite food"} accessibilityState={{ selected: food.data.is_favorite, disabled: favoritePending, busy: favoritePending }} disabled={favoritePending} onPress={toggleFavorite} style={styles.secondaryButton}><Text style={styles.text}>{favoritePending ? "Updating…" : food.data.is_favorite ? "Unfavorite" : "Favorite"}</Text></Pressable> : null}
         {actions.canDelete ? (
           <Pressable onPress={() => requestDelete(false)} style={styles.deleteButton}>
             <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
           </Pressable>
         ) : null}
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <FoodDeleteDependencyModal
         dependency={dependency}
         error={error}
@@ -282,14 +297,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   servingOptionTextSelected: { color: theme.colors.accent },
   servingOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   servingSection: { gap: 7 },
+  sourceLabel: { color: theme.colors.secondaryText, fontWeight: "600" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   warningTitle: { color: theme.colors.text, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },
 }); }
-
-function sourceLabel(sourceType: string): string {
-  if (sourceType === "usda") {
-    return "USDA FoodData Central";
-  }
-  return "Manual food";
-}

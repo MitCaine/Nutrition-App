@@ -234,6 +234,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
           </Pressable>
         </View>
         <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
+        {!log && food.data ? <Text accessibilityLabel={`Food source ${food.data.source_label}`} style={styles.meta}>{food.data.source_label}</Text> : null}
         <TextInput
           accessibilityHint="Enter a quantity greater than zero"
           accessibilityLabel="Amount quantity"
@@ -363,6 +364,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
   foodName: { color: theme.colors.text, fontSize: 18, fontWeight: "600" },
+  meta: { color: theme.colors.secondaryText },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
   keyboard: { backgroundColor: theme.colors.background, flex: 1 },

@@ -17,6 +17,7 @@ const food: Food = {
   source_type: "manual",
   source_id: null,
   is_recipe: false,
+  source_kind: "manual", source_label: "Manual", is_favorite: false, can_favorite: true,
   serving_definitions: [
     {
       id: "serving-default",

@@ -13,6 +13,7 @@ let mockResolvedQuery: Record<string, unknown>;
 let mockEditContextQuery: Record<string, unknown>;
 const mockCreateLog = jest.fn(async () => undefined);
 const mockUpdateLog = jest.fn(async () => undefined);
+const mockSetFavorite = jest.fn();
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFood: () => mockFoodQuery,
@@ -20,6 +21,7 @@ jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFoodMutations: () => ({
     deleteFood: { isPending: false, mutate: jest.fn() },
     duplicateFood: { mutate: jest.fn() },
+    setFavorite: { isPending: false, mutate: mockSetFavorite },
   }),
 }));
 
@@ -38,6 +40,7 @@ const food: Food = {
   source_type: "manual",
   source_id: null,
   is_recipe: false,
+  source_kind: "manual", source_label: "Manual", is_favorite: false, can_favorite: true,
   serving_definitions: [
     {
       id: "default-serving",
@@ -107,6 +110,7 @@ function nutrition(
 beforeEach(() => {
   mockCreateLog.mockClear();
   mockUpdateLog.mockClear();
+  mockSetFavorite.mockClear();
   mockFoodQuery = {
     data: food,
     isLoading: false,
@@ -201,6 +205,24 @@ test("Manual serving flows through Food Detail and navigator into visible submis
     amount_unit: "serving",
     serving_definition_id: "selected-serving",
   }));
+});
+
+test("Food Detail exposes source and guarded accessible favorite state", async () => {
+  const renderer = await render(React.createElement(FoodDetailsScreen, {
+    foodId: food.id, onBack: jest.fn(), onDeleted: jest.fn(), onEdit: jest.fn(), onLog: jest.fn(),
+  }));
+  expect(hasText(renderer.root, "Manual")).toBe(true);
+  const favorite = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Favorite food")!;
+  expect(favorite.props.accessibilityState).toMatchObject({ selected: false, disabled: false, busy: false });
+  await act(async () => { favorite.props.onPress(); favorite.props.onPress(); });
+  expect(mockSetFavorite).toHaveBeenCalledWith({ foodId: food.id, favorite: true }, expect.any(Object));
+  expect(mockSetFavorite).toHaveBeenCalledTimes(1);
+  const callbacks = mockSetFavorite.mock.calls[0][1];
+  await act(async () => { callbacks.onError(new Error("offline")); callbacks.onSettled(); });
+  expect(renderer.root.findAllByType(Text).some((node) => textContent(node).includes("offline"))).toBe(true);
+  await act(async () => favorite.props.onPress());
+  expect(mockSetFavorite).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.unmount());
 });
 
 test("gram selection opens Log Food in gram mode with its amount identity", async () => {

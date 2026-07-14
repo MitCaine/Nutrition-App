@@ -86,5 +86,7 @@ Implemented API surface:
 ## Stage 7: Targets + Dashboard Polish
 
 - Stage 7A: versioned FDA Daily Values, optional adult maintenance-calorie estimation, manual macro overrides, snapshot-based comparisons, and Settings configuration.
+- Stage 7B: direction-aware Daily Log target progress with explicit FDA reference semantics.
+- Stage 7C: user-scoped Food favorites, actual-use recents, and backend-owned source labels.
 - Dashboard progress bars.
 - Recents/favorites/source labels.

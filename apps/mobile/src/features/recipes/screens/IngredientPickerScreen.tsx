@@ -57,6 +57,9 @@ export function IngredientPickerScreen({
             <Pressable
               key={food.id}
               disabled={disabled}
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={`${food.name}, ${food.source_label}${disabled ? ", current recipe food, unavailable" : ""}`}
               onPress={() => onSelectFood(food)}
               style={[styles.row, disabled && styles.disabledRow]}
             >

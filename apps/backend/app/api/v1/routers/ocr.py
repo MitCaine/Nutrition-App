@@ -18,6 +18,7 @@ from app.ocr.confirmation_service import (
     OcrConfirmationService,
 )
 from app.schemas.food import FoodResponse
+from app.services.food_service import FoodService
 from app.ocr.schemas import NutritionLabelParseInput, ParsedNutritionLabel
 
 
@@ -86,8 +87,11 @@ def confirm_ocr_nutrition_label(
     except OcrConfirmationIdempotencyConflict as exc:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={"detail": {"code": "ocr_confirmation_idempotency_conflict", "message": str(exc)}},
+            content={
+                "detail": {"code": "ocr_confirmation_idempotency_conflict", "message": str(exc)}
+            },
         )
     return OcrNutritionConfirmationResponse(
-        food=FoodResponse.model_validate(food), trace_id=trace.id
+        food=FoodResponse.model_validate(FoodService(db).present_food(user.id, food)),
+        trace_id=trace.id,
     )

@@ -67,10 +67,9 @@ def test_saved_view_conservatively_excludes_partial_recipe_markers(
     row.source_type = "manual"
     db_session.commit()
 
-    assert projection["id"] not in _ids(
-        client.get("/api/v1/foods", params={"view": "saved"})
-    )
-    assert projection["id"] in _ids(client.get("/api/v1/foods"))
+    assert projection["id"] not in _ids(client.get("/api/v1/foods", params={"view": "saved"}))
+    # Generic discovery also excludes integrity-invalid Recipe marker graphs.
+    assert projection["id"] not in _ids(client.get("/api/v1/foods"))
     detail = client.get(f"/api/v1/foods/{projection['id']}/resolved-nutrition")
     assert detail.status_code == 409
     assert detail.json()["detail"]["code"] == "recipe_projection_integrity_invalid"
@@ -93,9 +92,7 @@ def test_foreign_recipe_backlink_does_not_hide_or_reclassify_user_food(
     db_session.add(foreign_recipe)
     db_session.commit()
 
-    assert _ids(client.get("/api/v1/foods", params={"view": "saved"})) == {
-        own["id"]
-    }
+    assert _ids(client.get("/api/v1/foods", params={"view": "saved"})) == {own["id"]}
     detail = client.get(f"/api/v1/foods/{own['id']}/resolved-nutrition")
     assert detail.status_code == 200
     assert detail.json()["nutrition_authority"] == "food_item"
@@ -105,18 +102,14 @@ def test_publication_duplication_republication_and_deletion_follow_saved_ownersh
     client: TestClient,
 ) -> None:
     recipe_id, projection = _published(client)
-    assert projection["id"] not in _ids(
-        client.get("/api/v1/foods", params={"view": "saved"})
-    )
+    assert projection["id"] not in _ids(client.get("/api/v1/foods", params={"view": "saved"}))
 
     duplicate_response = client.post(f"/api/v1/foods/{projection['id']}/duplicate")
     assert duplicate_response.status_code == 201, duplicate_response.text
     duplicate = duplicate_response.json()
     duplicate_before = client.get(f"/api/v1/foods/{duplicate['id']}").json()
     assert duplicate["source_type"] == "manual"
-    assert duplicate["id"] in _ids(
-        client.get("/api/v1/foods", params={"view": "saved"})
-    )
+    assert duplicate["id"] in _ids(client.get("/api/v1/foods", params={"view": "saved"}))
 
     republish = client.post(f"/api/v1/recipes/{recipe_id}/publish")
     assert republish.status_code == 200, republish.text
@@ -124,12 +117,8 @@ def test_publication_duplication_republication_and_deletion_follow_saved_ownersh
 
     deleted = client.delete(f"/api/v1/recipes/{recipe_id}")
     assert deleted.status_code == 204
-    assert projection["id"] not in _ids(
-        client.get("/api/v1/foods", params={"view": "saved"})
-    )
-    assert duplicate["id"] in _ids(
-        client.get("/api/v1/foods", params={"view": "saved"})
-    )
+    assert projection["id"] not in _ids(client.get("/api/v1/foods", params={"view": "saved"}))
+    assert duplicate["id"] in _ids(client.get("/api/v1/foods", params={"view": "saved"}))
 
 
 def test_saved_query_uses_one_bounded_ownership_subquery_without_per_row_queries(
@@ -153,7 +142,8 @@ def test_saved_query_uses_one_bounded_ownership_subquery_without_per_row_queries
         event.remove(db_session.bind, "before_cursor_execute", capture)
 
     assert len(foods) == 6
-    assert len(statements) == 4
+    # Food rows plus bounded source, OCR-provenance, serving, and nutrient loads.
+    assert len(statements) == 5
     assert "EXISTS" in statements[0].upper()
     assert "recipes.user_id" in statements[0]
     assert statements[0].upper().count("SELECT") == 2

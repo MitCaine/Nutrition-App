@@ -256,12 +256,9 @@ export function applyImportedIngredient(
 
 export function foodMeta(food: Food): string {
   if (food.brand) {
-    return food.brand;
+    return `${food.brand} · ${food.source_label}`;
   }
-  if (food.is_recipe) {
-    return "Recipe";
-  }
-  return food.source_type === "usda" ? "USDA" : "Manual";
+  return food.source_label;
 }
 
 export function formatRecipeIngredientDetail(params: {

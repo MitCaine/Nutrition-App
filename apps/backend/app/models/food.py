@@ -36,6 +36,7 @@ class FoodItem(Base):
             name="fk_food_items_publication_revision_owner",
             ondelete="RESTRICT",
         ),
+        UniqueConstraint("id", "user_id", name="uq_food_items_identity_user"),
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
@@ -75,6 +76,29 @@ class FoodItem(Base):
         back_populates="food_item",
         uselist=False,
     )
+    favorites: Mapped[list[FoodFavorite]] = relationship(back_populates="food_item")
+
+
+class FoodFavorite(Base):
+    __tablename__ = "food_favorites"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["food_item_id", "user_id"],
+            ["food_items.id", "food_items.user_id"],
+            name="fk_food_favorites_food_owner",
+            ondelete="RESTRICT",
+        ),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        GUID(), ForeignKey("users.id"), primary_key=True, nullable=False
+    )
+    food_item_id: Mapped[UUID] = mapped_column(GUID(), primary_key=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    food_item: Mapped[FoodItem] = relationship(back_populates="favorites")
 
 
 class OcrNutritionConfirmationTrace(Base):
@@ -86,9 +110,7 @@ class OcrNutritionConfirmationTrace(Base):
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("users.id"), nullable=False)
-    food_item_id: Mapped[UUID] = mapped_column(
-        GUID(), ForeignKey("food_items.id"), nullable=False
-    )
+    food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"), nullable=False)
     parser_version: Mapped[str] = mapped_column(Text, nullable=False)
     image_source_type: Mapped[str] = mapped_column(Text, nullable=False)
     schema_version: Mapped[str] = mapped_column(Text, nullable=False)

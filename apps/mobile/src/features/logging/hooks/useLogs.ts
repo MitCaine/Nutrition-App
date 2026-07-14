@@ -10,6 +10,10 @@ export function invalidateLogDateCaches(queryClient: QueryClient, date: string) 
   queryClient.invalidateQueries({ queryKey: ["target-comparison", date] });
 }
 
+export function invalidateFoodRecents(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["foods", "recent"] });
+}
+
 export function useDailyLogs(date: string) {
   return useQuery({ queryKey: ["logs", date], queryFn: () => listLogs(date) });
 }
@@ -29,13 +33,14 @@ export function useLogEditContext(logId: string | null) {
 export function useLogMutations(date: string) {
   const queryClient = useQueryClient();
   const invalidate = () => invalidateLogDateCaches(queryClient, date);
+  const invalidateUse = () => { invalidate(); invalidateFoodRecents(queryClient); };
   return {
-    createLog: useMutation({ mutationFn: createLog, onSuccess: invalidate }),
+    createLog: useMutation({ mutationFn: createLog, onSuccess: invalidateUse }),
     updateLog: useMutation({
       mutationFn: ({ logId, input }: { logId: string; input: Partial<DailyLogUpdateInput> }) =>
         updateLog(logId, input),
       onSuccess: invalidate,
     }),
-    deleteLog: useMutation({ mutationFn: deleteLog, onSuccess: invalidate }),
+    deleteLog: useMutation({ mutationFn: deleteLog, onSuccess: invalidateUse }),
   };
 }

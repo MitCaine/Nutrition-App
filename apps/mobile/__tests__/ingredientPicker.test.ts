@@ -6,6 +6,7 @@ const ordinaryFood: Food = {
   name: "Tomatoes",
   source_type: "manual",
   is_recipe: false,
+  source_kind: "manual", source_label: "Manual", is_favorite: false, can_favorite: true,
   serving_definitions: [],
   nutrients: [],
 };
@@ -15,6 +16,7 @@ const recipeFood: Food = {
   name: "Chili",
   source_type: "recipe",
   is_recipe: true,
+  source_kind: "recipe", source_label: "Recipe", is_favorite: false, can_favorite: false,
   serving_definitions: [],
   nutrients: [],
 };

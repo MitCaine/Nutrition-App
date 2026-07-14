@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.food import FoodItem
+from app.models.food import FoodFavorite, FoodItem
+from app.models.log import DailyLog
 from app.models.recipe import Recipe
 
 
@@ -22,8 +23,15 @@ class FoodRepository:
     def get(self, food_id: UUID, user_id: UUID) -> FoodItem | None:
         statement = (
             select(FoodItem)
-            .where(FoodItem.id == food_id, FoodItem.user_id == user_id, FoodItem.deleted_at.is_(None))
-            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
+            .where(
+                FoodItem.id == food_id, FoodItem.user_id == user_id, FoodItem.deleted_at.is_(None)
+            )
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+                selectinload(FoodItem.ocr_confirmation_trace),
+            )
         )
         return self.db.scalars(statement).first()
 
@@ -60,12 +68,19 @@ class FoodRepository:
         statement = (
             select(FoodItem)
             .where(FoodItem.user_id == user_id, FoodItem.deleted_at.is_(None))
-            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+                selectinload(FoodItem.ocr_confirmation_trace),
+            )
             .order_by(FoodItem.name)
         )
         if query:
             pattern = f"%{query.strip()}%"
-            statement = statement.where(or_(FoodItem.name.ilike(pattern), FoodItem.brand.ilike(pattern)))
+            statement = statement.where(
+                or_(FoodItem.name.ilike(pattern), FoodItem.brand.ilike(pattern))
+            )
         return list(self.db.scalars(statement).all())
 
     def list_saved(self, user_id: UUID, query: str | None = None) -> list[FoodItem]:
@@ -83,18 +98,12 @@ class FoodRepository:
         )
         statement = (
             select(FoodItem)
-            .where(
-                FoodItem.user_id == user_id,
-                FoodItem.deleted_at.is_(None),
-                FoodItem.is_recipe.is_(False),
-                FoodItem.source_type != "recipe",
-                FoodItem.recipe_publication_revision_id.is_(None),
-                ~recipe_backlink,
-            )
+            .where(*self._saved_predicates(user_id, recipe_backlink))
             .options(
                 selectinload(FoodItem.nutrients),
                 selectinload(FoodItem.serving_definitions),
                 selectinload(FoodItem.sources),
+                selectinload(FoodItem.ocr_confirmation_trace),
             )
             .order_by(FoodItem.name)
         )
@@ -105,7 +114,94 @@ class FoodRepository:
             )
         return list(self.db.scalars(statement).all())
 
-    def find_active_by_source(self, user_id: UUID, source_type: str, source_id: str) -> FoodItem | None:
+    def get_saved(self, user_id: UUID, food_id: UUID) -> FoodItem | None:
+        recipe_backlink = exists(
+            select(Recipe.id).where(
+                Recipe.published_food_item_id == FoodItem.id,
+                Recipe.user_id == user_id,
+            )
+        )
+        statement = (
+            select(FoodItem)
+            .where(FoodItem.id == food_id, *self._saved_predicates(user_id, recipe_backlink))
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+                selectinload(FoodItem.ocr_confirmation_trace),
+            )
+        )
+        return self.db.scalars(statement).first()
+
+    def list_favorites(self, user_id: UUID) -> list[FoodItem]:
+        recipe_backlink = exists(
+            select(Recipe.id).where(
+                Recipe.published_food_item_id == FoodItem.id,
+                Recipe.user_id == user_id,
+            )
+        )
+        statement = (
+            select(FoodItem)
+            .join(
+                FoodFavorite,
+                (FoodFavorite.food_item_id == FoodItem.id) & (FoodFavorite.user_id == user_id),
+            )
+            .where(*self._saved_predicates(user_id, recipe_backlink))
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+                selectinload(FoodItem.ocr_confirmation_trace),
+            )
+            .order_by(FoodFavorite.created_at.desc(), FoodItem.id)
+        )
+        return list(self.db.scalars(statement).all())
+
+    def list_recent(self, user_id: UUID, limit: int) -> list[tuple[FoodItem, object]]:
+        last_use = (
+            select(
+                DailyLog.food_item_id,
+                func.max(DailyLog.created_at).label("last_used_at"),
+            )
+            .where(DailyLog.user_id == user_id)
+            .group_by(DailyLog.food_item_id)
+            .subquery()
+        )
+        recipe_backlink = exists(
+            select(Recipe.id).where(
+                Recipe.published_food_item_id == FoodItem.id,
+                Recipe.user_id == user_id,
+            )
+        )
+        statement = (
+            select(FoodItem, last_use.c.last_used_at)
+            .join(last_use, last_use.c.food_item_id == FoodItem.id)
+            .where(*self._saved_predicates(user_id, recipe_backlink))
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+                selectinload(FoodItem.ocr_confirmation_trace),
+            )
+            .order_by(last_use.c.last_used_at.desc(), FoodItem.id)
+            .limit(limit)
+        )
+        return [(row[0], row[1]) for row in self.db.execute(statement).all()]
+
+    @staticmethod
+    def _saved_predicates(user_id: UUID, recipe_backlink):
+        return (
+            FoodItem.user_id == user_id,
+            FoodItem.deleted_at.is_(None),
+            FoodItem.is_recipe.is_(False),
+            FoodItem.source_type != "recipe",
+            FoodItem.recipe_publication_revision_id.is_(None),
+            ~recipe_backlink,
+        )
+
+    def find_active_by_source(
+        self, user_id: UUID, source_type: str, source_id: str
+    ) -> FoodItem | None:
         statement = (
             select(FoodItem)
             .where(
@@ -114,7 +210,11 @@ class FoodRepository:
                 FoodItem.source_id == source_id,
                 FoodItem.deleted_at.is_(None),
             )
-            .options(selectinload(FoodItem.nutrients), selectinload(FoodItem.serving_definitions), selectinload(FoodItem.sources))
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+            )
         )
         return self.db.scalars(statement).first()
 

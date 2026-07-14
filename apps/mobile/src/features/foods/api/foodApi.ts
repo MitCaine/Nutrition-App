@@ -1,5 +1,16 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { Food, FoodDeleteResult, FoodMutationInput, FoodResolvedNutrition, NutrientDefinition, ServingDefinitionInput } from "./types";
+import type { Food, FoodDeleteResult, FoodMutationInput, FoodResolvedNutrition, NutrientDefinition, RecentFood, ServingDefinitionInput } from "./types";
+
+const SOURCE_KINDS = new Set(["manual", "ocr_confirmed", "usda", "recipe", "duplicate", "legacy"]);
+
+export function validateFoodSourceContract(value: unknown): Food {
+  if (!value || typeof value !== "object") throw new Error("Invalid Food response");
+  const food = value as Record<string, unknown>;
+  if (!SOURCE_KINDS.has(String(food.source_kind)) || typeof food.source_label !== "string" || typeof food.is_favorite !== "boolean" || typeof food.can_favorite !== "boolean") {
+    throw new Error("Invalid Food source contract");
+  }
+  return value as Food;
+}
 
 export function listNutrients(): Promise<NutrientDefinition[]> {
   return apiRequest<NutrientDefinition[]>("/nutrients");
@@ -14,29 +25,46 @@ export async function listFoods(query?: string, view?: FoodListView): Promise<Fo
   ].filter(Boolean);
   const suffix = parameters.length > 0 ? `?${parameters.join("&")}` : "";
   const response = await apiRequest<{ foods: Food[] }>(`/foods${suffix}`);
-  return response.foods;
+  return response.foods.map(validateFoodSourceContract);
 }
 
-export function getFood(foodId: string): Promise<Food> {
-  return apiRequest<Food>(`/foods/${foodId}`);
+export async function getFood(foodId: string): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}`));
+}
+
+export async function listFavoriteFoods(): Promise<Food[]> {
+  const response = await apiRequest<{ foods: unknown[] }>("/foods/favorites");
+  return response.foods.map(validateFoodSourceContract);
+}
+
+export async function listRecentFoods(limit = 10): Promise<RecentFood[]> {
+  const response = await apiRequest<{ foods: { food: unknown; last_used_at: unknown }[] }>(`/foods/recent?limit=${limit}`);
+  return response.foods.map((item) => {
+    if (typeof item.last_used_at !== "string" || !Number.isFinite(Date.parse(item.last_used_at))) throw new Error("Invalid recent Food timestamp");
+    return { food: validateFoodSourceContract(item.food), last_used_at: item.last_used_at };
+  });
+}
+
+export async function setFoodFavorite(foodId: string, favorite: boolean): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}/favorite`, { method: favorite ? "PUT" : "DELETE" }));
 }
 
 export function getFoodResolvedNutrition(foodId: string): Promise<FoodResolvedNutrition> {
   return apiRequest<FoodResolvedNutrition>(`/foods/${foodId}/resolved-nutrition`);
 }
 
-export function createFood(input: FoodMutationInput): Promise<Food> {
-  return apiRequest<Food>("/foods", {
+export async function createFood(input: FoodMutationInput): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>("/foods", {
     method: "POST",
     body: JSON.stringify(input),
-  });
+  }));
 }
 
-export function updateFood(foodId: string, input: FoodMutationInput): Promise<Food> {
-  return apiRequest<Food>(`/foods/${foodId}`, {
+export async function updateFood(foodId: string, input: FoodMutationInput): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}`, {
     method: "PATCH",
     body: JSON.stringify(input),
-  });
+  }));
 }
 
 export function deleteFood({
@@ -50,13 +78,13 @@ export function deleteFood({
   return apiRequest<FoodDeleteResult>(`/foods/${foodId}${suffix}`, { method: "DELETE" });
 }
 
-export function duplicateFood(foodId: string): Promise<Food> {
-  return apiRequest<Food>(`/foods/${foodId}/duplicate`, { method: "POST" });
+export async function duplicateFood(foodId: string): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}/duplicate`, { method: "POST" }));
 }
 
-export function createFoodServing(foodId: string, input: ServingDefinitionInput): Promise<Food> {
-  return apiRequest<Food>(`/foods/${foodId}/serving-definitions`, {
+export async function createFoodServing(foodId: string, input: ServingDefinitionInput): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}/serving-definitions`, {
     method: "POST",
     body: JSON.stringify(input),
-  });
+  }));
 }

@@ -5,7 +5,7 @@ import { applyUsdaImportToFoodCache } from "../src/features/usda/hooks/useUsda";
 import { importUsdaFood } from "../src/features/usda/api/usdaApi";
 import { buildLogInput, initialServingId } from "../src/features/logging/utils/logFoodForm";
 import { createLog, getDailySummary } from "../src/features/logging/api/logApi";
-import { invalidateLogDateCaches } from "../src/features/logging/hooks/useLogs";
+import { invalidateFoodRecents, invalidateLogDateCaches } from "../src/features/logging/hooks/useLogs";
 
 const importedFood: Food = {
   id: "food-usda",
@@ -14,6 +14,7 @@ const importedFood: Food = {
   source_type: "usda",
   source_id: "555000",
   is_recipe: false,
+  source_kind: "usda", source_label: "USDA", is_favorite: false, can_favorite: true,
   serving_definitions: [
     {
       id: "serving-100g",
@@ -176,6 +177,7 @@ test("imported USDA food can be logged with default serving and refreshes daily 
     client_request_id: "00000000-0000-4000-8000-000000000001",
   });
   invalidateLogDateCaches(queryClient, "2026-07-08");
+  invalidateFoodRecents(queryClient);
   const summary = await getDailySummary("2026-07-08");
 
   expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toEqual({
