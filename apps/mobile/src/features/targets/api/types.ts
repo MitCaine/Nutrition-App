@@ -1,6 +1,7 @@
 export type ActivityLevel = "sedentary" | "lightly_active" | "active" | "very_active";
 export type EstimationContext = "general_adult" | "pregnant" | "lactating" | "specialized_medical";
 export type TargetAuthority = "manual_override" | "calculated_estimate" | "daily_value" | "unavailable";
+export type TargetDirection = "target" | "limit" | "minimum" | "reference" | "unavailable";
 
 export type TargetProfile = {
   birthDate: string | null;
@@ -16,7 +17,18 @@ export type TargetValue = {
   amount: string | null;
   unit: string;
   authority: TargetAuthority;
+  direction: TargetDirection;
   reasonCode: string | null;
+  noteCode: string | null;
+};
+
+export type DailyValueCatalogItem = {
+  nutrientId: string;
+  amount: string | null;
+  unit: string;
+  availability: "available" | "unavailable";
+  direction: TargetDirection;
+  noteCode: string | null;
 };
 
 export type TargetConfiguration = {
@@ -33,8 +45,31 @@ export type TargetConfiguration = {
   effectiveTargets: TargetValue[];
   dailyValueCatalogVersion: string;
   dailyValueStandard: string;
+  targetDirectionSemanticsVersion: string;
+  dailyValues: DailyValueCatalogItem[];
   limitations: string[];
   informationalNotice: string;
+};
+
+export type DailyTargetComparisonItem = {
+  nutrientId: string;
+  consumedAmount: string | null;
+  targetAmount: string | null;
+  unit: string;
+  percentage: string | null;
+  authority: TargetAuthority;
+  direction: TargetDirection;
+  status: "available" | "target_unavailable" | "consumed_unavailable";
+  reasonCode: string | null;
+  noteCode: string | null;
+  hasUnknownContributors: boolean;
+};
+
+export type DailyTargetComparison = {
+  date: string;
+  dailyValueCatalogVersion: string;
+  targetDirectionSemanticsVersion: string;
+  comparisons: DailyTargetComparisonItem[];
 };
 
 export type TargetConfigurationInput = {

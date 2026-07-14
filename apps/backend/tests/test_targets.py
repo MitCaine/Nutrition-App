@@ -22,6 +22,7 @@ from app.targets.daily_values import (
     FDA_DAILY_VALUE_CATALOG_VERSION,
     FDA_DAILY_VALUE_STANDARD,
     FDA_DAILY_VALUES,
+    TARGET_DIRECTION_SEMANTICS_VERSION,
 )
 from app.targets.estimation import (
     ACTIVITY_MULTIPLIERS,
@@ -61,11 +62,7 @@ def test_fda_daily_value_catalog_is_exact_versioned_and_canonical():
     assert FDA_DAILY_VALUE_CATALOG_VERSION == "fda_daily_values_2016_v1"
     assert FDA_DAILY_VALUE_STANDARD == "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS"
     assert set(values) == {item.id for item in NUTRIENT_CATALOG}
-    assert {
-        key: (item.amount, item.unit)
-        for key, item in values.items()
-        if item.available
-    } == {
+    assert {key: (item.amount, item.unit) for key, item in values.items() if item.available} == {
         "total_fat": (Decimal("78"), "g"),
         "saturated_fat": (Decimal("20"), "g"),
         "cholesterol": (Decimal("300"), "mg"),
@@ -84,6 +81,44 @@ def test_fda_daily_value_catalog_is_exact_versioned_and_canonical():
     assert values["trans_fat"].amount is None
     assert values["total_sugars"].amount is None
     assert values["protein"].note_code == "protein_percent_dv_labeling_caveat"
+    assert TARGET_DIRECTION_SEMANTICS_VERSION == "target_directions_2026_v1"
+    assert {item.direction for item in values.values()} <= {
+        "limit",
+        "minimum",
+        "reference",
+        "unavailable",
+    }
+    assert {
+        key: values[key].direction
+        for key in ("saturated_fat", "cholesterol", "sodium", "added_sugars")
+    } == {
+        "saturated_fat": "limit",
+        "cholesterol": "limit",
+        "sodium": "limit",
+        "added_sugars": "limit",
+    }
+    assert {
+        key: values[key].direction
+        for key in ("dietary_fiber", "vitamin_d", "calcium", "iron", "potassium")
+    } == {
+        "dietary_fiber": "minimum",
+        "vitamin_d": "minimum",
+        "calcium": "minimum",
+        "iron": "minimum",
+        "potassium": "minimum",
+    }
+    assert {
+        key: values[key].direction
+        for key in ("total_fat", "total_carbohydrate", "protein", "magnesium")
+    } == {
+        "total_fat": "reference",
+        "total_carbohydrate": "reference",
+        "protein": "reference",
+        "magnesium": "reference",
+    }
+    assert values["calories"].direction == "unavailable"
+    assert values["trans_fat"].direction == "unavailable"
+    assert values["total_sugars"].direction == "unavailable"
 
 
 @pytest.mark.parametrize(
@@ -108,7 +143,10 @@ def test_mifflin_st_jeor_known_example_activity_and_rounding(activity, expected)
     assert result.available
     assert result.amount == Decimal(expected)
     assert ACTIVITY_MULTIPLIERS[activity] in {
-        Decimal("1.4"), Decimal("1.6"), Decimal("1.8"), Decimal("2.0")
+        Decimal("1.4"),
+        Decimal("1.6"),
+        Decimal("1.8"),
+        Decimal("2.0"),
     }
 
 
@@ -137,7 +175,10 @@ def test_estimation_unit_conversion_is_decimal_exact():
         ({"birth_date": date(2010, 1, 1)}, "target_estimate_unsupported_age"),
         ({"energy_estimation_context": "pregnant"}, "target_estimate_unsupported_context"),
         ({"energy_estimation_context": "lactating"}, "target_estimate_unsupported_context"),
-        ({"energy_estimation_context": "specialized_medical"}, "target_estimate_unsupported_context"),
+        (
+            {"energy_estimation_context": "specialized_medical"},
+            "target_estimate_unsupported_context",
+        ),
     ],
 )
 def test_estimation_returns_structured_unavailable(changes, reason):
@@ -166,10 +207,12 @@ def test_comparison_zero_missing_unavailable_above_100_and_precision():
         AggregatedNutrientTotal("protein", Decimal("75.123456"), Decimal("0"), "g", False, 0),
     ]
     targets = [
-        EffectiveTarget("sodium", Decimal("2300"), "mg", "daily_value"),
-        EffectiveTarget("protein", Decimal("50"), "g", "manual_override"),
-        EffectiveTarget("calories", None, "kcal", "unavailable", "target_profile_incomplete"),
-        EffectiveTarget("iron", Decimal("18"), "mg", "daily_value"),
+        EffectiveTarget("sodium", Decimal("2300"), "mg", "daily_value", "limit"),
+        EffectiveTarget("protein", Decimal("50"), "g", "manual_override", "target"),
+        EffectiveTarget(
+            "calories", None, "kcal", "unavailable", "unavailable", "target_profile_incomplete"
+        ),
+        EffectiveTarget("iron", Decimal("18"), "mg", "daily_value", "minimum"),
     ]
     result = {item.nutrient_id: item for item in compare_daily_totals(totals, targets)}
     assert result["sodium"].consumed_amount == 0
@@ -178,13 +221,17 @@ def test_comparison_zero_missing_unavailable_above_100_and_precision():
     assert result["protein"].percentage > 100
     assert result["calories"].status == "target_unavailable"
     assert result["iron"].status == "consumed_unavailable"
+    assert result["sodium"].direction == "limit"
+    assert result["protein"].direction == "target"
 
 
 def test_target_api_no_configuration_and_update_override_precedence(client: TestClient):
     empty = client.get("/api/v1/targets")
     assert empty.status_code == 200
     assert empty.json()["profile"] is None
-    assert empty.json()["estimated_maintenance_calories"]["reason_code"] == "target_profile_incomplete"
+    assert (
+        empty.json()["estimated_maintenance_calories"]["reason_code"] == "target_profile_incomplete"
+    )
 
     payload = configuration_payload(calories="2400", protein="150")
     updated = client.put("/api/v1/targets", json=payload)
@@ -192,13 +239,26 @@ def test_target_api_no_configuration_and_update_override_precedence(client: Test
     effective = {item["nutrient_id"]: item for item in updated.json()["effective_targets"]}
     assert effective["calories"]["amount"] == "2400.000000"
     assert effective["calories"]["authority"] == "manual_override"
+    assert effective["calories"]["direction"] == "target"
     assert effective["protein"]["authority"] == "manual_override"
     assert effective["dietary_fiber"]["authority"] == "daily_value"
+    assert effective["dietary_fiber"]["direction"] == "minimum"
+    assert (
+        updated.json()["target_direction_semantics_version"] == TARGET_DIRECTION_SEMANTICS_VERSION
+    )
+    assert (
+        next(item for item in updated.json()["daily_values"] if item["nutrient_id"] == "sodium")[
+            "direction"
+        ]
+        == "limit"
+    )
 
     changed = deepcopy(payload)
     changed["profile"]["activity_level"] = "very_active"
     changed_response = client.put("/api/v1/targets", json=changed).json()
-    changed_effective = {item["nutrient_id"]: item for item in changed_response["effective_targets"]}
+    changed_effective = {
+        item["nutrient_id"]: item for item in changed_response["effective_targets"]
+    }
     assert changed_effective["calories"]["amount"] == "2400.000000"
 
     reset = client.delete("/api/v1/targets/overrides/calories")
@@ -228,7 +288,10 @@ def test_target_api_bounds_and_unsupported_context(client: TestClient):
     unsupported["profile"]["energy_estimation_context"] = "pregnant"
     response = client.put("/api/v1/targets", json=unsupported)
     assert response.status_code == 200
-    assert response.json()["estimated_maintenance_calories"]["reason_code"] == "target_estimate_unsupported_context"
+    assert (
+        response.json()["estimated_maintenance_calories"]["reason_code"]
+        == "target_estimate_unsupported_context"
+    )
 
 
 def test_target_api_rejects_arbitrary_units_with_stable_code(client: TestClient):
@@ -239,7 +302,9 @@ def test_target_api_rejects_arbitrary_units_with_stable_code(client: TestClient)
     assert response.json()["detail"]["field_errors"][0]["code"] == "target_unit_invalid"
 
 
-def test_daily_comparison_uses_snapshots_and_target_changes_do_not_mutate_summary(client: TestClient):
+def test_daily_comparison_uses_snapshots_and_target_changes_do_not_mutate_summary(
+    client: TestClient,
+):
     food = create_food(client)
     log = client.post(
         "/api/v1/logs",
@@ -255,12 +320,17 @@ def test_daily_comparison_uses_snapshots_and_target_changes_do_not_mutate_summar
     before = client.get("/api/v1/logs/daily-summary", params={"date": "2026-07-14"}).json()
 
     client.put("/api/v1/targets", json=configuration_payload(protein="5"))
-    comparison = client.get(
-        "/api/v1/targets/daily-comparison", params={"date": "2026-07-14"}
-    )
+    comparison = client.get("/api/v1/targets/daily-comparison", params={"date": "2026-07-14"})
     assert comparison.status_code == 200, comparison.text
-    protein = next(item for item in comparison.json()["comparisons"] if item["nutrient_id"] == "protein")
+    protein = next(
+        item for item in comparison.json()["comparisons"] if item["nutrient_id"] == "protein"
+    )
     assert protein["authority"] == "manual_override"
+    assert protein["direction"] == "target"
+    assert (
+        comparison.json()["target_direction_semantics_version"]
+        == TARGET_DIRECTION_SEMANTICS_VERSION
+    )
     assert Decimal(protein["percentage"]) > 100
 
     client.put("/api/v1/targets", json=configuration_payload(protein="100"))
@@ -302,10 +372,6 @@ def test_target_override_uniqueness_and_user_ownership_constraints(db_session: S
         db_session.flush()
     db_session.rollback()
 
-    db_session.add(
-        NutritionTarget(
-            **{**common, "user_id": uuid4(), "nutrient_id": "total_fat"}
-        )
-    )
+    db_session.add(NutritionTarget(**{**common, "user_id": uuid4(), "nutrient_id": "total_fat"}))
     with pytest.raises(IntegrityError):
         db_session.flush()

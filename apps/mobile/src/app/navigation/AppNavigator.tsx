@@ -57,7 +57,7 @@ type Route =
   | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" }
   | { name: "settings"; origin: MainTab }
-  | { name: "nutrition-targets"; origin: MainTab }
+  | { name: "nutrition-targets"; origin: MainTab; returnDirect?: boolean }
   | { name: "ocr-diagnostics"; origin: MainTab }
   | { name: "nutrition-scan" }
   | { name: "nutrition-confirm"; draft: NutritionConfirmationDraft };
@@ -126,7 +126,7 @@ export function AppNavigator() {
       onOpenOcrDiagnostics={ocrDiagnosticsEnabled ? () => setRoute({ name: "ocr-diagnostics", origin: route.origin }) : undefined}
     />;
   } else if (route.name === "nutrition-targets") {
-    content = <TargetSettingsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
+    content = <TargetSettingsScreen onBack={() => setRoute(route.returnDirect ? routeForMainTab(route.origin) : { name: "settings", origin: route.origin })} />;
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
     content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
   } else if (route.name === "nutrition-scan") {
@@ -274,6 +274,7 @@ export function AppNavigator() {
       onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
       onEditLog={(logId) => setRoute({ name: "edit-log", logId })}
       onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
+      onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })}
     />;
   } else {
     content = (

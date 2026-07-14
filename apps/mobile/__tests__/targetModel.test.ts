@@ -5,8 +5,8 @@ function configuration(): TargetConfiguration {
   return {
     profile: { birthDate: "1990-01-01", sexForEquation: "female", heightCm: "165.000", weightKg: "60.000", activityLevel: "active", energyEstimationContext: "general_adult" },
     estimatedMaintenanceCalories: { availability: "available", amount: "2200", unit: "kcal", authority: "calculated_estimate", reasonCode: null, equation: "mifflin_st_jeor_1990" },
-    manualOverrides: [{ nutrientId: "protein", amount: "90", unit: "g", authority: "manual_override", reasonCode: null }],
-    effectiveTargets: [], dailyValueCatalogVersion: "fda_daily_values_2016_v1", dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", limitations: [], informationalNotice: "Estimate, not medical advice.",
+    manualOverrides: [{ nutrientId: "protein", amount: "90", unit: "g", authority: "manual_override", direction: "target", reasonCode: null, noteCode: null }],
+    effectiveTargets: [], dailyValueCatalogVersion: "fda_daily_values_2016_v1", dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", targetDirectionSemanticsVersion: "target_directions_2026_v1", dailyValues: [], limitations: [], informationalNotice: "Estimate, not medical advice.",
   };
 }
 

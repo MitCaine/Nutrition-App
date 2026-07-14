@@ -19,6 +19,7 @@ import {
 } from "../utils/dailyLogDisplay";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
+import { TargetProgressSection } from "../../targets/TargetProgressSection";
 
 type Props = {
   date: string;
@@ -26,11 +27,12 @@ type Props = {
   onOpenFood: (foodId: string) => void;
   onEditLog: (logId: string) => void;
   onOpenSettings: () => void;
+  onOpenNutritionTargets: () => void;
   initialScrollOffset: number;
   onScrollOffsetChange: (offset: number) => void;
 };
 
-export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSettings, initialScrollOffset, onScrollOffsetChange }: Props) {
+export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -79,6 +81,7 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
           setPickerOpen(false);
         }}
       />
+      <TargetProgressSection date={date} onOpenTargets={onOpenNutritionTargets} />
       <Text style={styles.sectionTitle}>Totals</Text>
       {visibleDailyTotals(summary.data?.totals ?? []).map((total) => (
         <View key={total.nutrientId} style={styles.totalRow}>

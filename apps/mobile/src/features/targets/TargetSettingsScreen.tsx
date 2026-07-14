@@ -9,7 +9,12 @@ import type { TargetConfiguration } from "./api/types";
 import { EMPTY_TARGET_DRAFT, targetDraft, targetDraftError, targetInput, targetUnavailableMessage } from "./targetModel";
 import { targetErrorMessage } from "./targetErrors";
 
-const ACTIVITY = ["sedentary", "lightly_active", "active", "very_active"] as const;
+const ACTIVITY = [
+  { value: "sedentary", label: "Sedentary", description: "Mostly seated with little intentional activity.", multiplier: "1.4" },
+  { value: "lightly_active", label: "Lightly active", description: "Some routine walking or light exercise.", multiplier: "1.6" },
+  { value: "active", label: "Active", description: "Regular moderate activity.", multiplier: "1.8" },
+  { value: "very_active", label: "Very active", description: "Substantial daily activity or frequent demanding exercise.", multiplier: "2.0" },
+] as const;
 const CONTEXTS = ["general_adult", "pregnant", "lactating", "specialized_medical"] as const;
 const authorityLabel = (authority: string) => authority === "daily_value" ? "FDA Daily Value" : authority.replaceAll("_", " ");
 
@@ -38,6 +43,7 @@ export function TargetSettingsScreen({ onBack }: { onBack: () => void }) {
       const next = await updateTargets(targetInput(draft));
       setResult(next); setDraft(targetDraft(next));
       await queryClient.invalidateQueries({ queryKey: ["targets"] });
+      await queryClient.invalidateQueries({ queryKey: ["target-comparison"] });
     } catch (caught) {
       setError(targetErrorMessage(caught));
     } finally {
@@ -53,6 +59,7 @@ export function TargetSettingsScreen({ onBack }: { onBack: () => void }) {
       const draftKey = nutrientId === "total_carbohydrate" ? "totalCarbohydrate" : nutrientId === "total_fat" ? "totalFat" : nutrientId;
       setResult(next); setDraft((current) => ({ ...current, [draftKey]: "" }));
       await queryClient.invalidateQueries({ queryKey: ["targets"] });
+      await queryClient.invalidateQueries({ queryKey: ["target-comparison"] });
     } catch (caught) {
       setError(targetErrorMessage(caught));
     } finally {
@@ -74,7 +81,7 @@ export function TargetSettingsScreen({ onBack }: { onBack: () => void }) {
       <TextInput editable={!submitting} accessibilityLabel="Height in centimeters" accessibilityState={{ disabled: submitting }} value={draft.heightCm} onChangeText={(heightCm) => setDraft({ ...draft, heightCm })} keyboardType="decimal-pad" placeholder="Height (cm)" placeholderTextColor={theme.colors.placeholder} style={styles.input}/>
       <TextInput editable={!submitting} accessibilityLabel="Weight in kilograms" accessibilityState={{ disabled: submitting }} value={draft.weightKg} onChangeText={(weightKg) => setDraft({ ...draft, weightKg })} keyboardType="decimal-pad" placeholder="Weight (kg)" placeholderTextColor={theme.colors.placeholder} style={styles.input}/>
       <View accessibilityRole="radiogroup"><Text style={styles.label}>Sex used by estimation equation</Text>{(["female", "male"] as const).map((value) => <Pressable key={value} disabled={submitting} accessibilityRole="radio" accessibilityLabel={`Equation sex ${value}`} accessibilityState={{ checked: draft.sexForEquation === value, disabled: submitting }} onPress={() => setDraft({ ...draft, sexForEquation: value })} style={styles.choice}><Text style={styles.text}>{value === "female" ? "Female" : "Male"}</Text></Pressable>)}</View>
-      <View accessibilityRole="radiogroup"><Text style={styles.label}>Activity level</Text>{ACTIVITY.map((value) => <Pressable key={value} disabled={submitting} accessibilityRole="radio" accessibilityLabel={`Activity ${value.replaceAll("_", " ")}`} accessibilityState={{ checked: draft.activityLevel === value, disabled: submitting }} onPress={() => setDraft({ ...draft, activityLevel: value })} style={styles.choice}><Text style={styles.text}>{value.replaceAll("_", " ")}</Text></Pressable>)}</View>
+      <View accessibilityRole="radiogroup"><Text style={styles.label}>Activity level</Text><Text style={styles.notice}>Activity categories are estimates. The multiplier adjusts the resting estimate; actual energy needs may differ.</Text>{ACTIVITY.map((option) => <Pressable key={option.value} disabled={submitting} accessibilityRole="radio" accessibilityLabel={`Activity ${option.label}, ${option.description} Resting estimate multiplier ${option.multiplier}`} accessibilityState={{ checked: draft.activityLevel === option.value, disabled: submitting }} onPress={() => setDraft({ ...draft, activityLevel: option.value })} style={styles.choice}><Text style={styles.text}>{option.label} · {option.multiplier}</Text><Text style={styles.notice}>{option.description}</Text></Pressable>)}</View>
       <View accessibilityRole="radiogroup"><Text style={styles.label}>Estimation context</Text>{CONTEXTS.map((value) => <Pressable key={value} disabled={submitting} accessibilityRole="radio" accessibilityLabel={`Estimation context ${value.replaceAll("_", " ")}`} accessibilityState={{ checked: draft.energyEstimationContext === value, disabled: submitting }} onPress={() => setDraft({ ...draft, energyEstimationContext: value })} style={styles.choice}><Text style={styles.text}>{value === "general_adult" ? "General adult" : value.replaceAll("_", " ")}</Text></Pressable>)}</View>
       <Text accessibilityLiveRegion="polite" style={styles.result}>{estimate?.availability === "available" ? `Estimated maintenance calories: ${estimate.amount} kcal/day (calculated estimate)` : targetUnavailableMessage(estimate?.reasonCode ?? null)}</Text>
       <Text accessibilityRole="header" style={styles.section}>Optional personal targets</Text>

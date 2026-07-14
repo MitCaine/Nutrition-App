@@ -7,6 +7,7 @@ import type { DailyLogUpdateInput } from "../api/types";
 export function invalidateLogDateCaches(queryClient: QueryClient, date: string) {
   queryClient.invalidateQueries({ queryKey: ["logs", date] });
   queryClient.invalidateQueries({ queryKey: ["daily-summary", date] });
+  queryClient.invalidateQueries({ queryKey: ["target-comparison", date] });
 }
 
 export function useDailyLogs(date: string) {

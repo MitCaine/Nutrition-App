@@ -9,7 +9,7 @@ const mockConfiguration = {
   profile: null,
   estimatedMaintenanceCalories: { availability: "unavailable", amount: null, unit: "kcal", authority: "calculated_estimate", reasonCode: "target_profile_incomplete", equation: "mifflin_st_jeor_1990" },
   manualOverrides: [], effectiveTargets: [], dailyValueCatalogVersion: "fda_daily_values_2016_v1",
-  dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", limitations: ["target_profile_incomplete"],
+  dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", targetDirectionSemanticsVersion: "target_directions_2026_v1", dailyValues: [], limitations: ["target_profile_incomplete"],
   informationalNotice: "General informational estimate, not medical advice.",
 };
 
@@ -49,6 +49,10 @@ test("settings distinguishes FDA Daily Values from optional personal estimates a
   expect(action(renderer.root, "Save nutrition targets").props.accessibilityState).toMatchObject({ disabled: false, busy: false });
   expect(action(renderer.root, "Equation sex female").props.accessibilityRole).toBe("radio");
   expect(action(renderer.root, "Estimation context general adult").props.accessibilityRole).toBe("radio");
+  expect(text).toContain("Mostly seated with little intentional activity.");
+  expect(text).toContain("Some routine walking or light exercise.");
+  expect(text).toContain("Activity categories are estimates");
+  expect(action(renderer.root, "Activity Active, Regular moderate activity. Resting estimate multiplier 1.8").props.accessibilityState.checked).toBe(false);
   await act(async () => renderer.unmount());
 });
 
@@ -61,6 +65,25 @@ test("manual override reset uses the explicit endpoint and updates the draft", a
   expect(mockReset).toHaveBeenCalledWith("protein");
   expect(input(renderer.root, "Protein personal target").props.value).toBe("");
   expect(input(renderer.root, "Birth date").props.value).toBe("1990-01-01");
+  expect(mockInvalidate).toHaveBeenCalledWith({ queryKey: ["target-comparison"] });
+  await act(async () => renderer.unmount());
+});
+
+test("activity descriptions preserve radio selection semantics", async () => {
+  const renderer = await render();
+  const lightlyActive = action(renderer.root, "Activity Lightly active, Some routine walking or light exercise. Resting estimate multiplier 1.6");
+  await act(async () => lightlyActive.props.onPress());
+  expect(action(renderer.root, "Activity Lightly active, Some routine walking or light exercise. Resting estimate multiplier 1.6").props.accessibilityState.checked).toBe(true);
+  expect(action(renderer.root, "Activity Sedentary, Mostly seated with little intentional activity. Resting estimate multiplier 1.4").props.accessibilityState.checked).toBe(false);
+  await act(async () => renderer.unmount());
+});
+
+test("successful target update invalidates configuration and every dated comparison", async () => {
+  mockUpdate.mockResolvedValue(mockConfiguration);
+  const renderer = await render();
+  await act(async () => action(renderer.root, "Save nutrition targets").props.onPress());
+  expect(mockInvalidate).toHaveBeenCalledWith({ queryKey: ["targets"] });
+  expect(mockInvalidate).toHaveBeenCalledWith({ queryKey: ["target-comparison"] });
   await act(async () => renderer.unmount());
 });
 

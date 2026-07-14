@@ -17,6 +17,7 @@ def _strict_decimal(value):
 
 
 TargetDecimal = Annotated[Decimal | None, BeforeValidator(_strict_decimal)]
+TargetDirection = Literal["target", "limit", "minimum", "reference", "unavailable"]
 
 
 class TargetProfileInput(BaseModel):
@@ -55,6 +56,7 @@ class DailyValueResponse(BaseModel):
     amount: Decimal | None
     unit: str
     availability: Literal["available", "unavailable"]
+    direction: TargetDirection
     note_code: str | None
 
 
@@ -84,10 +86,10 @@ class TargetValueResponse(BaseModel):
     nutrient_id: str
     amount: Decimal | None
     unit: str
-    authority: Literal[
-        "manual_override", "calculated_estimate", "daily_value", "unavailable"
-    ]
+    authority: Literal["manual_override", "calculated_estimate", "daily_value", "unavailable"]
+    direction: TargetDirection
     reason_code: str | None = None
+    note_code: str | None = None
 
 
 class TargetConfigurationResponse(BaseModel):
@@ -97,6 +99,7 @@ class TargetConfigurationResponse(BaseModel):
     effective_targets: list[TargetValueResponse]
     daily_value_catalog_version: str
     daily_value_standard: str
+    target_direction_semantics_version: str
     daily_values: list[DailyValueResponse]
     limitations: list[str]
     informational_notice: str
@@ -108,15 +111,18 @@ class DailyTargetComparisonItemResponse(BaseModel):
     target_amount: Decimal | None
     unit: str
     percentage: Decimal | None
-    authority: str
+    authority: Literal["manual_override", "calculated_estimate", "daily_value", "unavailable"]
+    direction: TargetDirection
     status: Literal["available", "target_unavailable", "consumed_unavailable"]
     reason_code: str | None
+    note_code: str | None
     has_unknown_contributors: bool
 
 
 class DailyTargetComparisonResponse(BaseModel):
     date: date
     daily_value_catalog_version: str
+    target_direction_semantics_version: str
     comparisons: list[DailyTargetComparisonItemResponse]
 
 

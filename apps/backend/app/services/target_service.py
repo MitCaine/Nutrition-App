@@ -17,6 +17,7 @@ from app.targets.daily_values import (
     FDA_DAILY_VALUE_CATALOG_VERSION,
     FDA_DAILY_VALUE_STANDARD,
     FDA_DAILY_VALUES,
+    TARGET_DIRECTION_SEMANTICS_VERSION,
 )
 from app.targets.estimation import (
     EnergyEstimate,
@@ -67,10 +68,12 @@ class TargetService:
     def _overrides(self, user_id: UUID) -> list[NutritionTarget]:
         return list(
             self.db.scalars(
-                select(NutritionTarget).where(
+                select(NutritionTarget)
+                .where(
                     NutritionTarget.user_id == user_id,
                     NutritionTarget.target_type == "manual_override",
-                ).order_by(NutritionTarget.nutrient_id)
+                )
+                .order_by(NutritionTarget.nutrient_id)
             )
         )
 
@@ -93,11 +96,15 @@ class TargetService:
         weight_kg = weight_to_kg(profile.weight_kg, profile.weight_unit)
         if profile.birth_date and profile.birth_date > as_of:
             raise TargetDomainError(
-                "target_value_out_of_range", "Birth date cannot be in the future.", "profile.birth_date"
+                "target_value_out_of_range",
+                "Birth date cannot be in the future.",
+                "profile.birth_date",
             )
         if profile.birth_date and as_of.year - profile.birth_date.year > 120:
             raise TargetDomainError(
-                "target_value_out_of_range", "Birth date is outside the supported input range.", "profile.birth_date"
+                "target_value_out_of_range",
+                "Birth date is outside the supported input range.",
+                "profile.birth_date",
             )
         for field, value, minimum, maximum in (
             ("profile.height_cm", height_cm, Decimal("100"), Decimal("250")),
@@ -157,7 +164,9 @@ class TargetService:
     def reset_override(self, user_id: UUID, nutrient_id: str, as_of: date):
         if nutrient_id not in MANUAL_TARGET_UNITS:
             raise TargetDomainError(
-                "target_unit_invalid", "This nutrient does not support a personal override.", "nutrient_id"
+                "target_unit_invalid",
+                "This nutrient does not support a personal override.",
+                "nutrient_id",
             )
         row = self.db.scalars(
             select(NutritionTarget).where(
@@ -180,14 +189,48 @@ class TargetService:
             override = overrides.get(nutrient.id)
             daily_value = daily_values[nutrient.id]
             if override is not None:
-                result.append(EffectiveTarget(nutrient.id, override.target_amount, override.unit, "manual_override"))
+                result.append(
+                    EffectiveTarget(
+                        nutrient.id,
+                        override.target_amount,
+                        override.unit,
+                        "manual_override",
+                        "target",
+                    )
+                )
             elif nutrient.id == "calories" and estimate.available:
-                result.append(EffectiveTarget(nutrient.id, estimate.amount, "kcal", "calculated_estimate"))
+                result.append(
+                    EffectiveTarget(
+                        nutrient.id, estimate.amount, "kcal", "calculated_estimate", "target"
+                    )
+                )
             elif daily_value.available:
-                result.append(EffectiveTarget(nutrient.id, daily_value.amount, daily_value.unit, "daily_value", daily_value.note_code))
+                result.append(
+                    EffectiveTarget(
+                        nutrient.id,
+                        daily_value.amount,
+                        daily_value.unit,
+                        "daily_value",
+                        daily_value.direction,
+                        None,
+                        daily_value.note_code,
+                    )
+                )
             else:
-                reason = estimate.reason_code if nutrient.id == "calories" else daily_value.note_code
-                result.append(EffectiveTarget(nutrient.id, None, nutrient.default_unit, "unavailable", reason))
+                reason = (
+                    estimate.reason_code if nutrient.id == "calories" else daily_value.note_code
+                )
+                result.append(
+                    EffectiveTarget(
+                        nutrient.id,
+                        None,
+                        nutrient.default_unit,
+                        "unavailable",
+                        "unavailable",
+                        reason,
+                        daily_value.note_code,
+                    )
+                )
         return result
 
     def configuration(self, user_id: UUID, as_of: date) -> dict:
@@ -195,7 +238,9 @@ class TargetService:
         estimate = self._estimate(profile, as_of)
         overrides = self._overrides(user_id)
         return {
-            "profile": None if profile is None else {
+            "profile": None
+            if profile is None
+            else {
                 "birth_date": profile.birth_date,
                 "sex_for_equation": profile.biological_sex_for_reference_calculations,
                 "height_cm": profile.height_cm,
@@ -214,14 +259,30 @@ class TargetService:
                 "equation": estimate.equation,
             },
             "manual_overrides": [
-                {"nutrient_id": item.nutrient_id, "amount": item.target_amount, "unit": item.unit, "authority": "manual_override", "reason_code": None}
+                {
+                    "nutrient_id": item.nutrient_id,
+                    "amount": item.target_amount,
+                    "unit": item.unit,
+                    "authority": "manual_override",
+                    "direction": "target",
+                    "reason_code": None,
+                    "note_code": None,
+                }
                 for item in overrides
             ],
             "effective_targets": [item.__dict__ for item in self.effective_targets(user_id, as_of)],
             "daily_value_catalog_version": FDA_DAILY_VALUE_CATALOG_VERSION,
             "daily_value_standard": FDA_DAILY_VALUE_STANDARD,
+            "target_direction_semantics_version": TARGET_DIRECTION_SEMANTICS_VERSION,
             "daily_values": [
-                {"nutrient_id": item.nutrient_id, "amount": item.amount, "unit": item.unit, "availability": "available" if item.available else "unavailable", "note_code": item.note_code}
+                {
+                    "nutrient_id": item.nutrient_id,
+                    "amount": item.amount,
+                    "unit": item.unit,
+                    "availability": "available" if item.available else "unavailable",
+                    "direction": item.direction,
+                    "note_code": item.note_code,
+                }
                 for item in FDA_DAILY_VALUES
             ],
             "limitations": [] if estimate.available else [estimate.reason_code],
@@ -234,5 +295,6 @@ class TargetService:
         return {
             "date": logged_date,
             "daily_value_catalog_version": FDA_DAILY_VALUE_CATALOG_VERSION,
+            "target_direction_semantics_version": TARGET_DIRECTION_SEMANTICS_VERSION,
             "comparisons": [item.__dict__ for item in comparisons],
         }

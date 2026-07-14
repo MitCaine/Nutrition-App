@@ -23,6 +23,17 @@ Primary sources:
 
 The catalog is checked into the backend; runtime network access and scraping are not used.
 
+### Stage 7B direction semantics
+
+Direction semantics version `target_directions_2026_v1` travels with both target configuration and daily comparisons. Personal overrides and calculated calories are neutral `target` values. FDA saturated fat, cholesterol, sodium, and added sugars are `limit`; dietary fiber, vitamin D, calcium, iron, and potassium are `minimum`; total fat, total carbohydrate, protein, and magnesium are `reference`. Calories, trans fat, and total sugars are `unavailable` when no personal target exists. Mobile clients consume this metadata and never infer direction from nutrient IDs.
+
+The assignments follow FDA guidance to choose foods lower in saturated fat, sodium, added sugars, and cholesterol and higher in dietary fiber, vitamin D, calcium, iron, and potassium. The remaining available values stay neutral because the product does not have equally clean FDA support for a simple behavioral direction. This comparison metadata is non-prescriptive and never changes Daily Log snapshots.
+
+Additional primary sources:
+
+- [FDA nutrients to get more of and limit](https://www.fda.gov/media/132225/download)
+- [FDA cholesterol fact sheet](https://www.accessdata.fda.gov/scripts/InteractiveNutritionFactsLabel/assets/InteractiveNFL_Cholesterol_October2021.pdf)
+
 ## Personal estimate policy
 
 The optional energy estimate uses the 1990 Mifflin–St Jeor resting-energy equation:
@@ -33,6 +44,8 @@ The optional energy estimate uses the 1990 Mifflin–St Jeor resting-energy equa
 The source population was healthy adults ages 19–78, which is the product's supported estimate range. Metric inputs are stored; API inputs may use exact `cm`/`kg` or `in`/`lb` conversion factors. The resting estimate is multiplied by the explicitly selected physical-activity factor and rounded once to the nearest whole kcal using Decimal `ROUND_HALF_UP`.
 
 Activity choices are a bounded product policy within the NIH Body Weight Planner's published typical physical-activity-level range: sedentary 1.4, lightly active 1.6, active 1.8, and very active 2.0. These labels are estimates, not measured activity. No exercise adjustment or weight-change deficit is added.
+
+Settings describes these choices as general movement categories: sedentary is mostly seated with little intentional activity; lightly active includes some routine walking or light exercise; active means regular moderate activity; and very active means substantial daily activity or frequent demanding exercise. The selected multiplier is shown, along with a reminder that it adjusts the resting estimate and actual needs may differ.
 
 Example: a 30-year-old equation-male profile at 70 kg and 175 cm has resting energy `1,648.75 kcal`; sedentary multiplication is `1,648.75 × 1.4 = 2,308.25`, returned as `2,308 kcal/day`.
 
@@ -57,5 +70,7 @@ Authority is deterministic: manual override, calculated calorie estimate, FDA Da
 - `GET /api/v1/targets/daily-comparison?date=YYYY-MM-DD` compares the existing snapshot summary with effective targets.
 
 Comparison uses Decimal arithmetic and returns consumed amount, target amount, canonical unit, uncapped percentage, authority, unknown-contributor metadata, and `available`, `target_unavailable`, or `consumed_unavailable`. An explicit snapshot zero produces 0%; an absent nutrient remains unavailable. Display rounding is a later UI boundary; the API preserves four decimal percentage places.
+
+Stage 7B places a compact eight-nutrient progress section directly in Daily Log. Numeric percentages remain uncapped; only the bounded visual track caps at 100% and displays an overflow marker. Limit, minimum, target, reference, and unavailable rows use distinct textual interpretations without good/bad or medical-safety labels. Unknown contributors are labeled `Incomplete data`; unknown-only totals remain consumed-unavailable. Comparison loading and retry are independent of entries and totals.
 
 Settings → Nutrition targets is optional and uses neutral terms: **Estimated maintenance calories**, **Personal target**, and **FDA Daily Value**. The feature adds no analytics and does not send profile or target fields outside the existing backend account model.

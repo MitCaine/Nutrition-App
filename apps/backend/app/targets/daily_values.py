@@ -7,6 +7,7 @@ from app.catalog.nutrients import NUTRIENT_CATALOG
 
 FDA_DAILY_VALUE_CATALOG_VERSION = "fda_daily_values_2016_v1"
 FDA_DAILY_VALUE_STANDARD = "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS"
+TARGET_DIRECTION_SEMANTICS_VERSION = "target_directions_2026_v1"
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class DailyValueDefinition:
     amount: Decimal | None
     unit: str
     available: bool
+    direction: str
     note_code: str | None = None
 
 
@@ -38,6 +40,21 @@ _UNAVAILABLE_NOTES = {
     "trans_fat": "daily_value_not_established",
     "total_sugars": "daily_value_not_established",
 }
+_DIRECTIONS = {
+    "total_fat": "reference",
+    "saturated_fat": "limit",
+    "cholesterol": "limit",
+    "sodium": "limit",
+    "total_carbohydrate": "reference",
+    "dietary_fiber": "minimum",
+    "added_sugars": "limit",
+    "protein": "reference",
+    "vitamin_d": "minimum",
+    "calcium": "minimum",
+    "iron": "minimum",
+    "potassium": "minimum",
+    "magnesium": "reference",
+}
 
 
 def fda_daily_value_catalog() -> tuple[DailyValueDefinition, ...]:
@@ -51,12 +68,17 @@ def fda_daily_value_catalog() -> tuple[DailyValueDefinition, ...]:
                     None,
                     nutrient.default_unit,
                     False,
+                    "unavailable",
                     _UNAVAILABLE_NOTES.get(nutrient.id, "daily_value_not_available"),
                 )
             )
         else:
             amount, unit, note = configured
-            result.append(DailyValueDefinition(nutrient.id, Decimal(amount), unit, True, note))
+            result.append(
+                DailyValueDefinition(
+                    nutrient.id, Decimal(amount), unit, True, _DIRECTIONS[nutrient.id], note
+                )
+            )
     return tuple(result)
 
 

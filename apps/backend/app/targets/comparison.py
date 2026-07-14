@@ -12,7 +12,9 @@ class EffectiveTarget:
     amount: Decimal | None
     unit: str
     authority: str
+    direction: str
     reason_code: str | None = None
+    note_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -23,8 +25,10 @@ class TargetComparison:
     unit: str
     percentage: Decimal | None
     authority: str
+    direction: str
     status: str
     reason_code: str | None
+    note_code: str | None
     has_unknown_contributors: bool
 
 
@@ -36,18 +40,60 @@ def compare_daily_totals(
     for target in targets:
         total = totals_by_id.get(target.nutrient_id)
         if target.amount is None:
-            comparisons.append(TargetComparison(target.nutrient_id, None if total is None else total.amount_known + total.amount_estimated, None, target.unit, None, "unavailable", "target_unavailable", target.reason_code, bool(total and total.has_unknown_contributors)))
+            comparisons.append(
+                TargetComparison(
+                    target.nutrient_id,
+                    None if total is None else total.amount_known + total.amount_estimated,
+                    None,
+                    target.unit,
+                    None,
+                    "unavailable",
+                    target.direction,
+                    "target_unavailable",
+                    target.reason_code,
+                    target.note_code,
+                    bool(total and total.has_unknown_contributors),
+                )
+            )
             continue
         if total is None or (
             total.has_unknown_contributors
             and total.amount_known == 0
             and total.amount_estimated == 0
         ):
-            comparisons.append(TargetComparison(target.nutrient_id, None, target.amount, target.unit, None, target.authority, "consumed_unavailable", "consumed_value_unavailable", bool(total and total.has_unknown_contributors)))
+            comparisons.append(
+                TargetComparison(
+                    target.nutrient_id,
+                    None,
+                    target.amount,
+                    target.unit,
+                    None,
+                    target.authority,
+                    target.direction,
+                    "consumed_unavailable",
+                    "consumed_value_unavailable",
+                    target.note_code,
+                    bool(total and total.has_unknown_contributors),
+                )
+            )
             continue
         consumed = total.amount_known + total.amount_estimated
         percentage = (consumed / target.amount * Decimal("100")).quantize(
             Decimal("0.0001"), rounding=ROUND_HALF_UP
         )
-        comparisons.append(TargetComparison(target.nutrient_id, consumed, target.amount, target.unit, percentage, target.authority, "available", None, total.has_unknown_contributors))
+        comparisons.append(
+            TargetComparison(
+                target.nutrient_id,
+                consumed,
+                target.amount,
+                target.unit,
+                percentage,
+                target.authority,
+                target.direction,
+                "available",
+                None,
+                target.note_code,
+                total.has_unknown_contributors,
+            )
+        )
     return comparisons

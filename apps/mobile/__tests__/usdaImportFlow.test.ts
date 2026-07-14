@@ -162,6 +162,7 @@ test("imported USDA food can be logged with default serving and refreshes daily 
   const queryClient = new QueryClient();
   queryClient.setQueryData(["logs", "2026-07-08"], []);
   queryClient.setQueryData(["daily-summary", "2026-07-08"], { logged_date: "2026-07-08", totals: [] });
+  queryClient.setQueryData(["target-comparison", "2026-07-08"], { date: "2026-07-08", comparisons: [] });
 
   const input = buildLogInput({
     foodId: importedFood.id,
@@ -187,6 +188,7 @@ test("imported USDA food can be logged with default serving and refreshes daily 
   });
   expect(queryClient.getQueryState(["logs", "2026-07-08"])?.isInvalidated).toBe(true);
   expect(queryClient.getQueryState(["daily-summary", "2026-07-08"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["target-comparison", "2026-07-08"])?.isInvalidated).toBe(true);
   expect(summary.totals).toEqual([
     {
       nutrientId: "calories",
