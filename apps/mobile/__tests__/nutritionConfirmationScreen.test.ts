@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text, TextInput } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 import * as Crypto from "expo-crypto";
 
@@ -19,6 +19,7 @@ jest.mock("../src/app/theme/AppTheme", () => {
 
 import type { NutritionConfirmationDraft } from "../src/features/ocr/api/types";
 import { NutritionConfirmationScreen } from "../src/features/ocr/screens/NutritionConfirmationScreen";
+import { ApiError } from "../src/shared/api/client";
 
 function draft(): NutritionConfirmationDraft {
   return {
@@ -83,6 +84,66 @@ test("unchanged failure retry reuses ID, while an edited retry rotates it and pr
   await act(async () => renderer.unmount());
 });
 
+test("idempotency conflict retires the intent, preserves the draft, and guards the fresh retry", async () => {
+  const retry = deferred<ReturnType<typeof foodResponse>>();
+  (Crypto.randomUUID as jest.Mock)
+    .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+    .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+  mockConfirm
+    .mockRejectedValueOnce(new ApiError({
+      status: 409,
+      body: { detail: { code: "ocr_confirmation_idempotency_conflict" } },
+      message: "conflict",
+    }))
+    .mockReturnValueOnce(retry.promise);
+  const { renderer } = await render();
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(input(renderer.root, "Food name").props.value).toBe("Cereal");
+  expect(renderer.root.findAllByType(Text).some((item) => item.props.accessibilityRole === "alert")).toBe(true);
+
+  await act(async () => {
+    void action(renderer.root, "Create Food").props.onPress();
+    void action(renderer.root, "Create Food").props.onPress();
+    await Promise.resolve();
+  });
+  expect(mockConfirm).toHaveBeenCalledTimes(2);
+  expect(mockConfirm.mock.calls[0][0].client_request_id).toBe("00000000-0000-4000-8000-000000000001");
+  expect(mockConfirm.mock.calls[1][0].client_request_id).toBe("00000000-0000-4000-8000-000000000002");
+  expect(action(renderer.root, "Cancel confirmation").props.disabled).toBe(true);
+
+  await act(async () => retry.resolve(foodResponse()));
+  await act(async () => renderer.unmount());
+});
+
+test("editing after conflict creates one fresh intent reused by an unchanged network retry", async () => {
+  (Crypto.randomUUID as jest.Mock)
+    .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+    .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+  mockConfirm
+    .mockRejectedValueOnce(new ApiError({
+      status: 409,
+      body: { detail: { code: "ocr_confirmation_idempotency_conflict" } },
+      message: "conflict",
+    }))
+    .mockRejectedValue(new Error("offline"));
+  const { renderer } = await render();
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  await act(async () => input(renderer.root, "Food name").props.onChangeText("Edited after conflict"));
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+
+  expect(mockConfirm.mock.calls.map((call) => call[0].client_request_id)).toEqual([
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000002",
+  ]);
+  expect(input(renderer.root, "Food name").props.value).toBe("Edited after conflict");
+  expect(Crypto.randomUUID).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.unmount());
+});
+
 test("validation failure does not bind an intent or issue a request", async () => {
   const invalid = { ...draft(), name: "" };
   const { renderer } = await render(invalid);
@@ -143,6 +204,12 @@ test("all confirmation controls expose specific accessibility labels and review 
   expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Calories, review state accepted").length).toBeGreaterThan(0);
   expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Sodium, review state omitted").length).toBeGreaterThan(0);
   expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, dismissed").length).toBeGreaterThan(0);
+  expect(renderer.root.findAllByType(View).some((item) => item.props.accessibilityLabel?.includes("review state"))).toBe(false);
+  expect(renderer.root.findAllByType(View).some((item) => item.props.accessibilityLabel?.startsWith("Unknown nutrient"))).toBe(false);
+  expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Calories, review state accepted")?.props.accessible).toBe(true);
+  expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, dismissed")?.props.accessible).toBe(true);
+  expect(action(renderer.root, "Use Calories value")).toBeDefined();
+  expect(action(renderer.root, "Omit Sodium")).toBeDefined();
   await act(async () => renderer.unmount());
 });
 
@@ -151,5 +218,14 @@ test("unresolved review state is exposed to assistive technology", async () => {
   initial.calories = { ...initial.calories, decision: "unresolved" };
   const { renderer } = await render(initial);
   expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Calories, review state unresolved").length).toBeGreaterThan(0);
+  await act(async () => renderer.unmount());
+});
+
+test("an unresolved unknown row exposes state without swallowing its dismissal action", async () => {
+  const initial = draft();
+  initial.unknownNutrients = initial.unknownNutrients.map((item) => ({ ...item, dismissed: false }));
+  const { renderer } = await render(initial);
+  expect(renderer.root.findAllByType(Text).some((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, unresolved")).toBe(true);
+  expect(action(renderer.root, "Dismiss unknown nutrient Molybdenum").props.disabled).toBe(false);
   await act(async () => renderer.unmount());
 });

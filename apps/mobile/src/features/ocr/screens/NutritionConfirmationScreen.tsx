@@ -9,7 +9,7 @@ import { confirmNutritionLabel } from "../api/ocrApi";
 import type { ConfirmationField, NutritionConfirmationDraft } from "../api/types";
 import { confirmationPayload, confirmationValidationError, updateReview } from "../confirmation/confirmationModel";
 import { bindConfirmationIntent, type ConfirmationIntent } from "../confirmation/confirmationIntent";
-import { confirmationErrorMessage } from "../confirmation/confirmationErrors";
+import { confirmationErrorCode, confirmationErrorMessage } from "../confirmation/confirmationErrors";
 
 const FINGERPRINT_PLACEHOLDER_REQUEST_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -62,6 +62,9 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
         onCreated(response.food.id);
       }
     } catch (caught) {
+      if (confirmationErrorCode(caught) === "ocr_confirmation_idempotency_conflict") {
+        intentRef.current = null;
+      }
       submittingRef.current = false;
       if (mountedRef.current) {
         setSubmitting(false);
@@ -83,15 +86,15 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
       <View style={styles.row}><TextInput editable={!submitting} accessibilityLabel="Serving quantity" accessibilityState={{ disabled: submitting }} value={draft.servingQuantity} onChangeText={(servingQuantity) => setDraft({ ...draft, servingQuantity })} keyboardType="decimal-pad" placeholder="Quantity" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]}/><TextInput editable={!submitting} accessibilityLabel="Serving unit" accessibilityState={{ disabled: submitting }} value={draft.servingUnit} onChangeText={(servingUnit) => setDraft({ ...draft, servingUnit })} placeholder="Unit" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]}/></View>
       <TextInput editable={!submitting} accessibilityLabel="Serving grams" accessibilityState={{ disabled: submitting }} value={draft.gramWeight} onChangeText={(gramWeight) => setDraft({ ...draft, gramWeight })} keyboardType="decimal-pad" placeholder="Equivalent grams (required)" placeholderTextColor={theme.colors.placeholder} style={styles.input}/>
       <Text accessibilityRole="header" style={styles.section}>Nutrition per label serving</Text>
-      {fields.map((field) => <View key={field.fieldKey} accessibilityLabel={`${field.label}, review state ${field.decision}`} style={[styles.card, field.decision === "unresolved" && styles.flagged, field.decision === "omitted" && styles.omitted]}>
-        <View style={styles.row}><Text style={styles.fieldLabel}>{field.label}</Text><Text style={styles.meta}>{field.unit ?? ""}</Text></View>
+      {fields.map((field) => <View key={field.fieldKey} style={[styles.card, field.decision === "unresolved" && styles.flagged, field.decision === "omitted" && styles.omitted]}>
+        <View style={styles.row}><Text accessible accessibilityLabel={`${field.label}, review state ${field.decision}`} style={styles.fieldLabel}>{field.label}</Text><Text style={styles.meta}>{field.unit ?? ""}</Text></View>
         {(field.decision === "unresolved" || field.parseStatus === "ambiguous" || field.confidence < 0.8 || field.comparison) ? <Text style={styles.warning}>{field.comparison ? "Less-than value needs an exact replacement or omission" : `Review required · ${Math.round(field.confidence * 100)}% confidence`}</Text> : null}
         <Text style={styles.meta}>Review state: {field.decision}</Text>
         <TextInput editable={!submitting && field.decision !== "omitted"} accessibilityLabel={`${field.label} amount`} accessibilityState={{ disabled: submitting || field.decision === "omitted" }} value={field.confirmedValue} onChangeText={(value) => replaceField(updateReview(field, value))} keyboardType="decimal-pad" style={styles.input}/>
         <View style={styles.actions}><Pressable accessibilityLabel={`Use ${field.label} value`} accessibilityRole="button" accessibilityState={{ disabled: submitting }} disabled={submitting} onPress={() => { const value = field.decision === "omitted" ? field.suggestedValue ?? "" : field.confirmedValue; replaceField(updateReview(field, value, value === (field.suggestedValue ?? "") ? "accepted" : "edited")); }}><Text style={styles.link}>Use value</Text></Pressable><Pressable accessibilityLabel={`Omit ${field.label}`} accessibilityRole="button" accessibilityState={{ disabled: submitting || field.nutrientId === "calories" }} disabled={submitting || field.nutrientId === "calories"} onPress={() => replaceField({ ...field, decision: "omitted", confirmedValue: "", resolution: field.parseStatus === "ambiguous" || field.comparison ? "omitted after review" : field.resolution })}><Text style={styles.link}>Omit</Text></Pressable></View>
         <Text accessible={false} style={styles.source}>Source: {field.sourceText || "No source line"}</Text>
       </View>)}
-      {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "review required"}`} style={[styles.card, item.dismissed && styles.omitted]}><Text style={styles.fieldLabel}>{item.originalName}</Text><Text accessible={false} style={styles.source}>{item.sourceText}</Text><Pressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} accessibilityRole="button" accessibilityState={{ disabled: submitting || item.dismissed }} disabled={submitting || item.dismissed} onPress={() => setDraft({ ...draft, unknownNutrients: draft.unknownNutrients.map((entry, itemIndex) => itemIndex === index ? { ...entry, dismissed: true } : entry) })}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></Pressable></View>)}</> : null}
+      {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><Text accessible={false} style={styles.source}>{item.sourceText}</Text><Pressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} accessibilityRole="button" accessibilityState={{ disabled: submitting || item.dismissed }} disabled={submitting || item.dismissed} onPress={() => setDraft({ ...draft, unknownNutrients: draft.unknownNutrients.map((entry, itemIndex) => itemIndex === index ? { ...entry, dismissed: true } : entry) })}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></Pressable></View>)}</> : null}
       {error ? <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </>}</KeyboardSafeScrollView>
     <View style={styles.saveBar}><Pressable disabled={submitting} accessibilityLabel={submitting ? "Creating Food" : "Create Food"} accessibilityRole="button" accessibilityState={{ busy: submitting, disabled: submitting }} onPress={submit} style={[styles.button, submitting && styles.disabled]}><Text style={styles.buttonText}>{submitting ? "Creating Food…" : "Create Food"}</Text></Pressable></View>

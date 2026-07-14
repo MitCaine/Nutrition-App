@@ -109,6 +109,78 @@ def test_confirmation_rejects_unsupported_or_unresolved_trace(client, mutation):
     assert client.post("/api/v1/ocr/nutrition-label/confirm", json=payload).status_code == 400
 
 
+def _set_confirmed_food_name(payload, value):
+    payload["food"]["name"] = value
+    payload["field_decisions"][0]["confirmed_value"] = value
+
+
+@pytest.mark.parametrize(
+    ("secret", "mutation"),
+    [
+        ("file:///private/label.jpg", lambda value, secret: value["field_decisions"][7].update(source_text=secret)),
+        ("content://label/image/1", lambda value, secret: value["field_decisions"][7].update(suggested_value=secret)),
+        ("/Users/example/label.jpg", _set_confirmed_food_name),
+        ("ph://ABC-123", lambda value, secret: value["field_decisions"][7].update(resolution=secret)),
+        ("assets-library://asset/1", lambda value, secret: value["field_decisions"][7].update(source_observation_ids=[secret])),
+        ("/var/mobile/label.jpg", lambda value, secret: value["field_decisions"][7].update(warning_codes=[secret])),
+        ("/private/parser-warning", lambda value, secret: value.update(parser_warning_codes=[secret])),
+        ("CONTENT://unknown/name", lambda value, secret: value["unknown_nutrients"][0].update(original_name=secret)),
+        ("FILE:///private/unknown.jpg", lambda value, secret: value["unknown_nutrients"][0].update(source_text=secret)),
+        ("PH://unknown-observation", lambda value, secret: value["unknown_nutrients"][0].update(source_observation_ids=[secret])),
+        ("ASSETS-LIBRARY://unknown-warning", lambda value, secret: value["unknown_nutrients"][0].update(warning_codes=[secret])),
+    ],
+    ids=[
+        "source-text",
+        "suggested-value",
+        "confirmed-value",
+        "resolution",
+        "observation-id",
+        "warning-code",
+        "parser-warning-code",
+        "unknown-name",
+        "unknown-source-text",
+        "unknown-observation-id",
+        "unknown-warning-code",
+    ],
+)
+def test_confirmation_rejects_forbidden_material_from_every_trace_string(
+    client, secret, mutation
+):
+    payload = confirmation_payload()
+    mutation(payload, secret)
+
+    response = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_ocr_confirmation_request"
+    assert secret.lower() not in response.text.lower()
+
+
+def test_confirmation_accepts_ordinary_nutrition_punctuation(client):
+    payload = confirmation_payload()
+    label = "1/2 cup (30 g)"
+    payload["food"]["serving_definitions"][1]["label"] = label
+    payload["field_decisions"][3].update(
+        suggested_value=label,
+        confirmed_value=label,
+        source_text="Serving size: 1/2 cup (30 g); about 6% DV",
+        source_observation_ids=["obs:serving/1-2_(30g)"],
+        warning_codes=["label/punctuation-ok"],
+        resolution="selected (1/2 cup); 6% DV",
+    )
+    payload["parser_warning_codes"] = ["nutrition/fraction-ok"]
+    payload["unknown_nutrients"][0].update(
+        original_name="Vitamin B6 (6%)",
+        source_text="Protein/fiber: 1/2 g (2%); n/a",
+        source_observation_ids=["obs:unknown/1-2"],
+        warning_codes=["unknown/name-ok"],
+    )
+
+    response = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)
+
+    assert response.status_code == 201, response.text
+
+
 def test_confirmation_rolls_back_food_when_trace_stage_fails(client, db_session, monkeypatch):
     def fail(_self, _trace):
         raise RuntimeError("trace failure")

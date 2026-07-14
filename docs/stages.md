@@ -81,6 +81,7 @@ Implemented API surface:
 - Stage 6A: deterministic provenance, warnings, confidence ranking, and parse API without persistence.
 - Stage 6B: production still-image scan, typed parser boundary, explicit confirmation/editing, atomic Manual Food creation, and service-immutable / append-only correction trace persistence.
 - Stage 6C: payload-bound mobile intent IDs, narrow database race recovery, accessible review controls, strict decimal validation, and trace/Food lifecycle closeout. Automated Stage 6 contracts are complete; physical-device camera and overlay QA remains release work.
+- Stage 6D: conflict-specific intent recovery, recursive trace privacy validation, and independently accessible review-state semantics. Stage 6's automated contract is closed; physical camera and overlay QA remains required before release.
 
 ## Stage 7: Targets + Dashboard Polish
 

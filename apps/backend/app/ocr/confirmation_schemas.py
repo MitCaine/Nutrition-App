@@ -16,10 +16,25 @@ TRACE_SCHEMA_VERSION = "ocr_nutrition_confirmation_v1"
 MAX_TRACE_BYTES = 48_000
 CANONICAL_IDS = {item.id for item in NUTRIENT_CATALOG}
 EXPECTED_UNITS = {item.id: item.default_unit for item in NUTRIENT_CATALOG}
+FORBIDDEN_TRACE_REFERENCE = re.compile(
+    r"(?:file|content|ph|assets-library)://|/(?:private|var|users)/",
+    re.IGNORECASE,
+)
 FIELD_KEYS = {
     "food.name", "food.brand", "food.notes", "serving.display",
     "serving.quantity", "serving.unit", "serving.gram_weight", "calories",
 }
+
+
+def _persisted_strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _persisted_strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _persisted_strings(item)
 
 
 class TraceFieldDecision(BaseModel):
@@ -91,6 +106,12 @@ class OcrNutritionConfirmationRequest(BaseModel):
     def validate_confirmation(self) -> "OcrNutritionConfirmationRequest":
         if self.parser_version != NUTRITION_LABEL_PARSER_VERSION:
             raise ValueError("unsupported parser version")
+        snapshot = self.trace_snapshot()
+        if any(
+            FORBIDDEN_TRACE_REFERENCE.search(value)
+            for value in _persisted_strings(snapshot)
+        ):
+            raise ValueError("local image references are not allowed in confirmation provenance")
         if not self.food.name.strip():
             raise ValueError("food name is required")
         keys = [item.field_key for item in self.field_decisions]
@@ -140,12 +161,8 @@ class OcrNutritionConfirmationRequest(BaseModel):
                 raise ValueError("confirmed nutrient amount differs from trace")
             if expected < 0:
                 raise ValueError("confirmed nutrient amounts cannot be negative")
-        snapshot = self.trace_snapshot()
         if len(json.dumps(snapshot, separators=(",", ":")).encode()) > MAX_TRACE_BYTES:
             raise ValueError("confirmation trace exceeds size limit")
-        if any(re.search(r"(?:file://|/private/|/var/|/users/)", item.source_text, re.I)
-               for item in [*self.field_decisions, *self.unknown_nutrients]):
-            raise ValueError("raw image paths are not allowed in confirmation provenance")
         return self
 
     def trace_snapshot(self) -> dict:

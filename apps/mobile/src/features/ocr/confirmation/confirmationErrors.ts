@@ -1,6 +1,7 @@
 import { ApiError } from "../../../shared/api/client";
 
-function structuredCode(error: ApiError): string | null {
+export function confirmationErrorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
   if (!error.body || typeof error.body !== "object" || !("detail" in error.body)) return null;
   const detail = (error.body as { detail?: unknown }).detail;
   return detail && typeof detail === "object" && "code" in detail && typeof detail.code === "string"
@@ -10,7 +11,7 @@ function structuredCode(error: ApiError): string | null {
 
 export function confirmationErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    const code = structuredCode(error);
+    const code = confirmationErrorCode(error);
     if (code === "ocr_confirmation_idempotency_conflict") {
       return "This form changed after an earlier submission. Submit again to start a new confirmation attempt.";
     }
