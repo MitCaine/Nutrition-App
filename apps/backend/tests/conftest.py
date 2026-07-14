@@ -1,4 +1,8 @@
 from collections.abc import Generator
+import os
+
+os.environ.setdefault("NUTRITION_DEPLOYMENT_MODE", "test")
+os.environ.setdefault("NUTRITION_DATABASE_URL", "sqlite+pysqlite:///:memory:")
 
 import pytest
 from fastapi.testclient import TestClient

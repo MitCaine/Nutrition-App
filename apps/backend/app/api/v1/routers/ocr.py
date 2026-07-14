@@ -7,7 +7,8 @@ from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import get_current_user
+from app.models.user import User
 from app.ocr.parser import parse_nutrition_label
 from app.ocr.confirmation_schemas import (
     OcrNutritionConfirmationRequest,
@@ -65,10 +66,8 @@ router = APIRouter(route_class=OcrValidationRoute)
 def parse_ocr_nutrition_label(
     payload: NutritionLabelParseInput,
     db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
 ) -> ParsedNutritionLabel:
-    # The endpoint is scoped through the same development user used elsewhere,
-    # while the request and parse result themselves are never persisted.
-    ensure_dev_user(db)
     return parse_nutrition_label(payload)
 
 
@@ -80,8 +79,8 @@ def parse_ocr_nutrition_label(
 def confirm_ocr_nutrition_label(
     payload: OcrNutritionConfirmationRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> OcrNutritionConfirmationResponse:
-    user = ensure_dev_user(db)
     try:
         food, trace = OcrConfirmationService(db).confirm(user.id, payload)
     except OcrConfirmationIdempotencyConflict as exc:

@@ -6,6 +6,7 @@
     "start": "expo start",
     "test": "jest",
     "typecheck": "tsc --noEmit",
+    "config:validate": "expo config --type public",
     "android": "expo run:android",
     "ios": "expo run:ios"
   },
@@ -36,6 +37,9 @@
     "setupFiles": [
       "<rootDir>/jest.setup.ts"
     ],
+    "moduleNameMapper": {
+      "^expo/virtual/env$": "<rootDir>/config/jestExpoEnv.js"
+    },
     "testMatch": [
       "**/__tests__/**/*.test.ts"
     ]

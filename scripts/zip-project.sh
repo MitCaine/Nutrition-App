@@ -5,7 +5,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
-OUTPUT="$PROJECT_DIR/../${PROJECT_NAME}.zip"
+OUTPUT="${NUTRITION_ARCHIVE_OUTPUT:-$PROJECT_DIR/../${PROJECT_NAME}.zip}"
 
 rm -f "$OUTPUT"
 
@@ -39,6 +39,14 @@ zip -r "$OUTPUT" . \
   -x "*/.DS_Store" \
   -x "*.egg-info/*" \
   -x "*/.egg-info/*"
+
+# The broad secret-file exclusions above intentionally match .env.example too.
+# Re-add only the three reviewed, non-secret templates by exact path.
+for example in .env.example apps/backend/.env.example apps/mobile/.env.example; do
+  if [[ -f "$example" ]]; then
+    zip -q "$OUTPUT" "$example"
+  fi
+done
 
 echo
 echo "Created: $OUTPUT"

@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import get_current_user
 from app.domain.recipe_projection import RecipeProjectionMutationError
+from app.models.user import User
 from app.schemas.food import (
     FoodCreateRequest,
     FoodDeleteResultResponse,
@@ -29,8 +30,9 @@ def _service(db: Session) -> FoodService:
 
 
 @router.get("/favorites", response_model=FoodListResponse)
-def list_favorites(db: Session = Depends(get_db)) -> FoodListResponse:
-    user = ensure_dev_user(db)
+def list_favorites(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> FoodListResponse:
     return FoodListResponse(foods=_service(db).list_favorites(user.id))
 
 
@@ -38,14 +40,17 @@ def list_favorites(db: Session = Depends(get_db)) -> FoodListResponse:
 def list_recent_foods(
     limit: int = Query(default=10, ge=1, le=20),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> RecentFoodListResponse:
-    user = ensure_dev_user(db)
     return RecentFoodListResponse(foods=_service(db).list_recent(user.id, limit))
 
 
 @router.post("", response_model=FoodResponse, status_code=status.HTTP_201_CREATED)
-def create_food(payload: FoodCreateRequest, db: Session = Depends(get_db)) -> FoodResponse:
-    user = ensure_dev_user(db)
+def create_food(
+    payload: FoodCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FoodResponse:
     service = _service(db)
     return FoodResponse.model_validate(
         service.present_food(user.id, service.create_manual_food(user.id, payload))
@@ -57,14 +62,17 @@ def list_foods(
     q: str | None = Query(default=None, min_length=1),
     view: Literal["saved"] | None = Query(default=None),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> FoodListResponse:
-    user = ensure_dev_user(db)
     return FoodListResponse(foods=_service(db).list_foods(user.id, q, saved_view=view == "saved"))
 
 
 @router.get("/{food_id}", response_model=FoodResponse)
-def get_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
-    user = ensure_dev_user(db)
+def get_food(
+    food_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FoodResponse:
     try:
         return FoodResponse.model_validate(_service(db).get_food(user.id, food_id))
     except LookupError as exc:
@@ -74,8 +82,11 @@ def get_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
 
 
 @router.put("/{food_id}/favorite", response_model=FoodResponse)
-def favorite_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
-    user = ensure_dev_user(db)
+def favorite_food(
+    food_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FoodResponse:
     try:
         return FoodResponse.model_validate(
             _service(db).set_favorite(user.id, food_id, favorite=True)
@@ -85,8 +96,11 @@ def favorite_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
 
 
 @router.delete("/{food_id}/favorite", response_model=FoodResponse)
-def unfavorite_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
-    user = ensure_dev_user(db)
+def unfavorite_food(
+    food_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FoodResponse:
     try:
         return FoodResponse.model_validate(
             _service(db).set_favorite(user.id, food_id, favorite=False)
@@ -99,8 +113,8 @@ def unfavorite_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodRespons
 def resolved_food_nutrition(
     food_id: UUID,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> FoodResolvedNutritionResponse:
-    user = ensure_dev_user(db)
     try:
         return _service(db).resolved_nutrition(user.id, food_id)
     except LookupError as exc:
@@ -116,8 +130,8 @@ def update_food(
     food_id: UUID,
     payload: FoodUpdateRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> FoodResponse:
-    user = ensure_dev_user(db)
     try:
         service = _service(db)
         return FoodResponse.model_validate(
@@ -134,8 +148,8 @@ def delete_food(
     food_id: UUID,
     remove_from_recipes: bool = Query(default=False),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> FoodDeleteResultResponse:
-    user = ensure_dev_user(db)
     try:
         return _service(db).soft_delete_food(
             user.id, food_id, remove_from_recipes=remove_from_recipes
@@ -153,8 +167,11 @@ def delete_food(
 @router.post(
     "/{food_id}/duplicate", response_model=FoodResponse, status_code=status.HTTP_201_CREATED
 )
-def duplicate_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
-    user = ensure_dev_user(db)
+def duplicate_food(
+    food_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> FoodResponse:
     try:
         service = _service(db)
         return FoodResponse.model_validate(
@@ -173,8 +190,8 @@ def add_serving_definition(
     food_id: UUID,
     payload: ServingDefinitionInput,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> FoodResponse:
-    user = ensure_dev_user(db)
     try:
         service = _service(db)
         return FoodResponse.model_validate(

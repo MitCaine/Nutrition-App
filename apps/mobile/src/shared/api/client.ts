@@ -1,4 +1,10 @@
-const API_BASE_URL = "http://localhost:8000/api/v1";
+import { validateMobileConfig } from "../../../config/runtimeConfig";
+
+const runtimeConfig = validateMobileConfig({
+  deploymentMode: process.env.EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE,
+  apiUrl: process.env.EXPO_PUBLIC_NUTRITION_API_URL,
+  privateAuthToken: process.env.EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN,
+});
 
 export class ApiError extends Error {
   status: number;
@@ -12,13 +18,34 @@ export class ApiError extends Error {
   }
 }
 
+function requestHeaders(input: HeadersInit | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (input) {
+    if (Array.isArray(input)) {
+      for (const [name, value] of input) result[name] = value;
+    } else if (typeof Headers !== "undefined" && input instanceof Headers) {
+      input.forEach((value, name) => { result[name] = value; });
+    } else {
+      Object.assign(result, input);
+    }
+  }
+  return result;
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const headers = requestHeaders(options.headers);
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (runtimeConfig.privateAuthToken) {
+    for (const name of Object.keys(headers)) {
+      if (name.toLowerCase() === "authorization") delete headers[name];
+    }
+    headers.Authorization = `Bearer ${runtimeConfig.privateAuthToken}`;
+  }
+  const response = await fetch(`${runtimeConfig.apiBaseUrl}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers ?? {}),
-    },
+    headers,
   });
 
   if (!response.ok) {

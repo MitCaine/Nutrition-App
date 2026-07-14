@@ -9,7 +9,8 @@ from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import get_current_user
+from app.models.user import User
 from app.schemas.target import (
     DailyTargetComparisonResponse,
     TargetConfigurationResponse,
@@ -63,8 +64,9 @@ def _domain_error(exc: TargetDomainError) -> HTTPException:
 
 
 @router.get("", response_model=TargetConfigurationResponse)
-def get_targets(db: Session = Depends(get_db)) -> TargetConfigurationResponse:
-    user = ensure_dev_user(db)
+def get_targets(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> TargetConfigurationResponse:
     return TargetConfigurationResponse.model_validate(
         _service(db).configuration(user.id, date.today())
     )
@@ -74,8 +76,8 @@ def get_targets(db: Session = Depends(get_db)) -> TargetConfigurationResponse:
 def update_targets(
     payload: TargetConfigurationUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> TargetConfigurationResponse:
-    user = ensure_dev_user(db)
     try:
         result = _service(db).update(user.id, payload, date.today())
     except TargetDomainError as exc:
@@ -87,8 +89,8 @@ def update_targets(
 def reset_target_override(
     nutrient_id: str,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> TargetConfigurationResponse:
-    user = ensure_dev_user(db)
     try:
         result = _service(db).reset_override(user.id, nutrient_id, date.today())
     except TargetDomainError as exc:
@@ -100,8 +102,8 @@ def reset_target_override(
 def daily_target_comparison(
     date: date = Query(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> DailyTargetComparisonResponse:
-    user = ensure_dev_user(db)
     return DailyTargetComparisonResponse.model_validate(
         _service(db).daily_comparison(user.id, date)
     )

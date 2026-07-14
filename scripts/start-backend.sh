@@ -100,8 +100,10 @@ echo "Using Python: $("$PYTHON" --version)"
 echo "Checking backend configuration..."
 "$PYTHON" - <<'PY'
 from app.core.config import settings
+from app.core.database_identity import redacted_database_url
 
-print(f"Database: {settings.database_url}")
+print(f"Deployment mode: {settings.deployment_mode.value}")
+print(f"Database: {redacted_database_url(settings.database_url)}")
 print(f"USDA key loaded: {bool(settings.usda_api_key)}")
 
 if not settings.usda_api_key:

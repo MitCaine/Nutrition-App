@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.dependencies.database import get_db
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import get_current_user
 from app.integrations.usda.client import UsdaClient, UsdaConfigurationError, UsdaUpstreamError
 from app.integrations.usda.schemas import UsdaFoodPreview, UsdaSearchResponse
 from app.models.user import User
@@ -17,7 +17,8 @@ router = APIRouter()
 
 
 def get_usda_service(db: Session = Depends(get_db)) -> UsdaService:
-    return UsdaService(db, UsdaClient(settings.usda_api_key))
+    api_key = settings.usda_api_key.get_secret_value() if settings.usda_api_key else None
+    return UsdaService(db, UsdaClient(api_key))
 
 
 @router.get("/foods/search", response_model=UsdaSearchResponse)
@@ -26,6 +27,7 @@ def search_usda_foods(
     page_size: int = Query(default=25, ge=1, le=50),
     page_number: int = Query(default=1, ge=1),
     service: UsdaService = Depends(get_usda_service),
+    _user: User = Depends(get_current_user),
 ) -> UsdaSearchResponse:
     try:
         return service.search(query.strip(), page_size=page_size, page_number=page_number)
@@ -49,6 +51,7 @@ def search_usda_foods(
 def preview_usda_food(
     fdc_id: int,
     service: UsdaService = Depends(get_usda_service),
+    _user: User = Depends(get_current_user),
 ) -> UsdaFoodPreview:
     try:
         return service.preview(fdc_id)
@@ -71,8 +74,8 @@ def import_usda_food(
     response: Response,
     db: Session = Depends(get_db),
     service: UsdaService = Depends(get_usda_service),
+    user: User = Depends(get_current_user),
 ) -> FoodResponse:
-    user: User = ensure_dev_user(db)
     try:
         food, duplicate = service.import_food(user.id, fdc_id)
     except UsdaConfigurationError as exc:

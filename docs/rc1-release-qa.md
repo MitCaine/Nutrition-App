@@ -1,5 +1,10 @@
 # Release Candidate 1 QA report
 
+> Historical note: this report predates the authenticated-user and release-configuration hardening.
+> Its internal/TestFlight recommendation is superseded by
+> [Production Hardening Phase 1](production-hardening-phase1.md): private builds now require an
+> explicit HTTPS API URL and shared private credential, while public production remains blocked.
+
 Date: 2026-07-14 (America/Los_Angeles)
 
 ## 1. Environment matrix

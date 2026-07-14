@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import get_current_user
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.domain.recipe_projection import RecipeProjectionMutationError
+from app.models.user import User
 from app.schemas.recipe import (
     RecipeCreateRequest,
     RecipeListResponse,
@@ -33,8 +34,11 @@ def _service(db: Session) -> RecipeService:
 
 
 @router.post("", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)
-def create_recipe(payload: RecipeCreateRequest, db: Session = Depends(get_db)) -> RecipeResponse:
-    user = ensure_dev_user(db)
+def create_recipe(
+    payload: RecipeCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RecipeResponse:
     try:
         return RecipeResponse.model_validate(_service(db).create_recipe(user.id, payload))
     except (LookupError, ValueError) as exc:
@@ -45,14 +49,17 @@ def create_recipe(payload: RecipeCreateRequest, db: Session = Depends(get_db)) -
 def list_recipes(
     q: str | None = Query(default=None, min_length=1),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> RecipeListResponse:
-    user = ensure_dev_user(db)
     return RecipeListResponse(recipes=_service(db).list_recipes(user.id, q))
 
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
-def get_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipeResponse:
-    user = ensure_dev_user(db)
+def get_recipe(
+    recipe_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RecipeResponse:
     try:
         return RecipeResponse.model_validate(_service(db).get_recipe(user.id, recipe_id))
     except LookupError as exc:
@@ -64,8 +71,8 @@ def update_recipe(
     recipe_id: UUID,
     payload: RecipeUpdateRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> RecipeResponse:
-    user = ensure_dev_user(db)
     try:
         return RecipeResponse.model_validate(
             _service(db).update_recipe(user.id, recipe_id, payload)
@@ -81,8 +88,8 @@ def delete_recipe(
     recipe_id: UUID,
     remove_from_recipes: bool = Query(default=False),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> None:
-    user = ensure_dev_user(db)
     try:
         _service(db).soft_delete_recipe(
             user.id,
@@ -104,8 +111,11 @@ def delete_recipe(
 
 
 @router.get("/{recipe_id}/nutrition", response_model=RecipeNutritionResponse)
-def recipe_nutrition(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipeNutritionResponse:
-    user = ensure_dev_user(db)
+def recipe_nutrition(
+    recipe_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RecipeNutritionResponse:
     try:
         return RecipeNutritionResponse(**_service(db).nutrition(user.id, recipe_id))
     except LookupError as exc:
@@ -117,8 +127,11 @@ def recipe_nutrition(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipeNu
 
 
 @router.post("/{recipe_id}/publish", response_model=RecipePublishResponse)
-def publish_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipePublishResponse:
-    user = ensure_dev_user(db)
+def publish_recipe(
+    recipe_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RecipePublishResponse:
     try:
         recipe, food = _service(db).publish(user.id, recipe_id)
         return RecipePublishResponse(

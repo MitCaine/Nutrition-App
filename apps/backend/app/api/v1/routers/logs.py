@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import get_current_user
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
+from app.models.user import User
 from app.schemas.log import (
     DailyLogCreateRequest,
     DailyLogEditContextResponse,
@@ -29,8 +30,11 @@ def _service(db: Session) -> LogService:
 
 
 @router.post("", response_model=DailyLogResponse, status_code=status.HTTP_201_CREATED)
-def create_log(payload: DailyLogCreateRequest, db: Session = Depends(get_db)) -> DailyLogResponse:
-    user = ensure_dev_user(db)
+def create_log(
+    payload: DailyLogCreateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DailyLogResponse:
     try:
         return DailyLogResponse.model_validate(_service(db).create_log(user.id, payload))
     except LogIdempotencyConflictError as exc:
@@ -46,8 +50,8 @@ def create_log(payload: DailyLogCreateRequest, db: Session = Depends(get_db)) ->
 def list_logs(
     date: date = Query(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> DailyLogListResponse:
-    user = ensure_dev_user(db)
     return DailyLogListResponse(logs=_service(db).list_logs(user.id, date))
 
 
@@ -55,8 +59,8 @@ def list_logs(
 def daily_summary(
     date: date = Query(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> DailySummaryResponse:
-    user = ensure_dev_user(db)
     return DailySummaryResponse(logged_date=date, totals=_service(db).daily_summary(user.id, date))
 
 
@@ -64,8 +68,8 @@ def daily_summary(
 def log_edit_context(
     log_id: UUID,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> DailyLogEditContextResponse:
-    user = ensure_dev_user(db)
     try:
         return _service(db).edit_context(user.id, log_id)
     except RecipeNutritionValidationError as exc:
@@ -79,8 +83,8 @@ def update_log(
     log_id: UUID,
     payload: DailyLogUpdateRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> DailyLogResponse:
-    user = ensure_dev_user(db)
     try:
         return DailyLogResponse.model_validate(_service(db).update_log(user.id, log_id, payload))
     except LogEditConflictError as exc:
@@ -97,8 +101,11 @@ def update_log(
 
 
 @router.delete("/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_log(log_id: UUID, db: Session = Depends(get_db)) -> None:
-    user = ensure_dev_user(db)
+def delete_log(
+    log_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
     try:
         _service(db).delete_log(user.id, log_id)
     except LookupError as exc:
