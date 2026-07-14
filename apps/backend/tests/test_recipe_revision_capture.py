@@ -342,7 +342,7 @@ def test_resolver_invalid_projection_is_reported_as_failed_validation(
 ) -> None:
     recipe, projection = _published_recipe(client, db_session)
     for serving in projection.serving_definitions:
-        serving.is_default = True
+        serving.is_default = False
     db_session.commit()
 
     result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)

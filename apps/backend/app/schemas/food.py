@@ -229,3 +229,26 @@ class FoodDeleteResultResponse(BaseModel):
     deleted: bool
     removed_ingredient_count: int
     affected_recipes: list[FoodDeleteAffectedRecipeResponse]
+
+
+class FoodRecipeServingConflictIngredientResponse(BaseModel):
+    position: int
+    old_serving_label: str
+
+
+class FoodRecipeServingConflictRecipeResponse(BaseModel):
+    recipe_id: UUID
+    recipe_name: str
+    ingredients: list[FoodRecipeServingConflictIngredientResponse]
+
+
+class FoodUpdateRecipeServingConflictResponse(BaseModel):
+    code: Literal["food_update_recipe_serving_conflict"] = (
+        "food_update_recipe_serving_conflict"
+    )
+    message: str = (
+        "This serving change would alter active Recipe ingredients. "
+        "Update those Recipe ingredients before changing the Food serving."
+    )
+    food_id: UUID
+    affected_recipes: list[FoodRecipeServingConflictRecipeResponse]

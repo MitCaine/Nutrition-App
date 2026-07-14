@@ -349,6 +349,7 @@ def test_force_delete_food_rolls_back_recipe_changes_and_food_delete_on_failure(
 def test_food_delete_does_not_expose_cross_user_recipe_references(client: TestClient, db_session: Session) -> None:
     from uuid import UUID
 
+    from app.models.food import FoodItem
     from app.models.recipe import Recipe, RecipeIngredient
     from app.models.user import User
 
@@ -377,5 +378,9 @@ def test_food_delete_does_not_expose_cross_user_recipe_references(client: TestCl
 
     response = client.delete(f"/api/v1/foods/{food['id']}")
 
-    assert response.status_code == 200, response.text
-    assert response.json()["affected_recipes"] == []
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "food_dependencies_unstable"
+    assert "Other User Recipe" not in response.text
+    db_session.expire_all()
+    assert db_session.get(RecipeIngredient, UUID("00000000-0000-0000-0000-000000000299")) is not None
+    assert db_session.get(FoodItem, UUID(food["id"])).deleted_at is None

@@ -27,6 +27,7 @@ from app.nutrition.resolution import (
 )
 from app.nutrition.revision_resolution import resolve_revision_nutrition
 from app.repositories.food_repository import FoodRepository
+from app.repositories.recipe_repository import RecipeRepository
 from app.schemas.food import (
     FoodCreateRequest,
     FoodDeleteAffectedRecipeResponse,
@@ -34,6 +35,9 @@ from app.schemas.food import (
     FoodDeleteResultResponse,
     FoodRecipeDependencyResponse,
     FoodResolvedNutritionResponse,
+    FoodRecipeServingConflictIngredientResponse,
+    FoodRecipeServingConflictRecipeResponse,
+    FoodUpdateRecipeServingConflictResponse,
     FoodUpdateRequest,
     ResolvedFoodAmountResponse,
     ResolvedFoodNutrientResponse,
@@ -42,6 +46,7 @@ from app.schemas.food import (
 
 
 FAVORITE_IDENTITY_CONSTRAINT = "food_favorites_pkey"
+FOOD_DEPENDENCY_RESTART_LIMIT = 3
 
 
 def _is_favorite_identity_conflict(exc: IntegrityError) -> bool:
@@ -67,10 +72,31 @@ class FoodDependencyError(ValueError):
         self.dependency = dependency
 
 
+class FoodUpdateRecipeServingConflictError(ValueError):
+    def __init__(self, conflict: FoodUpdateRecipeServingConflictResponse):
+        super().__init__(conflict.message)
+        self.conflict = conflict
+
+
+class FoodDependenciesUnstableError(ValueError):
+    code = "food_dependencies_unstable"
+    message = (
+        "Food dependencies changed repeatedly during this operation. "
+        "Try again when Recipe edits are complete."
+    )
+
+    def __init__(self):
+        super().__init__(self.message)
+
+    def detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.message}
+
+
 class FoodService:
     def __init__(self, db: Session):
         self.db = db
         self.foods = FoodRepository(db)
+        self.recipes = RecipeRepository(db)
 
     def create_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodItem:
         food = self.build_manual_food(user_id, payload)
@@ -416,23 +442,45 @@ class FoodService:
         )
 
     def update_food(self, user_id: UUID, food_id: UUID, payload: FoodUpdateRequest) -> FoodItem:
-        food = self.foods.get_required(food_id, user_id)
-        self._assert_generic_mutation_allowed(food, user_id, "update")
-        if payload.name is not None:
-            food.name = payload.name.strip()
-        if payload.brand is not None:
-            food.brand = payload.brand.strip() if payload.brand else None
-        if payload.notes is not None:
-            food.notes = payload.notes
-        if payload.serving_definitions is not None:
-            food.serving_definitions.clear()
-            self._replace_servings(food, payload.serving_definitions)
-        if payload.nutrients is not None:
-            food.nutrients.clear()
-            self._replace_nutrients(food, payload.nutrients)
-        food.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        return self.foods.get_required(food_id, user_id)
+        try:
+            food, parents = self._lock_food_dependency_graph(user_id, food_id)
+            self._assert_generic_mutation_allowed(food, user_id, "update")
+            if payload.name is not None:
+                food.name = payload.name.strip()
+            if payload.brand is not None:
+                food.brand = payload.brand.strip() if payload.brand else None
+            if payload.notes is not None:
+                food.notes = payload.notes
+            dependency_affecting = payload.nutrients is not None
+            if payload.serving_definitions is not None:
+                replacements = self._new_servings(payload.serving_definitions)
+                remaps = self._plan_serving_remaps(food, parents, replacements)
+                # Release the partial unique default slot before inserting the
+                # replacement generation; the enclosing transaction remains atomic.
+                for serving in food.serving_definitions:
+                    serving.is_default = False
+                self.db.flush()
+                food.serving_definitions[:] = replacements
+                for ingredient, successor in remaps:
+                    ingredient.serving_definition_id = successor.id
+                    ingredient.resolved_gram_amount = (
+                        ingredient.amount_quantity * successor.gram_weight
+                        if successor.gram_weight is not None
+                        else None
+                    )
+                dependency_affecting = True
+            if payload.nutrients is not None:
+                food.nutrients.clear()
+                self._replace_nutrients(food, payload.nutrients)
+            now = datetime.now(timezone.utc)
+            food.updated_at = now
+            if dependency_affecting:
+                self._mark_published_parents_stale(parents, now)
+            self.db.commit()
+            return self.foods.get_required(food_id, user_id)
+        except Exception:
+            self.db.rollback()
+            raise
 
     def soft_delete_food(
         self,
@@ -441,17 +489,17 @@ class FoodService:
         *,
         remove_from_recipes: bool = False,
     ) -> FoodDeleteResultResponse:
-        food = self.foods.get_required(food_id, user_id)
-        self._assert_generic_mutation_allowed(food, user_id, "delete")
-        dependencies = self._food_recipe_dependencies(user_id, food_id)
-        if dependencies.affected_recipes and not remove_from_recipes:
-            raise FoodDependencyError(dependencies)
-
-        now = datetime.now(timezone.utc)
-        affected_recipes: list[FoodDeleteAffectedRecipeResponse] = []
         try:
+            food, parents = self._lock_food_dependency_graph(user_id, food_id)
+            self._assert_generic_mutation_allowed(food, user_id, "delete")
+            dependencies = self._food_recipe_dependencies(user_id, food_id)
+            if dependencies.affected_recipes and not remove_from_recipes:
+                raise FoodDependencyError(dependencies)
+
+            now = datetime.now(timezone.utc)
+            affected_recipes: list[FoodDeleteAffectedRecipeResponse] = []
             if remove_from_recipes and dependencies.affected_recipes:
-                affected_recipes = self._remove_food_from_recipes(user_id, food_id, now)
+                affected_recipes = self._remove_food_from_locked_recipes(parents, food_id, now)
 
             food.deleted_at = now
             food.updated_at = now
@@ -520,26 +568,34 @@ class FoodService:
         food_id: UUID,
         payload: ServingDefinitionInput,
     ) -> FoodItem:
-        food = self.foods.get_required(food_id, user_id)
-        self._assert_generic_mutation_allowed(food, user_id, "add_serving")
-        if payload.is_default:
-            for serving in food.serving_definitions:
-                serving.is_default = False
-        food.serving_definitions.append(
-            ServingDefinition(
-                id=uuid4(),
-                label=payload.label.strip(),
-                quantity=payload.quantity,
-                unit=payload.unit,
-                gram_weight=payload.gram_weight,
-                is_default=payload.is_default,
-                source="manual",
-                is_user_confirmed=True,
+        try:
+            food, parents = self._lock_food_dependency_graph(user_id, food_id)
+            self._assert_generic_mutation_allowed(food, user_id, "add_serving")
+            if payload.is_default:
+                for serving in food.serving_definitions:
+                    serving.is_default = False
+                self.db.flush()
+            food.serving_definitions.append(
+                ServingDefinition(
+                    id=uuid4(),
+                    label=payload.label.strip(),
+                    quantity=payload.quantity,
+                    unit=payload.unit,
+                    gram_weight=payload.gram_weight,
+                    is_default=payload.is_default,
+                    source="manual",
+                    is_user_confirmed=True,
+                )
             )
-        )
-        food.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        return self.foods.get_required(food_id, user_id)
+            now = datetime.now(timezone.utc)
+            food.updated_at = now
+            if payload.is_default:
+                self._mark_published_parents_stale(parents, now)
+            self.db.commit()
+            return self.foods.get_required(food_id, user_id)
+        except Exception:
+            self.db.rollback()
+            raise
 
     def _assert_generic_mutation_allowed(
         self,
@@ -601,24 +657,144 @@ class FoodService:
             ),
         )
 
-    def _remove_food_from_recipes(
+    def _dependent_recipe_ids(self, user_id: UUID, food_id: UUID) -> set[UUID]:
+        return set(
+            self.db.scalars(
+                select(Recipe.id)
+                .join(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+                .where(
+                    Recipe.user_id == user_id,
+                    Recipe.deleted_at.is_(None),
+                    RecipeIngredient.food_item_id == food_id,
+                )
+                .order_by(Recipe.id)
+                .distinct()
+            ).all()
+        )
+
+    def _lock_food_dependency_graph(
         self,
         user_id: UUID,
         food_id: UUID,
-        now: datetime,
-    ) -> list[FoodDeleteAffectedRecipeResponse]:
-        statement = (
-            select(Recipe)
-            .join(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+    ) -> tuple[FoodItem, list[Recipe]]:
+        """Lock one Food, then its active parent Recipes in stable UUID order."""
+        for _attempt in range(FOOD_DEPENDENCY_RESTART_LIMIT):
+            food = self.foods.get_for_update(food_id, user_id)
+            if self._has_foreign_dependencies(user_id, food_id):
+                # Treat cross-owner dependency corruption as an opaque conflict;
+                # never expose or mutate the foreign Recipe graph.
+                raise FoodDependenciesUnstableError()
+            initial_ids = self._dependent_recipe_ids(user_id, food_id)
+            locked = self.recipes.get_many_for_update(initial_ids, user_id)
+            final_ids = self._dependent_recipe_ids(user_id, food_id)
+            if final_ids == initial_ids and set(locked) == final_ids:
+                parents = [locked[recipe_id] for recipe_id in sorted(final_ids)]
+                self._after_food_dependency_lock(food, parents)
+                return food, parents
+            self.db.rollback()
+        raise FoodDependenciesUnstableError()
+
+    def _has_foreign_dependencies(self, user_id: UUID, food_id: UUID) -> bool:
+        return self.db.scalar(
+            select(func.count(RecipeIngredient.id))
+            .join(Recipe, Recipe.id == RecipeIngredient.recipe_id)
             .where(
-                Recipe.user_id == user_id,
+                Recipe.user_id != user_id,
                 Recipe.deleted_at.is_(None),
                 RecipeIngredient.food_item_id == food_id,
             )
-            .order_by(Recipe.name)
-            .distinct()
+        ) > 0
+
+    def _after_food_dependency_lock(
+        self,
+        _food: FoodItem,
+        _parents: list[Recipe],
+    ) -> None:
+        """Test seam after Food-then-Recipe dependency locks are complete."""
+
+    @staticmethod
+    def _serving_semantic_key(serving: ServingDefinition) -> tuple[Decimal, str, Decimal | None]:
+        return (
+            serving.quantity.normalize(),
+            serving.unit.strip().casefold(),
+            serving.gram_weight.normalize() if serving.gram_weight is not None else None,
         )
-        recipes = list(self.db.scalars(statement).unique().all())
+
+    def _plan_serving_remaps(
+        self,
+        food: FoodItem,
+        parents: list[Recipe],
+        replacements: list[ServingDefinition],
+    ) -> list[tuple[RecipeIngredient, ServingDefinition]]:
+        old_by_id = {serving.id: serving for serving in food.serving_definitions}
+        successors: dict[tuple[Decimal, str, Decimal | None], list[ServingDefinition]] = {}
+        for serving in replacements:
+            successors.setdefault(self._serving_semantic_key(serving), []).append(serving)
+
+        remaps: list[tuple[RecipeIngredient, ServingDefinition]] = []
+        conflicts: list[FoodRecipeServingConflictRecipeResponse] = []
+        for recipe in parents:
+            recipe_conflicts: list[FoodRecipeServingConflictIngredientResponse] = []
+            for ingredient in recipe.ingredients:
+                if ingredient.food_item_id != food.id or ingredient.serving_definition_id is None:
+                    continue
+                old = old_by_id.get(ingredient.serving_definition_id)
+                matching = successors.get(self._serving_semantic_key(old), []) if old else []
+                if len(matching) == 1:
+                    remaps.append((ingredient, matching[0]))
+                else:
+                    recipe_conflicts.append(
+                        FoodRecipeServingConflictIngredientResponse(
+                            position=ingredient.position,
+                            old_serving_label=old.label if old is not None else "Unavailable serving",
+                        )
+                    )
+            if recipe_conflicts:
+                conflicts.append(
+                    FoodRecipeServingConflictRecipeResponse(
+                        recipe_id=recipe.id,
+                        recipe_name=recipe.name,
+                        ingredients=recipe_conflicts,
+                    )
+                )
+        if conflicts:
+            raise FoodUpdateRecipeServingConflictError(
+                FoodUpdateRecipeServingConflictResponse(
+                    food_id=food.id,
+                    affected_recipes=sorted(conflicts, key=lambda row: str(row.recipe_id)),
+                )
+            )
+        return remaps
+
+    @staticmethod
+    def _mark_published_parents_stale(parents: list[Recipe], now: datetime) -> None:
+        for recipe in parents:
+            if recipe.published_food_item_id is not None:
+                recipe.needs_republish = True
+                recipe.updated_at = now
+
+    @staticmethod
+    def _new_servings(servings) -> list[ServingDefinition]:
+        return [
+            ServingDefinition(
+                id=uuid4(),
+                label=serving.label.strip(),
+                quantity=serving.quantity,
+                unit=serving.unit,
+                gram_weight=serving.gram_weight,
+                is_default=serving.is_default,
+                source="manual",
+                is_user_confirmed=True,
+            )
+            for serving in servings
+        ]
+
+    def _remove_food_from_locked_recipes(
+        self,
+        recipes: list[Recipe],
+        food_id: UUID,
+        now: datetime,
+    ) -> list[FoodDeleteAffectedRecipeResponse]:
         affected_recipes: list[FoodDeleteAffectedRecipeResponse] = []
         for recipe in recipes:
             removed_count = sum(
@@ -653,19 +829,7 @@ class FoodService:
         return affected_recipes
 
     def _replace_servings(self, food: FoodItem, servings) -> None:
-        for serving in servings:
-            food.serving_definitions.append(
-                ServingDefinition(
-                    id=uuid4(),
-                    label=serving.label.strip(),
-                    quantity=serving.quantity,
-                    unit=serving.unit,
-                    gram_weight=serving.gram_weight,
-                    is_default=serving.is_default,
-                    source="manual",
-                    is_user_confirmed=True,
-                )
-            )
+        food.serving_definitions.extend(self._new_servings(servings))
 
     def _replace_nutrients(self, food: FoodItem, nutrients) -> None:
         for nutrient in nutrients:

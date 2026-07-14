@@ -107,6 +107,11 @@ class RecipeService:
         return self.recipes.get_required(recipe_id, user_id)
 
     def update_recipe(self, user_id: UUID, recipe_id: UUID, payload: RecipeUpdateRequest) -> Recipe:
+        locked_foods = (
+            self._lock_ingredient_foods(user_id, payload.ingredients)
+            if payload.ingredients is not None
+            else None
+        )
         recipe = self.recipes.get_for_update(recipe_id, user_id)
         fields = payload.model_fields_set
         if payload.name is not None:
@@ -117,7 +122,12 @@ class RecipeService:
             recipe.serving_count_yield = payload.serving_count_yield
         self._apply_final_cooked_weight_update(recipe, payload)
         if payload.ingredients is not None:
-            ingredients = self._build_ingredients(user_id, recipe, payload.ingredients)
+            ingredients = self._build_ingredients(
+                user_id,
+                recipe,
+                payload.ingredients,
+                locked_foods=locked_foods,
+            )
             recipe.ingredients.clear()
             self.db.flush()
             recipe.ingredients.extend(ingredients)
@@ -179,6 +189,11 @@ class RecipeService:
                     if initial_projection_id is not None
                     else set()
                 )
+                projection = (
+                    self.foods.get_for_update(initial_projection_id, user_id)
+                    if initial_projection_id is not None
+                    else None
+                )
                 locked = self.recipes.get_many_for_update(
                     {recipe_id, *initial_dependency_ids},
                     user_id,
@@ -189,11 +204,6 @@ class RecipeService:
                 if recipe.published_food_item_id != initial_projection_id:
                     self.db.rollback()
                     continue
-                projection = (
-                    self.foods.get_for_update(recipe.published_food_item_id, user_id)
-                    if recipe.published_food_item_id is not None
-                    else None
-                )
                 final_dependency_ids = (
                     self._dependent_recipe_ids(user_id, projection.id)
                     if projection is not None
@@ -389,6 +399,12 @@ class RecipeService:
             self.db.flush()
             self._after_active_revision_assignment(recipe)
             projection = projection or self._select_or_create_projection(recipe, user_id)
+            # A partial unique index permits only one default per Food. Release
+            # the existing projection default before inserting the new revision's
+            # serving generation; the publication transaction remains atomic.
+            for serving in projection.serving_definitions:
+                serving.is_default = False
+            self.db.flush()
             apply_revision_to_projection(
                 projection,
                 revision,
@@ -440,6 +456,11 @@ class RecipeService:
                 if initial_projection_id is not None
                 else set()
             )
+            projection = (
+                self.foods.get_for_update(initial_projection_id, user_id)
+                if initial_projection_id is not None
+                else None
+            )
             locked = self.recipes.get_many_for_update(
                 {recipe_id, *initial_dependency_ids},
                 user_id,
@@ -450,11 +471,6 @@ class RecipeService:
             if recipe.published_food_item_id != initial_backlink_id:
                 self.db.rollback()
                 continue
-            projection = (
-                self.foods.get_for_update(initial_projection_id, user_id)
-                if initial_projection_id is not None
-                else None
-            )
             final_dependency_ids = (
                 self._dependent_recipe_ids(user_id, projection.id)
                 if projection is not None
@@ -569,14 +585,13 @@ class RecipeService:
         user_id: UUID,
         recipe: Recipe,
         ingredients: list[RecipeIngredientInput],
+        *,
+        locked_foods: dict[UUID, FoodItem] | None = None,
     ) -> list[RecipeIngredient]:
         positions = [ingredient.position for ingredient in ingredients]
         if len(positions) != len(set(positions)):
             raise ValueError("ingredient positions must be unique")
-        foods = {
-            food_id: self.foods.get_for_update(food_id, user_id)
-            for food_id in sorted({ingredient.food_item_id for ingredient in ingredients})
-        }
+        foods = locked_foods or self._lock_ingredient_foods(user_id, ingredients)
         built: list[RecipeIngredient] = []
         for ingredient in sorted(ingredients, key=lambda item: item.position):
             food = foods[ingredient.food_item_id]
@@ -596,12 +611,26 @@ class RecipeService:
                     amount_unit=ingredient.amount_unit,
                     amount_display_quantity=ingredient.amount_display_quantity,
                     amount_display_unit=ingredient.amount_display_unit,
-                    serving_definition_id=resolved.serving_definition.id if resolved.serving_definition else None,
+                    serving_definition_id=(
+                        resolved.serving_definition.id
+                        if ingredient.amount_unit == "serving" and resolved.serving_definition
+                        else None
+                    ),
                     resolved_gram_amount=resolved.gram_amount,
                     preparation_note=ingredient.preparation_note,
                 )
             )
         return built
+
+    def _lock_ingredient_foods(
+        self,
+        user_id: UUID,
+        ingredients: list[RecipeIngredientInput],
+    ) -> dict[UUID, FoodItem]:
+        return {
+            food_id: self.foods.get_for_update(food_id, user_id)
+            for food_id in sorted({ingredient.food_item_id for ingredient in ingredients})
+        }
 
     def _validate_no_recipe_cycle(self, user_id: UUID, recipe: Recipe, food: FoodItem) -> None:
         if recipe.published_food_item_id is not None and food.id == recipe.published_food_item_id:

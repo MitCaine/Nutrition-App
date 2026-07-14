@@ -24,6 +24,10 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
       typeof detail.message === "string" &&
       detail.message.trim()
     ) {
+      const servingConflict = formatFoodServingConflict(detail);
+      if (servingConflict) {
+        return servingConflict;
+      }
       return detail.message;
     }
     return error.message || fallback;
@@ -48,6 +52,41 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+function formatFoodServingConflict(detail: object): string | null {
+  const candidate = detail as Record<string, unknown>;
+  if (
+    candidate.code !== "food_update_recipe_serving_conflict" ||
+    !Array.isArray(candidate.affected_recipes)
+  ) {
+    return null;
+  }
+  const affected = candidate.affected_recipes.flatMap((value) => {
+    if (typeof value !== "object" || value === null) {
+      return [];
+    }
+    const recipe = value as Record<string, unknown>;
+    if (!isNonEmptyString(recipe.recipe_name) || !Array.isArray(recipe.ingredients)) {
+      return [];
+    }
+    const positions = recipe.ingredients.flatMap((ingredient) => {
+      if (typeof ingredient !== "object" || ingredient === null) {
+        return [];
+      }
+      const position = (ingredient as Record<string, unknown>).position;
+      return typeof position === "number" && Number.isInteger(position) && position >= 0
+        ? [position + 1]
+        : [];
+    });
+    return positions.length > 0
+      ? [`${recipe.recipe_name} (ingredient ${positions.join(", ")})`]
+      : [];
+  });
+  if (affected.length === 0 || !isNonEmptyString(candidate.message)) {
+    return null;
+  }
+  return `${candidate.message} Affected: ${affected.join("; ")}.`;
 }
 
 export function formatAffectedRecipeNames(

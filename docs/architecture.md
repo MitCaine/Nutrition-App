@@ -46,6 +46,30 @@ Stage 2 supports serving-count logging and gram logging.
 
 Mobile manual-food editing supports multiple serving definitions with stable local keys while editing. The API still enforces exactly one default serving.
 
+Active Recipe ingredients never rely on default-serving fallback: serving-mode ingredients
+store an explicit serving ID, while gram-mode ingredients store no serving ID. Replacing a
+Food's serving generation remaps an ingredient only when exactly one successor has the same
+normalized quantity, case-insensitive unit, and gram weight. Labels are presentation-only.
+Missing or ambiguous successors reject the Food update atomically. Equivalent remaps and
+nutrient changes mark published parent Recipes as needing explicit republication without
+changing their immutable active revision or compatibility projection.
+
+## Food and Recipe lock protocol
+
+Mutations that can change Food/Recipe dependency membership use one database lock order:
+
+1. Food rows, sorted by UUID when more than one is referenced.
+2. Active dependent Recipe rows, sorted by UUID.
+
+Food update, serving-default changes, Food deletion, Recipe ingredient authoring, Recipe
+publication/deletion projection work, and mutable-Food log snapshot creation follow this
+order. Food dependency operations recheck the active Recipe ID set after both lock classes
+are held. A changed set rolls back and restarts; three unstable attempts return the structured
+`food_dependencies_unstable` conflict. Mutable Manual, USDA, OCR-confirmed, and duplicated
+Food logs reload resolver children after locking the Food, so a snapshot cannot combine
+servings and nutrients from different committed Food generations. Immutable Recipe revision
+logging retains its revision lock path.
+
 ## Units
 
 Stage 2 supports `kcal`, `g`, `mg`, and `mcg`.

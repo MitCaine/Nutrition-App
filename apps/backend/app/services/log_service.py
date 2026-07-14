@@ -109,6 +109,10 @@ class LogService:
             if food.is_recipe or food.source_type == "recipe":
                 log = self._create_recipe_log(user_id, food, payload)
             else:
+                # Mutable Food resolver inputs must be loaded after the Food row
+                # lock so servings and nutrients describe one committed generation.
+                food = self.foods.get_for_update(payload.food_item_id, user_id)
+                self._after_mutable_food_lock(food)
                 log = self._create_food_log(user_id, food, payload)
             log.client_request_id = payload.client_request_id
             log.client_request_fingerprint = fingerprint
@@ -130,6 +134,9 @@ class LogService:
         except Exception:
             self.db.rollback()
             raise
+
+    def _after_mutable_food_lock(self, _food: FoodItem) -> None:
+        """Test seam after mutable Food generation lock and child refresh."""
 
     def _create_food_log(
         self,

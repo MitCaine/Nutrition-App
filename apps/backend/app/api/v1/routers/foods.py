@@ -20,7 +20,12 @@ from app.schemas.food import (
     FoodUpdateRequest,
     ServingDefinitionInput,
 )
-from app.services.food_service import FoodDependencyError, FoodService
+from app.services.food_service import (
+    FoodDependenciesUnstableError,
+    FoodDependencyError,
+    FoodService,
+    FoodUpdateRecipeServingConflictError,
+)
 
 router = APIRouter()
 
@@ -141,6 +146,13 @@ def update_food(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecipeProjectionMutationError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except FoodUpdateRecipeServingConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.conflict.model_dump(mode="json"),
+        ) from exc
+    except FoodDependenciesUnstableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
 @router.delete("/{food_id}", response_model=FoodDeleteResultResponse)
@@ -161,6 +173,8 @@ def delete_food(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecipeProjectionMutationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except FoodDependenciesUnstableError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
@@ -200,4 +214,6 @@ def add_serving_definition(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecipeProjectionMutationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except FoodDependenciesUnstableError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc

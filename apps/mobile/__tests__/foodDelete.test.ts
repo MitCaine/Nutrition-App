@@ -448,3 +448,27 @@ test("shared API client preserves useful fallback messages for malformed or miss
     message: "Request failed with status 503",
   });
 });
+
+test("food serving conflict names affected Recipes and one-based ingredient positions", () => {
+  const error = new ApiError({
+    status: 409,
+    message: "Request failed with status 409",
+    body: {
+      detail: {
+        code: "food_update_recipe_serving_conflict",
+        message: "Update dependent Recipe ingredients first.",
+        affected_recipes: [
+          {
+            recipe_id: "recipe-1",
+            recipe_name: "Chili",
+            ingredients: [{ position: 0 }, { position: 2 }],
+          },
+        ],
+      },
+    },
+  });
+
+  expect(apiErrorMessage(error, "Could not save food")).toBe(
+    "Update dependent Recipe ingredients first. Affected: Chili (ingredient 1, 3).",
+  );
+});

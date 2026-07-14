@@ -12,10 +12,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Numeric,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -162,6 +164,15 @@ class FoodNutrient(Base):
 
 class ServingDefinition(Base):
     __tablename__ = "serving_definitions"
+    __table_args__ = (
+        Index(
+            "uq_serving_definitions_one_default_per_food",
+            "food_item_id",
+            unique=True,
+            sqlite_where=text("is_default = true"),
+            postgresql_where=text("is_default = true"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"))

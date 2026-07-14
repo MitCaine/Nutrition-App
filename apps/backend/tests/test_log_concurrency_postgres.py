@@ -21,7 +21,7 @@ from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinit
 from app.models.food import OcrNutritionConfirmationTrace
 from app.models.log import DailyLog
 from app.models.nutrient import Nutrient
-from app.models.recipe import Recipe
+from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
 from app.models.target import NutritionTarget
@@ -35,8 +35,11 @@ from app.publication.recipe_revision import (
 from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
 from app.ocr.confirmation_service import OcrConfirmationService
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
+from app.schemas.food import FoodUpdateRequest, ServingDefinitionInput
+from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.services.log_service import LogService
 from app.services.food_service import FoodService
+from app.services.recipe_service import RecipeService
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -46,6 +49,9 @@ POSTGRES_URL = os.getenv(
 )
 idempotency_migration = import_module(
     "app.migrations.versions.0009_log_creation_idempotency"
+)
+integrity_migration = import_module(
+    "app.migrations.versions.0013_food_recipe_dependency_integrity"
 )
 
 
@@ -261,6 +267,450 @@ def _manual_create_target(factory) -> tuple:
         db.add(food)
         db.commit()
         return user.id, food.id, serving.id
+
+
+def test_mutable_food_log_snapshot_and_food_update_are_serialized(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    locked, release = Event(), Event()
+    log_result: list[object] = []
+    update_result: list[object] = []
+
+    def create_log() -> None:
+        with factory() as db:
+            service = LogService(db)
+
+            def after_lock(_food):
+                locked.set()
+                assert release.wait(5)
+
+            service._after_mutable_food_lock = after_lock
+            try:
+                log_result.append(
+                    service.create_log(
+                        user_id,
+                        DailyLogCreateRequest(
+                            food_item_id=food_id,
+                            logged_date=date(2026, 7, 14),
+                            amount_quantity=Decimal("1"),
+                            amount_unit="serving",
+                            serving_definition_id=serving_id,
+                        ),
+                    ).id
+                )
+            except Exception as exc:
+                log_result.append(exc)
+
+    def update_food() -> None:
+        with factory() as db:
+            try:
+                FoodService(db).update_food(
+                    user_id,
+                    food_id,
+                    FoodUpdateRequest.model_validate(
+                        {
+                            "nutrients": [
+                                {
+                                    "nutrient_id": "calories",
+                                    "amount": "200",
+                                    "unit": "kcal",
+                                    "basis": "per_serving",
+                                    "data_status": "known",
+                                }
+                            ]
+                        }
+                    ),
+                )
+                update_result.append("committed")
+            except Exception as exc:
+                update_result.append(exc)
+
+    logger = Thread(target=create_log)
+    logger.start()
+    assert locked.wait(5)
+    updater = Thread(target=update_food)
+    updater.start()
+    Event().wait(0.2)
+    assert not update_result
+    release.set()
+    logger.join(5)
+    updater.join(5)
+
+    assert len(log_result) == len(update_result) == 1
+    assert update_result == ["committed"]
+    with factory() as db:
+        log = db.get(DailyLog, log_result[0])
+        assert log.snapshots[0].amount == Decimal("100.000000")
+        food = db.get(FoodItem, food_id)
+        assert food.nutrients[0].amount == Decimal("200.000000")
+
+
+def test_food_delete_prevents_concurrent_recipe_dependency_addition(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    locked, release = Event(), Event()
+    delete_result: list[object] = []
+    recipe_result: list[object] = []
+
+    def delete_food() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def after_lock(_food, _parents):
+                locked.set()
+                assert release.wait(5)
+
+            service._after_food_dependency_lock = after_lock
+            try:
+                service.soft_delete_food(user_id, food_id)
+                delete_result.append("committed")
+            except Exception as exc:
+                delete_result.append(exc)
+
+    def create_recipe() -> None:
+        with factory() as db:
+            try:
+                RecipeService(db).create_recipe(
+                    user_id,
+                    RecipeCreateRequest.model_validate(
+                        {
+                            "name": "Concurrent parent",
+                            "ingredients": [
+                                {
+                                    "food_item_id": str(food_id),
+                                    "position": 0,
+                                    "amount_quantity": "1",
+                                    "amount_unit": "serving",
+                                    "serving_definition_id": str(serving_id),
+                                }
+                            ],
+                        }
+                    ),
+                )
+                recipe_result.append("committed")
+            except Exception as exc:
+                recipe_result.append(exc)
+
+    deleter = Thread(target=delete_food)
+    deleter.start()
+    assert locked.wait(5)
+    author = Thread(target=create_recipe)
+    author.start()
+    Event().wait(0.2)
+    assert not recipe_result
+    release.set()
+    deleter.join(5)
+    author.join(5)
+
+    assert delete_result == ["committed"]
+    assert len(recipe_result) == 1
+    assert isinstance(recipe_result[0], LookupError)
+    with factory() as db:
+        assert db.scalar(select(func.count(Recipe.id))) == 0
+
+
+def test_concurrent_default_serving_creation_leaves_exactly_one_default(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, _serving_id = _manual_create_target(factory)
+    locked, release = Event(), Event()
+    first_result: list[object] = []
+    second_result: list[object] = []
+
+    def add_default(label: str, result: list[object], *, hold: bool = False) -> None:
+        with factory() as db:
+            service = FoodService(db)
+            if hold:
+                def after_lock(_food, _parents):
+                    locked.set()
+                    assert release.wait(5)
+
+                service._after_food_dependency_lock = after_lock
+            try:
+                service.add_serving_definition(
+                    user_id,
+                    food_id,
+                    ServingDefinitionInput(
+                        label=label,
+                        quantity=Decimal("1"),
+                        unit="portion",
+                        gram_weight=Decimal("100"),
+                        is_default=True,
+                    ),
+                )
+                result.append("committed")
+            except Exception as exc:
+                result.append(exc)
+
+    first = Thread(target=add_default, args=("First", first_result), kwargs={"hold": True})
+    first.start()
+    assert locked.wait(5)
+    second = Thread(target=add_default, args=("Second", second_result))
+    second.start()
+    Event().wait(0.2)
+    assert not second_result
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert first_result == ["committed"]
+    assert second_result == ["committed"]
+    with factory() as db:
+        defaults = db.scalar(
+            select(func.count(ServingDefinition.id)).where(
+                ServingDefinition.food_item_id == food_id,
+                ServingDefinition.is_default.is_(True),
+            )
+        )
+        assert defaults == 1
+
+
+def test_food_update_and_recipe_ingredient_addition_follow_food_then_recipe_order(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    locked, release = Event(), Event()
+    update_result: list[object] = []
+    recipe_result: list[object] = []
+
+    def update_food() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def after_lock(_food, _parents):
+                locked.set()
+                assert release.wait(5)
+
+            service._after_food_dependency_lock = after_lock
+            try:
+                service.update_food(user_id, food_id, FoodUpdateRequest(name="Updated first"))
+                update_result.append("committed")
+            except Exception as exc:
+                update_result.append(exc)
+
+    def create_recipe() -> None:
+        with factory() as db:
+            try:
+                RecipeService(db).create_recipe(
+                    user_id,
+                    RecipeCreateRequest.model_validate(
+                        {
+                            "name": "Concurrent parent",
+                            "ingredients": [
+                                {
+                                    "food_item_id": str(food_id),
+                                    "position": 0,
+                                    "amount_quantity": "1",
+                                    "amount_unit": "serving",
+                                    "serving_definition_id": str(serving_id),
+                                }
+                            ],
+                        }
+                    ),
+                )
+                recipe_result.append("committed")
+            except Exception as exc:
+                recipe_result.append(exc)
+
+    food_writer = Thread(target=update_food)
+    food_writer.start()
+    assert locked.wait(5)
+    recipe_writer = Thread(target=create_recipe)
+    recipe_writer.start()
+    Event().wait(0.2)
+    assert not recipe_result
+    release.set()
+    food_writer.join(5)
+    recipe_writer.join(5)
+
+    assert update_result == ["committed"]
+    assert recipe_result == ["committed"]
+
+
+def test_serving_replacement_and_recipe_ingredient_update_do_not_deadlock(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    with factory() as db:
+        recipe = RecipeService(db).create_recipe(
+            user_id,
+            RecipeCreateRequest.model_validate(
+                {
+                    "name": "Existing parent",
+                    "ingredients": [
+                        {
+                            "food_item_id": str(food_id),
+                            "position": 0,
+                            "amount_quantity": "1",
+                            "amount_unit": "serving",
+                            "serving_definition_id": str(serving_id),
+                        }
+                    ],
+                }
+            ),
+        )
+        recipe_id = recipe.id
+
+    locked, release = Event(), Event()
+    food_result: list[object] = []
+    recipe_result: list[object] = []
+
+    def replace_servings() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def after_lock(_food, _parents):
+                locked.set()
+                assert release.wait(5)
+
+            service._after_food_dependency_lock = after_lock
+            try:
+                service.update_food(
+                    user_id,
+                    food_id,
+                    FoodUpdateRequest.model_validate(
+                        {
+                            "serving_definitions": [
+                                {
+                                    "label": "Renamed portion",
+                                    "quantity": "1",
+                                    "unit": "portion",
+                                    "gram_weight": "100",
+                                    "is_default": True,
+                                }
+                            ]
+                        }
+                    ),
+                )
+                food_result.append("committed")
+            except Exception as exc:
+                food_result.append(exc)
+
+    def update_recipe() -> None:
+        with factory() as db:
+            try:
+                RecipeService(db).update_recipe(
+                    user_id,
+                    recipe_id,
+                    RecipeUpdateRequest.model_validate(
+                        {
+                            "ingredients": [
+                                {
+                                    "food_item_id": str(food_id),
+                                    "position": 0,
+                                    "amount_quantity": "100",
+                                    "amount_unit": "g",
+                                }
+                            ]
+                        }
+                    ),
+                )
+                recipe_result.append("committed")
+            except Exception as exc:
+                recipe_result.append(exc)
+
+    food_writer = Thread(target=replace_servings)
+    food_writer.start()
+    assert locked.wait(5)
+    recipe_writer = Thread(target=update_recipe)
+    recipe_writer.start()
+    Event().wait(0.2)
+    assert not recipe_result
+    release.set()
+    food_writer.join(5)
+    recipe_writer.join(5)
+
+    assert food_result == ["committed"]
+    assert recipe_result == ["committed"]
+
+
+def test_food_dependency_set_change_restarts_before_mutation(postgres_sessions) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    with factory() as db:
+        parent = Recipe(id=uuid4(), user_id=user_id, name="Late parent")
+        db.add(parent)
+        db.flush()
+        db.add(
+            RecipeIngredient(
+                id=uuid4(),
+                recipe_id=parent.id,
+                food_item_id=food_id,
+                position=0,
+                amount_quantity=Decimal("1"),
+                amount_unit="serving",
+                serving_definition_id=serving_id,
+                resolved_gram_amount=Decimal("100"),
+            )
+        )
+        db.commit()
+        parent_id = parent.id
+
+    with factory() as db:
+        service = FoodService(db)
+        original_dependencies = service._dependent_recipe_ids
+        calls = 0
+
+        def dependencies(owner_id, target_food_id):
+            nonlocal calls
+            calls += 1
+            return set() if calls == 1 else original_dependencies(owner_id, target_food_id)
+
+        service._dependent_recipe_ids = dependencies
+        service.update_food(user_id, food_id, FoodUpdateRequest(name="Restarted update"))
+
+    assert calls == 4
+    assert parent_id
+
+
+def test_unrelated_food_mutation_does_not_wait_on_another_food_lock(postgres_sessions) -> None:
+    factory = postgres_sessions
+    first_user, first_food, _first_serving = _manual_create_target(factory)
+    second_user, second_food, _second_serving = _manual_create_target(factory)
+    locked, release = Event(), Event()
+    first_result: list[object] = []
+    second_result: list[object] = []
+
+    def hold_first() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def after_lock(_food, _parents):
+                locked.set()
+                assert release.wait(5)
+
+            service._after_food_dependency_lock = after_lock
+            try:
+                service.update_food(first_user, first_food, FoodUpdateRequest(name="First"))
+                first_result.append("committed")
+            except Exception as exc:
+                first_result.append(exc)
+
+    def update_second() -> None:
+        with factory() as db:
+            try:
+                FoodService(db).update_food(second_user, second_food, FoodUpdateRequest(name="Second"))
+                second_result.append("committed")
+            except Exception as exc:
+                second_result.append(exc)
+
+    first = Thread(target=hold_first)
+    first.start()
+    assert locked.wait(5)
+    second = Thread(target=update_second)
+    second.start()
+    second.join(2)
+    assert second_result == ["committed"]
+    release.set()
+    first.join(5)
+    assert first_result == ["committed"]
 
 
 def test_concurrent_create_with_same_request_id_commits_one_log_and_snapshot_set(
@@ -567,6 +1017,71 @@ def test_postgres_idempotency_migration_upgrade_and_downgrade(postgres_sessions)
         # Restore the isolated fixture schema for any later test using this factory.
         with Operations.context(context):
             idempotency_migration.upgrade()
+
+
+def test_postgres_food_recipe_integrity_migration_repairs_defaults_and_round_trips(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    engine = factory.kw["bind"]
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            integrity_migration.downgrade()
+
+    with factory() as db:
+        user = User(id=uuid4(), email=f"migration-{uuid4()}@example.test")
+        db.add(user)
+        db.flush()
+        food = FoodItem(
+            id=uuid4(),
+            user_id=user.id,
+            name="Legacy duplicate defaults",
+            source_type="manual",
+            is_recipe=False,
+            serving_definitions=[
+                ServingDefinition(
+                    id=uuid4(),
+                    label="First",
+                    quantity=Decimal("1"),
+                    unit="portion",
+                    gram_weight=Decimal("10"),
+                    is_default=True,
+                    source="manual",
+                    is_user_confirmed=True,
+                ),
+                ServingDefinition(
+                    id=uuid4(),
+                    label="Second",
+                    quantity=Decimal("1"),
+                    unit="portion",
+                    gram_weight=Decimal("20"),
+                    is_default=True,
+                    source="manual",
+                    is_user_confirmed=True,
+                ),
+            ],
+        )
+        db.add(food)
+        db.commit()
+        food_id = food.id
+
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            integrity_migration.upgrade()
+        indexes = {row["name"] for row in inspect(connection).get_indexes("serving_definitions")}
+        assert "uq_serving_definitions_one_default_per_food" in indexes
+        default_count = connection.scalar(
+            select(func.count(ServingDefinition.id)).where(
+                ServingDefinition.food_item_id == food_id,
+                ServingDefinition.is_default.is_(True),
+            )
+        )
+        assert default_count == 1
+        with Operations.context(context):
+            integrity_migration.downgrade()
+            integrity_migration.upgrade()
 
 
 def _run_update(factory, user_id, log_id, payload, *, locked=None, release=None, fail=False, result=None):

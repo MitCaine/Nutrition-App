@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    Index,
     Numeric,
     Text,
     UniqueConstraint,
@@ -84,6 +85,7 @@ class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredients"
     __table_args__ = (
         UniqueConstraint("recipe_id", "position", name="uq_recipe_ingredients_recipe_position"),
+        Index("ix_recipe_ingredients_serving_definition_id", "serving_definition_id"),
         CheckConstraint("amount_quantity > 0", name="ck_recipe_ingredients_amount_positive"),
         CheckConstraint(
             "resolved_gram_amount IS NULL OR resolved_gram_amount > 0",
