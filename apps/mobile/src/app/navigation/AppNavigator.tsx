@@ -35,6 +35,9 @@ import { isMainTabRoot, mainTabForRoute, settingsOriginForRoute, swipeDestinatio
 import { logFoodRoute, type LogFoodRoute } from "./logFoodRoute";
 import { OcrDiagnosticsScreen } from "../../features/ocr/diagnostics/OcrDiagnosticsScreen";
 import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnosticsModel";
+import { NutritionScanScreen } from "../../features/ocr/screens/NutritionScanScreen";
+import { NutritionConfirmationScreen } from "../../features/ocr/screens/NutritionConfirmationScreen";
+import type { NutritionConfirmationDraft } from "../../features/ocr/api/types";
 
 type Route =
   | { name: "foods" }
@@ -53,7 +56,9 @@ type Route =
   | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" }
   | { name: "settings"; origin: MainTab }
-  | { name: "ocr-diagnostics"; origin: MainTab };
+  | { name: "ocr-diagnostics"; origin: MainTab }
+  | { name: "nutrition-scan" }
+  | { name: "nutrition-confirm"; draft: NutritionConfirmationDraft };
 
 function routeForMainTab(tab: MainTab): Route {
   if (tab === "foods") {
@@ -119,6 +124,10 @@ export function AppNavigator() {
     />;
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
     content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
+  } else if (route.name === "nutrition-scan") {
+    content = <NutritionScanScreen onCancel={() => setRoute({ name: "foods" })} onReady={(draft) => setRoute({ name: "nutrition-confirm", draft })} />;
+  } else if (route.name === "nutrition-confirm") {
+    content = <NutritionConfirmationScreen initialDraft={route.draft} onCancel={() => setRoute({ name: "foods" })} onCreated={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "new-food") {
     content = <FoodFormScreen onCancel={() => setRoute({ name: "foods" })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "food-detail") {
@@ -285,6 +294,7 @@ export function AppNavigator() {
         message={foodMessage}
         onMessageExpired={() => setFoodMessage(null)}
         onOpenSettings={() => setRoute({ name: "settings", origin: settingsOriginForRoute(route.name) })}
+        onScanNutritionLabel={() => setRoute({ name: "nutrition-scan" })}
       />
     );
   }

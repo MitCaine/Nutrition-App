@@ -6,6 +6,8 @@ Stage 6A adds a deterministic, backend-owned parser for normalized OCR text. It 
 
 `POST /api/v1/ocr/nutrition-label/parse` accepts `full_text` plus ordered normalized OCR observations containing an ID, text, confidence, and optional normalized bounding box. Apple-specific image and observation types remain on mobile.
 
+When observations are nonempty they are the sole authoritative text source. `full_text` is fallback-only when observations are absent; it is never merged with or used to repair observation-backed input.
+
 The parser is split into explicit stages:
 
 1. normalize OCR text into deterministic source lines;
@@ -73,4 +75,4 @@ npm test -- --runInBand
 npm run typecheck
 ```
 
-Stage 6B must provide user confirmation/editing, decide which serving definition to persist, compare parser suggestions with confirmed/edited values, and only then create or update Foods. Physical-device Stage 5 camera and overlay QA remains outstanding before geometry is used as stronger parsing evidence.
+Stage 6B provides this explicit confirmation and atomic Manual Food/trace creation; see `docs/stage6-confirmation.md`. Physical-device Stage 5 camera and overlay QA remains outstanding, and parsing still does not rely on geometry.

@@ -53,6 +53,8 @@ class ParsedSourceLine(BaseModel):
     confidence: float
     reason: str | None = None
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class ParsedField(BaseModel):
     value: Decimal | str | bool | None
@@ -63,6 +65,8 @@ class ParsedField(BaseModel):
     status: ParseStatus
     warning_codes: list[str] = Field(default_factory=list)
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class ParsedServingInfo(BaseModel):
     servings_per_container: ParsedField
@@ -71,6 +75,8 @@ class ParsedServingInfo(BaseModel):
     serving_unit: ParsedField
     gram_weight: ParsedField
     approximate: ParsedField
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ParsedNutrient(BaseModel):
@@ -84,11 +90,15 @@ class ParsedNutrient(BaseModel):
     status: ParseStatus
     warning_codes: list[str] = Field(default_factory=list)
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class ParseWarning(BaseModel):
     code: str
     message: str
     source_observation_ids: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ParsedNutritionLabel(BaseModel):
@@ -98,3 +108,5 @@ class ParsedNutritionLabel(BaseModel):
     unparsed_lines: list[ParsedSourceLine]
     warnings: list[ParseWarning]
     parser_version: str
+
+    model_config = ConfigDict(extra="forbid")

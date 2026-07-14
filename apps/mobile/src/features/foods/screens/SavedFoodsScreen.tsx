@@ -26,9 +26,10 @@ type Props = {
   initialScrollOffset: number;
   onScrollSessionChange: (query: string, offset: number) => void;
   onOpenSettings: () => void;
+  onScanNutritionLabel: () => void;
 };
 
-export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, query, setQuery, message, onMessageExpired, initialScrollOffset, onScrollSessionChange, onOpenSettings }: Props) {
+export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, query, setQuery, message, onMessageExpired, initialScrollOffset, onScrollSessionChange, onOpenSettings, onScanNutritionLabel }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const searchQuery = useDebouncedSearchQuery(query);
@@ -116,6 +117,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
         {sections.showNoFoodsFound ? <Text style={styles.foodMeta}>No foods found.</Text> : null}
       </ScrollView>
       <View style={styles.bottomControls}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Scan nutrition label" onPress={onScanNutritionLabel} style={styles.scanButton}><Text style={styles.scanLabel}>Scan label</Text></Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Add custom food"
@@ -195,6 +197,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   search: { color: theme.colors.text, flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
   searchContainer: { paddingBottom: 8, paddingTop: 10 },
   searchRow: { alignItems: "center", backgroundColor: theme.colors.searchInputSurface, borderColor: theme.colors.searchInputBorder, borderRadius: 8, borderWidth: 1, flexDirection: "row" },
+  scanButton: { alignItems: "center", alignSelf: "flex-start", backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 20, borderWidth: 1, bottom: 69, minHeight: 44, paddingHorizontal: 14, justifyContent: "center", position: "absolute", left: 0, zIndex: 3 },
+  scanLabel: { color: theme.colors.text, fontSize: 15, fontWeight: "700" },
   section: { gap: 4, marginTop: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginTop: 6 },
 }); }

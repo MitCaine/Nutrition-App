@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -62,3 +63,22 @@ def test_golden_corpus_is_normalized_synthetic_and_covers_required_cases() -> No
         assert isinstance(request["full_text"], str)
         assert isinstance(request["observations"], list)
         assert all({"id", "text", "confidence"} <= observation.keys() for observation in request["observations"])
+
+
+@pytest.mark.parametrize("fixture", GOLDEN_FIXTURES, ids=lambda item: f"authority-{item['name']}")
+def test_golden_provenance_uses_observations_exclusively_when_present(fixture: dict) -> None:
+    request = fixture["request"]
+    result = parse_nutrition_label(NutritionLabelParseInput.model_validate(request))
+    source_ids = {
+        source_id
+        for field in [result.calories, *(item.amount for item in result.nutrients)]
+        for source_id in field.source_observation_ids
+    }
+    observation_ids = {item["id"] for item in request["observations"]}
+    if observation_ids:
+        assert source_ids <= observation_ids
+        altered = deepcopy(request)
+        altered["full_text"] = "Calories 9999\nSodium 9999mg"
+        assert parse_nutrition_label(NutritionLabelParseInput.model_validate(altered)) == result
+    else:
+        assert not source_ids

@@ -1,4 +1,10 @@
-from app.models.food import FoodItem, FoodNutrient, FoodSource, ServingDefinition
+from app.models.food import (
+    FoodItem,
+    FoodNutrient,
+    FoodSource,
+    OcrNutritionConfirmationTrace,
+    ServingDefinition,
+)
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe, RecipeIngredient
@@ -16,6 +22,7 @@ __all__ = [
     "FoodNutrient",
     "FoodSource",
     "Nutrient",
+    "OcrNutritionConfirmationTrace",
     "Recipe",
     "RecipeIngredient",
     "RecipePublicationAmountDefinition",

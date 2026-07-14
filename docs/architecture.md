@@ -123,7 +123,7 @@ The `nutrients` table defines nutrient identity and display hierarchy only.
 
 ## Parser Corrections
 
-Stage 6A parsing is a pure backend operation over normalized OCR input. It does not accept images and does not persist requests, drafts, or corrections. Parser suggestions retain source text and observation IDs so a future Stage 6B correction can identify:
+Stage 6A parsing is a pure backend operation over normalized OCR input. It does not accept images and does not persist requests or drafts. Observations are authoritative when present; `full_text` is fallback-only when observations are absent. Parser suggestions retain source text and observation IDs so Stage 6B confirmation can identify:
 
 - `ocr_scan_id`
 - `parse_result_id`
@@ -133,4 +133,4 @@ Stage 6A parsing is a pure backend operation over normalized OCR input. It does 
 - confirmed value
 - user confirmation action
 
-This makes parser regressions testable without requiring an ML feedback system.
+Stage 6B persists this bounded, versioned suggestion/confirmation trace beside an ordinary Manual Food in the same transaction. It never stores the image, image path, complete raw OCR text, or an unbounded parser response. The trace is immutable audit provenance and is not nutrition resolver input. Exact per-user client-request replay is idempotent; payload-changing reuse conflicts. This makes parser regressions and user corrections testable without introducing an ML feedback system.

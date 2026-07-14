@@ -51,6 +51,13 @@ class FoodService:
         self.foods = FoodRepository(db)
 
     def create_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodItem:
+        food = self.build_manual_food(user_id, payload)
+        created = self.foods.add(food)
+        self.db.commit()
+        return created
+
+    def build_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodItem:
+        """Build a normal Manual Food without committing for atomic orchestrators."""
         food = FoodItem(
             id=uuid4(),
             user_id=user_id,
@@ -63,9 +70,7 @@ class FoodService:
         )
         self._replace_servings(food, payload.serving_definitions)
         self._replace_nutrients(food, payload.nutrients)
-        created = self.foods.add(food)
-        self.db.commit()
-        return created
+        return food
 
     def list_foods(
         self,

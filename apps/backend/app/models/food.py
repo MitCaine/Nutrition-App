@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Numeric,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -70,6 +71,36 @@ class FoodItem(Base):
         uselist=False,
         foreign_keys="Recipe.published_food_item_id",
     )
+    ocr_confirmation_trace: Mapped[Optional[OcrNutritionConfirmationTrace]] = relationship(
+        back_populates="food_item",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class OcrNutritionConfirmationTrace(Base):
+    __tablename__ = "ocr_nutrition_confirmation_traces"
+    __table_args__ = (
+        UniqueConstraint("food_item_id", name="uq_ocr_confirmation_food"),
+        UniqueConstraint("user_id", "client_request_id", name="uq_ocr_confirmation_user_request"),
+    )
+
+    id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("users.id"), nullable=False)
+    food_item_id: Mapped[UUID] = mapped_column(
+        GUID(), ForeignKey("food_items.id"), nullable=False
+    )
+    parser_version: Mapped[str] = mapped_column(Text, nullable=False)
+    image_source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    schema_version: Mapped[str] = mapped_column(Text, nullable=False)
+    trace_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    client_request_id: Mapped[UUID] = mapped_column(GUID(), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    food_item: Mapped[FoodItem] = relationship(back_populates="ocr_confirmation_trace")
 
 
 class FoodSource(Base):

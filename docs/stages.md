@@ -79,7 +79,7 @@ Implemented API surface:
 
 - Stage 6A: normalized backend parser pipeline and golden parser fixtures.
 - Stage 6A: deterministic provenance, warnings, confidence ranking, and parse API without persistence.
-- Stage 6B (future): user confirmation/edit screen, Food creation, and correction trace persistence.
+- Stage 6B: production still-image scan, typed parser boundary, explicit confirmation/editing, atomic Manual Food creation, and immutable correction trace persistence with narrow idempotency.
 
 ## Stage 7: Targets + Dashboard Polish
 

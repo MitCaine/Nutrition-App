@@ -9,6 +9,15 @@ from sqlalchemy.orm import Session
 from app.dependencies.database import get_db
 from app.dependencies.user import ensure_dev_user
 from app.ocr.parser import parse_nutrition_label
+from app.ocr.confirmation_schemas import (
+    OcrNutritionConfirmationRequest,
+    OcrNutritionConfirmationResponse,
+)
+from app.ocr.confirmation_service import (
+    OcrConfirmationIdempotencyConflict,
+    OcrConfirmationService,
+)
+from app.schemas.food import FoodResponse
 from app.ocr.schemas import NutritionLabelParseInput, ParsedNutritionLabel
 
 
@@ -56,3 +65,25 @@ def parse_ocr_nutrition_label(
     # while the request and parse result themselves are never persisted.
     ensure_dev_user(db)
     return parse_nutrition_label(payload)
+
+
+@router.post(
+    "/confirm",
+    response_model=OcrNutritionConfirmationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def confirm_ocr_nutrition_label(
+    payload: OcrNutritionConfirmationRequest,
+    db: Session = Depends(get_db),
+) -> OcrNutritionConfirmationResponse:
+    user = ensure_dev_user(db)
+    try:
+        food, trace = OcrConfirmationService(db).confirm(user.id, payload)
+    except OcrConfirmationIdempotencyConflict as exc:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": {"code": "ocr_confirmation_idempotency_conflict", "message": str(exc)}},
+        )
+    return OcrNutritionConfirmationResponse(
+        food=FoodResponse.model_validate(food), trace_id=trace.id
+    )
