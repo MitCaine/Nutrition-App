@@ -24,7 +24,9 @@ function isStructuredLogErrorBody(
     detail !== null &&
     "code" in detail &&
     typeof detail.code === "string" &&
-    (detail.code === "source_food_deleted" || detail.code.startsWith("recipe_log_")) &&
+    (detail.code === "source_food_deleted" ||
+      detail.code === "log_idempotency_payload_conflict" ||
+      detail.code.startsWith("recipe_log_")) &&
     "message" in detail &&
     typeof detail.message === "string" &&
     Boolean(detail.message.trim())

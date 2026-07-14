@@ -3,7 +3,12 @@ import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../src/features/foods/api/types";
-import type { DailyLog, DailyLogEditContext } from "../src/features/logging/api/types";
+import type {
+  DailyLog,
+  DailyLogCreateInput,
+  DailyLogEditContext,
+  DailyLogUpdateInput,
+} from "../src/features/logging/api/types";
 import { LogFoodScreen } from "../src/features/logging/screens/LogFoodScreen";
 
 type Deferred = {
@@ -17,8 +22,12 @@ let mockResolvedQuery: Record<string, unknown>;
 let mockEditContextQuery: Record<string, unknown>;
 let mockCreateDeferred: Deferred;
 let mockUpdateDeferred: Deferred;
-const mockCreateLog = jest.fn(() => mockCreateDeferred.promise);
-const mockUpdateLog = jest.fn(() => mockUpdateDeferred.promise);
+let mockRequestIds: string[];
+const mockCreateLog = jest.fn((_input: DailyLogCreateInput) => mockCreateDeferred.promise);
+const mockUpdateLog = jest.fn((
+  _params: { logId: string; input: Partial<DailyLogUpdateInput> },
+) => mockUpdateDeferred.promise);
+const mockCreateClientRequestId = jest.fn(() => mockRequestIds.shift() as string);
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFood: () => mockFoodQuery,
@@ -31,6 +40,10 @@ jest.mock("../src/features/logging/hooks/useLogs", () => ({
     createLog: { mutateAsync: mockCreateLog },
     updateLog: { mutateAsync: mockUpdateLog },
   }),
+}));
+
+jest.mock("../src/features/logging/utils/clientRequestId", () => ({
+  createClientRequestId: () => mockCreateClientRequestId(),
 }));
 
 const food: Food = {
@@ -102,6 +115,13 @@ beforeEach(() => {
   mockUpdateDeferred = deferred();
   mockCreateLog.mockClear();
   mockUpdateLog.mockClear();
+  mockCreateClientRequestId.mockClear();
+  mockRequestIds = [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+    "00000000-0000-4000-8000-000000000004",
+  ];
   mockFoodQuery = {
     data: food,
     isLoading: false,
@@ -220,6 +240,7 @@ test("create claims synchronously, disables submitted controls, and succeeds onc
 
   expect(mockCreateLog).toHaveBeenCalledTimes(1);
   expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({
+    client_request_id: "00000000-0000-4000-8000-000000000001",
     amount_quantity: "2.5",
     amount_unit: "serving",
     serving_definition_id: "selected-serving",
@@ -240,6 +261,7 @@ test("create claims synchronously, disables submitted controls, and succeeds onc
   });
   expect(onSaved).toHaveBeenCalledTimes(1);
   expect(mockCreateLog).toHaveBeenCalledTimes(1);
+  expect(mockCreateClientRequestId).toHaveBeenCalledTimes(1);
 });
 
 test("edit claims synchronously, preserves revision amount identity, and succeeds once", async () => {
@@ -260,6 +282,8 @@ test("edit claims synchronously, preserves revision amount identity, and succeed
       serving_definition_id: "revision-amount-id",
     }),
   });
+  expect(mockUpdateLog.mock.calls[0][0].input).not.toHaveProperty("client_request_id");
+  expect(mockCreateClientRequestId).not.toHaveBeenCalled();
   const pendingSave = pressableWithText(renderer.root, "Updating...");
   expect(pendingSave.props.accessibilityState).toEqual({ disabled: true, busy: true });
   expect(renderer.root.findByType(TextInput).props.editable).toBe(false);
@@ -312,6 +336,9 @@ test("failed create preserves form and warning dismissal, then permits one retry
     void retry.props.onPress();
   });
   expect(mockCreateLog).toHaveBeenCalledTimes(2);
+  expect(mockCreateLog.mock.calls[0][0].client_request_id).toBe(
+    mockCreateLog.mock.calls[1][0].client_request_id,
+  );
   expect(mockCreateLog).toHaveBeenLastCalledWith(expect.objectContaining({
     amount_quantity: "6",
     serving_definition_id: "selected-serving",
@@ -426,4 +453,69 @@ test("a fresh screen after failure starts unlocked", async () => {
     void pressableWithText(reopened.root, "Save Log").props.onPress();
   });
   expect(mockCreateLog).toHaveBeenCalledTimes(2);
+  expect(mockCreateLog.mock.calls[0][0].client_request_id).not.toBe(
+    mockCreateLog.mock.calls[1][0].client_request_id,
+  );
+});
+
+test.each(["amount", "serving", "unit"] as const)(
+  "changing %s after a failed create starts a new request intent",
+  async (change) => {
+    const renderer = await render(createScreen());
+    act(() => {
+      void pressableWithText(renderer.root, "Save Log").props.onPress();
+    });
+    await act(async () => {
+      mockCreateDeferred.reject(new Error("network failed"));
+      try {
+        await mockCreateDeferred.promise;
+      } catch {
+        // The failed intent remains available only while its payload is unchanged.
+      }
+    });
+
+    if (change === "amount") {
+      await act(async () => renderer.root.findByType(TextInput).props.onChangeText("4"));
+    } else if (change === "serving") {
+      await act(async () => pressableStartingWithText(
+        renderer.root,
+        "Default serving",
+      ).props.onPress());
+    } else {
+      await act(async () => pressableWithText(renderer.root, "Grams").props.onPress());
+    }
+    mockCreateDeferred = deferred();
+    act(() => {
+      void pressableWithText(renderer.root, "Save Log").props.onPress();
+    });
+
+    expect(mockCreateLog).toHaveBeenCalledTimes(2);
+    expect(mockCreateLog.mock.calls[0][0].client_request_id).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(mockCreateLog.mock.calls[1][0].client_request_id).toBe(
+      "00000000-0000-4000-8000-000000000002",
+    );
+  },
+);
+
+test("a successful log followed by a fresh screen uses a new request ID", async () => {
+  const first = await render(createScreen());
+  act(() => {
+    void pressableWithText(first.root, "Save Log").props.onPress();
+  });
+  await act(async () => {
+    mockCreateDeferred.resolve();
+    await mockCreateDeferred.promise;
+  });
+  act(() => first.unmount());
+
+  mockCreateDeferred = deferred();
+  const second = await render(createScreen());
+  act(() => {
+    void pressableWithText(second.root, "Save Log").props.onPress();
+  });
+  expect(mockCreateLog.mock.calls[0][0].client_request_id).not.toBe(
+    mockCreateLog.mock.calls[1][0].client_request_id,
+  );
 });

@@ -15,7 +15,11 @@ from app.schemas.log import (
     DailyLogUpdateRequest,
     DailySummaryResponse,
 )
-from app.services.log_service import LogEditConflictError, LogService
+from app.services.log_service import (
+    LogEditConflictError,
+    LogIdempotencyConflictError,
+    LogService,
+)
 
 router = APIRouter()
 
@@ -29,6 +33,11 @@ def create_log(payload: DailyLogCreateRequest, db: Session = Depends(get_db)) ->
     user = ensure_dev_user(db)
     try:
         return DailyLogResponse.model_validate(_service(db).create_log(user.id, payload))
+    except LogIdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except (LookupError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

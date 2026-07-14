@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Numeric,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -38,6 +39,16 @@ class DailyLog(Base):
             name="fk_daily_logs_publication_revision_owner",
             ondelete="RESTRICT",
         ),
+        CheckConstraint(
+            "(client_request_id IS NULL AND client_request_fingerprint IS NULL) OR "
+            "(client_request_id IS NOT NULL AND client_request_fingerprint IS NOT NULL)",
+            name="ck_daily_logs_client_request_paired",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "client_request_id",
+            name="uq_daily_logs_user_client_request",
+        ),
         ForeignKeyConstraint(
             ["recipe_publication_amount_definition_id", "recipe_publication_revision_id"],
             [
@@ -53,6 +64,8 @@ class DailyLog(Base):
     user_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("users.id"))
     food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"))
     food_name_snapshot: Mapped[Optional[str]] = mapped_column(Text)
+    client_request_id: Mapped[Optional[UUID]] = mapped_column(GUID())
+    client_request_fingerprint: Mapped[Optional[str]] = mapped_column(Text)
     logged_date: Mapped[date] = mapped_column(Date)
     meal_type: Mapped[Optional[str]] = mapped_column(Text)
     amount_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 6))

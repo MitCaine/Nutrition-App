@@ -170,11 +170,15 @@ test("imported USDA food can be logged with default serving and refreshes daily 
     unit: "serving",
     selectedServingId: initialServingId(importedFood),
   });
-  await createLog(input);
+  await createLog({
+    ...input,
+    client_request_id: "00000000-0000-4000-8000-000000000001",
+  });
   invalidateLogDateCaches(queryClient, "2026-07-08");
   const summary = await getDailySummary("2026-07-08");
 
   expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toEqual({
+    client_request_id: "00000000-0000-4000-8000-000000000001",
     food_item_id: "food-usda",
     logged_date: "2026-07-08",
     amount_quantity: "1",

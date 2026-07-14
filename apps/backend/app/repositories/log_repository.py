@@ -33,6 +33,21 @@ class LogRepository:
             raise LookupError("Daily log not found")
         return log
 
+    def get_by_client_request_id(
+        self,
+        user_id: UUID,
+        client_request_id: UUID,
+    ) -> DailyLog | None:
+        statement = (
+            select(DailyLog)
+            .where(
+                DailyLog.user_id == user_id,
+                DailyLog.client_request_id == client_request_id,
+            )
+            .options(selectinload(DailyLog.snapshots), selectinload(DailyLog.food_item))
+        )
+        return self.db.scalars(statement).first()
+
     def get_for_update(self, log_id: UUID, user_id: UUID) -> DailyLog:
         pending_values: dict[str, object] = {}
         existing = next(

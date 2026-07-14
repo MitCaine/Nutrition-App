@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from importlib import import_module
 import os
 from threading import Event, Thread
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import MetaData, create_engine, text
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import MetaData, create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app import models  # noqa: F401
@@ -34,6 +37,9 @@ pytestmark = pytest.mark.postgres_concurrency
 POSTGRES_URL = os.getenv(
     "NUTRITION_TEST_POSTGRES_URL",
     "postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app",
+)
+idempotency_migration = import_module(
+    "app.migrations.versions.0009_log_creation_idempotency"
 )
 
 
@@ -209,6 +215,130 @@ def _manual_log(factory) -> tuple:
             ),
         )
         return user.id, log.id
+
+
+def _manual_create_target(factory) -> tuple:
+    with factory() as db:
+        user = User(id=uuid4(), email=f"manual-create-{uuid4()}@example.test")
+        db.add(user)
+        db.flush()
+        serving = ServingDefinition(
+            id=uuid4(),
+            label="1 portion",
+            quantity=Decimal("1"),
+            unit="portion",
+            gram_weight=Decimal("100"),
+            is_default=True,
+            source="manual",
+            is_user_confirmed=True,
+        )
+        food = FoodItem(
+            id=uuid4(),
+            user_id=user.id,
+            name="Idempotent Concurrent Food",
+            source_type="manual",
+            is_recipe=False,
+            serving_definitions=[serving],
+            nutrients=[
+                FoodNutrient(
+                    id=uuid4(),
+                    nutrient_id="calories",
+                    amount=Decimal("100"),
+                    unit="kcal",
+                    basis="per_serving",
+                    data_status="known",
+                    source="manual",
+                    is_user_confirmed=True,
+                )
+            ],
+        )
+        db.add(food)
+        db.commit()
+        return user.id, food.id, serving.id
+
+
+def test_concurrent_create_with_same_request_id_commits_one_log_and_snapshot_set(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    request_id = uuid4()
+    first_flushed, release = Event(), Event()
+    first_result, second_result = [], []
+
+    def create(result, *, hold=False):
+        with factory() as db:
+            service = LogService(db)
+            if hold:
+                def after_flush(_log):
+                    first_flushed.set()
+                    assert release.wait(5)
+
+                service._after_snapshot_creation = after_flush
+            try:
+                log = service.create_log(
+                    user_id,
+                    DailyLogCreateRequest(
+                        client_request_id=request_id,
+                        food_item_id=food_id,
+                        logged_date=date(2026, 7, 14),
+                        amount_quantity=Decimal("1"),
+                        amount_unit="serving",
+                        serving_definition_id=serving_id,
+                    ),
+                )
+                result.append(log.id)
+            except Exception as exc:
+                result.append(exc)
+
+    first = Thread(target=create, args=(first_result,), kwargs={"hold": True})
+    first.start()
+    assert first_flushed.wait(5)
+    second = Thread(target=create, args=(second_result,))
+    second.start()
+    Event().wait(0.2)
+    assert not second_result
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert len(first_result) == len(second_result) == 1
+    assert first_result[0] == second_result[0]
+    with factory() as db:
+        logs = list(
+            db.scalars(
+                select(DailyLog).where(
+                    DailyLog.user_id == user_id,
+                    DailyLog.client_request_id == request_id,
+                )
+            )
+        )
+        assert len(logs) == 1
+        assert len(logs[0].snapshots) == 1
+
+
+def test_postgres_idempotency_migration_upgrade_and_downgrade(postgres_sessions) -> None:
+    engine = postgres_sessions.kw["bind"]
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            idempotency_migration.downgrade()
+        columns = {column["name"] for column in inspect(connection).get_columns("daily_logs")}
+        assert "client_request_id" not in columns
+
+        with Operations.context(context):
+            idempotency_migration.upgrade()
+        columns = {column["name"] for column in inspect(connection).get_columns("daily_logs")}
+        assert {"client_request_id", "client_request_fingerprint"} <= columns
+
+        with Operations.context(context):
+            idempotency_migration.downgrade()
+        columns = {column["name"] for column in inspect(connection).get_columns("daily_logs")}
+        assert "client_request_id" not in columns
+
+        # Restore the isolated fixture schema for any later test using this factory.
+        with Operations.context(context):
+            idempotency_migration.upgrade()
 
 
 def _run_update(factory, user_id, log_id, payload, *, locked=None, release=None, fail=False, result=None):

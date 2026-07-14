@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from decimal import Decimal
+from hashlib import sha256
+import json
 from uuid import UUID, uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
@@ -37,9 +41,53 @@ from app.schemas.log import (
 )
 
 
+def _creation_fingerprint(payload: DailyLogCreateRequest) -> str:
+    canonical = {
+        "amount_quantity": _canonical_decimal(payload.amount_quantity),
+        "amount_unit": payload.amount_unit,
+        "food_item_id": str(payload.food_item_id),
+        "logged_date": payload.logged_date.isoformat(),
+        "meal_type": payload.meal_type,
+        "notes": payload.notes,
+        "serving_definition_id": (
+            str(payload.serving_definition_id)
+            if payload.serving_definition_id is not None
+            else None
+        ),
+    }
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    return sha256(encoded).hexdigest()
+
+
+def _canonical_decimal(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def _matching_idempotent_log(log: DailyLog, fingerprint: str | None) -> DailyLog:
+    if log.client_request_fingerprint != fingerprint:
+        raise LogIdempotencyConflictError(LogIdempotencyConflictError.message)
+    return log
+
+
+def _is_idempotency_unique_conflict(exc: IntegrityError) -> bool:
+    diagnostic = getattr(exc.orig, "diag", None)
+    if getattr(diagnostic, "constraint_name", None) == "uq_daily_logs_user_client_request":
+        return True
+    message = str(exc.orig).lower()
+    return (
+        "daily_logs.user_id, daily_logs.client_request_id" in message
+        or "uq_daily_logs_user_client_request" in message
+    )
+
+
 class LogEditConflictError(ValueError):
     code = "source_food_deleted"
     message = "This historical entry cannot be edited because its source food was deleted."
+
+
+class LogIdempotencyConflictError(ValueError):
+    code = "log_idempotency_payload_conflict"
+    message = "This request ID was already used for a different Daily Log creation."
 
 
 class LogService:
@@ -51,16 +99,34 @@ class LogService:
         self.recipes = RecipeRepository(db)
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
+        fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
+        if payload.client_request_id is not None:
+            existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
+            if existing is not None:
+                return _matching_idempotent_log(existing, fingerprint)
         try:
             food = self.foods.get_required(payload.food_item_id, user_id)
             if food.is_recipe or food.source_type == "recipe":
                 log = self._create_recipe_log(user_id, food, payload)
             else:
                 log = self._create_food_log(user_id, food, payload)
+            log.client_request_id = payload.client_request_id
+            log.client_request_fingerprint = fingerprint
             created = self.logs.add(log)
             self._after_snapshot_creation(created)
             self.db.commit()
             return created
+        except IntegrityError as exc:
+            self.db.rollback()
+            if (
+                payload.client_request_id is None
+                or not _is_idempotency_unique_conflict(exc)
+            ):
+                raise
+            existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
+            if existing is None:
+                raise
+            return _matching_idempotent_log(existing, fingerprint)
         except Exception:
             self.db.rollback()
             raise

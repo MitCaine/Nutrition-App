@@ -1,12 +1,12 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { DailyLog, DailyLogEditContext, DailyLogInput, DailyLogUpdateInput, DailySummary, DailySummaryResponse } from "./types";
+import type { DailyLog, DailyLogCreateInput, DailyLogEditContext, DailyLogUpdateInput, DailySummary, DailySummaryResponse } from "./types";
 
 export async function listLogs(date: string): Promise<DailyLog[]> {
   const response = await apiRequest<{ logs: DailyLog[] }>(`/logs?date=${encodeURIComponent(date)}`);
   return response.logs;
 }
 
-export function createLog(input: DailyLogInput): Promise<DailyLog> {
+export function createLog(input: DailyLogCreateInput): Promise<DailyLog> {
   return apiRequest<DailyLog>("/logs", { method: "POST", body: JSON.stringify(input) });
 }
 

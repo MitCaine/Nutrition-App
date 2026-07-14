@@ -11,6 +11,8 @@ from app.schemas.nutrition import AggregatedNutrientTotalSchema
 
 
 class DailyLogCreateRequest(BaseModel):
+    # Optional only for legacy callers. Current mobile creation always supplies this UUID.
+    client_request_id: UUID | None = None
     food_item_id: UUID
     logged_date: date
     amount_quantity: DecimalInput

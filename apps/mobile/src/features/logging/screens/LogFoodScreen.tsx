@@ -28,6 +28,7 @@ import {
   type LogFoodInitialAmount,
 } from "../utils/logFoodForm";
 import { logEditErrorMessage } from "../utils/logEditErrors";
+import { createClientRequestId } from "../utils/clientRequestId";
 import { logInputSchema } from "../validation/logValidation";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
@@ -58,6 +59,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
   );
   const initializedCreateFoodId = useRef<string | null>(null);
   const cancelClaimedRef = useRef(false);
+  const createIntentRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const mountedRef = useRef(true);
   const submissionClaimedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +179,17 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       if (log) {
         await mutations.updateLog.mutateAsync({ logId: log.id, input: buildLogUpdateInput(parsed.data) });
       } else {
-        await mutations.createLog.mutateAsync(parsed.data);
+        const fingerprint = JSON.stringify(parsed.data);
+        if (createIntentRef.current?.fingerprint !== fingerprint) {
+          createIntentRef.current = {
+            fingerprint,
+            requestId: createClientRequestId(),
+          };
+        }
+        await mutations.createLog.mutateAsync({
+          ...parsed.data,
+          client_request_id: createIntentRef.current.requestId,
+        });
       }
     } catch (saveError) {
       submissionClaimedRef.current = false;

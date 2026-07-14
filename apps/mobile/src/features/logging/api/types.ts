@@ -1,6 +1,6 @@
 import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
 
-export type DailyLogCreateInput = {
+export type DailyLogInput = {
   food_item_id: string;
   logged_date: string;
   amount_quantity: string;
@@ -10,10 +10,11 @@ export type DailyLogCreateInput = {
   notes?: string | null;
 };
 
-export type DailyLogUpdateInput = Omit<DailyLogCreateInput, "food_item_id">;
+export type DailyLogCreateInput = DailyLogInput & {
+  client_request_id: string;
+};
 
-// Backward-compatible alias for creation call sites.
-export type DailyLogInput = DailyLogCreateInput;
+export type DailyLogUpdateInput = Omit<DailyLogInput, "food_item_id">;
 
 export type DailyLog = {
   id: string;
