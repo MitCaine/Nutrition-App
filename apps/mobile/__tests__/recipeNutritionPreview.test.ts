@@ -32,6 +32,24 @@ test("publish displays the same backend-owned validation message", () => {
   );
 });
 
+test.each([
+  [
+    "recipe_publication_parent_amount_conflict",
+    "Update parent Recipe ingredient amounts before republishing.",
+  ],
+  [
+    "recipe_publication_dependencies_unstable",
+    "Try again when parent Recipe edits are complete.",
+  ],
+])("publication conflict %s displays its actionable detail message", (code, message) => {
+  const error = new ApiError({
+    status: 409,
+    body: { detail: { code, message } },
+    message,
+  });
+  expect(recipeNutritionErrorMessage(error, "Could not publish recipe.")).toBe(message);
+});
+
 test("unstructured errors retain the caller's generic fallback", () => {
   expect(
     recipeNutritionErrorMessage(

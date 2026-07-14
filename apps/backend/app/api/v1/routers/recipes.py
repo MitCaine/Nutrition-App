@@ -19,6 +19,7 @@ from app.schemas.recipe import (
 )
 from app.services.recipe_service import (
     RecipeDependencyError,
+    RecipePublicationDependenciesUnstableError,
     RecipePublicationParentAmountConflictError,
     RecipeService,
 )
@@ -129,6 +130,11 @@ def publish_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipePubl
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.conflict.model_dump(mode="json"),
+        ) from exc
+    except RecipePublicationDependenciesUnstableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

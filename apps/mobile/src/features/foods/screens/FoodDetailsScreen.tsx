@@ -19,13 +19,17 @@ import {
 import { foodDetailLoadState } from "../utils/foodDetailState";
 import { foodDetailActions, isRevisionBackedRecipeDetail } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import {
+  foodDetailLogInitialAmount,
+  type LogFoodInitialAmount,
+} from "../../logging/utils/logFoodForm";
 
 type Props = {
   foodId: string;
   onBack: () => void;
   onDeleted: (message: string) => void;
   onEdit: () => void;
-  onLog: () => void;
+  onLog: (initialAmount?: LogFoodInitialAmount) => void;
 };
 
 export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: Props) {
@@ -151,7 +155,10 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         </View>
       ) : null}
       <View style={styles.actions}>
-        <Pressable onPress={onLog} style={styles.primaryButton}>
+        <Pressable
+          onPress={() => onLog(foodDetailLogInitialAmount(selectedAmount))}
+          style={styles.primaryButton}
+        >
           <Text style={styles.primaryText}>Log</Text>
         </Pressable>
         {actions.canEdit ? (

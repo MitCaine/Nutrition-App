@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,17 +10,21 @@ import {
   View,
 } from "react-native";
 
-import { useFood } from "../../foods/hooks/useFoods";
+import { useFood, useFoodResolvedNutrition } from "../../foods/hooks/useFoods";
 import type { DailyLog } from "../api/types";
 import { useLogEditContext, useLogMutations } from "../hooks/useLogs";
 import {
   buildLogInput,
   buildLogUpdateInput,
+  createServingChoices,
   editServingChoices,
   formatInitialLogAmount,
   formatServingGramWeight,
   initialEditAmountId,
   initialServingId,
+  resolveCreateLogInitialization,
+  shouldApplyCreateLogInitialization,
+  type LogFoodInitialAmount,
 } from "../utils/logFoodForm";
 import { logEditErrorMessage } from "../utils/logEditErrors";
 import { logInputSchema } from "../validation/logValidation";
@@ -32,25 +36,57 @@ type Props = {
   onCancel: () => void;
   onSaved: () => void;
   log?: DailyLog;
+  initialAmount?: LogFoodInitialAmount;
 };
 
-export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
+export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmount }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editContext = useLogEditContext(log?.id ?? null);
   const revisionBacked = editContext.data?.is_revision_backed === true;
   const food = useFood(!log || editContext.data?.is_revision_backed === false ? foodId : null);
+  const resolvedNutrition = useFoodResolvedNutrition(log ? null : foodId);
   const mutations = useLogMutations(date);
   const [amount, setAmount] = useState(formatInitialLogAmount(log?.amount_quantity));
   const [unit, setUnit] = useState<"serving" | "g">(log?.amount_unit ?? "serving");
   const [selectedServingId, setSelectedServingId] = useState<string | null>(
     initialEditAmountId(food.data, log),
   );
+  const [selectedAmountMode, setSelectedAmountMode] = useState<"serving" | "g" | null>(
+    log?.amount_unit ?? null,
+  );
+  const initializedCreateFoodId = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const servings = useMemo(
-    () => editServingChoices(food.data, editContext.data),
-    [editContext.data, food.data],
+    () =>
+      log
+        ? editServingChoices(food.data, editContext.data)
+        : createServingChoices(food.data, resolvedNutrition.data),
+    [editContext.data, food.data, log, resolvedNutrition.data],
   );
+
+  useEffect(() => {
+    if (!shouldApplyCreateLogInitialization({
+      isEditMode: Boolean(log),
+      initializedFoodId: initializedCreateFoodId.current,
+      foodId,
+      authoritativeChoicesReady: Boolean(
+        food.data && resolvedNutrition.data && !resolvedNutrition.isFetching,
+      ),
+    }) || !food.data || !resolvedNutrition.data) {
+      return;
+    }
+    const initialization = resolveCreateLogInitialization(
+      food.data,
+      resolvedNutrition.data,
+      initialAmount,
+    );
+    setAmount(initialization.amount);
+    setUnit(initialization.unit);
+    setSelectedServingId(initialization.selectedAmountId);
+    setSelectedAmountMode(initialization.selectedAmountMode);
+    initializedCreateFoodId.current = foodId;
+  }, [food.data, foodId, initialAmount, log, resolvedNutrition.data, resolvedNutrition.isFetching]);
 
   useEffect(() => {
     if (!selectedServingId) {
@@ -64,12 +100,21 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
 
   function selectUnit(nextUnit: "serving" | "g") {
     setUnit(nextUnit);
+    setSelectedAmountMode(null);
     if (nextUnit === "serving" && !servings.some((serving) => serving.id === selectedServingId)) {
       setSelectedServingId(servings.find((serving) => serving.is_default)?.id ?? servings[0]?.id ?? null);
     }
   }
 
   async function save() {
+    if (!log && (!resolvedNutrition.data || resolvedNutrition.isFetching)) {
+      setError(
+        resolvedNutrition.isError
+          ? logEditErrorMessage(resolvedNutrition.error)
+          : "Loading food amount choices.",
+      );
+      return;
+    }
     if (log && !editContext.data) {
       setError(
         editContext.isError
@@ -83,7 +128,14 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
       return;
     }
     const resolvedServingId = selectedServingId ?? initialServingId(food.data, log?.serving_definition_id);
-    const input = buildLogInput({ foodId, date, amount, unit, selectedServingId: resolvedServingId });
+    const input = buildLogInput({
+      foodId,
+      date,
+      amount,
+      unit,
+      selectedServingId: resolvedServingId,
+      selectedAmountMode,
+    });
     const parsed = logInputSchema.safeParse(input);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Invalid log");
@@ -137,7 +189,10 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log }: Props) {
             {servings.map((serving) => (
               <Pressable
                 key={serving.id}
-                onPress={() => setSelectedServingId(serving.id)}
+                onPress={() => {
+                  setSelectedServingId(serving.id);
+                  setSelectedAmountMode("serving");
+                }}
                 style={[styles.servingButton, selectedServingId === serving.id && styles.active]}
               >
                 <Text style={styles.text}>{serving.label}</Text>

@@ -376,8 +376,14 @@ def test_dependency_restart_limit_returns_predictable_structured_failure(
 
     response = client.post(f"/api/v1/recipes/{child_id}/publish")
 
-    assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "recipe_publication_dependencies_unstable"
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "recipe_publication_dependencies_unstable",
+        "message": (
+            "Recipe dependencies changed repeatedly during publication. "
+            "Try again when parent Recipe edits are complete."
+        ),
+    }
     db_session.expire_all()
     child = db_session.get(Recipe, child_id)
     assert len(

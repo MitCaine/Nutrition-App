@@ -63,6 +63,20 @@ class RecipePublicationParentAmountConflictError(ValueError):
         self.conflict = conflict
 
 
+class RecipePublicationDependenciesUnstableError(ValueError):
+    code = "recipe_publication_dependencies_unstable"
+    message = (
+        "Recipe dependencies changed repeatedly during publication. "
+        "Try again when parent Recipe edits are complete."
+    )
+
+    def __init__(self):
+        super().__init__(self.message)
+
+    def detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.message}
+
+
 class RecipeService:
     def __init__(self, db: Session):
         self.db = db
@@ -454,10 +468,7 @@ class RecipeService:
                 projection,
                 [locked[parent_id] for parent_id in sorted(final_dependency_ids)],
             )
-        raise RecipeNutritionValidationError(
-            "recipe_publication_dependencies_unstable",
-            "Recipe dependencies changed repeatedly during publication. Try again when parent Recipe edits are complete.",
-        )
+        raise RecipePublicationDependenciesUnstableError
 
     def _plan_parent_serving_remaps(
         self,

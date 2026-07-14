@@ -14,6 +14,7 @@ import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { LogFoodScreen } from "../../features/logging/screens/LogFoodScreen";
 import { todayLocalDateString } from "../../features/logging/utils/dailyLogDisplay";
+import type { LogFoodInitialAmount } from "../../features/logging/utils/logFoodForm";
 import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
 import { RecipeDetailScreen } from "../../features/recipes/screens/RecipeDetailScreen";
 import { RecipeFormScreen } from "../../features/recipes/screens/RecipeFormScreen";
@@ -38,7 +39,7 @@ type Route =
   | { name: "new-food" }
   | { name: "food-detail"; foodId: string }
   | { name: "edit-food"; foodId: string }
-  | { name: "log-food"; foodId: string }
+  | { name: "log-food"; foodId: string; initialAmount?: LogFoodInitialAmount }
   | { name: "edit-log"; logId: string }
   | { name: "usda-preview"; fdcId: number }
   | { name: "recipes" }
@@ -121,13 +122,15 @@ export function AppNavigator() {
           setRoute({ name: "foods" });
         }}
         onEdit={() => setRoute({ name: "edit-food", foodId: route.foodId })}
-        onLog={() => setRoute({ name: "log-food", foodId: route.foodId })}
+        onLog={(initialAmount) =>
+          setRoute({ name: "log-food", foodId: route.foodId, initialAmount })
+        }
       />
     );
   } else if (route.name === "edit-food") {
     content = <EditFoodRoute foodId={route.foodId} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "log-food") {
-    content = <LogFoodScreen foodId={route.foodId} date={date} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} />;
+    content = <LogFoodScreen foodId={route.foodId} date={date} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} />;
   } else if (route.name === "edit-log") {
     content = <EditLogRoute logId={route.logId} date={date} onCancel={() => setRoute({ name: "daily-log" })} onSaved={() => setRoute({ name: "daily-log" })} />;
   } else if (route.name === "usda-preview") {
