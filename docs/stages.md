@@ -88,5 +88,6 @@ Implemented API surface:
 - Stage 7A: versioned FDA Daily Values, optional adult maintenance-calorie estimation, manual macro overrides, snapshot-based comparisons, and Settings configuration.
 - Stage 7B: direction-aware Daily Log target progress with explicit FDA reference semantics.
 - Stage 7C: user-scoped Food favorites, actual-use recents, and backend-owned source labels.
-- Dashboard progress bars.
-- Recents/favorites/source labels.
+- Stage 7D: exact duplicate provenance, narrow favorite-race recovery, discovery preview semantics, and original roadmap contract closeout.
+
+The original Stage 1–7 implementation and automated contracts are complete. Release QA remains required for physical OCR capture/overlay behavior, device accessibility, populated discovery lifecycles, themes, keyboard behavior, and live failure recovery. Recommendations, coaching, synchronization, Recipe favorites, and other product expansion remain intentionally deferred.

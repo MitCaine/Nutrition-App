@@ -72,6 +72,10 @@ def test_confirmation_creates_manual_food_and_bounded_trace_atomically(client, d
     body = response.json()
     assert body["food"]["source_type"] == "manual"
     assert body["food"]["source_id"] is None
+    assert body["food"]["source_kind"] == "ocr_confirmed"
+    assert body["food"]["source_label"] == "Scanned label"
+    assert body["food"]["is_favorite"] is False
+    assert body["food"]["can_favorite"] is True
     sodium = next(item for item in body["food"]["nutrients"] if item["nutrient_id"] == "sodium")
     assert sodium["amount"] == "0.000000"
     trace = db_session.get(OcrNutritionConfirmationTrace, UUID(body["trace_id"]))

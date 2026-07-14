@@ -53,7 +53,7 @@ beforeEach(() => {
 
 test("Saved Foods renders compact favorites, recents, all foods, source labels, and accessibility", async () => {
   const renderer = await render(); const text = screenText(renderer.root);
-  expect(text).toContain("Favorites"); expect(text).toContain("Recent"); expect(text).toContain("All Saved Foods");
+  expect(text).toContain("Favorites preview"); expect(text).toContain("Recent preview"); expect(text).toContain("All Saved Foods");
   expect(text.indexOf("Banana")).toBeLessThan(text.lastIndexOf("Greek yogurt"));
   expect(text).toContain("Scanned label"); expect(text).toContain("USDA");
   const favorite = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Greek yogurt, Scanned label, favorite");
@@ -63,7 +63,7 @@ test("Saved Foods renders compact favorites, recents, all foods, source labels, 
 
 test("search retains the full Saved Foods result surface without discovery reordering", async () => {
   const renderer = await render("banana"); const text = screenText(renderer.root);
-  expect(text).toContain("Saved Foods"); expect(text).not.toContain("Favorites"); expect(text).not.toContain("Recent");
+  expect(text).toContain("Saved Foods"); expect(text).not.toContain("Favorites preview"); expect(text).not.toContain("Recent preview");
   await act(async () => renderer.unmount());
 });
 
@@ -83,4 +83,26 @@ test("recent formatting uses device-local readable text and never exposes raw IS
   expect(formatRecentUse("2026-07-14T12:00:00Z", new Date("2026-07-14T18:00:00Z"))).toBe("Used today");
   expect(formatRecentUse("2025-07-14T12:00:00Z", new Date("2026-07-14T18:00:00Z"))).toMatch(/^Used /);
   expect(foodAccessibilityLabel(usda)).toBe("Banana, USDA");
+});
+
+test("discovery headings disclose the intentional five-row preview limit", async () => {
+  mockFavorites = {
+    data: Array.from({ length: 7 }, (_, index) => ({ ...manual, id: `favorite-${index}`, name: `Favorite ${index}` })),
+    isLoading: false, isError: false, refetch: jest.fn(),
+  };
+  mockRecents = {
+    data: Array.from({ length: 10 }, (_, index) => ({
+      food: { ...usda, id: `recent-${index}`, name: `Recent ${index}` },
+      last_used_at: `2026-07-${String(13 - index).padStart(2, "0")}T12:00:00Z`,
+    })),
+    isLoading: false, isError: false, refetch: jest.fn(),
+  };
+  const renderer = await render();
+  const headings = renderer.root.findAll((node) => node.props.accessibilityRole === "header").map(textContent);
+  expect(headings).toEqual(expect.arrayContaining(["Favorites preview", "Recent preview"]));
+  expect(screenText(renderer.root)).toContain("Favorite 4");
+  expect(screenText(renderer.root)).not.toContain("Favorite 5");
+  expect(screenText(renderer.root)).toContain("Recent 4");
+  expect(screenText(renderer.root)).not.toContain("Recent 5");
+  await act(async () => renderer.unmount());
 });

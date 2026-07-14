@@ -177,6 +177,10 @@ def test_first_publish_creates_revision_one_and_projection_from_revision(
     assert recipe.needs_republish is False
     assert response["recipe"]["published_food_item_id"] == str(projection.id)
     assert "active_publication_revision_id" not in response["recipe"]
+    assert response["food"]["source_kind"] == "recipe"
+    assert response["food"]["source_label"] == "Recipe"
+    assert response["food"]["is_favorite"] is False
+    assert response["food"]["can_favorite"] is False
 
 
 def test_republish_appends_revision_and_never_mutates_previous_revision(

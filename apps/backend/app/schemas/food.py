@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.domain.nutrition import NutrientBasis, NutrientDataStatus
@@ -147,7 +147,9 @@ class FoodResponse(BaseModel):
     brand: str | None
     notes: str | None
     source_type: str
-    source_id: str | None
+    source_id: str | None = Field(
+        validation_alias=AliasChoices("presented_source_id", "source_id")
+    )
     is_recipe: bool
     source_kind: Literal["manual", "ocr_confirmed", "usda", "recipe", "duplicate", "legacy"]
     source_label: str

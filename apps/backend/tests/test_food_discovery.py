@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import sqlite3
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,7 +13,7 @@ from app.dependencies.user import ensure_dev_user
 from app.models.food import FoodFavorite, FoodItem
 from app.models.log import DailyLog
 from app.models.user import User
-from app.services.food_service import FoodService
+from app.services.food_service import FoodService, _is_favorite_identity_conflict
 from tests.test_ocr_confirmation import confirmation_payload
 from tests.test_recipe_revision_logging import _published
 from tests.test_stage2_foods import create_food
@@ -173,7 +174,7 @@ def test_source_classification_matrix_and_invalid_recipe_markers(client, db_sess
         manual["id"]: ("manual", "Manual"),
         duplicate["id"]: ("duplicate", "Duplicated Food"),
         usda["id"]: ("usda", "USDA"),
-        legacy["id"]: ("legacy", "Legacy import"),
+        legacy["id"]: ("legacy", "Other source"),
         scan["id"]: ("ocr_confirmed", "Scanned label"),
         recipe["id"]: ("recipe", "Recipe"),
     }
@@ -188,3 +189,140 @@ def test_source_classification_matrix_and_invalid_recipe_markers(client, db_sess
     db_session.commit()
     assert client.get(f"/api/v1/foods/{recipe['id']}").status_code == 409
     assert recipe["id"] not in {item["id"] for item in client.get("/api/v1/foods").json()["foods"]}
+
+
+def test_duplicate_provenance_requires_exact_same_owner_immediate_source(client, db_session: Session):
+    valid_source = create_food(client, "Valid duplicate source")
+    valid = client.post(f"/api/v1/foods/{valid_source['id']}/duplicate").json()
+
+    malformed = create_food(client, "Malformed duplicate claim")
+    missing = create_food(client, "Missing duplicate claim")
+    self_reference = create_food(client, "Self duplicate claim")
+    foreign_claim = create_food(client, "Foreign duplicate claim")
+    other = User(id=uuid4(), email="duplicate-foreign@example.test")
+    db_session.add(other)
+    db_session.flush()
+    foreign_source = FoodItem(
+        id=uuid4(), user_id=other.id, name="Foreign source", source_type="manual", is_recipe=False
+    )
+    db_session.add(foreign_source)
+    db_session.flush()
+    db_session.get(FoodItem, UUID(malformed["id"])).source_id = "not-a-food-uuid"
+    db_session.get(FoodItem, UUID(missing["id"])).source_id = str(uuid4())
+    db_session.get(FoodItem, UUID(self_reference["id"])).source_id = self_reference["id"]
+    db_session.get(FoodItem, UUID(foreign_claim["id"])).source_id = str(foreign_source.id)
+    db_session.commit()
+
+    assert client.get(f"/api/v1/foods/{valid['id']}").json()["source_kind"] == "duplicate"
+    for food in (malformed, missing, self_reference, foreign_claim):
+        response = client.get(f"/api/v1/foods/{food['id']}")
+        assert response.status_code == 200
+        assert response.json()["source_kind"] == "legacy"
+        assert response.json()["source_label"] == "Other source"
+        assert response.json()["source_id"] is None
+
+
+def test_duplicate_lifecycle_covers_all_sources_and_keeps_immediate_origin(client, db_session: Session):
+    manual = create_food(client, "Manual original")
+    usda = create_food(client, "USDA original")
+    db_session.get(FoodItem, UUID(usda["id"])).source_type = "usda"
+    db_session.get(FoodItem, UUID(usda["id"])).source_id = "987654"
+    db_session.commit()
+    ocr = client.post(
+        "/api/v1/ocr/nutrition-label/confirm", json=confirmation_payload()
+    ).json()["food"]
+    recipe_id, recipe = _published(client)
+
+    duplicates = {
+        "manual": (manual, client.post(f"/api/v1/foods/{manual['id']}/duplicate").json()),
+        "usda": (usda, client.post(f"/api/v1/foods/{usda['id']}/duplicate").json()),
+        "ocr": (ocr, client.post(f"/api/v1/foods/{ocr['id']}/duplicate").json()),
+        "recipe": (recipe, client.post(f"/api/v1/foods/{recipe['id']}/duplicate").json()),
+    }
+    for original, duplicate in duplicates.values():
+        assert duplicate["source_kind"] == "duplicate"
+        assert duplicate["source_id"] == original["id"]
+        assert duplicate["source_type"] == "manual"
+        assert duplicate["is_recipe"] is False
+        assert duplicate["is_favorite"] is False
+        assert db_session.scalars(
+            select(FoodItem).where(FoodItem.id == UUID(duplicate["id"]))
+        ).first().ocr_confirmation_trace is None
+
+    first_duplicate = duplicates["manual"][1]
+    duplicate_of_duplicate = client.post(
+        f"/api/v1/foods/{first_duplicate['id']}/duplicate"
+    ).json()
+    assert duplicate_of_duplicate["source_kind"] == "duplicate"
+    assert duplicate_of_duplicate["source_id"] == first_duplicate["id"]
+
+    edited = client.patch(
+        f"/api/v1/foods/{first_duplicate['id']}", json={"name": "Edited duplicate"}
+    )
+    assert edited.status_code == 200
+    assert edited.json()["source_kind"] == "duplicate"
+    assert client.delete(f"/api/v1/foods/{manual['id']}").status_code == 200
+    assert client.get(f"/api/v1/foods/{first_duplicate['id']}").json()["source_kind"] == "duplicate"
+
+    recipe_duplicate = duplicates["recipe"][1]
+    assert client.post(f"/api/v1/recipes/{recipe_id}/publish").status_code == 200
+    after_republication = client.get(f"/api/v1/foods/{recipe_duplicate['id']}").json()
+    assert after_republication["source_kind"] == "duplicate"
+    assert after_republication["source_id"] == recipe["id"]
+
+
+def test_duplicate_source_validation_uses_one_bounded_lookup(client, db_session: Session):
+    source = create_food(client, "Batch source")
+    for index in range(12):
+        response = client.post(f"/api/v1/foods/{source['id']}/duplicate")
+        assert response.status_code == 201, index
+
+    statements: list[str] = []
+
+    def capture(_connection, _cursor, statement, _params, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", capture)
+    try:
+        listed = FoodService(db_session).list_foods(ensure_dev_user(db_session).id)
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", capture)
+    assert sum(food.source_kind == "duplicate" for food in listed) == 12
+    duplicate_identity_queries = [
+        statement
+        for statement in statements
+        if "FROM food_items" in statement and "food_items.id IN" in statement
+    ]
+    assert len(duplicate_identity_queries) == 1
+    assert len(statements) <= 9
+
+
+def test_favorite_identity_conflict_classifier_is_narrow_and_unrelated_error_propagates(
+    client, db_session: Session, monkeypatch
+):
+    identity_error = IntegrityError(
+        "INSERT",
+        {},
+        sqlite3.IntegrityError(
+            "UNIQUE constraint failed: food_favorites.user_id, food_favorites.food_item_id"
+        ),
+    )
+    unrelated_error = IntegrityError(
+        "INSERT", {}, sqlite3.IntegrityError("FOREIGN KEY constraint failed")
+    )
+    assert _is_favorite_identity_conflict(identity_error) is True
+    assert _is_favorite_identity_conflict(unrelated_error) is False
+
+    food = create_food(client, "Existing favorite")
+    assert client.put(f"/api/v1/foods/{food['id']}/favorite").status_code == 200
+
+    def fail_commit():
+        raise unrelated_error
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+    with pytest.raises(IntegrityError) as raised:
+        FoodService(db_session).set_favorite(
+            ensure_dev_user(db_session).id, UUID(food["id"]), favorite=True
+        )
+    assert raised.value is unrelated_error

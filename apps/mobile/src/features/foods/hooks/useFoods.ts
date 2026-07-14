@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 
 import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutrition, listFavoriteFoods, listFoods, listNutrients, listRecentFoods, setFoodFavorite, updateFood } from "../api/foodApi";
 import type { FoodDeleteResult, FoodMutationInput } from "../api/types";
+
+export function invalidateFoodDiscoveryCaches(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: ["foods"] });
+}
 
 export function useNutrients() {
   return useQuery({ queryKey: ["nutrients"], queryFn: listNutrients });
@@ -44,10 +49,10 @@ export function useFoodResolvedNutrition(foodId: string | null) {
 
 export function useFoodMutations() {
   const queryClient = useQueryClient();
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["foods"] });
+  const invalidate = () => invalidateFoodDiscoveryCaches(queryClient);
   const invalidateAfterDelete = (result: FoodDeleteResult) => {
     queryClient.removeQueries({ queryKey: ["foods", result.food_id] });
-    queryClient.invalidateQueries({ queryKey: ["foods"] });
+    invalidateFoodDiscoveryCaches(queryClient);
     queryClient.invalidateQueries({ queryKey: ["recipes"] });
     for (const recipe of result.affected_recipes) {
       queryClient.invalidateQueries({ queryKey: ["recipes", recipe.recipe_id] });

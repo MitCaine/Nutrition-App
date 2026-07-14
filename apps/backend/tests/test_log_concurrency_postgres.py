@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models  # noqa: F401
 from app.catalog.nutrients import nutrient_seed_rows
 from app.core.database import Base
-from app.models.food import FoodItem, FoodNutrient, ServingDefinition
+from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
 from app.models.food import OcrNutritionConfirmationTrace
 from app.models.log import DailyLog
 from app.models.nutrient import Nutrient
@@ -36,6 +36,7 @@ from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
 from app.ocr.confirmation_service import OcrConfirmationService
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
+from app.services.food_service import FoodService
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -452,6 +453,74 @@ def test_concurrent_same_id_confirmation_commits_one_food_and_trace(
         assert db.scalar(
             select(func.count()).select_from(FoodItem).where(FoodItem.user_id == user_id)
         ) == 1
+
+
+def test_concurrent_favorite_creation_recovers_only_identity_race(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"favorite-concurrency-{uuid4()}@example.test")
+        other = User(id=uuid4(), email=f"favorite-independent-{uuid4()}@example.test")
+        db.add_all([user, other])
+        db.flush()
+        food = FoodItem(
+            id=uuid4(), user_id=user.id, name="Concurrent favorite", source_type="manual",
+            source_id=None, is_recipe=False,
+        )
+        other_food = FoodItem(
+            id=uuid4(), user_id=other.id, name="Independent favorite", source_type="manual",
+            source_id=None, is_recipe=False,
+        )
+        db.add_all([food, other_food])
+        db.commit()
+        user_id, food_id = user.id, food.id
+        other_user_id, other_food_id = other.id, other_food.id
+
+    first_flushed, release = Event(), Event()
+    first_result: list = []
+    second_result: list = []
+
+    def favorite(result, *, hold=False):
+        with factory() as db:
+            service = FoodService(db)
+            if hold:
+                def after_creation(_favorite):
+                    first_flushed.set()
+                    assert release.wait(5)
+
+                service._after_favorite_creation = after_creation
+            try:
+                presented = service.set_favorite(user_id, food_id, favorite=True)
+                result.append((presented.id, presented.is_favorite))
+            except Exception as exc:
+                result.append(exc)
+
+    first = Thread(target=favorite, args=(first_result,), kwargs={"hold": True})
+    first.start()
+    assert first_flushed.wait(5)
+    second = Thread(target=favorite, args=(second_result,))
+    second.start()
+    Event().wait(0.2)
+    assert not second_result
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert first_result == [(food_id, True)]
+    assert second_result == [(food_id, True)]
+    with factory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(FoodFavorite).where(
+                FoodFavorite.user_id == user_id,
+                FoodFavorite.food_item_id == food_id,
+            )
+        ) == 1
+        independent = FoodService(db).set_favorite(
+            other_user_id, other_food_id, favorite=True
+        )
+        assert independent.is_favorite is True
+        assert db.scalar(select(func.count()).select_from(FoodFavorite)) == 2
 
 
 def test_postgres_target_override_uniqueness(postgres_sessions) -> None:

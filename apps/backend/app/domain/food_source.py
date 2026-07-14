@@ -23,7 +23,7 @@ SOURCE_LABELS = {
     "usda": "USDA",
     "recipe": "Recipe",
     "duplicate": "Duplicated Food",
-    "legacy": "Legacy import",
+    "legacy": "Other source",
 }
 
 
@@ -32,6 +32,7 @@ def classify_food_source(
     linked_recipe: Recipe | None,
     *,
     has_same_owner_ocr_trace: bool,
+    has_valid_duplicate_source: bool,
 ) -> FoodSourceClassification | None:
     projection = classify_recipe_projection(food, linked_recipe)
     if projection.kind == RecipeProjectionKind.INTEGRITY_INVALID:
@@ -42,8 +43,16 @@ def classify_food_source(
         return FoodSourceClassification("ocr_confirmed", SOURCE_LABELS["ocr_confirmed"], True)
     if food.source_type == "usda":
         return FoodSourceClassification("usda", SOURCE_LABELS["usda"], True)
-    if food.source_type == "manual" and food.source_id:
+    if (
+        food.source_type == "manual"
+        and food.is_recipe is False
+        and food.recipe_publication_revision_id is None
+        and not has_same_owner_ocr_trace
+        and has_valid_duplicate_source
+    ):
         return FoodSourceClassification("duplicate", SOURCE_LABELS["duplicate"], True)
+    if food.source_type == "manual" and food.source_id:
+        return FoodSourceClassification("legacy", SOURCE_LABELS["legacy"], True)
     if food.source_type == "manual":
         return FoodSourceClassification("manual", SOURCE_LABELS["manual"], True)
     return FoodSourceClassification("legacy", SOURCE_LABELS["legacy"], True)

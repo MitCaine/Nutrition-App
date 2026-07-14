@@ -70,6 +70,10 @@ def create_food(client: TestClient, name: str = "Greek Yogurt") -> dict:
 
 def test_food_create_retrieve_search_update_duplicate_and_soft_delete(client: TestClient) -> None:
     food = create_food(client)
+    assert food["source_kind"] == "manual"
+    assert food["source_label"] == "Manual"
+    assert food["is_favorite"] is False
+    assert food["can_favorite"] is True
 
     detail = client.get(f"/api/v1/foods/{food['id']}")
     assert detail.status_code == 200
@@ -84,11 +88,15 @@ def test_food_create_retrieve_search_update_duplicate_and_soft_delete(client: Te
     update = client.patch(f"/api/v1/foods/{food['id']}", json=updated_payload)
     assert update.status_code == 200, update.text
     assert update.json()["name"] == "Plain Greek Yogurt"
+    assert update.json()["source_kind"] == "manual"
     assert next(n for n in update.json()["nutrients"] if n["nutrient_id"] == "protein")["amount"] == "22.000000"
 
     duplicate = client.post(f"/api/v1/foods/{food['id']}/duplicate")
     assert duplicate.status_code == 201
     assert duplicate.json()["id"] != food["id"]
+    assert duplicate.json()["source_kind"] == "duplicate"
+    assert duplicate.json()["source_label"] == "Duplicated Food"
+    assert duplicate.json()["is_favorite"] is False
 
     delete = client.delete(f"/api/v1/foods/{food['id']}")
     assert delete.status_code == 200

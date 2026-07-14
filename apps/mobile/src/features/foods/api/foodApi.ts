@@ -1,12 +1,20 @@
 import { apiRequest } from "../../../shared/api/client";
 import type { Food, FoodDeleteResult, FoodMutationInput, FoodResolvedNutrition, NutrientDefinition, RecentFood, ServingDefinitionInput } from "./types";
 
-const SOURCE_KINDS = new Set(["manual", "ocr_confirmed", "usda", "recipe", "duplicate", "legacy"]);
+const SOURCE_LABELS = {
+  manual: "Manual",
+  ocr_confirmed: "Scanned label",
+  usda: "USDA",
+  recipe: "Recipe",
+  duplicate: "Duplicated Food",
+  legacy: "Other source",
+} as const;
 
 export function validateFoodSourceContract(value: unknown): Food {
   if (!value || typeof value !== "object") throw new Error("Invalid Food response");
   const food = value as Record<string, unknown>;
-  if (!SOURCE_KINDS.has(String(food.source_kind)) || typeof food.source_label !== "string" || typeof food.is_favorite !== "boolean" || typeof food.can_favorite !== "boolean") {
+  const sourceKind = food.source_kind as keyof typeof SOURCE_LABELS;
+  if (!(sourceKind in SOURCE_LABELS) || food.source_label !== SOURCE_LABELS[sourceKind] || typeof food.is_favorite !== "boolean" || typeof food.can_favorite !== "boolean") {
     throw new Error("Invalid Food source contract");
   }
   return value as Food;
@@ -34,7 +42,12 @@ export async function getFood(foodId: string): Promise<Food> {
 
 export async function listFavoriteFoods(): Promise<Food[]> {
   const response = await apiRequest<{ foods: unknown[] }>("/foods/favorites");
-  return response.foods.map(validateFoodSourceContract);
+  const seen = new Set<string>();
+  return response.foods.map(validateFoodSourceContract).filter((food) => {
+    if (seen.has(food.id)) return false;
+    seen.add(food.id);
+    return true;
+  });
 }
 
 export async function listRecentFoods(limit = 10): Promise<RecentFood[]> {

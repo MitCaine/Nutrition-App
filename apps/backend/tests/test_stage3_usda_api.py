@@ -77,6 +77,10 @@ def test_usda_import_endpoint_returns_existing_active_duplicate(
     assert second.json()["id"] == first.json()["id"]
     assert second.json()["source_type"] == "usda"
     assert second.json()["source_id"] == "1105314"
+    assert second.json()["source_kind"] == "usda"
+    assert second.json()["source_label"] == "USDA"
+    assert second.json()["is_favorite"] is False
+    assert second.json()["can_favorite"] is True
 
 
 def test_imported_usda_food_detail_api_preserves_nutrient_and_serving_distinctions(

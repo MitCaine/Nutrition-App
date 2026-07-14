@@ -72,3 +72,30 @@ test("malformed source kinds and recent timestamps fail safely", async () => {
   global.fetch = jest.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ foods: [{ food: manual, last_used_at: "not-a-time" }] }) });
   await expect(listRecentFoods()).rejects.toThrow("timestamp");
 });
+
+test("source labels must exactly match the backend-owned source kind", async () => {
+  global.fetch = jest.fn().mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ foods: [{ ...manual, source_kind: "legacy", source_label: "Legacy import" }] }),
+  });
+  await expect(listFavoriteFoods()).rejects.toThrow("source contract");
+
+  global.fetch = jest.fn().mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ foods: [{ ...manual, source_kind: "legacy", source_label: "Other source" }] }),
+  });
+  await expect(listFavoriteFoods()).resolves.toMatchObject([
+    { source_kind: "legacy", source_label: "Other source" },
+  ]);
+});
+
+test("a converged favorite response cannot render duplicate Food identities", async () => {
+  global.fetch = jest.fn().mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ foods: [manual, { ...manual }] }),
+  });
+  await expect(listFavoriteFoods()).resolves.toEqual([manual]);
+});

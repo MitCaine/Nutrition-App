@@ -41,6 +41,26 @@ from app.schemas.food import (
 )
 
 
+FAVORITE_IDENTITY_CONSTRAINT = "food_favorites_pkey"
+
+
+def _is_favorite_identity_conflict(exc: IntegrityError) -> bool:
+    """Recognize only the per-user/Food favorite identity violation.
+
+    PostgreSQL reports the primary-key constraint name. SQLite does not expose a
+    constraint name, so its exact two-column UNIQUE diagnostic is the narrow
+    equivalent used by unit tests.
+    """
+    diagnostic = getattr(exc.orig, "diag", None)
+    if getattr(diagnostic, "constraint_name", None) == FAVORITE_IDENTITY_CONSTRAINT:
+        return True
+    message = str(exc.orig).lower()
+    return (
+        "unique constraint failed: food_favorites.user_id, food_favorites.food_item_id"
+        in message
+    )
+
+
 class FoodDependencyError(ValueError):
     def __init__(self, dependency: FoodDeleteDependencyResponse):
         super().__init__("Food is used by active recipes")
@@ -131,6 +151,7 @@ class FoodService:
                 )
             )
         )
+        duplicate_source_ids = self._valid_duplicate_source_ids(user_id, foods)
         result = []
         for food in foods:
             trace = food.ocr_confirmation_trace
@@ -140,6 +161,7 @@ class FoodService:
                 has_same_owner_ocr_trace=bool(
                     trace is not None and trace.user_id == user_id and food.user_id == user_id
                 ),
+                has_valid_duplicate_source=food.id in duplicate_source_ids,
             )
             if classification is None:
                 if exclude_invalid:
@@ -150,8 +172,59 @@ class FoodService:
             food.source_label = classification.label
             food.can_favorite = classification.can_favorite
             food.is_favorite = food.id in favorite_ids
+            # Invalid Manual duplicate claims fall back to neutral provenance and
+            # never expose the malformed, missing, foreign, or self-referential ID.
+            food.presented_source_id = (
+                None
+                if food.source_type == "manual"
+                and food.source_id
+                and classification.kind == "legacy"
+                else food.source_id
+            )
             result.append(food)
         return result
+
+    def _valid_duplicate_source_ids(
+        self, user_id: UUID, foods: list[FoodItem]
+    ) -> set[UUID]:
+        """Return candidate Food IDs whose immediate duplicate source is owner-valid.
+
+        The source lookup deliberately includes soft-deleted Foods so a duplicate's
+        provenance label remains stable throughout the source lifecycle.
+        """
+        candidates: dict[UUID, UUID] = {}
+        for food in foods:
+            if (
+                food.user_id != user_id
+                or food.source_type != "manual"
+                or food.is_recipe is not False
+                or food.recipe_publication_revision_id is not None
+                or not food.source_id
+            ):
+                continue
+            try:
+                source_id = UUID(food.source_id)
+            except (TypeError, ValueError, AttributeError):
+                continue
+            # Production duplication stores the canonical string form of the UUID.
+            if food.source_id != str(source_id) or source_id == food.id:
+                continue
+            candidates[food.id] = source_id
+        if not candidates:
+            return set()
+        existing_source_ids = set(
+            self.db.scalars(
+                select(FoodItem.id).where(
+                    FoodItem.user_id == user_id,
+                    FoodItem.id.in_(set(candidates.values())),
+                )
+            )
+        )
+        return {
+            food_id
+            for food_id, source_id in candidates.items()
+            if source_id in existing_source_ids
+        }
 
     def list_favorites(self, user_id: UUID) -> list[FoodItem]:
         return self.present_foods(user_id, self.foods.list_favorites(user_id), exclude_invalid=True)
@@ -177,17 +250,27 @@ class FoodService:
         if food is None:
             raise LookupError("Food not found")
         row = self.db.get(FoodFavorite, (user_id, food_id))
-        if favorite and row is None:
-            self.db.add(FoodFavorite(user_id=user_id, food_item_id=food_id))
+        attempted_creation = favorite and row is None
+        if attempted_creation:
+            favorite_row = FoodFavorite(user_id=user_id, food_item_id=food_id)
+            self.db.add(favorite_row)
         elif not favorite and row is not None:
             self.db.delete(row)
         try:
+            if attempted_creation:
+                self.db.flush()
+                self._after_favorite_creation(favorite_row)
             self.db.commit()
-        except IntegrityError:
+        except IntegrityError as exc:
             self.db.rollback()
-            if not favorite or self.db.get(FoodFavorite, (user_id, food_id)) is None:
+            if not attempted_creation or not _is_favorite_identity_conflict(exc):
+                raise
+            if self.db.get(FoodFavorite, (user_id, food_id)) is None:
                 raise
         return self.present_food(user_id, self.foods.get_required(food_id, user_id))
+
+    def _after_favorite_creation(self, _favorite: FoodFavorite) -> None:
+        """Test seam after insert flush and before commit."""
 
     def resolved_nutrition(
         self,

@@ -91,14 +91,14 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
       >
         {!isCurrent ? <Text style={styles.foodMeta}>Searching foods…</Text> : null}
         {showDiscovery ? <View style={styles.section}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>Favorites</Text>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Favorites preview</Text>
           {favorites.isLoading ? <Text accessibilityLiveRegion="polite" style={styles.foodMeta}>Loading favorites…</Text> : null}
           {favorites.isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>Favorites are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry favorites" onPress={() => favorites.refetch()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
           {!favorites.isLoading && !favorites.isError && favorites.data?.length === 0 ? <Text style={styles.foodMeta}>No favorite foods yet.</Text> : null}
           {visibleDiscoveryRows(favorites.data).map((food) => <Pressable accessible accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} key={`favorite-${food.id}`} onPress={() => onOpenFood(food.id)} style={styles.compactRow}><Text style={styles.foodName}>{food.name}</Text><Text style={styles.foodMeta}>{food.source_label} · Favorite</Text></Pressable>)}
         </View> : null}
         {showDiscovery ? <View style={styles.section}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>Recent</Text>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Recent preview</Text>
           {recent.isLoading ? <Text accessibilityLiveRegion="polite" style={styles.foodMeta}>Loading recent foods…</Text> : null}
           {recent.isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>Recent foods are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry recent foods" onPress={() => recent.refetch()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
           {!recent.isLoading && !recent.isError && recent.data?.length === 0 ? <Text style={styles.foodMeta}>No recently logged foods.</Text> : null}
