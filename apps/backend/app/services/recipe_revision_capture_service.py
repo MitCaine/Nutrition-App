@@ -176,6 +176,9 @@ class RecipeRevisionCaptureService:
             )
 
     def _load_recipe(self, recipe_id: UUID, *, lock: bool) -> Recipe | None:
+        # This deliberately unscoped lookup belongs to the operator-only capture
+        # utility. User-facing services must load Recipes through an explicit owner
+        # boundary rather than treating this as a general repository convention.
         statement = select(Recipe).where(Recipe.id == recipe_id)
         if lock:
             statement = statement.with_for_update()
