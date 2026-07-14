@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "httpx2>=2.5,<3",
   "pytest>=8.2",
   "ruff>=0.5",
 ]

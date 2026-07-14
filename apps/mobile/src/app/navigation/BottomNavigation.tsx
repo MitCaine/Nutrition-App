@@ -49,7 +49,7 @@ export function BottomNavigation({
                 size={18}
                 color={selected ? theme.colors.selectedNavigationForeground : theme.colors.inactiveForeground}
               />
-              <Text style={[styles.label, selected ? styles.activeLabel : styles.inactiveLabel]}>
+              <Text maxFontSizeMultiplier={1.5} style={[styles.label, selected ? styles.activeLabel : styles.inactiveLabel]}>
                 {item.label}
               </Text>
             </Pressable>

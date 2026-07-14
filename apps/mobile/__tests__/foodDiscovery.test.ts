@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text } from "react-native";
+import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { Food } from "../src/features/foods/api/types";
@@ -58,6 +58,10 @@ test("Saved Foods renders compact favorites, recents, all foods, source labels, 
   expect(text).toContain("Scanned label"); expect(text).toContain("USDA");
   const favorite = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Greek yogurt, Scanned label, favorite");
   expect(favorite).toBeDefined();
+  expect(renderer.root.findByType(TextInput).props.maxFontSizeMultiplier).toBe(1.5);
+  const fixedLabels = renderer.root.findAllByType(Text).filter((node) => ["Scan label", "+", "Custom Food"].includes(textContent(node)));
+  expect(fixedLabels).toHaveLength(3);
+  expect(fixedLabels.every((node) => node.props.maxFontSizeMultiplier === 1.5)).toBe(true);
   await act(async () => renderer.unmount());
 });
 

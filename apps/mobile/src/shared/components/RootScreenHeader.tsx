@@ -15,7 +15,7 @@ export function RootScreenHeader({ title, onOpenSettings }: Props) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.header}>
-      <Text style={styles.title}>{title}</Text>
+      <Text maxFontSizeMultiplier={1.5} style={styles.title}>{title}</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={OPEN_SETTINGS_ACCESSIBILITY_LABEL}

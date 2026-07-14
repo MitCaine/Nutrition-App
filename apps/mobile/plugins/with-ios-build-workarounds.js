@@ -44,6 +44,29 @@ const podfileBlock = `
       end
     end
 
+    # React Native 0.79's Hermes configuration replacement builds a tar command
+    # by interpolating PODS_ROOT without shell escaping. Route only that script's
+    # artifact lookup through a no-space symlink so Release builds also work when
+    # the repository path contains spaces. Remove after React Native switches to
+    # argument-based process execution or quotes the tarball path.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'hermes-engine'
+
+      target.shell_script_build_phases.each do |phase|
+        next unless phase.name.include?('Replace Hermes for the right configuration')
+
+        safe_root_setup = <<~'SCRIPT'
+          HERMES_SAFE_PODS_ROOT="/tmp/nutrition-app-hermes-pods-\${UID}"
+          ln -sfn "$PODS_ROOT" "$HERMES_SAFE_PODS_ROOT"
+        SCRIPT
+
+        phase.shell_script = safe_root_setup + phase.shell_script.gsub(
+          '-p "$PODS_ROOT"',
+          '-p "$HERMES_SAFE_PODS_ROOT"',
+        )
+      end
+    end
+
     # Expo Constants generates a script phase using \`bash -c\` with an unquoted
     # absolute path. In checkouts with spaces, that fails before the app builds.
     # Keep this scoped to EXConstants and remove it when Expo quotes this phase.

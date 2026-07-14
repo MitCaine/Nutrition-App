@@ -57,7 +57,7 @@ function ProgressRow({ item }: { item: DailyTargetComparisonItem }) {
     <Text accessible={false} style={styles.value}>{detail}</Text>
     <Text accessible={false} style={styles.secondary}>{interpretation}</Text>
     <Text accessible={false} style={styles.direction}>{targetDirectionLabel(item.direction)}{over && item.percentage !== null ? ` · ${percentage}` : ""}</Text>
-    {item.percentage !== null ? <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: boundedProgressValue(item.percentage), text: `${percentage}, ${targetDirectionLabel(item.direction)}` }} style={styles.track}><View style={[styles.fill, limitAttention && styles.limitFill, { width: `${boundedProgressValue(item.percentage)}%` }]} />{over ? <Text accessible={false} style={styles.overflow}>›</Text> : null}</View> : null}
+    {item.percentage !== null ? <View accessible={false} style={styles.track}><View style={[styles.fill, limitAttention && styles.limitFill, { width: `${boundedProgressValue(item.percentage)}%` }]} />{over ? <Text accessible={false} style={styles.overflow}>›</Text> : null}</View> : null}
     {item.noteCode === "protein_percent_dv_labeling_caveat" ? <><Pressable accessibilityRole="button" accessibilityLabel={noteOpen ? "Hide protein Daily Value information" : "Explain protein Daily Value"} onPress={() => setNoteOpen((value) => !value)}><Text style={styles.noteLink}>{noteOpen ? "Hide info" : "Why this reference?"}</Text></Pressable>{noteOpen ? <Text style={styles.secondary}>Protein % Daily Value is generally not required on adult labels unless specific labeling conditions apply.</Text> : null}</> : null}
   </View>;
 }

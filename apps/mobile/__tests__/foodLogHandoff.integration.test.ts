@@ -394,14 +394,14 @@ test("fresh routes isolate Foods and remounting the same Food reapplies new stat
     amountUnit: "serving",
   });
   expect(first.root.findByType(TextInput).props.value).toBe("2");
-  first.unmount();
+  await act(async () => first.unmount());
 
   const foodB = { ...food, id: "food-b", name: "Food B" };
   mockFoodQuery = { ...mockFoodQuery, data: foodB };
   const second = await renderLog(undefined, foodB);
   expect(second.root.findByType(TextInput).props.value).toBe("1");
   expect(second.root.findAllByType(Text).some((node) => textContent(node).includes("no longer available"))).toBe(false);
-  second.unmount();
+  await act(async () => second.unmount());
 
   mockFoodQuery = { ...mockFoodQuery, data: food };
   const reopened = await renderLog({

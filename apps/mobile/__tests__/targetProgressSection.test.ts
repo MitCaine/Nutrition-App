@@ -68,7 +68,9 @@ test("renders direction-aware personal, FDA, unavailable, zero, and uncapped pro
   expect(saturated?.props.accessibilityLabel).toContain("limit reference reached or exceeded");
   expect(saturated?.props.accessibilityLabel).toContain("grams");
   const bars = renderer.root.findAllByType(View).filter((node) => node.props.accessibilityRole === "progressbar");
-  expect(bars.find((node) => node.props.accessibilityValue.text.startsWith("120%"))?.props.accessibilityValue.now).toBe(100);
+  expect(bars).toHaveLength(0);
+  const visualBars = renderer.root.findAllByType(View).filter((node) => node.props.accessible === false);
+  expect(visualBars.length).toBeGreaterThan(0);
   const explain = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Explain protein Daily Value");
   await act(async () => explain?.props.onPress());
   expect(allText(renderer.root)).toContain("generally not required on adult labels");

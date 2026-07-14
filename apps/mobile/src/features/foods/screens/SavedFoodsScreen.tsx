@@ -135,7 +135,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
         {sections.showNoFoodsFound ? <Text style={styles.foodMeta}>No foods found.</Text> : null}
       </ScrollView>
       <View style={styles.bottomControls}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Scan nutrition label" onPress={onScanNutritionLabel} style={styles.scanButton}><Text style={styles.scanLabel}>Scan label</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Scan nutrition label" onPress={onScanNutritionLabel} style={styles.scanButton}><Text maxFontSizeMultiplier={1.5} style={styles.scanLabel}>Scan label</Text></Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Add custom food"
@@ -143,8 +143,8 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
           onPress={onCreate}
           style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
         >
-          <Text style={styles.fabIcon}>+</Text>
-          <Text numberOfLines={1} style={styles.fabLabel}>Custom Food</Text>
+          <Text maxFontSizeMultiplier={1.5} style={styles.fabIcon}>+</Text>
+          <Text maxFontSizeMultiplier={1.5} numberOfLines={1} style={styles.fabLabel}>Custom Food</Text>
         </Pressable>
         <View style={styles.searchContainer}>
           <View style={styles.searchRow}>
@@ -152,6 +152,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
               value={query}
               onChangeText={updateQuery}
               placeholder="Search saved and USDA foods"
+              maxFontSizeMultiplier={1.5}
               style={styles.search}
               autoCapitalize="none"
               returnKeyType="search"
