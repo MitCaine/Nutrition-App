@@ -46,12 +46,18 @@ def classify_recipe_projection(
     if not has_recipe_marker:
         return RecipeProjectionClassification(RecipeProjectionKind.MANUAL, None)
 
-    recipe_id = linked_recipe.id if linked_recipe is not None else source_recipe_id
+    same_owner_link = (
+        linked_recipe is not None and linked_recipe.user_id == food.user_id
+    )
+    # A source marker alone is not trusted identity and may contain a foreign UUID
+    # introduced outside normal services. Only disclose a same-owner Recipe link.
+    recipe_id = linked_recipe.id if same_owner_link else None
     coherent = (
         food.is_recipe
         and food.deleted_at is None
         and food.source_type == "recipe"
         and source_recipe_id is not None
+        and same_owner_link
         and linked_recipe is not None
         and linked_recipe.id == source_recipe_id
         and linked_recipe.user_id == food.user_id

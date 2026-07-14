@@ -52,6 +52,8 @@ def get_food(food_id: UUID, db: Session = Depends(get_db)) -> FoodResponse:
         return FoodResponse.model_validate(_service(db).get_food(user.id, food_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeProjectionMutationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
 @router.get("/{food_id}/resolved-nutrition", response_model=FoodResolvedNutritionResponse)

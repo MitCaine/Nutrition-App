@@ -76,7 +76,10 @@ class FoodRepository:
         or partially linked projections instead of presenting them as editable Foods.
         """
         recipe_backlink = exists(
-            select(Recipe.id).where(Recipe.published_food_item_id == FoodItem.id)
+            select(Recipe.id).where(
+                Recipe.published_food_item_id == FoodItem.id,
+                Recipe.user_id == user_id,
+            )
         )
         statement = (
             select(FoodItem)

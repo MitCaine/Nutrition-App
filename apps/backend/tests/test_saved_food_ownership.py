@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
 from app.models.food import FoodItem
+from app.models.recipe import Recipe
 from app.models.user import User
 from app.repositories.food_repository import FoodRepository
 from tests.test_recipe_revision_logging import _published
@@ -75,7 +76,7 @@ def test_saved_view_conservatively_excludes_partial_recipe_markers(
     assert detail.json()["detail"]["code"] == "recipe_projection_integrity_invalid"
 
 
-def test_foreign_recipe_markers_do_not_affect_user_saved_results(
+def test_foreign_recipe_backlink_does_not_hide_or_reclassify_user_food(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -83,20 +84,21 @@ def test_foreign_recipe_markers_do_not_affect_user_saved_results(
     other = User(id=uuid4(), email=f"other-{uuid4()}@example.test")
     db_session.add(other)
     db_session.flush()
-    foreign_projection = FoodItem(
+    foreign_recipe = Recipe(
         id=uuid4(),
         user_id=other.id,
-        name="Foreign Projection",
-        source_type="recipe",
-        source_id=str(uuid4()),
-        is_recipe=True,
+        name="Foreign Backlink",
+        published_food_item_id=UUID(own["id"]),
     )
-    db_session.add(foreign_projection)
+    db_session.add(foreign_recipe)
     db_session.commit()
 
     assert _ids(client.get("/api/v1/foods", params={"view": "saved"})) == {
         own["id"]
     }
+    detail = client.get(f"/api/v1/foods/{own['id']}/resolved-nutrition")
+    assert detail.status_code == 200
+    assert detail.json()["nutrition_authority"] == "food_item"
 
 
 def test_publication_duplication_republication_and_deletion_follow_saved_ownership(
@@ -153,4 +155,5 @@ def test_saved_query_uses_one_bounded_ownership_subquery_without_per_row_queries
     assert len(foods) == 6
     assert len(statements) == 4
     assert "EXISTS" in statements[0].upper()
+    assert "recipes.user_id" in statements[0]
     assert statements[0].upper().count("SELECT") == 2

@@ -289,6 +289,11 @@ class LogService:
         log: DailyLog,
         payload: DailyLogUpdateRequest,
     ) -> None:
+        if log.food_item.user_id != user_id:
+            raise RecipeNutritionValidationError(
+                "recipe_log_source_food_unavailable",
+                "This entry's source food is no longer available.",
+            )
         revision = self.publications.get(log.recipe_publication_revision_id, user_id)
         if revision is None:
             raise RecipeNutritionValidationError(

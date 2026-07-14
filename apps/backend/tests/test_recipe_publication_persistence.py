@@ -22,6 +22,7 @@ from app.models.recipe_publication import (
     RecipePublicationNutrient,
     RecipePublicationRevision,
 )
+from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 
 publication_migration = import_module("app.migrations.versions.0008_recipe_pub_revisions")
@@ -418,6 +419,24 @@ def test_projection_linkage_is_optional_and_owner_checked(db_session: Session) -
     assert projection.recipe_publication_revision_id == revision.id
 
 
+def test_projection_rejects_foreign_user_revision_marker(db_session: Session) -> None:
+    owned_food = _food(db_session, name="Owned Food")
+    other_user = User(id=uuid4(), email=f"other-{uuid4()}@example.test")
+    db_session.add(other_user)
+    db_session.flush()
+    foreign_recipe = Recipe(id=uuid4(), user_id=other_user.id, name="Foreign Recipe")
+    db_session.add(foreign_recipe)
+    db_session.flush()
+    foreign_revision = _revision(foreign_recipe, 1)
+    db_session.add(foreign_revision)
+    db_session.flush()
+
+    owned_food.recipe_publication_revision_id = foreign_revision.id
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+
 def test_daily_log_revision_links_are_paired_and_amount_membership_is_enforced(
     db_session: Session,
 ) -> None:
@@ -441,6 +460,32 @@ def test_daily_log_revision_links_are_paired_and_amount_membership_is_enforced(
 
     mismatched = _log(db_session, food, revision_id=first.id, amount_id=second_amount.id)
     db_session.add(mismatched)
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+
+def test_daily_log_rejects_foreign_user_revision_and_amount(db_session: Session) -> None:
+    owned_food = _food(db_session, name="Owned Log Food")
+    other_user = User(id=uuid4(), email=f"other-log-{uuid4()}@example.test")
+    db_session.add(other_user)
+    db_session.flush()
+    foreign_recipe = Recipe(id=uuid4(), user_id=other_user.id, name="Foreign Recipe")
+    db_session.add(foreign_recipe)
+    db_session.flush()
+    foreign_revision = _revision(foreign_recipe, 1)
+    foreign_amount = _amount(foreign_revision)
+    db_session.add(foreign_revision)
+    db_session.flush()
+    db_session.add(foreign_amount)
+    db_session.flush()
+
+    _log(
+        db_session,
+        owned_food,
+        revision_id=foreign_revision.id,
+        amount_id=foreign_amount.id,
+    )
+
     with pytest.raises(IntegrityError):
         db_session.flush()
 

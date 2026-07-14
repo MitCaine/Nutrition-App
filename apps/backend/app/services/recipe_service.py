@@ -457,6 +457,8 @@ class RecipeService:
         recipe = self.recipes.get_required(recipe_id, user_id)
         for ingredient in recipe.ingredients:
             food = ingredient.food_item
+            if food.user_id != user_id:
+                raise LookupError("Food not found")
             if food.source_type != "recipe" or food.source_id is None:
                 continue
             try:
@@ -472,6 +474,11 @@ class RecipeService:
     def _calculate_totals(self, recipe: Recipe) -> list[AggregatedNutrientTotal]:
         snapshots: list[NutrientSnapshot] = []
         for ingredient in recipe.ingredients:
+            if ingredient.food_item.user_id != recipe.user_id:
+                raise RecipeNutritionValidationError(
+                    "ingredient_food_unavailable",
+                    "Cannot calculate nutrition because an ingredient food is unavailable.",
+                )
             try:
                 resolved = resolve_nutrition(
                     ingredient.food_item,

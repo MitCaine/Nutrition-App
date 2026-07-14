@@ -181,10 +181,16 @@ class RecipeRevisionCaptureService:
             statement = statement.with_for_update()
         return self.db.scalars(statement).first()
 
-    def _load_projection(self, food_id: UUID, *, lock: bool) -> FoodItem | None:
+    def _load_projection(
+        self,
+        food_id: UUID,
+        user_id: UUID,
+        *,
+        lock: bool,
+    ) -> FoodItem | None:
         statement = (
             select(FoodItem)
-            .where(FoodItem.id == food_id)
+            .where(FoodItem.id == food_id, FoodItem.user_id == user_id)
             .options(
                 selectinload(FoodItem.nutrients),
                 selectinload(FoodItem.serving_definitions),
@@ -241,7 +247,11 @@ class RecipeRevisionCaptureService:
                 recipe=recipe,
             )
 
-        projection = self._load_projection(recipe.published_food_item_id, lock=lock)
+        projection = self._load_projection(
+            recipe.published_food_item_id,
+            recipe.user_id,
+            lock=lock,
+        )
         if projection is None:
             return _Assessment(
                 result=CaptureResult(
@@ -392,7 +402,11 @@ class RecipeRevisionCaptureService:
     def _source_matches(self, recipe: Recipe) -> list[FoodItem]:
         statement = (
             select(FoodItem)
-            .where(FoodItem.source_type == "recipe", FoodItem.source_id == str(recipe.id))
+            .where(
+                FoodItem.user_id == recipe.user_id,
+                FoodItem.source_type == "recipe",
+                FoodItem.source_id == str(recipe.id),
+            )
             .options(
                 selectinload(FoodItem.nutrients),
                 selectinload(FoodItem.serving_definitions),

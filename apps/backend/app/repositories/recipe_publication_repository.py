@@ -70,7 +70,12 @@ class RecipePublicationRepository:
         statement = (
             select(RecipePublicationRevision)
             .join(Recipe, Recipe.active_publication_revision_id == RecipePublicationRevision.id)
-            .where(Recipe.id == recipe_id, Recipe.user_id == user_id)
+            .where(
+                Recipe.id == recipe_id,
+                Recipe.user_id == user_id,
+                RecipePublicationRevision.recipe_id == recipe_id,
+                RecipePublicationRevision.user_id == user_id,
+            )
             .options(
                 selectinload(RecipePublicationRevision.amount_definitions),
                 selectinload(RecipePublicationRevision.nutrients),

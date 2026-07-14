@@ -81,7 +81,14 @@ class FoodService:
         )
 
     def get_food(self, user_id: UUID, food_id: UUID) -> FoodItem:
-        return self.foods.get_required(food_id, user_id)
+        food = self.foods.get_required(food_id, user_id)
+        classification = classify_recipe_projection(
+            food,
+            self._linked_recipe(food.id, user_id),
+        )
+        if classification.kind == RecipeProjectionKind.INTEGRITY_INVALID:
+            raise projection_mutation_error(food, classification, "read")
+        return food
 
     def resolved_nutrition(
         self,
@@ -139,12 +146,19 @@ class FoodService:
     ) -> tuple[FoodItem, Recipe | None, RecipePublicationRevision | None]:
         statement = (
             select(FoodItem, Recipe, RecipePublicationRevision)
-            .outerjoin(Recipe, Recipe.published_food_item_id == FoodItem.id)
+            .outerjoin(
+                Recipe,
+                and_(
+                    Recipe.published_food_item_id == FoodItem.id,
+                    Recipe.user_id == user_id,
+                ),
+            )
             .outerjoin(
                 RecipePublicationRevision,
                 and_(
                     RecipePublicationRevision.id == Recipe.active_publication_revision_id,
                     RecipePublicationRevision.recipe_id == Recipe.id,
+                    RecipePublicationRevision.user_id == user_id,
                 ),
             )
             .where(
@@ -350,15 +364,18 @@ class FoodService:
         user_id: UUID,
         operation: str,
     ) -> None:
-        linked_recipe = self.db.scalars(
-            select(Recipe).where(
-                Recipe.user_id == user_id,
-                Recipe.published_food_item_id == food.id,
-            )
-        ).first()
+        linked_recipe = self._linked_recipe(food.id, user_id)
         classification = classify_recipe_projection(food, linked_recipe)
         if classification.kind != RecipeProjectionKind.MANUAL:
             raise projection_mutation_error(food, classification, operation)
+
+    def _linked_recipe(self, food_id: UUID, user_id: UUID) -> Recipe | None:
+        return self.db.scalars(
+            select(Recipe).where(
+                Recipe.user_id == user_id,
+                Recipe.published_food_item_id == food_id,
+            )
+        ).first()
 
     def _food_recipe_dependencies(self, user_id: UUID, food_id: UUID) -> FoodDeleteDependencyResponse:
         statement = (

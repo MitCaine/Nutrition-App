@@ -429,6 +429,54 @@ def test_cross_user_dependencies_are_not_exposed_or_mutated(
     assert len(db_session.get(Recipe, foreign_parent.id).ingredients) == 1
 
 
+def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    child_id, child_food = _published(client)
+    same_user_parent = _parent_recipe(client, child_food, "Visible Parent")
+    other_user = User(id=uuid4(), email="hidden-parent@example.test")
+    db_session.add(other_user)
+    db_session.flush()
+    foreign_parent = Recipe(
+        id=uuid4(),
+        user_id=other_user.id,
+        name="Secret Foreign Parent",
+        ingredients=[
+            RecipeIngredient(
+                id=uuid4(),
+                food_item_id=UUID(child_food["id"]),
+                position=0,
+                amount_quantity=Decimal("1"),
+                amount_unit="g",
+            )
+        ],
+    )
+    db_session.add(foreign_parent)
+    db_session.commit()
+
+    blocked = client.delete(f"/api/v1/recipes/{child_id}")
+
+    assert blocked.status_code == 409
+    assert [
+        row["recipe_id"] for row in blocked.json()["detail"]["affected_recipes"]
+    ] == [same_user_parent["id"]]
+    assert str(foreign_parent.id) not in blocked.text
+    assert "Secret Foreign Parent" not in blocked.text
+
+    confirmed = client.delete(
+        f"/api/v1/recipes/{child_id}",
+        params={"remove_from_recipes": "true"},
+    )
+
+    assert confirmed.status_code == 204
+    assert client.get(f"/api/v1/recipes/{same_user_parent['id']}").json()[
+        "ingredients"
+    ] == []
+    db_session.expire_all()
+    assert len(db_session.get(Recipe, foreign_parent.id).ingredients) == 1
+
+
 def test_repeated_confirmed_delete_returns_existing_not_found_semantics(
     client: TestClient,
 ) -> None:

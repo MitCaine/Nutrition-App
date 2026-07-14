@@ -231,7 +231,11 @@ def test_missing_projection_is_reported_without_fabricating_history(
 ) -> None:
     recipe, _projection = _published_recipe(client, db_session)
     service = RecipeRevisionCaptureService(db_session)
-    monkeypatch.setattr(service, "_load_projection", lambda _food_id, lock: None)
+    monkeypatch.setattr(
+        service,
+        "_load_projection",
+        lambda _food_id, _user_id, lock: None,
+    )
 
     result = service.capture_one(recipe.id, dry_run=False)
 
@@ -259,7 +263,11 @@ def test_inconsistent_projection_linkage_creates_no_partial_revision(
 
     result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
 
-    assert result.category == CaptureCategory.INCONSISTENT_LINKAGE
+    assert result.category == (
+        CaptureCategory.MISSING_PROJECTION
+        if inconsistency == "owner"
+        else CaptureCategory.INCONSISTENT_LINKAGE
+    )
     assert result.captured is False
     assert _revision_count(db_session) == 0
 
