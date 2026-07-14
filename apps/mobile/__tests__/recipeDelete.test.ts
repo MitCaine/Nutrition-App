@@ -18,14 +18,14 @@ const dependency = {
       recipe_name: "Published Chili",
       ingredient_occurrence_count: 2,
       is_published: true,
-      needs_republish: true,
+      will_require_republish: true,
     },
     {
       recipe_id: "parent-2",
       recipe_name: "Soup Draft",
       ingredient_occurrence_count: 1,
       is_published: false,
-      needs_republish: false,
+      will_require_republish: false,
     },
   ],
   total_ingredient_rows_affected: 3,
@@ -71,6 +71,16 @@ test.each([
   ["bad row total", { ...dependency, total_ingredient_rows_affected: 2 }],
   ["empty parents", { ...dependency, active_dependent_recipe_count: 0, affected_recipes: [] }],
   ["malformed parent", { ...dependency, affected_recipes: [{ recipe_id: "broken" }] }],
+  [
+    "ambiguous legacy republication field",
+    {
+      ...dependency,
+      affected_recipes: dependency.affected_recipes.map((recipe) => {
+        const { will_require_republish: _removed, ...legacy } = recipe;
+        return { ...legacy, needs_republish: recipe.will_require_republish };
+      }),
+    },
+  ],
 ])("malformed Recipe dependency response fails safely: %s", (_name, detail) => {
   expect(parseRecipeDeleteDependency(dependencyError(detail))).toBeNull();
 });

@@ -14,6 +14,7 @@ from app.models.log import DailyLog
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
+from app.repositories.recipe_repository import RecipeRepository
 from app.services.recipe_service import RecipeService
 from tests.test_recipe_revision_logging import _post_log, _published
 from tests.test_stage2_foods import create_food
@@ -99,7 +100,7 @@ def test_recipe_delete_dependency_conflict_is_structured_and_non_mutating(
                 "recipe_name": "Parent Recipe",
                 "ingredient_occurrence_count": 1,
                 "is_published": False,
-                "needs_republish": False,
+                "will_require_republish": False,
             }
         ],
         "total_ingredient_rows_affected": 1,
@@ -126,13 +127,74 @@ def test_dependency_conflict_reports_multiple_parents_and_duplicate_occurrences(
         value["recipe_id"]: (
             value["ingredient_occurrence_count"],
             value["is_published"],
-            value["needs_republish"],
+            value["will_require_republish"],
         )
         for value in detail["affected_recipes"]
     } == {
         first["id"]: (2, False, False),
         second["id"]: (1, True, True),
     }
+
+
+def test_dependency_metadata_describes_future_republish_even_when_already_stale(
+    client: TestClient,
+) -> None:
+    child_id, child_food = _published(client)
+    parent = _parent_recipe(client, child_food, "Already Stale Parent", publish=True)
+    changed = client.patch(
+        f"/api/v1/recipes/{parent['id']}",
+        json={"name": "Already Stale Parent Updated"},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["needs_republish"] is True
+
+    response = client.delete(f"/api/v1/recipes/{child_id}")
+
+    assert response.status_code == 409
+    affected = response.json()["detail"]["affected_recipes"][0]
+    assert affected["is_published"] is True
+    assert affected["will_require_republish"] is True
+    assert "needs_republish" not in affected
+
+
+def test_dependency_rediscovery_restarts_and_reacquires_complete_sorted_lock_set(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child_id, child_food = _published(client)
+    first = _parent_recipe(client, child_food, "Initially Visible Parent")
+    second = _parent_recipe(client, child_food, "Racing Parent")
+    original_dependencies = RecipeService._dependent_recipe_ids
+    original_lock_many = RecipeRepository.get_many_for_update
+    dependency_scans = 0
+    lock_sets: list[set[UUID]] = []
+
+    def changing_dependencies(service, user_id, projection_id):
+        nonlocal dependency_scans
+        dependency_scans += 1
+        if dependency_scans == 1:
+            return {UUID(first["id"])}
+        return original_dependencies(service, user_id, projection_id)
+
+    def record_lock_set(repository, recipe_ids, user_id):
+        lock_sets.append(set(recipe_ids))
+        return original_lock_many(repository, recipe_ids, user_id)
+
+    monkeypatch.setattr(RecipeService, "_dependent_recipe_ids", changing_dependencies)
+    monkeypatch.setattr(RecipeRepository, "get_many_for_update", record_lock_set)
+
+    response = client.delete(
+        f"/api/v1/recipes/{child_id}",
+        params={"remove_from_recipes": "true"},
+    )
+
+    assert response.status_code == 204, response.text
+    assert lock_sets == [
+        {UUID(str(child_id)), UUID(first["id"])},
+        {UUID(str(child_id)), UUID(first["id"]), UUID(second["id"])},
+    ]
+    assert client.get(f"/api/v1/recipes/{first['id']}").json()["ingredients"] == []
+    assert client.get(f"/api/v1/recipes/{second['id']}").json()["ingredients"] == []
 
 
 def test_confirmed_delete_preserves_parent_order_and_published_state(

@@ -67,8 +67,18 @@ class FoodService:
         self.db.commit()
         return created
 
-    def list_foods(self, user_id: UUID, query: str | None = None) -> list[FoodItem]:
-        return self.foods.list(user_id, query)
+    def list_foods(
+        self,
+        user_id: UUID,
+        query: str | None = None,
+        *,
+        saved_view: bool = False,
+    ) -> list[FoodItem]:
+        return (
+            self.foods.list_saved(user_id, query)
+            if saved_view
+            else self.foods.list(user_id, query)
+        )
 
     def get_food(self, user_id: UUID, food_id: UUID) -> FoodItem:
         return self.foods.get_required(food_id, user_id)

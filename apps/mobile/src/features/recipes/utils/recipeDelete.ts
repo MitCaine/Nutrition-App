@@ -25,7 +25,9 @@ export function recipeDeleteErrorMessage(error: unknown): string {
 }
 
 export function publishedParentWarning(dependency: RecipeDeleteDependency): string | null {
-  const published = dependency.affected_recipes.filter((recipe) => recipe.is_published);
+  const published = dependency.affected_recipes.filter(
+    (recipe) => recipe.will_require_republish,
+  );
   if (published.length === 0) {
     return null;
   }
@@ -72,7 +74,7 @@ function isAffectedRecipe(value: unknown): boolean {
     nonEmptyString(recipe.recipe_name) &&
     positiveInteger(recipe.ingredient_occurrence_count) &&
     typeof recipe.is_published === "boolean" &&
-    typeof recipe.needs_republish === "boolean"
+    typeof recipe.will_require_republish === "boolean"
   );
 }
 

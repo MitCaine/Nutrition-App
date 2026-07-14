@@ -11,6 +11,13 @@ export function useFoods(query: string) {
   return useQuery({ queryKey: ["foods", query], queryFn: () => listFoods(query) });
 }
 
+export function useSavedFoods(query: string) {
+  return useQuery({
+    queryKey: ["foods", "saved", query],
+    queryFn: () => listFoods(query, "saved"),
+  });
+}
+
 export function useFood(foodId: string | null) {
   return useQuery({
     queryKey: ["foods", foodId],

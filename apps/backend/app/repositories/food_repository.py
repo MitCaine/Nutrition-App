@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.food import FoodItem
+from app.models.recipe import Recipe
 
 
 class FoodRepository:
@@ -65,6 +66,40 @@ class FoodRepository:
         if query:
             pattern = f"%{query.strip()}%"
             statement = statement.where(or_(FoodItem.name.ilike(pattern), FoodItem.brand.ilike(pattern)))
+        return list(self.db.scalars(statement).all())
+
+    def list_saved(self, user_id: UUID, query: str | None = None) -> list[FoodItem]:
+        """List Food-owned records while conservatively excluding Recipe ownership markers.
+
+        The bounded NOT EXISTS check protects against a linked Recipe whose projection
+        markers are incomplete. The scalar marker predicates also exclude corrupted
+        or partially linked projections instead of presenting them as editable Foods.
+        """
+        recipe_backlink = exists(
+            select(Recipe.id).where(Recipe.published_food_item_id == FoodItem.id)
+        )
+        statement = (
+            select(FoodItem)
+            .where(
+                FoodItem.user_id == user_id,
+                FoodItem.deleted_at.is_(None),
+                FoodItem.is_recipe.is_(False),
+                FoodItem.source_type != "recipe",
+                FoodItem.recipe_publication_revision_id.is_(None),
+                ~recipe_backlink,
+            )
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+            )
+            .order_by(FoodItem.name)
+        )
+        if query:
+            pattern = f"%{query.strip()}%"
+            statement = statement.where(
+                or_(FoodItem.name.ilike(pattern), FoodItem.brand.ilike(pattern))
+            )
         return list(self.db.scalars(statement).all())
 
     def find_active_by_source(self, user_id: UUID, source_type: str, source_id: str) -> FoodItem | None:

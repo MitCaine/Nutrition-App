@@ -260,7 +260,7 @@ class RecipeDeleteAffectedRecipeResponse(BaseModel):
     recipe_name: str
     ingredient_occurrence_count: int
     is_published: bool
-    needs_republish: bool
+    will_require_republish: bool
 
 
 class RecipeDeleteDependencyResponse(BaseModel):

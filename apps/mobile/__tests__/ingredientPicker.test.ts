@@ -19,16 +19,18 @@ const recipeFood: Food = {
   nutrients: [],
 };
 
-test("ingredient picker includes ordinary foods and excludes published recipe foods", () => {
-  expect(ingredientPickerFoods([ordinaryFood, recipeFood])).toEqual([ordinaryFood]);
+test("ingredient picker includes ordinary foods and published Recipe projections", () => {
+  expect(ingredientPickerFoods([ordinaryFood, recipeFood])).toEqual([ordinaryFood, recipeFood]);
 });
 
 test("ingredient picker preserves existing search-filtered ordinary foods", () => {
   const searchedFoods = [{ ...ordinaryFood, name: "Tomato Paste" }, recipeFood];
-  expect(ingredientPickerFoods(searchedFoods).map((food) => food.name)).toEqual(["Tomato Paste"]);
+  expect(ingredientPickerFoods(searchedFoods).map((food) => food.name)).toEqual([
+    "Tomato Paste",
+    "Chili",
+  ]);
 });
 
-test("saved foods source data can still include published recipe foods", () => {
-  const savedFoods = [ordinaryFood, recipeFood];
-  expect(savedFoods.some((food) => food.is_recipe)).toBe(true);
+test("missing generic source data remains an empty ingredient list", () => {
+  expect(ingredientPickerFoods(undefined)).toEqual([]);
 });

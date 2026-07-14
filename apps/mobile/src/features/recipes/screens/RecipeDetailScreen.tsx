@@ -33,12 +33,13 @@ type Props = {
   onBack: () => void;
   onEdit: () => void;
   onOpenFood: (foodId: string) => void;
+  onLogFood: (foodId: string) => void;
   onDeleted: () => void;
   ingredientFoods?: Food[];
   editBlockedMessage?: string | null;
 };
 
-export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDeleted, ingredientFoods = [], editBlockedMessage }: Props) {
+export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFood, onDeleted, ingredientFoods = [], editBlockedMessage }: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrition = useRecipeNutrition(recipe.id);
   const mutations = useRecipeMutations();
@@ -144,8 +145,30 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
             )}
           </Text>
         ) : null}
-        {recipe.published_food_item_id ? <Text style={styles.success}>Available as a saved food.</Text> : null}
-        {recipe.needs_republish ? <Text style={styles.warning}>Recipe changed since publishing. Republish to update the saved food.</Text> : null}
+        {recipe.published_food_item_id ? (
+          <>
+            <Text style={styles.success}>Published nutrition is available.</Text>
+            <View style={styles.publishedActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="View published Recipe food"
+                onPress={() => onOpenFood(recipe.published_food_item_id as string)}
+                style={[styles.secondaryButton, styles.publishedAction]}
+              >
+                <Text style={styles.text}>View Published Food</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Log Recipe"
+                onPress={() => onLogFood(recipe.published_food_item_id as string)}
+                style={[styles.secondaryButton, styles.publishedAction]}
+              >
+                <Text style={styles.text}>Log Recipe</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+        {recipe.needs_republish ? <Text style={styles.warning}>Recipe changed since publishing. Republish to update its published nutrition.</Text> : null}
         <Pressable
           onPress={publish}
           disabled={!canPublish || mutations.publishRecipe.isPending}
@@ -284,6 +307,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   nutrientValue: { color: recipeNutrientValueColor(theme), flexShrink: 1, fontWeight: "600", textAlign: "right" },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  publishedAction: { alignItems: "center", flex: 1 },
+  publishedActions: { flexDirection: "row", gap: 8 },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   section: { gap: 8 },

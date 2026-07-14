@@ -148,39 +148,47 @@ class RecipeService:
         remove_from_recipes: bool = False,
     ) -> None:
         try:
-            candidate = self.recipes.get_required(recipe_id, user_id)
-            initial_projection_id = candidate.published_food_item_id
-            initial_dependency_ids = (
-                self._dependent_recipe_ids(user_id, initial_projection_id)
-                if initial_projection_id is not None
-                else set()
-            )
-            locked = self.recipes.get_many_for_update(
-                {recipe_id, *initial_dependency_ids},
-                user_id,
-            )
-            recipe = locked.get(recipe_id)
-            if recipe is None:
-                raise LookupError("Recipe not found")
-            projection = (
-                self.foods.get_for_update(recipe.published_food_item_id, user_id)
-                if recipe.published_food_item_id is not None
-                else None
-            )
+            while True:
+                candidate = self.recipes.get_required(recipe_id, user_id)
+                initial_projection_id = candidate.published_food_item_id
+                initial_dependency_ids = (
+                    self._dependent_recipe_ids(user_id, initial_projection_id)
+                    if initial_projection_id is not None
+                    else set()
+                )
+                locked = self.recipes.get_many_for_update(
+                    {recipe_id, *initial_dependency_ids},
+                    user_id,
+                )
+                recipe = locked.get(recipe_id)
+                if recipe is None:
+                    raise LookupError("Recipe not found")
+                if recipe.published_food_item_id != initial_projection_id:
+                    self.db.rollback()
+                    continue
+                projection = (
+                    self.foods.get_for_update(recipe.published_food_item_id, user_id)
+                    if recipe.published_food_item_id is not None
+                    else None
+                )
+                final_dependency_ids = (
+                    self._dependent_recipe_ids(user_id, projection.id)
+                    if projection is not None
+                    else set()
+                )
+                if final_dependency_ids != initial_dependency_ids:
+                    # Dependency writers lock the projection Food before changing
+                    # ingredient references. Once this row is held, the set can no
+                    # longer grow. Restarting releases every lock and reacquires the
+                    # complete changed set in one globally sorted Recipe batch.
+                    self.db.rollback()
+                    continue
+                break
+
             if projection is not None:
                 classification = classify_recipe_projection(projection, recipe)
                 if classification.kind != RecipeProjectionKind.MANAGED:
                     raise projection_mutation_error(projection, classification, "delete")
-
-            final_dependency_ids = (
-                self._dependent_recipe_ids(user_id, projection.id)
-                if projection is not None
-                else set()
-            )
-            newly_discovered = final_dependency_ids.difference(locked)
-            if newly_discovered:
-                locked.update(self.recipes.get_many_for_update(newly_discovered, user_id))
-                final_dependency_ids = self._dependent_recipe_ids(user_id, projection.id)
             dependencies = [
                 locked[parent_id]
                 for parent_id in sorted(final_dependency_ids)
@@ -245,7 +253,7 @@ class RecipeService:
                     for ingredient in parent.ingredients
                 ),
                 is_published=parent.published_food_item_id is not None,
-                needs_republish=parent.published_food_item_id is not None,
+                will_require_republish=parent.published_food_item_id is not None,
             )
             for parent in sorted(dependencies, key=lambda value: value.name.casefold())
         ]

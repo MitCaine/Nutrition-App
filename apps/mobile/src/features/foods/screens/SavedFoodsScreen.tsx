@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { useFoods } from "../hooks/useFoods";
+import { useSavedFoods } from "../hooks/useFoods";
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
 import { formatUsdaNutrientPreview, usdaResultMeta } from "../../usda/utils/usdaDisplay";
 import { unifiedFoodSearchSections } from "../utils/unifiedFoodSearch";
@@ -33,7 +33,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
   const styles = useMemo(() => createStyles(theme), [theme]);
   const searchQuery = useDebouncedSearchQuery(query);
   const isCurrent = isCurrentSearchQuery(query, searchQuery);
-  const foods = useFoods(searchQuery);
+  const foods = useSavedFoods(searchQuery);
   const usda = useUsdaSearch(searchQuery);
   const resultsRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);

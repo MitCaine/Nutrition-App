@@ -185,6 +185,7 @@ export function AppNavigator() {
           setRoute({ name: "edit-recipe", recipeId: route.recipeId });
         }}
         onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
+        onLogFood={(foodId) => setRoute({ name: "log-food", foodId })}
         onDeleted={() => {
           setRecipeMessage("Recipe deleted");
           setRoute({ name: "recipes" });
@@ -289,12 +290,14 @@ function RecipeDetailRoute({
   onBack,
   onEdit,
   onOpenFood,
+  onLogFood,
   onDeleted,
 }: {
   recipeId: string;
   onBack: () => void;
   onEdit: (draft: RecipeDraft) => void;
   onOpenFood: (foodId: string) => void;
+  onLogFood: (foodId: string) => void;
   onDeleted: () => void;
 }) {
   const recipe = useRecipe(recipeId);
@@ -327,6 +330,7 @@ function RecipeDetailRoute({
         }
       }}
       onOpenFood={onOpenFood}
+      onLogFood={onLogFood}
       onDeleted={onDeleted}
       ingredientFoods={loadedFoods}
       editBlockedMessage={

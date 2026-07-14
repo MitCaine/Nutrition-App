@@ -5,8 +5,14 @@ export function listNutrients(): Promise<NutrientDefinition[]> {
   return apiRequest<NutrientDefinition[]>("/nutrients");
 }
 
-export async function listFoods(query?: string): Promise<Food[]> {
-  const suffix = query ? `?q=${encodeURIComponent(query)}` : "";
+export type FoodListView = "saved";
+
+export async function listFoods(query?: string, view?: FoodListView): Promise<Food[]> {
+  const parameters = [
+    query ? `q=${encodeURIComponent(query)}` : null,
+    view ? `view=${view}` : null,
+  ].filter(Boolean);
+  const suffix = parameters.length > 0 ? `?${parameters.join("&")}` : "";
   const response = await apiRequest<{ foods: Food[] }>(`/foods${suffix}`);
   return response.foods;
 }

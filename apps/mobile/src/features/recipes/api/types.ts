@@ -75,7 +75,7 @@ export type RecipeDeleteAffectedRecipe = {
   recipe_name: string;
   ingredient_occurrence_count: number;
   is_published: boolean;
-  needs_republish: boolean;
+  will_require_republish: boolean;
 };
 
 export type RecipeDeleteDependency = {

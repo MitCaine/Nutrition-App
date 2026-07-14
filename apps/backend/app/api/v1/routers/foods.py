@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -35,10 +36,13 @@ def create_food(payload: FoodCreateRequest, db: Session = Depends(get_db)) -> Fo
 @router.get("", response_model=FoodListResponse)
 def list_foods(
     q: str | None = Query(default=None, min_length=1),
+    view: Literal["saved"] | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> FoodListResponse:
     user = ensure_dev_user(db)
-    return FoodListResponse(foods=_service(db).list_foods(user.id, q))
+    return FoodListResponse(
+        foods=_service(db).list_foods(user.id, q, saved_view=view == "saved")
+    )
 
 
 @router.get("/{food_id}", response_model=FoodResponse)
