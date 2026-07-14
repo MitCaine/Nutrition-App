@@ -277,6 +277,26 @@ class RecipeDeleteDependencyResponse(BaseModel):
     total_ingredient_rows_affected: int
 
 
+class RecipePublicationParentAmountConflictIngredientResponse(BaseModel):
+    recipe_id: UUID
+    recipe_name: str
+    ingredient_positions: list[int]
+
+
+class RecipePublicationParentAmountConflictResponse(BaseModel):
+    code: Literal["recipe_publication_parent_amount_conflict"] = (
+        "recipe_publication_parent_amount_conflict"
+    )
+    message: str = (
+        "This Recipe cannot be republished because one or more parent Recipe "
+        "ingredient amounts no longer have an equivalent serving. Update those "
+        "parent Recipe ingredients before republishing."
+    )
+    recipe_id: UUID
+    projection_food_item_id: UUID
+    affected_recipes: list[RecipePublicationParentAmountConflictIngredientResponse]
+
+
 class RecipeNutrientTotalResponse(BaseModel):
     nutrient_id: str
     amount_known: Decimal

@@ -26,6 +26,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "postgres_concurrency: requires a reachable PostgreSQL database",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

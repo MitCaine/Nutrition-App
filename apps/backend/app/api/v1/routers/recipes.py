@@ -17,7 +17,11 @@ from app.schemas.recipe import (
     RecipeResponse,
     RecipeUpdateRequest,
 )
-from app.services.recipe_service import RecipeDependencyError, RecipeService
+from app.services.recipe_service import (
+    RecipeDependencyError,
+    RecipePublicationParentAmountConflictError,
+    RecipeService,
+)
 
 router = APIRouter()
 
@@ -121,5 +125,10 @@ def publish_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> RecipePubl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecipeNutritionValidationError as exc:
         raise HTTPException(status_code=400, detail=exc.detail()) from exc
+    except RecipePublicationParentAmountConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.conflict.model_dump(mode="json"),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

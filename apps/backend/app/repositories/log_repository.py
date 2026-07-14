@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, inspect, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
@@ -31,6 +31,37 @@ class LogRepository:
         log = self.get(log_id, user_id)
         if log is None:
             raise LookupError("Daily log not found")
+        return log
+
+    def get_for_update(self, log_id: UUID, user_id: UUID) -> DailyLog:
+        pending_values: dict[str, object] = {}
+        existing = next(
+            (
+                value
+                for value in self.db.identity_map.values()
+                if isinstance(value, DailyLog) and value.id == log_id
+            ),
+            None,
+        )
+        if existing is not None:
+            state = inspect(existing)
+            pending_values = {
+                attribute.key: getattr(existing, attribute.key)
+                for attribute in state.mapper.column_attrs
+                if state.attrs[attribute.key].history.has_changes()
+            }
+        statement = (
+            select(DailyLog)
+            .where(DailyLog.id == log_id, DailyLog.user_id == user_id)
+            .options(selectinload(DailyLog.snapshots), selectinload(DailyLog.food_item))
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        )
+        log = self.db.scalars(statement).first()
+        if log is None:
+            raise LookupError("Daily log not found")
+        for key, value in pending_values.items():
+            setattr(log, key, value)
         return log
 
     def list_for_date(self, user_id: UUID, logged_date: date) -> list[DailyLog]:

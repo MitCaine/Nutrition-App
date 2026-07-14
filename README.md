@@ -38,6 +38,14 @@ pytest
 uvicorn app.main:app --reload
 ```
 
+PostgreSQL row-lock concurrency tests (the default URL matches `docker-compose.yml`):
+
+```bash
+cd apps/backend
+NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app \
+  pytest -m postgres_concurrency
+```
+
 Database:
 
 ```bash

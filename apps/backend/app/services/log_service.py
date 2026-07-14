@@ -238,7 +238,7 @@ class LogService:
 
     def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
         try:
-            log = self.logs.get_required(log_id, user_id)
+            log = self.logs.get_for_update(log_id, user_id)
             if log.recipe_publication_revision_id is not None:
                 self._update_revision_aware_log(user_id, log, payload)
             else:

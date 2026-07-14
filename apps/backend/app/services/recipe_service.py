@@ -40,18 +40,27 @@ from app.schemas.recipe import (
     RecipeDeleteAffectedRecipeResponse,
     RecipeDeleteDependencyResponse,
     RecipeIngredientInput,
+    RecipePublicationParentAmountConflictIngredientResponse,
+    RecipePublicationParentAmountConflictResponse,
     RecipeUpdateRequest,
     _validate_display_metadata,
 )
 
 UNITS_BY_NUTRIENT_ID = {nutrient.id: nutrient.default_unit for nutrient in NUTRIENT_CATALOG}
 DECIMAL_PLACES = Decimal("0.000001")
+PUBLICATION_DEPENDENCY_RESTART_LIMIT = 3
 
 
 class RecipeDependencyError(ValueError):
     def __init__(self, dependency: RecipeDeleteDependencyResponse):
         super().__init__(dependency.message)
         self.dependency = dependency
+
+
+class RecipePublicationParentAmountConflictError(ValueError):
+    def __init__(self, conflict: RecipePublicationParentAmountConflictResponse):
+        super().__init__(conflict.message)
+        self.conflict = conflict
 
 
 class RecipeService:
@@ -319,7 +328,7 @@ class RecipeService:
 
     def publish(self, user_id: UUID, recipe_id: UUID) -> tuple[Recipe, FoodItem]:
         try:
-            recipe = self.recipes.get_for_update(recipe_id, user_id)
+            recipe, projection, parents = self._lock_publication_graph(user_id, recipe_id)
             if not recipe.serving_count_yield and not recipe.final_cooked_weight_grams:
                 raise ValueError(
                     "Publishing requires serving_count_yield or final_cooked_weight_grams"
@@ -353,13 +362,19 @@ class RecipeService:
                 ),
             )
             validate_revision_resolver_input(revision)
+            serving_remaps = self._plan_parent_serving_remaps(
+                recipe,
+                projection,
+                parents,
+                revision,
+            )
             self.publications.add(revision)
             self._after_revision_insert(revision)
 
             self._assign_active_revision(recipe, revision.id)
             self.db.flush()
             self._after_active_revision_assignment(recipe)
-            projection = self._select_or_create_projection(recipe, user_id)
+            projection = projection or self._select_or_create_projection(recipe, user_id)
             apply_revision_to_projection(
                 projection,
                 revision,
@@ -367,8 +382,10 @@ class RecipeService:
                 user_id=user_id,
                 updated_at=datetime.now(timezone.utc),
             )
+            self._apply_parent_publication_updates(parents, serving_remaps, projection)
             self.db.flush()
             self._after_projection_refresh(projection)
+            self._after_parent_serving_remaps(parents)
             self._link_projection(projection, revision.id)
             self.db.flush()
             self._after_projection_link(projection)
@@ -387,6 +404,151 @@ class RecipeService:
         except Exception:
             self.db.rollback()
             raise
+
+    def _lock_publication_graph(
+        self,
+        user_id: UUID,
+        recipe_id: UUID,
+    ) -> tuple[Recipe, FoodItem | None, list[Recipe]]:
+        for _attempt in range(PUBLICATION_DEPENDENCY_RESTART_LIMIT):
+            candidate = self.recipes.get_required(recipe_id, user_id)
+            initial_backlink_id = candidate.published_food_item_id
+            active_projections = self.foods.list_active_by_source(
+                user_id,
+                "recipe",
+                str(recipe_id),
+            )
+            if len(active_projections) > 1:
+                raise ValueError("Recipe has multiple active compatibility projections")
+            initial_projection_id = active_projections[0].id if active_projections else None
+            initial_dependency_ids = (
+                self._dependent_recipe_ids(user_id, initial_projection_id)
+                if initial_projection_id is not None
+                else set()
+            )
+            locked = self.recipes.get_many_for_update(
+                {recipe_id, *initial_dependency_ids},
+                user_id,
+            )
+            recipe = locked.get(recipe_id)
+            if recipe is None:
+                raise LookupError("Recipe not found")
+            if recipe.published_food_item_id != initial_backlink_id:
+                self.db.rollback()
+                continue
+            projection = (
+                self.foods.get_for_update(initial_projection_id, user_id)
+                if initial_projection_id is not None
+                else None
+            )
+            final_dependency_ids = (
+                self._dependent_recipe_ids(user_id, projection.id)
+                if projection is not None
+                else set()
+            )
+            if final_dependency_ids != initial_dependency_ids:
+                self.db.rollback()
+                continue
+            return (
+                recipe,
+                projection,
+                [locked[parent_id] for parent_id in sorted(final_dependency_ids)],
+            )
+        raise RecipeNutritionValidationError(
+            "recipe_publication_dependencies_unstable",
+            "Recipe dependencies changed repeatedly during publication. Try again when parent Recipe edits are complete.",
+        )
+
+    def _plan_parent_serving_remaps(
+        self,
+        recipe: Recipe,
+        projection: FoodItem | None,
+        parents: list[Recipe],
+        revision,
+    ) -> dict[UUID, int]:
+        if projection is None:
+            return {}
+        old_servings = {serving.id: serving for serving in projection.serving_definitions}
+        new_servings = [
+            amount
+            for amount in revision.amount_definitions
+            if amount.semantic_mode == "serving" and amount.display_quantity is not None
+        ]
+        remaps: dict[UUID, int] = {}
+        conflicts: list[RecipePublicationParentAmountConflictIngredientResponse] = []
+        for parent in parents:
+            positions: list[int] = []
+            for ingredient in parent.ingredients:
+                if ingredient.food_item_id != projection.id or ingredient.amount_unit == "g":
+                    continue
+                old = old_servings.get(ingredient.serving_definition_id)
+                candidates = (
+                    []
+                    if old is None
+                    else [
+                        index
+                        for index, new in enumerate(new_servings)
+                        if self._serving_semantics_equal(old, new)
+                    ]
+                )
+                if len(candidates) != 1:
+                    positions.append(ingredient.position)
+                else:
+                    remaps[ingredient.id] = candidates[0]
+            if positions:
+                conflicts.append(
+                    RecipePublicationParentAmountConflictIngredientResponse(
+                        recipe_id=parent.id,
+                        recipe_name=parent.name,
+                        ingredient_positions=sorted(positions),
+                    )
+                )
+        if conflicts:
+            raise RecipePublicationParentAmountConflictError(
+                RecipePublicationParentAmountConflictResponse(
+                    recipe_id=recipe.id,
+                    projection_food_item_id=projection.id,
+                    affected_recipes=sorted(conflicts, key=lambda row: row.recipe_id),
+                )
+            )
+        return remaps
+
+    @staticmethod
+    def _serving_semantics_equal(old, new) -> bool:
+        def normalized_decimal(value):
+            return value.normalize() if value is not None else None
+
+        return (
+            new.semantic_mode == "serving"
+            and normalized_decimal(old.quantity) == normalized_decimal(new.display_quantity)
+            and old.unit.strip().casefold() == new.display_unit.strip().casefold()
+            and normalized_decimal(old.gram_weight) == normalized_decimal(new.gram_equivalent)
+        )
+
+    def _apply_parent_publication_updates(
+        self,
+        parents: list[Recipe],
+        serving_remaps: dict[UUID, int],
+        projection: FoodItem,
+    ) -> None:
+        new_servings = list(projection.serving_definitions)
+        now = datetime.now(timezone.utc)
+        for parent in parents:
+            for ingredient in parent.ingredients:
+                target_index = serving_remaps.get(ingredient.id)
+                if target_index is not None:
+                    ingredient.serving_definition_id = new_servings[target_index].id
+                    ingredient.resolved_gram_amount = (
+                        ingredient.amount_quantity * new_servings[target_index].gram_weight
+                        if new_servings[target_index].gram_weight is not None
+                        else None
+                    )
+            if parent.published_food_item_id is not None:
+                parent.needs_republish = True
+                parent.updated_at = now
+
+    def _after_parent_serving_remaps(self, _parents: list[Recipe]) -> None:
+        """Test seam after parent ingredient remaps and staleness are flushed."""
 
     def _replace_ingredients(self, user_id: UUID, recipe: Recipe, ingredients: list[RecipeIngredientInput]) -> None:
         recipe.ingredients.extend(self._build_ingredients(user_id, recipe, ingredients))
