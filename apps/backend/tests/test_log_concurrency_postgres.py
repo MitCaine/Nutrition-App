@@ -11,6 +11,7 @@ import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import MetaData, create_engine, func, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app import models  # noqa: F401
@@ -23,6 +24,7 @@ from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
+from app.models.target import NutritionTarget
 from app.publication.recipe_revision import (
     PublishedAmountContent,
     PublishedNutrientContent,
@@ -450,6 +452,28 @@ def test_concurrent_same_id_confirmation_commits_one_food_and_trace(
         assert db.scalar(
             select(func.count()).select_from(FoodItem).where(FoodItem.user_id == user_id)
         ) == 1
+
+
+def test_postgres_target_override_uniqueness(postgres_sessions) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"target-postgres-{uuid4()}@example.test")
+        db.add(user)
+        db.flush()
+        values = {
+            "user_id": user.id,
+            "target_type": "manual_override",
+            "nutrient_id": "protein",
+            "target_amount": Decimal("90"),
+            "unit": "g",
+            "basis": "per_day",
+            "source": "user",
+        }
+        db.add(NutritionTarget(**values))
+        db.flush()
+        db.add(NutritionTarget(**values))
+        with pytest.raises(IntegrityError):
+            db.flush()
 
 
 def test_postgres_idempotency_migration_upgrade_and_downgrade(postgres_sessions) -> None:

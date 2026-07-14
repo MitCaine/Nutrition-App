@@ -38,6 +38,7 @@ import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnost
 import { NutritionScanScreen } from "../../features/ocr/screens/NutritionScanScreen";
 import { NutritionConfirmationScreen } from "../../features/ocr/screens/NutritionConfirmationScreen";
 import type { NutritionConfirmationDraft } from "../../features/ocr/api/types";
+import { TargetSettingsScreen } from "../../features/targets/TargetSettingsScreen";
 
 type Route =
   | { name: "foods" }
@@ -56,6 +57,7 @@ type Route =
   | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" }
   | { name: "settings"; origin: MainTab }
+  | { name: "nutrition-targets"; origin: MainTab }
   | { name: "ocr-diagnostics"; origin: MainTab }
   | { name: "nutrition-scan" }
   | { name: "nutrition-confirm"; draft: NutritionConfirmationDraft };
@@ -85,7 +87,7 @@ export function AppNavigator() {
   const foodSearchScroll = useRef({ query: "", offset: 0 });
   const recipeSearchScroll = useRef({ query: "", offset: 0 });
   const dailyLogScroll = useRef({ date, offset: 0 });
-  const activeTab = route.name === "settings" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
+  const activeTab = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
   const swipeEnabled = isMainTabRoot(route.name);
 
   const selectMainTab = (tab: MainTab) => {
@@ -120,8 +122,11 @@ export function AppNavigator() {
   if (route.name === "settings") {
     content = <SettingsScreen
       onBack={() => setRoute(routeForMainTab(route.origin))}
+      onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: route.origin })}
       onOpenOcrDiagnostics={ocrDiagnosticsEnabled ? () => setRoute({ name: "ocr-diagnostics", origin: route.origin }) : undefined}
     />;
+  } else if (route.name === "nutrition-targets") {
+    content = <TargetSettingsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
     content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
   } else if (route.name === "nutrition-scan") {

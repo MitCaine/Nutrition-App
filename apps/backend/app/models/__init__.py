@@ -14,6 +14,7 @@ from app.models.recipe_publication import (
     RecipePublicationRevision,
 )
 from app.models.user import User, UserProfile
+from app.models.target import NutritionTarget
 
 __all__ = [
     "DailyLog",
@@ -22,6 +23,7 @@ __all__ = [
     "FoodNutrient",
     "FoodSource",
     "Nutrient",
+    "NutritionTarget",
     "OcrNutritionConfirmationTrace",
     "Recipe",
     "RecipeIngredient",

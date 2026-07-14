@@ -6,7 +6,7 @@ import { useAppTheme } from "../theme/AppTheme";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnosticsModel";
 
-export function SettingsScreen({ onBack, onOpenOcrDiagnostics }: { onBack: () => void; onOpenOcrDiagnostics?: () => void }) {
+export function SettingsScreen({ onBack, onOpenNutritionTargets, onOpenOcrDiagnostics }: { onBack: () => void; onOpenNutritionTargets: () => void; onOpenOcrDiagnostics?: () => void }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
@@ -36,6 +36,11 @@ export function SettingsScreen({ onBack, onOpenOcrDiagnostics }: { onBack: () =>
           );
         })}
       </View>
+      <Text style={styles.sectionTitle}>Nutrition</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open nutrition targets" onPress={onOpenNutritionTargets} style={({ pressed }) => [styles.option, pressed && styles.pressed]}>
+        <Text style={styles.optionText}>Nutrition targets</Text>
+        <Ionicons name="chevron-forward" size={22} color={theme.colors.secondaryText} />
+      </Pressable>
       {isOcrDiagnosticsEnabled(__DEV__) && onOpenOcrDiagnostics && (
         <>
           <Text style={styles.sectionTitle}>Development</Text>

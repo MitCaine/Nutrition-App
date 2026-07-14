@@ -85,7 +85,6 @@ Implemented API surface:
 
 ## Stage 7: Targets + Dashboard Polish
 
-- Target-estimation service.
-- FDA DV comparison.
+- Stage 7A: versioned FDA Daily Values, optional adult maintenance-calorie estimation, manual macro overrides, snapshot-based comparisons, and Settings configuration.
 - Dashboard progress bars.
 - Recents/favorites/source labels.

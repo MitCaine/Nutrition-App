@@ -19,7 +19,7 @@ class User(Base):
     display_name: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    profile: Mapped[Optional["UserProfile"]] = relationship(back_populates="user")
+    profile: Mapped[Optional["UserProfile"]] = relationship(back_populates="user", uselist=False)
 
 
 class UserProfile(Base):
@@ -31,7 +31,12 @@ class UserProfile(Base):
     weight_kg: Mapped[Optional[object]] = mapped_column(Numeric(8, 3))
     biological_sex_for_reference_calculations: Mapped[Optional[str]] = mapped_column(Text)
     activity_level: Mapped[Optional[str]] = mapped_column(Text)
+    energy_estimation_context: Mapped[str] = mapped_column(
+        Text, nullable=False, default="general_adult", server_default="general_adult"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     user: Mapped[User] = relationship(back_populates="profile")
