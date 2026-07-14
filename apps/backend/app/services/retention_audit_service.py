@@ -52,6 +52,7 @@ class RetentionAuditReport:
     operator_scope: bool
     owner_id: UUID | None
     dry_run: bool
+    limitations: tuple[str, ...]
     records: tuple[RetentionRecord, ...]
     counts: dict[str, int]
 
@@ -60,6 +61,7 @@ class RetentionAuditReport:
             "operator_scope": self.operator_scope,
             "owner_id": str(self.owner_id) if self.owner_id is not None else None,
             "dry_run": self.dry_run,
+            "limitations": list(self.limitations),
             "policy": "retain_valid_publication_history_indefinitely",
             "cleanup_supported": False,
             "counts": self.counts,
@@ -134,19 +136,22 @@ class RetentionAuditService:
         amount_statement = select(
             RecipePublicationAmountDefinition.id,
             RecipePublicationAmountDefinition.revision_id,
-        ).join(
-            RecipePublicationRevision,
-            RecipePublicationAmountDefinition.revision_id
-            == RecipePublicationRevision.id,
         )
         nutrient_statement = select(
             RecipePublicationNutrient.id,
             RecipePublicationNutrient.revision_id,
-        ).join(
-            RecipePublicationRevision,
-            RecipePublicationNutrient.revision_id == RecipePublicationRevision.id,
         )
         if scope_owner is not None:
+            amount_statement = amount_statement.join(
+                RecipePublicationRevision,
+                RecipePublicationAmountDefinition.revision_id
+                == RecipePublicationRevision.id,
+            )
+            nutrient_statement = nutrient_statement.join(
+                RecipePublicationRevision,
+                RecipePublicationNutrient.revision_id
+                == RecipePublicationRevision.id,
+            )
             amount_statement = amount_statement.where(
                 RecipePublicationRevision.user_id == scope_owner
             )
@@ -240,6 +245,14 @@ class RetentionAuditService:
             operator_scope=operator_scope,
             owner_id=owner_id,
             dry_run=True,
+            limitations=(
+                ()
+                if operator_scope
+                else (
+                    "owner_scoped_orphan_revision_children_not_reported_"
+                    "because_child_owner_is_unknown",
+                )
+            ),
             records=records,
             counts=counts,
         )
@@ -412,10 +425,17 @@ class RetentionAuditService:
         log_refs = [row for row in logs if row.food_id == food.id]
         snapshot_refs = [row for row in snapshots if row.source_food_item_id == food.id]
         ingredient_refs = [row for row in ingredients if row.food_item_id == food.id]
+        # FoodService.duplicate_food is the only production writer that stores a
+        # source Food ID on a Manual Food. source_id is otherwise generic, so all
+        # duplication markers must be present before treating it as provenance.
         provenance_refs = [
             row
             for row in foods
-            if row.id != food.id and row.source_id == str(food.id)
+            if row.id != food.id
+            and row.source_type == "manual"
+            and not row.is_recipe
+            and row.revision_id is None
+            and row.source_id == str(food.id)
         ]
         source_recipe = self._source_recipe(food, recipe_by_id)
         revision = revision_by_id.get(food.revision_id) if food.revision_id else None
@@ -449,6 +469,9 @@ class RetentionAuditService:
             or log_by_id[row.daily_log_id].user_id != food.user_id
             for row in snapshot_refs
         )
+        cross_owner = cross_owner or any(
+            row.user_id != food.user_id for row in provenance_refs
+        )
         same_history = any(row.user_id == food.user_id for row in log_refs) or any(
             log_by_id.get(row.daily_log_id) is not None
             and log_by_id[row.daily_log_id].user_id == food.user_id
@@ -462,7 +485,7 @@ class RetentionAuditService:
                 for row in ingredient_refs
             )
             or food.revision_id is not None
-            or bool(provenance_refs)
+            or any(row.user_id == food.user_id for row in provenance_refs)
         )
         linked_graph = bool(backlinks or food.revision_id is not None)
         reasons: list[str] = []
@@ -479,7 +502,7 @@ class RetentionAuditService:
         if food.revision_id is not None:
             reasons.append("projection_revision_link")
         if provenance_refs:
-            reasons.append("duplicated_food_provenance_reference")
+            reasons.append("manual_duplicate_provenance_reference")
         if food.deleted:
             reasons.append("soft_deleted_projection")
         if food_nutrients.get(food.id, 0):
@@ -645,6 +668,12 @@ class RetentionAuditService:
             ),
             "inconsistent_rows": sum(
                 row.category == RetentionCategory.ORPHANED_INCONSISTENT
+                for row in records
+            ),
+            "orphan_revision_children": sum(
+                row.entity_type
+                in {"publication_amount_definition", "publication_nutrient"}
+                and "missing_parent_revision" in row.reason_codes
                 for row in records
             ),
             "purge_candidates": sum(row.purge_eligible for row in records),
