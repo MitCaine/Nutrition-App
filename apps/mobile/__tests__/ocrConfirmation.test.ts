@@ -62,3 +62,15 @@ test("payload creates manual-compatible amounts, exact trace, and contains no im
   expect(payload.unknown_nutrients).toHaveLength(1);
   expect(JSON.stringify(payload)).not.toMatch(/file:|image_uri|\.jpg/);
 });
+
+test.each(["1e3", "Infinity", " 1", "1 ", "1,5", "1.2.3", "", " "])("rejects unsupported decimal input %s", (value) => {
+  let draft = draftFromParsedLabel(parsed(), "camera");
+  draft = { ...draft, name: "Cereal", gramWeight: value, calories: updateReview(draft.calories, "120", "accepted") };
+  expect(confirmationValidationError(draft)).toMatch(/positive gram weight/);
+});
+
+test("unchanged less-than suggestion remains unresolved when Use value is requested", () => {
+  const draft = draftFromParsedLabel(parsed(), "camera");
+  const protein = draft.nutrients.find((item) => item.nutrientId === "protein")!;
+  expect(updateReview(protein, protein.confirmedValue, "accepted").decision).toBe("unresolved");
+});

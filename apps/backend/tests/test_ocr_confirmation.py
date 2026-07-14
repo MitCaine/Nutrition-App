@@ -3,9 +3,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.food import FoodItem, OcrNutritionConfirmationTrace
-from app.ocr.confirmation_service import OcrConfirmationService
+from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
+from app.ocr.confirmation_service import OcrConfirmationService, _fingerprint
 
 
 def decision(key, confirmed, *, nutrient_id=None, unit=None, suggested=None, status="parsed", comparison=None, resolution=None):
@@ -121,3 +123,171 @@ def test_trace_lookup_is_user_scoped(client, db_session):
     body = client.post("/api/v1/ocr/nutrition-label/confirm", json=confirmation_payload()).json()
     with pytest.raises(LookupError):
         OcrConfirmationService(db_session).get_trace(uuid4(), UUID(body["trace_id"]))
+
+
+def test_fingerprint_is_deterministic_and_preserves_review_order():
+    payload = OcrNutritionConfirmationRequest.model_validate(confirmation_payload())
+    assert _fingerprint(payload) == _fingerprint(
+        OcrNutritionConfirmationRequest.model_validate(payload.model_dump(mode="json"))
+    )
+    reordered = payload.model_copy(
+        update={"field_decisions": list(reversed(payload.field_decisions))}
+    )
+    assert _fingerprint(reordered) != _fingerprint(payload)
+
+    nutrient_reordered = payload.model_copy(
+        update={
+            "food": payload.food.model_copy(
+                update={"nutrients": list(reversed(payload.food.nutrients))}
+            )
+        }
+    )
+    assert _fingerprint(nutrient_reordered) != _fingerprint(payload)
+
+    with_unknown_pair = OcrNutritionConfirmationRequest.model_validate(
+        {
+            **payload.model_dump(mode="json"),
+            "unknown_nutrients": [
+                *payload.model_dump(mode="json")["unknown_nutrients"],
+                {
+                    "original_name": "Second unknown",
+                    "source_text": "Second unknown 2 mg",
+                    "source_observation_ids": ["obs-second"],
+                    "warning_codes": ["unmapped_nutrient"],
+                    "decision": "dismissed",
+                },
+            ],
+        }
+    )
+    unknown_reordered = with_unknown_pair.model_copy(
+        update={"unknown_nutrients": list(reversed(with_unknown_pair.unknown_nutrients))}
+    )
+    assert _fingerprint(unknown_reordered) != _fingerprint(with_unknown_pair)
+
+
+def test_unrelated_integrity_error_propagates_even_if_matching_request_exists(
+    client, db_session, monkeypatch
+):
+    submitted = confirmation_payload()
+    body = client.post("/api/v1/ocr/nutrition-label/confirm", json=submitted).json()
+    trace = db_session.get(OcrNutritionConfirmationTrace, UUID(body["trace_id"]))
+    assert trace is not None
+    service = OcrConfirmationService(db_session)
+    existing_calls = iter([None, trace])
+    monkeypatch.setattr(service, "_existing", lambda *_args: next(existing_calls))
+
+    unrelated = IntegrityError("insert", {}, Exception("foreign key constraint failed"))
+    monkeypatch.setattr(service.foods, "add", lambda _food: (_ for _ in ()).throw(unrelated))
+    payload = OcrNutritionConfirmationRequest.model_validate(submitted)
+    with pytest.raises(IntegrityError) as raised:
+        service.confirm(trace.user_id, payload)
+    assert raised.value is unrelated
+
+
+def _food_update_payload(food: dict, *, name: str) -> dict:
+    return {
+        "name": name,
+        "brand": food["brand"],
+        "notes": food["notes"],
+        "serving_definitions": [
+            {
+                "label": item["label"],
+                "quantity": item["quantity"],
+                "unit": item["unit"],
+                "gram_weight": item["gram_weight"],
+                "is_default": item["is_default"],
+            }
+            for item in food["serving_definitions"]
+        ],
+        "nutrients": [
+            {
+                "nutrient_id": item["nutrient_id"],
+                "amount": item["amount"],
+                "unit": item["unit"],
+                "basis": item["basis"],
+                "data_status": item["data_status"],
+            }
+            for item in food["nutrients"]
+        ],
+    }
+
+
+def test_edit_duplicate_and_soft_delete_preserve_creation_trace_semantics(client, db_session):
+    created = client.post(
+        "/api/v1/ocr/nutrition-label/confirm", json=confirmation_payload()
+    ).json()
+    food = created["food"]
+    trace_id = UUID(created["trace_id"])
+    original_snapshot = deepcopy(
+        db_session.get(OcrNutritionConfirmationTrace, trace_id).trace_snapshot
+    )
+
+    edited = client.patch(
+        f"/api/v1/foods/{food['id']}",
+        json=_food_update_payload(food, name="Edited Cereal"),
+    )
+    assert edited.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(OcrNutritionConfirmationTrace, trace_id).trace_snapshot == original_snapshot
+
+    duplicated = client.post(f"/api/v1/foods/{food['id']}/duplicate")
+    assert duplicated.status_code == 201
+    duplicate_id = UUID(duplicated.json()["id"])
+    assert db_session.scalar(
+        select(func.count()).select_from(OcrNutritionConfirmationTrace).where(
+            OcrNutritionConfirmationTrace.food_item_id == duplicate_id
+        )
+    ) == 0
+
+    deleted = client.delete(f"/api/v1/foods/{food['id']}")
+    assert deleted.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(OcrNutritionConfirmationTrace, trace_id) is not None
+
+
+def test_ordinary_manual_food_has_no_ocr_trace(client, db_session):
+    payload = confirmation_payload()["food"]
+    response = client.post("/api/v1/foods", json=payload)
+    assert response.status_code == 201
+    assert db_session.scalar(
+        select(func.count()).select_from(OcrNutritionConfirmationTrace)
+    ) == 0
+
+
+def test_trace_snapshot_is_not_food_resolver_authority(client, db_session):
+    created = client.post(
+        "/api/v1/ocr/nutrition-label/confirm", json=confirmation_payload()
+    ).json()
+    before = client.get(
+        f"/api/v1/foods/{created['food']['id']}/resolved-nutrition"
+    )
+    assert before.status_code == 200
+
+    trace = db_session.get(OcrNutritionConfirmationTrace, UUID(created["trace_id"]))
+    changed = deepcopy(trace.trace_snapshot)
+    calories = next(
+        item
+        for item in changed["field_decisions"]
+        if item["field_key"] == "nutrient.calories"
+    )
+    calories["confirmed_value"] = "999999"
+    trace.trace_snapshot = changed
+    db_session.commit()
+
+    after = client.get(
+        f"/api/v1/foods/{created['food']['id']}/resolved-nutrition"
+    )
+    assert after.status_code == 200
+    assert after.json() == before.json()
+
+
+def test_persisted_trace_contains_no_forbidden_raw_material(client, db_session):
+    body = client.post(
+        "/api/v1/ocr/nutrition-label/confirm", json=confirmation_payload()
+    ).json()
+    snapshot = db_session.get(
+        OcrNutritionConfirmationTrace, UUID(body["trace_id"])
+    ).trace_snapshot
+    encoded = str(snapshot).lower()
+    for forbidden in ("image_uri", "image_path", "image_bytes", "full_text", "file://", "/private/"):
+        assert forbidden not in encoded

@@ -73,7 +73,6 @@ class FoodItem(Base):
     )
     ocr_confirmation_trace: Mapped[Optional[OcrNutritionConfirmationTrace]] = relationship(
         back_populates="food_item",
-        cascade="all, delete-orphan",
         uselist=False,
     )
 

@@ -22,8 +22,25 @@ class OcrConfirmationIdempotencyConflict(ValueError):
 
 
 def _fingerprint(payload: OcrNutritionConfirmationRequest) -> str:
+    """Hash canonical mappings/scalars while preserving semantically meaningful array order."""
     value = payload.model_dump(mode="json", exclude={"client_request_id"})
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _is_confirmation_request_unique_conflict(exc: IntegrityError) -> bool:
+    diagnostic = getattr(exc.orig, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    if constraint_name is not None:
+        return constraint_name == "uq_ocr_confirmation_user_request"
+    message = str(exc.orig).lower()
+    return (
+        "uq_ocr_confirmation_user_request" in message
+        or (
+            "ocr_nutrition_confirmation_traces.user_id" in message
+            and "ocr_nutrition_confirmation_traces.client_request_id" in message
+            and "unique" in message
+        )
+    )
 
 
 class OcrConfirmationService:
@@ -68,8 +85,10 @@ class OcrConfirmationService:
             self._after_trace_creation(trace)
             self.db.commit()
             return self.foods.get_required(created.id, user_id), trace
-        except IntegrityError:
+        except IntegrityError as exc:
             self.db.rollback()
+            if not _is_confirmation_request_unique_conflict(exc):
+                raise
             existing = self._existing(user_id, payload.client_request_id)
             if existing is None:
                 raise

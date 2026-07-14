@@ -4,6 +4,7 @@ import type {
   ConfirmationField, NutritionConfirmationDraft, OcrConfirmationInput,
   ParsedField, ParsedNutritionLabel, ReviewDecision,
 } from "../api/types";
+import { isPositiveDecimalString, isUnsignedDecimalString, isZeroDecimalString } from "../../../shared/forms/decimalString";
 
 const NUTRIENT_LABELS: Record<string, string> = {
   calories: "Calories", total_fat: "Total Fat", saturated_fat: "Saturated Fat",
@@ -61,18 +62,22 @@ export function draftFromParsedLabel(parsed: ParsedNutritionLabel, imageSourceTy
 
 export function updateReview(field: ConfirmationField, value: string, decision?: ReviewDecision): ConfirmationField {
   const changed = value !== (field.suggestedValue ?? "");
-  return { ...field, confirmedValue: value, decision: decision ?? (changed ? "edited" : "accepted"), resolution: field.parseStatus === "ambiguous" || field.comparison ? (changed ? "entered exact value" : "selected suggestion") : field.resolution };
+  const nextDecision = decision ?? (changed ? "edited" : "accepted");
+  if (field.comparison === "less_than" && !changed && nextDecision === "accepted") {
+    return { ...field, confirmedValue: value, decision: "unresolved", resolution: null };
+  }
+  return { ...field, confirmedValue: value, decision: nextDecision, resolution: field.parseStatus === "ambiguous" || field.comparison ? (changed ? "entered exact value" : "selected suggestion") : field.resolution };
 }
 
 export function confirmationValidationError(draft: NutritionConfirmationDraft): string | null {
   if (!draft.name.trim()) return "Food name is required.";
-  const grams = Number(draft.gramWeight);
-  if (!Number.isFinite(grams) || grams <= 0) return "Enter a positive gram weight for the label serving.";
+  if (!isPositiveDecimalString(draft.servingQuantity)) return "Enter a positive decimal serving quantity.";
+  if (!isPositiveDecimalString(draft.gramWeight)) return "Enter a positive gram weight for the label serving.";
   const fields = [draft.calories, ...draft.nutrients];
   if (fields.some((field) => field.decision === "unresolved")) return "Review every flagged or ambiguous value before creating the Food.";
   if (draft.unknownNutrients.some((item) => !item.dismissed)) return "Dismiss each unknown nutrient after reviewing its source text.";
   for (const field of fields) {
-    if (field.decision !== "omitted" && (!field.confirmedValue || !Number.isFinite(Number(field.confirmedValue)) || Number(field.confirmedValue) < 0)) {
+    if (field.decision !== "omitted" && !isUnsignedDecimalString(field.confirmedValue)) {
       return `${field.label} must be a nonnegative number or omitted.`;
     }
     if (field.comparison === "less_than" && field.decision === "accepted") return `${field.label} is a less-than value; enter an exact replacement or omit it.`;
@@ -85,7 +90,7 @@ function retainedNutrient(field: ConfirmationField) {
   const amount = field.confirmedValue;
   return {
     nutrient_id: field.nutrientId, amount, unit: field.unit as NutrientUnit,
-    basis: "per_serving" as const, data_status: Number(amount) === 0 ? "zero" as const : "known" as const,
+    basis: "per_serving" as const, data_status: isZeroDecimalString(amount) ? "zero" as const : "known" as const,
   };
 }
 

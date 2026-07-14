@@ -35,7 +35,11 @@ class OcrValidationRoute(APIRoute):
                     status_code=status.HTTP_400_BAD_REQUEST,
                     content={
                         "detail": {
-                            "code": "invalid_ocr_parse_request",
+                            "code": (
+                                "invalid_ocr_confirmation_request"
+                                if request.url.path.endswith("/confirm")
+                                else "invalid_ocr_parse_request"
+                            ),
                             # Deliberately omit validation input/context so raw OCR
                             # text is not reflected into error payloads or logs.
                             "errors": [

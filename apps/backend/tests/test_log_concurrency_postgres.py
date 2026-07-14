@@ -10,13 +10,14 @@ from uuid import uuid4
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import MetaData, create_engine, inspect, select, text
+from sqlalchemy import MetaData, create_engine, func, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app import models  # noqa: F401
 from app.catalog.nutrients import nutrient_seed_rows
 from app.core.database import Base
 from app.models.food import FoodItem, FoodNutrient, ServingDefinition
+from app.models.food import OcrNutritionConfirmationTrace
 from app.models.log import DailyLog
 from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe
@@ -29,6 +30,8 @@ from app.publication.recipe_revision import (
     apply_revision_to_projection,
     build_revision,
 )
+from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
+from app.ocr.confirmation_service import OcrConfirmationService
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
 
@@ -315,6 +318,138 @@ def test_concurrent_create_with_same_request_id_commits_one_log_and_snapshot_set
         )
         assert len(logs) == 1
         assert len(logs[0].snapshots) == 1
+
+
+def _ocr_confirmation_request(request_id):
+    def field(key, value, *, nutrient_id=None, unit=None):
+        return {
+            "field_key": key,
+            "nutrient_id": nutrient_id,
+            "suggested_value": value,
+            "confirmed_value": value,
+            "unit": unit,
+            "decision": "accepted",
+            "parse_status": "parsed",
+            "comparison": None,
+            "confidence": "0.95",
+            "source_text": key,
+            "source_observation_ids": [f"obs-{key}"],
+            "warning_codes": [],
+            "resolution": None,
+        }
+
+    return OcrNutritionConfirmationRequest.model_validate(
+        {
+            "parser_version": "nutrition_label_v1",
+            "image_source_type": "photo_library",
+            "client_request_id": request_id,
+            "food": {
+                "name": "Concurrent Cereal",
+                "brand": None,
+                "notes": None,
+                "serving_definitions": [
+                    {
+                        "label": "100 g",
+                        "quantity": "100",
+                        "unit": "g",
+                        "gram_weight": "100",
+                        "is_default": False,
+                    },
+                    {
+                        "label": "1 cup (30g)",
+                        "quantity": "1",
+                        "unit": "cup",
+                        "gram_weight": "30",
+                        "is_default": True,
+                    },
+                ],
+                "nutrients": [
+                    {
+                        "nutrient_id": "calories",
+                        "amount": "120",
+                        "unit": "kcal",
+                        "basis": "per_serving",
+                        "data_status": "known",
+                    }
+                ],
+            },
+            "field_decisions": [
+                field("food.name", "Concurrent Cereal"),
+                {**field("food.brand", None), "decision": "omitted"},
+                {**field("food.notes", None), "decision": "omitted"},
+                field("serving.display", "1 cup (30g)"),
+                field("serving.quantity", "1"),
+                field("serving.unit", "cup"),
+                field("serving.gram_weight", "30", unit="g"),
+                field(
+                    "nutrient.calories",
+                    "120",
+                    nutrient_id="calories",
+                    unit="kcal",
+                ),
+            ],
+            "unknown_nutrients": [],
+            "parser_warning_codes": [],
+        }
+    )
+
+
+def test_concurrent_same_id_confirmation_commits_one_food_and_trace(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"ocr-concurrency-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        user_id = user.id
+
+    payload = _ocr_confirmation_request(uuid4())
+    first_flushed, release = Event(), Event()
+    first_result, second_result = [], []
+
+    def confirm(result, *, hold=False):
+        with factory() as db:
+            service = OcrConfirmationService(db)
+            if hold:
+                def after_trace(_trace):
+                    first_flushed.set()
+                    assert release.wait(5)
+
+                service._after_trace_creation = after_trace
+            try:
+                food, trace = service.confirm(user_id, payload)
+                result.append((food.id, trace.id))
+            except Exception as exc:
+                result.append(exc)
+
+    first = Thread(target=confirm, args=(first_result,), kwargs={"hold": True})
+    first.start()
+    assert first_flushed.wait(5)
+    second = Thread(target=confirm, args=(second_result,))
+    second.start()
+    Event().wait(0.2)
+    assert not second_result
+    release.set()
+    first.join(5)
+    second.join(5)
+
+    assert len(first_result) == len(second_result) == 1
+    assert first_result[0] == second_result[0]
+    with factory() as db:
+        traces = list(
+            db.scalars(
+                select(OcrNutritionConfirmationTrace).where(
+                    OcrNutritionConfirmationTrace.user_id == user_id,
+                    OcrNutritionConfirmationTrace.client_request_id
+                    == payload.client_request_id,
+                )
+            )
+        )
+        assert len(traces) == 1
+        assert db.scalar(
+            select(func.count()).select_from(FoodItem).where(FoodItem.user_id == user_id)
+        ) == 1
 
 
 def test_postgres_idempotency_migration_upgrade_and_downgrade(postgres_sessions) -> None:
