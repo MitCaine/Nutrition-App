@@ -15,7 +15,15 @@
     },
     "plugins": [
       "./plugins/with-ios-build-workarounds",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Nutrition App to choose a nutrition-label image for on-device OCR diagnostics.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

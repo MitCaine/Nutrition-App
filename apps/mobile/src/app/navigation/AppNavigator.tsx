@@ -33,6 +33,8 @@ import { useAppTheme } from "../theme/AppTheme";
 import { SettingsScreen } from "../settings/SettingsScreen";
 import { isMainTabRoot, mainTabForRoute, settingsOriginForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
 import { logFoodRoute, type LogFoodRoute } from "./logFoodRoute";
+import { OcrDiagnosticsScreen } from "../../features/ocr/diagnostics/OcrDiagnosticsScreen";
+import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnosticsModel";
 
 type Route =
   | { name: "foods" }
@@ -50,7 +52,8 @@ type Route =
   | { name: "recipe-usda-search" }
   | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" }
-  | { name: "settings"; origin: MainTab };
+  | { name: "settings"; origin: MainTab }
+  | { name: "ocr-diagnostics"; origin: MainTab };
 
 function routeForMainTab(tab: MainTab): Route {
   if (tab === "foods") {
@@ -63,6 +66,7 @@ function routeForMainTab(tab: MainTab): Route {
 }
 
 export function AppNavigator() {
+  const ocrDiagnosticsEnabled = isOcrDiagnosticsEnabled(__DEV__);
   const theme = useAppTheme();
   const [route, setRoute] = useState<Route>({ name: "foods" });
   const [foodQuery, setFoodQuery] = useState("");
@@ -76,7 +80,7 @@ export function AppNavigator() {
   const foodSearchScroll = useRef({ query: "", offset: 0 });
   const recipeSearchScroll = useRef({ query: "", offset: 0 });
   const dailyLogScroll = useRef({ date, offset: 0 });
-  const activeTab = route.name === "settings" ? route.origin : mainTabForRoute(route.name);
+  const activeTab = route.name === "settings" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
   const swipeEnabled = isMainTabRoot(route.name);
 
   const selectMainTab = (tab: MainTab) => {
@@ -109,7 +113,12 @@ export function AppNavigator() {
 
   let content;
   if (route.name === "settings") {
-    content = <SettingsScreen onBack={() => setRoute(routeForMainTab(route.origin))} />;
+    content = <SettingsScreen
+      onBack={() => setRoute(routeForMainTab(route.origin))}
+      onOpenOcrDiagnostics={ocrDiagnosticsEnabled ? () => setRoute({ name: "ocr-diagnostics", origin: route.origin }) : undefined}
+    />;
+  } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
+    content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
   } else if (route.name === "new-food") {
     content = <FoodFormScreen onCancel={() => setRoute({ name: "foods" })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "food-detail") {

@@ -4,8 +4,9 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../theme/AppTheme";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
+import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnosticsModel";
 
-export function SettingsScreen({ onBack }: { onBack: () => void }) {
+export function SettingsScreen({ onBack, onOpenOcrDiagnostics }: { onBack: () => void; onOpenOcrDiagnostics?: () => void }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
@@ -35,6 +36,19 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           );
         })}
       </View>
+      {isOcrDiagnosticsEnabled(__DEV__) && onOpenOcrDiagnostics && (
+        <>
+          <Text style={styles.sectionTitle}>Development</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenOcrDiagnostics}
+            style={({ pressed }) => [styles.option, pressed && styles.pressed]}
+          >
+            <Text style={styles.optionText}>Apple Vision OCR diagnostics</Text>
+            <Ionicons name="chevron-forward" size={22} color={theme.colors.secondaryText} />
+          </Pressable>
+        </>
+      )}
     </View>
   );
 }

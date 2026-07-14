@@ -61,3 +61,5 @@ cd apps/mobile
 npm install
 npm test
 ```
+
+Apple Vision OCR requires an iOS custom development build; it does not run in Expo Go. See [Stage 5A Apple Vision OCR](docs/stage5-ocr.md) for prebuild commands, the bridge contract, diagnostics access, coordinates, privacy guarantees, and platform limitations.
