@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -252,6 +253,28 @@ class RecipeResponse(BaseModel):
 
 class RecipeListResponse(BaseModel):
     recipes: list[RecipeResponse]
+
+
+class RecipeDeleteAffectedRecipeResponse(BaseModel):
+    recipe_id: UUID
+    recipe_name: str
+    ingredient_occurrence_count: int
+    is_published: bool
+    needs_republish: bool
+
+
+class RecipeDeleteDependencyResponse(BaseModel):
+    code: Literal["recipe_delete_dependencies_exist"] = (
+        "recipe_delete_dependencies_exist"
+    )
+    message: str = (
+        "This Recipe is used by other Recipes. Confirm deletion to remove it from those Recipes."
+    )
+    recipe_id: UUID
+    projection_food_item_id: UUID
+    active_dependent_recipe_count: int
+    affected_recipes: list[RecipeDeleteAffectedRecipeResponse]
+    total_ingredient_rows_affected: int
 
 
 class RecipeNutrientTotalResponse(BaseModel):

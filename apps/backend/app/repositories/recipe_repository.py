@@ -47,12 +47,37 @@ class RecipeRepository:
                 selectinload(Recipe.ingredients),
                 selectinload(Recipe.published_food_item),
             )
+            .execution_options(populate_existing=True)
             .with_for_update()
         )
         recipe = self.db.scalars(statement).first()
         if recipe is None:
             raise LookupError("Recipe not found")
         return recipe
+
+    def get_many_for_update(
+        self,
+        recipe_ids: set[UUID],
+        user_id: UUID,
+    ) -> dict[UUID, Recipe]:
+        if not recipe_ids:
+            return {}
+        statement = (
+            select(Recipe)
+            .where(
+                Recipe.id.in_(recipe_ids),
+                Recipe.user_id == user_id,
+                Recipe.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(Recipe.ingredients),
+                selectinload(Recipe.published_food_item),
+            )
+            .order_by(Recipe.id)
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        )
+        return {recipe.id: recipe for recipe in self.db.scalars(statement).all()}
 
     def list(self, user_id: UUID, query: str | None = None) -> list[Recipe]:
         statement = (

@@ -69,3 +69,21 @@ export type RecipePublishResponse = {
   recipe: Recipe;
   food: Food;
 };
+
+export type RecipeDeleteAffectedRecipe = {
+  recipe_id: string;
+  recipe_name: string;
+  ingredient_occurrence_count: number;
+  is_published: boolean;
+  needs_republish: boolean;
+};
+
+export type RecipeDeleteDependency = {
+  code: "recipe_delete_dependencies_exist";
+  message: string;
+  recipe_id: string;
+  projection_food_item_id: string;
+  active_dependent_recipe_count: number;
+  affected_recipes: RecipeDeleteAffectedRecipe[];
+  total_ingredient_rows_affected: number;
+};

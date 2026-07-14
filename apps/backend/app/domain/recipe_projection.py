@@ -49,6 +49,7 @@ def classify_recipe_projection(
     recipe_id = linked_recipe.id if linked_recipe is not None else source_recipe_id
     coherent = (
         food.is_recipe
+        and food.deleted_at is None
         and food.source_type == "recipe"
         and source_recipe_id is not None
         and linked_recipe is not None

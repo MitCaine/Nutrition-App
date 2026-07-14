@@ -37,6 +37,12 @@ export function invalidateRecipeCaches(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ["foods"] });
 }
 
+export function removeDeletedRecipeCaches(queryClient: QueryClient, recipeId: string) {
+  queryClient.removeQueries({ queryKey: ["recipes", recipeId] });
+  queryClient.removeQueries({ queryKey: ["recipes", recipeId, "nutrition"] });
+  invalidateRecipeCaches(queryClient);
+}
+
 export function useRecipeMutations() {
   const queryClient = useQueryClient();
   const invalidate = () => invalidateRecipeCaches(queryClient);
@@ -50,11 +56,7 @@ export function useRecipeMutations() {
     }),
     deleteRecipe: useMutation({
       mutationFn: deleteRecipe,
-      onSuccess: (_data, recipeId) => {
-        queryClient.removeQueries({ queryKey: ["recipes", recipeId] });
-        queryClient.removeQueries({ queryKey: ["recipes", recipeId, "nutrition"] });
-        invalidate();
-      },
+      onSuccess: (_data, { recipeId }) => removeDeletedRecipeCaches(queryClient, recipeId),
     }),
     publishRecipe: useMutation({ mutationFn: publishRecipe, onSuccess: invalidate }),
   };

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { formatDisplayNumber } from "../../../shared/nutrition/display";
 import { isUnknownOnlyAggregatedTotal } from "../../../shared/nutrition/display";
@@ -19,7 +19,13 @@ import {
   visibleRecipeNutrition,
 } from "../utils/recipeNutritionPreview";
 import type { Recipe } from "../api/types";
+import type { RecipeDeleteDependency } from "../api/types";
 import type { Food } from "../../foods/api/types";
+import {
+  parseRecipeDeleteDependency,
+  publishedParentWarning,
+  recipeDeleteErrorMessage,
+} from "../utils/recipeDelete";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
 type Props = {
@@ -36,6 +42,8 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrition = useRecipeNutrition(recipe.id);
   const mutations = useRecipeMutations();
+  const [deleteDependency, setDeleteDependency] = useState<RecipeDeleteDependency | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const nutritionPreview = visibleRecipeNutrition(nutrition.data, nutrition.isError);
   const canPublish = canPublishRecipe({
     servingCountYield: recipe.serving_count_yield ?? "",
@@ -55,15 +63,22 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
     }
   }
 
-  async function deleteRecipe() {
+  async function deleteRecipe(removeFromRecipes = false) {
     if (mutations.deleteRecipe.isPending) {
       return;
     }
+    setDeleteError(null);
     try {
-      await mutations.deleteRecipe.mutateAsync(recipe.id);
+      await mutations.deleteRecipe.mutateAsync({ recipeId: recipe.id, removeFromRecipes });
+      setDeleteDependency(null);
       onDeleted();
-    } catch {
-      // Mutation state renders the error.
+    } catch (error) {
+      const dependency = parseRecipeDeleteDependency(error);
+      if (dependency) {
+        setDeleteDependency(dependency);
+        return;
+      }
+      setDeleteError(recipeDeleteErrorMessage(error));
     }
   }
 
@@ -140,12 +155,81 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onDelet
             {recipe.published_food_item_id ? "Republish Food" : "Publish as Food"}
           </Text>
         </Pressable>
-        {mutations.deleteRecipe.isError ? <Text style={styles.error}>Could not delete recipe.</Text> : null}
-        <Pressable onPress={deleteRecipe} disabled={mutations.deleteRecipe.isPending} style={styles.deleteButton}>
+        {deleteError ? <Text style={styles.error}>{deleteError}</Text> : null}
+        <Pressable onPress={() => deleteRecipe(false)} disabled={mutations.deleteRecipe.isPending} style={styles.deleteButton}>
           <Text style={styles.deleteText}>{mutations.deleteRecipe.isPending ? "Deleting..." : "Delete Recipe"}</Text>
         </Pressable>
       </ScrollView>
+      <RecipeDeleteDependencyModal
+        dependency={deleteDependency}
+        error={deleteError}
+        isDeleting={mutations.deleteRecipe.isPending}
+        onCancel={() => {
+          setDeleteDependency(null);
+          setDeleteError(null);
+        }}
+        onConfirm={() => deleteRecipe(true)}
+      />
     </View>
+  );
+}
+
+function RecipeDeleteDependencyModal({
+  dependency,
+  error,
+  isDeleting,
+  onCancel,
+  onConfirm,
+}: {
+  dependency: RecipeDeleteDependency | null;
+  error: string | null;
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const publishedWarning = dependency ? publishedParentWarning(dependency) : null;
+  return (
+    <Modal
+      animationType="fade"
+      transparent
+      visible={Boolean(dependency)}
+      onRequestClose={isDeleting ? undefined : onCancel}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.warningTitle}>Remove Recipe from other Recipes?</Text>
+          <Text style={styles.text}>
+            Deleting this Recipe will also remove it from the Recipes listed below.
+          </Text>
+          <ScrollView style={styles.modalList} contentContainerStyle={styles.modalListContent}>
+            {dependency?.affected_recipes.map((parent) => (
+              <View key={parent.recipe_id} style={styles.dependencyRow}>
+                <Text style={styles.dependencyName}>{parent.recipe_name}</Text>
+                <Text style={styles.meta}>
+                  {parent.ingredient_occurrence_count}{" "}
+                  {parent.ingredient_occurrence_count === 1 ? "occurrence" : "occurrences"}
+                  {parent.is_published ? " · published" : ""}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+          {publishedWarning ? <Text style={styles.warning}>{publishedWarning}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={styles.modalActions}>
+            <Pressable onPress={onCancel} disabled={isDeleting} style={styles.secondaryButton}>
+              <Text style={styles.text}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={onConfirm} disabled={isDeleting} style={styles.destructiveButton}>
+              <Text style={styles.destructiveText}>
+                {isDeleting ? "Deleting..." : "Remove and Delete"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -179,22 +263,33 @@ function NutritionSection({ title, totals }: { title: string; totals?: Aggregate
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
   content: { gap: 18, paddingBottom: 32, paddingRight: 28 },
+  dependencyName: { color: theme.colors.text, fontWeight: "700" },
+  dependencyRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 3, paddingBottom: 8 },
   deleteButton: { alignItems: "center", borderColor: theme.colors.destructive, borderRadius: 6, borderWidth: 1, padding: 12 },
   deleteText: { color: theme.colors.destructive, fontWeight: "700" },
+  destructiveButton: { backgroundColor: theme.colors.destructive, borderRadius: 6, padding: 10 },
+  destructiveText: { color: theme.colors.accentForeground, fontWeight: "700" },
   disabledButton: { opacity: 0.55 },
   error: { color: theme.colors.errorText },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   ingredientLine: { gap: 3 },
   legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, padding: 12 },
   meta: { color: theme.colors.secondaryText },
+  modalActions: { flexDirection: "row", gap: 8, justifyContent: "flex-end" },
+  modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },
+  modalCard: { backgroundColor: theme.colors.surface, borderRadius: 8, gap: 12, maxHeight: "78%", padding: 16, width: "100%" },
+  modalList: { maxHeight: 260 },
+  modalListContent: { gap: 8 },
   nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 8 },
   nutrientValue: { color: recipeNutrientValueColor(theme), flexShrink: 1, fontWeight: "600", textAlign: "right" },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
+  secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   section: { gap: 8 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   success: { color: theme.colors.successText, fontWeight: "600" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   unknown: { color: theme.colors.secondaryText }, warning: { color: theme.colors.warningText, fontWeight: "600" },
+  warningTitle: { color: theme.colors.text, fontWeight: "700" },
 }); }

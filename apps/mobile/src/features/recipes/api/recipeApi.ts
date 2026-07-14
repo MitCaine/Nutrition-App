@@ -37,8 +37,15 @@ export function updateRecipe(recipeId: string, input: RecipeMutationInput): Prom
   return apiRequest<Recipe>(`/recipes/${recipeId}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
-export function deleteRecipe(recipeId: string): Promise<void> {
-  return apiRequest<void>(`/recipes/${recipeId}`, { method: "DELETE" });
+export function deleteRecipe({
+  recipeId,
+  removeFromRecipes = false,
+}: {
+  recipeId: string;
+  removeFromRecipes?: boolean;
+}): Promise<void> {
+  const suffix = removeFromRecipes ? "?remove_from_recipes=true" : "";
+  return apiRequest<void>(`/recipes/${recipeId}${suffix}`, { method: "DELETE" });
 }
 
 export async function getRecipeNutrition(recipeId: string): Promise<RecipeNutritionResponse> {

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.dependencies.database import get_db
 from app.dependencies.user import ensure_dev_user
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
+from app.domain.recipe_projection import RecipeProjectionMutationError
 from app.schemas.recipe import (
     RecipeCreateRequest,
     RecipeListResponse,
@@ -16,7 +17,7 @@ from app.schemas.recipe import (
     RecipeResponse,
     RecipeUpdateRequest,
 )
-from app.services.recipe_service import RecipeService
+from app.services.recipe_service import RecipeDependencyError, RecipeService
 
 router = APIRouter()
 
@@ -68,12 +69,30 @@ def update_recipe(
 
 
 @router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_recipe(recipe_id: UUID, db: Session = Depends(get_db)) -> None:
+def delete_recipe(
+    recipe_id: UUID,
+    remove_from_recipes: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> None:
     user = ensure_dev_user(db)
     try:
-        _service(db).soft_delete_recipe(user.id, recipe_id)
+        _service(db).soft_delete_recipe(
+            user.id,
+            recipe_id,
+            remove_from_recipes=remove_from_recipes,
+        )
+    except RecipeDependencyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.dependency.model_dump(mode="json"),
+        ) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeProjectionMutationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
 
 
 @router.get("/{recipe_id}/nutrition", response_model=RecipeNutritionResponse)

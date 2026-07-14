@@ -4,11 +4,17 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.domain.nutrition import AggregatedNutrientTotal, NutrientSnapshot
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
+from app.domain.recipe_projection import (
+    RecipeProjectionKind,
+    classify_recipe_projection,
+    projection_mutation_error,
+)
 from app.models.food import FoodItem
 from app.models.recipe import Recipe, RecipeIngredient
 from app.nutrition.aggregation import aggregate_snapshots
@@ -31,6 +37,8 @@ from app.repositories.recipe_publication_repository import RecipePublicationRepo
 from app.repositories.recipe_repository import RecipeRepository
 from app.schemas.recipe import (
     RecipeCreateRequest,
+    RecipeDeleteAffectedRecipeResponse,
+    RecipeDeleteDependencyResponse,
     RecipeIngredientInput,
     RecipeUpdateRequest,
     _validate_display_metadata,
@@ -38,6 +46,12 @@ from app.schemas.recipe import (
 
 UNITS_BY_NUTRIENT_ID = {nutrient.id: nutrient.default_unit for nutrient in NUTRIENT_CATALOG}
 DECIMAL_PLACES = Decimal("0.000001")
+
+
+class RecipeDependencyError(ValueError):
+    def __init__(self, dependency: RecipeDeleteDependencyResponse):
+        super().__init__(dependency.message)
+        self.dependency = dependency
 
 
 class RecipeService:
@@ -70,7 +84,7 @@ class RecipeService:
         return self.recipes.get_required(recipe_id, user_id)
 
     def update_recipe(self, user_id: UUID, recipe_id: UUID, payload: RecipeUpdateRequest) -> Recipe:
-        recipe = self.recipes.get_required(recipe_id, user_id)
+        recipe = self.recipes.get_for_update(recipe_id, user_id)
         fields = payload.model_fields_set
         if payload.name is not None:
             recipe.name = payload.name.strip()
@@ -126,15 +140,162 @@ class RecipeService:
             recipe.final_cooked_weight_display_quantity = quantity
             recipe.final_cooked_weight_display_unit = unit
 
-    def soft_delete_recipe(self, user_id: UUID, recipe_id: UUID) -> None:
-        recipe = self.recipes.get_for_update(recipe_id, user_id)
-        now = datetime.now(timezone.utc)
-        recipe.deleted_at = now
-        recipe.updated_at = now
-        if recipe.published_food_item is not None:
-            recipe.published_food_item.deleted_at = now
-            recipe.published_food_item.updated_at = now
-        self.db.commit()
+    def soft_delete_recipe(
+        self,
+        user_id: UUID,
+        recipe_id: UUID,
+        *,
+        remove_from_recipes: bool = False,
+    ) -> None:
+        try:
+            candidate = self.recipes.get_required(recipe_id, user_id)
+            initial_projection_id = candidate.published_food_item_id
+            initial_dependency_ids = (
+                self._dependent_recipe_ids(user_id, initial_projection_id)
+                if initial_projection_id is not None
+                else set()
+            )
+            locked = self.recipes.get_many_for_update(
+                {recipe_id, *initial_dependency_ids},
+                user_id,
+            )
+            recipe = locked.get(recipe_id)
+            if recipe is None:
+                raise LookupError("Recipe not found")
+            projection = (
+                self.foods.get_for_update(recipe.published_food_item_id, user_id)
+                if recipe.published_food_item_id is not None
+                else None
+            )
+            if projection is not None:
+                classification = classify_recipe_projection(projection, recipe)
+                if classification.kind != RecipeProjectionKind.MANAGED:
+                    raise projection_mutation_error(projection, classification, "delete")
+
+            final_dependency_ids = (
+                self._dependent_recipe_ids(user_id, projection.id)
+                if projection is not None
+                else set()
+            )
+            newly_discovered = final_dependency_ids.difference(locked)
+            if newly_discovered:
+                locked.update(self.recipes.get_many_for_update(newly_discovered, user_id))
+                final_dependency_ids = self._dependent_recipe_ids(user_id, projection.id)
+            dependencies = [
+                locked[parent_id]
+                for parent_id in sorted(final_dependency_ids)
+                if parent_id in locked
+            ]
+            dependency = (
+                self._recipe_delete_dependency(recipe, projection, dependencies)
+                if projection is not None and dependencies
+                else None
+            )
+            if dependency is not None and not remove_from_recipes:
+                raise RecipeDependencyError(dependency)
+
+            now = datetime.now(timezone.utc)
+            if remove_from_recipes and dependencies:
+                self._remove_projection_from_recipes(dependencies, projection.id, now)
+
+            recipe.deleted_at = now
+            recipe.updated_at = now
+            self.db.flush()
+            self._after_child_recipe_soft_delete(recipe)
+            if projection is not None:
+                projection.deleted_at = now
+                projection.updated_at = now
+                self.db.flush()
+                self._after_projection_soft_delete(projection)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _dependent_recipe_ids(
+        self,
+        user_id: UUID,
+        projection_id: UUID,
+    ) -> set[UUID]:
+        statement = (
+            select(Recipe.id)
+            .join(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+            .where(
+                Recipe.user_id == user_id,
+                Recipe.deleted_at.is_(None),
+                RecipeIngredient.food_item_id == projection_id,
+            )
+            .order_by(Recipe.id)
+            .distinct()
+        )
+        return set(self.db.scalars(statement).all())
+
+    @staticmethod
+    def _recipe_delete_dependency(
+        recipe: Recipe,
+        projection: FoodItem,
+        dependencies: list[Recipe],
+    ) -> RecipeDeleteDependencyResponse:
+        affected = [
+            RecipeDeleteAffectedRecipeResponse(
+                recipe_id=parent.id,
+                recipe_name=parent.name,
+                ingredient_occurrence_count=sum(
+                    ingredient.food_item_id == projection.id
+                    for ingredient in parent.ingredients
+                ),
+                is_published=parent.published_food_item_id is not None,
+                needs_republish=parent.published_food_item_id is not None,
+            )
+            for parent in sorted(dependencies, key=lambda value: value.name.casefold())
+        ]
+        return RecipeDeleteDependencyResponse(
+            recipe_id=recipe.id,
+            projection_food_item_id=projection.id,
+            active_dependent_recipe_count=len(affected),
+            affected_recipes=affected,
+            total_ingredient_rows_affected=sum(
+                parent.ingredient_occurrence_count for parent in affected
+            ),
+        )
+
+    def _remove_projection_from_recipes(
+        self,
+        dependencies: list[Recipe],
+        projection_id: UUID,
+        now: datetime,
+    ) -> None:
+        for parent in dependencies:
+            remaining = [
+                ingredient
+                for ingredient in parent.ingredients
+                if ingredient.food_item_id != projection_id
+            ]
+            parent.ingredients[:] = remaining
+            for offset, ingredient in enumerate(parent.ingredients):
+                ingredient.position = 100_000 + offset
+            parent.updated_at = now
+            if parent.published_food_item_id is not None:
+                parent.needs_republish = True
+        self.db.flush()
+        self._after_dependent_ingredient_removal(dependencies)
+        for parent in dependencies:
+            for position, ingredient in enumerate(parent.ingredients):
+                ingredient.position = position
+        self.db.flush()
+        self._after_parent_staleness_update(dependencies)
+
+    def _after_dependent_ingredient_removal(self, _parents: list[Recipe]) -> None:
+        """Test seam after dependent ingredient deletion is flushed."""
+
+    def _after_parent_staleness_update(self, _parents: list[Recipe]) -> None:
+        """Test seam after parent order and publication staleness are flushed."""
+
+    def _after_child_recipe_soft_delete(self, _recipe: Recipe) -> None:
+        """Test seam after child Recipe retirement is flushed."""
+
+    def _after_projection_soft_delete(self, _projection: FoodItem) -> None:
+        """Test seam after compatibility projection retirement is flushed."""
 
     def nutrition(self, user_id: UUID, recipe_id: UUID) -> dict[str, list[AggregatedNutrientTotal] | None]:
         recipe = self.recipes.get_required(recipe_id, user_id)
@@ -231,9 +392,13 @@ class RecipeService:
         positions = [ingredient.position for ingredient in ingredients]
         if len(positions) != len(set(positions)):
             raise ValueError("ingredient positions must be unique")
+        foods = {
+            food_id: self.foods.get_for_update(food_id, user_id)
+            for food_id in sorted({ingredient.food_item_id for ingredient in ingredients})
+        }
         built: list[RecipeIngredient] = []
         for ingredient in sorted(ingredients, key=lambda item: item.position):
-            food = self.foods.get_required(ingredient.food_item_id, user_id)
+            food = foods[ingredient.food_item_id]
             self._validate_no_recipe_cycle(user_id, recipe, food)
             resolved = resolve_amount(
                 food,
