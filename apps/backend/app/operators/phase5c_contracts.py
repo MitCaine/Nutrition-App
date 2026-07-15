@@ -28,6 +28,9 @@ EXECUTION_OPERATOR_ATTESTATION_VERSION = "phase5c_operator_attestation_v2"
 EXECUTION_ISOLATION_EVIDENCE_VERSION = "phase5c_isolation_evidence_v2"
 CONVERTER_VERSION = "phase5c_checkpointed_converter_v1"
 EXECUTION_RECEIPT_VERSION = "phase5c_execution_receipt_v1"
+QUALIFICATION_RECEIPT_VERSION = "phase5c_conversion_qualification_receipt_v1"
+QUALIFIER_VERSION = "phase5c_independent_qualifier_v1"
+QUALIFICATION_DIAGNOSTIC_VERSION = "phase5c_qualification_diagnostic_v1"
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{2,127}$")

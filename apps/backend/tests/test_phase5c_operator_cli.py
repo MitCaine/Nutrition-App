@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import inspect
 import sys
 
 import pytest
 
+from app.operators import historical_recipe_qualification as qualification_module
 from scripts.bridge_historical_recipes import main as bridge_main
 from scripts.capture_phase5c_database_identity import main as identity_main
 from scripts.create_phase5c_operator_attestation import main as attestation_main
 from scripts.establish_phase5c_clone_marker import main as marker_main
 from scripts.execute_historical_recipe_conversion import main as converter_main
 from scripts.plan_historical_recipe_conversion import main as planner_main
+from scripts.verify_historical_recipe_conversion import main as qualifier_main
 
 
 @pytest.mark.parametrize(
@@ -98,6 +101,25 @@ from scripts.plan_historical_recipe_conversion import main as planner_main
                 "test-clone",
             ],
             "NUTRITION_DATABASE_URL must be explicitly set for historical conversion",
+        ),
+        (
+            qualifier_main,
+            [
+                "verify_historical_recipe_conversion",
+                "--plan",
+                "plan.json",
+                "--inventory",
+                "inventory.json",
+                "--attestation",
+                "attestation.json",
+                "--execution-receipt",
+                "execution-receipt.json",
+                "--clone-marker-id",
+                "test-marker",
+                "--conversion-clone-id",
+                "test-clone",
+            ],
+            "NUTRITION_DATABASE_URL must be explicitly set for conversion qualification",
         ),
     ),
 )
@@ -199,3 +221,123 @@ def test_execution_attestation_command_rejects_invalid_plan_file(
     assert "Conversion plan" in error
     assert "private text" not in error
     assert "postgresql" not in error
+
+
+def test_qualification_diagnostic_redacts_invalid_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    invalid_plan = tmp_path / "invalid-qualification-plan.json"
+    invalid_plan.write_text(
+        '{"authored":"private qualification text","url":"postgresql://secret"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "NUTRITION_DATABASE_URL",
+        "postgresql+psycopg://example.invalid/conversion_clone",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_historical_recipe_conversion",
+            "--plan",
+            str(invalid_plan),
+            "--inventory",
+            "inventory.json",
+            "--attestation",
+            "attestation.json",
+            "--execution-receipt",
+            "execution-receipt.json",
+            "--clone-marker-id",
+            "test-marker",
+            "--conversion-clone-id",
+            "test-clone",
+            "--diagnostic-only",
+            "--format",
+            "json",
+        ],
+    )
+
+    qualifier_main()
+
+    output = capsys.readouterr().out
+    assert "qualification_evidence_mismatch" in output
+    assert "private qualification text" not in output
+    assert "postgresql" not in output
+    assert "secret" not in output
+
+
+def test_qualification_module_has_no_converter_or_write_statement_dependency() -> None:
+    source = inspect.getsource(qualification_module)
+
+    assert "historical_recipe_converter" not in source
+    for write_statement in (
+        "INSERT INTO",
+        "UPDATE phase5c",
+        "DELETE FROM",
+        "ALTER TABLE",
+        "CREATE TABLE",
+    ):
+        assert write_statement not in source
+
+
+def test_qualification_cli_redacts_unexpected_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv(
+        "NUTRITION_DATABASE_URL",
+        "postgresql+psycopg://example.invalid/conversion_clone",
+    )
+    for loader in (
+        "load_conversion_plan_file",
+        "load_inventory_file",
+        "load_operator_attestation",
+        "load_execution_receipt_file",
+    ):
+        monkeypatch.setattr(
+            f"scripts.verify_historical_recipe_conversion.{loader}",
+            lambda _path: {},
+        )
+
+    def fail_safely(*args, **kwargs):
+        raise RuntimeError(
+            "private authored text postgresql://operator:secret@example.invalid"
+        )
+
+    monkeypatch.setattr(
+        "scripts.verify_historical_recipe_conversion.qualify_historical_recipe_conversion",
+        fail_safely,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_historical_recipe_conversion",
+            "--plan",
+            "plan.json",
+            "--inventory",
+            "inventory.json",
+            "--attestation",
+            "attestation.json",
+            "--execution-receipt",
+            "execution-receipt.json",
+            "--clone-marker-id",
+            "test-marker",
+            "--conversion-clone-id",
+            "test-clone",
+            "--diagnostic-only",
+            "--format",
+            "json",
+        ],
+    )
+
+    qualifier_main()
+
+    output = capsys.readouterr().out
+    assert "qualification_evidence_mismatch" in output
+    assert "private authored text" not in output
+    assert "postgresql" not in output
+    assert "secret" not in output

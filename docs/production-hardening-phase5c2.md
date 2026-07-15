@@ -165,8 +165,17 @@ UUIDs, stable dispositions/reasons, converted target/projection/revision identit
 verification state, and a canonical report digest. It excludes authored names, notes, instructions,
 preparation text, emails, OCR content, credentials, URLs, and arbitrary exception text.
 
-## Deferred Phase 5C3 boundary
+## Phase 5C3a qualification handoff
 
-Phase 5C2 does not authorize production promotion. Promotion/cutover verification, archive cleanup,
-legacy Daily Log revision-link enrichment, quarantine repair, OCR changes, and alternate historical
-schema signatures require separately reviewed work.
+Phase 5C3a independently re-queries a completed conversion clone and reconciles the exact plan,
+execution authorization, run, outcomes, immutable Recipe domain, archive/source roots, Daily
+Log/OCR baselines, and execution receipt. It emits a compact read-only qualification receipt but
+does not authorize promotion. See
+[Phase 5C3a](production-hardening-phase5c3a.md).
+
+## Deferred Phase 5C3b boundary
+
+Phase 5C2 and Phase 5C3a do not authorize production promotion. Performance and recovery
+qualification, promotion/cutover eligibility, archive cleanup, legacy Daily Log revision-link
+enrichment, quarantine repair, OCR changes, and alternate historical schema signatures require
+separately reviewed work.

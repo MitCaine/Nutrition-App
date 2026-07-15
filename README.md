@@ -118,6 +118,12 @@ required. A regenerated plan requires new execution authorization. Phase 5C2 doe
 production promotion; rollback remains cutback to the pre-conversion clone. See
 [Production Hardening Phase 5C2](docs/production-hardening-phase5c2.md).
 
+Phase 5C3a adds a PostgreSQL-only independent qualification command for completed Phase 5C2 clones.
+It re-queries final Recipe, ingredient, revision, projection, graph, archive/source, Daily Log, OCR,
+run, outcome, and execution-receipt state inside a read-only repeatable snapshot. Its compact,
+deterministic receipt is external evidence only and does not authorize production promotion. See
+[Production Hardening Phase 5C3a](docs/production-hardening-phase5c3a.md).
+
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
 stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,

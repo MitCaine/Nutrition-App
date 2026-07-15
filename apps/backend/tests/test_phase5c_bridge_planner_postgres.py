@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -16,6 +17,7 @@ from sqlalchemy.pool import NullPool
 
 from app.operators import historical_recipe_bridge as bridge_module
 from app.operators import historical_recipe_converter as converter_module
+from app.operators import historical_recipe_qualification as qualification_module
 from app.operators.historical_database_inventory import inventory_database
 from app.operators.historical_recipe_bridge import (
     SCHEMA_SIGNATURE_DIGEST,
@@ -27,6 +29,10 @@ from app.operators.historical_recipe_converter import (
     execute_historical_recipe_conversion,
 )
 from app.operators.historical_recipe_planner import plan_historical_recipe_conversion
+from app.operators.historical_recipe_qualification import (
+    Phase5CQualificationError,
+    qualify_historical_recipe_conversion,
+)
 from app.operators.phase5c_contracts import (
     CONTROL_REVISION,
     CONVERSION_PLAN_VERSION,
@@ -377,6 +383,55 @@ def _seed_historical_log_and_ocr(engine: Engine, ids: dict[str, UUID]) -> None:
                 "user_id": ids["user"],
                 "scan_id": scan_id,
                 "parse_id": parse_id,
+            },
+        )
+
+
+def _seed_qualification_preservation_rows(
+    engine: Engine, archive_schema: str
+) -> None:
+    archive = engine.dialect.identifier_preparer.quote(archive_schema)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                f"SELECT recipe.user_id, ingredient.ingredient_food_item_id, "
+                f"ingredient.serving_definition_id FROM {archive}.recipes recipe "
+                f"JOIN {archive}.recipe_ingredients ingredient "
+                "ON ingredient.recipe_id = recipe.id ORDER BY recipe.id LIMIT 1"
+            )
+        ).mappings().one()
+        nutrient_id = connection.scalar(
+            text(
+                "SELECT id FROM food_nutrients WHERE food_item_id = :food_id "
+                "ORDER BY id LIMIT 1"
+            ),
+            {"food_id": row["ingredient_food_item_id"]},
+        )
+    _seed_historical_log_and_ocr(
+        engine,
+        {
+            "user": row["user_id"],
+            "ingredient_food": row["ingredient_food_item_id"],
+            "ingredient_serving": row["serving_definition_id"],
+            "ingredient_nutrient": nutrient_id,
+        },
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO ocr_nutrition_confirmation_traces "
+                "(id, user_id, food_item_id, parser_version, image_source_type, "
+                "schema_version, trace_snapshot, client_request_id, "
+                "request_fingerprint) VALUES "
+                "(:id, :user_id, :food_id, 'legacy-parser', 'camera', 'v1', "
+                "'{\"private\":\"trace payload\"}'::jsonb, :request_id, "
+                "'qualification-fixture')"
+            ),
+            {
+                "id": uuid4(),
+                "user_id": row["user_id"],
+                "food_id": row["ingredient_food_item_id"],
+                "request_id": uuid4(),
             },
         )
 
@@ -925,6 +980,36 @@ def _execute_conversion(
         conversion_clone_id=evidence["conversion_clone_id"],
         clone_marker_identity=evidence["clone_marker_identity"],
         attestation_payload=attestation_payload,
+        **kwargs,
+    )
+
+
+def _qualify_conversion(
+    engine: Engine,
+    archive_schema: str,
+    inventory: dict,
+    evidence: dict,
+    plan: dict,
+    execution_receipt: dict,
+    **kwargs,
+):
+    return qualify_historical_recipe_conversion(
+        engine,
+        plan_payload=kwargs.pop("plan_payload", plan),
+        inventory_payload=kwargs.pop("inventory_payload", inventory),
+        execution_attestation_payload=kwargs.pop(
+            "execution_attestation_payload", evidence["execution_attestation"]
+        ),
+        execution_receipt_payload=kwargs.pop(
+            "execution_receipt_payload", execution_receipt
+        ),
+        archive_schema=kwargs.pop("archive_schema_override", archive_schema),
+        conversion_clone_id=kwargs.pop(
+            "conversion_clone_id", evidence["conversion_clone_id"]
+        ),
+        clone_marker_identity=kwargs.pop(
+            "clone_marker_identity", evidence["clone_marker_identity"]
+        ),
         **kwargs,
     )
 
@@ -2574,3 +2659,933 @@ def test_converter_bounds_retry_exhaustion_and_does_not_retry_other_failures(
     assert attempts == expected_attempts
     assert report["subjects"][0]["reason_code"] == reason_code
     assert report["counts"]["failed"] == 1
+
+
+def test_independent_qualification_is_deterministic_private_and_read_only(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    with engine.connect() as connection:
+        before = canonical_digest(
+            {
+                "run": [
+                    dict(row)
+                    for row in connection.execute(
+                        text("SELECT * FROM phase5c_conversion_runs")
+                    ).mappings()
+                ],
+                "outcomes": [
+                    dict(row)
+                    for row in connection.execute(
+                        text(
+                            "SELECT * FROM phase5c_conversion_outcomes "
+                            "ORDER BY source_recipe_id"
+                        )
+                    ).mappings()
+                ],
+                "recipes": [
+                    dict(row)
+                    for row in connection.execute(
+                        text("SELECT * FROM recipes ORDER BY id")
+                    ).mappings()
+                ],
+            }
+        )
+
+    first = _qualify_conversion(
+        engine, archive_schema, inventory, evidence, plan, execution_receipt
+    )
+    second = _qualify_conversion(
+        engine, archive_schema, inventory, evidence, plan, execution_receipt
+    )
+
+    assert first.payload == second.payload
+    assert first.payload["verification_result"] == "qualified"
+    assert first.payload["observed_counts"]["converted"] == 1
+    rendered = first.to_json() + first.to_human()
+    for private_value in (
+        "Historical Recipe Projection",
+        "Historical Ingredient",
+        "prepared",
+        "postgresql",
+    ):
+        assert private_value not in rendered
+    with engine.connect() as connection:
+        after = canonical_digest(
+            {
+                "run": [
+                    dict(row)
+                    for row in connection.execute(
+                        text("SELECT * FROM phase5c_conversion_runs")
+                    ).mappings()
+                ],
+                "outcomes": [
+                    dict(row)
+                    for row in connection.execute(
+                        text(
+                            "SELECT * FROM phase5c_conversion_outcomes "
+                            "ORDER BY source_recipe_id"
+                        )
+                    ).mappings()
+                ],
+                "recipes": [
+                    dict(row)
+                    for row in connection.execute(
+                        text("SELECT * FROM recipes ORDER BY id")
+                    ).mappings()
+                ],
+            }
+        )
+    assert before == after
+
+
+@pytest.fixture()
+def completed_qualification_clone(
+    conversion_clone: tuple[Engine, str, str],
+) -> tuple[Engine, str, str, dict, dict, dict, dict]:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    return (
+        engine,
+        database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason_code"),
+    (
+        (
+            "UPDATE {archive}.recipes SET instructions = 'changed archive'",
+            "qualification_archive_checksum_changed",
+        ),
+        (
+            "UPDATE {archive}.recipe_ingredients "
+            "SET preparation_note = 'changed archive ingredient'",
+            "qualification_archive_checksum_changed",
+        ),
+        (
+            "UPDATE food_items SET name = 'changed supporting Food' "
+            "WHERE id = (SELECT published_food_item_id FROM recipes LIMIT 1)",
+            "qualification_archive_checksum_changed",
+        ),
+        (
+            "UPDATE serving_definitions SET label = 'changed serving' "
+            "WHERE food_item_id = (SELECT published_food_item_id FROM recipes LIMIT 1)",
+            "qualification_archive_checksum_changed",
+        ),
+        (
+            "UPDATE food_nutrients SET amount = amount + 1 "
+            "WHERE food_item_id = (SELECT published_food_item_id FROM recipes LIMIT 1)",
+            "qualification_archive_checksum_changed",
+        ),
+        (
+            "INSERT INTO food_sources (id, food_item_id, source_type) "
+            "SELECT gen_random_uuid(), published_food_item_id, 'changed-source' "
+            "FROM recipes LIMIT 1",
+            "qualification_archive_checksum_changed",
+        ),
+        (
+            "UPDATE recipes SET serving_count_yield = serving_count_yield + 1",
+            "qualification_converted_mapping_invalid",
+        ),
+        (
+            "UPDATE recipe_ingredients SET preparation_note = 'changed authored row'",
+            "qualification_converted_mapping_invalid",
+        ),
+        (
+            "UPDATE food_items SET recipe_publication_revision_id = NULL "
+            "WHERE id = (SELECT published_food_item_id FROM recipes LIMIT 1)",
+            "qualification_projection_snapshot_invalid",
+        ),
+        (
+            "UPDATE recipe_publication_revisions SET content_digest = repeat('0', 64)",
+            "qualification_revision_digest_invalid",
+        ),
+        (
+            "DELETE FROM recipe_publication_amount_definitions",
+            "qualification_revision_digest_invalid",
+        ),
+        (
+            "UPDATE recipes SET active_publication_revision_id = NULL",
+            "qualification_projection_snapshot_invalid",
+        ),
+        (
+            "UPDATE recipes SET needs_republish = NOT needs_republish",
+            "qualification_staleness_invalid",
+        ),
+    ),
+)
+def test_independent_qualification_detects_archive_and_domain_corruption(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+    mutation: str,
+    reason_code: str,
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    quoted_archive = engine.dialect.identifier_preparer.quote(archive_schema)
+    with engine.begin() as connection:
+        connection.execute(text(mutation.format(archive=quoted_archive)))
+
+    with pytest.raises(Phase5CQualificationError, match=reason_code):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+@pytest.mark.parametrize("missing", (True, False))
+def test_independent_qualification_rejects_missing_or_extra_outcomes(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+    missing: bool,
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    with engine.begin() as connection:
+        run_id = connection.scalar(text("SELECT id FROM phase5c_conversion_runs"))
+        if missing:
+            connection.execute(text("DELETE FROM phase5c_conversion_outcomes"))
+        else:
+            connection.execute(
+                text(
+                    "INSERT INTO phase5c_conversion_outcomes "
+                    "(run_id, source_recipe_id, planned_disposition, "
+                    "planned_reason_code, source_checksum, execution_disposition, "
+                    "checkpoint_state, verification_state) VALUES "
+                    "(:run_id, :source_id, 'block', 'unexpected_subject', :checksum, "
+                    "'blocked', 'completed', 'verified')"
+                ),
+                {
+                    "run_id": run_id,
+                    "source_id": uuid4(),
+                    "checksum": "a" * 64,
+                },
+            )
+
+    with pytest.raises(
+        Phase5CQualificationError,
+        match="qualification_outcome_cardinality_invalid",
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+@pytest.mark.parametrize("state", ("pending", "failed"))
+def test_independent_qualification_rejects_incomplete_runs(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+    state: str,
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    with engine.begin() as connection:
+        if state == "pending":
+            connection.execute(
+                text(
+                    "UPDATE phase5c_conversion_runs SET execution_state = 'running', "
+                    "verification_state = 'pending'"
+                )
+            )
+        else:
+            connection.execute(
+                text(
+                    "UPDATE phase5c_conversion_runs SET execution_state = 'failed', "
+                    "verification_state = 'failed', "
+                    "failure_reason_code = 'subject_failure'"
+                )
+            )
+
+    with pytest.raises(
+        Phase5CQualificationError, match="qualification_run_incomplete"
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_reconciles_execution_receipt_subjects(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    changed = deepcopy(execution_receipt)
+    changed["subjects"][0]["reason_code"] = "changed_receipt_reason"
+    unsigned = {key: value for key, value in changed.items() if key != "report_digest"}
+    changed["report_digest"] = canonical_digest(unsigned)
+
+    with pytest.raises(
+        Phase5CQualificationError,
+        match="qualification_execution_receipt_mismatch",
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+            execution_receipt_payload=changed,
+        )
+
+
+def test_independent_qualification_rechecks_evidence_after_operation_lock(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    original = qualification_module._verify_isolation
+    calls = 0
+
+    def reject_second_check(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise Phase5CQualificationError("qualification_evidence_mismatch")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        qualification_module, "_verify_isolation", reject_second_check
+    )
+    with pytest.raises(
+        Phase5CQualificationError, match="qualification_evidence_mismatch"
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+    assert calls == 2
+
+
+def test_independent_qualification_refuses_nonmaintenance_session(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    with engine.connect() as unrelated:
+        unrelated.execute(text("SELECT 1"))
+        with pytest.raises(
+            Phase5CQualificationError, match="qualification_evidence_mismatch"
+        ):
+            _qualify_conversion(
+                engine,
+                archive_schema,
+                inventory,
+                evidence,
+                plan,
+                execution_receipt,
+            )
+
+
+def test_independent_qualification_accepts_multiple_converted_recipes(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema, convert_count=2
+    )
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+
+    receipt = _qualify_conversion(
+        engine, archive_schema, inventory, evidence, plan, execution_receipt
+    ).payload
+
+    assert receipt["observed_counts"]["converted"] == 2
+    assert receipt["verification_result"] == "qualified"
+
+
+def test_independent_qualification_accepts_nested_converted_recipes(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _upgrade(database_url, "0003_usda_source_identity")
+    child = _seed_recipe(engine)
+    _seed_recipe(
+        engine,
+        user_id=child["user"],
+        ingredient_food_item_id=child["projection"],
+        ingredient_serving_id=child["projection_serving"],
+    )
+    inventory = _inventory(engine)
+    evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
+    _bridge(engine, archive_schema, inventory, evidence)
+    _upgrade(database_url, CONTROL_REVISION)
+    plan = plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    ).payload
+    evidence["execution_attestation"] = _build_execution_attestation(
+        engine, inventory, evidence, plan
+    )
+    _upgrade(database_url, EXECUTION_REVISION)
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+
+    receipt = _qualify_conversion(
+        engine, archive_schema, inventory, evidence, plan, execution_receipt
+    ).payload
+
+    assert receipt["observed_counts"]["converted"] == 2
+    assert receipt["verification_result"] == "qualified"
+
+
+def test_independent_qualification_accepts_mixed_convert_and_quarantine(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _upgrade(database_url, "0003_usda_source_identity")
+    _seed_recipe(engine)
+    _seed_recipe(
+        engine,
+        instructions="historical instructions have no lossless current field",
+    )
+    inventory = _inventory(engine)
+    evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
+    _bridge(engine, archive_schema, inventory, evidence)
+    _upgrade(database_url, CONTROL_REVISION)
+    plan = plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    ).payload
+    evidence["execution_attestation"] = _build_execution_attestation(
+        engine, inventory, evidence, plan
+    )
+    _upgrade(database_url, EXECUTION_REVISION)
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+
+    receipt = _qualify_conversion(
+        engine, archive_schema, inventory, evidence, plan, execution_receipt
+    ).payload
+
+    assert receipt["observed_counts"] == {
+        "converted": 1,
+        "quarantined": 1,
+        "blocked": 0,
+        "failed": 0,
+        "pending": 0,
+    }
+    assert receipt["verification_result"] == "qualified"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason_code"),
+    (
+        (
+            "UPDATE daily_logs SET notes = 'changed historical log'",
+            "qualification_daily_log_state_changed",
+        ),
+        (
+            "UPDATE daily_log_nutrient_snapshots SET amount = amount + 1",
+            "qualification_daily_log_state_changed",
+        ),
+        (
+            "UPDATE ocr_scans SET full_text = 'changed private OCR text'",
+            "qualification_ocr_state_changed",
+        ),
+        (
+            "UPDATE parse_results SET parsed_payload = "
+            "'{\"changed\":\"private\"}'::jsonb",
+            "qualification_ocr_state_changed",
+        ),
+        (
+            "UPDATE ocr_nutrition_confirmation_traces SET trace_snapshot = "
+            "'{\"changed\":\"private\"}'::jsonb",
+            "qualification_ocr_state_changed",
+        ),
+    ),
+)
+def test_independent_qualification_detects_daily_log_and_ocr_mutation(
+    conversion_clone: tuple[Engine, str, str],
+    mutation: str,
+    reason_code: str,
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    _seed_qualification_preservation_rows(engine, archive_schema)
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    with engine.begin() as connection:
+        connection.execute(text(mutation))
+
+    with pytest.raises(Phase5CQualificationError, match=reason_code):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_detects_current_dependency_cycle(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _upgrade(database_url, "0003_usda_source_identity")
+    child = _seed_recipe(engine)
+    parent = _seed_recipe(
+        engine,
+        user_id=child["user"],
+        ingredient_food_item_id=child["projection"],
+        ingredient_serving_id=child["projection_serving"],
+    )
+    inventory = _inventory(engine)
+    evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
+    _bridge(engine, archive_schema, inventory, evidence)
+    _upgrade(database_url, CONTROL_REVISION)
+    plan = plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    ).payload
+    evidence["execution_attestation"] = _build_execution_attestation(
+        engine, inventory, evidence, plan
+    )
+    _upgrade(database_url, EXECUTION_REVISION)
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE recipe_ingredients SET food_item_id = :parent_projection, "
+                "serving_definition_id = :parent_serving, amount_unit = 'serving' "
+                "WHERE recipe_id = :child_id"
+            ),
+            {
+                "parent_projection": parent["projection"],
+                "parent_serving": parent["projection_serving"],
+                "child_id": child["recipe"],
+            },
+        )
+
+    with pytest.raises(
+        Phase5CQualificationError, match="qualification_dependency_cycle"
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_rejects_dependency_on_quarantined_subject(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _upgrade(database_url, "0003_usda_source_identity")
+    converted = _seed_recipe(engine)
+    quarantined = _seed_recipe(
+        engine,
+        user_id=converted["user"],
+        instructions="historical instructions have no lossless current field",
+    )
+    inventory = _inventory(engine)
+    evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
+    _bridge(engine, archive_schema, inventory, evidence)
+    _upgrade(database_url, CONTROL_REVISION)
+    plan = plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    ).payload
+    evidence["execution_attestation"] = _build_execution_attestation(
+        engine, inventory, evidence, plan
+    )
+    _upgrade(database_url, EXECUTION_REVISION)
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE recipe_ingredients SET food_item_id = :projection, "
+                "serving_definition_id = :serving, amount_unit = 'serving' "
+                "WHERE recipe_id = :recipe_id"
+            ),
+            {
+                "projection": quarantined["projection"],
+                "serving": quarantined["projection_serving"],
+                "recipe_id": converted["recipe"],
+            },
+        )
+
+    with pytest.raises(
+        Phase5CQualificationError, match="qualification_dependency_invalid"
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_detects_unexplained_current_recipe(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    with engine.begin() as connection:
+        owner_id = connection.scalar(text("SELECT user_id FROM recipes LIMIT 1"))
+        connection.execute(
+            text(
+                "INSERT INTO recipes (id, user_id, name, needs_republish) "
+                "VALUES (:id, :owner_id, 'unexplained private Recipe', false)"
+            ),
+            {"id": uuid4(), "owner_id": owner_id},
+        )
+
+    with pytest.raises(
+        Phase5CQualificationError,
+        match="qualification_unexplained_current_domain_row",
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_detects_unexpected_revision(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    with engine.begin() as connection:
+        recipe = connection.execute(
+            text("SELECT id, user_id FROM recipes LIMIT 1")
+        ).mappings().one()
+        connection.execute(
+            text(
+                "INSERT INTO recipe_publication_revisions "
+                "(id, recipe_id, user_id, revision_number, creation_origin, "
+                "provenance_confidence, published_name, content_digest) VALUES "
+                "(:id, :recipe_id, :user_id, 2, 'normal_publication', 'complete', "
+                "'unexpected private revision', :digest)"
+            ),
+            {
+                "id": uuid4(),
+                "recipe_id": recipe["id"],
+                "user_id": recipe["user_id"],
+                "digest": "a" * 64,
+            },
+        )
+
+    with pytest.raises(
+        Phase5CQualificationError,
+        match="qualification_converted_mapping_invalid",
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_rejects_current_domain_for_quarantine(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _upgrade(database_url, "0003_usda_source_identity")
+    _seed_recipe(engine)
+    _seed_recipe(
+        engine,
+        instructions="historical instructions have no lossless current field",
+    )
+    inventory = _inventory(engine)
+    evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
+    _bridge(engine, archive_schema, inventory, evidence)
+    _upgrade(database_url, CONTROL_REVISION)
+    plan = plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    ).payload
+    evidence["execution_attestation"] = _build_execution_attestation(
+        engine, inventory, evidence, plan
+    )
+    _upgrade(database_url, EXECUTION_REVISION)
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    quarantined_id = UUID(
+        next(
+            row["source_recipe_id"]
+            for row in plan["decisions"]
+            if row["intended_disposition"] == "quarantine"
+        )
+    )
+    archive = engine.dialect.identifier_preparer.quote(archive_schema)
+    with engine.begin() as connection:
+        source = connection.execute(
+            text(
+                f"SELECT recipe.user_id, recipe.food_item_id, food.name "
+                f"FROM {archive}.recipes recipe JOIN food_items food "
+                "ON food.id = recipe.food_item_id WHERE recipe.id = :recipe_id"
+            ),
+            {"recipe_id": quarantined_id},
+        ).mappings().one()
+        connection.execute(
+            text(
+                "INSERT INTO recipes "
+                "(id, user_id, published_food_item_id, name, needs_republish) "
+                "VALUES (:id, :user_id, :projection_id, :name, false)"
+            ),
+            {
+                "id": quarantined_id,
+                "user_id": source["user_id"],
+                "projection_id": source["food_item_id"],
+                "name": source["name"],
+            },
+        )
+
+    with pytest.raises(
+        Phase5CQualificationError,
+        match="qualification_nonconvert_domain_row_exists",
+    ):
+        _qualify_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            execution_receipt,
+        )
+
+
+def test_independent_qualification_rejects_other_plan_attestation_run_and_clone(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+) -> None:
+    (
+        engine,
+        _database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    other_plan = _redigest_plan(
+        plan, decisions__0__reason_code="another_approved_decision"
+    )
+    other_attestation = _redigest_attestation(
+        evidence["execution_attestation"],
+        clone_marker_identity="phase5c-other-qualification-marker",
+    )
+    other_receipt = deepcopy(execution_receipt)
+    other_receipt["run_id"] = str(uuid4())
+    unsigned = {
+        key: value for key, value in other_receipt.items() if key != "report_digest"
+    }
+    other_receipt["report_digest"] = canonical_digest(unsigned)
+    cases = (
+        {"plan_payload": other_plan},
+        {"execution_attestation_payload": other_attestation},
+        {"execution_receipt_payload": other_receipt},
+        {"clone_marker_identity": "phase5c-other-qualification-marker"},
+        {"conversion_clone_id": "phase5c-other-qualification-clone"},
+        {"archive_schema_override": "phase5c_other_archive"},
+    )
+    for changes in cases:
+        with pytest.raises(
+            Phase5CQualificationError,
+            match="qualification_evidence_mismatch",
+        ):
+            _qualify_conversion(
+                engine,
+                archive_schema,
+                inventory,
+                evidence,
+                plan,
+                execution_receipt,
+                **changes,
+            )
+
+
+def test_independent_qualification_cli_emits_canonical_receipt(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+    tmp_path: Path,
+) -> None:
+    (
+        _engine,
+        database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    artifacts = {
+        "plan": plan,
+        "inventory": inventory,
+        "attestation": evidence["execution_attestation"],
+        "execution-receipt": execution_receipt,
+    }
+    paths: dict[str, Path] = {}
+    for name, payload in artifacts.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(canonical_json(payload), encoding="utf-8")
+        paths[name] = path
+    environment = os.environ.copy()
+    environment["NUTRITION_DATABASE_URL"] = database_url
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.verify_historical_recipe_conversion",
+            "--plan",
+            str(paths["plan"]),
+            "--inventory",
+            str(paths["inventory"]),
+            "--attestation",
+            str(paths["attestation"]),
+            "--execution-receipt",
+            str(paths["execution-receipt"]),
+            "--clone-marker-id",
+            evidence["clone_marker_identity"],
+            "--conversion-clone-id",
+            evidence["conversion_clone_id"],
+            "--archive-schema",
+            archive_schema,
+            "--format",
+            "json",
+        ],
+        cwd=BACKEND_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    receipt = json.loads(result.stdout)
+    assert receipt["verification_result"] == "qualified"
+    assert canonical_json(receipt) + "\n" == result.stdout
+    assert "postgresql" not in result.stdout
