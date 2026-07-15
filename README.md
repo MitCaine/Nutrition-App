@@ -78,10 +78,11 @@ variable explicitly on the migration command.
 
 Migration `0004_recipe_domain_foundation` intentionally refuses to upgrade a pre-0004 database
 when either legacy `recipes` or `recipe_ingredients` table contains rows. Empty databases continue
-to upgrade normally. A populated legacy database requires a future, separately validated historical
-Recipe conversion before it can pass 0004; this release does not attempt that conversion. If a
-database was already upgraded through the older destructive 0004, discarded rows can be recovered
-only from a backup. See [Production Hardening Phase 5A](docs/production-hardening-phase5a.md).
+to upgrade normally. A populated legacy database must first use the offline Phase 5C1 bridge on an
+isolated conversion clone; this release can preserve and plan that history but does not convert it.
+If a database was already upgraded through the older destructive 0004, discarded rows can be
+recovered only from a backup. See
+[Production Hardening Phase 5A](docs/production-hardening-phase5a.md).
 
 Before any future historical conversion work, operators can produce an aggregate-only, read-only
 inventory of migration, Recipe, publication, projection, log, OCR, idempotency, and retention state:
@@ -96,6 +97,16 @@ Use `--format json` for the stable machine-readable contract. The command requir
 database variable in its process environment, runs PostgreSQL inspection in a read-only transaction,
 does not run migrations or repairs, and emits no row identifiers or user-authored content. See
 [Production Hardening Phase 5B](docs/production-hardening-phase5b.md).
+
+For a populated canonical 0003 clone, Phase 5C1 can move the legacy Recipe tables into an immutable
+archive, let unchanged Alembic migrations create the current empty Recipe domain, and produce the
+canonical `phase5c_conversion_plan_v2` manifest. Destructive bridging requires a separately created
+clone marker, distinct source/clone safe identities, versioned operator attestation, and
+database-level exclusion of non-Phase-5C client sessions; a boolean confirmation is not accepted.
+The operator commands require explicit database configuration and create no Recipe or publication
+data. See
+[Production Hardening Phase 5C1](docs/production-hardening-phase5c1.md) for the admission rules,
+commands, archive contract, deterministic dispositions, and deferred conversion boundary.
 
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or

@@ -25,7 +25,15 @@ Supported formats are:
 
 - `human`: a sectioned operator summary.
 - `json`: the stable `historical_database_inventory_v1` machine-readable contract intended for
-  comparison and possible consumption by later, separately reviewed tooling.
+  comparison and consumption by the separately reviewed Phase 5C planner and verifier tooling.
+
+`historical_database_inventory_v1` is now the official machine admission contract for historical
+inventory, planning, conversion, verification, and future repair tooling. Consumers must reject a
+major version they do not explicitly support. Changes to classification meaning, required fields,
+or safety decisions require a new major contract. Additive, non-decision metadata is permitted only
+inside a documented extension namespace. Unknown classifications and decision-affecting fields
+must fail closed. Phase 5C hashes the canonical complete v1 report; changing any report evidence
+therefore requires a new plan.
 
 On PostgreSQL, inspection uses one repeatable-read transaction, marks it `READ ONLY`, performs only
 schema inspection and aggregate queries, and rolls the transaction back. It does not acquire write
@@ -72,3 +80,6 @@ Phase 5B deliberately contains no repair, conversion, deletion, rewriting, anony
 or historical inference. Correct conversion requires separately proven mappings and belongs to a
 later phase. When this inventory cannot establish a state with certainty, it reports
 `inventory_inconclusive` instead of guessing.
+
+The [Phase 5C1 bridge and planner](production-hardening-phase5c1.md) consume this contract but still
+perform no semantic historical conversion.

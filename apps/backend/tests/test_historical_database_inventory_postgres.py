@@ -162,7 +162,9 @@ def test_empty_current_database_inventory_is_stable_and_aggregate_only(
         "value": "empty_database",
         "reason": "no_application_or_historical_rows_detected",
     }
-    assert payload["migration"]["current_alembic_revision"] == "0014_create_idempotency"
+    assert payload["migration"]["current_alembic_revision"] == (
+        "0015_phase5c_conversion_control"
+    )
     assert payload["migration"]["already_beyond_migration_0004"] is True
     assert payload["legacy_recipes"]["recipe_count"] == 0
     assert payload["current_recipes"]["recipe_count"] == 0

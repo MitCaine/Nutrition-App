@@ -28,3 +28,7 @@ tables contain data.
 
 The separate [Phase 5B inventory](production-hardening-phase5b.md) can report aggregate historical
 state without changing the database; it still performs no conversion or repair.
+
+The [Phase 5C1 bridge and planner](production-hardening-phase5c1.md) can now preserve eligible
+legacy tables on an isolated conversion clone and produce a deterministic conversion manifest.
+Phase 5C1 still performs no historical Recipe conversion.

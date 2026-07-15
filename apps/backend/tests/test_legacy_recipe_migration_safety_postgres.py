@@ -324,24 +324,42 @@ def test_empty_baseline_upgrades_to_head_and_latest_revision_round_trips(
     assert result.returncode == 0, result.stderr
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0014_create_idempotency"
+            "0015_phase5c_conversion_control"
         )
         table_names = set(inspect(connection).get_table_names())
+        control_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns(
+                "phase5c_conversion_metadata"
+            )
+        }
     assert {"recipes", "recipe_ingredients", "recipe_publication_revisions"} <= table_names
+    assert {
+        "clone_marker_identity",
+        "clone_marker_digest",
+        "clone_database_identity_digest",
+        "source_production_identity_digest",
+        "operator_attestation_identity",
+        "operator_attestation_scope",
+        "operator_attestation_digest",
+        "isolation_evidence_contract_version",
+    } <= control_columns
 
     downgrade = _run_alembic(migration_url, "downgrade", "-1")
     assert downgrade.returncode == 0, downgrade.stderr
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0013_food_recipe_integrity"
+            "0014_create_idempotency"
         )
+        assert "phase5c_conversion_metadata" not in inspect(connection).get_table_names()
 
     reupgrade = _run_alembic(migration_url, "upgrade", "head")
     assert reupgrade.returncode == 0, reupgrade.stderr
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0014_create_idempotency"
+            "0015_phase5c_conversion_control"
         )
+        assert "phase5c_conversion_metadata" in inspect(connection).get_table_names()
 
 
 def test_alembic_populated_0003_to_0004_failure_keeps_revision_and_rows(
