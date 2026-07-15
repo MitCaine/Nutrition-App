@@ -17,7 +17,35 @@ branch_labels = None
 depends_on = None
 
 
+class LegacyRecipeDataRequiresConversionError(RuntimeError):
+    """Block destructive replacement of populated pre-0004 Recipe tables."""
+
+
+def _require_empty_legacy_recipe_tables() -> None:
+    connection = op.get_bind()
+    if connection.dialect.name == "postgresql":
+        # Keep the admission decision stable until the transactional DDL completes.
+        connection.execute(
+            sa.text("LOCK TABLE recipes, recipe_ingredients IN ACCESS EXCLUSIVE MODE")
+        )
+
+    recipes_have_rows = bool(
+        connection.scalar(sa.text("SELECT EXISTS (SELECT 1 FROM recipes LIMIT 1)"))
+    )
+    ingredients_have_rows = bool(
+        connection.scalar(sa.text("SELECT EXISTS (SELECT 1 FROM recipe_ingredients LIMIT 1)"))
+    )
+    if recipes_have_rows or ingredients_have_rows:
+        raise LegacyRecipeDataRequiresConversionError(
+            "Migration 0004_recipe_domain_foundation cannot replace populated legacy Recipe "
+            "tables: historical Recipe conversion is required before upgrade. No legacy Recipe "
+            "data was changed."
+        )
+
+
 def upgrade() -> None:
+    _require_empty_legacy_recipe_tables()
+
     op.rename_table("recipes", "recipes_legacy")
     op.rename_table("recipe_ingredients", "recipe_ingredients_legacy")
 

@@ -76,6 +76,13 @@ Alembic does not use an operational URL from `alembic.ini`. Migration and runtim
 load `NUTRITION_DATABASE_URL` through the application settings. To select a test database, set that
 variable explicitly on the migration command.
 
+Migration `0004_recipe_domain_foundation` intentionally refuses to upgrade a pre-0004 database
+when either legacy `recipes` or `recipe_ingredients` table contains rows. Empty databases continue
+to upgrade normally. A populated legacy database requires a future, separately validated historical
+Recipe conversion before it can pass 0004; this release does not attempt that conversion. If a
+database was already upgraded through the older destructive 0004, discarded rows can be recovered
+only from a backup. See [Production Hardening Phase 5A](docs/production-hardening-phase5a.md).
+
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
 stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,
