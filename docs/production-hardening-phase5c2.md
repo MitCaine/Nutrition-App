@@ -173,9 +173,10 @@ Log/OCR baselines, and execution receipt. It emits a compact read-only qualifica
 does not authorize promotion. See
 [Phase 5C3a](production-hardening-phase5c3a.md).
 
-## Deferred Phase 5C3b boundary
+## Performance qualification and remaining boundary
 
-Phase 5C2 and Phase 5C3a do not authorize production promotion. Performance and recovery
-qualification, promotion/cutover eligibility, archive cleanup, legacy Daily Log revision-link
-enrichment, quarantine repair, OCR changes, and alternate historical schema signatures require
-separately reviewed work.
+Phase 5C3b measures the unchanged conversion path against deterministic representative-volume
+fixtures; see [Phase 5C3b](production-hardening-phase5c3b.md). Phase 5C2, C3a, and C3b do not
+authorize production promotion. Recovery qualification, promotion/cutover eligibility, archive
+cleanup, legacy Daily Log revision-link enrichment, quarantine repair, OCR changes, and alternate
+historical schema signatures require separately reviewed work.

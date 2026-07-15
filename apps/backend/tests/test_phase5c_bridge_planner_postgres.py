@@ -94,6 +94,7 @@ def conversion_clone() -> tuple[Engine, str, str]:
     token = uuid4().hex
     database_name = f"test_phase5c_clone_{token}"
     archive_schema = f"test_phase5c_archive_{token}"
+    assert len(database_name.encode("ascii")) <= 63
     with admin.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{database_name}"'))
     admin.dispose()

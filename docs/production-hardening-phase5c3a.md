@@ -137,10 +137,11 @@ Qualification fails closed with one of these stable reason codes:
 
 Raw database or exception messages are not included.
 
-## Deferred Phase 5C3b boundary
+## Phase 5C3b performance handoff
 
 A valid Phase 5C3a receipt is evidence that the clone is internally consistent. It is not evidence
 that conversion duration, resource use, backup/cutback procedures, source write-freeze equivalence,
-application smoke tests, quarantine policy, or deployment cutover are acceptable. Representative
-volume qualification, recovery exercises, promotion-eligibility reporting, and any checksum
-performance correction remain deferred to Phase 5C3b or another explicitly bounded phase.
+application smoke tests, quarantine policy, or deployment cutover are acceptable. Phase 5C3b adds
+representative-volume performance evidence without changing this receipt. Recovery exercises,
+promotion eligibility, cutover, and any checksum optimization remain separately deferred. See
+[Phase 5C3b](production-hardening-phase5c3b.md).

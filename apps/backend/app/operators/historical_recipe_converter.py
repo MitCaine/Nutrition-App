@@ -78,6 +78,7 @@ _OCR_TABLES = (
     "ocr_nutrition_confirmation_traces",
 )
 FailureHook = Callable[[str, UUID], None]
+PerformanceObserver = Callable[[str, UUID | None, str | None, int | None], None]
 
 
 class Phase5CSubjectError(RuntimeError):
@@ -121,6 +122,7 @@ def execute_historical_recipe_conversion(
     clone_marker_identity: str,
     attestation_payload: dict[str, Any],
     failure_hook: FailureHook | None = None,
+    performance_observer: PerformanceObserver | None = None,
 ) -> ConversionExecutionReport:
     plan = validate_conversion_plan_contract(plan_payload)
     inventory = validate_inventory_contract(inventory_payload)
@@ -173,64 +175,75 @@ def execute_historical_recipe_conversion(
             )
             for recipe_id in (*nonconverts, *order):
                 decision = decisions[recipe_id]
-                with connection.begin():
-                    outcome = _load_outcome(connection, run["id"], recipe_id)
-                if outcome["checkpoint_state"] == "completed":
-                    _verify_completed_outcome(
+                with _observed_operation(
+                    performance_observer,
+                    "subject",
+                    recipe_id=recipe_id,
+                    disposition=decision["intended_disposition"],
+                ):
+                    with connection.begin():
+                        outcome = _load_outcome(connection, run["id"], recipe_id)
+                    if outcome["checkpoint_state"] == "completed":
+                        _verify_completed_outcome(
+                            connection,
+                            run=run,
+                            outcome=outcome,
+                            decision=decision,
+                            plan=plan,
+                            archive_schema=archive_schema,
+                        )
+                        continue
+                    if outcome["checkpoint_state"] == "failed":
+                        continue
+                    if decision["intended_disposition"] != "convert":
+                        _persist_nonconvert_outcome(
+                            connection,
+                            run=run,
+                            decision=decision,
+                            archive_schema=archive_schema,
+                            plan=plan,
+                        )
+                        continue
+                    with connection.begin():
+                        dependencies_completed = _dependencies_completed(
+                            connection,
+                            run_id=run["id"],
+                            dependencies=dependencies[recipe_id],
+                        )
+                    if not dependencies_completed:
+                        _record_subject_failure(
+                            connection,
+                            run_id=run["id"],
+                            recipe_id=recipe_id,
+                            reason_code="dependency_execution_incomplete",
+                        )
+                        continue
+                    if outcome["checkpoint_state"] == "domain_committed":
+                        _post_commit_verify(
+                            connection,
+                            run=run,
+                            decision=decision,
+                            plan=plan,
+                            archive_schema=archive_schema,
+                        )
+                        continue
+                    _execute_convert_with_retry(
                         connection,
                         run=run,
-                        outcome=outcome,
                         decision=decision,
                         plan=plan,
                         archive_schema=archive_schema,
+                        failure_hook=failure_hook,
+                        performance_observer=performance_observer,
                     )
-                    continue
-                if outcome["checkpoint_state"] == "failed":
-                    continue
-                if decision["intended_disposition"] != "convert":
-                    _persist_nonconvert_outcome(
-                        connection,
-                        run=run,
-                        decision=decision,
-                        archive_schema=archive_schema,
-                        plan=plan,
-                    )
-                    continue
-                with connection.begin():
-                    dependencies_completed = _dependencies_completed(
-                        connection,
-                        run_id=run["id"],
-                        dependencies=dependencies[recipe_id],
-                    )
-                if not dependencies_completed:
-                    _record_subject_failure(
-                        connection,
-                        run_id=run["id"],
-                        recipe_id=recipe_id,
-                        reason_code="dependency_execution_incomplete",
-                    )
-                    continue
-                if outcome["checkpoint_state"] == "domain_committed":
-                    _post_commit_verify(
-                        connection,
-                        run=run,
-                        decision=decision,
-                        plan=plan,
-                        archive_schema=archive_schema,
-                    )
-                    continue
-                _execute_convert_with_retry(
-                    connection,
-                    run=run,
-                    decision=decision,
-                    plan=plan,
-                    archive_schema=archive_schema,
-                    failure_hook=failure_hook,
-                )
 
             with connection.begin():
                 _finalize_run(connection, run["id"])
-                report = _build_report(connection, run["id"])
+                with _observed_operation(
+                    performance_observer,
+                    "execution_receipt",
+                ):
+                    report = _build_report(connection, run["id"])
             return ConversionExecutionReport(report)
 
 
@@ -609,6 +622,7 @@ def _execute_convert_with_retry(
     plan: dict[str, Any],
     archive_schema: str,
     failure_hook: FailureHook | None,
+    performance_observer: PerformanceObserver | None,
 ) -> None:
     recipe_id = UUID(decision["source_recipe_id"])
     for attempt in range(1, _RETRY_LIMIT + 1):
@@ -640,6 +654,13 @@ def _execute_convert_with_retry(
                     reason_code="subject_retry_exhausted",
                 )
                 return
+            _notify_performance_observer(
+                performance_observer,
+                "subject_retry",
+                recipe_id=recipe_id,
+                disposition="convert",
+                attempt=attempt + 1,
+            )
         except Phase5CSubjectError as exc:
             _record_subject_failure(
                 connection,
@@ -1422,3 +1443,40 @@ def _sqlstate(exc: DBAPIError) -> str | None:
 def _call_hook(hook: FailureHook | None, stage: str, recipe_id: UUID) -> None:
     if hook is not None:
         hook(stage, recipe_id)
+
+
+def _notify_performance_observer(
+    observer: PerformanceObserver | None,
+    event: str,
+    *,
+    recipe_id: UUID | None = None,
+    disposition: str | None = None,
+    attempt: int | None = None,
+) -> None:
+    if observer is not None:
+        observer(event, recipe_id, disposition, attempt)
+
+
+@contextmanager
+def _observed_operation(
+    observer: PerformanceObserver | None,
+    operation: str,
+    *,
+    recipe_id: UUID | None = None,
+    disposition: str | None = None,
+) -> Iterator[None]:
+    _notify_performance_observer(
+        observer,
+        f"{operation}_start",
+        recipe_id=recipe_id,
+        disposition=disposition,
+    )
+    try:
+        yield
+    finally:
+        _notify_performance_observer(
+            observer,
+            f"{operation}_end",
+            recipe_id=recipe_id,
+            disposition=disposition,
+        )

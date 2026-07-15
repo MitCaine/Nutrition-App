@@ -124,6 +124,13 @@ run, outcome, and execution-receipt state inside a read-only repeatable snapshot
 deterministic receipt is external evidence only and does not authorize production promotion. See
 [Production Hardening Phase 5C3a](docs/production-hardening-phase5c3a.md).
 
+Phase 5C3b adds deterministic T0–T3 historical fixtures and aggregate-only performance
+instrumentation for the unchanged Phase 5C path. The offline command requires an empty, explicitly
+confirmed `nutrition_phase5c_benchmark_*` PostgreSQL database and emits a canonical external
+performance manifest. Timing and structural scan-budget failures are evidence for a separately
+reviewed optimization; they do not authorize promotion or change conversion correctness. See
+[Production Hardening Phase 5C3b](docs/production-hardening-phase5c3b.md).
+
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
 stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,

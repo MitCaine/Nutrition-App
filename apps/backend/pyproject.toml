@@ -29,6 +29,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
   "postgres_concurrency: requires a reachable PostgreSQL database",
+  "phase5c_performance_t0: explicitly runs the full T0 performance fixture",
 ]
 
 [tool.setuptools.packages.find]

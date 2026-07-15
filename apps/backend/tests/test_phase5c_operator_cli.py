@@ -12,6 +12,7 @@ from scripts.create_phase5c_operator_attestation import main as attestation_main
 from scripts.establish_phase5c_clone_marker import main as marker_main
 from scripts.execute_historical_recipe_conversion import main as converter_main
 from scripts.plan_historical_recipe_conversion import main as planner_main
+from scripts.qualify_phase5c_performance import main as performance_main
 from scripts.verify_historical_recipe_conversion import main as qualifier_main
 
 
@@ -120,6 +121,25 @@ from scripts.verify_historical_recipe_conversion import main as qualifier_main
                 "test-clone",
             ],
             "NUTRITION_DATABASE_URL must be explicitly set for conversion qualification",
+        ),
+        (
+            performance_main,
+            [
+                "qualify_phase5c_performance",
+                "--tier",
+                "T0",
+                "--fixture-seed",
+                "1",
+                "--storage-environment",
+                "local disposable SSD",
+                "--cache-mode",
+                "warm",
+                "--output",
+                "performance.json",
+                "--confirm-disposable-database",
+                "nutrition_phase5c_benchmark_test",
+            ],
+            "NUTRITION_DATABASE_URL must be explicitly set for performance qualification",
         ),
     ),
 )
@@ -341,3 +361,53 @@ def test_qualification_cli_redacts_unexpected_exceptions(
     assert "private authored text" not in output
     assert "postgresql" not in output
     assert "secret" not in output
+
+
+def test_performance_cli_redacts_unexpected_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    output = tmp_path / "performance.json"
+    monkeypatch.setenv(
+        "NUTRITION_DATABASE_URL",
+        "postgresql+psycopg://operator:private-value@example.invalid/"
+        "nutrition_phase5c_benchmark_test",
+    )
+
+    def fail_safely(**_kwargs):
+        raise RuntimeError(
+            "authored fixture content postgresql://operator:private-value@example.invalid"
+        )
+
+    monkeypatch.setattr(
+        "scripts.qualify_phase5c_performance.qualify_phase5c_performance",
+        fail_safely,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "qualify_phase5c_performance",
+            "--tier",
+            "T0",
+            "--fixture-seed",
+            "1",
+            "--storage-environment",
+            "local disposable SSD",
+            "--cache-mode",
+            "warm",
+            "--output",
+            str(output),
+            "--confirm-disposable-database",
+            "nutrition_phase5c_benchmark_test",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        performance_main()
+
+    error = str(exc_info.value)
+    assert error == "performance_database_operation_failed"
+    assert "private-value" not in error
+    assert "authored fixture" not in error
+    assert not output.exists()
