@@ -1,6 +1,7 @@
 import { apiRequest } from "../../../shared/api/client";
 import type {
   Recipe,
+  RecipeCreateInput,
   RecipeMutationInput,
   RecipeNutritionApiResponse,
   RecipeNutritionResponse,
@@ -29,7 +30,7 @@ export function getRecipe(recipeId: string): Promise<Recipe> {
   return apiRequest<Recipe>(`/recipes/${recipeId}`);
 }
 
-export function createRecipe(input: RecipeMutationInput): Promise<Recipe> {
+export function createRecipe(input: RecipeCreateInput): Promise<Recipe> {
   return apiRequest<Recipe>("/recipes", { method: "POST", body: JSON.stringify(input) });
 }
 
@@ -57,6 +58,9 @@ export async function getRecipeNutrition(recipeId: string): Promise<RecipeNutrit
   };
 }
 
-export function publishRecipe(recipeId: string): Promise<RecipePublishResponse> {
-  return apiRequest<RecipePublishResponse>(`/recipes/${recipeId}/publish`, { method: "POST" });
+export function publishRecipe({ recipeId, clientRequestId }: { recipeId: string; clientRequestId: string }): Promise<RecipePublishResponse> {
+  return apiRequest<RecipePublishResponse>(`/recipes/${recipeId}/publish`, {
+    method: "POST",
+    body: JSON.stringify({ client_request_id: clientRequestId }),
+  });
 }

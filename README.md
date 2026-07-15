@@ -143,6 +143,18 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
 - FDA Daily Values are reference rows rather than nutrient columns.
 - Parser corrections retain structured provenance without storing raw label images/text.
 - Recipe publication revisions are immutable snapshots and ownership remains service-scoped.
+- Retryable create operations use owner- and operation-scoped `client_request_id` receipts in the
+  same transaction as the created resource. Replays with the same payload return the committed
+  resource; reuse with different payload data returns a conflict. Manual Food creation, Food
+  duplication, custom serving creation, Recipe creation, Recipe publication, Daily Log creation,
+  and OCR confirmation are covered. Favorites and targets remain naturally idempotent `PUT`
+  operations, while USDA import retains its owner/source identity deduplication.
+
+Create-operation receipts retain the original response snapshot and are kept indefinitely so an
+accepted request ID never expires into permission to create a duplicate. If the exact mutable
+result is later archived or its created child is replaced, replay returns the structured
+`create_idempotency_result_unavailable` conflict instead of returning stale success or creating a
+replacement. Receipt cleanup is intentionally not part of the current retention model.
 
 See [Production Hardening Phase 1](docs/production-hardening-phase1.md) for the configuration contract
 and [Stage 5A Apple Vision OCR](docs/stage5-ocr.md) for native OCR setup and limitations.

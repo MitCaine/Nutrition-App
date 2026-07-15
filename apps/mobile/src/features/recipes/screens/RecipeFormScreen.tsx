@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
@@ -26,6 +26,8 @@ import {
   isCustomServingExpanded,
   type CustomServingExpansionState,
 } from "../utils/customServingState";
+import { createClientRequestId } from "../../logging/utils/clientRequestId";
+import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
 
 type Props = {
   draft: RecipeDraft;
@@ -43,6 +45,8 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
   const [expandedCustomServingForms, setExpandedCustomServingForms] =
     useState<CustomServingExpansionState>({});
   const isSaving = mutations.createRecipe.isPending || mutations.updateRecipe.isPending;
+  const createIntentRef = useRef<CreateIntent | null>(null);
+  const servingIntentRefs = useRef<Record<string, CreateIntent>>({});
 
   async function save() {
     if (isSaving) {
@@ -59,9 +63,21 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
     }
     setError(null);
     try {
-      const saved = draft.recipeId
-        ? await mutations.updateRecipe.mutateAsync({ recipeId: draft.recipeId, input })
-        : await mutations.createRecipe.mutateAsync(input);
+      let saved;
+      if (draft.recipeId) {
+        saved = await mutations.updateRecipe.mutateAsync({ recipeId: draft.recipeId, input });
+      } else {
+        createIntentRef.current = bindCreateIntent(
+          createIntentRef.current,
+          input,
+          createClientRequestId,
+        );
+        saved = await mutations.createRecipe.mutateAsync({
+          ...input,
+          client_request_id: createIntentRef.current.requestId,
+        });
+        createIntentRef.current = null;
+      }
       onSaved(saved.id);
     } catch (exc) {
       setError(recipeApiErrorMessage(exc));
@@ -79,13 +95,23 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
 
   async function addCustomServing(ingredient: DraftIngredient) {
     const form = customServingForms[ingredient.localId] ?? emptyCustomServingForm();
+    const servingPayload = {
+      label: form.label,
+      quantity: form.quantity,
+      unit: form.unit,
+      gram_weight: form.gramWeight,
+      is_default: false,
+    };
+    const intent = bindCreateIntent(
+      servingIntentRefs.current[ingredient.localId] ?? null,
+      servingPayload,
+      createClientRequestId,
+    );
+    servingIntentRefs.current[ingredient.localId] = intent;
     try {
       const food = await createFoodServing(ingredient.food.id, {
-        label: form.label,
-        quantity: form.quantity,
-        unit: form.unit,
-        gram_weight: form.gramWeight,
-        is_default: false,
+        ...servingPayload,
+        client_request_id: intent.requestId,
       });
       const serving = food.serving_definitions.find((item) => isMatchingCreatedServing(item, form));
       updateIngredient(ingredient.localId, {
@@ -97,6 +123,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
       });
       setCustomServingForms((current) => ({ ...current, [ingredient.localId]: emptyCustomServingForm() }));
       setExpandedCustomServingForms((current) => collapseCustomServing(current, ingredient.localId));
+      delete servingIntentRefs.current[ingredient.localId];
       setError(null);
     } catch (exc) {
       setError(recipeApiErrorMessage(exc));

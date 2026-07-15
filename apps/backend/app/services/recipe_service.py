@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
@@ -36,6 +38,7 @@ from app.publication.recipe_revision import (
 from app.repositories.food_repository import FoodRepository
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
+from app.schemas.food import FoodResponse
 from app.schemas.recipe import (
     RecipeCreateRequest,
     RecipeDeleteAffectedRecipeResponse,
@@ -43,13 +46,34 @@ from app.schemas.recipe import (
     RecipeIngredientInput,
     RecipePublicationParentAmountConflictIngredientResponse,
     RecipePublicationParentAmountConflictResponse,
+    RecipePublishResponse,
+    RecipeResponse,
     RecipeUpdateRequest,
     _validate_display_metadata,
 )
+from app.services.create_idempotency import (
+    CreateIdempotencyCoordinator,
+    CreateOperationResultUnavailableError,
+    create_fingerprint,
+    is_create_idempotency_conflict,
+)
+from app.services.food_service import FoodService
 
 UNITS_BY_NUTRIENT_ID = {nutrient.id: nutrient.default_unit for nutrient in NUTRIENT_CATALOG}
 DECIMAL_PLACES = Decimal("0.000001")
 PUBLICATION_DEPENDENCY_RESTART_LIMIT = 3
+
+
+@dataclass(frozen=True)
+class RecipePublicationResult:
+    recipe: Recipe | RecipeResponse
+    food: FoodItem | FoodResponse
+    response: RecipePublishResponse
+
+    def __iter__(self):
+        # Preserve the established service-level two-value unpacking contract.
+        yield self.recipe
+        yield self.food
 
 
 class RecipeDependencyError(ValueError):
@@ -98,23 +122,77 @@ class RecipeService:
         self.foods = FoodRepository(db)
         self.recipes = RecipeRepository(db)
         self.publications = RecipePublicationRepository(db)
+        self.create_idempotency = CreateIdempotencyCoordinator(db)
 
-    def create_recipe(self, user_id: UUID, payload: RecipeCreateRequest) -> Recipe:
-        self._lock_recipe_graph_owner(user_id)
-        recipe = Recipe(
-            id=uuid4(),
-            user_id=user_id,
-            name=payload.name.strip(),
-            notes=payload.notes,
-            serving_count_yield=payload.serving_count_yield,
-            final_cooked_weight_grams=payload.final_cooked_weight_grams,
-            final_cooked_weight_display_quantity=payload.final_cooked_weight_display_quantity,
-            final_cooked_weight_display_unit=payload.final_cooked_weight_display_unit,
+    def create_recipe(self, user_id: UUID, payload: RecipeCreateRequest) -> RecipeResponse:
+        request_id = payload.client_request_id
+        fingerprint = create_fingerprint(payload)
+        if request_id is not None:
+            receipt = self.create_idempotency.find(
+                user_id, "recipe.create", request_id, fingerprint
+            )
+            if receipt is not None:
+                return self._replay_recipe_response(user_id, receipt)
+        recipe_id = uuid4()
+        try:
+            receipt = None
+            if request_id is not None:
+                receipt = self.create_idempotency.reserve(
+                    user_id,
+                    "recipe.create",
+                    request_id,
+                    fingerprint,
+                    recipe_id,
+                )
+            self._lock_recipe_graph_owner(user_id)
+            recipe = Recipe(
+                id=recipe_id,
+                user_id=user_id,
+                name=payload.name.strip(),
+                notes=payload.notes,
+                serving_count_yield=payload.serving_count_yield,
+                final_cooked_weight_grams=payload.final_cooked_weight_grams,
+                final_cooked_weight_display_quantity=payload.final_cooked_weight_display_quantity,
+                final_cooked_weight_display_unit=payload.final_cooked_weight_display_unit,
+            )
+            self._replace_ingredients(user_id, recipe, payload.ingredients)
+            created = self.recipes.add(recipe)
+            response = self._recipe_response(user_id, created)
+            if receipt is not None:
+                self.create_idempotency.complete(
+                    receipt, response.model_dump(mode="json")
+                )
+            self.db.commit()
+            return response
+        except IntegrityError as exc:
+            self.db.rollback()
+            if request_id is None or not is_create_idempotency_conflict(exc):
+                raise
+            receipt = self.create_idempotency.find(
+                user_id, "recipe.create", request_id, fingerprint
+            )
+            if receipt is None:
+                raise
+            return self._replay_recipe_response(user_id, receipt)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _replay_recipe_response(self, user_id: UUID, receipt) -> RecipeResponse:
+        try:
+            self.recipes.get_required(receipt.resource_id, user_id)
+        except LookupError as exc:
+            raise CreateOperationResultUnavailableError() from exc
+        return RecipeResponse.model_validate(
+            self.create_idempotency.replay_snapshot(receipt)
         )
-        self._replace_ingredients(user_id, recipe, payload.ingredients)
-        created = self.recipes.add(recipe)
-        self.db.commit()
-        return created
+
+    def _recipe_response(self, user_id: UUID, recipe: Recipe) -> RecipeResponse:
+        self.db.flush()
+        self.db.expire(recipe)
+        return RecipeResponse.model_validate(
+            self.recipes.get_required(recipe.id, user_id)
+        )
 
     def list_recipes(self, user_id: UUID, query: str | None = None) -> list[Recipe]:
         return self.recipes.list(user_id, query)
@@ -381,8 +459,29 @@ class RecipeService:
             ),
         }
 
-    def publish(self, user_id: UUID, recipe_id: UUID) -> tuple[Recipe, FoodItem]:
+    def publish(
+        self,
+        user_id: UUID,
+        recipe_id: UUID,
+        client_request_id: UUID | None = None,
+    ) -> RecipePublicationResult:
+        fingerprint = create_fingerprint(None, context={"recipe_id": str(recipe_id)})
+        if client_request_id is not None:
+            receipt = self.create_idempotency.find(
+                user_id, "recipe.publish", client_request_id, fingerprint
+            )
+            if receipt is not None:
+                return self._published_response_for_revision(user_id, recipe_id, receipt)
         try:
+            receipt = None
+            if client_request_id is not None:
+                receipt = self.create_idempotency.reserve(
+                    user_id,
+                    "recipe.publish",
+                    client_request_id,
+                    fingerprint,
+                    recipe_id,
+                )
             recipe, projection, parents = self._lock_publication_graph(user_id, recipe_id)
             if not recipe.serving_count_yield and not recipe.final_cooked_weight_grams:
                 raise ValueError(
@@ -416,6 +515,8 @@ class RecipeService:
                     per_100g=per_100g,
                 ),
             )
+            if receipt is not None:
+                receipt.resource_id = revision.id
             validate_revision_resolver_input(revision)
             serving_remaps = self._plan_parent_serving_remaps(
                 recipe,
@@ -457,14 +558,60 @@ class RecipeService:
             recipe.needs_republish = False
             recipe.updated_at = datetime.now(timezone.utc)
             self.db.flush()
-            self.db.commit()
-            return self.recipes.get_required(recipe_id, user_id), self.foods.get_required(
-                projection.id,
-                user_id,
+            created_recipe = self.recipes.get_required(recipe_id, user_id)
+            created_food = self.foods.get_required(projection.id, user_id)
+            response = RecipePublishResponse(
+                recipe=self._recipe_response(user_id, created_recipe),
+                food=FoodService(self.db)._food_response(user_id, created_food),
             )
+            if receipt is not None:
+                self.create_idempotency.complete(
+                    receipt, response.model_dump(mode="json")
+                )
+            self.db.commit()
+            return RecipePublicationResult(
+                recipe=created_recipe,
+                food=created_food,
+                response=response,
+            )
+        except IntegrityError as exc:
+            self.db.rollback()
+            if client_request_id is None or not is_create_idempotency_conflict(exc):
+                raise
+            receipt = self.create_idempotency.find(
+                user_id, "recipe.publish", client_request_id, fingerprint
+            )
+            if receipt is None:
+                raise
+            return self._published_response_for_revision(user_id, recipe_id, receipt)
         except Exception:
             self.db.rollback()
             raise
+
+    def _published_response_for_revision(
+        self,
+        user_id: UUID,
+        recipe_id: UUID,
+        receipt,
+    ) -> RecipePublicationResult:
+        try:
+            revision = self.publications.get_required(receipt.resource_id, user_id)
+            if revision.recipe_id != recipe_id:
+                raise CreateOperationResultUnavailableError()
+            self.recipes.get_required(recipe_id, user_id)
+            snapshot = RecipePublishResponse.model_validate(
+                self.create_idempotency.replay_snapshot(receipt)
+            )
+            if snapshot.recipe.id != recipe_id:
+                raise CreateOperationResultUnavailableError()
+            self.foods.get_required(snapshot.food.id, user_id)
+        except LookupError as exc:
+            raise CreateOperationResultUnavailableError() from exc
+        return RecipePublicationResult(
+            recipe=snapshot.recipe,
+            food=snapshot.food,
+            response=snapshot,
+        )
 
     def _lock_publication_graph(
         self,

@@ -79,7 +79,12 @@ class ServingDefinitionInput(BaseModel):
         return self
 
 
+class ServingDefinitionCreateRequest(ServingDefinitionInput):
+    client_request_id: UUID | None = None
+
+
 class FoodCreateRequest(BaseModel):
+    client_request_id: UUID | None = None
     name: str = Field(min_length=1)
     brand: str | None = None
     notes: str | None = None
@@ -92,6 +97,10 @@ class FoodCreateRequest(BaseModel):
         if default_count != 1:
             raise ValueError("foods with serving definitions must have exactly one default serving")
         return self
+
+
+class FoodDuplicateRequest(BaseModel):
+    client_request_id: UUID | None = None
 
 
 class FoodUpdateRequest(BaseModel):

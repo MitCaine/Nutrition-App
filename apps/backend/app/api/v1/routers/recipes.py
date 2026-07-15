@@ -15,8 +15,13 @@ from app.schemas.recipe import (
     RecipeListResponse,
     RecipeNutritionResponse,
     RecipePublishResponse,
+    RecipePublishRequest,
     RecipeResponse,
     RecipeUpdateRequest,
+)
+from app.services.create_idempotency import (
+    CreateOperationIdempotencyConflictError,
+    CreateOperationResultUnavailableError,
 )
 from app.services.recipe_service import (
     RecipeDependencyError,
@@ -25,7 +30,6 @@ from app.services.recipe_service import (
     RecipePublicationParentAmountConflictError,
     RecipeService,
 )
-from app.services.food_service import FoodService
 
 router = APIRouter()
 
@@ -41,8 +45,12 @@ def create_recipe(
     user: User = Depends(get_current_user),
 ) -> RecipeResponse:
     try:
-        return RecipeResponse.model_validate(_service(db).create_recipe(user.id, payload))
+        return _service(db).create_recipe(user.id, payload)
     except RecipeGraphCycleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationResultUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
     except (LookupError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -134,15 +142,17 @@ def recipe_nutrition(
 @router.post("/{recipe_id}/publish", response_model=RecipePublishResponse)
 def publish_recipe(
     recipe_id: UUID,
+    payload: RecipePublishRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RecipePublishResponse:
     try:
-        recipe, food = _service(db).publish(user.id, recipe_id)
-        return RecipePublishResponse(
-            recipe=RecipeResponse.model_validate(recipe),
-            food=FoodService(db).present_food(user.id, food),
+        result = _service(db).publish(
+            user.id,
+            recipe_id,
+            payload.client_request_id if payload is not None else None,
         )
+        return result.response
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecipeNutritionValidationError as exc:
@@ -157,5 +167,9 @@ def publish_recipe(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.detail(),
         ) from exc
+    except CreateOperationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationResultUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

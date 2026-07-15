@@ -1,5 +1,5 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { Food, FoodDeleteResult, FoodMutationInput, FoodResolvedNutrition, NutrientDefinition, RecentFood, ServingDefinitionInput } from "./types";
+import type { Food, FoodCreateInput, FoodDeleteResult, FoodMutationInput, FoodResolvedNutrition, NutrientDefinition, RecentFood, ServingDefinitionCreateInput } from "./types";
 
 const SOURCE_LABELS = {
   manual: "Manual",
@@ -66,7 +66,7 @@ export function getFoodResolvedNutrition(foodId: string): Promise<FoodResolvedNu
   return apiRequest<FoodResolvedNutrition>(`/foods/${foodId}/resolved-nutrition`);
 }
 
-export async function createFood(input: FoodMutationInput): Promise<Food> {
+export async function createFood(input: FoodCreateInput): Promise<Food> {
   return validateFoodSourceContract(await apiRequest<unknown>("/foods", {
     method: "POST",
     body: JSON.stringify(input),
@@ -91,11 +91,14 @@ export function deleteFood({
   return apiRequest<FoodDeleteResult>(`/foods/${foodId}${suffix}`, { method: "DELETE" });
 }
 
-export async function duplicateFood(foodId: string): Promise<Food> {
-  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}/duplicate`, { method: "POST" }));
+export async function duplicateFood({ foodId, clientRequestId }: { foodId: string; clientRequestId: string }): Promise<Food> {
+  return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}/duplicate`, {
+    method: "POST",
+    body: JSON.stringify({ client_request_id: clientRequestId }),
+  }));
 }
 
-export async function createFoodServing(foodId: string, input: ServingDefinitionInput): Promise<Food> {
+export async function createFoodServing(foodId: string, input: ServingDefinitionCreateInput): Promise<Food> {
   return validateFoodSourceContract(await apiRequest<unknown>(`/foods/${foodId}/serving-definitions`, {
     method: "POST",
     body: JSON.stringify(input),

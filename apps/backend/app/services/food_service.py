@@ -37,11 +37,18 @@ from app.schemas.food import (
     FoodResolvedNutritionResponse,
     FoodRecipeServingConflictIngredientResponse,
     FoodRecipeServingConflictRecipeResponse,
+    FoodResponse,
     FoodUpdateRecipeServingConflictResponse,
     FoodUpdateRequest,
     ResolvedFoodAmountResponse,
     ResolvedFoodNutrientResponse,
-    ServingDefinitionInput,
+    ServingDefinitionCreateRequest,
+)
+from app.services.create_idempotency import (
+    CreateIdempotencyCoordinator,
+    CreateOperationResultUnavailableError,
+    create_fingerprint,
+    is_create_idempotency_conflict,
 )
 
 
@@ -97,17 +104,61 @@ class FoodService:
         self.db = db
         self.foods = FoodRepository(db)
         self.recipes = RecipeRepository(db)
+        self.create_idempotency = CreateIdempotencyCoordinator(db)
 
-    def create_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodItem:
-        food = self.build_manual_food(user_id, payload)
-        created = self.foods.add(food)
-        self.db.commit()
-        return created
+    def create_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodResponse:
+        request_id = payload.client_request_id
+        fingerprint = create_fingerprint(payload)
+        if request_id is not None:
+            receipt = self.create_idempotency.find(
+                user_id, "food.create_manual", request_id, fingerprint
+            )
+            if receipt is not None:
+                return self._replay_food_response(user_id, receipt)
+        food_id = uuid4()
+        try:
+            receipt = None
+            if request_id is not None:
+                receipt = self.create_idempotency.reserve(
+                    user_id,
+                    "food.create_manual",
+                    request_id,
+                    fingerprint,
+                    food_id,
+                )
+            food = self.build_manual_food(user_id, payload, food_id=food_id)
+            created = self.foods.add(food)
+            response = self._food_response(user_id, created)
+            if receipt is not None:
+                self.create_idempotency.complete(
+                    receipt, response.model_dump(mode="json")
+                )
+            self.db.commit()
+            return response
+        except IntegrityError as exc:
+            self.db.rollback()
+            if request_id is None or not is_create_idempotency_conflict(exc):
+                raise
+            receipt = self.create_idempotency.find(
+                user_id, "food.create_manual", request_id, fingerprint
+            )
+            if receipt is None:
+                raise
+            return self._replay_food_response(user_id, receipt)
+        except Exception:
+            self.db.rollback()
+            raise
 
-    def build_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodItem:
+    def build_manual_food(
+        self,
+        user_id: UUID,
+        payload: FoodCreateRequest,
+        *,
+        food_id: UUID | None = None,
+    ) -> FoodItem:
         """Build a normal Manual Food without committing for atomic orchestrators."""
         food = FoodItem(
-            id=uuid4(),
+            id=food_id or uuid4(),
             user_id=user_id,
             name=payload.name.strip(),
             brand=payload.brand.strip() if payload.brand else None,
@@ -517,58 +568,119 @@ class FoodService:
             affected_recipes=affected_recipes,
         )
 
-    def duplicate_food(self, user_id: UUID, food_id: UUID) -> FoodItem:
-        source = self.foods.get_required(food_id, user_id)
-        duplicate = FoodItem(
-            id=uuid4(),
-            user_id=user_id,
-            name=f"{source.name} Copy",
-            brand=source.brand,
-            notes=source.notes,
-            source_type="manual",
-            source_id=str(source.id),
-            is_recipe=False,
-        )
-        for serving in source.serving_definitions:
-            duplicate.serving_definitions.append(
-                ServingDefinition(
-                    id=uuid4(),
-                    label=serving.label,
-                    quantity=serving.quantity,
-                    unit=serving.unit,
-                    gram_weight=serving.gram_weight,
-                    is_default=serving.is_default,
-                    source="manual",
-                    is_user_confirmed=True,
-                )
+    def duplicate_food(
+        self,
+        user_id: UUID,
+        food_id: UUID,
+        client_request_id: UUID | None = None,
+    ) -> FoodResponse:
+        fingerprint = create_fingerprint(None, context={"food_id": str(food_id)})
+        if client_request_id is not None:
+            receipt = self.create_idempotency.find(
+                user_id, "food.duplicate", client_request_id, fingerprint
             )
-        for nutrient in source.nutrients:
-            duplicate.nutrients.append(
-                FoodNutrient(
-                    id=uuid4(),
-                    nutrient_id=nutrient.nutrient_id,
-                    amount=nutrient.amount,
-                    unit=nutrient.unit,
-                    basis=nutrient.basis,
-                    data_status=nutrient.data_status,
-                    source="manual",
-                    is_user_confirmed=True,
-                    original_amount=nutrient.original_amount,
-                    original_unit=nutrient.original_unit,
-                    original_text=nutrient.original_text,
+            if receipt is not None:
+                return self._replay_food_response(user_id, receipt)
+        duplicate_id = uuid4()
+        try:
+            receipt = None
+            if client_request_id is not None:
+                receipt = self.create_idempotency.reserve(
+                    user_id,
+                    "food.duplicate",
+                    client_request_id,
+                    fingerprint,
+                    duplicate_id,
                 )
+            source = self.foods.get_required(food_id, user_id)
+            duplicate = FoodItem(
+                id=duplicate_id,
+                user_id=user_id,
+                name=f"{source.name} Copy",
+                brand=source.brand,
+                notes=source.notes,
+                source_type="manual",
+                source_id=str(source.id),
+                is_recipe=False,
             )
-        created = self.foods.add(duplicate)
-        self.db.commit()
-        return created
+            for serving in source.serving_definitions:
+                duplicate.serving_definitions.append(
+                    ServingDefinition(
+                        id=uuid4(),
+                        label=serving.label,
+                        quantity=serving.quantity,
+                        unit=serving.unit,
+                        gram_weight=serving.gram_weight,
+                        is_default=serving.is_default,
+                        source="manual",
+                        is_user_confirmed=True,
+                    )
+                )
+            for nutrient in source.nutrients:
+                duplicate.nutrients.append(
+                    FoodNutrient(
+                        id=uuid4(),
+                        nutrient_id=nutrient.nutrient_id,
+                        amount=nutrient.amount,
+                        unit=nutrient.unit,
+                        basis=nutrient.basis,
+                        data_status=nutrient.data_status,
+                        source="manual",
+                        is_user_confirmed=True,
+                        original_amount=nutrient.original_amount,
+                        original_unit=nutrient.original_unit,
+                        original_text=nutrient.original_text,
+                    )
+                )
+            created = self.foods.add(duplicate)
+            response = self._food_response(user_id, created)
+            if receipt is not None:
+                self.create_idempotency.complete(
+                    receipt, response.model_dump(mode="json")
+                )
+            self.db.commit()
+            return response
+        except IntegrityError as exc:
+            self.db.rollback()
+            if client_request_id is None or not is_create_idempotency_conflict(exc):
+                raise
+            receipt = self.create_idempotency.find(
+                user_id, "food.duplicate", client_request_id, fingerprint
+            )
+            if receipt is None:
+                raise
+            return self._replay_food_response(user_id, receipt)
+        except Exception:
+            self.db.rollback()
+            raise
 
     def add_serving_definition(
         self,
         user_id: UUID,
         food_id: UUID,
-        payload: ServingDefinitionInput,
-    ) -> FoodItem:
+        payload: ServingDefinitionCreateRequest,
+    ) -> FoodResponse:
+        # The API uses ServingDefinitionCreateRequest; accepting the historical
+        # base schema keeps internal service callers source-compatible.
+        request_id = getattr(payload, "client_request_id", None)
+        fingerprint = create_fingerprint(payload, context={"food_id": str(food_id)})
+        if request_id is not None:
+            receipt = self.create_idempotency.find(
+                user_id, "food.add_serving", request_id, fingerprint
+            )
+            if receipt is not None:
+                return self._replay_serving_response(user_id, food_id, receipt)
+        serving_id = uuid4()
         try:
+            receipt = None
+            if request_id is not None:
+                receipt = self.create_idempotency.reserve(
+                    user_id,
+                    "food.add_serving",
+                    request_id,
+                    fingerprint,
+                    serving_id,
+                )
             food, parents = self._lock_food_dependency_graph(user_id, food_id)
             self._assert_generic_mutation_allowed(food, user_id, "add_serving")
             if payload.is_default:
@@ -577,7 +689,7 @@ class FoodService:
                 self.db.flush()
             food.serving_definitions.append(
                 ServingDefinition(
-                    id=uuid4(),
+                    id=serving_id,
                     label=payload.label.strip(),
                     quantity=payload.quantity,
                     unit=payload.unit,
@@ -591,11 +703,69 @@ class FoodService:
             food.updated_at = now
             if payload.is_default:
                 self._mark_published_parents_stale(parents, now)
+            response = self._food_response(user_id, food)
+            if receipt is not None:
+                self.create_idempotency.complete(
+                    receipt, response.model_dump(mode="json")
+                )
             self.db.commit()
-            return self.foods.get_required(food_id, user_id)
+            return response
+        except IntegrityError as exc:
+            self.db.rollback()
+            if request_id is None or not is_create_idempotency_conflict(exc):
+                raise
+            receipt = self.create_idempotency.find(
+                user_id, "food.add_serving", request_id, fingerprint
+            )
+            if receipt is None:
+                raise
+            return self._replay_serving_response(user_id, food_id, receipt)
         except Exception:
             self.db.rollback()
             raise
+
+    def _food_response(self, user_id: UUID, food: FoodItem) -> FoodResponse:
+        # Snapshot the database-normalized representation (not pre-flush Decimal
+        # spellings held by newly appended ORM children).
+        self.db.flush()
+        self.db.expire(food)
+        persisted = self.foods.get_required(food.id, user_id)
+        return FoodResponse.model_validate(self.present_food(user_id, persisted))
+
+    def _replay_food_response(
+        self,
+        user_id: UUID,
+        receipt,
+    ) -> FoodResponse:
+        try:
+            self.foods.get_required(receipt.resource_id, user_id)
+        except LookupError as exc:
+            raise CreateOperationResultUnavailableError() from exc
+        return FoodResponse.model_validate(
+            self.create_idempotency.replay_snapshot(receipt)
+        )
+
+    def _replay_serving_response(
+        self,
+        user_id: UUID,
+        food_id: UUID,
+        receipt,
+    ) -> FoodResponse:
+        serving = self.db.scalar(
+            select(ServingDefinition)
+            .join(FoodItem, FoodItem.id == ServingDefinition.food_item_id)
+            .where(
+                ServingDefinition.id == receipt.resource_id,
+                ServingDefinition.food_item_id == food_id,
+                FoodItem.user_id == user_id,
+                FoodItem.deleted_at.is_(None),
+            )
+        )
+        if serving is None:
+            raise CreateOperationResultUnavailableError()
+        return FoodResponse.model_validate(
+            self.create_idempotency.replay_snapshot(receipt)
+        )
 
     def _assert_generic_mutation_allowed(
         self,

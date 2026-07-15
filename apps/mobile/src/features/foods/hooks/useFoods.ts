@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutrition, listFavoriteFoods, listFoods, listNutrients, listRecentFoods, setFoodFavorite, updateFood } from "../api/foodApi";
-import type { FoodDeleteResult, FoodMutationInput } from "../api/types";
+import type { FoodCreateInput, FoodDeleteResult, FoodMutationInput } from "../api/types";
 
 export function invalidateFoodDiscoveryCaches(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: ["foods"] });
@@ -62,7 +62,7 @@ export function useFoodMutations() {
 
   return {
     createFood: useMutation({
-      mutationFn: (input: FoodMutationInput) => createFood(input),
+      mutationFn: (input: FoodCreateInput) => createFood(input),
       onSuccess: invalidate,
     }),
     updateFood: useMutation({

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
@@ -10,6 +10,8 @@ import { useFoodMutations, useNutrients } from "../hooks/useFoods";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { foodFocusKey } from "../../../shared/forms/focusTargets";
 import { apiErrorMessage } from "../utils/foodDelete";
+import { createClientRequestId } from "../../logging/utils/clientRequestId";
+import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
 
 type Props = {
   food?: Food;
@@ -22,6 +24,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   const nutrientQuery = useNutrients();
   const mutations = useFoodMutations();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const createIntentRef = useRef<CreateIntent | null>(null);
   const nutrientDefinitions = useMemo(
     () => [...(nutrientQuery.data ?? [])].sort((a, b) => a.display_order - b.display_order),
     [nutrientQuery.data],
@@ -35,9 +38,21 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
       return;
     }
     try {
-      const saved = food
-        ? await mutations.updateFood.mutateAsync({ foodId: food.id, input })
-        : await mutations.createFood.mutateAsync(input);
+      let saved: Food;
+      if (food) {
+        saved = await mutations.updateFood.mutateAsync({ foodId: food.id, input });
+      } else {
+        createIntentRef.current = bindCreateIntent(
+          createIntentRef.current,
+          input,
+          createClientRequestId,
+        );
+        saved = await mutations.createFood.mutateAsync({
+          ...input,
+          client_request_id: createIntentRef.current.requestId,
+        });
+        createIntentRef.current = null;
+      }
       onSaved(saved.id);
     } catch (error) {
       setSaveError(apiErrorMessage(error, "Could not save food"));

@@ -27,6 +27,9 @@ export type FoodMutationInput = {
   nutrients: FoodNutrientInput[];
 };
 
+export type FoodCreateInput = FoodMutationInput & { client_request_id?: string };
+export type ServingDefinitionCreateInput = ServingDefinitionInput & { client_request_id?: string };
+
 export type ServingDefinition = ServingDefinitionInput & {
   id: string;
   source: string;

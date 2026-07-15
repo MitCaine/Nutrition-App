@@ -35,6 +35,7 @@ test("recipe create API sends ingredient payload", async () => {
   });
 
   await createRecipe({
+    client_request_id: "recipe-request-1",
     name: "Soup",
     notes: null,
     serving_count_yield: "6",
@@ -57,6 +58,9 @@ test("recipe create API sends ingredient payload", async () => {
       body: expect.stringContaining('"amount_unit":"g"'),
     }),
   );
+  expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toMatchObject({
+    client_request_id: "recipe-request-1",
+  });
 });
 
 test("recipe nutrition API maps snake case totals to mobile shape", async () => {
@@ -123,10 +127,13 @@ test("recipe publish posts to publish endpoint", async () => {
     }),
   });
 
-  await publishRecipe("recipe-1");
+  await publishRecipe({ recipeId: "recipe-1", clientRequestId: "request-1" });
 
   expect(global.fetch).toHaveBeenCalledWith(
     "http://localhost:8000/api/v1/recipes/recipe-1/publish",
-    expect.objectContaining({ method: "POST" }),
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ client_request_id: "request-1" }),
+    }),
   );
 });

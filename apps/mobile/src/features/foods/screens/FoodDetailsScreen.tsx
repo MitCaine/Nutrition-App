@@ -23,6 +23,7 @@ import {
   foodDetailLogInitialAmount,
   type LogFoodInitialAmount,
 } from "../../logging/utils/logFoodForm";
+import { createClientRequestId } from "../../logging/utils/clientRequestId";
 
 type Props = {
   foodId: string;
@@ -42,6 +43,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const [error, setError] = useState<string | null>(null);
   const [selectedAmountId, setSelectedAmountId] = useState<string | null>(null);
   const favoriteClaimedRef = useRef(false);
+  const duplicateRequestIdRef = useRef<string | null>(null);
   const deletePending = mutations.deleteFood.isPending;
   const favoritePending = mutations.setFavorite.isPending;
   const loadState = foodDetailLoadState({
@@ -84,6 +86,18 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
       {
         onError: (favoriteError) => setError(apiErrorMessage(favoriteError, "Could not update favorite")),
         onSettled: () => { favoriteClaimedRef.current = false; },
+      },
+    );
+  };
+
+  const duplicate = () => {
+    if (mutations.duplicateFood.isPending) return;
+    duplicateRequestIdRef.current ??= createClientRequestId();
+    mutations.duplicateFood.mutate(
+      { foodId, clientRequestId: duplicateRequestIdRef.current },
+      {
+        onSuccess: () => { duplicateRequestIdRef.current = null; },
+        onError: (duplicateError) => setError(apiErrorMessage(duplicateError, "Could not duplicate food")),
       },
     );
   };
@@ -180,7 +194,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
             <Text style={styles.text}>Edit</Text>
           </Pressable>
         ) : null}
-        <Pressable onPress={() => mutations.duplicateFood.mutate(foodId)} style={styles.secondaryButton}>
+        <Pressable onPress={duplicate} style={styles.secondaryButton}>
           <Text style={styles.text}>Duplicate</Text>
         </Pressable>
         {food.data.can_favorite ? <Pressable accessibilityRole="button" accessibilityLabel={food.data.is_favorite ? "Unfavorite food" : "Favorite food"} accessibilityState={{ selected: food.data.is_favorite, disabled: favoritePending, busy: favoritePending }} disabled={favoritePending} onPress={toggleFavorite} style={styles.secondaryButton}><Text style={styles.text}>{favoritePending ? "Updating…" : food.data.is_favorite ? "Unfavorite" : "Favorite"}</Text></Pressable> : null}

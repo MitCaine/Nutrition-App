@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { formatDisplayNumber } from "../../../shared/nutrition/display";
@@ -27,6 +27,7 @@ import {
   recipeDeleteErrorMessage,
 } from "../utils/recipeDelete";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { createClientRequestId } from "../../logging/utils/clientRequestId";
 
 type Props = {
   recipe: Recipe;
@@ -45,6 +46,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
   const mutations = useRecipeMutations();
   const [deleteDependency, setDeleteDependency] = useState<RecipeDeleteDependency | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const publishRequestRef = useRef<{ recipeId: string; requestId: string } | null>(null);
   const nutritionPreview = visibleRecipeNutrition(nutrition.data, nutrition.isError);
   const canPublish = canPublishRecipe({
     servingCountYield: recipe.serving_count_yield ?? "",
@@ -57,7 +59,14 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
       return;
     }
     try {
-      const response = await mutations.publishRecipe.mutateAsync(recipe.id);
+      if (publishRequestRef.current?.recipeId !== recipe.id) {
+        publishRequestRef.current = { recipeId: recipe.id, requestId: createClientRequestId() };
+      }
+      const response = await mutations.publishRecipe.mutateAsync({
+        recipeId: recipe.id,
+        clientRequestId: publishRequestRef.current.requestId,
+      });
+      publishRequestRef.current = null;
       onOpenFood(response.food.id);
     } catch {
       // Mutation state renders the error.

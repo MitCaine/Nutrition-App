@@ -123,6 +123,7 @@ class RecipeIngredientInput(BaseModel):
 
 
 class RecipeCreateRequest(BaseModel):
+    client_request_id: UUID | None = None
     name: str = Field(min_length=1)
     notes: str | None = None
     serving_count_yield: DecimalInput = None
@@ -144,6 +145,10 @@ class RecipeCreateRequest(BaseModel):
             field_name="final cooked weight",
         )
         return self
+
+
+class RecipePublishRequest(BaseModel):
+    client_request_id: UUID | None = None
 
 
 class RecipeUpdateRequest(BaseModel):

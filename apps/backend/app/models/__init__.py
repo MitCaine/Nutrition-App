@@ -6,6 +6,7 @@ from app.models.food import (
     OcrNutritionConfirmationTrace,
     ServingDefinition,
 )
+from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe, RecipeIngredient
@@ -19,6 +20,7 @@ from app.models.target import NutritionTarget
 
 __all__ = [
     "DailyLog",
+    "CreateOperationIdempotency",
     "DailyLogNutrientSnapshot",
     "FoodItem",
     "FoodFavorite",

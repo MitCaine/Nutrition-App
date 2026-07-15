@@ -12,13 +12,18 @@ from app.domain.recipe_projection import RecipeProjectionMutationError
 from app.models.user import User
 from app.schemas.food import (
     FoodCreateRequest,
+    FoodDuplicateRequest,
     FoodDeleteResultResponse,
     FoodListResponse,
     FoodResolvedNutritionResponse,
     RecentFoodListResponse,
     FoodResponse,
     FoodUpdateRequest,
-    ServingDefinitionInput,
+    ServingDefinitionCreateRequest,
+)
+from app.services.create_idempotency import (
+    CreateOperationIdempotencyConflictError,
+    CreateOperationResultUnavailableError,
 )
 from app.services.food_service import (
     FoodDependenciesUnstableError,
@@ -56,10 +61,12 @@ def create_food(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FoodResponse:
-    service = _service(db)
-    return FoodResponse.model_validate(
-        service.present_food(user.id, service.create_manual_food(user.id, payload))
-    )
+    try:
+        return _service(db).create_manual_food(user.id, payload)
+    except CreateOperationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationResultUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
 @router.get("", response_model=FoodListResponse)
@@ -183,16 +190,22 @@ def delete_food(
 )
 def duplicate_food(
     food_id: UUID,
+    payload: FoodDuplicateRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FoodResponse:
     try:
-        service = _service(db)
-        return FoodResponse.model_validate(
-            service.present_food(user.id, service.duplicate_food(user.id, food_id))
+        return _service(db).duplicate_food(
+            user.id,
+            food_id,
+            payload.client_request_id if payload is not None else None,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CreateOperationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationResultUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
 
 
 @router.post(
@@ -202,18 +215,19 @@ def duplicate_food(
 )
 def add_serving_definition(
     food_id: UUID,
-    payload: ServingDefinitionInput,
+    payload: ServingDefinitionCreateRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FoodResponse:
     try:
-        service = _service(db)
-        return FoodResponse.model_validate(
-            service.present_food(user.id, service.add_serving_definition(user.id, food_id, payload))
-        )
+        return _service(db).add_serving_definition(user.id, food_id, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecipeProjectionMutationError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
     except FoodDependenciesUnstableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationResultUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc

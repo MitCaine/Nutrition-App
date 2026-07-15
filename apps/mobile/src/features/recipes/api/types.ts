@@ -22,6 +22,8 @@ export type RecipeMutationInput = {
   ingredients: RecipeIngredientInput[];
 };
 
+export type RecipeCreateInput = RecipeMutationInput & { client_request_id?: string };
+
 export type RecipeIngredient = RecipeIngredientInput & {
   id: string;
   recipe_id: string;

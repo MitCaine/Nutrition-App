@@ -18,6 +18,7 @@ from app import models  # noqa: F401
 from app.catalog.nutrients import nutrient_seed_rows
 from app.core.database import Base
 from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
+from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.food import OcrNutritionConfirmationTrace
 from app.models.log import DailyLog
 from app.models.nutrient import Nutrient
@@ -35,11 +36,16 @@ from app.publication.recipe_revision import (
 from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
 from app.ocr.confirmation_service import OcrConfirmationService
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
-from app.schemas.food import FoodUpdateRequest, ServingDefinitionInput
+from app.schemas.food import FoodCreateRequest, FoodUpdateRequest, ServingDefinitionInput
 from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.services.log_service import LogService
 from app.services.food_service import FoodService
 from app.services.recipe_service import RecipeGraphCycleError, RecipeService
+from app.services.create_idempotency import (
+    CreateIdempotencyCoordinator,
+    CreateOperationIdempotencyConflictError,
+    CreateOperationResultUnavailableError,
+)
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -53,6 +59,23 @@ idempotency_migration = import_module(
 integrity_migration = import_module(
     "app.migrations.versions.0013_food_recipe_dependency_integrity"
 )
+
+
+def _idempotent_food_payload(request_id, name="Concurrent Idempotent Create"):
+    return FoodCreateRequest(
+        client_request_id=request_id,
+        name=name,
+        serving_definitions=[
+            {
+                "label": "1 portion",
+                "quantity": "1",
+                "unit": "portion",
+                "gram_weight": "100",
+                "is_default": True,
+            }
+        ],
+        nutrients=[],
+    )
 
 
 @pytest.fixture()
@@ -1734,3 +1757,418 @@ def test_deleted_projection_revision_log_updates_are_serialized(postgres_session
     first.join(5)
     second.join(5)
     _assert_coherent(factory, user_id, log_id, Decimal("6"))
+
+
+def test_concurrent_identical_food_creates_replay_one_committed_resource(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"create-retry-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        user_id = user.id
+    request_id = uuid4()
+    start = Event()
+    results: list = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        with factory() as db:
+            try:
+                start.wait(5)
+                results.append(
+                    FoodService(db).create_manual_food(
+                        user_id, _idempotent_food_payload(request_id)
+                    ).id
+                )
+            except BaseException as exc:  # pragma: no cover - reported by assertion.
+                errors.append(exc)
+
+    threads = [Thread(target=run), Thread(target=run)]
+    for thread in threads:
+        thread.start()
+    start.set()
+    for thread in threads:
+        thread.join(10)
+
+    assert not errors
+    assert len(results) == 2
+    assert len(set(results)) == 1
+    with factory() as db:
+        assert db.scalar(
+            select(func.count(FoodItem.id)).where(FoodItem.user_id == user_id)
+        ) == 1
+        assert db.scalar(
+            select(func.count(CreateOperationIdempotency.id)).where(
+                CreateOperationIdempotency.user_id == user_id
+            )
+        ) == 1
+
+
+def test_retry_waiting_on_failed_create_proceeds_after_receipt_rollback(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"rollback-retry-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        user_id = user.id
+    request_id = uuid4()
+    reserved = Event()
+    release_failure = Event()
+    first_errors: list[BaseException] = []
+    retry_results: list = []
+
+    def fail_first() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def fail_after_reservation(_food):
+                reserved.set()
+                release_failure.wait(5)
+                raise RuntimeError("injected rollback")
+
+            service.foods.add = fail_after_reservation
+            try:
+                service.create_manual_food(user_id, _idempotent_food_payload(request_id))
+            except BaseException as exc:
+                first_errors.append(exc)
+
+    def retry() -> None:
+        with factory() as db:
+            retry_results.append(
+                FoodService(db).create_manual_food(
+                    user_id, _idempotent_food_payload(request_id)
+                ).id
+            )
+
+    first = Thread(target=fail_first)
+    first.start()
+    assert reserved.wait(5)
+    second = Thread(target=retry)
+    second.start()
+    Event().wait(0.2)
+    assert not retry_results
+    release_failure.set()
+    first.join(10)
+    second.join(10)
+
+    assert len(first_errors) == 1
+    assert isinstance(first_errors[0], RuntimeError)
+    assert len(retry_results) == 1
+    with factory() as db:
+        assert db.scalar(
+            select(func.count(FoodItem.id)).where(FoodItem.user_id == user_id)
+        ) == 1
+        assert db.scalar(
+            select(func.count(CreateOperationIdempotency.id)).where(
+                CreateOperationIdempotency.user_id == user_id
+            )
+        ) == 1
+
+
+def test_concurrent_identical_recipe_publication_creates_one_revision(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"publish-retry-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        recipe = RecipeService(db).create_recipe(
+            user.id,
+            RecipeCreateRequest(name="Idempotent Publish", serving_count_yield=Decimal("1")),
+        )
+        user_id, recipe_id = user.id, recipe.id
+    request_id = uuid4()
+    start = Event()
+    results: list = []
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        with factory() as db:
+            try:
+                start.wait(5)
+                _, food = RecipeService(db).publish(user_id, recipe_id, request_id)
+                results.append(food.id)
+            except BaseException as exc:  # pragma: no cover - reported by assertion.
+                errors.append(exc)
+
+    threads = [Thread(target=run), Thread(target=run)]
+    for thread in threads:
+        thread.start()
+    start.set()
+    for thread in threads:
+        thread.join(10)
+
+    assert not errors
+    assert len(results) == 2
+    assert len(set(results)) == 1
+    with factory() as db:
+        assert db.scalar(
+            select(func.count(RecipePublicationRevision.id)).where(
+                RecipePublicationRevision.recipe_id == recipe_id
+            )
+        ) == 1
+
+
+def test_committed_retry_replays_and_same_request_is_cross_user_isolated(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        first_user = User(id=uuid4(), email=f"replay-owner-a-{uuid4()}@example.test")
+        second_user = User(id=uuid4(), email=f"replay-owner-b-{uuid4()}@example.test")
+        db.add_all([first_user, second_user])
+        db.commit()
+        first_user_id, second_user_id = first_user.id, second_user.id
+    request_id = uuid4()
+
+    with factory() as db:
+        original = FoodService(db).create_manual_food(
+            first_user_id, _idempotent_food_payload(request_id)
+        )
+        original_id = original.id
+    # This models a timeout where the first commit succeeded but its response
+    # was lost, followed by a later retry using the same request identity.
+    with factory() as db:
+        replay = FoodService(db).create_manual_food(
+            first_user_id, _idempotent_food_payload(request_id)
+        )
+        assert replay.id == original_id
+    with factory() as db:
+        other_owner = FoodService(db).create_manual_food(
+            second_user_id, _idempotent_food_payload(request_id)
+        )
+        assert other_owner.id != original_id
+    with factory() as db:
+        recipe = RecipeService(db).create_recipe(
+            first_user_id,
+            RecipeCreateRequest(
+                client_request_id=request_id,
+                name="Cross-operation request reuse",
+                serving_count_yield=Decimal("1"),
+            ),
+        )
+        assert recipe.user_id == first_user_id
+
+    with factory() as db:
+        assert db.scalar(select(func.count(FoodItem.id))) == 2
+        assert db.scalar(select(func.count(CreateOperationIdempotency.id))) == 3
+
+
+def test_different_payload_waiting_on_uncommitted_request_conflicts_after_commit(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"payload-conflict-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        user_id = user.id
+    request_id = uuid4()
+    first_domain_started, second_reservation_started, release = Event(), Event(), Event()
+    first_results: list = []
+    second_errors: list[BaseException] = []
+
+    def first_create() -> None:
+        with factory() as db:
+            service = FoodService(db)
+            original_add = service.foods.add
+
+            def hold_after_reservation(food):
+                first_domain_started.set()
+                release.wait(5)
+                return original_add(food)
+
+            service.foods.add = hold_after_reservation
+            first_results.append(
+                service.create_manual_food(
+                    user_id, _idempotent_food_payload(request_id, "First payload")
+                ).id
+            )
+
+    def conflicting_create() -> None:
+        with factory() as db:
+            service = FoodService(db)
+            original_reserve = service.create_idempotency.reserve
+
+            def signal_then_reserve(*args, **kwargs):
+                second_reservation_started.set()
+                return original_reserve(*args, **kwargs)
+
+            service.create_idempotency.reserve = signal_then_reserve
+            try:
+                service.create_manual_food(
+                    user_id, _idempotent_food_payload(request_id, "Different payload")
+                )
+            except BaseException as exc:
+                second_errors.append(exc)
+
+    first = Thread(target=first_create)
+    first.start()
+    assert first_domain_started.wait(5)
+    second = Thread(target=conflicting_create)
+    second.start()
+    assert second_reservation_started.wait(5)
+    release.set()
+    first.join(10)
+    second.join(10)
+
+    assert len(first_results) == 1
+    assert len(second_errors) == 1
+    assert isinstance(second_errors[0], CreateOperationIdempotencyConflictError)
+    with factory() as db:
+        assert db.scalar(select(func.count(FoodItem.id))) == 1
+        assert db.scalar(select(func.count(CreateOperationIdempotency.id))) == 1
+
+
+def test_publication_replay_after_later_publication_uses_original_revision_snapshot(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"publication-snapshot-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        recipe = RecipeService(db).create_recipe(
+            user.id,
+            RecipeCreateRequest(name="First PG Publication", serving_count_yield=Decimal("1")),
+        )
+        user_id, recipe_id = user.id, recipe.id
+    first_request, second_request = uuid4(), uuid4()
+    with factory() as db:
+        first = RecipeService(db).publish(user_id, recipe_id, first_request).response
+    with factory() as db:
+        RecipeService(db).update_recipe(
+            user_id,
+            recipe_id,
+            RecipeUpdateRequest(name="Second PG Publication"),
+        )
+        second = RecipeService(db).publish(user_id, recipe_id, second_request).response
+        assert second.recipe.name == "Second PG Publication"
+    with factory() as db:
+        replay = RecipeService(db).publish(user_id, recipe_id, first_request).response
+        assert replay.model_dump(mode="json") == first.model_dump(mode="json")
+        receipt = db.scalar(
+            select(CreateOperationIdempotency).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == "recipe.publish",
+                CreateOperationIdempotency.client_request_id == first_request,
+            )
+        )
+        assert receipt is not None
+        revision = db.get(RecipePublicationRevision, receipt.resource_id)
+        assert revision is not None
+        assert revision.revision_number == 1
+
+
+def test_archived_result_replay_is_unavailable_and_never_replaced(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"archive-replay-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        user_id = user.id
+        request_id = uuid4()
+        original = FoodService(db).create_manual_food(
+            user_id, _idempotent_food_payload(request_id)
+        )
+        original_id = original.id
+    with factory() as db:
+        FoodService(db).soft_delete_food(user_id, original_id)
+    with factory() as db:
+        with pytest.raises(CreateOperationResultUnavailableError):
+            FoodService(db).create_manual_food(
+                user_id, _idempotent_food_payload(request_id)
+            )
+        assert db.scalar(select(func.count(FoodItem.id))) == 1
+
+
+def test_unrelated_integrity_and_post_completion_failures_leave_no_orphans(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"orphan-owner-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        user_id, duplicate_email = user.id, user.email
+
+    unrelated_request = uuid4()
+    with factory() as db:
+        service = FoodService(db)
+
+        def unrelated_failure(_food):
+            db.add(User(id=uuid4(), email=duplicate_email))
+            db.flush()
+            raise AssertionError("unreachable")
+
+        service.foods.add = unrelated_failure
+        with pytest.raises(IntegrityError):
+            service.create_manual_food(
+                user_id, _idempotent_food_payload(unrelated_request)
+            )
+        assert not service.create_idempotency.find(
+            user_id,
+            "food.create_manual",
+            unrelated_request,
+            "not-used-after-rollback",
+        )
+
+    completion_request = uuid4()
+    with factory() as db:
+        service = FoodService(db)
+
+        def fail_after_completion(receipt, snapshot):
+            CreateIdempotencyCoordinator.complete(receipt, snapshot)
+            raise RuntimeError("injected after receipt completion")
+
+        service.create_idempotency.complete = fail_after_completion
+        with pytest.raises(RuntimeError, match="after receipt completion"):
+            service.create_manual_food(
+                user_id, _idempotent_food_payload(completion_request)
+            )
+
+    with factory() as db:
+        assert db.scalar(select(func.count(FoodItem.id))) == 0
+        assert db.scalar(select(func.count(CreateOperationIdempotency.id))) == 0
+
+
+def test_publication_failure_after_projection_link_rolls_back_receipt_and_domain_graph(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    with factory() as db:
+        user = User(id=uuid4(), email=f"publication-orphan-{uuid4()}@example.test")
+        db.add(user)
+        db.commit()
+        recipe = RecipeService(db).create_recipe(
+            user.id,
+            RecipeCreateRequest(name="Rollback Publication", serving_count_yield=Decimal("1")),
+        )
+        user_id, recipe_id = user.id, recipe.id
+
+    request_id = uuid4()
+    with factory() as db:
+        service = RecipeService(db)
+
+        def fail_after_projection_link(_projection):
+            raise RuntimeError("injected after projection link")
+
+        service._after_projection_link = fail_after_projection_link
+        with pytest.raises(RuntimeError, match="after projection link"):
+            service.publish(user_id, recipe_id, request_id)
+
+    with factory() as db:
+        recipe = db.get(Recipe, recipe_id)
+        assert recipe is not None
+        assert recipe.active_publication_revision_id is None
+        assert recipe.published_food_item_id is None
+        assert db.scalar(select(func.count(RecipePublicationRevision.id))) == 0
+        assert db.scalar(select(func.count(FoodItem.id))) == 0
+        assert db.scalar(select(func.count(CreateOperationIdempotency.id))) == 0
