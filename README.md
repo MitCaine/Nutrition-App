@@ -78,8 +78,8 @@ variable explicitly on the migration command.
 
 Migration `0004_recipe_domain_foundation` intentionally refuses to upgrade a pre-0004 database
 when either legacy `recipes` or `recipe_ingredients` table contains rows. Empty databases continue
-to upgrade normally. A populated legacy database must first use the offline Phase 5C1 bridge on an
-isolated conversion clone; this release can preserve and plan that history but does not convert it.
+to upgrade normally. A populated legacy database must use the offline Phase 5C1 bridge and planner,
+then the Phase 5C2 checkpointed converter, on an isolated conversion clone.
 If a database was already upgraded through the older destructive 0004, discarded rows can be
 recovered only from a backup. See
 [Production Hardening Phase 5A](docs/production-hardening-phase5a.md).
@@ -107,6 +107,16 @@ The operator commands require explicit database configuration and create no Reci
 data. See
 [Production Hardening Phase 5C1](docs/production-hardening-phase5c1.md) for the admission rules,
 commands, archive contract, deterministic dispositions, and deferred conversion boundary.
+
+Phase 5C2 executes only `convert` decisions from that exact approved plan at migration
+`0016_phase5c_execution`. It reuses each compatibility projection, captures one immutable
+transition-baseline revision, and records every convert/quarantine/block outcome. Daily Logs and OCR
+provenance are unchanged. Execution is restart-safe and produces a privacy-safe receipt, but it does
+not accept the Phase 5C1 planning attestation as permission to convert. A separate execution-capable
+operator attestation derived from the exact validated plan and bound to the same clone marker is
+required. A regenerated plan requires new execution authorization. Phase 5C2 does not authorize
+production promotion; rollback remains cutback to the pre-conversion clone. See
+[Production Hardening Phase 5C2](docs/production-hardening-phase5c2.md).
 
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or

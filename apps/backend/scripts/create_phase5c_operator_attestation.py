@@ -16,6 +16,7 @@ from app.operators.phase5c_contracts import (
     SUPPORTED_SCHEMA_SIGNATURE,
     canonical_digest,
     canonical_json,
+    load_conversion_plan_file,
     load_inventory_file,
 )
 from app.operators.phase5c_isolation import (
@@ -33,11 +34,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--operator-attestation-id", required=True)
     parser.add_argument(
         "--scope",
-        choices=("bridge", "planning", "bridge_and_planning"),
+        choices=(
+            "bridge",
+            "planning",
+            "execution",
+            "bridge_and_planning",
+            "planning_and_execution",
+            "bridge_planning_and_execution",
+        ),
         default="bridge_and_planning",
     )
     parser.add_argument("--clone-marker-id", required=True)
     parser.add_argument("--conversion-clone-id", required=True)
+    parser.add_argument(
+        "--plan",
+        type=Path,
+        help="Validated phase5c_conversion_plan_v2 required by execution-capable scopes.",
+    )
     return parser.parse_args()
 
 
@@ -50,6 +63,16 @@ def main() -> None:
         )
     try:
         inventory = load_inventory_file(args.inventory)
+        execution_capable = args.scope in {
+            "execution",
+            "planning_and_execution",
+            "bridge_planning_and_execution",
+        }
+        if execution_capable and args.plan is None:
+            raise Phase5CAdmissionError(
+                "Execution-capable attestation requires --plan"
+            )
+        plan = load_conversion_plan_file(args.plan) if args.plan is not None else None
         source_identity = load_safe_database_identity(args.source_production_identity)
         make_url(database_url)
         engine = create_engine(
@@ -72,6 +95,7 @@ def main() -> None:
                     inventory_digest=canonical_digest(inventory),
                     schema_signature=SUPPORTED_SCHEMA_SIGNATURE,
                     schema_signature_digest=SCHEMA_SIGNATURE_DIGEST,
+                    conversion_plan_payload=plan,
                 )
         finally:
             engine.dispose()

@@ -12,20 +12,34 @@ from sqlalchemy import Connection, Engine, inspect, text
 from app.core.database_identity import database_identity
 from app.operators.phase5c_contracts import (
     CLONE_MARKER_VERSION,
+    CONVERSION_PLAN_VERSION,
     CONVERSION_RULES_VERSION,
+    EXECUTION_ISOLATION_EVIDENCE_VERSION,
+    EXECUTION_OPERATOR_ATTESTATION_VERSION,
     ISOLATION_EVIDENCE_VERSION,
     OPERATOR_ATTESTATION_VERSION,
     Phase5CAdmissionError,
     SAFE_DATABASE_IDENTITY_VERSION,
     canonical_digest,
     canonical_json,
+    validate_conversion_plan_contract,
 )
 
 
 CLONE_MARKER_TABLE = "phase5c_conversion_clone_marker"
 _LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_ATTESTATION_SCOPES = {"bridge", "planning", "bridge_and_planning"}
+_V1_ATTESTATION_SCOPES = {"bridge", "planning", "bridge_and_planning"}
+_V2_ATTESTATION_OPERATIONS = {
+    "bridge": frozenset({"bridge"}),
+    "planning": frozenset({"planning"}),
+    "execution": frozenset({"execution"}),
+    "bridge_and_planning": frozenset({"bridge", "planning"}),
+    "planning_and_execution": frozenset({"planning", "execution"}),
+    "bridge_planning_and_execution": frozenset(
+        {"bridge", "planning", "execution"}
+    ),
+}
 
 
 def validate_operator_label(value: str, label: str) -> str:
@@ -95,10 +109,12 @@ def build_operator_attestation(
     schema_signature: str,
     schema_signature_digest: str,
     conversion_rules_version: str = CONVERSION_RULES_VERSION,
+    conversion_plan_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_operator_label(operator_attestation_identity, "operator attestation identity")
     validate_operator_label(clone_marker_identity, "clone marker identity")
-    if scope not in _ATTESTATION_SCOPES:
+    all_scopes = set(_V2_ATTESTATION_OPERATIONS)
+    if scope not in all_scopes:
         raise Phase5CAdmissionError("Unsupported operator attestation scope")
     if not _DIGEST.fullmatch(source_production_identity_digest):
         raise Phase5CAdmissionError("Source-production identity digest is invalid")
@@ -112,9 +128,20 @@ def build_operator_attestation(
         raise Phase5CAdmissionError(
             "phase5c_clone_matches_source_production_identity"
         )
+    execution_capable = "execution" in _V2_ATTESTATION_OPERATIONS[scope]
+    attestation_version = (
+        EXECUTION_OPERATOR_ATTESTATION_VERSION
+        if execution_capable
+        else OPERATOR_ATTESTATION_VERSION
+    )
+    isolation_version = (
+        EXECUTION_ISOLATION_EVIDENCE_VERSION
+        if execution_capable
+        else ISOLATION_EVIDENCE_VERSION
+    )
     unsigned = {
-        "attestation_version": OPERATOR_ATTESTATION_VERSION,
-        "isolation_evidence_contract_version": ISOLATION_EVIDENCE_VERSION,
+        "attestation_version": attestation_version,
+        "isolation_evidence_contract_version": isolation_version,
         "operator_attestation_identity": operator_attestation_identity,
         "scope": scope,
         "clone_marker_identity": clone_marker_identity,
@@ -130,6 +157,49 @@ def build_operator_attestation(
         },
         "conversion_rules_version": conversion_rules_version,
     }
+    if execution_capable:
+        if conversion_plan_payload is None:
+            raise Phase5CAdmissionError(
+                "Execution-capable attestation requires a validated conversion plan"
+            )
+        plan = validate_conversion_plan_contract(conversion_plan_payload)
+        marker = load_clone_marker(connection)
+        if marker["clone_marker_identity"] != clone_marker_identity:
+            raise Phase5CAdmissionError(
+                "Execution attestation clone marker identity differs"
+            )
+        if marker["source_production_identity_digest"] != (
+            source_production_identity_digest
+        ):
+            raise Phase5CAdmissionError(
+                "Execution attestation source identity differs from clone marker"
+            )
+        if marker["conversion_clone_identity_digest"] != unsigned[
+            "conversion_clone_identity_digest"
+        ]:
+            raise Phase5CAdmissionError(
+                "Execution attestation clone identity differs from clone marker"
+            )
+        if marker["clone_database_identity_digest"] != clone_database_digest:
+            raise Phase5CAdmissionError(
+                "Execution attestation database identity differs from clone marker"
+            )
+        _validate_plan_for_execution_attestation(
+            connection,
+            plan=plan,
+            marker=marker,
+            inventory_digest=inventory_digest,
+            schema_signature=schema_signature,
+            schema_signature_digest=schema_signature_digest,
+            conversion_rules_version=conversion_rules_version,
+        )
+        unsigned["clone_marker_digest"] = marker["clone_marker_digest"]
+        unsigned["conversion_plan_evidence"] = {
+            "contract_version": plan["manifest_version"],
+            "digest": plan["manifest_digest"],
+            "archive_identity": plan["source_identity"]["archive_identity"],
+            "source_checksums": plan["source_checksums"],
+        }
     return {**unsigned, "attestation_digest": canonical_digest(unsigned)}
 
 
@@ -144,7 +214,7 @@ def load_operator_attestation(path: Path) -> dict[str, Any]:
 def validate_operator_attestation(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise Phase5CAdmissionError("Operator attestation must be a JSON object")
-    expected_keys = {
+    base_keys = {
         "attestation_version",
         "isolation_evidence_contract_version",
         "operator_attestation_identity",
@@ -158,11 +228,26 @@ def validate_operator_attestation(payload: Any) -> dict[str, Any]:
         "conversion_rules_version",
         "attestation_digest",
     }
+    version = payload.get("attestation_version")
+    execution_version = version == EXECUTION_OPERATOR_ATTESTATION_VERSION
+    expected_keys = base_keys | (
+        {"clone_marker_digest", "conversion_plan_evidence"}
+        if execution_version
+        else set()
+    )
     if set(payload) != expected_keys:
         raise Phase5CAdmissionError("Operator attestation has an unsupported shape")
-    if payload.get("attestation_version") != OPERATOR_ATTESTATION_VERSION:
+    if version not in {
+        OPERATOR_ATTESTATION_VERSION,
+        EXECUTION_OPERATOR_ATTESTATION_VERSION,
+    }:
         raise Phase5CAdmissionError("Unsupported operator attestation version")
-    if payload.get("isolation_evidence_contract_version") != ISOLATION_EVIDENCE_VERSION:
+    expected_isolation_version = (
+        EXECUTION_ISOLATION_EVIDENCE_VERSION
+        if execution_version
+        else ISOLATION_EVIDENCE_VERSION
+    )
+    if payload.get("isolation_evidence_contract_version") != expected_isolation_version:
         raise Phase5CAdmissionError("Unsupported isolation-evidence contract version")
     validate_operator_label(
         str(payload.get("operator_attestation_identity")),
@@ -171,7 +256,12 @@ def validate_operator_attestation(payload: Any) -> dict[str, Any]:
     validate_operator_label(
         str(payload.get("clone_marker_identity")), "clone marker identity"
     )
-    if payload.get("scope") not in _ATTESTATION_SCOPES:
+    valid_scopes = (
+        set(_V2_ATTESTATION_OPERATIONS)
+        if execution_version
+        else _V1_ATTESTATION_SCOPES
+    )
+    if payload.get("scope") not in valid_scopes:
         raise Phase5CAdmissionError("Unsupported operator attestation scope")
     digest_fields = (
         "conversion_clone_identity_digest",
@@ -180,6 +270,8 @@ def validate_operator_attestation(payload: Any) -> dict[str, Any]:
         "inventory_digest",
         "attestation_digest",
     )
+    if execution_version:
+        digest_fields = (*digest_fields, "clone_marker_digest")
     if any(
         not isinstance(payload.get(field), str)
         or not _DIGEST.fullmatch(payload[field])
@@ -194,6 +286,8 @@ def validate_operator_attestation(payload: Any) -> dict[str, Any]:
         or not _DIGEST.fullmatch(signature["digest"])
     ):
         raise Phase5CAdmissionError("Operator attestation schema signature is invalid")
+    if execution_version:
+        _validate_attested_plan_evidence(payload.get("conversion_plan_evidence"))
     unsigned = {key: value for key, value in payload.items() if key != "attestation_digest"}
     if canonical_digest(unsigned) != payload["attestation_digest"]:
         raise Phase5CAdmissionError("Operator attestation digest verification failed")
@@ -201,7 +295,136 @@ def validate_operator_attestation(payload: Any) -> dict[str, Any]:
 
 
 def _attestation_allows(attestation: dict[str, Any], operation: str) -> bool:
-    return attestation["scope"] in {operation, "bridge_and_planning"}
+    if attestation["attestation_version"] == OPERATOR_ATTESTATION_VERSION:
+        permitted = {
+            "bridge": frozenset({"bridge"}),
+            "planning": frozenset({"planning"}),
+            "bridge_and_planning": frozenset({"bridge", "planning"}),
+        }[attestation["scope"]]
+    else:
+        permitted = _V2_ATTESTATION_OPERATIONS[attestation["scope"]]
+    return operation in permitted
+
+
+def _validate_attested_plan_evidence(value: Any) -> None:
+    if not isinstance(value, dict) or set(value) != {
+        "contract_version",
+        "digest",
+        "archive_identity",
+        "source_checksums",
+    }:
+        raise Phase5CAdmissionError("Execution attestation plan evidence is invalid")
+    if value.get("contract_version") != CONVERSION_PLAN_VERSION:
+        raise Phase5CAdmissionError("Execution attestation plan version is unsupported")
+    checksums = value.get("source_checksums")
+    if not isinstance(checksums, dict) or set(checksums) != {
+        "archived_recipes",
+        "archived_recipe_ingredients",
+        "archive",
+        "planning_source",
+    }:
+        raise Phase5CAdmissionError("Execution attestation source checksums are invalid")
+    digest_values = (
+        value.get("digest"),
+        value.get("archive_identity"),
+        *checksums.values(),
+    )
+    if any(not isinstance(item, str) or not _DIGEST.fullmatch(item) for item in digest_values):
+        raise Phase5CAdmissionError("Execution attestation plan digest is invalid")
+
+
+def _validate_plan_for_execution_attestation(
+    connection: Connection,
+    *,
+    plan: dict[str, Any],
+    marker: dict[str, Any],
+    inventory_digest: str,
+    schema_signature: str,
+    schema_signature_digest: str,
+    conversion_rules_version: str,
+) -> None:
+    plan_requirements = {
+        "inventory_digest": inventory_digest,
+        "conversion_rules_version": conversion_rules_version,
+        "supported_schema_signature": {
+            "name": schema_signature,
+            "digest": schema_signature_digest,
+        },
+    }
+    if any(plan.get(key) != value for key, value in plan_requirements.items()):
+        raise Phase5CAdmissionError(
+            "Conversion plan does not match execution attestation evidence"
+        )
+    isolation_requirements = {
+        "clone_marker_identity": marker["clone_marker_identity"],
+        "clone_marker_digest": marker["clone_marker_digest"],
+        "conversion_clone_identity_digest": marker[
+            "conversion_clone_identity_digest"
+        ],
+        "clone_database_identity_digest": marker[
+            "clone_database_identity_digest"
+        ],
+        "source_production_identity_digest": marker[
+            "source_production_identity_digest"
+        ],
+    }
+    if any(
+        plan["isolation_evidence"].get(key) != value
+        for key, value in isolation_requirements.items()
+    ):
+        raise Phase5CAdmissionError(
+            "Conversion plan does not match clone marker evidence"
+        )
+    current_identity = safe_database_identity(connection)
+    source_identity = plan["source_identity"]
+    safe_identity_requirements = {
+        "driver_family": current_identity["driver_family"],
+        "host": current_identity["host"],
+        "port": current_identity["port"],
+        "database": current_identity["database"],
+        "source_schema": current_identity["schema"],
+        "conversion_clone_identity_digest": marker[
+            "conversion_clone_identity_digest"
+        ],
+    }
+    if any(
+        source_identity.get(key) != value
+        for key, value in safe_identity_requirements.items()
+    ):
+        raise Phase5CAdmissionError(
+            "Conversion plan does not match the configured clone identity"
+        )
+    if "phase5c_conversion_metadata" not in inspect(connection).get_table_names():
+        raise Phase5CAdmissionError("Approved conversion manifest metadata is absent")
+    metadata = connection.execute(
+        text(
+            "SELECT * FROM phase5c_conversion_metadata "
+            "WHERE archive_identity = :archive_identity"
+        ),
+        {"archive_identity": source_identity["archive_identity"]},
+    ).mappings().one_or_none()
+    if metadata is None:
+        raise Phase5CAdmissionError("Conversion plan archive metadata is absent")
+    metadata_requirements = {
+        "archive_schema": source_identity["archive_schema"],
+        "inventory_digest": plan["inventory_digest"],
+        "schema_signature": plan["supported_schema_signature"]["name"],
+        "schema_signature_digest": plan["supported_schema_signature"]["digest"],
+        "conversion_rules_version": plan["conversion_rules_version"],
+        "clone_marker_digest": marker["clone_marker_digest"],
+        "manifest_version": plan["manifest_version"],
+        "manifest_digest": plan["manifest_digest"],
+        "recipes_checksum": plan["source_checksums"]["archived_recipes"],
+        "ingredients_checksum": plan["source_checksums"][
+            "archived_recipe_ingredients"
+        ],
+        "archive_checksum": plan["source_checksums"]["archive"],
+        "planning_source_checksum": plan["source_checksums"]["planning_source"],
+    }
+    if any(metadata.get(key) != value for key, value in metadata_requirements.items()):
+        raise Phase5CAdmissionError(
+            "Conversion plan does not match approved archive metadata"
+        )
 
 
 def _marker_unsigned(attestation: dict[str, Any]) -> dict[str, Any]:
@@ -307,6 +530,10 @@ def establish_clone_marker_on_connection(
     conversion_clone_id: str,
 ) -> dict[str, Any]:
     attestation = validate_operator_attestation(attestation_payload)
+    if attestation["attestation_version"] != OPERATOR_ATTESTATION_VERSION:
+        raise Phase5CAdmissionError(
+            "Clone marker preflight requires bridge/planning attestation evidence"
+        )
     validate_operator_label(clone_marker_identity, "clone marker identity")
     expected_clone_digest = conversion_clone_identity_digest(conversion_clone_id)
     if attestation["clone_marker_identity"] != clone_marker_identity:
@@ -347,12 +574,29 @@ def verify_clone_isolation_evidence(
     schema_signature: str,
     schema_signature_digest: str,
     operation: str,
+    conversion_plan_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     attestation = validate_operator_attestation(attestation_payload)
-    if operation not in {"bridge", "planning"}:
+    if operation not in {"bridge", "planning", "execution"}:
         raise Phase5CAdmissionError("Unsupported Phase 5C isolation operation")
     if not _attestation_allows(attestation, operation):
         raise Phase5CAdmissionError("Operator attestation scope does not permit this operation")
+    if operation == "execution":
+        if conversion_plan_payload is None:
+            raise Phase5CAdmissionError(
+                "Execution authorization requires the approved conversion plan"
+            )
+        plan = validate_conversion_plan_contract(conversion_plan_payload)
+        expected_plan_evidence = {
+            "contract_version": plan["manifest_version"],
+            "digest": plan["manifest_digest"],
+            "archive_identity": plan["source_identity"]["archive_identity"],
+            "source_checksums": plan["source_checksums"],
+        }
+        if attestation.get("conversion_plan_evidence") != expected_plan_evidence:
+            raise Phase5CAdmissionError(
+                "Execution attestation does not authorize this conversion plan"
+            )
     expected = {
         "clone_marker_identity": clone_marker_identity,
         "conversion_clone_identity_digest": conversion_clone_identity_digest(
@@ -373,9 +617,49 @@ def verify_clone_isolation_evidence(
     if current_digest == attestation["source_production_identity_digest"]:
         raise Phase5CAdmissionError("phase5c_clone_matches_source_production_identity")
     marker = load_clone_marker(connection)
-    if marker != _marker_payload(attestation):
-        raise Phase5CAdmissionError("Conversion-clone marker and attestation differ")
-    return marker
+    if attestation["attestation_version"] == OPERATOR_ATTESTATION_VERSION:
+        if marker != _marker_payload(attestation):
+            raise Phase5CAdmissionError("Conversion-clone marker and attestation differ")
+    else:
+        marker_requirements = {
+            "clone_marker_identity": attestation["clone_marker_identity"],
+            "clone_marker_digest": attestation["clone_marker_digest"],
+            "conversion_clone_identity_digest": attestation[
+                "conversion_clone_identity_digest"
+            ],
+            "clone_database_identity_digest": attestation[
+                "clone_database_identity_digest"
+            ],
+            "source_production_identity_digest": attestation[
+                "source_production_identity_digest"
+            ],
+            "inventory_digest": attestation["inventory_digest"],
+            "schema_signature": attestation["schema_signature"]["name"],
+            "schema_signature_digest": attestation["schema_signature"]["digest"],
+            "conversion_rules_version": attestation["conversion_rules_version"],
+        }
+        if any(marker.get(key) != value for key, value in marker_requirements.items()):
+            raise Phase5CAdmissionError(
+                "Operator attestation does not match clone marker evidence"
+            )
+    if operation != "execution":
+        return marker
+    return {
+        **marker,
+        "execution_isolation_evidence_contract_version": attestation[
+            "isolation_evidence_contract_version"
+        ],
+        "execution_operator_attestation_version": attestation[
+            "attestation_version"
+        ],
+        "execution_operator_attestation_identity": attestation[
+            "operator_attestation_identity"
+        ],
+        "execution_operator_attestation_scope": attestation["scope"],
+        "execution_operator_attestation_digest": attestation[
+            "attestation_digest"
+        ],
+    }
 
 
 def _maintenance_lock_key(clone_marker_digest: str) -> int:

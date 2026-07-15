@@ -27,6 +27,7 @@ from app.operators.historical_database_inventory import (
 from app.operators.phase5c_contracts import (
     CONTROL_REVISION,
     CONVERSION_RULES_VERSION,
+    EXECUTION_REVISION,
     Phase5CAdmissionError,
     SUPPORTED_SCHEMA_SIGNATURE,
     SUPPORTED_SOURCE_REVISION,
@@ -860,6 +861,7 @@ def _verify_existing_archive(
         "0013_food_recipe_integrity",
         "0014_create_idempotency",
         CONTROL_REVISION,
+        EXECUTION_REVISION,
     }:
         raise Phase5CAdmissionError("Existing archive is paired with an unsupported migration state")
     return _result(metadata, archive_created=False)

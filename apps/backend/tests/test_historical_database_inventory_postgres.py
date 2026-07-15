@@ -163,7 +163,7 @@ def test_empty_current_database_inventory_is_stable_and_aggregate_only(
         "reason": "no_application_or_historical_rows_detected",
     }
     assert payload["migration"]["current_alembic_revision"] == (
-        "0015_phase5c_conversion_control"
+        "0016_phase5c_execution"
     )
     assert payload["migration"]["already_beyond_migration_0004"] is True
     assert payload["legacy_recipes"]["recipe_count"] == 0

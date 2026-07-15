@@ -112,11 +112,13 @@ NUTRITION_DATABASE_URL='<conversion-clone-url>' \
   --format human
 ```
 
-After the bridge succeeds, run normal Alembic migrations and then the planner with the same exact
-evidence:
+After the bridge succeeds, migrate exactly to the planning control revision and run the planner
+with the same evidence. Do not use `upgrade head` here because Phase 5C2 adds a later execution
+revision and the planner intentionally admits only 0015:
 
 ```bash
-NUTRITION_DATABASE_URL='<conversion-clone-url>' alembic upgrade head
+NUTRITION_DATABASE_URL='<conversion-clone-url>' \
+  alembic upgrade 0015_phase5c_conversion_control
 
 NUTRITION_DATABASE_URL='<conversion-clone-url>' \
   .venv/bin/python -m scripts.plan_historical_recipe_conversion \
@@ -165,13 +167,16 @@ identity digests, conversion-clone digest, operator attestation identity/scope/v
 the isolation contract version. It retains deterministic ordering, source checksums, dispositions,
 and a digest over the complete preceding manifest. No execution timestamp or user-authored content
 appears. Repeating an identical plan is a no-op; different evidence for the archive is rejected.
+The bridge/planning attestation embedded in this plan proves who authorized planning; it does not
+authorize Phase 5C2 semantic conversion. Execution requires separate v2 authorization evidence.
 
-## Migration and deferred work
+## Migration and Phase 5C2 handoff
 
-The uncommitted migration `0015_phase5c_conversion_control` creates only the metadata table needed
+Migration `0015_phase5c_conversion_control` creates only the metadata table needed
 to bind future execution to the immutable v2 plan and its isolation evidence. It does not inspect
 the archive or modify domain data. Migration 0004 and its Phase 5A admission guard remain unchanged.
 
-Actual Recipe conversion, immutable revision creation, compatibility projection changes,
-checkpointed execution, quarantine persistence, execution receipts, post-conversion verification,
-Daily Log enrichment, and OCR changes remain deferred to Phase 5C2 or later bounded phases.
+Phase 5C2 consumes the approved plan only after the operator advances the clone to
+`0016_phase5c_execution`. See [Phase 5C2](production-hardening-phase5c2.md) for the execution command,
+checkpoint contract, restart behavior, and verification boundary. Daily Log enrichment, OCR
+changes, promotion, and archive cleanup remain deferred.
