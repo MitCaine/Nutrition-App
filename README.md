@@ -83,6 +83,20 @@ Recipe conversion before it can pass 0004; this release does not attempt that co
 database was already upgraded through the older destructive 0004, discarded rows can be recovered
 only from a backup. See [Production Hardening Phase 5A](docs/production-hardening-phase5a.md).
 
+Before any future historical conversion work, operators can produce an aggregate-only, read-only
+inventory of migration, Recipe, publication, projection, log, OCR, idempotency, and retention state:
+
+```bash
+cd apps/backend
+NUTRITION_DATABASE_URL='<explicit-sqlalchemy-database-url>' \
+  .venv/bin/python -m scripts.inventory_historical_database --format human
+```
+
+Use `--format json` for the stable machine-readable contract. The command requires the canonical
+database variable in its process environment, runs PostgreSQL inspection in a read-only transaction,
+does not run migrations or repairs, and emits no row identifiers or user-authored content. See
+[Production Hardening Phase 5B](docs/production-hardening-phase5b.md).
+
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
 stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,

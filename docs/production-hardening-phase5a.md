@@ -25,3 +25,6 @@ transaction rolls back and leaves the legacy schema and all rows unchanged.
 Phase 5A deliberately provides no historical conversion, revision repair, inventory report,
 dry-run conversion, or best-effort mapping. Blocking is the intended safe behavior when the old
 tables contain data.
+
+The separate [Phase 5B inventory](production-hardening-phase5b.md) can report aggregate historical
+state without changing the database; it still performs no conversion or repair.
