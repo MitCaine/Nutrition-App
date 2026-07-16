@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.db.types import GUID
+from app.db.types import GUID, json_document_type
 
 
 class FoodItem(Base):
@@ -39,6 +39,20 @@ class FoodItem(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("id", "user_id", name="uq_food_items_identity_user"),
+        Index(
+            "ix_food_items_active_source_identity",
+            "user_id",
+            "source_type",
+            "source_id",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL AND source_id IS NOT NULL"),
+        ).ddl_if(dialect="postgresql"),
+        Index(
+            "ix_food_items_source_identity_all",
+            "user_id",
+            "source_type",
+            "source_id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
@@ -128,13 +142,16 @@ class OcrNutritionConfirmationTrace(Base):
 
 class FoodSource(Base):
     __tablename__ = "food_sources"
+    __table_args__ = (Index("ix_food_sources_food_item_id", "food_item_id"),)
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"))
     source_type: Mapped[str] = mapped_column(Text)
     external_id: Mapped[Optional[str]] = mapped_column(Text)
-    raw_payload: Mapped[Optional[dict]] = mapped_column(JSON)
-    source_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON)
+    raw_payload: Mapped[Optional[dict]] = mapped_column(json_document_type())
+    source_metadata: Mapped[Optional[dict]] = mapped_column(
+        "metadata", json_document_type()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     food_item: Mapped[FoodItem] = relationship(back_populates="sources")
@@ -142,6 +159,7 @@ class FoodSource(Base):
 
 class FoodNutrient(Base):
     __tablename__ = "food_nutrients"
+    __table_args__ = (Index("ix_food_nutrients_food_item_id", "food_item_id"),)
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"))
@@ -172,6 +190,7 @@ class ServingDefinition(Base):
             sqlite_where=text("is_default = true"),
             postgresql_where=text("is_default = true"),
         ),
+        Index("ix_serving_definitions_food_item_id", "food_item_id"),
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)

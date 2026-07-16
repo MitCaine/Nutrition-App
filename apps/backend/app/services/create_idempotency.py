@@ -93,6 +93,12 @@ def is_create_idempotency_conflict(exc: IntegrityError) -> bool:
 
 
 class CreateIdempotencyCoordinator:
+    """Own receipt state inside a transaction owned by the calling service.
+
+    The coordinator flushes reservations for concurrency, but it never commits,
+    rolls back, or retries the caller's transaction.
+    """
+
     def __init__(self, db: Session):
         self.db = db
 

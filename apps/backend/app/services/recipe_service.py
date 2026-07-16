@@ -619,49 +619,53 @@ class RecipeService:
         recipe_id: UUID,
     ) -> tuple[Recipe, FoodItem | None, list[Recipe]]:
         for _attempt in range(PUBLICATION_DEPENDENCY_RESTART_LIMIT):
-            candidate = self.recipes.get_required(recipe_id, user_id)
-            initial_backlink_id = candidate.published_food_item_id
-            active_projections = self.foods.list_active_by_source(
-                user_id,
-                "recipe",
-                str(recipe_id),
-            )
-            if len(active_projections) > 1:
-                raise ValueError("Recipe has multiple active compatibility projections")
-            initial_projection_id = active_projections[0].id if active_projections else None
-            initial_dependency_ids = (
-                self._dependent_recipe_ids(user_id, initial_projection_id)
-                if initial_projection_id is not None
-                else set()
-            )
-            projection = (
-                self.foods.get_for_update(initial_projection_id, user_id)
-                if initial_projection_id is not None
-                else None
-            )
-            locked = self.recipes.get_many_for_update(
-                {recipe_id, *initial_dependency_ids},
-                user_id,
-            )
-            recipe = locked.get(recipe_id)
-            if recipe is None:
-                raise LookupError("Recipe not found")
-            if recipe.published_food_item_id != initial_backlink_id:
-                self.db.rollback()
-                continue
-            final_dependency_ids = (
-                self._dependent_recipe_ids(user_id, projection.id)
-                if projection is not None
-                else set()
-            )
-            if final_dependency_ids != initial_dependency_ids:
-                self.db.rollback()
-                continue
-            return (
-                recipe,
-                projection,
-                [locked[parent_id] for parent_id in sorted(final_dependency_ids)],
-            )
+            # Publication owns the outer transaction and its idempotency
+            # reservation. Stabilization retries release only locks acquired by
+            # this attempt, never the outer reservation.
+            with self.db.begin_nested() as graph_attempt:
+                candidate = self.recipes.get_required(recipe_id, user_id)
+                initial_backlink_id = candidate.published_food_item_id
+                active_projections = self.foods.list_active_by_source(
+                    user_id,
+                    "recipe",
+                    str(recipe_id),
+                )
+                if len(active_projections) > 1:
+                    raise ValueError("Recipe has multiple active compatibility projections")
+                initial_projection_id = active_projections[0].id if active_projections else None
+                initial_dependency_ids = (
+                    self._dependent_recipe_ids(user_id, initial_projection_id)
+                    if initial_projection_id is not None
+                    else set()
+                )
+                projection = (
+                    self.foods.get_for_update(initial_projection_id, user_id)
+                    if initial_projection_id is not None
+                    else None
+                )
+                locked = self.recipes.get_many_for_update(
+                    {recipe_id, *initial_dependency_ids},
+                    user_id,
+                )
+                recipe = locked.get(recipe_id)
+                if recipe is None:
+                    raise LookupError("Recipe not found")
+                if recipe.published_food_item_id != initial_backlink_id:
+                    graph_attempt.rollback()
+                    continue
+                final_dependency_ids = (
+                    self._dependent_recipe_ids(user_id, projection.id)
+                    if projection is not None
+                    else set()
+                )
+                if final_dependency_ids != initial_dependency_ids:
+                    graph_attempt.rollback()
+                    continue
+                return (
+                    recipe,
+                    projection,
+                    [locked[parent_id] for parent_id in sorted(final_dependency_ids)],
+                )
         raise RecipePublicationDependenciesUnstableError
 
     def _plan_parent_serving_remaps(

@@ -6,7 +6,6 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import (
-    JSON,
     CheckConstraint,
     Date,
     DateTime,
@@ -20,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.db.types import GUID
+from app.db.types import GUID, json_document_type
 
 
 class DailyLog(Base):
@@ -127,6 +126,6 @@ class DailyLogNutrientSnapshot(Base):
     consumed_amount_unit: Mapped[str] = mapped_column(Text)
     consumed_gram_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
     consumed_package_fraction: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
-    calculation_metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    calculation_metadata: Mapped[Optional[dict]] = mapped_column(json_document_type())
 
     daily_log: Mapped[DailyLog] = relationship(back_populates="snapshots")

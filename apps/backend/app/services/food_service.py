@@ -849,19 +849,24 @@ class FoodService:
     ) -> tuple[FoodItem, list[Recipe]]:
         """Lock one Food, then its active parent Recipes in stable UUID order."""
         for _attempt in range(FOOD_DEPENDENCY_RESTART_LIMIT):
-            food = self.foods.get_for_update(food_id, user_id)
-            if self._has_foreign_dependencies(user_id, food_id):
-                # Treat cross-owner dependency corruption as an opaque conflict;
-                # never expose or mutate the foreign Recipe graph.
-                raise FoodDependenciesUnstableError()
-            initial_ids = self._dependent_recipe_ids(user_id, food_id)
-            locked = self.recipes.get_many_for_update(initial_ids, user_id)
-            final_ids = self._dependent_recipe_ids(user_id, food_id)
-            if final_ids == initial_ids and set(locked) == final_ids:
-                parents = [locked[recipe_id] for recipe_id in sorted(final_ids)]
-                self._after_food_dependency_lock(food, parents)
-                return food, parents
-            self.db.rollback()
+            # The service operation owns the outer transaction, including any
+            # idempotency reservation. A graph-stabilization retry owns only
+            # this savepoint so it can release attempt locks without discarding
+            # outer transaction state.
+            with self.db.begin_nested() as graph_attempt:
+                food = self.foods.get_for_update(food_id, user_id)
+                if self._has_foreign_dependencies(user_id, food_id):
+                    # Treat cross-owner dependency corruption as an opaque conflict;
+                    # never expose or mutate the foreign Recipe graph.
+                    raise FoodDependenciesUnstableError()
+                initial_ids = self._dependent_recipe_ids(user_id, food_id)
+                locked = self.recipes.get_many_for_update(initial_ids, user_id)
+                final_ids = self._dependent_recipe_ids(user_id, food_id)
+                if final_ids == initial_ids and set(locked) == final_ids:
+                    parents = [locked[recipe_id] for recipe_id in sorted(final_ids)]
+                    self._after_food_dependency_lock(food, parents)
+                    return food, parents
+                graph_attempt.rollback()
         raise FoodDependenciesUnstableError()
 
     def _has_foreign_dependencies(self, user_id: UUID, food_id: UUID) -> bool:

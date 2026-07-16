@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import CHAR
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy import CHAR, JSON
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.types import TypeDecorator
 
 
@@ -27,3 +27,9 @@ class GUID(TypeDecorator[UUID]):
         if value is None:
             return None
         return value if isinstance(value, UUID) else UUID(str(value))
+
+
+def json_document_type():
+    """Use the migrated JSONB storage on PostgreSQL and portable JSON elsewhere."""
+
+    return JSON().with_variant(JSONB(), "postgresql")

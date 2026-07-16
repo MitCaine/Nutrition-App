@@ -4,11 +4,11 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, JSON, Numeric, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Numeric, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.db.types import GUID
+from app.db.types import GUID, json_document_type
 
 
 class NutritionTarget(Base):
@@ -29,7 +29,9 @@ class NutritionTarget(Base):
     unit: Mapped[str] = mapped_column(Text, nullable=False)
     basis: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
-    target_metadata: Mapped[dict | None] = mapped_column("metadata", JSON)
+    target_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", json_document_type()
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
