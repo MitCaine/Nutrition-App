@@ -73,6 +73,11 @@ def load_safe_database_identity(path: Path) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         raise Phase5CAdmissionError("Unable to read a safe database identity document") from None
+    return validate_safe_database_identity(payload)
+
+
+def validate_safe_database_identity(payload: Any) -> dict[str, Any]:
+    """Validate the existing safe endpoint document without performing I/O."""
     if not isinstance(payload, dict):
         raise Phase5CAdmissionError("Safe database identity must be a JSON object")
     expected_keys = {
@@ -88,6 +93,12 @@ def load_safe_database_identity(path: Path) -> dict[str, Any]:
         raise Phase5CAdmissionError("Safe database identity has an unsupported shape")
     if payload.get("identity_contract_version") != SAFE_DATABASE_IDENTITY_VERSION:
         raise Phase5CAdmissionError("Unsupported safe database identity contract version")
+    for field in ("driver_family", "host", "database", "schema"):
+        if not isinstance(payload.get(field), str) or not payload[field] or len(payload[field]) > 255:
+            raise Phase5CAdmissionError(f"Safe database identity {field} is invalid")
+    port = payload.get("port")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65_535:
+        raise Phase5CAdmissionError("Safe database identity port is invalid")
     digest = payload.get("identity_digest")
     if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
         raise Phase5CAdmissionError("Safe database identity digest is invalid")
@@ -493,12 +504,70 @@ def load_clone_marker(connection: Connection) -> dict[str, Any]:
     rows = connection.execute(text(f"SELECT * FROM {CLONE_MARKER_TABLE}")).mappings().all()
     if len(rows) != 1:
         raise Phase5CAdmissionError("phase5c_clone_marker_cardinality_invalid")
-    marker = dict(rows[0])
+    return validate_clone_marker_contract(dict(rows[0]))
+
+
+def validate_clone_marker_contract(payload: Any) -> dict[str, Any]:
+    """Validate the persisted conversion-clone marker without database access."""
+    if not isinstance(payload, dict):
+        raise Phase5CAdmissionError("Conversion-clone marker must be a JSON object")
+    expected_keys = {
+        "marker_format_version",
+        "isolation_evidence_contract_version",
+        "clone_marker_identity",
+        "clone_marker_digest",
+        "conversion_clone_identity_digest",
+        "clone_database_identity_digest",
+        "source_production_identity_digest",
+        "inventory_digest",
+        "schema_signature",
+        "schema_signature_digest",
+        "conversion_rules_version",
+        "operator_attestation_version",
+        "operator_attestation_identity",
+        "operator_attestation_scope",
+        "operator_attestation_digest",
+    }
+    if set(payload) != expected_keys:
+        raise Phase5CAdmissionError("Conversion-clone marker has an unsupported shape")
+    marker = payload
     unsigned = {key: value for key, value in marker.items() if key != "clone_marker_digest"}
     if marker.get("marker_format_version") != CLONE_MARKER_VERSION:
         raise Phase5CAdmissionError("Unsupported conversion-clone marker version")
     if marker.get("isolation_evidence_contract_version") != ISOLATION_EVIDENCE_VERSION:
         raise Phase5CAdmissionError("Unsupported isolation-evidence contract version")
+    if marker.get("operator_attestation_version") != OPERATOR_ATTESTATION_VERSION:
+        raise Phase5CAdmissionError("Unsupported clone-marker attestation version")
+    if marker.get("operator_attestation_scope") not in _V1_ATTESTATION_SCOPES:
+        raise Phase5CAdmissionError("Unsupported clone-marker attestation scope")
+    validate_operator_label(str(marker.get("clone_marker_identity")), "clone marker identity")
+    validate_operator_label(
+        str(marker.get("operator_attestation_identity")),
+        "operator attestation identity",
+    )
+    if (
+        not isinstance(marker.get("schema_signature"), str)
+        or not marker["schema_signature"]
+        or len(marker["schema_signature"]) > 255
+        or not isinstance(marker.get("conversion_rules_version"), str)
+        or not marker["conversion_rules_version"]
+        or len(marker["conversion_rules_version"]) > 255
+    ):
+        raise Phase5CAdmissionError("Conversion-clone marker metadata is invalid")
+    digest_fields = {
+        "clone_marker_digest",
+        "conversion_clone_identity_digest",
+        "clone_database_identity_digest",
+        "source_production_identity_digest",
+        "inventory_digest",
+        "schema_signature_digest",
+        "operator_attestation_digest",
+    }
+    if any(
+        not isinstance(marker.get(field), str) or not _DIGEST.fullmatch(marker[field])
+        for field in digest_fields
+    ):
+        raise Phase5CAdmissionError("Conversion-clone marker contains an invalid digest")
     if canonical_digest(unsigned) != marker.get("clone_marker_digest"):
         raise Phase5CAdmissionError("Conversion-clone marker digest verification failed")
     return marker

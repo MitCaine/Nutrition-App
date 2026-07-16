@@ -30,7 +30,6 @@ from app.operators.historical_recipe_bridge import (
 )
 from app.operators.historical_recipe_planner import _recipe_source_checksum
 from app.operators.phase5c_contracts import (
-    EXECUTION_RECEIPT_VERSION,
     EXECUTION_REVISION,
     QUALIFICATION_DIAGNOSTIC_VERSION,
     QUALIFICATION_RECEIPT_VERSION,
@@ -40,7 +39,9 @@ from app.operators.phase5c_contracts import (
     canonical_digest,
     canonical_json,
     validate_conversion_plan_contract,
+    validate_execution_receipt_contract as validate_execution_receipt_document,
     validate_inventory_contract,
+    validate_qualification_receipt_contract as validate_qualification_receipt_document,
 )
 from app.operators.phase5c_isolation import (
     assert_database_session_isolation,
@@ -147,93 +148,10 @@ class QualificationDiagnostic:
 
 
 def validate_qualification_receipt_contract(payload: Any) -> dict[str, Any]:
-    expected = {
-        "receipt_version",
-        "verifier_version",
-        "plan",
-        "execution_attestation",
-        "conversion_run_id",
-        "execution_receipt",
-        "clone_marker_digest",
-        "archive_identity_digest",
-        "inventory_digest",
-        "schema_signature_digest",
-        "conversion_rules_version",
-        "planned_counts",
-        "observed_counts",
-        "reason_code_counts",
-        "source_roots",
-        "daily_log_state_digest",
-        "ocr_state_digest",
-        "outcome_ledger_digest",
-        "verification_result",
-        "receipt_digest",
-    }
-    if not isinstance(payload, dict) or set(payload) != expected:
-        raise Phase5CQualificationError("qualification_evidence_mismatch")
-    if (
-        payload.get("receipt_version") != QUALIFICATION_RECEIPT_VERSION
-        or payload.get("verifier_version") != QUALIFIER_VERSION
-        or payload.get("verification_result") != "qualified"
-    ):
-        raise Phase5CQualificationError("qualification_evidence_mismatch")
-    for field in (
-        "clone_marker_digest",
-        "archive_identity_digest",
-        "inventory_digest",
-        "schema_signature_digest",
-        "daily_log_state_digest",
-        "ocr_state_digest",
-        "outcome_ledger_digest",
-        "receipt_digest",
-    ):
-        if not _is_digest(payload.get(field)):
-            raise Phase5CQualificationError("qualification_evidence_mismatch")
-    for field in ("plan", "execution_attestation", "execution_receipt"):
-        evidence = payload.get(field)
-        if (
-            not isinstance(evidence, dict)
-            or set(evidence) != {"contract_version", "digest"}
-            or not isinstance(evidence["contract_version"], str)
-            or not _is_digest(evidence["digest"])
-        ):
-            raise Phase5CQualificationError("qualification_evidence_mismatch")
     try:
-        UUID(str(payload.get("conversion_run_id")))
-    except (TypeError, ValueError):
+        return validate_qualification_receipt_document(payload)
+    except Phase5CAdmissionError:
         raise Phase5CQualificationError("qualification_evidence_mismatch") from None
-    if set(payload.get("source_roots", {})) != {
-        "archived_recipes",
-        "archived_recipe_ingredients",
-        "archive",
-        "planning_source",
-    } or any(not _is_digest(value) for value in payload["source_roots"].values()):
-        raise Phase5CQualificationError("qualification_evidence_mismatch")
-    for field in ("planned_counts", "observed_counts"):
-        counts = payload.get(field)
-        if not isinstance(counts, dict) or any(
-            not isinstance(value, int) or value < 0 for value in counts.values()
-        ):
-            raise Phase5CQualificationError("qualification_evidence_mismatch")
-    reason_counts = payload.get("reason_code_counts")
-    if not isinstance(reason_counts, dict) or set(reason_counts) != {
-        "planned",
-        "observed",
-    }:
-        raise Phase5CQualificationError("qualification_evidence_mismatch")
-    for values in reason_counts.values():
-        if not isinstance(values, dict) or any(
-            not isinstance(code, str)
-            or not _REASON_CODE.fullmatch(code)
-            or not isinstance(count, int)
-            or count < 0
-            for code, count in values.items()
-        ):
-            raise Phase5CQualificationError("qualification_evidence_mismatch")
-    unsigned = {key: value for key, value in payload.items() if key != "receipt_digest"}
-    if canonical_digest(unsigned) != payload["receipt_digest"]:
-        raise Phase5CQualificationError("qualification_evidence_mismatch")
-    return payload
 
 
 def load_execution_receipt_file(path: Path) -> dict[str, Any]:
@@ -247,88 +165,12 @@ def load_execution_receipt_file(path: Path) -> dict[str, Any]:
 
 
 def validate_execution_receipt_contract(payload: Any) -> dict[str, Any]:
-    expected = {
-        "receipt_version",
-        "run_id",
-        "plan_digest",
-        "converter_version",
-        "counts",
-        "subjects",
-        "verification_result",
-        "report_digest",
-    }
-    if not isinstance(payload, dict) or set(payload) != expected:
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    if payload.get("receipt_version") != EXECUTION_RECEIPT_VERSION:
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
     try:
-        UUID(str(payload.get("run_id")))
-    except (TypeError, ValueError):
+        return validate_execution_receipt_document(payload)
+    except Phase5CAdmissionError:
         raise Phase5CQualificationError(
             "qualification_execution_receipt_mismatch"
         ) from None
-    if not _is_digest(payload.get("plan_digest")) or not _is_digest(
-        payload.get("report_digest")
-    ):
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    if not isinstance(payload.get("converter_version"), str):
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    counts = payload.get("counts")
-    if not isinstance(counts, dict) or set(counts) != {
-        "converted",
-        "quarantined",
-        "blocked",
-        "failed",
-        "pending",
-    }:
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    if any(not isinstance(value, int) or value < 0 for value in counts.values()):
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    subjects = payload.get("subjects")
-    if not isinstance(subjects, list) or sum(counts.values()) != len(subjects):
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    seen: set[UUID] = set()
-    for subject in subjects:
-        base = {"source_recipe_id", "disposition", "reason_code"}
-        converted = subject.get("disposition") == "converted" if isinstance(subject, dict) else False
-        expected_subject = base | (
-            {"target_recipe_id", "projection_food_item_id", "revision_id", "revision_digest"}
-            if converted
-            else set()
-        )
-        if not isinstance(subject, dict) or set(subject) != expected_subject:
-            raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-        try:
-            recipe_id = UUID(str(subject["source_recipe_id"]))
-            if converted:
-                UUID(str(subject["target_recipe_id"]))
-                UUID(str(subject["projection_food_item_id"]))
-                UUID(str(subject["revision_id"]))
-        except (TypeError, ValueError):
-            raise Phase5CQualificationError(
-                "qualification_execution_receipt_mismatch"
-            ) from None
-        if recipe_id in seen:
-            raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-        seen.add(recipe_id)
-        if subject["disposition"] not in {
-            "converted",
-            "quarantined",
-            "blocked",
-            "failed",
-            "pending",
-        }:
-            raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-        if not isinstance(subject["reason_code"], str) or not _REASON_CODE.fullmatch(
-            subject["reason_code"]
-        ):
-            raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-        if converted and not _is_digest(subject["revision_digest"]):
-            raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    unsigned = {key: value for key, value in payload.items() if key != "report_digest"}
-    if canonical_digest(unsigned) != payload["report_digest"]:
-        raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
-    return payload
 
 
 def qualify_historical_recipe_conversion(
