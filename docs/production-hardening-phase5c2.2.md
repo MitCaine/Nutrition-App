@@ -97,4 +97,5 @@ Phase 5C4 should address promotion, cutover, and recovery qualification: artifac
 maintenance-mode cutover, pre-cutover backup and restore evidence, quarantine acceptance, bounded
 post-cutover verification, and cutback expectations. It should consume the existing immutable
 inventory, plan, execution receipt, qualification receipt, and performance evidence without
-changing conversion semantics or authorizing archive cleanup.
+changing conversion semantics or authorizing archive cleanup. The implementation contract is
+documented in [Production Hardening Phase 5C4](production-hardening-phase5c4.md).
