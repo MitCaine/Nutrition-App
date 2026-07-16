@@ -109,7 +109,7 @@ data. See
 commands, archive contract, deterministic dispositions, and deferred conversion boundary.
 
 Phase 5C2 executes only `convert` decisions from that exact approved plan at migration
-`0016_phase5c_execution`. It reuses each compatibility projection, captures one immutable
+`0017_phase5c_indexes`. It reuses each compatibility projection, captures one immutable
 transition-baseline revision, and records every convert/quarantine/block outcome. Daily Logs and OCR
 provenance are unchanged. Execution is restart-safe and produces a privacy-safe receipt, but it does
 not accept the Phase 5C1 planning attestation as permission to convert. A separate execution-capable
@@ -130,6 +130,13 @@ confirmed `nutrition_phase5c_benchmark_*` PostgreSQL database and emits a canoni
 performance manifest. Timing and structural scan-budget failures are evidence for a separately
 reviewed optimization; they do not authorize promotion or change conversion correctness. See
 [Production Hardening Phase 5C3b](docs/production-hardening-phase5c3b.md).
+
+Phase 5C2.1 applies the bounded optimization justified by that evidence. Admission and finalization
+retain full source, Daily Log, and OCR roots; each subject now verifies only its exact canonical
+plan-v2 inputs plus the immutable run binding. The independent qualifier, authorization,
+checkpoints, plan v2, converter receipt, and qualification receipt v1 are unchanged. The measured T0
+per-subject full-scan counts fell to zero; aggregate scan ceilings still fail because intentionally
+independent and pre-conversion stages remain outside this bounded correction.
 
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or

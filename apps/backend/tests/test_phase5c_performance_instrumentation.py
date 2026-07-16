@@ -34,6 +34,11 @@ def test_query_classification_distinguishes_scans_and_dependencies() -> None:
         "WHERE is_recipe = true OR source_type = 'recipe'",
         subject_scoped=True,
     )
+    bounded_marker_lookup = classify_sql(
+        "SELECT id FROM food_items WHERE user_id = :owner_id "
+        "AND source_type = 'recipe' AND source_id = :source_id",
+        subject_scoped=True,
+    )
     daily = classify_sql("SELECT * FROM daily_logs", subject_scoped=True)
     ocr = classify_sql("SELECT count(*) FROM ocr_scans")
 
@@ -46,6 +51,8 @@ def test_query_classification_distinguishes_scans_and_dependencies() -> None:
     assert marker_food_scan.logical_full_scan
     assert marker_food_scan.archive_support_relation_scan
     assert not marker_food_scan.dependency_query
+    assert not bounded_marker_lookup.logical_full_scan
+    assert bounded_marker_lookup.dependency_query
     assert daily.daily_log_relation_scan
     assert ocr.ocr_relation_scan
 

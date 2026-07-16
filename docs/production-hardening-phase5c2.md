@@ -16,7 +16,7 @@ are never deleted to simulate rollback.
 
 Execution requires all of the following to match the approved plan exactly:
 
-- migration `0016_phase5c_execution`;
+- migration `0017_phase5c_indexes`;
 - the original `historical_database_inventory_v1` digest;
 - schema signature and conversion-rules versions;
 - archive identity, structure, row counts, and archive/planning-source checksums;
@@ -84,7 +84,7 @@ Then advance only that isolated clone to the execution revision:
 ```bash
 cd apps/backend
 NUTRITION_DATABASE_URL='<conversion-clone-url>' \
-  alembic upgrade 0016_phase5c_execution
+  alembic upgrade 0017_phase5c_indexes
 ```
 
 With no unrelated sessions connected, execute the exact plan and evidence:
@@ -129,17 +129,23 @@ the comparison; the persisted legacy authored quantity and unit remain unchanged
 
 Each converted Recipe runs in one PostgreSQL `SERIALIZABLE` transaction. The converter locks the
 projection and referenced Foods together in sorted UUID order, then the archived Recipe and its
-ingredients. It rechecks the full source evidence, ownership, serving membership, projection
-identity, defaults, nutrients, and graph assumptions before writing Recipe, ingredients, immutable
-revision children, projection linkage, and the `domain_committed` checkpoint atomically.
+ingredients. Admission verifies the complete archive and planning-source roots once. Each subject
+then reloads only that archived Recipe, its ingredients, directly referenced and exact marker Foods,
+servings, nutrients, sources, and owner. It reproduces the existing plan-v2 subject checksum before
+and after lock acquisition, verifies the immutable run binding, and rechecks ownership, serving
+membership, projection identity, defaults, nutrients, and graph assumptions before writing Recipe,
+ingredients, immutable revision children, projection linkage, and the `domain_committed` checkpoint
+atomically.
 
 Converted children are processed before converted parents; UUID order is the deterministic
 tie-breaker. A parent never proceeds until every planned converted child has committed and verified.
 Only PostgreSQL serialization failures and deadlocks are retried, with a maximum of three attempts
-and full source revalidation on every attempt. Other failures persist a bounded reason code and roll
-back the whole subject.
+and the same subject-scoped source revalidation on every attempt. Other failures persist a bounded
+reason code and roll back the whole subject.
 
-Migration 0016 creates `phase5c_conversion_runs` and `phase5c_conversion_outcomes`. The run binds the
+Migration 0016 creates `phase5c_conversion_runs` and `phase5c_conversion_outcomes`. Migration 0017
+adds non-semantic lookup indexes for exact subject verification in the current supporting tables and
+every registered custom archive schema. The run binds the
 plan, inventory, signature, rules, archive checksums, marker/planning-attestation evidence, exact
 execution attestation version, isolation contract, identity, scope and digest, converter version,
 and baseline Daily Log/OCR state digests. Each outcome binds one source UUID, planned disposition,
@@ -150,15 +156,22 @@ revision identity/digest. Constraints enforce valid state and converted/non-conv
 
 An exact completed restart re-verifies and skips each subject. It checks Recipe and ingredient
 mapping, projection content, exactly one valid transition revision, active links, staleness, source
-checksum, and unchanged Daily Log/OCR state. Quarantine and block outcomes similarly recheck their
-plan identity, reason, and source evidence. A failed deterministic outcome is not silently retried.
-An unexplained, partial, or tampered current domain fails admission. Restart also requires the exact
-same execution authorization evidence; another otherwise valid execution approval cannot silently
-take over an existing run.
+checksum, and the immutable run binding. Quarantine and block outcomes similarly recheck their plan
+identity, reason, and scoped source evidence. At run creation the converter stores canonical full
+Daily Log and OCR roots. A restart recalculates each root once and must match the stored evidence.
+Before finalizing any execution or restart receipt, one final complete planning-source, Daily Log,
+and OCR verification must pass in the finalization transaction. A late or unrelated mutation
+therefore cannot produce a verified run or verified receipt. A failed deterministic outcome is not silently
+retried. An unexplained, partial, or tampered current domain fails admission. Restart also requires
+the exact same execution authorization evidence; another otherwise valid execution approval cannot
+silently take over an existing run.
 
 The domain transaction first records `domain_committed`; a separate read-only post-commit check then
 marks the outcome completed and verified. If that check fails, the outcome and run are marked failed
 without deleting already committed immutable data. Operator review and clone cutback are required.
+If the final run-level roots differ, the run is marked failed and the established privacy-safe
+execution-receipt shape is returned with `verification_result = failed`; already durable subject
+checkpoints retain the existing restart semantics and the clone remains unqualified.
 
 The execution receipt contains only versions, run and plan identities, aggregate counts, source
 UUIDs, stable dispositions/reasons, converted target/projection/revision identities and digests,
@@ -175,8 +188,9 @@ does not authorize promotion. See
 
 ## Performance qualification and remaining boundary
 
-Phase 5C3b measures the unchanged conversion path against deterministic representative-volume
-fixtures; see [Phase 5C3b](production-hardening-phase5c3b.md). Phase 5C2, C3a, and C3b do not
+Phase 5C3b measured the correctness-first path and Phase 5C2.1 removed repeated subject-wide scans
+without changing plan v2, converter/receipt versions, checkpoints, qualification, or the operator
+workflow; see [Phase 5C3b](production-hardening-phase5c3b.md). Phase 5C2, C2.1, C3a, and C3b do not
 authorize production promotion. Recovery qualification, promotion/cutover eligibility, archive
 cleanup, legacy Daily Log revision-link enrichment, quarantine repair, OCR changes, and alternate
 historical schema signatures require separately reviewed work.

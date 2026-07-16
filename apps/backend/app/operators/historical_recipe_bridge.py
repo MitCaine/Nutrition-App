@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import re
 from typing import Any, Iterator
+from uuid import UUID
 
 from sqlalchemy import (
     Connection,
@@ -42,6 +43,10 @@ from app.operators.phase5c_isolation import (
     phase5c_maintenance_session,
     validate_operator_attestation,
     verify_clone_isolation_evidence,
+)
+from app.operators.phase5c_lookup_indexes import (
+    ARCHIVE_RECIPE_INGREDIENT_LOOKUP_INDEX,
+    archive_recipe_ingredient_lookup_index_state,
 )
 
 
@@ -428,6 +433,65 @@ def planning_source_payload(
         "recipe_ingredients",
         _INGREDIENT_COLUMNS,
     )
+    return _planning_source_payload_for_rows(
+        connection,
+        supporting_schema=supporting_schema,
+        recipes=recipes,
+        ingredients=ingredients,
+        marker_foods=_recipe_marker_food_rows(connection, supporting_schema),
+    )
+
+
+def planning_subject_source_payload(
+    connection: Connection,
+    *,
+    recipe_schema: str,
+    supporting_schema: str,
+    recipe_id: UUID,
+) -> dict[str, list[dict[str, Any]]]:
+    """Load exactly the canonical planning inputs capable of affecting one Recipe."""
+
+    recipes = _rows(
+        connection,
+        recipe_schema,
+        "recipes",
+        _RECIPE_COLUMNS,
+        where_column="id",
+        values={recipe_id},
+    )
+    ingredients = _rows(
+        connection,
+        recipe_schema,
+        "recipe_ingredients",
+        _INGREDIENT_COLUMNS,
+        where_column="recipe_id",
+        values={recipe_id},
+    )
+    marker_foods: list[dict[str, Any]] = []
+    if recipes:
+        marker_foods = _recipe_marker_food_rows_for_subject(
+            connection,
+            supporting_schema,
+            recipe_id=recipe_id,
+            owner_id=recipes[0]["user_id"],
+        )
+    return _planning_source_payload_for_rows(
+        connection,
+        supporting_schema=supporting_schema,
+        recipes=recipes,
+        ingredients=ingredients,
+        marker_foods=marker_foods,
+    )
+
+
+def _planning_source_payload_for_rows(
+    connection: Connection,
+    *,
+    supporting_schema: str,
+    recipes: list[dict[str, Any]],
+    ingredients: list[dict[str, Any]],
+    marker_foods: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
     food_ids = {row["food_item_id"] for row in recipes}
     food_ids.update(row["ingredient_food_item_id"] for row in ingredients)
     serving_ids = {
@@ -445,9 +509,7 @@ def planning_source_payload(
         values=food_ids,
     )
     foods_by_id = {row["id"]: row for row in referenced_foods}
-    foods_by_id.update(
-        {row["id"]: row for row in _recipe_marker_food_rows(connection, supporting_schema)}
-    )
+    foods_by_id.update({row["id"]: row for row in marker_foods})
     foods = sorted(foods_by_id.values(), key=lambda row: str(row["id"]))
     food_ids.update(foods_by_id)
     servings = _rows(
@@ -500,6 +562,28 @@ def planning_source_payload(
             values=food_ids,
         ),
     }
+
+
+def _recipe_marker_food_rows_for_subject(
+    connection: Connection,
+    schema: str,
+    *,
+    recipe_id: UUID,
+    owner_id: UUID,
+) -> list[dict[str, Any]]:
+    qualified = _qualified(connection, schema, "food_items")
+    selected = ", ".join(
+        connection.dialect.identifier_preparer.quote(value) for value in _FOOD_COLUMNS
+    )
+    rows = connection.execute(
+        text(
+            f"SELECT {selected} FROM {qualified} "
+            "WHERE user_id = :owner_id AND source_type = 'recipe' "
+            "AND source_id = :source_id"
+        ),
+        {"owner_id": owner_id, "source_id": str(recipe_id)},
+    ).mappings().all()
+    return sorted((dict(row) for row in rows), key=lambda row: str(row["id"]))
 
 
 def _archive_checksums(payload: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -723,6 +807,33 @@ def _create_placeholders(connection: Connection, source_schema: str) -> None:
     )
 
 
+def _ensure_archive_recipe_ingredient_lookup_index(
+    connection: Connection,
+    archive_schema: str,
+    *,
+    required: bool,
+) -> None:
+    state = archive_recipe_ingredient_lookup_index_state(connection, archive_schema)
+    if state == "incompatible":
+        raise Phase5CAdmissionError(
+            "Archive Recipe ingredient lookup index definition differs"
+        )
+    if state == "valid" or not required:
+        return
+
+    name, table, columns = ARCHIVE_RECIPE_INGREDIENT_LOOKUP_INDEX
+    quote = connection.dialect.identifier_preparer.quote
+    qualified_table = _qualified(connection, archive_schema, table)
+    rendered_columns = ", ".join(quote(column) for column in columns)
+    connection.execute(
+        text(f"CREATE INDEX {quote(name)} ON {qualified_table} ({rendered_columns})")
+    )
+    if archive_recipe_ingredient_lookup_index_state(connection, archive_schema) != "valid":
+        raise Phase5CAdmissionError(
+            "Archive Recipe ingredient lookup index verification failed"
+        )
+
+
 def _metadata_payload(
     *,
     source_identity: dict[str, Any],
@@ -861,9 +972,15 @@ def _verify_existing_archive(
         "0013_food_recipe_integrity",
         "0014_create_idempotency",
         CONTROL_REVISION,
+        "0016_phase5c_execution",
         EXECUTION_REVISION,
     }:
         raise Phase5CAdmissionError("Existing archive is paired with an unsupported migration state")
+    _ensure_archive_recipe_ingredient_lookup_index(
+        connection,
+        archive_schema,
+        required=revision == EXECUTION_REVISION,
+    )
     return _result(metadata, archive_created=False)
 
 
@@ -1056,6 +1173,11 @@ def bridge_legacy_recipes(
                         text(f"ALTER TABLE {ingredients} SET SCHEMA {archive}")
                     )
                     connection.execute(text(f"ALTER TABLE {recipes} SET SCHEMA {archive}"))
+                    _ensure_archive_recipe_ingredient_lookup_index(
+                        connection,
+                        archive_schema,
+                        required=True,
+                    )
                     _create_placeholders(connection, source_schema)
                     require_supported_legacy_schema(connection, source_schema)
                     require_supported_legacy_schema(connection, archive_schema)

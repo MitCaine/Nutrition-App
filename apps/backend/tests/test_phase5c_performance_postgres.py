@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -153,9 +154,15 @@ def test_reduced_bridge_to_qualification_flow_is_measured_without_runtime_state(
     )
     assert measurements["subject_conversion_seconds"]["count"] == 2
     assert measurements["subject_query_distribution"]["count"] == 4
-    assert measurements["scan_counts"]["per_subject_global_source_passes"] > 0
-    assert measurements["scan_counts"]["per_subject_daily_log_relation_scans"] > 0
-    assert measurements["scan_counts"]["per_subject_ocr_relation_scans"] > 0
+    assert measurements["scan_counts"]["per_subject_global_source_passes"] == 0
+    assert measurements["scan_counts"]["per_subject_daily_log_relation_scans"] == 0
+    assert measurements["scan_counts"]["per_subject_ocr_relation_scans"] == 0
+    for stage in ("conversion", "restart_verification"):
+        scans = measurements["stages"][stage]["scan_counts"]
+        assert scans["global_source_passes"] <= 3
+        assert scans["archive_support_relation_scans"] <= 7
+        assert scans["daily_log_relation_scans"] <= 4
+        assert scans["ocr_relation_scans"] <= 8
     assert measurements["artifact_bytes"]["execution_receipt"] > 0
     assert measurements["artifact_bytes"]["qualification_receipt"] > 0
     assert measurements["database_size_bytes"] > 0
@@ -170,6 +177,63 @@ def test_reduced_bridge_to_qualification_flow_is_measured_without_runtime_state(
         ).all()
         assert performance_tables == []
         assert "phase5c_conversion_runs" in inspect(connection).get_table_names()
+        expected_indexes = {
+            "ix_food_items_source_identity_all": (
+                "user_id",
+                "source_type",
+                "source_id",
+            ),
+            "ix_serving_definitions_food_item_id": ("food_item_id",),
+            "ix_food_nutrients_food_item_id": ("food_item_id",),
+            "ix_food_sources_food_item_id": ("food_item_id",),
+        }
+        actual_indexes = {
+            str(index["name"]): tuple(index.get("column_names") or ())
+            for table in (
+                "food_items",
+                "serving_definitions",
+                "food_nutrients",
+                "food_sources",
+            )
+            for index in inspect(connection).get_indexes(table)
+        }
+        assert all(
+            actual_indexes.get(name) == columns
+            for name, columns in expected_indexes.items()
+        )
+        assert {
+            str(index["name"]): tuple(index.get("column_names") or ())
+            for index in inspect(connection).get_indexes(
+                "recipe_ingredients",
+                schema="nutrition_phase5c_archive",
+            )
+        }["ix_recipe_ingredients_recipe_id"] == ("recipe_id",)
+
+        connection.execute(text("SET LOCAL enable_seqscan = off"))
+        recipe_id = connection.scalar(
+            text(
+                'SELECT id FROM "nutrition_phase5c_archive".recipes '
+                "ORDER BY id LIMIT 1"
+            )
+        )
+        food_id = connection.scalar(text("SELECT id FROM food_items ORDER BY id LIMIT 1"))
+        archive_plan = connection.scalar(
+            text(
+                'EXPLAIN (FORMAT JSON) SELECT id FROM '
+                '"nutrition_phase5c_archive".recipe_ingredients '
+                "WHERE recipe_id = :recipe_id"
+            ),
+            {"recipe_id": recipe_id},
+        )
+        nutrient_plan = connection.scalar(
+            text(
+                "EXPLAIN (FORMAT JSON) SELECT id FROM food_nutrients "
+                "WHERE food_item_id = :food_id"
+            ),
+            {"food_id": food_id},
+        )
+        assert "ix_recipe_ingredients_recipe_id" in json.dumps(archive_plan)
+        assert "ix_food_nutrients_food_item_id" in json.dumps(nutrient_plan)
 
 
 def test_disposable_target_admission_refuses_mismatch_sessions_and_rows(

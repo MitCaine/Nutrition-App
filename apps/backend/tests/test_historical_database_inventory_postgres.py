@@ -163,7 +163,7 @@ def test_empty_current_database_inventory_is_stable_and_aggregate_only(
         "reason": "no_application_or_historical_rows_detected",
     }
     assert payload["migration"]["current_alembic_revision"] == (
-        "0016_phase5c_execution"
+        "0017_phase5c_indexes"
     )
     assert payload["migration"]["already_beyond_migration_0004"] is True
     assert payload["legacy_recipes"]["recipe_count"] == 0
@@ -186,6 +186,28 @@ def test_empty_current_database_inventory_is_stable_and_aggregate_only(
         "retention",
         "consistency",
         "limitations",
+    }
+
+
+def test_phase5c_0016_database_remains_a_known_restartable_revision(
+    isolated_postgres_schema: tuple[Engine, str],
+) -> None:
+    engine, database_url = isolated_postgres_schema
+    _upgrade(database_url, "0016_phase5c_execution")
+
+    payload = inventory_database(engine).to_dict()
+
+    migration = payload["migration"]
+    assert migration["current_alembic_revision"] == "0016_phase5c_execution"
+    assert migration["expected_head"] == "0017_phase5c_indexes"
+    assert migration["at_expected_head"] is False
+    assert migration["migration_0004_status"] == "already_beyond"
+    assert migration["migration_0004_pending"] is False
+    assert migration["already_beyond_migration_0004"] is True
+    assert "unknown_or_missing_alembic_revision" not in payload["limitations"]
+    assert payload["classification"] == {
+        "value": "empty_database",
+        "reason": "no_application_or_historical_rows_detected",
     }
 
 

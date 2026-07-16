@@ -24,6 +24,8 @@ from app.operators.historical_recipe_bridge import (
     bridge_legacy_recipes,
     establish_conversion_clone_marker,
     legacy_schema_structure,
+    planning_source_payload,
+    planning_subject_source_payload,
 )
 from app.operators.historical_recipe_converter import (
     execute_historical_recipe_conversion,
@@ -38,6 +40,7 @@ from app.operators.phase5c_contracts import (
     CONVERSION_PLAN_VERSION,
     EXECUTION_REVISION,
     Phase5CAdmissionError,
+    QUALIFICATION_RECEIPT_VERSION,
     SUPPORTED_SCHEMA_SIGNATURE,
     canonical_digest,
     canonical_json,
@@ -120,6 +123,25 @@ def conversion_clone() -> tuple[Engine, str, str]:
 
 def _upgrade(database_url: str, revision: str) -> None:
     result = _run_alembic(database_url, revision)
+    assert result.returncode == 0, result.stderr
+
+
+def _downgrade(database_url: str, revision: str) -> None:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "NUTRITION_DEPLOYMENT_MODE": "test",
+            "NUTRITION_DATABASE_URL": database_url,
+        }
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "downgrade", revision],
+        cwd=BACKEND_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert result.returncode == 0, result.stderr
 
 
@@ -437,6 +459,86 @@ def _seed_qualification_preservation_rows(
         )
 
 
+def _mutate_run_preservation_state(engine: Engine, mutation: str) -> None:
+    with engine.begin() as connection:
+        if mutation == "daily_nutrition":
+            connection.execute(
+                text("UPDATE daily_log_nutrient_snapshots SET amount = amount + 1")
+            )
+        elif mutation == "daily_deletion":
+            connection.execute(text("DELETE FROM daily_log_nutrient_snapshots"))
+            connection.execute(text("DELETE FROM daily_logs"))
+        elif mutation == "daily_ownership":
+            user_id = uuid4()
+            connection.execute(
+                text("INSERT INTO users (id, email) VALUES (:id, :email)"),
+                {"id": user_id, "email": f"phase5c-{user_id}@example.test"},
+            )
+            connection.execute(
+                text("UPDATE daily_logs SET user_id = :user_id"),
+                {"user_id": user_id},
+            )
+        elif mutation == "daily_revision_linkage":
+            revision = connection.execute(
+                text(
+                    "SELECT revision.id, revision.user_id, amount.id AS amount_id "
+                    "FROM recipe_publication_revisions revision "
+                    "JOIN recipe_publication_amount_definitions amount "
+                    "ON amount.revision_id = revision.id ORDER BY amount.display_order LIMIT 1"
+                )
+            ).mappings().one()
+            connection.execute(
+                text(
+                    "UPDATE daily_logs SET user_id = :user_id, "
+                    "recipe_publication_revision_id = :revision_id, "
+                    "recipe_publication_amount_definition_id = :amount_id"
+                ),
+                {
+                    "user_id": revision["user_id"],
+                    "revision_id": revision["id"],
+                    "amount_id": revision["amount_id"],
+                },
+            )
+        elif mutation == "daily_serving_linkage":
+            connection.execute(
+                text(
+                    "UPDATE daily_log_nutrient_snapshots "
+                    "SET serving_definition_id = NULL"
+                )
+            )
+        elif mutation == "daily_nutrient_authority":
+            connection.execute(
+                text(
+                    "UPDATE daily_log_nutrient_snapshots "
+                    "SET source_food_nutrient_id = NULL"
+                )
+            )
+        elif mutation == "ocr_provenance":
+            connection.execute(
+                text("UPDATE parse_results SET parser_version = 'mutated-parser'")
+            )
+        elif mutation == "ocr_correction":
+            connection.execute(
+                text(
+                    "UPDATE parser_corrections SET confirmed_value = "
+                    "CAST(:confirmed_value AS jsonb)"
+                ),
+                {"confirmed_value": '{"mutated":true}'},
+            )
+        elif mutation == "ocr_ownership":
+            user_id = uuid4()
+            connection.execute(
+                text("INSERT INTO users (id, email) VALUES (:id, :email)"),
+                {"id": user_id, "email": f"phase5c-{user_id}@example.test"},
+            )
+            connection.execute(
+                text("UPDATE ocr_scans SET user_id = :user_id"),
+                {"user_id": user_id},
+            )
+        else:  # pragma: no cover - test parametrization is closed.
+            raise AssertionError("Unsupported preservation mutation")
+
+
 def _inventory(engine: Engine) -> dict:
     report = inventory_database(engine).to_dict()
     assert report["classification"]["value"] == "legacy_conversion_required"
@@ -516,6 +618,18 @@ def _archive_rows(engine: Engine, archive_schema: str, table: str) -> list[dict]
     return [dict(row) for row in rows]
 
 
+def _archive_recipe_index_columns(engine: Engine, archive_schema: str) -> tuple[str, ...] | None:
+    with engine.connect() as connection:
+        indexes = {
+            str(index["name"]): tuple(index.get("column_names") or ())
+            for index in inspect(connection).get_indexes(
+                "recipe_ingredients",
+                schema=archive_schema,
+            )
+        }
+    return indexes.get("ix_recipe_ingredients_recipe_id")
+
+
 def test_bridge_creates_verified_archive_placeholders_and_is_restart_safe(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
@@ -571,6 +685,91 @@ def test_bridge_creates_verified_archive_placeholders_and_is_restart_safe(
     )
     with pytest.raises(Phase5CAdmissionError, match="marker and attestation differ"):
         _bridge(engine, archive_schema, inventory, changed_source)
+
+
+def test_bridge_provisions_archive_lookup_index_after_head_previously_had_no_archive(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _upgrade(database_url, EXECUTION_REVISION)
+    with engine.connect() as connection:
+        assert archive_schema not in inspect(connection).get_schema_names()
+
+    _downgrade(database_url, "0003_usda_source_identity")
+    _seed_recipe(engine)
+    inventory = _inventory(engine)
+    evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
+    result = _bridge(engine, archive_schema, inventory, evidence)
+
+    assert result.payload["archive_created"] is True
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("recipe_id",)
+
+    _upgrade(database_url, EXECUTION_REVISION)
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("recipe_id",)
+    readmitted = _bridge(engine, archive_schema, inventory, evidence)
+    assert readmitted.payload == {
+        **result.payload,
+        "archive_created": False,
+    }
+
+
+def test_bridge_rejects_incompatible_archive_lookup_index_without_replacing_it(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, _plan = _prepare_execution_clone(
+        engine,
+        database_url,
+        archive_schema,
+    )
+    recipes_before = _archive_rows(engine, archive_schema, "recipes")
+    ingredients_before = _archive_rows(engine, archive_schema, "recipe_ingredients")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f'DROP INDEX "{archive_schema}".'
+                '"ix_recipe_ingredients_recipe_id"'
+            )
+        )
+        connection.execute(
+            text(
+                'CREATE INDEX "ix_recipe_ingredients_recipe_id" ON '
+                f'"{archive_schema}"."recipe_ingredients" '
+                '(ingredient_food_item_id)'
+            )
+        )
+
+    with pytest.raises(Phase5CAdmissionError, match="lookup index definition differs"):
+        _bridge(engine, archive_schema, inventory, evidence)
+
+    assert _archive_recipe_index_columns(engine, archive_schema) == (
+        "ingredient_food_item_id",
+    )
+    assert _archive_rows(engine, archive_schema, "recipes") == recipes_before
+    assert _archive_rows(engine, archive_schema, "recipe_ingredients") == ingredients_before
+
+
+def test_bridge_readmission_at_0017_provisions_a_missing_archive_lookup_index(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, _plan = _prepare_execution_clone(
+        engine,
+        database_url,
+        archive_schema,
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f'DROP INDEX "{archive_schema}".'
+                '"ix_recipe_ingredients_recipe_id"'
+            )
+        )
+
+    assert _archive_recipe_index_columns(engine, archive_schema) is None
+    result = _bridge(engine, archive_schema, inventory, evidence)
+    assert result.payload["archive_created"] is False
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("recipe_id",)
 
 
 def test_bridge_rejects_unsupported_revision_and_schema_signature(
@@ -2407,6 +2606,423 @@ def test_converter_rejects_supporting_nutrition_mutation_before_creating_run(
         assert connection.scalar(
             text("SELECT count(*) FROM phase5c_conversion_runs")
         ) == 0
+
+
+def test_subject_scoped_payload_reproduces_every_plan_v2_checksum(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    _inventory_payload, _evidence, plan = _prepare_execution_clone(
+        engine,
+        database_url,
+        archive_schema,
+        classified_fixture=True,
+    )
+
+    with engine.connect() as connection:
+        source_schema = str(connection.scalar(text("SELECT current_schema()")))
+        full_payload = planning_source_payload(
+            connection,
+            recipe_schema=archive_schema,
+            supporting_schema=source_schema,
+        )
+        for decision in plan["decisions"]:
+            recipe_id = UUID(decision["source_recipe_id"])
+            scoped_payload = planning_subject_source_payload(
+                connection,
+                recipe_schema=archive_schema,
+                supporting_schema=source_schema,
+                recipe_id=recipe_id,
+            )
+            full_subject = converter_module._subject_source(
+                full_payload,
+                recipe_id,
+                decision["source_checksum"],
+            )
+            scoped_subject = converter_module._subject_source(
+                scoped_payload,
+                recipe_id,
+                decision["source_checksum"],
+            )
+            assert scoped_subject == full_subject
+
+
+def test_phase5c_subject_lookup_indexes_round_trip_for_custom_archive(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence = _prepare_planner_clone(engine, database_url, archive_schema)
+    plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    )
+    _upgrade(database_url, "0016_phase5c_execution")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f'DROP INDEX "{archive_schema}".'
+                '"ix_recipe_ingredients_recipe_id"'
+            )
+        )
+
+    assert _archive_recipe_index_columns(engine, archive_schema) is None
+    pre_index_readmission = _bridge(engine, archive_schema, inventory, evidence)
+    assert pre_index_readmission.payload["archive_created"] is False
+    assert _archive_recipe_index_columns(engine, archive_schema) is None
+
+    _upgrade(database_url, EXECUTION_REVISION)
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("recipe_id",)
+    post_index_readmission = _bridge(engine, archive_schema, inventory, evidence)
+    assert post_index_readmission.payload == pre_index_readmission.payload
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("recipe_id",)
+
+    _downgrade(database_url, "0016_phase5c_execution")
+    assert _archive_recipe_index_columns(engine, archive_schema) is None
+    assert _bridge(engine, archive_schema, inventory, evidence).payload == (
+        pre_index_readmission.payload
+    )
+    _upgrade(database_url, EXECUTION_REVISION)
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("recipe_id",)
+
+
+def test_phase5c_0017_rejects_an_incompatible_registered_archive_index(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence = _prepare_planner_clone(engine, database_url, archive_schema)
+    plan_historical_recipe_conversion(
+        engine,
+        inventory_payload=inventory,
+        archive_schema=archive_schema,
+        conversion_clone_id=evidence["conversion_clone_id"],
+        clone_marker_identity=evidence["clone_marker_identity"],
+        attestation_payload=evidence["attestation"],
+    )
+    _upgrade(database_url, "0016_phase5c_execution")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f'DROP INDEX "{archive_schema}".'
+                '"ix_recipe_ingredients_recipe_id"'
+            )
+        )
+        connection.execute(
+            text(
+                'CREATE INDEX "ix_recipe_ingredients_recipe_id" ON '
+                f'"{archive_schema}"."recipe_ingredients" '
+                '(ingredient_food_item_id)'
+            )
+        )
+
+    result = _run_alembic(database_url, EXECUTION_REVISION)
+
+    assert result.returncode != 0
+    assert "Phase 5C archive lookup index definition differs" in (
+        result.stdout + result.stderr
+    )
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+            "0016_phase5c_execution"
+        )
+    assert _archive_recipe_index_columns(engine, archive_schema) == (
+        "ingredient_food_item_id",
+    )
+
+
+def test_subject_scoped_verification_rejects_source_mutation_before_domain_writes(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    mutated = False
+
+    def mutate_at_subject_start(event, _recipe_id, _disposition, _attempt):
+        nonlocal mutated
+        if event == "subject_start" and not mutated:
+            mutated = True
+            with engine.begin() as mutation_connection:
+                mutation_connection.execute(
+                    text(
+                        f'UPDATE "{archive_schema}".recipe_ingredients '
+                        "SET quantity = quantity + 1"
+                    )
+                )
+
+    report = _execute_conversion(
+        engine,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        performance_observer=mutate_at_subject_start,
+    ).payload
+
+    assert mutated
+    assert report["counts"]["failed"] == 1
+    assert report["verification_result"] == "failed"
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
+        assert connection.scalar(
+            text("SELECT count(*) FROM recipe_publication_revisions")
+        ) == 0
+
+
+def test_final_run_verification_rejects_source_mutation_after_subject_checkpoint(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    mutated = False
+
+    def mutate_at_subject_end(event, _recipe_id, _disposition, _attempt):
+        nonlocal mutated
+        if event == "subject_end" and not mutated:
+            mutated = True
+            with engine.begin() as mutation_connection:
+                mutation_connection.execute(
+                    text(
+                        f'UPDATE "{archive_schema}".recipe_ingredients '
+                        "SET quantity = quantity + 1"
+                    )
+                )
+
+    report = _execute_conversion(
+        engine,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        performance_observer=mutate_at_subject_end,
+    ).payload
+
+    assert mutated
+    assert report["counts"]["converted"] == 1
+    assert report["verification_result"] == "failed"
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM recipes")) == 1
+        outcome = connection.execute(
+            text(
+                "SELECT checkpoint_state, verification_state "
+                "FROM phase5c_conversion_outcomes"
+            )
+        ).mappings().one()
+        run = connection.execute(
+            text(
+                "SELECT execution_state, verification_state "
+                "FROM phase5c_conversion_runs"
+            )
+        ).mappings().one()
+    assert dict(outcome) == {
+        "checkpoint_state": "completed",
+        "verification_state": "verified",
+    }
+    assert dict(run) == {
+        "execution_state": "failed",
+        "verification_state": "failed",
+    }
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "daily_nutrition",
+        "daily_deletion",
+        "daily_ownership",
+        "daily_revision_linkage",
+        "daily_serving_linkage",
+        "daily_nutrient_authority",
+        "ocr_provenance",
+        "ocr_correction",
+        "ocr_ownership",
+    ),
+)
+def test_final_run_verification_rejects_daily_log_and_ocr_semantic_mutation(
+    conversion_clone: tuple[Engine, str, str],
+    mutation: str,
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    _seed_qualification_preservation_rows(engine, archive_schema)
+    mutated = False
+
+    def mutate_at_subject_end(event, _recipe_id, _disposition, _attempt):
+        nonlocal mutated
+        if event == "subject_end" and not mutated:
+            mutated = True
+            _mutate_run_preservation_state(engine, mutation)
+
+    report = _execute_conversion(
+        engine,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        performance_observer=mutate_at_subject_end,
+    ).payload
+
+    assert mutated
+    assert report["counts"]["converted"] == 1
+    assert report["verification_result"] == "failed"
+    with engine.connect() as connection:
+        run = connection.execute(
+            text(
+                "SELECT execution_state, verification_state "
+                "FROM phase5c_conversion_runs"
+            )
+        ).mappings().one()
+    assert dict(run) == {
+        "execution_state": "failed",
+        "verification_state": "failed",
+    }
+
+
+def test_interrupted_run_reuses_immutable_binding_metadata_on_restart(
+    conversion_clone: tuple[Engine, str, str],
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+
+    def interrupt_at_subject_start(event, _recipe_id, _disposition, _attempt):
+        if event == "subject_start":
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _execute_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            performance_observer=interrupt_at_subject_start,
+        )
+    columns = ", ".join(converter_module._RUN_BINDING_COLUMNS)
+    with engine.connect() as connection:
+        before = dict(
+            connection.execute(
+                text(f"SELECT {columns} FROM phase5c_conversion_runs")
+            ).mappings().one()
+        )
+
+    execution_receipt = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    ).payload
+    qualification_receipt = _qualify_conversion(
+        engine,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ).payload
+    with engine.connect() as connection:
+        after = dict(
+            connection.execute(
+                text(f"SELECT {columns} FROM phase5c_conversion_runs")
+            ).mappings().one()
+        )
+
+    assert after == before
+    assert qualification_receipt["receipt_version"] == QUALIFICATION_RECEIPT_VERSION
+    assert qualification_receipt["verification_result"] == "qualified"
+
+
+def test_domain_committed_checkpoint_resumes_without_duplicate_revision(
+    conversion_clone: tuple[Engine, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+    original = converter_module._post_commit_verify
+    interrupted = False
+
+    def interrupt_once(*args, **kwargs):
+        nonlocal interrupted
+        if not interrupted:
+            interrupted = True
+            raise KeyboardInterrupt
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(converter_module, "_post_commit_verify", interrupt_once)
+    with pytest.raises(KeyboardInterrupt):
+        _execute_conversion(engine, archive_schema, inventory, evidence, plan)
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text(
+                "SELECT count(*) FROM phase5c_conversion_outcomes "
+                "WHERE checkpoint_state = 'domain_committed'"
+            )
+        ) == 1
+
+    first = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    )
+    second = _execute_conversion(
+        engine, archive_schema, inventory, evidence, plan
+    )
+
+    assert first.to_json() == second.to_json()
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT count(*) FROM recipe_publication_revisions")
+        ) == 1
+
+
+@pytest.mark.parametrize(
+    "column",
+    (
+        "archive_checksum",
+        "planning_source_checksum",
+        "daily_log_state_digest",
+        "ocr_state_digest",
+    ),
+)
+def test_restart_rejects_tampered_run_level_binding(
+    conversion_clone: tuple[Engine, str, str],
+    column: str,
+) -> None:
+    engine, database_url, archive_schema = conversion_clone
+    inventory, evidence, plan = _prepare_execution_clone(
+        engine, database_url, archive_schema
+    )
+
+    def interrupt_at_subject_start(event, _recipe_id, _disposition, _attempt):
+        if event == "subject_start":
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _execute_conversion(
+            engine,
+            archive_schema,
+            inventory,
+            evidence,
+            plan,
+            performance_observer=interrupt_at_subject_start,
+        )
+    with engine.begin() as connection:
+        connection.execute(
+            text(f"UPDATE phase5c_conversion_runs SET {column} = :digest"),
+            {"digest": "0" * 64},
+        )
+
+    with pytest.raises(
+        Phase5CAdmissionError,
+        match="conversion run or execution authorization evidence differs",
+    ):
+        _execute_conversion(engine, archive_schema, inventory, evidence, plan)
 
 
 def test_converter_rejects_preexisting_current_recipe_collision(

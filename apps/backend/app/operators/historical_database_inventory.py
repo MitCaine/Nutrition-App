@@ -8,7 +8,7 @@ from sqlalchemy import Connection, Engine, inspect, text
 
 
 REPORT_SCHEMA_VERSION = "historical_database_inventory_v1"
-CURRENT_HEAD = "0016_phase5c_execution"
+CURRENT_HEAD = "0017_phase5c_indexes"
 REVISIONS = (
     "0001_initial_schema",
     "0002_snapshot_fk",
@@ -25,6 +25,7 @@ REVISIONS = (
     "0013_food_recipe_integrity",
     "0014_create_idempotency",
     "0015_phase5c_conversion_control",
+    "0016_phase5c_execution",
     CURRENT_HEAD,
 )
 

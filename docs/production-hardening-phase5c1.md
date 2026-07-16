@@ -177,6 +177,6 @@ to bind future execution to the immutable v2 plan and its isolation evidence. It
 the archive or modify domain data. Migration 0004 and its Phase 5A admission guard remain unchanged.
 
 Phase 5C2 consumes the approved plan only after the operator advances the clone to
-`0016_phase5c_execution`. See [Phase 5C2](production-hardening-phase5c2.md) for the execution command,
+`0017_phase5c_indexes`. See [Phase 5C2](production-hardening-phase5c2.md) for the execution command,
 checkpoint contract, restart behavior, and verification boundary. Daily Log enrichment, OCR
 changes, promotion, and archive cleanup remain deferred.

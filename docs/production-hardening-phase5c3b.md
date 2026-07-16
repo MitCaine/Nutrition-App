@@ -142,13 +142,50 @@ The command exits nonzero when correctness fails or any required budget fails, a
 manifest when the full measured path completed. Errors before safe evidence exists are bounded
 reason codes and never echo the URL or exception.
 
-## Failed evidence and later optimization
+## Measured Phase 5C2.1 optimization
 
-A failed manifest identifies the stage, query growth, repeated run/subject scans, Daily Log/OCR
-scan repetition, peak RSS, receipt growth, and exact tier dimensions. A later separately reviewed
-correction may evaluate one run-level archive/supporting-source verification, per-subject dependency
-checksums, once-per-run Daily Log/OCR roots, final full-source verification, or streamed relation
-hashing. Phase 5C3b deliberately implements none of those changes.
+The committed initial T0 manifest identified repeated per-subject planning-source, Daily Log, and
+OCR scans. Phase 5C2.1 implements the bounded correction that evidence justified:
+
+- admission and finalization retain complete archive/planning-source verification;
+- each subject reuses the existing canonical plan-v2 checksum over an exact bounded source payload;
+- convertible subjects also verify the archived owner still exists;
+- immutable run binding columns are checked with one bounded control-row query;
+- Daily Log and OCR roots are captured or verified once per invocation and once at finalization; and
+- independent qualification remains a separate complete read-only verification.
+
+No mutable cache, new checksum algorithm, plan change, receipt change, authorization change,
+checkpoint change, or operator command was introduced. Migration 0017 adds only the supporting and
+dynamic-archive indexes needed to make bounded subject lookups usable at representative scale;
+partially completed v1 converter runs retain their stored evidence and restart compatibility after
+that non-semantic upgrade.
+
+The same T0 seed, fixture blueprint digest, logical-data digest, dimensions, PostgreSQL host, and
+warm-cache declaration produced this comparison. Wall time is environment evidence, not an SLA:
+
+| Metric | Initial T0 | Phase 5C2.1 T0 |
+| --- | ---: | ---: |
+| Global source passes | 213 | 25 |
+| Archive/support relation scans | 632 | 68 |
+| Daily Log relation scans | 196 | 20 |
+| OCR relation scans | 389 | 37 |
+| Per-subject source / Daily / OCR scans | 140 / 90 / 180 | 0 / 0 / 0 |
+| Total queries | 6,081 | 5,517 |
+| Conversion wall time | 20.849 s | 2.176 s |
+| Restart-verification wall time | 15.452 s | 1.288 s |
+| Independent-qualification wall time | 1.520 s | 1.484 s |
+| Subject p95 time / queries | 0.475 s / 72 | 0.046 s / 65 |
+
+The [initial manifest](../apps/backend/phase5c-performance-t0.json) and
+[optimized manifest](../apps/backend/phase5c-performance-t0-optimized.json) preserve the detailed
+aggregate evidence. Both independently qualified correctness and restart behavior.
+
+The optimized manifest still reports `performance_failed` for the four aggregate scan ceilings.
+Stages outside conversion and restart already account for 19 global-source, 54 archive/support, 12
+Daily Log, and 21 OCR scans; independent qualification intentionally contributes a complete scan.
+Conversion and restart each add the bounded admission/final verification passes. Phase 5C2.1 does
+not relabel those reads, weaken independent qualification, or revise the v1 budget contract to hide
+that remaining measured work.
 
 No result from this command authorizes production promotion, cutover, recovery, quarantine
 acceptance, archive cleanup, Daily Log enrichment, or OCR cleanup.

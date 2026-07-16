@@ -29,6 +29,7 @@ from app.operators.historical_recipe_bridge import (
     load_bridge_metadata,
     phase5c_advisory_lock,
     planning_source_payload,
+    planning_subject_source_payload,
     require_supported_legacy_schema,
 )
 from app.operators.historical_recipe_planner import (
@@ -76,6 +77,30 @@ _OCR_TABLES = (
     "parse_results",
     "parser_corrections",
     "ocr_nutrition_confirmation_traces",
+)
+_RUN_BINDING_COLUMNS = (
+    "id",
+    "archive_identity",
+    "plan_version",
+    "plan_digest",
+    "inventory_digest",
+    "schema_signature",
+    "schema_signature_digest",
+    "conversion_rules_version",
+    "recipes_checksum",
+    "ingredients_checksum",
+    "archive_checksum",
+    "planning_source_checksum",
+    "clone_marker_digest",
+    "operator_attestation_digest",
+    "execution_isolation_contract_version",
+    "execution_attestation_version",
+    "execution_attestation_identity",
+    "execution_attestation_scope",
+    "execution_attestation_digest",
+    "converter_version",
+    "daily_log_state_digest",
+    "ocr_state_digest",
 )
 FailureHook = Callable[[str, UUID], None]
 PerformanceObserver = Callable[[str, UUID | None, str | None, int | None], None]
@@ -238,7 +263,17 @@ def execute_historical_recipe_conversion(
                     )
 
             with connection.begin():
-                _finalize_run(connection, run["id"])
+                try:
+                    _verify_run_level_state(
+                        connection,
+                        run=run,
+                        plan=plan,
+                        archive_schema=archive_schema,
+                    )
+                except Phase5CSubjectError:
+                    _fail_run_level_verification(connection, run["id"])
+                else:
+                    _finalize_run(connection, run["id"])
                 with _observed_operation(
                     performance_observer,
                     "execution_receipt",
@@ -486,10 +521,6 @@ def _create_or_validate_run(
             "execution_operator_attestation_digest"
         ],
         "converter_version": CONVERTER_VERSION,
-        "daily_log_state_digest": _relation_state_digest(
-            connection, _DAILY_LOG_TABLES
-        ),
-        "ocr_state_digest": _relation_state_digest(connection, _OCR_TABLES),
     }
     if existing is None:
         if connection.scalar(text("SELECT count(*) FROM recipes")):
@@ -498,6 +529,14 @@ def _create_or_validate_run(
             raise Phase5CAdmissionError(
                 "Current publication revisions exist before the first conversion run"
             )
+        state.update(
+            {
+                "daily_log_state_digest": _relation_state_digest(
+                    connection, _DAILY_LOG_TABLES
+                ),
+                "ocr_state_digest": _relation_state_digest(connection, _OCR_TABLES),
+            }
+        )
         connection.execute(
             text(
                 f"INSERT INTO {_RUN_TABLE} "
@@ -528,6 +567,15 @@ def _create_or_validate_run(
 
     existing_dict = dict(existing)
     if any(existing_dict.get(key) != value for key, value in state.items()):
+        raise Phase5CAdmissionError(
+            "Existing conversion run or execution authorization evidence differs"
+        )
+    if (
+        _relation_state_digest(connection, _DAILY_LOG_TABLES)
+        != existing_dict["daily_log_state_digest"]
+        or _relation_state_digest(connection, _OCR_TABLES)
+        != existing_dict["ocr_state_digest"]
+    ):
         raise Phase5CAdmissionError(
             "Existing conversion run or execution authorization evidence differs"
         )
@@ -591,10 +639,10 @@ def _persist_nonconvert_outcome(
     with connection.begin():
         _verify_subject_source(
             connection,
+            run=run,
             recipe_id=recipe_id,
             expected_checksum=decision["source_checksum"],
             archive_schema=archive_schema,
-            plan=plan,
         )
         execution = (
             "quarantined"
@@ -661,6 +709,8 @@ def _execute_convert_with_retry(
                 disposition="convert",
                 attempt=attempt + 1,
             )
+        except Phase5CAdmissionError:
+            raise
         except Phase5CSubjectError as exc:
             _record_subject_failure(
                 connection,
@@ -696,17 +746,17 @@ def _convert_subject(
     failure_hook: FailureHook | None,
 ) -> None:
     recipe_id = UUID(decision["source_recipe_id"])
-    initial_payload = planning_source_payload(
+    source_schema = str(connection.scalar(text("SELECT current_schema()")))
+    initial_payload = planning_subject_source_payload(
         connection,
         recipe_schema=archive_schema,
-        supporting_schema=str(connection.scalar(text("SELECT current_schema()"))),
+        supporting_schema=source_schema,
+        recipe_id=recipe_id,
     )
-    recipe_by_id = _by_id(initial_payload["recipes"])
-    ingredients_by_recipe = _by_recipe(initial_payload["recipe_ingredients"])
-    source_recipe = recipe_by_id.get(recipe_id)
-    if source_recipe is None:
-        raise Phase5CSubjectError("archived_recipe_missing")
-    source_ingredients = ingredients_by_recipe.get(recipe_id, [])
+    source_recipe, source_ingredients = _subject_source(
+        initial_payload, recipe_id, decision["source_checksum"]
+    )
+    _require_subject_owner(initial_payload, source_recipe)
     food_ids = {source_recipe["food_item_id"]}
     food_ids.update(row["ingredient_food_item_id"] for row in source_ingredients)
 
@@ -750,15 +800,17 @@ def _convert_subject(
             {"id": recipe_id},
         ).all()
 
-        payload = planning_source_payload(
+        payload = planning_subject_source_payload(
             connection,
             recipe_schema=archive_schema,
-            supporting_schema=str(connection.scalar(text("SELECT current_schema()"))),
+            supporting_schema=source_schema,
+            recipe_id=recipe_id,
         )
-        _verify_payload_checksums(payload, plan)
+        _verify_run_binding(connection, run)
         source_recipe, source_ingredients = _subject_source(
             payload, recipe_id, decision["source_checksum"]
         )
+        _require_subject_owner(payload, source_recipe)
         projection = food_by_id[source_recipe["food_item_id"]]
         _validate_locked_subject(
             source_recipe=source_recipe,
@@ -883,6 +935,8 @@ def _post_commit_verify(
                 ),
                 {"run_id": run["id"], "recipe_id": recipe_id},
             )
+    except Phase5CAdmissionError:
+        raise
     except Exception:
         _record_verification_failure(
             connection,
@@ -923,10 +977,10 @@ def _verify_completed_outcome(
             with connection.begin():
                 _verify_subject_source(
                     connection,
+                    run=run,
                     recipe_id=UUID(decision["source_recipe_id"]),
                     expected_checksum=decision["source_checksum"],
                     archive_schema=archive_schema,
-                    plan=plan,
                 )
     except Phase5CSubjectError:
         raise Phase5CAdmissionError(
@@ -946,10 +1000,11 @@ def _verify_converted_outcome(
     recipe_id = UUID(decision["source_recipe_id"])
     payload = _verify_subject_source(
         connection,
+        run=run,
         recipe_id=recipe_id,
         expected_checksum=decision["source_checksum"],
         archive_schema=archive_schema,
-        plan=plan,
+        require_owner=True,
     )
     source_recipe, source_ingredients = _subject_source(
         payload, recipe_id, decision["source_checksum"]
@@ -1048,30 +1103,62 @@ def _verify_converted_outcome(
             raise Phase5CSubjectError("converted_staleness_mismatch")
     finally:
         session.close()
-    if _relation_state_digest(connection, _DAILY_LOG_TABLES) != run[
-        "daily_log_state_digest"
-    ]:
-        raise Phase5CSubjectError("daily_log_state_changed")
-    if _relation_state_digest(connection, _OCR_TABLES) != run["ocr_state_digest"]:
-        raise Phase5CSubjectError("ocr_state_changed")
 
 
 def _verify_subject_source(
     connection: Connection,
     *,
+    run: dict[str, Any],
     recipe_id: UUID,
     expected_checksum: str,
     archive_schema: str,
-    plan: dict[str, Any],
+    require_owner: bool = False,
 ) -> dict[str, list[dict[str, Any]]]:
+    _verify_run_binding(connection, run)
+    payload = planning_subject_source_payload(
+        connection,
+        recipe_schema=archive_schema,
+        supporting_schema=str(connection.scalar(text("SELECT current_schema()"))),
+        recipe_id=recipe_id,
+    )
+    source_recipe, _ = _subject_source(payload, recipe_id, expected_checksum)
+    if require_owner:
+        _require_subject_owner(payload, source_recipe)
+    return payload
+
+
+def _verify_run_binding(connection: Connection, run: dict[str, Any]) -> None:
+    columns = ", ".join(_RUN_BINDING_COLUMNS)
+    stored = connection.execute(
+        text(f"SELECT {columns} FROM {_RUN_TABLE} WHERE id = :run_id"),
+        {"run_id": run["id"]},
+    ).mappings().one_or_none()
+    expected = {column: run[column] for column in _RUN_BINDING_COLUMNS}
+    if stored is None or dict(stored) != expected:
+        raise Phase5CAdmissionError("Conversion run binding changed")
+
+
+def _verify_run_level_state(
+    connection: Connection,
+    *,
+    run: dict[str, Any],
+    plan: dict[str, Any],
+    archive_schema: str,
+) -> None:
+    _verify_run_binding(connection, run)
     payload = planning_source_payload(
         connection,
         recipe_schema=archive_schema,
         supporting_schema=str(connection.scalar(text("SELECT current_schema()"))),
     )
     _verify_payload_checksums(payload, plan)
-    _subject_source(payload, recipe_id, expected_checksum)
-    return payload
+    if (
+        _relation_state_digest(connection, _DAILY_LOG_TABLES)
+        != run["daily_log_state_digest"]
+    ):
+        raise Phase5CSubjectError("daily_log_state_changed")
+    if _relation_state_digest(connection, _OCR_TABLES) != run["ocr_state_digest"]:
+        raise Phase5CSubjectError("ocr_state_changed")
 
 
 def _verify_payload_checksums(
@@ -1119,6 +1206,13 @@ def _subject_source(
     if actual != expected_checksum:
         raise Phase5CSubjectError("subject_source_checksum_changed")
     return recipe, rows
+
+
+def _require_subject_owner(
+    payload: dict[str, list[dict[str, Any]]], recipe: dict[str, Any]
+) -> None:
+    if recipe["user_id"] not in {row["id"] for row in payload["users"]}:
+        raise Phase5CSubjectError("subject_owner_missing")
 
 
 def _validate_locked_subject(
@@ -1369,6 +1463,18 @@ def _finalize_run(connection: Connection, run_id: UUID) -> None:
             "reason": reason,
             "run_id": run_id,
         },
+    )
+
+
+def _fail_run_level_verification(connection: Connection, run_id: UUID) -> None:
+    connection.execute(
+        text(
+            f"UPDATE {_RUN_TABLE} SET execution_state = 'failed', "
+            "verification_state = 'failed', "
+            "failure_reason_code = 'run_level_verification_failed' "
+            "WHERE id = :run_id"
+        ),
+        {"run_id": run_id},
     )
 
 

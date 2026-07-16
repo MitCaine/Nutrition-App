@@ -324,7 +324,7 @@ def test_empty_baseline_upgrades_to_head_and_latest_revision_round_trips(
     assert result.returncode == 0, result.stderr
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0016_phase5c_execution"
+            "0017_phase5c_indexes"
         )
         table_names = set(inspect(connection).get_table_names())
         control_columns = {
@@ -334,6 +334,16 @@ def test_empty_baseline_upgrades_to_head_and_latest_revision_round_trips(
         run_columns = {
             column["name"]
             for column in inspect(connection).get_columns("phase5c_conversion_runs")
+        }
+        index_names = {
+            index["name"]
+            for table in (
+                "food_items",
+                "serving_definitions",
+                "food_nutrients",
+                "food_sources",
+            )
+            for index in inspect(connection).get_indexes(table)
         }
     assert {"recipes", "recipe_ingredients", "recipe_publication_revisions"} <= table_names
     assert {
@@ -354,23 +364,41 @@ def test_empty_baseline_upgrades_to_head_and_latest_revision_round_trips(
         "execution_attestation_scope",
         "execution_attestation_digest",
     } <= run_columns
+    assert {
+        "ix_food_items_source_identity_all",
+        "ix_serving_definitions_food_item_id",
+        "ix_food_nutrients_food_item_id",
+        "ix_food_sources_food_item_id",
+    } <= index_names
 
     downgrade = _run_alembic(migration_url, "downgrade", "-1")
     assert downgrade.returncode == 0, downgrade.stderr
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0015_phase5c_conversion_control"
+            "0016_phase5c_execution"
         )
         downgraded_tables = set(inspect(connection).get_table_names())
         assert "phase5c_conversion_metadata" in downgraded_tables
-        assert "phase5c_conversion_runs" not in downgraded_tables
-        assert "phase5c_conversion_outcomes" not in downgraded_tables
+        assert {"phase5c_conversion_runs", "phase5c_conversion_outcomes"} <= (
+            downgraded_tables
+        )
+        downgraded_indexes = {
+            index["name"]
+            for table in (
+                "food_items",
+                "serving_definitions",
+                "food_nutrients",
+                "food_sources",
+            )
+            for index in inspect(connection).get_indexes(table)
+        }
+        assert "ix_food_items_source_identity_all" not in downgraded_indexes
 
     reupgrade = _run_alembic(migration_url, "upgrade", "head")
     assert reupgrade.returncode == 0, reupgrade.stderr
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0016_phase5c_execution"
+            "0017_phase5c_indexes"
         )
         reupgraded_tables = set(inspect(connection).get_table_names())
         assert "phase5c_conversion_metadata" in reupgraded_tables
