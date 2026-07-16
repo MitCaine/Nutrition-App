@@ -138,6 +138,13 @@ checkpoints, plan v2, converter receipt, and qualification receipt v1 are unchan
 per-subject full-scan counts fell to zero; aggregate scan ceilings still fail because intentionally
 independent and pre-conversion stages remain outside this bounded correction.
 
+Phase 5C2.2 requalifies that unchanged optimized path with the same T0 seed, blueprint, logical-data
+digest, and dimensions. Scan counts remain exactly stable at 25 global, 68 archive/support, 20 Daily
+Log, and 37 OCR scans, with every per-subject full-scan count still zero. All remaining scans are
+accounted for by authorization/admission, restart guarantees, or independent qualification; no
+further verifier optimization is justified at T0. See
+[Production Hardening Phase 5C2.2](docs/production-hardening-phase5c2.2.md).
+
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
 stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,

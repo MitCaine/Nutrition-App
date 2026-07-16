@@ -180,6 +180,13 @@ The [initial manifest](../apps/backend/phase5c-performance-t0.json) and
 [optimized manifest](../apps/backend/phase5c-performance-t0-optimized.json) preserve the detailed
 aggregate evidence. Both independently qualified correctness and restart behavior.
 
+Phase 5C2.2 repeated the same T0 workload after the archive-index provisioning correction. The
+[requalification manifest](../apps/backend/phase5c-performance-t0-requalified.json) preserves that
+evidence. Its aggregate and per-subject scan vectors exactly match the optimized manifest; the only
+structural query delta is 15 bridge/migration metadata queries. The exhaustive proof-obligation
+analysis and recommendation to stop optimization are documented in
+[Production Hardening Phase 5C2.2](production-hardening-phase5c2.2.md).
+
 The optimized manifest still reports `performance_failed` for the four aggregate scan ceilings.
 Stages outside conversion and restart already account for 19 global-source, 54 archive/support, 12
 Daily Log, and 21 OCR scans; independent qualification intentionally contributes a complete scan.
