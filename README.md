@@ -145,6 +145,13 @@ accounted for by authorization/admission, restart guarantees, or independent qua
 further verifier optimization is justified at T0. See
 [Production Hardening Phase 5C2.2](docs/production-hardening-phase5c2.2.md).
 
+Phase 5C4.0 selects a controlled production-like portfolio demonstration as the first deployment
+profile and closes its provider, authentication, role, signing, switching, recovery, performance,
+canary, qualifier, ownership, and deferral decisions. It authorizes Stage 5C4.1 contract work only;
+promotion remains gated by the production-like exercises, and public or independently used
+multi-user production remains blocked. See
+[Production Hardening Phase 5C4.0](docs/production-hardening-phase5c4.0.md).
+
 Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
 bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
 stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,

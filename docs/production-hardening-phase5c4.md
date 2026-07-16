@@ -1092,7 +1092,13 @@ Phase 5C4 does not:
 
 The architecture above resolves freeze-before-clone, the external control plane, target 0018 fence,
 zero-block policy, explicit quarantine acceptance, exact T0 scan vector, and activation as the
-irreversible boundary. The following infrastructure-specific decisions remain hard blockers:
+irreversible boundary.
+
+**Phase 5C4.0 status update (2026-07-16):** these infrastructure-specific decisions are closed for
+the narrowly defined `phase5c4_controlled_portfolio_demo_v1` profile by
+[Production Hardening Phase 5C4.0](production-hardening-phase5c4.0.md). Exercise-dependent gates
+remain unfulfilled, and public or independently used multi-user production remains blocked. The
+following list is retained as the source requirements that the decision record answers:
 
 1. **Deployment mode and authentication.** The repository currently has no supported production
    authentication provider. Public production promotion is blocked until one is implemented and
