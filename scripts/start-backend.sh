@@ -82,11 +82,11 @@ cd "$BACKEND_DIR"
 
 if [[ ! -f ".env" ]]; then
   echo "Error: $BACKEND_DIR/.env does not exist."
-  echo "Create it from .env.example and add USDA_FDC_API_KEY."
+  echo "Create it from .env.example and configure the runtime database URL."
   exit 1
 fi
 
-# Prefer the project virtual environment when present.
+# Prefer the backend virtual environment when present.
 if [[ -x ".venv/bin/python" ]]; then
   PYTHON=".venv/bin/python"
 elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
@@ -97,8 +97,10 @@ fi
 
 echo "Using Python: $("$PYTHON" --version)"
 
-echo "Checking backend configuration..."
+echo "Checking runtime configuration and database identity..."
 "$PYTHON" - <<'PY'
+from sqlalchemy import create_engine, text
+
 from app.core.config import settings
 from app.core.database_identity import redacted_database_url
 
@@ -107,18 +109,41 @@ print(f"Process mode: {settings.process_mode.value}")
 print(f"Database: {redacted_database_url(settings.database_url)}")
 print(f"USDA key loaded: {bool(settings.usda_api_key)}")
 
-if settings.process_mode.value == "canary":
+if settings.process_mode.value != "runtime":
     raise SystemExit(
-        "Canary mode refuses the migration-capable start-backend workflow; "
-        "apply migrations separately as nutrition_migrator, then start Uvicorn directly."
+        "start-backend.sh only starts the runtime process. "
+        f"Configured process mode is {settings.process_mode.value!r}."
     )
 
 if not settings.usda_api_key:
     print("Warning: USDA search/import will be unavailable.")
+
+engine = create_engine(settings.database_url)
+
+with engine.connect() as connection:
+    session_user, current_user = connection.execute(
+        text("SELECT session_user, current_user")
+    ).one()
+
+print(f"Database session user: {session_user}")
+print(f"Database current user: {current_user}")
+
+if session_user != "nutrition_runtime":
+    raise SystemExit(
+        "Refusing to start FastAPI with a non-runtime database login. "
+        f"Expected nutrition_runtime, received {session_user!r}. "
+        "Apply migrations separately using nutrition_migrator."
+    )
+
+if current_user != "nutrition_runtime":
+    raise SystemExit(
+        "Refusing to start FastAPI with an unexpected effective database role. "
+        f"Expected nutrition_runtime, received {current_user!r}."
+    )
 PY
 
-echo "Applying Alembic migrations..."
-"$PYTHON" -m alembic upgrade head
+echo "Alembic migrations are not run by this script."
+echo "Apply migrations separately using the nutrition_migrator identity."
 
 echo "Starting FastAPI at http://localhost:$PORT"
 exec "$PYTHON" -m uvicorn app.main:app \

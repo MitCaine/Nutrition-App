@@ -1,0 +1,26 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    profiles: ["phase5c4-evidence"]
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${NUTRITION_PHASE5C4_TEST_MINIO_ROOT_USER:?set a disposable MinIO root user}
+      MINIO_ROOT_PASSWORD: ${NUTRITION_PHASE5C4_TEST_MINIO_ROOT_PASSWORD:?set a disposable MinIO root password}
+    ports:
+      - "127.0.0.1:${NUTRITION_PHASE5C4_TEST_MINIO_PORT:-59000}:9000"
+    volumes:
+      - phase5c4_minio_data:/data
+    networks:
+      - phase5c4_evidence
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  phase5c4_minio_data:
+
+networks:
+  phase5c4_evidence:

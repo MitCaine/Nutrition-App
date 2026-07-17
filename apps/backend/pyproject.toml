@@ -15,6 +15,7 @@ dependencies = [
   "uvicorn[standard]>=0.30",
   "psycopg[binary]>=3.2",
   "httpx>=0.27",
+  "minio>=7.2.20,<7.3",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,9 @@ pythonpath = ["."]
 markers = [
   "postgres_concurrency: requires a reachable PostgreSQL database",
   "phase5c_performance_t0: explicitly runs the full T0 performance fixture",
+  "phase5c4_control_postgres: requires an isolated PostgreSQL 16 control database",
+  "phase5c4_minio: requires a disposable object-lock-enabled MinIO server",
+  "phase5c4_docker_integration: requires Docker control-plane infrastructure",
 ]
 
 [tool.setuptools.packages.find]

@@ -16,12 +16,16 @@ from sqlalchemy import Connection, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.config import DeploymentMode, settings
 from app.operators import phase5c_contracts as canonical
 from app.operators.phase5c4_contracts import (
     QUALIFIER_VERSION,
     TARGET_SCHEMA_REVISION,
 )
+
+
+# Compatibility seam for existing test callers without importing application
+# settings into independent control-plane commands at module import time.
+settings: Any | None = None
 
 
 ADVISORY_LOCK_KEY = 5_542_018
@@ -414,7 +418,10 @@ def evaluate_local_readiness(
     bind = db.get_bind() if isinstance(db, Session) else db
     dialect_name = getattr(getattr(bind, "dialect", None), "name", None)
     if dialect_name != "postgresql":
-        if settings.deployment_mode is not DeploymentMode.TEST:
+        from app.core.config import DeploymentMode, settings as application_settings
+
+        configured_settings = settings or application_settings
+        if configured_settings.deployment_mode is not DeploymentMode.TEST:
             return LocalReadiness(False, "schema_revision_mismatch")
         try:
             db.execute(text("SELECT 1"))

@@ -799,6 +799,8 @@ def test_migrator_owns_alembic_path_and_downgrade_reupgrade_is_clean(
     migrator_url = role_database.role_urls[roles.MIGRATOR_ROLE]
     qualifier = role_database.engine(roles.QUALIFIER_ROLE)
 
+    upgraded_to_head = _run_alembic(migrator_url, "upgrade", "head")
+    assert upgraded_to_head.returncode == 0, upgraded_to_head.stderr
     check = _run_alembic(migrator_url, "check")
     assert check.returncode == 0, check.stdout + check.stderr
 
