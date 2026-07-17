@@ -81,9 +81,7 @@ def _run_alembic(database_url: str, *arguments: str) -> subprocess.CompletedProc
 def _create_archive_fixture(connection, archive_schema: str) -> None:
     quoted = connection.dialect.identifier_preparer.quote(archive_schema)
     connection.execute(text(f"CREATE SCHEMA {quoted}"))
-    connection.execute(
-        text(f"CREATE TABLE {quoted}.recipes (id uuid PRIMARY KEY)")
-    )
+    connection.execute(text(f"CREATE TABLE {quoted}.recipes (id uuid PRIMARY KEY)"))
     connection.execute(
         text(
             f"CREATE TABLE {quoted}.recipe_ingredients "
@@ -175,9 +173,7 @@ def role_database() -> RoleDatabase:
             )
             lock_connection.close()
             control.dispose()
-            pytest.skip(
-                "Stage 5C4.2a tests require an isolated cluster without managed roles"
-            )
+            pytest.skip("Stage 5C4.2a tests require an isolated cluster without managed roles")
     except Exception as exc:  # pragma: no cover - depends on developer environment.
         if lock_connection is not None:
             lock_connection.close()
@@ -192,7 +188,7 @@ def role_database() -> RoleDatabase:
     admin_url = root.set(database=database_name).render_as_string(hide_password=False)
     admin = create_engine(admin_url, poolclass=NullPool, hide_parameters=True)
     try:
-        migrated = _run_alembic(admin_url, "upgrade", "head")
+        migrated = _run_alembic(admin_url, "upgrade", roles.EXPECTED_ALEMBIC_REVISION)
         assert migrated.returncode == 0, migrated.stderr
         with admin.begin() as connection:
             assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
@@ -240,9 +236,7 @@ def role_database() -> RoleDatabase:
         admin.dispose()
         with control.connect() as connection:
             connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)'))
-            connection.execute(
-                text("DROP ROLE IF EXISTS " + ", ".join(roles.MANAGED_ROLES))
-            )
+            connection.execute(text("DROP ROLE IF EXISTS " + ", ".join(roles.MANAGED_ROLES)))
         if lock_connection is not None:
             lock_connection.execute(
                 text("SELECT pg_catalog.pg_advisory_unlock(:lock_id)"),
@@ -376,9 +370,12 @@ def test_exact_roles_ownership_and_application_privileges(role_database: RoleDat
 
         user_id, food_id = _create_runtime_food(role_database)
         with runtime.connect() as connection:
-            assert connection.scalar(
-                text("SELECT name FROM food_items WHERE id = :id"), {"id": food_id}
-            ) == "Role-qualified Food"
+            assert (
+                connection.scalar(
+                    text("SELECT name FROM food_items WHERE id = :id"), {"id": food_id}
+                )
+                == "Role-qualified Food"
+            )
             assert connection.scalar(text("SELECT count(*) FROM users")) >= 1
 
         runtime_sessions = sessionmaker(bind=runtime, autoflush=False, autocommit=False)
@@ -423,9 +420,12 @@ def test_exact_roles_ownership_and_application_privileges(role_database: RoleDat
 
         with canary.connect() as connection:
             assert connection.scalar(text("SHOW transaction_read_only")) == "on"
-            assert connection.scalar(
-                text("SELECT count(*) FROM users WHERE id = :id"), {"id": user_id}
-            ) == 1
+            assert (
+                connection.scalar(
+                    text("SELECT count(*) FROM users WHERE id = :id"), {"id": user_id}
+                )
+                == 1
+            )
         _assert_denied(canary, "INSERT INTO users (id, email) VALUES (gen_random_uuid(), 'x')")
         _assert_denied(canary, "SELECT count(*) FROM food_favorites")
         _assert_denied(
@@ -436,9 +436,12 @@ def test_exact_roles_ownership_and_application_privileges(role_database: RoleDat
         with qualifier.connect() as connection:
             assert connection.scalar(text("SHOW transaction_read_only")) == "on"
             assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_metadata")) == 1
-            assert connection.scalar(
-                text(f'SELECT count(*) FROM "{role_database.archive_schema}".recipes')
-            ) == 0
+            assert (
+                connection.scalar(
+                    text(f'SELECT count(*) FROM "{role_database.archive_schema}".recipes')
+                )
+                == 0
+            )
         _assert_denied(qualifier, "DELETE FROM users")
 
         for readonly_engine in (canary, qualifier):
@@ -451,9 +454,7 @@ def test_exact_roles_ownership_and_application_privileges(role_database: RoleDat
 
         _assert_denied(ops, "SELECT count(*) FROM users")
         with ops.connect() as connection:
-            assert connection.scalar(
-                text("SELECT count(*) FROM phase5c_conversion_metadata")
-            ) == 1
+            assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_metadata")) == 1
             assert connection.scalar(text("SELECT count(*) FROM alembic_version")) == 1
         _assert_denied(ops, "SET ROLE nutrition_owner")
         _assert_denied(ops, "SET ROLE nutrition_migrator")
@@ -523,10 +524,7 @@ def test_eligibility_is_deterministic_and_rejects_tampering(
 
         with admin.begin() as connection:
             connection.execute(
-                text(
-                    "ALTER FUNCTION phase5c4_maintenance.close_runtime_writes(text) "
-                    "STRICT"
-                )
+                text("ALTER FUNCTION phase5c4_maintenance.close_runtime_writes(text) STRICT")
             )
         try:
             with qualifier.connect() as connection:
@@ -543,10 +541,7 @@ def test_eligibility_is_deterministic_and_rejects_tampering(
 
         with admin.begin() as connection:
             connection.execute(
-                text(
-                    "GRANT SELECT ON public.users TO nutrition_qualifier "
-                    "WITH GRANT OPTION"
-                )
+                text("GRANT SELECT ON public.users TO nutrition_qualifier WITH GRANT OPTION")
             )
         try:
             with qualifier.connect() as connection:
@@ -555,18 +550,12 @@ def test_eligibility_is_deterministic_and_rejects_tampering(
         finally:
             with admin.begin() as connection:
                 connection.execute(
-                    text(
-                        "REVOKE GRANT OPTION FOR SELECT ON public.users "
-                        "FROM nutrition_qualifier"
-                    )
+                    text("REVOKE GRANT OPTION FOR SELECT ON public.users FROM nutrition_qualifier")
                 )
 
         with admin.begin() as connection:
             connection.execute(
-                text(
-                    "GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) "
-                    "TO nutrition_runtime"
-                )
+                text("GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) TO nutrition_runtime")
             )
         try:
             with qualifier.connect() as connection:
@@ -582,9 +571,7 @@ def test_eligibility_is_deterministic_and_rejects_tampering(
                 )
 
         with admin.begin() as connection:
-            database = connection.dialect.identifier_preparer.quote(
-                role_database.database_name
-            )
+            database = connection.dialect.identifier_preparer.quote(role_database.database_name)
             connection.execute(
                 text(
                     "ALTER ROLE nutrition_canary IN DATABASE "
@@ -597,9 +584,7 @@ def test_eligibility_is_deterministic_and_rejects_tampering(
             assert "role_setting_mismatch" in evidence["reason_codes"]
         finally:
             with admin.begin() as connection:
-                database = connection.dialect.identifier_preparer.quote(
-                    role_database.database_name
-                )
+                database = connection.dialect.identifier_preparer.quote(role_database.database_name)
                 connection.execute(
                     text(
                         "ALTER ROLE nutrition_canary IN DATABASE "
@@ -651,9 +636,7 @@ def test_maintenance_session_drain_reconnect_denial_and_exact_restore(
             connection.execute(text("SET search_path = public, pg_temp"))
             with pytest.raises(DBAPIError):
                 connection.execute(
-                    text(
-                        "SELECT phase5c4_maintenance.close_runtime_writes(:digest)"
-                    ),
+                    text("SELECT phase5c4_maintenance.close_runtime_writes(:digest)"),
                     {"digest": "0" * 64},
                 )
 
@@ -713,10 +696,13 @@ def test_maintenance_session_drain_reconnect_denial_and_exact_restore(
         # Simulate a crash immediately after the durable ACL close.  The public
         # command must detect maintenance and resume the bounded session drain.
         with ops.begin() as connection:
-            assert connection.scalar(
-                text("SELECT phase5c4_maintenance.close_runtime_writes(:digest)"),
-                {"digest": roles.PRIVILEGE_MANIFEST_DIGEST},
-            ) == "maintenance_closed"
+            assert (
+                connection.scalar(
+                    text("SELECT phase5c4_maintenance.close_runtime_writes(:digest)"),
+                    {"digest": roles.PRIVILEGE_MANIFEST_DIGEST},
+                )
+                == "maintenance_closed"
+            )
         with pytest.raises(roles.Phase5C4RoleError, match="sessions must be zero"):
             roles.restore_runtime_privileges(ops)
         result = roles.close_runtime_maintenance(
@@ -768,7 +754,9 @@ def test_maintenance_session_drain_reconnect_denial_and_exact_restore(
                 roles.restore_runtime_privileges(ops)
         finally:
             with admin.begin() as connection:
-                connection.execute(text("REVOKE UPDATE ON TABLE public.users FROM nutrition_runtime"))
+                connection.execute(
+                    text("REVOKE UPDATE ON TABLE public.users FROM nutrition_runtime")
+                )
 
         restored = roles.restore_runtime_privileges(ops)
         assert restored["state"] == "normal"
@@ -789,10 +777,13 @@ def test_maintenance_session_drain_reconnect_denial_and_exact_restore(
         assert normal_evidence["qualified"] is True
 
         with admin.connect() as connection:
-            assert connection.scalar(
-                text("SELECT count(*) FROM pg_stat_activity WHERE pid = :pid"),
-                {"pid": held_pid},
-            ) == 0
+            assert (
+                connection.scalar(
+                    text("SELECT count(*) FROM pg_stat_activity WHERE pid = :pid"),
+                    {"pid": held_pid},
+                )
+                == 0
+            )
     finally:
         try:
             held_runtime.close()
@@ -813,7 +804,7 @@ def test_migrator_owns_alembic_path_and_downgrade_reupgrade_is_clean(
 
     downgraded = _run_alembic(migrator_url, "downgrade", "0016_phase5c_execution")
     assert downgraded.returncode == 0, downgraded.stderr
-    upgraded = _run_alembic(migrator_url, "upgrade", "head")
+    upgraded = _run_alembic(migrator_url, "upgrade", roles.EXPECTED_ALEMBIC_REVISION)
     assert upgraded.returncode == 0, upgraded.stderr
 
     try:

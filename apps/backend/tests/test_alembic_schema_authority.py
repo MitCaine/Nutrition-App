@@ -23,6 +23,9 @@ def test_migration_owned_tables_are_exact_and_disjoint_from_runtime_metadata() -
         "phase5c_conversion_metadata",
         "phase5c_conversion_runs",
         "phase5c_conversion_outcomes",
+        "phase5c_promotion_target_identity",
+        "phase5c_write_fence_state",
+        "phase5c_write_fence_events",
     }
     validate_schema_authority(Base.metadata)
     alembic_metadata = build_alembic_metadata(Base.metadata)
@@ -54,18 +57,16 @@ def test_migration_owned_metadata_contains_exact_retained_structure() -> None:
         metadata.tables["ocr_scans"].c.full_text,
         metadata.tables["ocr_scans"].c.created_at,
     ]
-    assert {
-        index.name for index in metadata.tables["nutrient_reference_values"].indexes
-    } == {"ix_nutrient_reference_lookup"}
+    assert {index.name for index in metadata.tables["nutrient_reference_values"].indexes} == {
+        "ix_nutrient_reference_lookup"
+    }
     outcomes = metadata.tables["phase5c_conversion_outcomes"]
     assert {column.name for column in outcomes.primary_key.columns} == {
         "run_id",
         "source_recipe_id",
     }
     assert {
-        constraint.name
-        for constraint in outcomes.constraints
-        if constraint.name is not None
+        constraint.name for constraint in outcomes.constraints if constraint.name is not None
     } >= {
         "ck_phase5c_outcome_converted_shape",
         "ck_phase5c_outcome_failure_shape",

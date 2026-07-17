@@ -34,7 +34,9 @@ The design makes these decisions:
    fence, and immutability hardening without changing any domain/archive row. Independent
    qualification then runs again through a v2 admission implementation that emits the unchanged
    `phase5c_conversion_qualification_receipt_v1` shape. Promotion control has a separate Alembic
-   stream and database.
+   stream and database. Revision 0018 persists only the target nonce/identity component of database
+   incarnation; the complete `phase5c4_database_incarnation_v1` observation and its authoritative
+   durable registry remain external evidence owned by the independent control plane.
 
 These choices favor a longer, bounded maintenance window over an unproven synchronization or
 rollback claim.
@@ -80,10 +82,15 @@ ingested once and retained immutably in that database; a second copy is anchored
 immutable object storage. The database records the content digest, byte count, and exact object
 version, so neither a path nor the recoverability of one storage system is the sole evidence.
 
-The control database is not a user-facing application dependency for nutrition reads. A
-maintenance-aware release reads only its environment gate for readiness and mutation admission.
-If that gate cannot be read, readiness and mutations fail closed. The database privilege barrier
-still protects the source if an application process has stale state or misses the gate change.
+The control database is not a user-facing application dependency for nutrition reads. Readiness has
+two cumulative layers. Stage 5C4.2b adds a local application-data-plane prerequisite evaluation over
+schema 0018, target identity, local fence history/projection, role topology, and database
+connectivity. Stage 5C4.3 and later add the authoritative environment gate from the independent
+control database. A promotion-capable release is writable-ready only when both layers pass; an
+unavailable or inconsistent control gate fails readiness and mutations closed. The local 0018
+fence is defense in depth and never substitutes for that gate. The source database privilege
+barrier still protects the source if an application process has stale state or misses a gate
+change.
 
 ### 3.2 Roles
 
@@ -106,6 +113,13 @@ any migration or operator role. Operator identity comes from mTLS/OIDC/workload-
 caller-supplied labels are audit references, not authority.
 
 ### 3.3 Write barrier and readiness
+
+Stage 5C4.2b implements only the local target-side prerequisite layer. Its database gate rejects
+ordinary runtime DML unless the target fence is `open_production`, and its application check may
+return an earlier bounded 503. Stage 5C4.2b grants no production principal authority to open that
+fence, so a candidate remains locally non-ready after initialization and qualification. The later
+control-plane environment gate, source freeze, session drain, endpoint routing, and operational
+activation remain authoritative later-stage work.
 
 `MAINTENANCE_REQUESTED` first makes the maintenance gate durable and changes `/api/v1/ready` to a
 safe 503 while `/api/v1/health` remains a liveness-only 200. Mutating requests return a bounded 503.
@@ -547,6 +561,17 @@ after conversion and restart verification complete, apply the PostgreSQL-only ap
 row. It adds target identity, a closed write fence, and immutability enforcement. Run independent
 qualification again at 0018 before producing the candidate seal.
 
+`phase5c4_database_incarnation_v1` remains an externally captured evidence artifact. Revision 0018
+does not create a complete data-plane incarnation table. The later control database stores the
+authoritative durable database-instance registry and combines the 0018 target identity/nonce with
+provider identity, Docker resource evidence, PostgreSQL system/control identity, database OID,
+restore operation, backup lineage, and observed fence evidence. A candidate created from the
+pre-0018 source receives a newly initialized target identity after 0018 is applied. A later exact
+physical restore of an already initialized target deliberately retains that target identity and is
+distinguished as a new database incarnation by its new external restore-operation and provider
+lineage. A separately prepared candidate from the pre-0018 source receives a different new target
+identity. Ordinary application or canary startup never initializes, repairs, rotates, or rekeys it.
+
 The qualifier implementation becomes `phase5c_independent_qualifier_v2` solely to admit and verify
 the exact 0018 promotion schema and closed fence. Its independent queries and
 `phase5c_conversion_qualification_receipt_v1` shape remain unchanged. A receipt produced before
@@ -579,19 +604,226 @@ Revision `0018_phase5c_promotion_prerequisites` creates:
 
 | Table | Essential columns and constraints | Lifecycle / ownership / indexes |
 | --- | --- | --- |
-| `phase5c_promotion_target_identity` | Singleton key `CHECK = 1`; identity version; unique target instance ID and nonce; archive identity; unique conversion run ID; marker and clone-identity digests; initialized time; unique identity digest. Composite `ON DELETE RESTRICT` FKs bind metadata `(archive_identity, marker digest, clone identity)` and run `(id, archive identity, marker digest)`. | Insert once through a fixed-search-path routine; no update/delete/truncate. Owned by `NOLOGIN` owner, unreadable/unwritable by clients. Unique digest and binding indexes. |
+| `phase5c_promotion_target_identity` | Singleton key `CHECK = 1`; identity version; unique target instance ID and nonce; archive identity; unique conversion run ID; marker and clone-identity digests; initialized time; unique identity digest. Composite `ON DELETE RESTRICT` FKs bind metadata `(archive_identity, marker digest, clone identity)` and run `(id, archive identity, marker digest)`. | Insert once through the initialization routine below; no update/delete/truncate. Owned by `nutrition_owner`; no login receives direct DML. Unique digest and binding indexes. |
 | `phase5c_write_fence_state` | Target-instance PK/FK; monotonic epoch; mode in `closed_prequalification`, `closed_cutover`, `open_production`, `closed_incident`, `retired`; attempt/auth/artifact digests with mode-shape checks; last-event digest; server time. | Sole mutable target projection, only through transition routine. Runtime may read mode through a safe function, never update. |
 | `phase5c_write_fence_events` | PK `(target_instance_id, epoch)`; unique event and command IDs; attempt; from/to modes; authorization/artifact-set digests; previous/event digests; server time; target FK RESTRICT. | Append-only. Index event/command/attempt. Transition routine locks state, checks expected epoch/mode, appends event, and updates projection atomically. |
 
+#### Database identity and one-shot initialization
+
+The target row is the 0018 component of later database-incarnation evidence, not a complete
+incarnation registry. Its version is `phase5c_promotion_target_identity_v1`. Its `identity_digest`
+is lowercase SHA-256 over the shared Phase 5C canonical JSON serialization of exactly these keys:
+
+```json
+{
+  "archive_identity": "<64 lowercase hex>",
+  "clone_marker_digest": "<64 lowercase hex>",
+  "conversion_clone_identity_digest": "<64 lowercase hex>",
+  "conversion_run_id": "<lowercase canonical UUID>",
+  "identity_version": "phase5c_promotion_target_identity_v1",
+  "initialized_at": "<UTC timestamp with exactly six fractional digits and Z>",
+  "target_instance_id": "<lowercase canonical UUID>",
+  "target_nonce": "<lowercase canonical UUID>"
+}
+```
+
+JSON object presentation above is explanatory; digest bytes use the existing canonical serializer,
+which sorts keys and emits UTF-8 with no insignificant whitespace. UUIDs, nonce, timestamp, and
+digest are generated inside PostgreSQL. The initialization caller supplies only a command UUID and
+the expected archive identity, conversion-run UUID, clone-marker digest, and conversion-clone
+identity digest.
+
+`nutrition_ops` alone receives `EXECUTE` on
+`public.phase5c_initialize_promotion_target(...)`, a `SECURITY DEFINER` routine owned by the
+`NOLOGIN` `nutrition_owner`. The routine has a fixed `pg_catalog, public` search path, fully
+qualifies every object, rejects any `SESSION_USER` other than `nutrition_ops`, and in one
+transaction:
+
+1. takes transaction-level exclusive advisory lock `pg_advisory_xact_lock(5542018)`, the fixed
+   application-database namespace for target initialization/fence mutation, and verifies exact head
+   `0018_phase5c_promotion_prerequisites`;
+2. verifies exactly one matching immutable clone marker, conversion metadata row, and terminal
+   completed/verified conversion run with the supplied composite bindings;
+3. captures one database time used as both `initialized_at` and the initial event `occurred_at`, then
+   generates target instance ID, target nonce, identity digest, and initial event identity;
+4. inserts the singleton target identity;
+5. inserts fence state at epoch 1 in `closed_prequalification`; and
+6. appends the matching initial fence event with `from_mode`, attempt, authorization, artifact set,
+   and previous-event digest all null.
+
+Initialization is exactly idempotent by command UUID because acknowledgement can be lost. Repeating
+the same command UUID with the same four expected bindings returns the existing identity, state, and
+initial event byte-for-byte. Reusing that command UUID with different bindings fails
+`command_conflict`; any new command after successful initialization fails
+`target_identity_already_initialized`, even if its bindings happen to match. No partial identity or
+fence row survives an error.
+
+`nutrition_migrator` creates the objects as `nutrition_owner` but cannot choose environment-specific
+identity. Runtime, qualifier, canary, application startup, and the bootstrap administrator have no
+normal initialization path. `PUBLIC` has no execution privilege. No login receives direct
+`INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE` on identity, state, or event tables. Readiness, runtime,
+ops inspection, and qualification use separate bounded read-only functions or views with only the
+minimum projected fields.
+
+Identity and event tables also have owner-firing `BEFORE UPDATE OR DELETE` and `BEFORE TRUNCATE`
+rejection triggers with no operational bypass branch; singleton/chain constraints reject duplicate
+inserts through the routines. Fence state is intentionally mutable, but all login-role DML is
+revoked and its only installed operational entry points are the owner-executed initialization and
+transition routines. PostgreSQL cannot distinguish a security-definer owner's statement from
+arbitrary SQL issued after deliberately assuming that owner, so the trust boundary is explicit:
+`nutrition_owner` is `NOLOGIN`, `nutrition_ops` cannot assume it, and `nutrition_migrator` may assume
+it only for reviewed Alembic execution. Using migrator/owner authority after initialization is not
+normal maintenance; it invalidates qualification and requires a new candidate. Tests prove
+identity/event rejection under the owner and prove state-table denial for every operational login,
+while separately recognizing that migrator-owner DDL/DML or superuser authority can dismantle
+enforcement and is outside the ordinary operational authority claim.
+
+#### Closed-state transitions and canonical event chain
+
+The only transitions executable by `nutrition_ops` in Stage 5C4.2b are:
+
+| From | To |
+| --- | --- |
+| initialization | `closed_prequalification` |
+| `closed_prequalification` | `closed_cutover` |
+| `closed_prequalification` | `closed_incident` |
+| `closed_prequalification` | `retired` |
+| `closed_cutover` | `closed_incident` |
+| `closed_cutover` | `retired` |
+| `closed_incident` | `retired` |
+
+There are no transitions out of `retired`. `open_production` remains a valid persisted mode so the
+write gate and future activation can be represented, but the 5C4.2b closed-transition routine
+rejects every transition from or to it. Migration 0018 creates no production path into
+`open_production`. Stage 5C4.7 must add a distinct, narrowly granted activation-only routine after
+the independent control plane has durably marked divergence possible and Stage 5C4.6 has consumed
+activation authorization. It must not widen the ops routine. Later incident/recovery work likewise
+adds its own least-privilege open-to-closed authority. An isolated disposable PostgreSQL fixture may
+act as owner solely to test write-gate behavior in `open_production`; that fixture authority is not
+installed or granted by migration 0018.
+
+`public.phase5c_transition_closed_write_fence(...)` is owned by `nutrition_owner`, executable only
+by `nutrition_ops`, checks `SESSION_USER`, and accepts target instance ID, command UUID, expected
+epoch, expected mode, expected last-event digest, destination mode, and optional attempt,
+authorization, and artifact-set bindings. The latter values are evidence only; neither a caller
+label nor a digest authenticates or authorizes the caller. PostgreSQL login identity plus the exact
+`EXECUTE` grant is the 5C4.2b authority.
+
+The epoch-1 `closed_prequalification` event and projection require attempt, authorization, and
+artifact-set bindings to be null. For later closed modes those bindings may be null or well-formed,
+but the projection must exactly copy the latest event and may never claim a value not in the chain.
+Any future `open_production` event/state requires non-null attempt, authorization, and artifact-set
+digests in addition to the later routine's control-plane checks. Structural presence is evidence
+shape only and never makes a digest authoritative.
+
+The routine locks the singleton fence-state row `FOR UPDATE`, validates all expected values and the
+closed-state graph, assigns `epoch = prior_epoch + 1`, captures one database timestamp, generates
+the event UUID, appends the event, and updates the projection in the same transaction. A stale
+expected value loses without an append. The same command UUID with the same complete logical
+request returns the recorded result; reuse with any changed request field fails `command_conflict`.
+Concurrent distinct commands from one epoch select one winner and all losers fail stale-state
+comparison. Rollback removes both event and projection changes.
+
+Every initializer or fence-transition routine acquires exclusive advisory lock `5542018` before
+locking or reading identity/fence rows. Readiness and qualifier boundaries acquire the shared
+transaction-level form of the same lock before their first identity/fence read. The lock order is
+always advisory lock, identity row if needed, then fence-state row; no code may invert it.
+
+Each event is contract `phase5c_write_fence_event_v1`. Its digest preimage is the shared Phase 5C
+canonical JSON encoding of exactly these keys and value types:
+
+```json
+{
+  "artifact_set_digest": null,
+  "attempt_id": null,
+  "authorization_digest": null,
+  "command_id": "<lowercase canonical UUID>",
+  "contract_version": "phase5c_write_fence_event_v1",
+  "epoch": 1,
+  "event_id": "<lowercase canonical UUID>",
+  "from_mode": null,
+  "occurred_at": "<UTC timestamp with exactly six fractional digits and Z>",
+  "previous_event_digest": null,
+  "target_instance_id": "<lowercase canonical UUID>",
+  "to_mode": "closed_prequalification"
+}
+```
+
+Canonical keys are lexicographically sorted, JSON is UTF-8 without a BOM or insignificant
+whitespace, integers are base-10 without leading zeros, JSON null is literal `null`, UUIDs are
+lowercase hyphenated strings, and timestamps are UTC
+`YYYY-MM-DDTHH:MM:SS.ffffffZ`. Optional digests are either null or exactly 64 lowercase hex
+characters. The database captures and stores `occurred_at` once, constructs these exact bytes, and
+stores lowercase `SHA-256(preimage)` as `event_digest`; callers cannot supply event UUID,
+timestamp, previous digest, or event digest. The initial event has epoch 1, null `from_mode`, and
+null previous digest. Every later event uses the preceding event digest, and the projection's
+`last_event_digest` is the canonical fence-event-chain digest. The Python verifier must recompute
+the same bytes through the single existing Phase 5C canonical serializer. Cross-language golden
+vectors are mandatory; SQL digest assembly may exist only once and may not be duplicated across
+routines.
+
+#### Local mutation and readiness boundary
+
 A statement-level gate trigger covers every table on which the application role has
 `INSERT`, `UPDATE`, or `DELETE`. Missing identity/fence rows or any mode other than
-`open_production` raises a stable maintenance error. A migration assertion and recurring test fail
-if an application-DML-granted table lacks the trigger. DDL, ownership, superuser, bypass, archive,
-and promotion-control privileges are absent from the runtime role.
+`open_production` raises SQLSTATE `P5C01` with stable non-secret code
+`phase5c_write_fence_closed`. It fires before each statement, so a rejected multi-row statement or
+transaction applies no partial statement. The trigger is the authoritative local barrier across
+all processes. Before admitting a statement it takes shared transaction-level advisory lock
+`5542018` and a `FOR SHARE` lock on the validated fence-state row; both remain held until transaction
+end. A close transition therefore waits for every previously admitted write transaction to commit
+or roll back before the new closed event can commit. A transaction begun before closure but making
+its first gated statement afterward observes the closed mode and is rejected. Application
+middleware/dependencies may reject known maintenance state early for a bounded 503, but they are not
+an authorization boundary. A migration assertion and recurring test fail if an
+application-DML-granted table lacks the trigger. DDL, ownership, superuser, bypass, archive, and
+promotion-control privileges are absent from the runtime role. Migration DDL and narrow ops
+routines are not gated application DML; qualification, health, and readiness remain read-only. This
+target fence is not the source-freeze mechanism, which remains the later
+privilege-revocation/session-drain barrier.
 
 The fence is initialized `closed_prequalification`, remains closed through final 0018
 qualification, endpoint switch, and read-only smoke, and opens only after control-plane divergence
 is durably marked possible. Fence state/events are bound separately from the qualified domain root.
+
+Stage 5C4.2b local readiness performs a fresh bounded database evaluation, not a process-cached
+decision. It verifies connectivity, exact schema 0018, target identity and composite bindings,
+fence projection/event-chain consistency, the expected runtime database identity and 5C4.2a role
+topology, and current local mode. Local writable readiness is true only for `open_production`.
+Because no 5C4.2b production principal can open the fence, a real candidate remains intentionally
+503 until later activation authority exists.
+
+Runtime startup installs the local admission evaluator and mutation-error mapping before serving
+application routes. A database outage, closed fence, or invalid prerequisite may leave the process
+live for `/api/v1/health`, but it remains non-ready and cannot run mutation-capable startup or
+background work. Startup never creates or repairs identity/fence rows. Readiness is re-evaluated
+from PostgreSQL on every probe, and the per-statement database trigger closes the check/act race.
+
+`GET /api/v1/health` remains liveness-only and preserves status 200 with exact body
+`{"status":"ok"}` without a database prerequisite. A successful `GET /api/v1/ready` preserves
+status 200 and exact body `{"status":"ready"}`. A local readiness failure preserves the existing
+status 503 and body `{"detail":"Service is not ready"}`; its stable machine-readable classification
+is returned in `X-Nutrition-Readiness-Reason`. The allowlist is:
+
+- `database_unavailable`;
+- `schema_revision_mismatch`;
+- `target_identity_missing`;
+- `target_identity_invalid`;
+- `fence_state_missing`;
+- `fence_state_invalid`;
+- `fence_event_chain_invalid`;
+- `write_fence_closed_prequalification`;
+- `write_fence_closed_cutover`;
+- `write_fence_closed_incident`;
+- `write_fence_retired`;
+- `runtime_role_mismatch`; and
+- `role_topology_invalid`.
+
+The response never includes SQL, exception text, credentials, role membership detail, or topology
+evidence. At Stage 5C4.3 and later, the final evaluator combines this local result with the
+independent environment gate and adds fail-closed control-gate reasons without redefining these
+local codes. A valid local result never overrides an absent, negative, stale, or inconsistent
+control gate.
 
 The same migration hardens existing terminal evidence:
 
@@ -607,9 +839,11 @@ been initialized; otherwise it fails explicitly. A qualified or promoted target 
 
 ### 10.3 Common constraints
 
-All UUIDs are server-generated. All time is `timestamptz` from control-database time. SHA-256
-columns use a domain/check matching exactly 64 lowercase hexadecimal characters. Bounded identity,
-type, reason, and version strings use restrictive checks; arbitrary exception text is not stored.
+Identity, nonce, event, and evidence UUIDs are server-generated; caller-supplied command UUIDs are
+idempotency keys, not authority. All time is `timestamptz`: 0018 rows use the application database's
+server time captured once per event, while later control-plane rows use control-database time.
+SHA-256 columns use a domain/check matching exactly 64 lowercase hexadecimal characters. Bounded
+identity, type, reason, and version strings use restrictive checks; arbitrary exception text is not stored.
 Every foreign key uses `ON DELETE RESTRICT`. Immutable tables reject `UPDATE`, `DELETE`, and
 `TRUNCATE` through privileges and triggers. Every canonical artifact has a unique digest and byte
 count; typed evidence tables reference that artifact so cross-artifact relations are enforced by
@@ -656,13 +890,79 @@ The deployment also needs a separately reviewed role/grant migration before the 
 - a `NOLOGIN` owner/migration role owns schemas and objects;
 - a non-owner runtime login receives only required table, sequence, and function privileges;
 - a read-only verifier role cannot execute user-creating or mutating functions;
-- an operations role may change runtime grants and inspect sessions but cannot alter evidence;
+- an operations role may change runtime grants, inspect sessions, initialize the one-shot target
+  identity/fence, and execute only the closed-state transition routine; it cannot directly alter
+  evidence or open production;
 - archive-schema privileges are absent from the runtime role; and
 - default privileges preserve this split for later migrations.
 
 The role migration must inventory and reproduce every existing grant and ownership before changing
 anything. Preflight rejects a source on which the runtime login still owns objects or can inherit a
 write-capable owner role.
+
+### 10.6 Stage 5C4.2b boundary
+
+| In scope | Out of scope |
+| --- | --- |
+| Migration `0018_phase5c_promotion_prerequisites` | Full durable database-incarnation registry |
+| Target identity and exactly idempotent one-shot initialization | Control-plane environment/attempt FSM |
+| Local fence projection, append-only events, and closed-state ops transitions | Authoritative independent maintenance gate |
+| Database write-gate triggers and coverage assertion | Signed authorization verification or consumption |
+| Promotion-prerequisite and existing terminal-evidence immutability | Operational authority to enter `open_production` |
+| Local readiness prerequisite evaluation and stable safe reason codes | Control-plane WORM chain/outbox |
+| Explicit read-only canary process/startup capability | Endpoint switching or Caddy/Docker orchestration |
+| Qualifier-v2 admission and separate prerequisite evidence | Post-cutover canary execution |
+| Exact qualification-receipt-v1 compatibility tests | Activation, cutback, or backup/restore orchestration |
+
+The 5C4.2b canary work is configuration and startup capability only. It introduces
+`NUTRITION_PROCESS_MODE=runtime|canary`; `runtime` is the compatibility default, while every
+promotion deployment manifest must set the value explicitly. Canary mode requires a
+`nutrition_canary` session with
+`default_transaction_read_only=on`, disabled private-user auto-creation, an already-existing
+synthetic canary user, no background jobs or mutation-capable startup hooks, no cache warming or
+persistent cache writes, and no recents, favorites, idempotency, or other mutation-capable route.
+Startup fails before serving if any prohibited capability is enabled, and it never initializes or
+repairs protected records. Synthetic fixtures are provisioned before source freeze by a separate
+authenticated preparation step. Routing, process replacement, execution of post-switch probes,
+activation, and cutback remain Stage 5C4.7.
+
+Canary startup accepts only a valid target identity/chain with mode `closed_prequalification` or
+`closed_cutover`; it rejects `open_production`, `closed_incident`, and `retired`. It verifies
+`SESSION_USER`/`CURRENT_USER`, transaction-read-only settings, and the pre-existing user through
+read-only queries under shared advisory lock `5542018`. Concurrent canary processes therefore make
+the same admission decision without initialization or a process-local mutex. They do not make the
+public writable-readiness endpoint return 200: the later canary runner reaches the exact GET
+allowlist through its private Stage 5C4.7 execution path while public readiness remains maintenance
+503.
+
+Qualifier v2 admits exact 0018 only and verifies target identity, the initial
+`closed_prequalification` fence, the complete event chain, gate-trigger coverage, role topology,
+object ownership, and immutability prerequisites through `nutrition_qualifier` in a read-only
+repeatable snapshot. After setting transaction characteristics and before its first prerequisite
+read, it takes `pg_advisory_xact_lock_shared(5542018)` and holds it through receipt and separate
+prerequisite-evidence computation. Initialization or fence transition therefore cannot interleave
+with qualification; multiple qualifier or canary/readiness readers may coexist. It emits the exact
+existing `phase5c_conversion_qualification_receipt_v1` keys, versions, canonical bytes, and digest.
+Target identity/fence evidence is emitted separately for later candidate sealing and is excluded
+from all historical/domain roots. A pre-0018 receipt remains valid historical evidence but is
+inadmissible for promotion.
+
+The separate 5C4.2b result is an in-memory/read-only prerequisite projection, not a persisted
+promotion artifact: target identity digest, fence mode/epoch/event-chain digest, exact schema,
+trigger-coverage digest, role-qualification digest, and immutability-qualification digest. Stage
+5C4.3+ collectors must re-query those values and construct the already versioned qualification
+observation/candidate seal rather than trusting cached 5C4.2b output. New v2 admission failures use
+only these stable codes while preserving all existing historical qualifier codes:
+
+- `qualification_schema_revision_unsupported`;
+- `qualification_target_identity_missing`;
+- `qualification_target_identity_invalid`;
+- `qualification_fence_state_invalid`;
+- `qualification_fence_event_chain_invalid`;
+- `qualification_gate_trigger_coverage_invalid`;
+- `qualification_role_topology_invalid`;
+- `qualification_immutability_invalid`; and
+- `qualification_concurrent_fence_change`.
 
 ## 11. Operator command and API contract
 
@@ -919,10 +1219,13 @@ and use of a source/target endpoint with a replaced database incarnation. Postgr
 Python validator—must reject them.
 
 **Fence and maintenance tests** prove missing/closed fence fails writes, every app-DML table is
-gated, open permits expected writes, transition compare-and-swap is atomic, source role revocation
-survives reconnect attempts, maintenance readiness is 503 while liveness remains 200, and failure
-to read the control gate fails closed. Two concurrent opens create one fence event. A schema test
-fails whenever a newly writable table lacks a gate trigger.
+gated, an isolated owner-only fixture in `open_production` permits expected writes, closed-state
+transition compare-and-swap is atomic, source role revocation survives reconnect attempts,
+maintenance readiness is 503 while liveness remains 200, and failure to read the later control gate
+fails closed. Two concurrent 5C4.2b closed-state commands select one winner; later activation tests
+must separately prove that two concurrent authorized opens create one fence event. A schema test
+fails whenever a newly writable table lacks a gate trigger. Golden vectors prove PostgreSQL and the
+shared Python canonical serializer produce identical target-identity and fence-event bytes/digests.
 
 **Concurrency/replay tests** run two promotions for one environment, two consumers for one
 authorization, stale state versions/generations, duplicate provider callbacks, same command/same
@@ -1056,7 +1359,8 @@ Each stage is independently reviewable and must land only after its named tests 
 | --- | --- | --- |
 | 5C4.0 Decisions and contracts | Resolve all blockers in section 20; freeze versioned artifact/root/state/role/provider contracts and threat model; no runtime changes | GPT-5.6 Sol / xhigh |
 | 5C4.1 Pure contract library | Canonical parsers/digests, strict shapes, database-incarnation, artifact-set, policy, performance-v2, quarantine/block, authorization envelopes; exhaustive unit/tamper tests | GPT-5.3-Codex / high |
-| 5C4.2 Application prerequisites | Role/grant migration, 0018 identity/fence/immutability migration, qualifier-v2 admission with receipt-v1 shape, maintenance-aware readiness/mutation denial; migration/PostgreSQL tests | GPT-5.3-Codex / xhigh |
+| 5C4.2a Role prerequisites | Role/grant conversion and exact privilege-manifest qualification; no identity, fence, readiness, or runtime work | GPT-5.3-Codex / xhigh |
+| 5C4.2b Data-plane promotion prerequisites | 0018 target identity/closed fence/immutability, local readiness and mutation denial, canary startup capability, qualifier-v2 admission with exact receipt-v1 shape; no complete incarnation registry or open authority | GPT-5.3-Codex / xhigh |
 | 5C4.3 Independent control plane | Separate Alembic graph, typed artifact/binding/evidence schema, FSM, event hash chain, procedures, replay/concurrency enforcement, WORM outbox | GPT-5.3-Codex / xhigh |
 | 5C4.4 Admission and performance | Artifact ingestion/finalization, live DB re-query, candidate/root reconciliation, T0 v2 ratification evaluator, tier gating, zero-block/quarantine workflows | GPT-5.3-Codex / xhigh |
 | 5C4.5 Backup and restore | One approved provider adapter, physical identity/LSN/timeline evidence, exact restore verifier, PITR/WAL checks, corruption/timeout simulations | GPT-5.3-Codex / xhigh |
@@ -1092,7 +1396,10 @@ Phase 5C4 does not:
 
 The architecture above resolves freeze-before-clone, the external control plane, target 0018 fence,
 zero-block policy, explicit quarantine acceptance, exact T0 scan vector, and activation as the
-irreversible boundary.
+irreversible boundary. The Stage 5C4.2b clarification also fixes the data-plane/incarnation split,
+ops-only one-shot initialization, closed-state transition graph, canonical event preimage, layered
+readiness, and canary startup-versus-execution boundary. These are implementation contracts, not
+permission to pull later control-plane or cutover work into 5C4.2b.
 
 **Phase 5C4.0 status update (2026-07-16):** these infrastructure-specific decisions are closed for
 the narrowly defined `phase5c4_controlled_portfolio_demo_v1` profile by

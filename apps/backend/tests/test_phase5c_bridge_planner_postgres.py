@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from importlib import import_module
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,9 @@ import threading
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Engine, create_engine, inspect, make_url, text
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import Engine, create_engine, event, inspect, make_url, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
 
@@ -34,7 +37,9 @@ from app.operators.historical_recipe_planner import plan_historical_recipe_conve
 from app.operators.historical_recipe_qualification import (
     Phase5CQualificationError,
     qualify_historical_recipe_conversion,
+    qualify_historical_recipe_conversion_v2,
 )
+from app.operators import phase5c4_roles as roles
 from app.operators.phase5c_contracts import (
     CONTROL_REVISION,
     CONVERSION_PLAN_VERSION,
@@ -87,9 +92,16 @@ def conversion_clone() -> tuple[Engine, str, str]:
         pool_pre_ping=True,
         isolation_level="AUTOCOMMIT",
     )
+    managed_roles_before: set[str] = set()
     try:
         with admin.connect() as connection:
             connection.execute(text("SELECT 1"))
+            managed_roles_before = set(
+                connection.scalars(
+                    text("SELECT rolname FROM pg_roles WHERE rolname = ANY(:roles)"),
+                    {"roles": list(roles.MANAGED_ROLES)},
+                )
+            )
     except Exception as exc:  # pragma: no cover - depends on developer environment.
         admin.dispose()
         pytest.skip(f"PostgreSQL conversion database unavailable: {exc}")
@@ -101,8 +113,8 @@ def conversion_clone() -> tuple[Engine, str, str]:
     with admin.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{database_name}"'))
     admin.dispose()
-    database_url = make_url(POSTGRES_URL).set(database=database_name).render_as_string(
-        hide_password=False
+    database_url = (
+        make_url(POSTGRES_URL).set(database=database_name).render_as_string(hide_password=False)
     )
     engine = create_engine(database_url, pool_pre_ping=True, poolclass=NullPool)
     try:
@@ -117,6 +129,16 @@ def conversion_clone() -> tuple[Engine, str, str]:
         try:
             with cleanup.connect() as connection:
                 connection.execute(text(f'DROP DATABASE "{database_name}" WITH (FORCE)'))
+                managed_roles_after = set(
+                    connection.scalars(
+                        text("SELECT rolname FROM pg_roles WHERE rolname = ANY(:roles)"),
+                        {"roles": list(roles.MANAGED_ROLES)},
+                    )
+                )
+                if not managed_roles_before and managed_roles_after == set(roles.MANAGED_ROLES):
+                    connection.execute(
+                        text("DROP ROLE IF EXISTS " + ", ".join(roles.MANAGED_ROLES))
+                    )
         finally:
             cleanup.dispose()
 
@@ -124,6 +146,21 @@ def conversion_clone() -> tuple[Engine, str, str]:
 def _upgrade(database_url: str, revision: str) -> None:
     result = _run_alembic(database_url, revision)
     assert result.returncode == 0, result.stderr
+
+
+def _upgrade_0018_as_migrator(engine: Engine) -> None:
+    migration = import_module("app.migrations.versions.0018_phase5c_promotion_prerequisites")
+    with engine.connect() as connection:
+        connection.execute(text(f"SET SESSION AUTHORIZATION {roles.MIGRATOR_ROLE}"))
+        roles.assume_migration_owner(connection)
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            migration.upgrade()
+        connection.execute(
+            text("UPDATE alembic_version SET version_num = :revision"),
+            {"revision": migration.revision},
+        )
+        connection.commit()
 
 
 def _downgrade(database_url: str, revision: str) -> None:
@@ -228,9 +265,7 @@ def _seed_recipe(
                 {
                     "ingredient_id": ids["ingredient_food"],
                     "ingredient_owner": (
-                        ids["foreign_user"]
-                        if foreign_ingredient_owner
-                        else ids["user"]
+                        ids["foreign_user"] if foreign_ingredient_owner else ids["user"]
                     ),
                 },
             )
@@ -410,24 +445,23 @@ def _seed_historical_log_and_ocr(engine: Engine, ids: dict[str, UUID]) -> None:
         )
 
 
-def _seed_qualification_preservation_rows(
-    engine: Engine, archive_schema: str
-) -> None:
+def _seed_qualification_preservation_rows(engine: Engine, archive_schema: str) -> None:
     archive = engine.dialect.identifier_preparer.quote(archive_schema)
     with engine.connect() as connection:
-        row = connection.execute(
-            text(
-                f"SELECT recipe.user_id, ingredient.ingredient_food_item_id, "
-                f"ingredient.serving_definition_id FROM {archive}.recipes recipe "
-                f"JOIN {archive}.recipe_ingredients ingredient "
-                "ON ingredient.recipe_id = recipe.id ORDER BY recipe.id LIMIT 1"
+        row = (
+            connection.execute(
+                text(
+                    f"SELECT recipe.user_id, ingredient.ingredient_food_item_id, "
+                    f"ingredient.serving_definition_id FROM {archive}.recipes recipe "
+                    f"JOIN {archive}.recipe_ingredients ingredient "
+                    "ON ingredient.recipe_id = recipe.id ORDER BY recipe.id LIMIT 1"
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         nutrient_id = connection.scalar(
-            text(
-                "SELECT id FROM food_nutrients WHERE food_item_id = :food_id "
-                "ORDER BY id LIMIT 1"
-            ),
+            text("SELECT id FROM food_nutrients WHERE food_item_id = :food_id ORDER BY id LIMIT 1"),
             {"food_id": row["ingredient_food_item_id"]},
         )
     _seed_historical_log_and_ocr(
@@ -447,7 +481,7 @@ def _seed_qualification_preservation_rows(
                 "schema_version, trace_snapshot, client_request_id, "
                 "request_fingerprint) VALUES "
                 "(:id, :user_id, :food_id, 'legacy-parser', 'camera', 'v1', "
-                "'{\"private\":\"trace payload\"}'::jsonb, :request_id, "
+                '\'{"private":"trace payload"}\'::jsonb, :request_id, '
                 "'qualification-fixture')"
             ),
             {
@@ -462,9 +496,7 @@ def _seed_qualification_preservation_rows(
 def _mutate_run_preservation_state(engine: Engine, mutation: str) -> None:
     with engine.begin() as connection:
         if mutation == "daily_nutrition":
-            connection.execute(
-                text("UPDATE daily_log_nutrient_snapshots SET amount = amount + 1")
-            )
+            connection.execute(text("UPDATE daily_log_nutrient_snapshots SET amount = amount + 1"))
         elif mutation == "daily_deletion":
             connection.execute(text("DELETE FROM daily_log_nutrient_snapshots"))
             connection.execute(text("DELETE FROM daily_logs"))
@@ -479,14 +511,18 @@ def _mutate_run_preservation_state(engine: Engine, mutation: str) -> None:
                 {"user_id": user_id},
             )
         elif mutation == "daily_revision_linkage":
-            revision = connection.execute(
-                text(
-                    "SELECT revision.id, revision.user_id, amount.id AS amount_id "
-                    "FROM recipe_publication_revisions revision "
-                    "JOIN recipe_publication_amount_definitions amount "
-                    "ON amount.revision_id = revision.id ORDER BY amount.display_order LIMIT 1"
+            revision = (
+                connection.execute(
+                    text(
+                        "SELECT revision.id, revision.user_id, amount.id AS amount_id "
+                        "FROM recipe_publication_revisions revision "
+                        "JOIN recipe_publication_amount_definitions amount "
+                        "ON amount.revision_id = revision.id ORDER BY amount.display_order LIMIT 1"
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
             connection.execute(
                 text(
                     "UPDATE daily_logs SET user_id = :user_id, "
@@ -501,22 +537,14 @@ def _mutate_run_preservation_state(engine: Engine, mutation: str) -> None:
             )
         elif mutation == "daily_serving_linkage":
             connection.execute(
-                text(
-                    "UPDATE daily_log_nutrient_snapshots "
-                    "SET serving_definition_id = NULL"
-                )
+                text("UPDATE daily_log_nutrient_snapshots SET serving_definition_id = NULL")
             )
         elif mutation == "daily_nutrient_authority":
             connection.execute(
-                text(
-                    "UPDATE daily_log_nutrient_snapshots "
-                    "SET source_food_nutrient_id = NULL"
-                )
+                text("UPDATE daily_log_nutrient_snapshots SET source_food_nutrient_id = NULL")
             )
         elif mutation == "ocr_provenance":
-            connection.execute(
-                text("UPDATE parse_results SET parser_version = 'mutated-parser'")
-            )
+            connection.execute(text("UPDATE parse_results SET parser_version = 'mutated-parser'"))
         elif mutation == "ocr_correction":
             connection.execute(
                 text(
@@ -577,9 +605,7 @@ def _prepare_isolation_evidence(
         clone_identity = safe_database_identity(connection)
         if source_production_identity_digest is None:
             source_unsigned = {
-                key: value
-                for key, value in clone_identity.items()
-                if key != "identity_digest"
+                key: value for key, value in clone_identity.items() if key != "identity_digest"
             }
             source_unsigned["schema"] = "recorded_production_source"
             source_production_identity_digest = canonical_digest(source_unsigned)
@@ -612,9 +638,11 @@ def _prepare_isolation_evidence(
 
 def _archive_rows(engine: Engine, archive_schema: str, table: str) -> list[dict]:
     with engine.connect() as connection:
-        rows = connection.execute(
-            text(f'SELECT * FROM "{archive_schema}"."{table}" ORDER BY id')
-        ).mappings().all()
+        rows = (
+            connection.execute(text(f'SELECT * FROM "{archive_schema}"."{table}" ORDER BY id'))
+            .mappings()
+            .all()
+        )
     return [dict(row) for row in rows]
 
 
@@ -639,12 +667,18 @@ def test_bridge_creates_verified_archive_placeholders_and_is_restart_safe(
     inventory = _inventory(engine)
     evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
     with engine.connect() as connection:
-        recipes_before = [dict(row) for row in connection.execute(
-            text("SELECT * FROM recipes ORDER BY id")
-        ).mappings().all()]
-        ingredients_before = [dict(row) for row in connection.execute(
-            text("SELECT * FROM recipe_ingredients ORDER BY id")
-        ).mappings().all()]
+        recipes_before = [
+            dict(row)
+            for row in connection.execute(text("SELECT * FROM recipes ORDER BY id"))
+            .mappings()
+            .all()
+        ]
+        ingredients_before = [
+            dict(row)
+            for row in connection.execute(text("SELECT * FROM recipe_ingredients ORDER BY id"))
+            .mappings()
+            .all()
+        ]
 
     first = _bridge(engine, archive_schema, inventory, evidence)
     second = _bridge(engine, archive_schema, inventory, evidence)
@@ -725,26 +759,19 @@ def test_bridge_rejects_incompatible_archive_lookup_index_without_replacing_it(
     recipes_before = _archive_rows(engine, archive_schema, "recipes")
     ingredients_before = _archive_rows(engine, archive_schema, "recipe_ingredients")
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                f'DROP INDEX "{archive_schema}".'
-                '"ix_recipe_ingredients_recipe_id"'
-            )
-        )
+        connection.execute(text(f'DROP INDEX "{archive_schema}"."ix_recipe_ingredients_recipe_id"'))
         connection.execute(
             text(
                 'CREATE INDEX "ix_recipe_ingredients_recipe_id" ON '
                 f'"{archive_schema}"."recipe_ingredients" '
-                '(ingredient_food_item_id)'
+                "(ingredient_food_item_id)"
             )
         )
 
     with pytest.raises(Phase5CAdmissionError, match="lookup index definition differs"):
         _bridge(engine, archive_schema, inventory, evidence)
 
-    assert _archive_recipe_index_columns(engine, archive_schema) == (
-        "ingredient_food_item_id",
-    )
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("ingredient_food_item_id",)
     assert _archive_rows(engine, archive_schema, "recipes") == recipes_before
     assert _archive_rows(engine, archive_schema, "recipe_ingredients") == ingredients_before
 
@@ -759,12 +786,7 @@ def test_bridge_readmission_at_0017_provisions_a_missing_archive_lookup_index(
         archive_schema,
     )
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                f'DROP INDEX "{archive_schema}".'
-                '"ix_recipe_ingredients_recipe_id"'
-            )
-        )
+        connection.execute(text(f'DROP INDEX "{archive_schema}"."ix_recipe_ingredients_recipe_id"'))
 
     assert _archive_recipe_index_columns(engine, archive_schema) is None
     result = _bridge(engine, archive_schema, inventory, evidence)
@@ -781,9 +803,7 @@ def test_bridge_rejects_unsupported_revision_and_schema_signature(
     inventory = _inventory(engine)
     evidence = _prepare_isolation_evidence(engine, archive_schema, inventory)
     with engine.begin() as connection:
-        connection.execute(
-            text("UPDATE alembic_version SET version_num = '0002_snapshot_fk'")
-        )
+        connection.execute(text("UPDATE alembic_version SET version_num = '0002_snapshot_fk'"))
     with pytest.raises(Phase5CAdmissionError, match="source revision"):
         _bridge(engine, archive_schema, inventory, evidence)
 
@@ -835,13 +855,19 @@ def test_clone_marker_preflight_is_required_and_changes_no_domain_or_revision_ro
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
             "0003_usda_source_identity"
         )
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipes WHERE id = :id"), {"id": ids["recipe"]}
-        ) == 1
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_ingredients WHERE id = :id"),
-            {"id": ids["ingredient"]},
-        ) == 1
+        assert (
+            connection.scalar(
+                text("SELECT count(*) FROM recipes WHERE id = :id"), {"id": ids["recipe"]}
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                text("SELECT count(*) FROM recipe_ingredients WHERE id = :id"),
+                {"id": ids["ingredient"]},
+            )
+            == 1
+        )
 
     established = establish_conversion_clone_marker(
         engine,
@@ -866,9 +892,7 @@ def test_clone_marker_preflight_is_required_and_changes_no_domain_or_revision_ro
         )
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 1
         assert connection.scalar(text("SELECT count(*) FROM recipe_ingredients")) == 1
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_clone_marker")
-        ) == 1
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_clone_marker")) == 1
 
 
 def test_clone_admission_rejects_source_equality_and_mismatched_evidence(
@@ -949,10 +973,7 @@ def test_clone_admission_rejects_unsupported_evidence_versions(
 
     with engine.begin() as connection:
         connection.execute(
-            text(
-                "UPDATE phase5c_conversion_clone_marker "
-                "SET marker_format_version = 'unsupported'"
-            )
+            text("UPDATE phase5c_conversion_clone_marker SET marker_format_version = 'unsupported'")
         )
     with pytest.raises(Phase5CAdmissionError, match="marker version"):
         _bridge(engine, archive_schema, inventory, evidence)
@@ -1055,15 +1076,14 @@ def test_concurrent_bridges_serialize_with_maintenance_admission(
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [
-            executor.submit(_bridge, engine, archive_schema, inventory, evidence)
-            for _ in range(2)
+            executor.submit(_bridge, engine, archive_schema, inventory, evidence) for _ in range(2)
         ]
         results = [future.result(timeout=20) for future in futures]
     assert sorted(result.payload["archive_created"] for result in results) == [False, True]
     with engine.connect() as connection:
-        assert connection.scalar(
-            text(f'SELECT count(*) FROM "{archive_schema}".bridge_metadata')
-        ) == 1
+        assert (
+            connection.scalar(text(f'SELECT count(*) FROM "{archive_schema}".bridge_metadata')) == 1
+        )
 
 
 def _prepare_planner_clone(
@@ -1169,9 +1189,7 @@ def _execute_conversion(
         evidence.get("execution_attestation"),
     )
     if attestation_payload is None:
-        attestation_payload = _build_execution_attestation(
-            engine, inventory, evidence, plan
-        )
+        attestation_payload = _build_execution_attestation(engine, inventory, evidence, plan)
     return execute_historical_recipe_conversion(
         engine,
         plan_payload=plan,
@@ -1200,13 +1218,9 @@ def _qualify_conversion(
         execution_attestation_payload=kwargs.pop(
             "execution_attestation_payload", evidence["execution_attestation"]
         ),
-        execution_receipt_payload=kwargs.pop(
-            "execution_receipt_payload", execution_receipt
-        ),
+        execution_receipt_payload=kwargs.pop("execution_receipt_payload", execution_receipt),
         archive_schema=kwargs.pop("archive_schema_override", archive_schema),
-        conversion_clone_id=kwargs.pop(
-            "conversion_clone_id", evidence["conversion_clone_id"]
-        ),
+        conversion_clone_id=kwargs.pop("conversion_clone_id", evidence["conversion_clone_id"]),
         clone_marker_identity=kwargs.pop(
             "clone_marker_identity", evidence["clone_marker_identity"]
         ),
@@ -1221,9 +1235,7 @@ def _redigest_attestation(attestation: dict, **changes) -> dict:
             changed["schema_signature"][key.removeprefix("schema_signature__")] = value
         else:
             changed[key] = value
-    unsigned = {
-        key: value for key, value in changed.items() if key != "attestation_digest"
-    }
+    unsigned = {key: value for key, value in changed.items() if key != "attestation_digest"}
     changed["attestation_digest"] = canonical_digest(unsigned)
     return changed
 
@@ -1284,8 +1296,8 @@ def _domain_fingerprints(engine: Engine, archive_schema: str) -> dict[str, str]:
             result[f"archive.{table}"] = str(
                 connection.scalar(
                     text(
-                        f'SELECT md5(COALESCE(jsonb_agg(to_jsonb(row_value) '
-                        f'ORDER BY row_value.id)::text, \'[]\')) '
+                        f"SELECT md5(COALESCE(jsonb_agg(to_jsonb(row_value) "
+                        f"ORDER BY row_value.id)::text, '[]')) "
                         f'FROM "{archive_schema}"."{table}" row_value'
                     )
                 )
@@ -1359,9 +1371,10 @@ def test_planner_is_deterministic_classifies_every_recipe_and_changes_no_domain_
     assert "timestamp" not in rendered.casefold()
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_metadata")) == 1
-        assert connection.scalar(
-            text("SELECT manifest_digest FROM phase5c_conversion_metadata")
-        ) == payload["manifest_digest"]
+        assert (
+            connection.scalar(text("SELECT manifest_digest FROM phase5c_conversion_metadata"))
+            == payload["manifest_digest"]
+        )
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
             CONTROL_REVISION
         )
@@ -1485,18 +1498,14 @@ def test_planner_rejects_nonmaintenance_database_session(
         blocker.close()
         blocker_engine.dispose()
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_metadata")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_metadata")) == 0
 
 
 def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     with engine.connect() as connection:
         projection_id = connection.scalar(
             text(f'SELECT food_item_id FROM "{archive_schema}".recipes')
@@ -1507,8 +1516,7 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
                     dict(row)
                     for row in connection.execute(
                         text(
-                            "SELECT * FROM serving_definitions "
-                            "WHERE food_item_id = :id ORDER BY id"
+                            "SELECT * FROM serving_definitions WHERE food_item_id = :id ORDER BY id"
                         ),
                         {"id": projection_id},
                     ).mappings()
@@ -1518,10 +1526,7 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
                 [
                     dict(row)
                     for row in connection.execute(
-                        text(
-                            "SELECT * FROM food_nutrients "
-                            "WHERE food_item_id = :id ORDER BY id"
-                        ),
+                        text("SELECT * FROM food_nutrients WHERE food_item_id = :id ORDER BY id"),
                         {"id": projection_id},
                     ).mappings()
                 ]
@@ -1530,10 +1535,7 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
                 [
                     dict(row)
                     for row in connection.execute(
-                        text(
-                            "SELECT * FROM food_sources "
-                            "WHERE food_item_id = :id ORDER BY id"
-                        ),
+                        text("SELECT * FROM food_sources WHERE food_item_id = :id ORDER BY id"),
                         {"id": projection_id},
                     ).mappings()
                 ]
@@ -1572,45 +1574,40 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
     assert subject["projection_food_item_id"] == str(projection_id)
     with engine.connect() as connection:
         recipe = connection.execute(text("SELECT * FROM recipes")).mappings().one()
-        archived_recipe = connection.execute(
-            text(f'SELECT * FROM "{archive_schema}".recipes')
-        ).mappings().one()
-        revision = connection.execute(
-            text("SELECT * FROM recipe_publication_revisions")
-        ).mappings().one()
+        archived_recipe = (
+            connection.execute(text(f'SELECT * FROM "{archive_schema}".recipes')).mappings().one()
+        )
+        revision = (
+            connection.execute(text("SELECT * FROM recipe_publication_revisions")).mappings().one()
+        )
         assert recipe["id"] == archived_recipe["id"]
         assert recipe["user_id"] == archived_recipe["user_id"]
         assert recipe["published_food_item_id"] == archived_recipe["food_item_id"]
         assert recipe["serving_count_yield"] == archived_recipe["serving_count"]
-        assert recipe["final_cooked_weight_grams"] == archived_recipe[
-            "final_yield_quantity"
-        ]
+        assert recipe["final_cooked_weight_grams"] == archived_recipe["final_yield_quantity"]
         assert revision["revision_number"] == 1
         assert revision["creation_origin"] == "legacy_projection_capture"
         assert revision["provenance_confidence"] == "transition_baseline"
         assert recipe["active_publication_revision_id"] == revision["id"]
         assert recipe["needs_republish"] is True
-        assert connection.scalar(
-            text(
-                "SELECT recipe_publication_revision_id FROM food_items WHERE id = :id"
-            ),
-            {"id": projection_id},
-        ) == revision["id"]
-        ingredient = connection.execute(
-            text("SELECT * FROM recipe_ingredients")
-        ).mappings().one()
-        archived_ingredient = connection.execute(
-            text(f'SELECT * FROM "{archive_schema}".recipe_ingredients')
-        ).mappings().one()
+        assert (
+            connection.scalar(
+                text("SELECT recipe_publication_revision_id FROM food_items WHERE id = :id"),
+                {"id": projection_id},
+            )
+            == revision["id"]
+        )
+        ingredient = connection.execute(text("SELECT * FROM recipe_ingredients")).mappings().one()
+        archived_ingredient = (
+            connection.execute(text(f'SELECT * FROM "{archive_schema}".recipe_ingredients'))
+            .mappings()
+            .one()
+        )
         assert ingredient["id"] == archived_ingredient["id"]
-        assert ingredient["food_item_id"] == archived_ingredient[
-            "ingredient_food_item_id"
-        ]
+        assert ingredient["food_item_id"] == archived_ingredient["ingredient_food_item_id"]
         assert ingredient["amount_quantity"] == archived_ingredient["quantity"]
         assert ingredient["amount_unit"] == archived_ingredient["unit"]
-        assert ingredient["serving_definition_id"] == archived_ingredient[
-            "serving_definition_id"
-        ]
+        assert ingredient["serving_definition_id"] == archived_ingredient["serving_definition_id"]
         assert ingredient["resolved_gram_amount"] == archived_ingredient["gram_amount"]
         assert ingredient["preparation_note"] == archived_ingredient["preparation_note"]
         assert ingredient["position"] == archived_ingredient["sort_order"]
@@ -1620,8 +1617,7 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
                     dict(row)
                     for row in connection.execute(
                         text(
-                            "SELECT * FROM serving_definitions "
-                            "WHERE food_item_id = :id ORDER BY id"
+                            "SELECT * FROM serving_definitions WHERE food_item_id = :id ORDER BY id"
                         ),
                         {"id": projection_id},
                     ).mappings()
@@ -1631,10 +1627,7 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
                 [
                     dict(row)
                     for row in connection.execute(
-                        text(
-                            "SELECT * FROM food_nutrients "
-                            "WHERE food_item_id = :id ORDER BY id"
-                        ),
+                        text("SELECT * FROM food_nutrients WHERE food_item_id = :id ORDER BY id"),
                         {"id": projection_id},
                     ).mappings()
                 ]
@@ -1643,10 +1636,7 @@ def test_converter_creates_transition_baseline_and_restart_verifies_exact_state(
                 [
                     dict(row)
                     for row in connection.execute(
-                        text(
-                            "SELECT * FROM food_sources "
-                            "WHERE food_item_id = :id ORDER BY id"
-                        ),
+                        text("SELECT * FROM food_sources WHERE food_item_id = :id ORDER BY id"),
                         {"id": projection_id},
                     ).mappings()
                 ]
@@ -1663,9 +1653,7 @@ def test_planning_only_attestation_can_plan_but_cannot_execute(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence = _prepare_planner_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence = _prepare_planner_clone(engine, database_url, archive_schema)
     plan = plan_historical_recipe_conversion(
         engine,
         inventory_payload=inventory,
@@ -1674,9 +1662,7 @@ def test_planning_only_attestation_can_plan_but_cannot_execute(
         clone_marker_identity=evidence["clone_marker_identity"],
         attestation_payload=evidence["attestation"],
     ).payload
-    execution_authorization = _build_execution_attestation(
-        engine, inventory, evidence, plan
-    )
+    execution_authorization = _build_execution_attestation(engine, inventory, evidence, plan)
     planning_only = _redigest_attestation(
         execution_authorization,
         scope="planning",
@@ -1703,12 +1689,8 @@ def test_planning_only_attestation_can_plan_but_cannot_execute(
         )
     assert planning_only["attestation_digest"] not in str(failure.value)
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_outcomes")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_outcomes")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
 
 
@@ -1716,9 +1698,7 @@ def test_bridge_only_attestation_cannot_execute(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     bridge_only = _prepare_isolation_evidence(
         engine,
         archive_schema,
@@ -1741,9 +1721,7 @@ def test_bridge_only_attestation_cannot_execute(
             attestation_payload=bridge_only,
         )
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
 
 
@@ -1751,9 +1729,7 @@ def test_execution_only_attestation_executes_but_cannot_bridge_or_plan(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence = _prepare_planner_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence = _prepare_planner_clone(engine, database_url, archive_schema)
     plan = plan_historical_recipe_conversion(
         engine,
         inventory_payload=inventory,
@@ -1762,9 +1738,7 @@ def test_execution_only_attestation_executes_but_cannot_bridge_or_plan(
         clone_marker_identity=evidence["clone_marker_identity"],
         attestation_payload=evidence["attestation"],
     ).payload
-    execution_only = _build_execution_attestation(
-        engine, inventory, evidence, plan
-    )
+    execution_only = _build_execution_attestation(engine, inventory, evidence, plan)
 
     with pytest.raises(Phase5CAdmissionError, match="scope"):
         bridge_legacy_recipes(
@@ -1801,9 +1775,7 @@ def test_combined_planning_execution_attestation_permits_both_operations(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence = _prepare_planner_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence = _prepare_planner_clone(engine, database_url, archive_schema)
     plan = plan_historical_recipe_conversion(
         engine,
         inventory_payload=inventory,
@@ -1846,33 +1818,17 @@ def test_execution_attestation_must_match_every_clone_and_plan_evidence_field(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     authorization = evidence["execution_attestation"]
     altered_authorizations = (
-        _redigest_attestation(
-            authorization, clone_marker_identity="phase5c-other-marker"
-        ),
-        _redigest_attestation(
-            authorization, conversion_clone_identity_digest="0" * 64
-        ),
+        _redigest_attestation(authorization, clone_marker_identity="phase5c-other-marker"),
+        _redigest_attestation(authorization, conversion_clone_identity_digest="0" * 64),
         _redigest_attestation(authorization, inventory_digest="1" * 64),
-        _redigest_attestation(
-            authorization, schema_signature__name="unsupported_signature"
-        ),
-        _redigest_attestation(
-            authorization, schema_signature__digest="2" * 64
-        ),
-        _redigest_attestation(
-            authorization, conversion_rules_version="unsupported_rules"
-        ),
-        _redigest_attestation(
-            authorization, source_production_identity_digest="3" * 64
-        ),
-        _redigest_attestation(
-            authorization, clone_database_identity_digest="4" * 64
-        ),
+        _redigest_attestation(authorization, schema_signature__name="unsupported_signature"),
+        _redigest_attestation(authorization, schema_signature__digest="2" * 64),
+        _redigest_attestation(authorization, conversion_rules_version="unsupported_rules"),
+        _redigest_attestation(authorization, source_production_identity_digest="3" * 64),
+        _redigest_attestation(authorization, clone_database_identity_digest="4" * 64),
         _redigest_attestation(authorization, clone_marker_digest="5" * 64),
     )
 
@@ -1906,12 +1862,8 @@ def test_execution_attestation_must_match_every_clone_and_plan_evidence_field(
     assert "private-attestation-payload" not in safe_failures
     assert "postgresql" not in safe_failures
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_outcomes")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_outcomes")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
 
 
@@ -1919,9 +1871,7 @@ def test_execution_attestation_authorizes_only_its_exact_plan_and_archive_eviden
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     authorization = evidence["execution_attestation"]
     invalid_digest = deepcopy(plan)
     invalid_digest["decisions"][0]["reason_code"] = "changed_decision_reason"
@@ -1961,12 +1911,8 @@ def test_execution_attestation_authorizes_only_its_exact_plan_and_archive_eviden
                 attestation_payload=authorization,
             )
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_outcomes")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_outcomes")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
 
 
@@ -1974,9 +1920,7 @@ def test_execution_attestation_creation_rejects_invalid_or_foreign_plan_evidence
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence = _prepare_planner_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence = _prepare_planner_clone(engine, database_url, archive_schema)
     plan = plan_historical_recipe_conversion(
         engine,
         inventory_payload=inventory,
@@ -2040,9 +1984,7 @@ def test_execution_attestation_creation_rejects_invalid_or_foreign_plan_evidence
                 conversion_plan_payload=plan,
             )
 
-    authorization = _build_execution_attestation(
-        engine, inventory, evidence, plan
-    )
+    authorization = _build_execution_attestation(engine, inventory, evidence, plan)
     rendered = canonical_json(authorization)
     assert set(authorization["conversion_plan_evidence"]) == {
         "contract_version",
@@ -2064,9 +2006,7 @@ def test_execution_authorization_is_rechecked_after_operation_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     original = converter_module.verify_clone_isolation_evidence
     calls = 0
 
@@ -2093,9 +2033,7 @@ def test_execution_authorization_is_rechecked_after_operation_lock(
         _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     assert calls == 2
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
 
 
@@ -2103,9 +2041,7 @@ def test_restart_requires_exact_same_execution_authorization(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     replacement = _build_execution_attestation(
         engine,
@@ -2119,9 +2055,7 @@ def test_restart_requires_exact_same_execution_authorization(
         decisions__0__reason_code="replacement_plan_decision",
     )
     other_plan_authorization = deepcopy(evidence["execution_attestation"])
-    other_plan_authorization["conversion_plan_evidence"] = (
-        _plan_authorization_evidence(other_plan)
-    )
+    other_plan_authorization["conversion_plan_evidence"] = _plan_authorization_evidence(other_plan)
     other_plan_authorization = _redigest_attestation(other_plan_authorization)
 
     with pytest.raises(
@@ -2150,21 +2084,27 @@ def test_restart_requires_exact_same_execution_authorization(
             attestation_payload=replacement,
         )
     with engine.connect() as connection:
-        run = connection.execute(
-            text(
-                "SELECT execution_attestation_version, "
-                "execution_isolation_contract_version, "
-                "execution_attestation_identity, execution_attestation_scope, "
-                "execution_attestation_digest FROM phase5c_conversion_runs"
+        run = (
+            connection.execute(
+                text(
+                    "SELECT execution_attestation_version, "
+                    "execution_isolation_contract_version, "
+                    "execution_attestation_identity, execution_attestation_scope, "
+                    "execution_attestation_digest FROM phase5c_conversion_runs"
+                )
             )
-        ).mappings().one()
-    assert run["execution_attestation_identity"] == evidence[
-        "execution_attestation"
-    ]["operator_attestation_identity"]
+            .mappings()
+            .one()
+        )
+    assert (
+        run["execution_attestation_identity"]
+        == evidence["execution_attestation"]["operator_attestation_identity"]
+    )
     assert run["execution_attestation_scope"] == "execution"
-    assert run["execution_attestation_digest"] == evidence[
-        "execution_attestation"
-    ]["attestation_digest"]
+    assert (
+        run["execution_attestation_digest"]
+        == evidence["execution_attestation"]["attestation_digest"]
+    )
 
 
 def test_converter_marks_exact_authored_projection_equivalence_current(
@@ -2182,10 +2122,7 @@ def test_converter_marks_exact_authored_projection_equivalence_current(
             {"recipe_id": ids["recipe"]},
         )
         connection.execute(
-            text(
-                "UPDATE serving_definitions SET gram_weight = NULL "
-                "WHERE id = :serving_id"
-            ),
+            text("UPDATE serving_definitions SET gram_weight = NULL WHERE id = :serving_id"),
             {"serving_id": ids["projection_serving"]},
         )
     inventory = _inventory(engine)
@@ -2202,9 +2139,7 @@ def test_converter_marks_exact_authored_projection_equivalence_current(
     ).payload
     _upgrade(database_url, EXECUTION_REVISION)
 
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert report["counts"]["converted"] == 1
     with engine.connect() as connection:
@@ -2222,9 +2157,7 @@ def test_converter_persists_quarantine_and_block_without_domain_mutation(
         classified_fixture=True,
     )
 
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert report["counts"] == {
         "converted": 1,
@@ -2246,16 +2179,17 @@ def test_converter_persists_quarantine_and_block_without_domain_mutation(
     }
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 1
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 1
-        assert connection.scalar(
-            text(
-                "SELECT count(*) FROM phase5c_conversion_outcomes "
-                "WHERE execution_disposition IN ('quarantined', 'blocked') "
-                "AND target_recipe_id IS NULL AND created_revision_id IS NULL"
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 1
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM phase5c_conversion_outcomes "
+                    "WHERE execution_disposition IN ('quarantined', 'blocked') "
+                    "AND target_recipe_id IS NULL AND created_revision_id IS NULL"
+                )
             )
-        ) == 2
+            == 2
+        )
 
 
 def test_converter_converts_multiple_independent_recipes(
@@ -2269,25 +2203,24 @@ def test_converter_converts_multiple_independent_recipes(
         convert_count=2,
     )
 
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert report["counts"]["converted"] == 2
     assert report["verification_result"] == "verified"
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 2
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 2
-        assert connection.scalar(
-            text(
-                "SELECT count(*) FROM recipes recipe "
-                "JOIN recipe_publication_revisions revision "
-                "ON revision.id = recipe.active_publication_revision_id "
-                "WHERE revision.recipe_id = recipe.id AND revision.revision_number = 1"
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 2
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM recipes recipe "
+                    "JOIN recipe_publication_revisions revision "
+                    "ON revision.id = recipe.active_publication_revision_id "
+                    "WHERE revision.recipe_id = recipe.id AND revision.revision_number = 1"
+                )
             )
-        ) == 2
+            == 2
+        )
 
 
 def test_converter_processes_nested_recipes_in_dependency_order(
@@ -2334,15 +2267,18 @@ def test_converter_processes_nested_recipes_in_dependency_order(
     assert report["counts"]["converted"] == 2
     assert execution_order == [child["recipe"], parent["recipe"]]
     with engine.connect() as connection:
-        assert connection.scalar(
-            text(
-                "SELECT count(*) FROM recipes parent "
-                "JOIN recipe_ingredients ingredient ON ingredient.recipe_id = parent.id "
-                "JOIN recipes child ON child.published_food_item_id = ingredient.food_item_id "
-                "WHERE parent.id = :parent_id AND child.id = :child_id"
-            ),
-            {"parent_id": parent["recipe"], "child_id": child["recipe"]},
-        ) == 1
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM recipes parent "
+                    "JOIN recipe_ingredients ingredient ON ingredient.recipe_id = parent.id "
+                    "JOIN recipes child ON child.published_food_item_id = ingredient.food_item_id "
+                    "WHERE parent.id = :parent_id AND child.id = :child_id"
+                ),
+                {"parent_id": parent["recipe"], "child_id": child["recipe"]},
+            )
+            == 1
+        )
 
 
 def test_converter_does_not_convert_parent_after_child_execution_failure(
@@ -2384,17 +2320,13 @@ def test_converter_does_not_convert_parent_after_child_execution_failure(
         failure_hook=fail_child,
     ).payload
 
-    reasons = {
-        row["source_recipe_id"]: row["reason_code"] for row in report["subjects"]
-    }
+    reasons = {row["source_recipe_id"]: row["reason_code"] for row in report["subjects"]}
     assert reasons[str(child["recipe"])] == "subject_execution_failure"
     assert reasons[str(parent["recipe"])] == "dependency_execution_incomplete"
     assert report["counts"]["failed"] == 2
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 0
 
 
 def test_source_graph_cycle_is_planned_and_persisted_as_blocked(
@@ -2440,22 +2372,16 @@ def test_source_graph_cycle_is_planned_and_persisted_as_blocked(
         "quarantine": 0,
         "block": 2,
     }
-    assert {row["reason_code"] for row in plan["decisions"]} == {
-        "nested_recipe_cycle"
-    }
+    assert {row["reason_code"] for row in plan["decisions"]} == {"nested_recipe_cycle"}
     _upgrade(database_url, EXECUTION_REVISION)
 
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert report["counts"]["blocked"] == 2
     assert report["counts"]["converted"] == 0
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 0
 
 
 def test_converter_leaves_nonempty_daily_log_and_ocr_history_unchanged(
@@ -2491,9 +2417,7 @@ def test_converter_leaves_nonempty_daily_log_and_ocr_history_unchanged(
         if table in protected_tables
     }
 
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    )
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     after = {
         table: digest
         for table, digest in _domain_fingerprints(engine, archive_schema).items()
@@ -2526,9 +2450,7 @@ def test_converter_subject_failure_rolls_back_every_domain_stage(
     stage: str,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
 
     def fail_at_stage(current_stage: str, _recipe_id: UUID) -> None:
         if current_stage == stage:
@@ -2550,41 +2472,33 @@ def test_converter_subject_failure_rolls_back_every_domain_stage(
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipe_ingredients")) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 0
-        assert connection.scalar(
-            text(
-                "SELECT count(*) FROM food_items "
-                "WHERE recipe_publication_revision_id IS NOT NULL"
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 0
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM food_items "
+                    "WHERE recipe_publication_revision_id IS NOT NULL"
+                )
             )
-        ) == 0
-        assert connection.scalar(
-            text(f'SELECT count(*) FROM "{archive_schema}".recipes')
-        ) == 1
+            == 0
+        )
+        assert connection.scalar(text(f'SELECT count(*) FROM "{archive_schema}".recipes')) == 1
 
 
 def test_converter_rejects_source_mutation_before_creating_run(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     with engine.begin() as connection:
         connection.execute(
-            text(
-                f'UPDATE "{archive_schema}".recipe_ingredients '
-                "SET quantity = quantity + 1"
-            )
+            text(f'UPDATE "{archive_schema}".recipe_ingredients SET quantity = quantity + 1')
         )
 
     with pytest.raises(Phase5CAdmissionError, match="source checksums changed"):
         _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
 
 
@@ -2592,9 +2506,7 @@ def test_converter_rejects_supporting_nutrition_mutation_before_creating_run(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     with engine.begin() as connection:
         connection.execute(
             text("UPDATE food_nutrients SET amount = amount + 1 WHERE source = 'manual'")
@@ -2603,9 +2515,7 @@ def test_converter_rejects_supporting_nutrition_mutation_before_creating_run(
     with pytest.raises(Phase5CAdmissionError, match="source checksums changed"):
         _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
 
 
 def test_subject_scoped_payload_reproduces_every_plan_v2_checksum(
@@ -2662,12 +2572,7 @@ def test_phase5c_subject_lookup_indexes_round_trip_for_custom_archive(
     )
     _upgrade(database_url, "0016_phase5c_execution")
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                f'DROP INDEX "{archive_schema}".'
-                '"ix_recipe_ingredients_recipe_id"'
-            )
-        )
+        connection.execute(text(f'DROP INDEX "{archive_schema}"."ix_recipe_ingredients_recipe_id"'))
 
     assert _archive_recipe_index_columns(engine, archive_schema) is None
     pre_index_readmission = _bridge(engine, archive_schema, inventory, evidence)
@@ -2704,42 +2609,31 @@ def test_phase5c_0017_rejects_an_incompatible_registered_archive_index(
     )
     _upgrade(database_url, "0016_phase5c_execution")
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                f'DROP INDEX "{archive_schema}".'
-                '"ix_recipe_ingredients_recipe_id"'
-            )
-        )
+        connection.execute(text(f'DROP INDEX "{archive_schema}"."ix_recipe_ingredients_recipe_id"'))
         connection.execute(
             text(
                 'CREATE INDEX "ix_recipe_ingredients_recipe_id" ON '
                 f'"{archive_schema}"."recipe_ingredients" '
-                '(ingredient_food_item_id)'
+                "(ingredient_food_item_id)"
             )
         )
 
     result = _run_alembic(database_url, EXECUTION_REVISION)
 
     assert result.returncode != 0
-    assert "Phase 5C archive lookup index definition differs" in (
-        result.stdout + result.stderr
-    )
+    assert "Phase 5C archive lookup index definition differs" in (result.stdout + result.stderr)
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
             "0016_phase5c_execution"
         )
-    assert _archive_recipe_index_columns(engine, archive_schema) == (
-        "ingredient_food_item_id",
-    )
+    assert _archive_recipe_index_columns(engine, archive_schema) == ("ingredient_food_item_id",)
 
 
 def test_subject_scoped_verification_rejects_source_mutation_before_domain_writes(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     mutated = False
 
     def mutate_at_subject_start(event, _recipe_id, _disposition, _attempt):
@@ -2749,8 +2643,7 @@ def test_subject_scoped_verification_rejects_source_mutation_before_domain_write
             with engine.begin() as mutation_connection:
                 mutation_connection.execute(
                     text(
-                        f'UPDATE "{archive_schema}".recipe_ingredients '
-                        "SET quantity = quantity + 1"
+                        f'UPDATE "{archive_schema}".recipe_ingredients SET quantity = quantity + 1'
                     )
                 )
 
@@ -2768,18 +2661,14 @@ def test_subject_scoped_verification_rejects_source_mutation_before_domain_write
     assert report["verification_result"] == "failed"
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 0
 
 
 def test_final_run_verification_rejects_source_mutation_after_subject_checkpoint(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     mutated = False
 
     def mutate_at_subject_end(event, _recipe_id, _disposition, _attempt):
@@ -2789,8 +2678,7 @@ def test_final_run_verification_rejects_source_mutation_after_subject_checkpoint
             with engine.begin() as mutation_connection:
                 mutation_connection.execute(
                     text(
-                        f'UPDATE "{archive_schema}".recipe_ingredients '
-                        "SET quantity = quantity + 1"
+                        f'UPDATE "{archive_schema}".recipe_ingredients SET quantity = quantity + 1'
                     )
                 )
 
@@ -2808,18 +2696,20 @@ def test_final_run_verification_rejects_source_mutation_after_subject_checkpoint
     assert report["verification_result"] == "failed"
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 1
-        outcome = connection.execute(
-            text(
-                "SELECT checkpoint_state, verification_state "
-                "FROM phase5c_conversion_outcomes"
+        outcome = (
+            connection.execute(
+                text("SELECT checkpoint_state, verification_state FROM phase5c_conversion_outcomes")
             )
-        ).mappings().one()
-        run = connection.execute(
-            text(
-                "SELECT execution_state, verification_state "
-                "FROM phase5c_conversion_runs"
+            .mappings()
+            .one()
+        )
+        run = (
+            connection.execute(
+                text("SELECT execution_state, verification_state FROM phase5c_conversion_runs")
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
     assert dict(outcome) == {
         "checkpoint_state": "completed",
         "verification_state": "verified",
@@ -2849,9 +2739,7 @@ def test_final_run_verification_rejects_daily_log_and_ocr_semantic_mutation(
     mutation: str,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     _seed_qualification_preservation_rows(engine, archive_schema)
     mutated = False
 
@@ -2874,12 +2762,13 @@ def test_final_run_verification_rejects_daily_log_and_ocr_semantic_mutation(
     assert report["counts"]["converted"] == 1
     assert report["verification_result"] == "failed"
     with engine.connect() as connection:
-        run = connection.execute(
-            text(
-                "SELECT execution_state, verification_state "
-                "FROM phase5c_conversion_runs"
+        run = (
+            connection.execute(
+                text("SELECT execution_state, verification_state FROM phase5c_conversion_runs")
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
     assert dict(run) == {
         "execution_state": "failed",
         "verification_state": "failed",
@@ -2890,9 +2779,7 @@ def test_interrupted_run_reuses_immutable_binding_metadata_on_restart(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
 
     def interrupt_at_subject_start(event, _recipe_id, _disposition, _attempt):
         if event == "subject_start":
@@ -2910,9 +2797,9 @@ def test_interrupted_run_reuses_immutable_binding_metadata_on_restart(
     columns = ", ".join(converter_module._RUN_BINDING_COLUMNS)
     with engine.connect() as connection:
         before = dict(
-            connection.execute(
-                text(f"SELECT {columns} FROM phase5c_conversion_runs")
-            ).mappings().one()
+            connection.execute(text(f"SELECT {columns} FROM phase5c_conversion_runs"))
+            .mappings()
+            .one()
         )
 
     execution_receipt = _execute_conversion(
@@ -2928,9 +2815,9 @@ def test_interrupted_run_reuses_immutable_binding_metadata_on_restart(
     ).payload
     with engine.connect() as connection:
         after = dict(
-            connection.execute(
-                text(f"SELECT {columns} FROM phase5c_conversion_runs")
-            ).mappings().one()
+            connection.execute(text(f"SELECT {columns} FROM phase5c_conversion_runs"))
+            .mappings()
+            .one()
         )
 
     assert after == before
@@ -2943,9 +2830,7 @@ def test_domain_committed_checkpoint_resumes_without_duplicate_revision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     original = converter_module._post_commit_verify
     interrupted = False
 
@@ -2960,25 +2845,22 @@ def test_domain_committed_checkpoint_resumes_without_duplicate_revision(
     with pytest.raises(KeyboardInterrupt):
         _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     with engine.connect() as connection:
-        assert connection.scalar(
-            text(
-                "SELECT count(*) FROM phase5c_conversion_outcomes "
-                "WHERE checkpoint_state = 'domain_committed'"
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM phase5c_conversion_outcomes "
+                    "WHERE checkpoint_state = 'domain_committed'"
+                )
             )
-        ) == 1
+            == 1
+        )
 
-    first = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    )
-    second = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    )
+    first = _execute_conversion(engine, archive_schema, inventory, evidence, plan)
+    second = _execute_conversion(engine, archive_schema, inventory, evidence, plan)
 
     assert first.to_json() == second.to_json()
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 1
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 1
 
 
 @pytest.mark.parametrize(
@@ -2995,9 +2877,7 @@ def test_restart_rejects_tampered_run_level_binding(
     column: str,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
 
     def interrupt_at_subject_start(event, _recipe_id, _disposition, _attempt):
         if event == "subject_start":
@@ -3029,9 +2909,7 @@ def test_converter_rejects_preexisting_current_recipe_collision(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     with engine.begin() as connection:
         owner_id = connection.scalar(text("SELECT user_id FROM food_items LIMIT 1"))
         connection.execute(
@@ -3045,18 +2923,14 @@ def test_converter_rejects_preexisting_current_recipe_collision(
     with pytest.raises(Phase5CAdmissionError, match="before the first conversion run"):
         _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
 
 
 def test_converter_rejects_unknown_plan_fields_and_a_different_plan_digest(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     unknown = deepcopy(plan)
     unknown["unsupported_execution_hint"] = True
     with pytest.raises(Phase5CAdmissionError, match="unsupported v2 shape"):
@@ -3072,18 +2946,14 @@ def test_converter_rejects_unknown_plan_fields_and_a_different_plan_digest(
     ):
         _execute_conversion(engine, archive_schema, inventory, evidence, changed)
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
 
 
 def test_converter_restart_rejects_tampered_completed_domain_state(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     _execute_conversion(engine, archive_schema, inventory, evidence, plan)
     with engine.begin() as connection:
         connection.execute(text("UPDATE recipes SET name = 'tampered current state'"))
@@ -3100,9 +2970,7 @@ def test_post_commit_verification_failure_preserves_immutable_domain_and_marks_r
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
 
     def fail_verification(*args, **kwargs):
         raise converter_module.Phase5CSubjectError("private_verification_detail")
@@ -3112,37 +2980,32 @@ def test_post_commit_verification_failure_preserves_immutable_domain_and_marks_r
         "_verify_converted_outcome",
         fail_verification,
     )
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert report["counts"]["failed"] == 1
-    assert report["subjects"][0]["reason_code"] == (
-        "post_commit_verification_failed"
-    )
+    assert report["subjects"][0]["reason_code"] == ("post_commit_verification_failed")
     assert "private_verification_detail" not in canonical_json(report)
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 1
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 1
-        assert connection.scalar(
-            text(
-                "SELECT count(*) FROM phase5c_conversion_outcomes "
-                "WHERE checkpoint_state = 'failed' "
-                "AND execution_disposition = 'converted' "
-                "AND created_revision_id IS NOT NULL"
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 1
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM phase5c_conversion_outcomes "
+                    "WHERE checkpoint_state = 'failed' "
+                    "AND execution_disposition = 'converted' "
+                    "AND created_revision_id IS NOT NULL"
+                )
             )
-        ) == 1
+            == 1
+        )
 
 
 def test_converter_rejects_nonmaintenance_database_session(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     blocker_engine = create_engine(database_url, pool_pre_ping=True)
     blocker = blocker_engine.connect()
     blocker.execute(text("SELECT 1"))
@@ -3154,9 +3017,7 @@ def test_converter_rejects_nonmaintenance_database_session(
         blocker.close()
         blocker_engine.dispose()
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 0
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 0
 
 
 def test_concurrent_converters_serialize_and_return_one_verified_receipt(
@@ -3164,9 +3025,7 @@ def test_concurrent_converters_serialize_and_return_one_verified_receipt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     barrier = threading.Barrier(2)
     local = threading.local()
     original = converter_module.assert_database_session_isolation
@@ -3198,13 +3057,9 @@ def test_concurrent_converters_serialize_and_return_one_verified_receipt(
 
     assert reports[0].to_json() == reports[1].to_json()
     with engine.connect() as connection:
-        assert connection.scalar(
-            text("SELECT count(*) FROM phase5c_conversion_runs")
-        ) == 1
+        assert connection.scalar(text("SELECT count(*) FROM phase5c_conversion_runs")) == 1
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 1
-        assert connection.scalar(
-            text("SELECT count(*) FROM recipe_publication_revisions")
-        ) == 1
+        assert connection.scalar(text("SELECT count(*) FROM recipe_publication_revisions")) == 1
 
 
 def test_converter_retries_only_bounded_retryable_database_failures(
@@ -3212,9 +3067,7 @@ def test_converter_retries_only_bounded_retryable_database_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     original = converter_module._convert_subject
     attempts = 0
 
@@ -3230,9 +3083,7 @@ def test_converter_retries_only_bounded_retryable_database_failures(
 
     monkeypatch.setattr(converter_module, "_convert_subject", flaky_convert)
 
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert attempts == 3
     assert report["counts"]["converted"] == 1
@@ -3253,9 +3104,7 @@ def test_converter_bounds_retry_exhaustion_and_does_not_retry_other_failures(
     reason_code: str,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     attempts = 0
 
     class DatabaseError(RuntimeError):
@@ -3269,9 +3118,7 @@ def test_converter_bounds_retry_exhaustion_and_does_not_retry_other_failures(
         raise DBAPIError(None, None, original)
 
     monkeypatch.setattr(converter_module, "_convert_subject", always_fail)
-    report = _execute_conversion(
-        engine, archive_schema, inventory, evidence, plan
-    ).payload
+    report = _execute_conversion(engine, archive_schema, inventory, evidence, plan).payload
 
     assert attempts == expected_attempts
     assert report["subjects"][0]["reason_code"] == reason_code
@@ -3282,9 +3129,7 @@ def test_independent_qualification_is_deterministic_private_and_read_only(
     conversion_clone: tuple[Engine, str, str],
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     execution_receipt = _execute_conversion(
         engine, archive_schema, inventory, evidence, plan
     ).payload
@@ -3300,10 +3145,7 @@ def test_independent_qualification_is_deterministic_private_and_read_only(
                 "outcomes": [
                     dict(row)
                     for row in connection.execute(
-                        text(
-                            "SELECT * FROM phase5c_conversion_outcomes "
-                            "ORDER BY source_recipe_id"
-                        )
+                        text("SELECT * FROM phase5c_conversion_outcomes ORDER BY source_recipe_id")
                     ).mappings()
                 ],
                 "recipes": [
@@ -3345,10 +3187,7 @@ def test_independent_qualification_is_deterministic_private_and_read_only(
                 "outcomes": [
                     dict(row)
                     for row in connection.execute(
-                        text(
-                            "SELECT * FROM phase5c_conversion_outcomes "
-                            "ORDER BY source_recipe_id"
-                        )
+                        text("SELECT * FROM phase5c_conversion_outcomes ORDER BY source_recipe_id")
                     ).mappings()
                 ],
                 "recipes": [
@@ -3367,9 +3206,7 @@ def completed_qualification_clone(
     conversion_clone: tuple[Engine, str, str],
 ) -> tuple[Engine, str, str, dict, dict, dict, dict]:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     execution_receipt = _execute_conversion(
         engine, archive_schema, inventory, evidence, plan
     ).payload
@@ -3382,6 +3219,135 @@ def completed_qualification_clone(
         plan,
         execution_receipt,
     )
+
+
+def test_qualifier_v2_preserves_receipt_v1_bytes_and_excludes_target_state(
+    completed_qualification_clone: tuple[Engine, str, str, dict, dict, dict, dict],
+) -> None:
+    (
+        engine,
+        database_url,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    ) = completed_qualification_clone
+    receipt_v1 = _qualify_conversion(
+        engine,
+        archive_schema,
+        inventory,
+        evidence,
+        plan,
+        execution_receipt,
+    )
+    with engine.connect() as connection:
+        managed_roles_preexisting = set(
+            connection.scalars(
+                text("SELECT rolname FROM pg_roles WHERE rolname = ANY(:roles)"),
+                {"roles": list(roles.MANAGED_ROLES)},
+            )
+        )
+
+    role_qualification = roles.provision_role_policy(engine, disposable=True)
+    assert role_qualification["qualified"] is True
+    _upgrade_0018_as_migrator(engine)
+
+    initialize = text(
+        "SELECT public.phase5c_initialize_promotion_target("
+        "CAST(:command AS uuid), :archive, CAST(:run AS uuid), :marker, :clone)"
+    )
+    with engine.connect() as connection:
+        connection.execute(text(f"SET SESSION AUTHORIZATION {roles.OPS_ROLE}"))
+        connection.commit()
+        connection.execute(
+            initialize,
+            {
+                "command": uuid4(),
+                "archive": plan["source_identity"]["archive_identity"],
+                "run": execution_receipt["run_id"],
+                "marker": plan["isolation_evidence"]["clone_marker_digest"],
+                "clone": plan["source_identity"]["conversion_clone_identity_digest"],
+            },
+        )
+        connection.commit()
+
+    qualifier_engine: Engine
+    if not managed_roles_preexisting:
+        password = f"phase5c-{uuid4().hex}"
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f"ALTER ROLE {roles.QUALIFIER_ROLE} PASSWORD '{password}'")
+        qualifier_engine = create_engine(
+            make_url(database_url).set(
+                username=roles.QUALIFIER_ROLE,
+                password=password,
+            ),
+            poolclass=NullPool,
+            hide_parameters=True,
+        )
+    else:
+        qualifier_engine = create_engine(
+            database_url,
+            poolclass=NullPool,
+            hide_parameters=True,
+        )
+
+        @event.listens_for(qualifier_engine, "connect")
+        def _assume_qualifier_session(dbapi_connection, _connection_record) -> None:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute(f"SET SESSION AUTHORIZATION {roles.QUALIFIER_ROLE}")
+                cursor.execute("SET default_transaction_read_only = on")
+            dbapi_connection.commit()
+
+    try:
+        with engine.connect() as connection:
+            before = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT count(*) FROM phase5c_promotion_target_identity), "
+                    "(SELECT count(*) FROM phase5c_write_fence_state), "
+                    "(SELECT count(*) FROM phase5c_write_fence_events)"
+                )
+            ).one()
+        result_v2 = qualify_historical_recipe_conversion_v2(
+            qualifier_engine,
+            plan_payload=plan,
+            inventory_payload=inventory,
+            execution_attestation_payload=evidence["execution_attestation"],
+            execution_receipt_payload=execution_receipt,
+            archive_schema=archive_schema,
+            conversion_clone_id=evidence["conversion_clone_id"],
+            clone_marker_identity=evidence["clone_marker_identity"],
+        )
+        with engine.connect() as connection:
+            after = connection.execute(
+                text(
+                    "SELECT "
+                    "(SELECT count(*) FROM phase5c_promotion_target_identity), "
+                    "(SELECT count(*) FROM phase5c_write_fence_state), "
+                    "(SELECT count(*) FROM phase5c_write_fence_events)"
+                )
+            ).one()
+    finally:
+        qualifier_engine.dispose()
+
+    assert before == after == (1, 1, 1)
+    assert result_v2.receipt.payload == receipt_v1.payload
+    assert result_v2.receipt.to_json() == receipt_v1.to_json()
+    assert result_v2.receipt.payload["receipt_digest"] == receipt_v1.payload["receipt_digest"]
+    assert set(result_v2.prerequisites) == {
+        "target_identity_digest",
+        "fence_mode",
+        "fence_epoch",
+        "event_chain_digest",
+        "schema_revision",
+        "trigger_coverage_digest",
+        "role_qualification_digest",
+        "immutability_qualification_digest",
+    }
+    serialized_receipt = canonical_json(result_v2.receipt.payload)
+    assert "phase5c_promotion_target_identity" not in serialized_receipt
+    assert "phase5c_write_fence" not in serialized_receipt
 
 
 @pytest.mark.parametrize(
@@ -3557,9 +3523,7 @@ def test_independent_qualification_rejects_incomplete_runs(
                 )
             )
 
-    with pytest.raises(
-        Phase5CQualificationError, match="qualification_run_incomplete"
-    ):
+    with pytest.raises(Phase5CQualificationError, match="qualification_run_incomplete"):
         _qualify_conversion(
             engine,
             archive_schema,
@@ -3625,12 +3589,8 @@ def test_independent_qualification_rechecks_evidence_after_operation_lock(
             raise Phase5CQualificationError("qualification_evidence_mismatch")
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(
-        qualification_module, "_verify_isolation", reject_second_check
-    )
-    with pytest.raises(
-        Phase5CQualificationError, match="qualification_evidence_mismatch"
-    ):
+    monkeypatch.setattr(qualification_module, "_verify_isolation", reject_second_check)
+    with pytest.raises(Phase5CQualificationError, match="qualification_evidence_mismatch"):
         _qualify_conversion(
             engine,
             archive_schema,
@@ -3656,9 +3616,7 @@ def test_independent_qualification_refuses_nonmaintenance_session(
     ) = completed_qualification_clone
     with engine.connect() as unrelated:
         unrelated.execute(text("SELECT 1"))
-        with pytest.raises(
-            Phase5CQualificationError, match="qualification_evidence_mismatch"
-        ):
+        with pytest.raises(Phase5CQualificationError, match="qualification_evidence_mismatch"):
             _qualify_conversion(
                 engine,
                 archive_schema,
@@ -3788,13 +3746,12 @@ def test_independent_qualification_accepts_mixed_convert_and_quarantine(
             "qualification_ocr_state_changed",
         ),
         (
-            "UPDATE parse_results SET parsed_payload = "
-            "'{\"changed\":\"private\"}'::jsonb",
+            'UPDATE parse_results SET parsed_payload = \'{"changed":"private"}\'::jsonb',
             "qualification_ocr_state_changed",
         ),
         (
             "UPDATE ocr_nutrition_confirmation_traces SET trace_snapshot = "
-            "'{\"changed\":\"private\"}'::jsonb",
+            '\'{"changed":"private"}\'::jsonb',
             "qualification_ocr_state_changed",
         ),
     ),
@@ -3805,9 +3762,7 @@ def test_independent_qualification_detects_daily_log_and_ocr_mutation(
     reason_code: str,
 ) -> None:
     engine, database_url, archive_schema = conversion_clone
-    inventory, evidence, plan = _prepare_execution_clone(
-        engine, database_url, archive_schema
-    )
+    inventory, evidence, plan = _prepare_execution_clone(engine, database_url, archive_schema)
     _seed_qualification_preservation_rows(engine, archive_schema)
     execution_receipt = _execute_conversion(
         engine, archive_schema, inventory, evidence, plan
@@ -3871,9 +3826,7 @@ def test_independent_qualification_detects_current_dependency_cycle(
             },
         )
 
-    with pytest.raises(
-        Phase5CQualificationError, match="qualification_dependency_cycle"
-    ):
+    with pytest.raises(Phase5CQualificationError, match="qualification_dependency_cycle"):
         _qualify_conversion(
             engine,
             archive_schema,
@@ -3928,9 +3881,7 @@ def test_independent_qualification_rejects_dependency_on_quarantined_subject(
             },
         )
 
-    with pytest.raises(
-        Phase5CQualificationError, match="qualification_dependency_invalid"
-    ):
+    with pytest.raises(Phase5CQualificationError, match="qualification_dependency_invalid"):
         _qualify_conversion(
             engine,
             archive_schema,
@@ -3990,9 +3941,9 @@ def test_independent_qualification_detects_unexpected_revision(
         execution_receipt,
     ) = completed_qualification_clone
     with engine.begin() as connection:
-        recipe = connection.execute(
-            text("SELECT id, user_id FROM recipes LIMIT 1")
-        ).mappings().one()
+        recipe = (
+            connection.execute(text("SELECT id, user_id FROM recipes LIMIT 1")).mappings().one()
+        )
         connection.execute(
             text(
                 "INSERT INTO recipe_publication_revisions "
@@ -4061,14 +4012,18 @@ def test_independent_qualification_rejects_current_domain_for_quarantine(
     )
     archive = engine.dialect.identifier_preparer.quote(archive_schema)
     with engine.begin() as connection:
-        source = connection.execute(
-            text(
-                f"SELECT recipe.user_id, recipe.food_item_id, food.name "
-                f"FROM {archive}.recipes recipe JOIN food_items food "
-                "ON food.id = recipe.food_item_id WHERE recipe.id = :recipe_id"
-            ),
-            {"recipe_id": quarantined_id},
-        ).mappings().one()
+        source = (
+            connection.execute(
+                text(
+                    f"SELECT recipe.user_id, recipe.food_item_id, food.name "
+                    f"FROM {archive}.recipes recipe JOIN food_items food "
+                    "ON food.id = recipe.food_item_id WHERE recipe.id = :recipe_id"
+                ),
+                {"recipe_id": quarantined_id},
+            )
+            .mappings()
+            .one()
+        )
         connection.execute(
             text(
                 "INSERT INTO recipes "
@@ -4109,18 +4064,14 @@ def test_independent_qualification_rejects_other_plan_attestation_run_and_clone(
         plan,
         execution_receipt,
     ) = completed_qualification_clone
-    other_plan = _redigest_plan(
-        plan, decisions__0__reason_code="another_approved_decision"
-    )
+    other_plan = _redigest_plan(plan, decisions__0__reason_code="another_approved_decision")
     other_attestation = _redigest_attestation(
         evidence["execution_attestation"],
         clone_marker_identity="phase5c-other-qualification-marker",
     )
     other_receipt = deepcopy(execution_receipt)
     other_receipt["run_id"] = str(uuid4())
-    unsigned = {
-        key: value for key, value in other_receipt.items() if key != "report_digest"
-    }
+    unsigned = {key: value for key, value in other_receipt.items() if key != "report_digest"}
     other_receipt["report_digest"] = canonical_digest(unsigned)
     cases = (
         {"plan_payload": other_plan},

@@ -103,8 +103,15 @@ from app.core.config import settings
 from app.core.database_identity import redacted_database_url
 
 print(f"Deployment mode: {settings.deployment_mode.value}")
+print(f"Process mode: {settings.process_mode.value}")
 print(f"Database: {redacted_database_url(settings.database_url)}")
 print(f"USDA key loaded: {bool(settings.usda_api_key)}")
+
+if settings.process_mode.value == "canary":
+    raise SystemExit(
+        "Canary mode refuses the migration-capable start-backend workflow; "
+        "apply migrations separately as nutrition_migrator, then start Uvicorn directly."
+    )
 
 if not settings.usda_api_key:
     print("Warning: USDA search/import will be unavailable.")

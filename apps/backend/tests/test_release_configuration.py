@@ -8,12 +8,14 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.api.v1.routers import health as health_router
 from app.core.config import DeploymentMode, Settings, get_settings
 from app.core.database import engine
 from app.core.database_identity import database_identity, redacted_database_url
 from app.dependencies.user import DEV_USER_ID, TEST_USER_ID, get_current_user
 from app.main import app
 from app.models.user import User
+from app.operators.phase5c4_prerequisites import LocalReadiness, READINESS_REASONS
 
 
 PRIVATE_USER_ID = UUID("10000000-0000-0000-0000-000000000001")
@@ -62,17 +64,16 @@ def test_private_mode_requires_valid_bearer_credential(client, db_session: Sessi
 
     missing = client.get("/api/v1/nutrients")
     malformed = client.get("/api/v1/nutrients", headers={"Authorization": "Basic invalid"})
-    invalid = client.get(
-        "/api/v1/nutrients", headers={"Authorization": "Bearer wrong-credential"}
-    )
-    valid = client.get(
-        "/api/v1/nutrients", headers={"Authorization": f"Bearer {PRIVATE_SECRET}"}
-    )
+    invalid = client.get("/api/v1/nutrients", headers={"Authorization": "Bearer wrong-credential"})
+    valid = client.get("/api/v1/nutrients", headers={"Authorization": f"Bearer {PRIVATE_SECRET}"})
 
     assert missing.status_code == malformed.status_code == invalid.status_code == 401
-    assert missing.json() == malformed.json() == invalid.json() == {
-        "detail": "Authentication required"
-    }
+    assert (
+        missing.json()
+        == malformed.json()
+        == invalid.json()
+        == {"detail": "Authentication required"}
+    )
     assert missing.headers["www-authenticate"] == malformed.headers["www-authenticate"]
     assert missing.headers["www-authenticate"] == invalid.headers["www-authenticate"] == "Bearer"
     assert valid.status_code == 200
@@ -121,9 +122,12 @@ def test_private_user_bootstrap_is_explicit(client, db_session: Session) -> None
     assert db_session.get(User, PRIVATE_USER_ID) is None
 
     app.dependency_overrides[get_settings] = _private_settings
-    assert client.get(
-        "/api/v1/nutrients", headers={"Authorization": f"Bearer {PRIVATE_SECRET}"}
-    ).status_code == 200
+    assert (
+        client.get(
+            "/api/v1/nutrients", headers={"Authorization": f"Bearer {PRIVATE_SECRET}"}
+        ).status_code
+        == 200
+    )
     assert db_session.get(User, PRIVATE_USER_ID) is not None
 
 
@@ -152,9 +156,7 @@ def test_database_url_redaction_and_runtime_identity() -> None:
     assert "private-user" not in redacted
     assert "private-password" not in redacted
     assert "sslkey" not in redacted
-    assert database_identity(engine.url) == database_identity(
-        "sqlite+pysqlite:///:memory:"
-    )
+    assert database_identity(engine.url) == database_identity("sqlite+pysqlite:///:memory:")
 
 
 def test_alembic_has_no_independent_operational_url() -> None:
@@ -213,7 +215,53 @@ def test_readiness_returns_safe_503_when_database_check_fails(client) -> None:
     response = client.get("/api/v1/ready")
     assert response.status_code == 503
     assert response.json() == {"detail": "Service is not ready"}
+    assert response.headers["X-Nutrition-Readiness-Reason"] == "database_unavailable"
     assert "internal database detail" not in response.text
+
+
+@pytest.mark.parametrize("reason_code", sorted(READINESS_REASONS))
+def test_readiness_exposes_only_the_documented_reason_allowlist(
+    client,
+    monkeypatch: pytest.MonkeyPatch,
+    reason_code: str,
+) -> None:
+    monkeypatch.setattr(
+        health_router,
+        "evaluate_local_readiness",
+        lambda _db: LocalReadiness(False, reason_code),
+    )
+    response = client.get("/api/v1/ready")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Service is not ready"}
+    assert response.headers["X-Nutrition-Readiness-Reason"] == reason_code
+
+
+def test_readiness_is_evaluated_fresh_on_every_request(
+    client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observations = iter(
+        (
+            LocalReadiness(False, "write_fence_closed_prequalification"),
+            LocalReadiness(True),
+        )
+    )
+    calls = 0
+
+    def evaluate(_db) -> LocalReadiness:
+        nonlocal calls
+        calls += 1
+        return next(observations)
+
+    monkeypatch.setattr(health_router, "evaluate_local_readiness", evaluate)
+    closed = client.get("/api/v1/ready")
+    opened = client.get("/api/v1/ready")
+
+    assert calls == 2
+    assert closed.status_code == 503
+    assert closed.headers["X-Nutrition-Readiness-Reason"] == ("write_fence_closed_prequalification")
+    assert opened.status_code == 200
+    assert opened.json() == {"status": "ready"}
 
 
 @pytest.mark.parametrize(

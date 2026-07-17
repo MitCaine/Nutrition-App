@@ -1,13 +1,15 @@
 # Production Hardening Phase 5C4.0: deployment and provider decision record
 
-Status: **accepted for Stage 5C4.1**
+Status: **accepted; Stage 5C4.2b architecture clarified, implementation pending**
 Decision date: 2026-07-16
+Stage 5C4.2b clarification date: 2026-07-16
 Decision owner: repository owner, acting as `portfolio_owner_v1`
 Selected profile: `phase5c4_controlled_portfolio_demo_v1`
 
 This record closes the infrastructure and policy choices required by Section 20 of
 [Production Hardening Phase 5C4](production-hardening-phase5c4.md). It makes no application,
-database, provider, or Phase 5C4 runtime change. Stages 5C4.1 through 5C4.9 remain implementation
+database, provider, or Phase 5C4 runtime change. Stage 5C4.1 contracts and Stage 5C4.2a role
+topology were completed under separate reviews. Stages 5C4.2b through 5C4.9 remain implementation
 work with their own exit gates.
 
 The graph-restart/idempotency and Alembic schema-authority blockers were corrected before this
@@ -59,6 +61,8 @@ version rather than mutating v1:
 | Local provider profile | `phase5c4_local_docker_provider_profile_v1` |
 | Database roles | `phase5c4_postgresql_role_policy_v1` |
 | Database incarnation | `phase5c4_database_incarnation_v1` |
+| Data-plane target identity | `phase5c_promotion_target_identity_v1` |
+| Data-plane fence event | `phase5c_write_fence_event_v1` |
 | Signing/trust | `phase5c4_local_ed25519_trust_policy_v1` |
 | Endpoint switching | `phase5c4_docker_compose_switch_contract_v1` |
 | Backup/recovery | `phase5c4_pgbackrest_minio_recovery_policy_v1` |
@@ -90,7 +94,7 @@ Each row has exactly one current classification.
 | Maintenance window | Two consecutive complete rehearsals must finish within 180 minutes; hard window is 240 minutes with 30 minutes reserved for safe pre-activation exit | requires a production-like exercise | Exceeding the gate aborts or revises this ADR; no stale clone or delta copy |
 | Production tier | T0 is the only permitted first-release tier, subject to a fresh frozen inventory meeting every T0 ceiling | requires a production-like exercise | Any exceeded dimension requires T1 fixture evidence and a new ratification |
 | Read-only canaries | Pre-provisioned synthetic user/data, separate read-only database role and canary process, GET-only bounded suite, no bootstrap or cache writes | requires a production-like exercise | Database-denied write probe and before/after logical roots must prove zero mutation |
-| Qualifier v2 | Admit only exact 0018 with a closed target fence; preserve independent queries and qualification receipt v1 shape; bind fence history separately | resolved | Compatibility proof obligations in Section 14 must pass during Stage 5C4.2 |
+| Qualifier v2 | Admit only exact 0018 with a closed target fence; preserve independent queries and qualification receipt v1 shape; bind fence history separately | resolved | Compatibility proof obligations in Section 15 must pass during Stage 5C4.2b |
 | Operational ownership | All named roles are assigned to authenticated principal `portfolio_owner_v1`; every separation exception is explicit | resolved | The assignment is invalid for public or independently used private deployment |
 
 There are no unresolved provider names in this profile. Items classified `requires a
@@ -267,7 +271,7 @@ Role policy is `phase5c4_postgresql_role_policy_v1`.
 | `nutrition_runtime` | `LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; member only of `nutrition_runtime_read` and `nutrition_runtime_write` | Normal application DML through the documented surface; never owner/migrator/archive/control authority |
 | `nutrition_canary` | `LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; member only of `nutrition_canary_read`; `default_transaction_read_only=on` | Bounded pre-activation API verification; no sequences, DML, receipts, caches, or favorites |
 | `nutrition_qualifier` | `LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; `default_transaction_read_only=on` | SELECT on required public/archive/evidence relations and control functions only |
-| `nutrition_ops` | `LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; member of `pg_signal_backend`; execute-only maintenance routines | Revoke/restore bounded runtime grants, terminate sessions, observe role/fence state; cannot mutate domain rows directly |
+| `nutrition_ops` | `LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; member of `pg_signal_backend`; execute-only maintenance routines | Revoke/restore bounded runtime grants, terminate sessions, observe role/fence state, initialize the one-shot 0018 target identity/fence, and make closed-state fence transitions; cannot mutate domain rows directly or open production |
 | bootstrap administrator | Local PostgreSQL administrative credential, never supplied to the app or normal CLI | Creates roles and performs the one-time ownership transfer; sealed after provisioning |
 
 `PUBLIC` receives no schema create privilege. Runtime receives no `USAGE` on any Phase 5C archive
@@ -291,9 +295,28 @@ privileges, ownership, and database settings proving:
 - runtime can perform only expected application operations before maintenance;
 - runtime cannot access archives or control tables;
 - canary and qualifier transactions are read-only and cannot call mutating routines;
+- only `nutrition_ops` can execute the one-shot target initializer and closed-state fence routine;
+  it has no direct DML on those tables and no routine capable of entering `open_production`;
 - `max_prepared_transactions = 0` and `pg_prepared_xacts` is empty; and
 - every security-definer routine pins `search_path`, validates expected state, and is not executable
   by `PUBLIC`.
+
+### Stage 5C4.2b data-plane authority and readiness
+
+Revision 0018 objects remain owned by the `NOLOGIN` `nutrition_owner`. The
+`nutrition_migrator` creates them while acting as owner but never chooses environment identity.
+`nutrition_ops` receives only the exact initialization and closed-state transition routines defined
+in the primary design. Runtime, canary, qualifier, bootstrap, and application startup cannot
+initialize, repair, rotate, or rekey target identity. No login receives direct identity/fence/event
+table DML, and `PUBLIC` receives no execution privilege.
+
+Stage 5C4.2b local readiness checks application-database connectivity, exact schema 0018, target
+identity, fence projection and event chain, current mode, and the expected 5C4.2a runtime topology.
+It is writable-ready only at `open_production`; migration 0018 grants no production principal a way
+to reach that mode. Stage 5C4.3 adds the independent authoritative environment gate and combines it
+with the local result. Local readiness never substitutes for or overrides that later gate. The
+exact response compatibility, reason-code allowlist, gate SQLSTATE, initialization replay rules,
+transition graph, and event preimage are normative in Sections 3.3 and 10.2 of the primary design.
 
 ### Current-owner migration and rehearsal
 
@@ -367,7 +390,13 @@ A partial/mixed/unknown observation fences both sides and retains maintenance.
 
 ## 10. Database-incarnation and clone-lineage evidence
 
-The canonical `phase5c4_database_incarnation_v1` record contains:
+The canonical `phase5c4_database_incarnation_v1` record is an externally captured evidence
+artifact, not a migration-0018 application-data-plane table. Its authoritative durable registry is
+created in the independent Phase 5C4.3 control database. Migration 0018 persists only the target
+identity and nonce component that later evidence binds to provider, PostgreSQL, backup, restore,
+and fence observations.
+
+The canonical record contains:
 
 - environment, purpose (`source`, `candidate`, `source_restore`, `target_restore`, or
   `promoted_target`), attempt, and observation UUID;
@@ -393,6 +422,15 @@ The local provider has no managed-cloud resource UUID. The selected equivalent i
 Docker engine ID, container ID, immutable image/config digests, volume incarnation label,
 PostgreSQL control identity, database OID, target nonce, and lineage operation. Absence or
 disagreement of any required field fails closed.
+
+A physical restore or clone is not distinguished by a copied database row or system identifier
+alone. Candidate preparation from the pre-0018 source invokes the 0018 `nutrition_ops` one-shot
+initializer after the clone has exact conversion metadata, producing a new target instance ID and
+nonce. A later exact physical restore of that initialized target retains the copied target identity;
+its new external restore-operation UUID and provider/resource tuple make it a distinct incarnation.
+A separately prepared candidate from the pre-0018 source receives a different newly initialized
+target identity. Ordinary runtime or canary startup never rekeys identity, and 0018 does not move
+the complete database-instance registry into the application database.
 
 ## 11. Backup, WAL, PITR, restore, RPO, and RTO policy
 
@@ -520,7 +558,8 @@ Canary policy is `phase5c4_private_canary_policy_v1`.
 
 ### Seeded data
 
-Stage 5C4.2 provisions one fixed synthetic canary user before freeze, with:
+A separate authenticated preparation step provisions one fixed synthetic canary user before source
+freeze, with:
 
 - one manual Food with serving and nutrient data;
 - one published Recipe, immutable revision, and compatibility projection;
@@ -530,10 +569,13 @@ Stage 5C4.2 provisions one fixed synthetic canary user before freeze, with:
 - ownership-isolation fixtures owned by the primary application user but inaccessible to canary.
 
 The canary seed has a canonical manifest and logical root. Seeding is never part of post-switch
-verification.
+verification, ordinary startup, or target-identity initialization.
 
 ### Execution boundary
 
+- Stage 5C4.2b adds only `NUTRITION_PROCESS_MODE=runtime|canary` configuration and startup
+  admission capable of running this policy. `runtime` is the compatibility default, but promotion
+  manifests set it explicitly. It does not route traffic or execute post-switch verification.
 - Private-user auto-create is disabled and startup fails if either required user is absent.
 - A separate canary backend process uses `nutrition_canary`, not `nutrition_runtime`.
 - The database role has SELECT/execute-read privileges only and
@@ -547,8 +589,18 @@ verification.
 - Before/after domain roots, row counts, sequence values, idempotency receipts, favorites, logs,
   revision state, OCR state, and fence events must be identical.
 
+Canary startup admits only a valid target identity and event chain in
+`closed_prequalification` or `closed_cutover`; it rejects open, incident, or retired state. It uses
+only shared/read-only database locks, so concurrent canary starts reach the same decision without a
+process-local mutex or protected-record mutation. Public writable readiness remains 503 during the
+canary even though the later private canary runner may invoke its exact GET allowlist.
+
 Only after the canary succeeds does the normal target process become eligible for activation. The
 normal runtime write group remains revoked and the target fence remains closed during the canary.
+Stage 5C4.7 owns process replacement, Caddy/Docker route integration, post-switch canary execution,
+verification receipts, activation, and cutback. Stage 5C4.2b merely makes a provably read-only
+canary process possible and fails startup before serving if a mutation-capable hook, background job,
+cache write, auto-create behavior, or disallowed route is enabled.
 
 ## 15. Qualifier-v2 compatibility decision
 
@@ -557,7 +609,7 @@ normal runtime write group remains revoked and the target fence remains closed d
 It must:
 
 - admit only exact Alembic revision `0018_phase5c_promotion_prerequisites`;
-- verify target incarnation/nonce, exact role and trigger contract, closed
+- verify the 0018 target identity/nonce component, exact role and trigger contract, closed
   `closed_prequalification` fence, and the initial append-only fence event;
 - run its own read-only repeatable snapshot through `nutrition_qualifier`;
 - preserve the independent queries, comparison rules, roots, reason classifications, and canonical
@@ -566,6 +618,11 @@ It must:
   historical/domain root; and
 - compute a separate append-only fence-event-chain digest and bind it through the candidate state
   seal, artifact set, and promotion authorization rather than inserting it into receipt v1.
+
+Qualifier v2 also exposes separate promotion-prerequisite evidence for later candidate sealing.
+That evidence is not a receipt-v1 extension. A pre-0018 receipt remains valid historical evidence
+under its original contract but is inadmissible for promotion, and every historical/domain root
+excludes target-identity and fence rows.
 
 ### Compatibility proof obligations
 
@@ -644,9 +701,9 @@ These limitations are disclosed, not mitigated through misleading names. The env
 closed on control/evidence loss but may lose availability and locally stored evidence after total
 host destruction.
 
-## 18. Stage 5C4.1 go/no-go
+## 18. Stage go/no-go record
 
-**Decision: GO for Stage 5C4.1 only.**
+**Historical decision: GO for Stage 5C4.1 only.**
 
 The GO is valid because deployment scope, authentication, providers, algorithms, roles,
 thresholds, and scope-based deferrals are concrete. No Section 20 item remains a placeholder.
@@ -665,6 +722,11 @@ The GO becomes NO-GO immediately if:
 No production-like promotion is authorized by this GO. Promotion remains blocked until every
 exercise-dependent row in Section 3 has passing evidence.
 
+**Current clarification:** Stage 5C4.1 and 5C4.2a passed their separate implementation reviews.
+Stage 5C4.2b may now implement only the bounded data-plane scope in Section 19 and the normative
+contracts in the primary design. This clarification grants neither control-plane authority nor a
+production path into `open_production`.
+
 ## 19. Revised bounded implementation sequence
 
 The original sequence remains structurally sound. This profile narrows it to one local provider
@@ -675,7 +737,7 @@ per capability and splits the risk-heavy database stage; it does not remove corr
 | 5C4.0 | This decision record only; no runtime work | GPT-5.6 Sol / xhigh | Read-only provider, security, operations, or consistency reviews | Deployment claim, provider/policy choice, threat model, final GO/NO-GO |
 | 5C4.1 | Pure versioned contracts for the exact local profile; canonical shapes/digests, identity, artifact set, policies, T0 v2, auth envelopes; exhaustive tamper tests | GPT-5.3-Codex / high | Independent parsers, fixtures, tamper matrices, documentation checks | Shared contract semantics, versioning, cross-bindings, integration, no placeholders |
 | 5C4.2a | Disposable/local role conversion and exact privilege manifest; owner/migrator/runtime/canary/qualifier/ops proof and drain/reconnect tests | GPT-5.3-Codex / xhigh | PostgreSQL role inspection, negative privilege tests, migration rehearsal | Role architecture, security-definer boundary, source eligibility decision |
-| 5C4.2b | Migration 0018 identity/fence/immutability, maintenance-aware readiness/mutation denial, canary startup boundary, qualifier v2 with receipt v1 | GPT-5.3-Codex / xhigh | Migration test matrices, trigger coverage, qualifier compatibility fixtures | Migration architecture, root/receipt invariants, application transaction/auth semantics |
+| 5C4.2b | Migration 0018 target identity/closed fence/immutability; ops-only one-shot initialization and closed-state transitions; local prerequisite readiness/mutation denial; read-only canary startup capability; qualifier v2 with exact receipt v1. No full incarnation registry or production-open authority. | GPT-5.3-Codex / xhigh | Migration test matrices, trigger coverage, qualifier compatibility fixtures | Migration architecture, canonical event/replay semantics, root/receipt invariants, application transaction/auth semantics |
 | 5C4.3 | Separate control PostgreSQL graph, FSM/events, typed evidence, replay/CAS, WORM outbox; MinIO evidence/audit integration for this profile only | GPT-5.3-Codex / xhigh | Control-schema tests, concurrency tests, MinIO test harness, outbox failure cases | Control authority, state machine, transaction boundaries, one-way trust boundary |
 | 5C4.4 | Artifact admission/finalization, live candidate re-query, reconciliation, exact T0 v2 evaluator, zero-block and quarantine acceptance | GPT-5.3-Codex / xhigh | Contract/tamper tests, performance fixtures, reconciliation cases | Admission authority, root equivalence, policy decisions, final result semantics |
 | 5C4.5 | One pgBackRest/MinIO adapter, WAL/archive monitoring, backup labels/manifests, exact restore verifier, PITR and corruption/timeout drills | GPT-5.3-Codex / xhigh | Provider harness, disposable restore tests, fault injection, documentation | Recovery policy, identity/lineage binding, RPO/RTO acceptance, secret boundary |
@@ -717,10 +779,13 @@ The selected local equivalents are grounded in the providers' documented capabil
 
 ## 21. Final decision
 
-Phase 5C4.0 is complete for `phase5c4_controlled_portfolio_demo_v1`.
+Phase 5C4.0, including the Stage 5C4.2b architecture clarification, is complete for
+`phase5c4_controlled_portfolio_demo_v1`.
 
-- Stage 5C4.1 may begin against the exact contracts and providers in this record.
-- Stages 5C4.2 through 5C4.9 remain unimplemented and must not be skipped or combined casually.
+- Stage 5C4.1 and Stage 5C4.2a were completed under their own reviews.
+- Stage 5C4.2b may be implemented against this record and the exact normative details in the primary
+  design; Stages 5C4.3 through 5C4.9 remain unimplemented and must not be skipped or combined
+  casually.
 - Public or multi-user production remains blocked and requires a new Phase 5C4.0 decision,
   production identity provider, real human separation, managed infrastructure choices, and a
   different threat model.

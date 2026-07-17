@@ -64,8 +64,26 @@ SWITCH_CONTRACT_VERSION = "phase5c4_docker_compose_switch_contract_v1"
 RECOVERY_POLICY_VERSION = "phase5c4_pgbackrest_minio_recovery_policy_v1"
 MAINTENANCE_POLICY_VERSION = "phase5c4_t0_four_hour_window_policy_v1"
 CANARY_POLICY_VERSION = "phase5c4_private_canary_policy_v1"
+CANARY_HTTP_POLICY_VERSION = "phase5c4_private_canary_http_policy_v1"
 QUALIFIER_VERSION = "phase5c_independent_qualifier_v2"
 TARGET_SCHEMA_REVISION = "0018_phase5c_promotion_prerequisites"
+
+# Normative v1 policy fixture. Route additions require explicit contract review
+# and a new policy version; app.main preserves the public allowlist shape.
+CANARY_GET_ALLOWLIST_V1 = (
+    "/api/v1/health",
+    "/api/v1/ready",
+    "/api/v1/nutrients",
+    "/api/v1/foods/{food_id}/resolved-nutrition",
+    "/api/v1/logs",
+    "/api/v1/logs/daily-summary",
+    "/api/v1/logs/{log_id}/edit-context",
+    "/api/v1/targets",
+    "/api/v1/targets/daily-comparison",
+    "/api/v1/recipes",
+    "/api/v1/recipes/{recipe_id}",
+    "/api/v1/recipes/{recipe_id}/nutrition",
+)
 
 SIGNED_ARTIFACT_ISSUER = "portfolio_owner_v1@phase5c4_local_ed25519_trust_policy_v1"
 SIGNED_ARTIFACT_AUDIENCE = "nutrition-phase5c4-control"

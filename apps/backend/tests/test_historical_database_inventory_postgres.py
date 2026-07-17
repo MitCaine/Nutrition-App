@@ -90,7 +90,7 @@ def isolated_postgres_schema() -> tuple[Engine, str]:
         admin.dispose()
 
 
-def _upgrade(database_url: str, revision: str = "head") -> None:
+def _upgrade(database_url: str, revision: str = "0017_phase5c_indexes") -> None:
     result = _run_alembic(database_url, revision)
     assert result.returncode == 0, result.stderr
 
@@ -162,9 +162,7 @@ def test_empty_current_database_inventory_is_stable_and_aggregate_only(
         "value": "empty_database",
         "reason": "no_application_or_historical_rows_detected",
     }
-    assert payload["migration"]["current_alembic_revision"] == (
-        "0017_phase5c_indexes"
-    )
+    assert payload["migration"]["current_alembic_revision"] == ("0017_phase5c_indexes")
     assert payload["migration"]["already_beyond_migration_0004"] is True
     assert payload["legacy_recipes"]["recipe_count"] == 0
     assert payload["current_recipes"]["recipe_count"] == 0
@@ -239,9 +237,11 @@ def test_inventory_uses_only_read_only_queries_and_changes_no_domain_rows(
     with engine.begin() as connection:
         user_id = _insert_user(connection)
         recipe_id = _insert_current_draft(connection, user_id)
-        before = connection.execute(
-            text("SELECT id, user_id, name, notes, updated_at FROM recipes")
-        ).mappings().all()
+        before = (
+            connection.execute(text("SELECT id, user_id, name, notes, updated_at FROM recipes"))
+            .mappings()
+            .all()
+        )
 
     statements: list[str] = []
 
@@ -255,18 +255,18 @@ def test_inventory_uses_only_read_only_queries_and_changes_no_domain_rows(
         event.remove(engine, "before_cursor_execute", capture_statement)
 
     with engine.connect() as connection:
-        after = connection.execute(
-            text("SELECT id, user_id, name, notes, updated_at FROM recipes")
-        ).mappings().all()
+        after = (
+            connection.execute(text("SELECT id, user_id, name, notes, updated_at FROM recipes"))
+            .mappings()
+            .all()
+        )
     assert before == after
     assert before[0]["id"] == recipe_id
     assert report.to_dict()["classification"]["value"] == "clean_current_database"
     assert any(statement.upper() == "SET TRANSACTION READ ONLY" for statement in statements)
     forbidden = ("INSERT ", "UPDATE ", "DELETE ", "ALTER ", "CREATE ", "DROP ", "TRUNCATE ")
     assert not [
-        statement
-        for statement in statements
-        if statement.lstrip().upper().startswith(forbidden)
+        statement for statement in statements if statement.lstrip().upper().startswith(forbidden)
     ]
 
 
@@ -596,10 +596,7 @@ def test_ocr_idempotency_and_sensitive_values_are_reported_only_as_counts(
         scan_id = uuid4()
         parse_id = uuid4()
         connection.execute(
-            text(
-                "INSERT INTO users (id, email, display_name) "
-                "VALUES (:id, :email, :display_name)"
-            ),
+            text("INSERT INTO users (id, email, display_name) VALUES (:id, :email, :display_name)"),
             {
                 "id": user_id,
                 "email": "sensitive-email-token@example.test",

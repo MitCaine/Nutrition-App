@@ -18,6 +18,9 @@ MIGRATION_OWNED_TABLES = frozenset(
         "phase5c_conversion_metadata",
         "phase5c_conversion_runs",
         "phase5c_conversion_outcomes",
+        "phase5c_promotion_target_identity",
+        "phase5c_write_fence_state",
+        "phase5c_write_fence_events",
     }
 )
 
@@ -196,6 +199,12 @@ def _add_phase5c_control_tables(metadata: MetaData) -> None:
         sa.Column("conversion_rules_version", sa.Text(), nullable=False),
         sa.Column("manifest_version", sa.Text(), nullable=False),
         sa.Column("manifest_digest", sa.Text(), nullable=False),
+        sa.UniqueConstraint(
+            "archive_identity",
+            "clone_marker_digest",
+            "conversion_clone_identity_digest",
+            name="uq_phase5c_metadata_identity_binding",
+        ),
         sa.CheckConstraint("recipe_count >= 0", name="ck_phase5c_recipe_count_nonnegative"),
         sa.CheckConstraint(
             "ingredient_count >= 0",
@@ -275,6 +284,12 @@ def _add_phase5c_control_tables(metadata: MetaData) -> None:
         sa.Column("execution_state", sa.Text(), nullable=False),
         sa.Column("verification_state", sa.Text(), nullable=False),
         sa.Column("failure_reason_code", sa.Text(), nullable=True),
+        sa.UniqueConstraint(
+            "id",
+            "archive_identity",
+            "clone_marker_digest",
+            name="uq_phase5c_run_identity_binding",
+        ),
         sa.CheckConstraint(
             "execution_state IN ('pending', 'running', 'completed', 'failed')",
             name="ck_phase5c_run_execution_state",
@@ -392,13 +407,11 @@ def _add_phase5c_control_tables(metadata: MetaData) -> None:
             name="ck_phase5c_outcome_nonconvert_complete",
         ),
         sa.CheckConstraint(
-            "NOT (execution_disposition = 'quarantined' "
-            "AND planned_disposition <> 'quarantine')",
+            "NOT (execution_disposition = 'quarantined' AND planned_disposition <> 'quarantine')",
             name="ck_phase5c_outcome_quarantine_matches_plan",
         ),
         sa.CheckConstraint(
-            "NOT (execution_disposition = 'blocked' "
-            "AND planned_disposition <> 'block')",
+            "NOT (execution_disposition = 'blocked' AND planned_disposition <> 'block')",
             name="ck_phase5c_outcome_block_matches_plan",
         ),
         sa.CheckConstraint(
@@ -407,3 +420,149 @@ def _add_phase5c_control_tables(metadata: MetaData) -> None:
             name="ck_phase5c_outcome_digest_lengths",
         ),
     )
+
+    _table(
+        "phase5c_promotion_target_identity",
+        metadata,
+        sa.Column("singleton_key", sa.SmallInteger(), primary_key=True),
+        sa.Column("initialization_command_id", GUID(), nullable=False, unique=True),
+        sa.Column("identity_version", sa.Text(), nullable=False),
+        sa.Column("target_instance_id", GUID(), nullable=False, unique=True),
+        sa.Column("target_nonce", GUID(), nullable=False, unique=True),
+        sa.Column("archive_identity", sa.Text(), nullable=False),
+        sa.Column("conversion_run_id", GUID(), nullable=False, unique=True),
+        sa.Column("clone_marker_digest", sa.Text(), nullable=False),
+        sa.Column("conversion_clone_identity_digest", sa.Text(), nullable=False),
+        sa.Column("initialized_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("identity_digest", sa.Text(), nullable=False, unique=True),
+        sa.ForeignKeyConstraint(
+            ["archive_identity", "clone_marker_digest", "conversion_clone_identity_digest"],
+            [
+                "phase5c_conversion_metadata.archive_identity",
+                "phase5c_conversion_metadata.clone_marker_digest",
+                "phase5c_conversion_metadata.conversion_clone_identity_digest",
+            ],
+            name="fk_phase5c_target_metadata_binding",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["conversion_run_id", "archive_identity", "clone_marker_digest"],
+            [
+                "phase5c_conversion_runs.id",
+                "phase5c_conversion_runs.archive_identity",
+                "phase5c_conversion_runs.clone_marker_digest",
+            ],
+            name="fk_phase5c_target_run_binding",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint("singleton_key = 1", name="ck_phase5c_target_singleton"),
+        sa.CheckConstraint(
+            "identity_version = 'phase5c_promotion_target_identity_v1'",
+            name="ck_phase5c_target_identity_version",
+        ),
+        sa.CheckConstraint(
+            "archive_identity ~ '^[0-9a-f]{64}$' "
+            "AND clone_marker_digest ~ '^[0-9a-f]{64}$' "
+            "AND conversion_clone_identity_digest ~ '^[0-9a-f]{64}$' "
+            "AND identity_digest ~ '^[0-9a-f]{64}$'",
+            name="ck_phase5c_target_digest_shape",
+        ),
+    )
+    _table(
+        "phase5c_write_fence_state",
+        metadata,
+        sa.Column(
+            "target_instance_id",
+            GUID(),
+            sa.ForeignKey(
+                "phase5c_promotion_target_identity.target_instance_id",
+                ondelete="RESTRICT",
+                name="fk_phase5c_fence_state_target",
+            ),
+            primary_key=True,
+        ),
+        sa.Column("epoch", sa.BigInteger(), nullable=False),
+        sa.Column("mode", sa.Text(), nullable=False),
+        sa.Column("attempt_id", GUID(), nullable=True),
+        sa.Column("authorization_digest", sa.Text(), nullable=True),
+        sa.Column("artifact_set_digest", sa.Text(), nullable=True),
+        sa.Column("last_event_digest", sa.Text(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("epoch >= 1", name="ck_phase5c_fence_epoch_positive"),
+        sa.CheckConstraint(
+            "mode IN ('closed_prequalification', 'closed_cutover', "
+            "'open_production', 'closed_incident', 'retired')",
+            name="ck_phase5c_fence_mode",
+        ),
+        sa.CheckConstraint(
+            "last_event_digest ~ '^[0-9a-f]{64}$' "
+            "AND (authorization_digest IS NULL OR authorization_digest ~ '^[0-9a-f]{64}$') "
+            "AND (artifact_set_digest IS NULL OR artifact_set_digest ~ '^[0-9a-f]{64}$')",
+            name="ck_phase5c_fence_digest_shape",
+        ),
+        sa.CheckConstraint(
+            "mode <> 'open_production' OR "
+            "(attempt_id IS NOT NULL AND authorization_digest IS NOT NULL "
+            "AND artifact_set_digest IS NOT NULL)",
+            name="ck_phase5c_fence_open_evidence_shape",
+        ),
+        sa.CheckConstraint(
+            "epoch <> 1 OR (mode = 'closed_prequalification' AND attempt_id IS NULL "
+            "AND authorization_digest IS NULL AND artifact_set_digest IS NULL)",
+            name="ck_phase5c_fence_initial_shape",
+        ),
+    )
+    fence_events = _table(
+        "phase5c_write_fence_events",
+        metadata,
+        sa.Column(
+            "target_instance_id",
+            GUID(),
+            sa.ForeignKey(
+                "phase5c_promotion_target_identity.target_instance_id",
+                ondelete="RESTRICT",
+                name="fk_phase5c_fence_event_target",
+            ),
+            primary_key=True,
+        ),
+        sa.Column("epoch", sa.BigInteger(), primary_key=True),
+        sa.Column("event_id", GUID(), nullable=False, unique=True),
+        sa.Column("command_id", GUID(), nullable=False, unique=True),
+        sa.Column("from_mode", sa.Text(), nullable=True),
+        sa.Column("to_mode", sa.Text(), nullable=False),
+        sa.Column("attempt_id", GUID(), nullable=True),
+        sa.Column("authorization_digest", sa.Text(), nullable=True),
+        sa.Column("artifact_set_digest", sa.Text(), nullable=True),
+        sa.Column("previous_event_digest", sa.Text(), nullable=True),
+        sa.Column("event_digest", sa.Text(), nullable=False, unique=True),
+        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("epoch >= 1", name="ck_phase5c_fence_event_epoch_positive"),
+        sa.CheckConstraint(
+            "(from_mode IS NULL OR from_mode IN ('closed_prequalification', "
+            "'closed_cutover', 'open_production', 'closed_incident', 'retired')) "
+            "AND to_mode IN ('closed_prequalification', 'closed_cutover', "
+            "'open_production', 'closed_incident', 'retired')",
+            name="ck_phase5c_fence_event_modes",
+        ),
+        sa.CheckConstraint(
+            "event_digest ~ '^[0-9a-f]{64}$' "
+            "AND (previous_event_digest IS NULL OR previous_event_digest ~ '^[0-9a-f]{64}$') "
+            "AND (authorization_digest IS NULL OR authorization_digest ~ '^[0-9a-f]{64}$') "
+            "AND (artifact_set_digest IS NULL OR artifact_set_digest ~ '^[0-9a-f]{64}$')",
+            name="ck_phase5c_fence_event_digest_shape",
+        ),
+        sa.CheckConstraint(
+            "(epoch = 1 AND from_mode IS NULL AND previous_event_digest IS NULL "
+            "AND to_mode = 'closed_prequalification' AND attempt_id IS NULL "
+            "AND authorization_digest IS NULL AND artifact_set_digest IS NULL) OR "
+            "(epoch > 1 AND from_mode IS NOT NULL AND previous_event_digest IS NOT NULL)",
+            name="ck_phase5c_fence_event_chain_shape",
+        ),
+        sa.CheckConstraint(
+            "to_mode <> 'open_production' OR "
+            "(attempt_id IS NOT NULL AND authorization_digest IS NOT NULL "
+            "AND artifact_set_digest IS NOT NULL)",
+            name="ck_phase5c_fence_event_open_evidence_shape",
+        ),
+    )
+    sa.Index("ix_phase5c_fence_events_attempt", fence_events.c.attempt_id)

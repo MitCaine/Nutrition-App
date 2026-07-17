@@ -43,6 +43,13 @@ from app.operators.phase5c_contracts import (
     validate_inventory_contract,
     validate_qualification_receipt_contract as validate_qualification_receipt_document,
 )
+from app.operators.phase5c4_contracts import TARGET_SCHEMA_REVISION
+from app.operators.phase5c4_prerequisites import (
+    Phase5C4PrerequisiteError,
+    PromotionPrerequisiteState,
+    qualification_reason,
+    validate_prerequisite_observation,
+)
 from app.operators.phase5c_isolation import (
     assert_database_session_isolation,
     phase5c_maintenance_session,
@@ -66,6 +73,13 @@ _OCR_TABLES = (
     "parser_corrections",
     "ocr_nutrition_confirmation_traces",
 )
+_PROMOTION_PREREQUISITE_TABLES = frozenset(
+    {
+        "phase5c_promotion_target_identity",
+        "phase5c_write_fence_events",
+        "phase5c_write_fence_state",
+    }
+)
 _DECIMAL_PLACES = Decimal("0.000001")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{2,127}$")
@@ -86,6 +100,15 @@ _FAILURE_CODES = {
     "qualification_execution_receipt_mismatch",
     "qualification_run_incomplete",
     "qualification_snapshot_unstable",
+    "qualification_schema_revision_unsupported",
+    "qualification_target_identity_missing",
+    "qualification_target_identity_invalid",
+    "qualification_fence_state_invalid",
+    "qualification_fence_event_chain_invalid",
+    "qualification_gate_trigger_coverage_invalid",
+    "qualification_role_topology_invalid",
+    "qualification_immutability_invalid",
+    "qualification_concurrent_fence_change",
 }
 
 
@@ -147,6 +170,14 @@ class QualificationDiagnostic:
         )
 
 
+@dataclass(frozen=True)
+class Phase5C4QualificationResult:
+    """Unchanged receipt-v1 plus non-persisted 0018 prerequisite evidence."""
+
+    receipt: QualificationReceipt
+    prerequisites: dict[str, Any]
+
+
 def validate_qualification_receipt_contract(payload: Any) -> dict[str, Any]:
     try:
         return validate_qualification_receipt_document(payload)
@@ -158,9 +189,7 @@ def load_execution_receipt_file(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
-        raise Phase5CQualificationError(
-            "qualification_execution_receipt_mismatch"
-        ) from None
+        raise Phase5CQualificationError("qualification_execution_receipt_mismatch") from None
     return validate_execution_receipt_contract(payload)
 
 
@@ -168,9 +197,7 @@ def validate_execution_receipt_contract(payload: Any) -> dict[str, Any]:
     try:
         return validate_execution_receipt_document(payload)
     except Phase5CAdmissionError:
-        raise Phase5CQualificationError(
-            "qualification_execution_receipt_mismatch"
-        ) from None
+        raise Phase5CQualificationError("qualification_execution_receipt_mismatch") from None
 
 
 def qualify_historical_recipe_conversion(
@@ -188,9 +215,7 @@ def qualify_historical_recipe_conversion(
         plan = validate_conversion_plan_contract(plan_payload)
         inventory = validate_inventory_contract(inventory_payload)
         attestation = validate_operator_attestation(execution_attestation_payload)
-        execution_receipt = validate_execution_receipt_contract(
-            execution_receipt_payload
-        )
+        execution_receipt = validate_execution_receipt_contract(execution_receipt_payload)
     except Phase5CQualificationError:
         raise
     except Phase5CAdmissionError:
@@ -219,14 +244,10 @@ def qualify_historical_recipe_conversion(
                 transaction = connection.begin()
                 try:
                     connection.execute(
-                        text(
-                            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
-                        )
+                        text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                     )
                     if connection.scalar(text("SHOW transaction_read_only")) != "on":
-                        raise Phase5CQualificationError(
-                            "qualification_snapshot_unstable"
-                        )
+                        raise Phase5CQualificationError("qualification_snapshot_unstable")
                     before = _database_state_digest(
                         connection,
                         source_schema=source_schema,
@@ -247,9 +268,7 @@ def qualify_historical_recipe_conversion(
                         archive_schema=archive_schema,
                     )
                     if before != after:
-                        raise Phase5CQualificationError(
-                            "qualification_snapshot_unstable"
-                        )
+                        raise Phase5CQualificationError("qualification_snapshot_unstable")
                     return QualificationReceipt(receipt)
                 finally:
                     transaction.rollback()
@@ -259,6 +278,173 @@ def qualify_historical_recipe_conversion(
             raise Phase5CQualificationError("qualification_evidence_mismatch") from None
         except Exception:
             raise Phase5CQualificationError("qualification_evidence_mismatch") from None
+
+
+def qualify_historical_recipe_conversion_v2(
+    engine: Engine,
+    *,
+    plan_payload: dict[str, Any],
+    inventory_payload: dict[str, Any],
+    execution_attestation_payload: dict[str, Any],
+    execution_receipt_payload: dict[str, Any],
+    archive_schema: str,
+    conversion_clone_id: str,
+    clone_marker_identity: str,
+) -> Phase5C4QualificationResult:
+    """Qualify exact 0018 without changing receipt-v1 bytes or historical roots."""
+
+    try:
+        plan = validate_conversion_plan_contract(plan_payload)
+        inventory = validate_inventory_contract(inventory_payload)
+        attestation = validate_operator_attestation(execution_attestation_payload)
+        execution_receipt = validate_execution_receipt_contract(execution_receipt_payload)
+    except Phase5CQualificationError:
+        raise
+    except Phase5CAdmissionError:
+        raise Phase5CQualificationError("qualification_evidence_mismatch") from None
+    if engine.dialect.name != "postgresql":
+        raise Phase5CQualificationError("qualification_schema_revision_unsupported")
+    inventory_digest = canonical_digest(inventory)
+    if plan["inventory_digest"] != inventory_digest:
+        raise Phase5CQualificationError("qualification_evidence_mismatch")
+    if plan["source_identity"]["archive_schema"] != archive_schema:
+        raise Phase5CQualificationError("qualification_evidence_mismatch")
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+            connection.execute(text("SELECT pg_catalog.pg_advisory_xact_lock_shared(5542018)"))
+            session_identity = connection.execute(
+                text(
+                    "SELECT session_user, current_user, "
+                    "current_setting('default_transaction_read_only'), "
+                    "current_setting('transaction_read_only')"
+                )
+            ).one()
+            if tuple(session_identity) != (
+                "nutrition_qualifier",
+                "nutrition_qualifier",
+                "on",
+                "on",
+            ):
+                raise Phase5CQualificationError("qualification_role_topology_invalid")
+            reader_available = connection.execute(
+                text(
+                    "SELECT pg_catalog.to_regprocedure("
+                    "'public.phase5c_read_qualifier_evidence_v2()')"
+                )
+            ).scalar_one()
+            if reader_available is None:
+                raise Phase5CQualificationError("qualification_schema_revision_unsupported")
+            try:
+                raw_prerequisites = connection.execute(
+                    text("SELECT public.phase5c_read_qualifier_evidence_v2()")
+                ).scalar_one()
+                prerequisites = validate_prerequisite_observation(raw_prerequisites)
+            except Phase5C4PrerequisiteError as exc:
+                raise Phase5CQualificationError(qualification_reason(exc.reason_code)) from None
+            _admit_qualification_prerequisites(prerequisites)
+
+            source_schema = str(connection.scalar(text("SELECT current_schema()")))
+            isolation_evidence = _verify_isolation(
+                connection,
+                plan=plan,
+                inventory_digest=inventory_digest,
+                execution_attestation=attestation,
+                conversion_clone_id=conversion_clone_id,
+                clone_marker_identity=clone_marker_identity,
+            )
+            _bind_qualification_target(
+                prerequisites,
+                plan=plan,
+                execution_receipt=execution_receipt,
+                isolation_evidence=isolation_evidence,
+            )
+            before = _database_state_digest(
+                connection,
+                source_schema=source_schema,
+                archive_schema=archive_schema,
+                excluded_source_tables=_PROMOTION_PREREQUISITE_TABLES,
+            )
+            receipt_payload = _qualify_snapshot(
+                connection,
+                plan=plan,
+                execution_attestation=attestation,
+                execution_receipt=execution_receipt,
+                archive_schema=archive_schema,
+                source_schema=source_schema,
+                isolation_evidence=isolation_evidence,
+                expected_revision=TARGET_SCHEMA_REVISION,
+            )
+            after = _database_state_digest(
+                connection,
+                source_schema=source_schema,
+                archive_schema=archive_schema,
+                excluded_source_tables=_PROMOTION_PREREQUISITE_TABLES,
+            )
+            if before != after:
+                raise Phase5CQualificationError("qualification_snapshot_unstable")
+            receipt = QualificationReceipt(receipt_payload)
+            validate_qualification_receipt_contract(receipt.payload)
+            return Phase5C4QualificationResult(
+                receipt=receipt,
+                prerequisites=prerequisites.qualifier_projection(),
+            )
+        except Phase5CQualificationError:
+            raise
+        except (Phase5CAdmissionError, LookupError, ValueError, TypeError):
+            raise Phase5CQualificationError("qualification_evidence_mismatch") from None
+        except Exception:
+            raise Phase5CQualificationError("qualification_evidence_mismatch") from None
+        finally:
+            transaction.rollback()
+
+
+def _admit_qualification_prerequisites(
+    prerequisites: PromotionPrerequisiteState,
+) -> None:
+    if prerequisites.session_role != "nutrition_qualifier":
+        raise Phase5CQualificationError("qualification_role_topology_invalid")
+    if not prerequisites.role_topology_valid:
+        raise Phase5CQualificationError("qualification_role_topology_invalid")
+    if not prerequisites.gate_trigger_coverage_valid:
+        raise Phase5CQualificationError("qualification_gate_trigger_coverage_invalid")
+    if not prerequisites.immutability_valid:
+        raise Phase5CQualificationError("qualification_immutability_invalid")
+    if (
+        prerequisites.state["mode"] != "closed_prequalification"
+        or prerequisites.state["epoch"] != 1
+    ):
+        raise Phase5CQualificationError("qualification_fence_state_invalid")
+
+
+def _bind_qualification_target(
+    prerequisites: PromotionPrerequisiteState,
+    *,
+    plan: dict[str, Any],
+    execution_receipt: dict[str, Any],
+    isolation_evidence: dict[str, Any],
+) -> None:
+    """Bind the admitted target singleton to the exact receipt being qualified."""
+
+    identity = prerequisites.identity
+    expected = {
+        "archive_identity": plan["source_identity"]["archive_identity"],
+        "clone_marker_digest": plan["isolation_evidence"]["clone_marker_digest"],
+        "conversion_clone_identity_digest": plan["source_identity"][
+            "conversion_clone_identity_digest"
+        ],
+        "conversion_run_id": execution_receipt["run_id"],
+    }
+    if any(str(identity[field]) != str(value) for field, value in expected.items()):
+        raise Phase5CQualificationError("qualification_target_identity_invalid")
+    if (
+        identity["clone_marker_digest"] != isolation_evidence["clone_marker_digest"]
+        or identity["conversion_clone_identity_digest"]
+        != isolation_evidence["conversion_clone_identity_digest"]
+    ):
+        raise Phase5CQualificationError("qualification_target_identity_invalid")
 
 
 @contextmanager
@@ -292,9 +478,7 @@ def _qualification_operation(
                 conversion_clone_id=conversion_clone_id,
                 clone_marker_identity=clone_marker_identity,
             )
-            assert_database_session_isolation(
-                connection, evidence["clone_marker_digest"]
-            )
+            assert_database_session_isolation(connection, evidence["clone_marker_digest"])
             connection.commit()
             yield evidence
 
@@ -333,8 +517,9 @@ def _qualify_snapshot(
     archive_schema: str,
     source_schema: str,
     isolation_evidence: dict[str, Any],
+    expected_revision: str = EXECUTION_REVISION,
 ) -> dict[str, Any]:
-    if _current_revision(connection, source_schema) != EXECUTION_REVISION:
+    if _current_revision(connection, source_schema) != expected_revision:
         raise Phase5CQualificationError("qualification_evidence_mismatch")
     run = _load_run(connection, execution_receipt["run_id"])
     metadata = load_bridge_metadata(connection, archive_schema)
@@ -392,10 +577,14 @@ def _qualify_snapshot(
 
 
 def _load_run(connection: Connection, run_id: str) -> dict[str, Any]:
-    rows = connection.execute(
-        text(f"SELECT * FROM {_RUN_TABLE} WHERE id = :run_id"),
-        {"run_id": UUID(str(run_id))},
-    ).mappings().all()
+    rows = (
+        connection.execute(
+            text(f"SELECT * FROM {_RUN_TABLE} WHERE id = :run_id"),
+            {"run_id": UUID(str(run_id))},
+        )
+        .mappings()
+        .all()
+    )
     if len(rows) != 1:
         raise Phase5CQualificationError("qualification_evidence_mismatch")
     return dict(rows[0])
@@ -406,8 +595,7 @@ def _load_outcomes(connection: Connection, run_id: UUID) -> list[dict[str, Any]]
         dict(row)
         for row in connection.execute(
             text(
-                f"SELECT * FROM {_OUTCOME_TABLE} WHERE run_id = :run_id "
-                "ORDER BY source_recipe_id"
+                f"SELECT * FROM {_OUTCOME_TABLE} WHERE run_id = :run_id ORDER BY source_recipe_id"
             ),
             {"run_id": run_id},
         ).mappings()
@@ -438,28 +626,22 @@ def _verify_run_and_roots(
         "archive_checksum": source_checksums["archive"],
         "planning_source_checksum": source_checksums["planning_source"],
         "clone_marker_digest": plan["isolation_evidence"]["clone_marker_digest"],
-        "operator_attestation_digest": plan["isolation_evidence"][
-            "operator_attestation_digest"
-        ],
+        "operator_attestation_digest": plan["isolation_evidence"]["operator_attestation_digest"],
         "execution_isolation_contract_version": execution_attestation[
             "isolation_evidence_contract_version"
         ],
-        "execution_attestation_version": execution_attestation[
-            "attestation_version"
-        ],
-        "execution_attestation_identity": execution_attestation[
-            "operator_attestation_identity"
-        ],
+        "execution_attestation_version": execution_attestation["attestation_version"],
+        "execution_attestation_identity": execution_attestation["operator_attestation_identity"],
         "execution_attestation_scope": execution_attestation["scope"],
-        "execution_attestation_digest": execution_attestation[
-            "attestation_digest"
-        ],
+        "execution_attestation_digest": execution_attestation["attestation_digest"],
     }
     if any(run.get(key) != value for key, value in expected_run.items()):
         raise Phase5CQualificationError("qualification_evidence_mismatch")
-    if run.get("execution_state") != "completed" or run.get(
-        "verification_state"
-    ) != "verified" or run.get("failure_reason_code") is not None:
+    if (
+        run.get("execution_state") != "completed"
+        or run.get("verification_state") != "verified"
+        or run.get("failure_reason_code") is not None
+    ):
         raise Phase5CQualificationError("qualification_run_incomplete")
     if execution_receipt["converter_version"] != run.get("converter_version"):
         raise Phase5CQualificationError("qualification_execution_receipt_mismatch")
@@ -503,9 +685,7 @@ def _verify_subjects(
     for outcome in outcomes:
         recipe_id = UUID(str(outcome["source_recipe_id"]))
         if recipe_id in outcome_by_id or recipe_id not in decisions:
-            raise Phase5CQualificationError(
-                "qualification_outcome_cardinality_invalid"
-            )
+            raise Phase5CQualificationError("qualification_outcome_cardinality_invalid")
         outcome_by_id[recipe_id] = outcome
     if set(outcome_by_id) != set(decisions):
         raise Phase5CQualificationError("qualification_outcome_cardinality_invalid")
@@ -540,9 +720,10 @@ def _verify_subjects(
             nutrients_by_food=nutrients_by_food,
             sources_by_food=sources_by_food,
         )
-        if actual_source_checksum != decision["source_checksum"] or outcome[
-            "source_checksum"
-        ] != decision["source_checksum"]:
+        if (
+            actual_source_checksum != decision["source_checksum"]
+            or outcome["source_checksum"] != decision["source_checksum"]
+        ):
             raise Phase5CQualificationError("qualification_archive_checksum_changed")
         expected_execution = {
             "convert": "converted",
@@ -559,9 +740,7 @@ def _verify_subjects(
         ):
             if outcome["checkpoint_state"] in {"pending", "failed", "domain_committed"}:
                 raise Phase5CQualificationError("qualification_run_incomplete")
-            raise Phase5CQualificationError(
-                "qualification_outcome_cardinality_invalid"
-            )
+            raise Phase5CQualificationError("qualification_outcome_cardinality_invalid")
         if expected_execution == "converted":
             _verify_converted_subject(
                 connection,
@@ -575,9 +754,7 @@ def _verify_subjects(
     return ledger
 
 
-def _verify_outcome_cardinality(
-    plan: dict[str, Any], outcomes: list[dict[str, Any]]
-) -> None:
+def _verify_outcome_cardinality(plan: dict[str, Any], outcomes: list[dict[str, Any]]) -> None:
     planned = {UUID(row["source_recipe_id"]) for row in plan["decisions"]}
     observed = [UUID(str(row["source_recipe_id"])) for row in outcomes]
     if len(observed) != len(planned) or len(set(observed)) != len(observed):
@@ -635,9 +812,7 @@ def _verify_converted_subject(
             ).all()
         )
         if recipe is None or projection is None or len(revisions) != 1:
-            raise Phase5CQualificationError(
-                "qualification_converted_mapping_invalid"
-            )
+            raise Phase5CQualificationError("qualification_converted_mapping_invalid")
         revision = revisions[0]
         if (
             recipe.id != outcome["target_recipe_id"]
@@ -649,27 +824,18 @@ def _verify_converted_subject(
             or recipe.name != projection.name
             or recipe.notes != projection.notes
             or recipe.serving_count_yield != source_recipe["serving_count"]
-            or recipe.final_cooked_weight_grams
-            != source_recipe["final_yield_quantity"]
+            or recipe.final_cooked_weight_grams != source_recipe["final_yield_quantity"]
             or recipe.final_cooked_weight_display_quantity is not None
             or recipe.final_cooked_weight_display_unit is not None
             or recipe.created_at != source_recipe["created_at"]
             or recipe.updated_at != source_recipe["updated_at"]
             or recipe.deleted_at is not None
         ):
-            raise Phase5CQualificationError(
-                "qualification_converted_mapping_invalid"
-            )
-        actual_ingredients = sorted(
-            recipe.ingredients, key=lambda row: (row.position, str(row.id))
-        )
+            raise Phase5CQualificationError("qualification_converted_mapping_invalid")
+        actual_ingredients = sorted(recipe.ingredients, key=lambda row: (row.position, str(row.id)))
         if len(actual_ingredients) != len(source_ingredients):
-            raise Phase5CQualificationError(
-                "qualification_converted_mapping_invalid"
-            )
-        for actual, expected in zip(
-            actual_ingredients, source_ingredients, strict=True
-        ):
+            raise Phase5CQualificationError("qualification_converted_mapping_invalid")
+        for actual, expected in zip(actual_ingredients, source_ingredients, strict=True):
             if (
                 actual.id != expected["id"]
                 or actual.recipe_id != recipe.id
@@ -679,14 +845,11 @@ def _verify_converted_subject(
                 or actual.amount_unit != expected["unit"]
                 or actual.amount_display_quantity is not None
                 or actual.amount_display_unit is not None
-                or actual.serving_definition_id
-                != expected["serving_definition_id"]
+                or actual.serving_definition_id != expected["serving_definition_id"]
                 or actual.resolved_gram_amount != expected["gram_amount"]
                 or actual.preparation_note != expected["preparation_note"]
             ):
-                raise Phase5CQualificationError(
-                    "qualification_converted_mapping_invalid"
-                )
+                raise Phase5CQualificationError("qualification_converted_mapping_invalid")
         if (
             revision.recipe_id != recipe.id
             or revision.user_id != recipe.user_id
@@ -707,9 +870,7 @@ def _verify_converted_subject(
             or projection.deleted_at is not None
             or not projection_matches_revision(projection, revision)
         ):
-            raise Phase5CQualificationError(
-                "qualification_projection_snapshot_invalid"
-            )
+            raise Phase5CQualificationError("qualification_projection_snapshot_invalid")
         if recipe.needs_republish != _authored_content_differs(recipe, revision):
             raise Phase5CQualificationError("qualification_staleness_invalid")
     except Phase5CQualificationError:
@@ -726,17 +887,21 @@ def _verify_nonconvert_subject(
     recipe_id: UUID,
     outcome: dict[str, Any],
 ) -> None:
-    counts = connection.execute(
-        text(
-            "SELECT "
-            "(SELECT count(*) FROM recipes WHERE id = :recipe_id) AS recipes, "
-            "(SELECT count(*) FROM recipe_ingredients WHERE recipe_id = :recipe_id) "
-            "AS ingredients, "
-            "(SELECT count(*) FROM recipe_publication_revisions "
-            " WHERE recipe_id = :recipe_id) AS revisions"
-        ),
-        {"recipe_id": recipe_id},
-    ).mappings().one()
+    counts = (
+        connection.execute(
+            text(
+                "SELECT "
+                "(SELECT count(*) FROM recipes WHERE id = :recipe_id) AS recipes, "
+                "(SELECT count(*) FROM recipe_ingredients WHERE recipe_id = :recipe_id) "
+                "AS ingredients, "
+                "(SELECT count(*) FROM recipe_publication_revisions "
+                " WHERE recipe_id = :recipe_id) AS revisions"
+            ),
+            {"recipe_id": recipe_id},
+        )
+        .mappings()
+        .one()
+    )
     linked_projection_count = connection.scalar(
         text(
             "SELECT count(*) FROM food_items food "
@@ -759,9 +924,7 @@ def _verify_nonconvert_subject(
             )
         )
     ):
-        raise Phase5CQualificationError(
-            "qualification_nonconvert_domain_row_exists"
-        )
+        raise Phase5CQualificationError("qualification_nonconvert_domain_row_exists")
 
 
 def _verify_unexplained_state(
@@ -770,9 +933,7 @@ def _verify_unexplained_state(
     plan: dict[str, Any],
     outcomes: list[dict[str, Any]],
 ) -> None:
-    converted = [
-        row for row in outcomes if row["execution_disposition"] == "converted"
-    ]
+    converted = [row for row in outcomes if row["execution_disposition"] == "converted"]
     expected_recipes = {row["target_recipe_id"] for row in converted}
     expected_revisions = {row["created_revision_id"] for row in converted}
     expected_projections = {row["reused_projection_food_item_id"] for row in converted}
@@ -780,29 +941,28 @@ def _verify_unexplained_state(
     current_revisions = set(
         connection.scalars(text("SELECT id FROM recipe_publication_revisions")).all()
     )
-    managed = connection.execute(
-        text(
-            "SELECT id, recipe_publication_revision_id FROM food_items "
-            "WHERE recipe_publication_revision_id IS NOT NULL"
+    managed = (
+        connection.execute(
+            text(
+                "SELECT id, recipe_publication_revision_id FROM food_items "
+                "WHERE recipe_publication_revision_id IS NOT NULL"
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     if (
         current_recipes != expected_recipes
         or current_revisions != expected_revisions
         or {row["id"] for row in managed} != expected_projections
-        or {row["recipe_publication_revision_id"] for row in managed}
-        != expected_revisions
+        or {row["recipe_publication_revision_id"] for row in managed} != expected_revisions
     ):
-        raise Phase5CQualificationError(
-            "qualification_unexplained_current_domain_row"
-        )
+        raise Phase5CQualificationError("qualification_unexplained_current_domain_row")
     ingredient_recipe_ids = set(
         connection.scalars(text("SELECT DISTINCT recipe_id FROM recipe_ingredients")).all()
     )
     if not ingredient_recipe_ids <= expected_recipes:
-        raise Phase5CQualificationError(
-            "qualification_unexplained_current_domain_row"
-        )
+        raise Phase5CQualificationError("qualification_unexplained_current_domain_row")
     amount_revision_ids = set(
         connection.scalars(
             text("SELECT DISTINCT revision_id FROM recipe_publication_amount_definitions")
@@ -816,17 +976,13 @@ def _verify_unexplained_state(
     if not amount_revision_ids <= expected_revisions or not nutrient_revision_ids <= (
         expected_revisions
     ):
-        raise Phase5CQualificationError(
-            "qualification_unexplained_current_domain_row"
-        )
+        raise Phase5CQualificationError("qualification_unexplained_current_domain_row")
     plan_ids = {UUID(row["source_recipe_id"]) for row in plan["decisions"]}
     duplicates = connection.execute(
         text("SELECT id FROM recipes GROUP BY id HAVING count(*) <> 1")
     ).all()
     if duplicates or not expected_recipes <= plan_ids:
-        raise Phase5CQualificationError(
-            "qualification_unexplained_current_domain_row"
-        )
+        raise Phase5CQualificationError("qualification_unexplained_current_domain_row")
 
 
 def _verify_graph(
@@ -836,28 +992,28 @@ def _verify_graph(
     outcomes: list[dict[str, Any]],
     source_payload: dict[str, list[dict[str, Any]]],
 ) -> None:
-    decision_by_id = {
-        UUID(row["source_recipe_id"]): row for row in plan["decisions"]
-    }
+    decision_by_id = {UUID(row["source_recipe_id"]): row for row in plan["decisions"]}
     outcome_by_id = {UUID(str(row["source_recipe_id"])): row for row in outcomes}
-    projection_subject = {
-        row["food_item_id"]: row["id"] for row in source_payload["recipes"]
-    }
+    projection_subject = {row["food_item_id"]: row["id"] for row in source_payload["recipes"]}
     current_recipes = {
         row["id"]: row
         for row in connection.execute(text("SELECT id, user_id FROM recipes")).mappings()
     }
     graph: dict[UUID, set[UUID]] = {recipe_id: set() for recipe_id in current_recipes}
-    rows = connection.execute(
-        text(
-            "SELECT ingredient.recipe_id, ingredient.food_item_id, "
-            "parent.user_id AS parent_owner, food.user_id AS food_owner, "
-            "food.recipe_publication_revision_id "
-            "FROM recipe_ingredients ingredient "
-            "JOIN recipes parent ON parent.id = ingredient.recipe_id "
-            "JOIN food_items food ON food.id = ingredient.food_item_id"
+    rows = (
+        connection.execute(
+            text(
+                "SELECT ingredient.recipe_id, ingredient.food_item_id, "
+                "parent.user_id AS parent_owner, food.user_id AS food_owner, "
+                "food.recipe_publication_revision_id "
+                "FROM recipe_ingredients ingredient "
+                "JOIN recipes parent ON parent.id = ingredient.recipe_id "
+                "JOIN food_items food ON food.id = ingredient.food_item_id"
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     for row in rows:
         if row["parent_owner"] != row["food_owner"]:
             raise Phase5CQualificationError("qualification_dependency_invalid")
@@ -879,9 +1035,7 @@ def _verify_graph(
     remaining = set(graph)
     completed: set[UUID] = set()
     while remaining:
-        ready = sorted(
-            (node for node in remaining if graph[node] <= completed), key=str
-        )
+        ready = sorted((node for node in remaining if graph[node] <= completed), key=str)
         if not ready:
             raise Phase5CQualificationError("qualification_dependency_cycle")
         for node in ready:
@@ -924,9 +1078,7 @@ def _execution_receipt_subject(row: dict[str, Any]) -> dict[str, Any]:
         subject.update(
             {
                 "target_recipe_id": str(row["target_recipe_id"]),
-                "projection_food_item_id": str(
-                    row["reused_projection_food_item_id"]
-                ),
+                "projection_food_item_id": str(row["reused_projection_food_item_id"]),
                 "revision_id": str(row["created_revision_id"]),
                 "revision_digest": row["created_revision_digest"],
             }
@@ -993,15 +1145,12 @@ def _qualification_receipt(
     return validate_qualification_receipt_contract(receipt)
 
 
-def _ledger_row(
-    decision: dict[str, Any], outcome: dict[str, Any]
-) -> dict[str, Any]:
+def _ledger_row(decision: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any]:
     row: dict[str, Any] = {
         "source_recipe_id": str(outcome["source_recipe_id"]),
         "planned_disposition": decision["intended_disposition"],
         "executed_disposition": outcome["execution_disposition"],
-        "reason_code": outcome["failure_reason_code"]
-        or outcome["planned_reason_code"],
+        "reason_code": outcome["failure_reason_code"] or outcome["planned_reason_code"],
         "source_checksum": outcome["source_checksum"],
         "verification_state": outcome["verification_state"],
     }
@@ -1009,9 +1158,7 @@ def _ledger_row(
         row.update(
             {
                 "target_recipe_id": str(outcome["target_recipe_id"]),
-                "projection_food_item_id": str(
-                    outcome["reused_projection_food_item_id"]
-                ),
+                "projection_food_item_id": str(outcome["reused_projection_food_item_id"]),
                 "revision_id": str(outcome["created_revision_id"]),
                 "revision_digest": outcome["created_revision_digest"],
             }
@@ -1044,19 +1191,14 @@ def _group_by_food(rows: list[dict[str, Any]]) -> dict[UUID, list[dict[str, Any]
     return result
 
 
-def _relation_state_digest(
-    connection: Connection, tables: tuple[str, ...]
-) -> str:
+def _relation_state_digest(connection: Connection, tables: tuple[str, ...]) -> str:
     existing = set(inspect(connection).get_table_names())
     payload: dict[str, list[dict[str, Any]]] = {}
     for table in tables:
         if table not in existing:
             payload[table] = []
             continue
-        rows = [
-            dict(row)
-            for row in connection.execute(text(f"SELECT * FROM {table}")).mappings()
-        ]
+        rows = [dict(row) for row in connection.execute(text(f"SELECT * FROM {table}")).mappings()]
         payload[table] = sorted(rows, key=canonical_json)
     return canonical_digest(payload)
 
@@ -1066,18 +1208,19 @@ def _database_state_digest(
     *,
     source_schema: str,
     archive_schema: str,
+    excluded_source_tables: frozenset[str] = frozenset(),
 ) -> str:
     inspector = inspect(connection)
     payload: dict[str, Any] = {}
     for schema in (source_schema, archive_schema):
         tables: dict[str, Any] = {}
         for table_name in sorted(inspector.get_table_names(schema=schema)):
+            if schema == source_schema and table_name in excluded_source_tables:
+                continue
             qualified = _qualified(connection, schema, table_name)
             rows = [
                 dict(row)
-                for row in connection.execute(
-                    text(f"SELECT * FROM {qualified}")
-                ).mappings()
+                for row in connection.execute(text(f"SELECT * FROM {qualified}")).mappings()
             ]
             tables[table_name] = {
                 "count": len(rows),
@@ -1087,9 +1230,7 @@ def _database_state_digest(
     return canonical_digest(payload)
 
 
-def _authored_content_differs(
-    recipe: Recipe, captured_revision: RecipePublicationRevision
-) -> bool:
+def _authored_content_differs(recipe: Recipe, captured_revision: RecipePublicationRevision) -> bool:
     snapshots: list[NutrientSnapshot] = []
     for ingredient in recipe.ingredients:
         resolved = _resolve_preserved_amount(ingredient)
@@ -1176,9 +1317,7 @@ def _divide_totals(
         AggregatedNutrientTotal(
             nutrient_id=total.nutrient_id,
             amount_known=(total.amount_known / divisor).quantize(_DECIMAL_PLACES),
-            amount_estimated=(total.amount_estimated / divisor).quantize(
-                _DECIMAL_PLACES
-            ),
+            amount_estimated=(total.amount_estimated / divisor).quantize(_DECIMAL_PLACES),
             unit=total.unit,
             has_unknown_contributors=total.has_unknown_contributors,
             unknown_contributor_count=total.unknown_contributor_count,
