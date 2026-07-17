@@ -8,6 +8,7 @@ from app.core.database import Base
 from app.core.database_identity import database_connect_args
 from app import models  # noqa: F401
 from app.migrations.schema_authority import build_alembic_metadata
+from app.operators.phase5c4_roles import assume_migration_owner
 
 config = context.config
 
@@ -36,6 +37,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        assume_migration_owner(connection)
+        # Role inspection/SET ROLE autobegins a SQLAlchemy transaction.  End that
+        # transaction before handing the connection to Alembic so migration DDL
+        # retains its existing transactional commit boundary.
+        connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
