@@ -1,184 +1,219 @@
-# Architecture
+# Architecture guide
 
-## Layers
+Nutrition App has a conventional mobile/API/data architecture at its center and a separate,
+optional operations architecture around production promotion. Keeping those two views distinct is
+the most important aid to understanding the repository.
 
-Mobile:
+## System boundaries
 
-```text
-screen -> feature hook/use case -> API client/state -> domain utilities
+```mermaid
+flowchart TB
+    subgraph Product["Application functionality"]
+        Mobile["Expo / React Native"] --> API["FastAPI /api/v1"]
+        API --> Services["Application services"]
+        Services --> Rules["Domain and nutrition rules"]
+        Services --> Repos["Repositories"]
+        Repos --> AppDB[("Application PostgreSQL")]
+        Services --> USDA["USDA FoodData Central"]
+        Native["Apple Vision on iOS"] --> Mobile
+    end
+
+    subgraph Operations["Advanced production infrastructure"]
+        Collector["Read-only evidence collector"] --> ControlDB[("Control PostgreSQL")]
+        Collector --> WORM["MinIO object-lock storage"]
+        Executor["Promotion executor"] --> ControlDB
+        ControlDB -.->|admission and future gate| AppDB
+    end
 ```
 
-Backend:
+The application database is the authority for nutrition data. The control database is the
+authority for operational evidence and promotion workflow. It is not a second application backend
+and does not serve Foods, Recipes, or Daily Logs.
+
+## Mobile layers
+
+The mobile dependency direction is:
 
 ```text
-router -> service -> repository/domain utility -> database or integration
+screen and navigation
+    -> feature hook or local use-case model
+        -> feature API client
+            -> shared API transport
 ```
 
-Screens and route handlers stay thin. Nutrition math, parser behavior, persistence decisions, USDA mapping, and target estimation live in dedicated modules.
+| Layer | Responsibility | Typical location |
+| --- | --- | --- |
+| Navigation and screens | User flow, accessibility, loading/error presentation | `src/app`, `src/features/*/screens` |
+| Hooks | Server-state queries, mutations, and cache invalidation | `src/features/*/hooks` |
+| Feature utilities | Form state, display policy, validation, error mapping | `src/features/*/utils`, `validation`, `confirmation` |
+| Feature API boundary | Request construction and runtime response validation | `src/features/*/api` |
+| Shared transport | Base URL, headers, authentication, bounded error handling | `src/shared/api/client.ts` |
+| Native boundary | Typed wrapper over the Swift OCR module | `src/native/ocr`, `modules/nutrition-ocr` |
 
-## Historical Log Snapshot Rule
+TanStack Query owns in-process server-state caching. Zod validates important runtime boundaries,
+particularly OCR and Food source contracts. React Hook Form and feature-specific models own draft
+input. The mobile app does not calculate authoritative persisted nutrition totals.
 
-Food definitions are editable. Logs are historical facts.
+## Backend layers
 
-When a user logs food, the backend resolves the consumed amount into nutrient amounts and writes those resolved values to `daily_log_nutrient_snapshots`. Daily totals must aggregate snapshots only. They must not join back to current `food_nutrients` for nutrient math.
+```mermaid
+flowchart LR
+    Router["Router"] --> Schema["Pydantic contract"]
+    Router --> Service["Service"]
+    Service --> Domain["Domain / nutrition utility"]
+    Service --> Repository["Repository"]
+    Repository --> Model["SQLAlchemy model"]
+    Model --> DB[("PostgreSQL")]
+    Service --> Integration["External integration"]
+```
 
-This prevents edits to a saved food from rewriting past days.
+### Routers
 
-When a daily log amount is updated, that log's snapshots are deliberately deleted and rebuilt in the same service operation using the current food definition at update time. Food edits never recalculate existing log snapshots.
+Routers translate HTTP into application calls. They resolve the authenticated user, validate
+Pydantic input, choose status codes, and map known domain failures to stable API errors. Routers
+should not own nutrition math, transaction choreography, or external payload mapping.
 
-Snapshot provenance is intentionally nullable for food nutrient and serving rows:
+The API is versioned under `/api/v1`. Health and readiness are public; all feature routes are
+authenticated.
 
-- `daily_log_nutrient_snapshots.source_food_item_id` remains a live foreign key because foods are soft deleted.
-- `daily_log_nutrient_snapshots.source_food_nutrient_id` uses `ON DELETE SET NULL`.
-- `daily_log_nutrient_snapshots.serving_definition_id` uses `ON DELETE SET NULL`.
-- `daily_logs.serving_definition_id` uses `ON DELETE SET NULL`.
+### Services
 
-This preserves historical nutrient math while allowing manual food edits to replace nutrient and serving rows without violating production PostgreSQL foreign keys.
+Services own transactional use cases: create or update a Food, publish a Recipe, snapshot a Log,
+confirm OCR, import USDA data, or calculate a target comparison. They enforce user ownership,
+coordinate locks, call domain functions, maintain idempotency receipts, and commit one coherent
+result.
 
-## Serving Resolution
+Services are the best backend starting point for behavioral changes.
 
-Stage 2 supports serving-count logging and gram logging.
+### Repositories and models
 
-- Serving-count logging requires a serving definition.
-- Gram logging is allowed when the food has per-gram/per-100g nutrients or the selected/default serving definition has a valid `gram_weight`.
-- Household measures do not imply grams unless `gram_weight` is present.
-- Serving and gram resolution lives in `app/nutrition/serving_resolution.py`.
+Repositories centralize persistence queries that are reused or need a clear locking/ownership
+contract. SQLAlchemy models define stored relationships and database constraints. Neither layer
+should decide what an HTTP error means.
 
-Mobile manual-food editing supports multiple serving definitions with stable local keys while editing. The API still enforces exactly one default serving.
+Database constraints intentionally reinforce service rules: owner-scoped composite foreign keys,
+one default serving, immutable revision links, source identity uniqueness, and paired revision/log
+references make invalid cross-domain states difficult to persist.
 
-Active Recipe ingredients never rely on default-serving fallback: serving-mode ingredients
-store an explicit serving ID, while gram-mode ingredients store no serving ID. Replacing a
-Food's serving generation remaps an ingredient only when exactly one successor has the same
-normalized quantity, case-insensitive unit, and gram weight. Labels are presentation-only.
-Missing or ambiguous successors reject the Food update atomically. Equivalent remaps and
-nutrient changes mark published parent Recipes as needing explicit republication without
-changing their immutable active revision or compatibility projection.
+### Domain and nutrition modules
 
-## Food and Recipe lock protocol
+Pure modules own decimal-safe unit conversion, serving resolution, nutrient aggregation, Recipe
+projection rules, and validation. They are kept independent of HTTP and normally independent of
+session lifecycle so they can be tested exhaustively.
 
-Mutations that can change Food/Recipe dependency membership use one database lock order:
+### Integrations
 
-1. Food rows, sorted by UUID when more than one is referenced.
-2. Active dependent Recipe rows, sorted by UUID.
+`app/integrations/usda` is the external FoodData Central boundary. The client owns HTTP and API-key
+behavior; mappers translate variable upstream payloads into the app's stable nutrient and serving
+model. The mobile app never receives the USDA key or raw upstream contract.
 
-Food update, serving-default changes, Food deletion, Recipe ingredient authoring, Recipe
-publication/deletion projection work, and mutable-Food log snapshot creation follow this
-order. Food dependency operations recheck the active Recipe ID set after both lock classes
-are held. A changed set rolls back and restarts; three unstable attempts return the structured
-`food_dependencies_unstable` conflict. Mutable Manual, USDA, OCR-confirmed, and duplicated
-Food logs reload resolver children after locking the Food, so a snapshot cannot combine
-servings and nutrients from different committed Food generations. Immutable Recipe revision
-logging retains its revision lock path.
+## API organization
 
-Authored Recipe graph-edge creation and replacement add a narrower per-owner boundary before
-that order:
+| Prefix | Capability |
+| --- | --- |
+| `/api/v1/health`, `/api/v1/ready` | Liveness and bounded database readiness |
+| `/api/v1/nutrients` | Canonical nutrient catalog |
+| `/api/v1/foods` | Saved Foods, servings, favorites, recents, duplication, resolution |
+| `/api/v1/recipes` | Recipe authoring, calculation, publication, deletion |
+| `/api/v1/logs` | Daily Log creation, editing, deletion, and summaries |
+| `/api/v1/usda` | USDA search, preview, and import |
+| `/api/v1/ocr/nutrition-label` | Pure parsing and confirmed Food creation |
+| `/api/v1/targets` | Profiles, overrides, effective targets, and daily comparison |
 
-1. Lock the owning `users` row for the transaction.
-2. Lock referenced Food rows in sorted UUID order.
-3. Lock the Recipe being updated.
-4. Traverse the now-current committed Recipe graph and validate ownership, activity, serving
-   membership, and cycles.
-5. Replace ingredients and commit.
+Use FastAPI's generated `/docs` for field-level request/response exploration. The guides explain
+meaning and ownership rather than duplicating generated schema details.
 
-The owner row is a database lock, not a Python-process lock or a global application lock.
-Consequently, graph mutations for one owner serialize, different owners remain independent,
-and no advisory-key collision is possible. Under PostgreSQL `READ COMMITTED`, a waiter begins
-all graph reads only after the preceding owner transaction commits or rolls back, so graph
-membership discovery does not require a separate restart loop. SQLite's test strategy uses
-the same explicit query; its ordinary tests are single-writer, while concurrency guarantees
-are proven by the PostgreSQL suite. Ingredient removals during Food or child-Recipe deletion
-do not acquire this owner boundary because removing edges cannot introduce a cycle and their
-Food-before-Recipe locks already prevent concurrent dependency additions.
+## Persistence and transaction boundaries
 
-## Units
+### Application data
 
-Stage 2 supports `kcal`, `g`, `mg`, and `mcg`.
+The application database stores mutable definitions and immutable historical facts together, with
+explicit links between them:
 
-Mass units are normalized for aggregation when compatible. Incompatible units are rejected instead of being merged. Backend nutrition math uses `Decimal`, not floating point.
+- Foods, servings, and authored Recipes are mutable definitions.
+- Recipe publication revisions are immutable snapshots.
+- Daily Log nutrient snapshots are historical facts.
+- OCR confirmation traces are append-only creation provenance.
+- Create-idempotency rows bind retry identifiers to exact payloads and response snapshots.
 
-## USDA FoodData Central
+The [domain guides](foods-and-nutrition.md) explain those relationships in user terms.
 
-FoodData Central access is backend-only. The React Native app never receives or stores
-`USDA_FDC_API_KEY`, and mobile screens consume normalized USDA contracts rather than raw
-FoodData Central payloads.
+### Locking
 
-Integration boundary:
+Application mutations use deterministic lock protocols where Food and Recipe dependency graphs can
+race. Food rows are locked in UUID order before dependent Recipe rows. Authored Recipe graph-edge
+changes first lock the owning user row so graph discovery and cycle validation serialize per owner.
+PostgreSQL concurrency tests—not SQLite behavior—are the authority for those guarantees.
 
-- `app/integrations/usda/client.py` owns HTTP calls, API-key attachment, timeout handling,
-  upstream HTTP errors, and malformed response handling.
-- `app/integrations/usda/mappers.py` maps USDA payloads into canonical app nutrients,
-  servings, diagnostics, and source metadata.
-- `app/services/usda_service.py` orchestrates search, preview, import, duplicate detection,
-  and normal food persistence.
+### Migrations
 
-USDA nutrient mapping uses stable USDA nutrient IDs first and nutrient numbers second.
-Display-name aliases are only a narrow fallback for payload variation. Imported nutrients
-are stored in `food_nutrients`; JSON source payloads are provenance, not the primary nutrient
-model.
+Two Alembic streams exist:
 
-USDA nutrient amounts are represented as `per_100g` when imported from FoodData Central
-food nutrient records. Imported foods always receive a `100 g` serving definition with a
-valid gram weight, and additional servings are added only when USDA provides a valid gram
-weight. Household measures are never converted to grams by inference.
+1. `app/migrations` changes the application database. It currently runs through
+   `0018_phase5c_promotion_prerequisites`.
+2. `app/control_migrations` changes the independent operations database. It currently runs through
+   `ops_0004_phase5c4_admission`.
 
-USDA serving default selection is deterministic:
+Application migration 0004 deliberately refuses unsafe in-place migration of populated legacy
+Recipe tables. The Phase 5 offline bridge and converter are the supported historical path. See the
+[Control Plane Guide](control-plane.md) before changing any migration from 0015 onward or any
+control migration.
 
-- valid branded serving with gram weight is the default
-- otherwise `100 g` is the default
-- exactly one imported serving definition is default
+## Configuration and authentication
 
-USDA serving preview candidates carry deterministic candidate IDs for React Native list
-keys: `basis:100g`, `branded:serving-size`, or a USDA portion ID when available.
+Backend configuration is validated at construction time:
 
-Missing USDA nutrients remain `unknown`. Explicit USDA zero values are stored as `zero`.
-Unsupported units or ambiguous portions become diagnostics instead of silent coercions.
+- `development` creates/uses one deterministic development user.
+- `test` provides a deterministic test identity.
+- `private_single_user` requires a long shared bearer secret and a configured user identity.
+- `production` fails startup because no production identity provider is installed.
 
-USDA duplicate import behavior is source-identity based:
+This is an explicit safety boundary. Private single-user mode is suitable only for a personally
+controlled deployment; a credential embedded in a mobile binary is extractable.
 
-- active food with the same `user_id`, `source_type = usda`, and FDC ID returns the existing
-  local food
-- a concurrent insert race that loses the PostgreSQL source-identity unique index is rolled
-  back and recovered by returning the now-existing active food
-- soft-deleted prior imports may be imported again as a new local food
-- unrelated foods are not deduplicated by name
+The advanced PostgreSQL role profile separates owner, migrator, runtime, canary, qualifier, and
+operations credentials. Local development's simple Compose role is not evidence of that production
+topology.
 
-## Aggregation Semantics
+## Runtime and canary modes
 
-Daily summaries return, per nutrient:
+Normal `runtime` mode exposes the full application API. `canary` mode is a deliberately read-only,
+allowlisted process:
 
-- known amount
-- estimated amount
-- display unit
-- whether unknown contributors exist
-- unknown contributor count
+- it requires private-single-user configuration;
+- startup validates the local application database's 0018 admission view under a read-only
+  repeatable snapshot and shared advisory lock;
+- the database session must be exactly `nutrition_canary`;
+- only the frozen GET allowlist is mounted.
 
-Explicit zero contributes zero to known totals and does not count as unknown. Estimated amounts stay separate from known amounts.
+The independent control-plane gate is not yet consumed by normal request handling. The local 0018
+write-fence trigger and canary checks are prerequisites, not a completed production cutover path.
 
-## Reference Values
+## Testing architecture
 
-Reference nutrition values live in `nutrient_reference_values`:
+Tests are layered to match the claim being made:
 
-- `FDA_DV`
-- future `DRI_RDA`
-- future `DRI_AI`
-- future `DRI_UL`
+- pure unit tests prove calculation and canonical-contract behavior;
+- FastAPI tests prove ownership and API behavior;
+- Jest tests prove mobile models and interaction flows;
+- PostgreSQL tests prove locking, constraints, role boundaries, migrations, and concurrency;
+- MinIO tests prove exact object-version and retention behavior;
+- qualification tests deliberately tamper with security-critical objects to prevent false-green
+  manifests.
 
-The `nutrients` table defines nutrient identity and display hierarchy only.
+See the [Testing Guide](testing.md) for commands and suite boundaries.
 
-## Parser Corrections
+## Next reading
 
-Stage 6A parsing is a pure backend operation over normalized OCR input. It does not accept images and does not persist requests or drafts. Observations are authoritative when present; `full_text` is fallback-only when observations are absent. Parser suggestions retain source text and observation IDs so Stage 6B confirmation can identify:
+- Read the [Repository Tour](repository-tour.md) for a guided path through the directories.
+- Choose [Foods and Nutrition](foods-and-nutrition.md),
+  [Recipes and Nutrition History](recipes-and-logging.md), or
+  [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for domain behavior.
+- Use the [Development Guide](development-guide.md) to map a change to code and tests.
 
-- `ocr_scan_id`
-- `parse_result_id`
-- `parser_version`
-- canonical `nutrient_id` or parsed field name
-- parsed value
-- confirmed value
-- user confirmation action
+## See also
 
-Stage 6B persists this bounded, versioned suggestion/confirmation trace beside an ordinary Manual Food in the same transaction. It never stores the image, image path, complete raw OCR text, or an unbounded parser response. The trace is service-immutable / append-only creation provenance: no public route or production service updates or independently deletes it, and the Food relationship does not use delete-orphan. It is not nutrition resolver input. Exact per-user client-request replay is idempotent; payload-changing reuse conflicts, and only the named request-uniqueness constraint is eligible for race recovery. Stage 6C binds mobile request IDs to canonical submitted payloads and preserves ordered review/provenance arrays in backend fingerprints. Stage 6D retires only structurally identified conflicting mobile intents and recursively rejects path/URI material from every persisted trace string without blocking normal nutrition punctuation. This makes parser regressions and user corrections testable without introducing an ML feedback system.
-
-## Nutrition target authority
-
-Stage 7A keeps targets outside the historical nutrition record. Daily comparisons consume the existing snapshot-derived daily summary; profile changes and target overrides cannot rewrite Daily Logs or nutrient snapshots. Effective authority is manual override, calculated personal calorie estimate, FDA Daily Value fallback, then unavailable. FDA Daily Values are versioned regulatory references, while Mifflin–St Jeor maintenance calories are optional general estimates. Personal protein, carbohydrate, and fat targets are manual only in this phase.
+- [Architecture Decision Index](architecture-decisions.md) summarizes the major choices.
+- [Why This Exists](why-this-exists.md) explains the rationale in depth.
+- [Testing Guide](testing.md) maps tests to architectural claims.
+- [Control Plane Guide](control-plane.md) covers the optional operational subsystem.

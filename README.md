@@ -1,198 +1,196 @@
 # Nutrition App
 
-iOS-first nutrition tracker with native OCR, a FastAPI calculation backend, and PostgreSQL.
+Nutrition App is an iOS-first nutrition tracker for building a personal food library, publishing
+reusable recipes, scanning nutrition labels, and recording nutrition history without allowing
+later edits to rewrite the past. A React Native mobile client talks to a FastAPI API backed by
+PostgreSQL; Apple Vision performs OCR on the device, and the backend owns nutrition calculation,
+validation, persistence, USDA integration, and historical guarantees.
 
-## Production-hardening status
+The repository also contains an advanced production-hardening and promotion control plane. That
+subsystem protects high-risk historical database conversion and deployment operations. It is
+important for operators, but it is **not prerequisite reading** for ordinary Foods, Recipes,
+Daily Logs, USDA, OCR, Search, or Targets work.
 
-Phase 1 establishes an explicit release configuration and caller-identity boundary. Local
-development and controlled private/internal distribution are supported. Public multi-user
-production remains blocked because this repository does not contain a production identity
-provider; it will fail configuration validation instead of falling back to the development user.
+## Repository at a glance
 
-The private mode uses one configured application user and one shared bearer credential. It is
-not an account system or scalable multi-user authentication. The credential embedded in a mobile
-binary can be extracted, so this mode is only appropriate for a personally controlled backend and
-private/internal builds.
-
-## Release matrix
-
-| Deployment | Mobile API URL | Transport | Authentication | Backend exposure |
-| --- | --- | --- | --- | --- |
-| Local simulator development | Explicit `http://localhost:8000/api/v1` (or another explicit URL) | Local HTTP allowed | Backend `development`; fixed development user | Local machine only |
-| Physical local development | Explicit LAN URL such as `http://192.168.1.20:8000/api/v1` | Private-LAN HTTP allowed for development only | Backend `development`; fixed development user | Trusted LAN only; bind Uvicorn deliberately |
-| Private internal/TestFlight | Explicit non-local HTTPS URL, normalized to exactly `/api/v1` | HTTPS required | Backend/mobile `private_single_user`; shared bearer secret | Personally controlled backend; restrict access as narrowly as operationally possible |
-| Public production | Explicit non-local HTTPS URL | HTTPS required | Real production identity provider required | **Blocked in this build** |
-
-## Backend configuration
-
-Copy the backend example and choose a mode explicitly:
-
-```bash
-cp apps/backend/.env.example apps/backend/.env
+```mermaid
+flowchart TD
+    Repo["Nutrition App repository"] --> Apps["apps"]
+    Apps --> Backend["backend: FastAPI and PostgreSQL domain"]
+    Apps --> Mobile["mobile: Expo, React Native, and iOS OCR"]
+    Repo --> Docs["docs: reader guides and design records"]
+    Repo --> Packages["packages: shared contract references"]
+    Repo --> Scripts["scripts: local and operator entry points"]
+    Repo --> Compose["Docker Compose: local PostgreSQL and optional MinIO"]
 ```
 
-Required in every mode:
+| Area | Responsibility |
+| --- | --- |
+| `apps/backend` | Authoritative API behavior, nutrition rules, persistence, migrations, operators, and backend tests |
+| `apps/mobile` | User experience, mobile state, typed API boundaries, and native Apple Vision integration |
+| `docs` | Reader-oriented guides plus detailed stage, production-hardening, and release records |
+| `packages` | Small shared contract references; not a generated client SDK |
+| `scripts` | Development conveniences and explicit offline/operator commands |
+| Compose files | Local application PostgreSQL and disposable Phase 5C4 MinIO qualification |
 
-- `NUTRITION_DEPLOYMENT_MODE`: `development`, `private_single_user`, `production`, or `test`.
-- `NUTRITION_DATABASE_URL`: one SQLAlchemy database URL used by both the app and Alembic.
+The [Repository Tour](docs/repository-tour.md) explains where to begin for each feature and which
+advanced directories can be ignored during ordinary application work.
 
-Development may create the fixed development user. Test mode provides a deterministic test
-identity and does not need release credentials. Private mode additionally requires a secret of at
-least 32 characters, a configured user ID/email, and optionally the explicit
-`NUTRITION_PRIVATE_USER_CREATE_IF_MISSING=true` bootstrap switch. Caller-supplied user IDs are
-never accepted.
+## What the app does
 
-`production` currently fails startup with an actionable error because no production-capable auth
-provider is installed. This is intentional and prevents an anonymous or development-user fallback.
+- Creates, edits, duplicates, favorites, searches, and soft-deletes personal Foods.
+- Resolves serving-based and gram-based nutrition using decimal-safe calculations.
+- Searches and previews USDA FoodData Central through a backend-owned integration.
+- Builds Recipes from Foods or published nested Recipes.
+- Publishes immutable Recipe revisions that can be logged safely over time.
+- Records Daily Logs as nutrient snapshots so Food edits cannot rewrite historical totals.
+- Recognizes nutrition labels on iOS with Apple Vision, parses structured observations, and
+  preserves a bounded correction-provenance trace after confirmation.
+- Compares snapshot-derived daily nutrition with FDA Daily Values and optional personal targets.
+- Provides favorites, recents, unified saved/USDA discovery, and light/dark presentation.
 
-Operational output uses a redacted database identity (driver family, host, port, database). It does
-not print usernames, passwords, or URL query values. Configuration validation also hides input
-values in errors.
+## Screenshots
 
-## Local development
+> **[Home / Daily Log Screenshot]**
+>
+> Replace this placeholder with the current Daily Log screen.
 
-Start PostgreSQL and the backend:
+> **[Saved Foods and Search Screenshot]**
+>
+> Replace this placeholder with the combined saved-food and USDA discovery screen.
+
+> **[Recipe Editor Screenshot]**
+>
+> Replace this placeholder with Recipe authoring and ingredient selection.
+
+> **[Nutrition Label Review Screenshot]**
+>
+> Replace this placeholder with OCR confirmation and correction review.
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    subgraph Mobile["React Native mobile app"]
+        Screen["Screens and navigation"] --> Hook["Feature hooks and state"]
+        Hook --> Client["Typed API clients"]
+        Vision["Apple Vision OCR"] --> Client
+    end
+
+    Client --> API["FastAPI routers"]
+    API --> Service["Application services"]
+    Service --> Domain["Nutrition and domain rules"]
+    Service --> Repository["Repositories"]
+    Repository --> AppDB[("Application PostgreSQL")]
+    Service --> USDA["USDA FoodData Central"]
+
+    Control["Optional promotion control plane"] -.->|operations only| AppDB
+    Control --> ControlDB[("Independent control PostgreSQL")]
+    Control --> WORM["MinIO WORM evidence"]
+```
+
+For layer responsibilities, persistence boundaries, and the two migration streams, read the
+[Architecture Guide](docs/architecture.md). For a six-month-return orientation, start with the
+[Repository Tour](docs/repository-tour.md).
+
+## Technology stack
+
+| Area | Technology |
+| --- | --- |
+| Mobile | React Native 0.79, Expo 53, TypeScript, React Navigation, TanStack Query, Zod |
+| Native OCR | Swift Expo module using Apple Vision |
+| Backend | Python 3.10+, FastAPI, Pydantic, SQLAlchemy 2 |
+| Primary data | PostgreSQL 16, Alembic |
+| External data | USDA FoodData Central API |
+| Advanced operational evidence | Independent PostgreSQL control database and MinIO object lock |
+| Tests | Pytest, Jest, PostgreSQL concurrency suites, native Swift tests |
+| Quality | Ruff and TypeScript compiler |
+
+## Repository navigation
+
+The root `src/Main.java` and IDE metadata are not part of the Nutrition App runtime. See the
+[Repository Tour](docs/repository-tour.md#what-to-ignore) before inferring architecture from
+top-level files.
+
+## Quick start
+
+### 1. Start PostgreSQL
 
 ```bash
 docker compose up -d postgres
+```
+
+### 2. Start the backend
+
+```bash
 cd apps/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-# Set NUTRITION_DEPLOYMENT_MODE=development explicitly.
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-The convenience command is for local development only; it is not a remote deployment platform.
-It performs the same configuration check before migrations and never prints the full database URL:
+The example explicitly selects `development` mode and PostgreSQL at `localhost:5432`. The API is
+available at `http://localhost:8000`; FastAPI's interactive schema is at `/docs`. Liveness is
+`/api/v1/health` and database-backed readiness is `/api/v1/ready`.
 
-```bash
-./scripts/start-backend.sh
-```
-
-Alembic does not use an operational URL from `alembic.ini`. Migration and runtime commands both
-load `NUTRITION_DATABASE_URL` through the application settings. To select a test database, set that
-variable explicitly on the migration command.
-
-Migration `0004_recipe_domain_foundation` intentionally refuses to upgrade a pre-0004 database
-when either legacy `recipes` or `recipe_ingredients` table contains rows. Empty databases continue
-to upgrade normally. A populated legacy database must use the offline Phase 5C1 bridge and planner,
-then the Phase 5C2 checkpointed converter, on an isolated conversion clone.
-If a database was already upgraded through the older destructive 0004, discarded rows can be
-recovered only from a backup. See
-[Production Hardening Phase 5A](docs/production-hardening-phase5a.md).
-
-Before any future historical conversion work, operators can produce an aggregate-only, read-only
-inventory of migration, Recipe, publication, projection, log, OCR, idempotency, and retention state:
-
-```bash
-cd apps/backend
-NUTRITION_DATABASE_URL='<explicit-sqlalchemy-database-url>' \
-  .venv/bin/python -m scripts.inventory_historical_database --format human
-```
-
-Use `--format json` for the stable machine-readable contract. The command requires the canonical
-database variable in its process environment, runs PostgreSQL inspection in a read-only transaction,
-does not run migrations or repairs, and emits no row identifiers or user-authored content. See
-[Production Hardening Phase 5B](docs/production-hardening-phase5b.md).
-
-For a populated canonical 0003 clone, Phase 5C1 can move the legacy Recipe tables into an immutable
-archive, let unchanged Alembic migrations create the current empty Recipe domain, and produce the
-canonical `phase5c_conversion_plan_v2` manifest. Destructive bridging requires a separately created
-clone marker, distinct source/clone safe identities, versioned operator attestation, and
-database-level exclusion of non-Phase-5C client sessions; a boolean confirmation is not accepted.
-The operator commands require explicit database configuration and create no Recipe or publication
-data. See
-[Production Hardening Phase 5C1](docs/production-hardening-phase5c1.md) for the admission rules,
-commands, archive contract, deterministic dispositions, and deferred conversion boundary.
-
-Phase 5C2 executes only `convert` decisions from that exact approved plan at migration
-`0017_phase5c_indexes`. It reuses each compatibility projection, captures one immutable
-transition-baseline revision, and records every convert/quarantine/block outcome. Daily Logs and OCR
-provenance are unchanged. Execution is restart-safe and produces a privacy-safe receipt, but it does
-not accept the Phase 5C1 planning attestation as permission to convert. A separate execution-capable
-operator attestation derived from the exact validated plan and bound to the same clone marker is
-required. A regenerated plan requires new execution authorization. Phase 5C2 does not authorize
-production promotion; rollback remains cutback to the pre-conversion clone. See
-[Production Hardening Phase 5C2](docs/production-hardening-phase5c2.md).
-
-Phase 5C3a adds a PostgreSQL-only independent qualification command for completed Phase 5C2 clones.
-It re-queries final Recipe, ingredient, revision, projection, graph, archive/source, Daily Log, OCR,
-run, outcome, and execution-receipt state inside a read-only repeatable snapshot. Its compact,
-deterministic receipt is external evidence only and does not authorize production promotion. See
-[Production Hardening Phase 5C3a](docs/production-hardening-phase5c3a.md).
-
-Phase 5C3b adds deterministic T0–T3 historical fixtures and aggregate-only performance
-instrumentation for the unchanged Phase 5C path. The offline command requires an empty, explicitly
-confirmed `nutrition_phase5c_benchmark_*` PostgreSQL database and emits a canonical external
-performance manifest. Timing and structural scan-budget failures are evidence for a separately
-reviewed optimization; they do not authorize promotion or change conversion correctness. See
-[Production Hardening Phase 5C3b](docs/production-hardening-phase5c3b.md).
-
-Phase 5C2.1 applies the bounded optimization justified by that evidence. Admission and finalization
-retain full source, Daily Log, and OCR roots; each subject now verifies only its exact canonical
-plan-v2 inputs plus the immutable run binding. The independent qualifier, authorization,
-checkpoints, plan v2, converter receipt, and qualification receipt v1 are unchanged. The measured T0
-per-subject full-scan counts fell to zero; aggregate scan ceilings still fail because intentionally
-independent and pre-conversion stages remain outside this bounded correction.
-
-Phase 5C2.2 requalifies that unchanged optimized path with the same T0 seed, blueprint, logical-data
-digest, and dimensions. Scan counts remain exactly stable at 25 global, 68 archive/support, 20 Daily
-Log, and 37 OCR scans, with every per-subject full-scan count still zero. All remaining scans are
-accounted for by authorization/admission, restart guarantees, or independent qualification; no
-further verifier optimization is justified at T0. See
-[Production Hardening Phase 5C2.2](docs/production-hardening-phase5c2.2.md).
-
-Phase 5C4.0 selects a controlled production-like portfolio demonstration as the first deployment
-profile and closes its provider, authentication, role, signing, switching, recovery, performance,
-canary, qualifier, ownership, and deferral decisions. It authorizes Stage 5C4.1 contract work only;
-promotion remains gated by the production-like exercises, and public or independently used
-multi-user production remains blocked. See
-[Production Hardening Phase 5C4.0](docs/production-hardening-phase5c4.0.md).
-
-Liveness is public at `/api/v1/health`. Readiness is public at `/api/v1/ready` and performs a small,
-bounded database check. Neither endpoint returns configuration, API keys, credentials, user IDs, or
-stack traces. Every other `/api/v1` route is authenticated, including nutrients, USDA search/detail,
-OCR parsing, and all persisted application resources.
-
-## Mobile configuration
-
-Mobile configuration is validated during Expo config generation and again when the central API
-client loads. There is no localhost fallback.
-
-For the iOS simulator:
+### 3. Start the mobile client
 
 ```bash
 cd apps/mobile
+npm ci
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm start
 ```
 
-For a physical local development build, replace localhost with the development machine's reachable
-LAN address. The backend must be deliberately bound and reachable on that trusted network.
+Use a reachable LAN URL for a physical device. Native Apple Vision OCR requires an iOS development
+build; it is not supplied by Expo Go. The rest of the application can be understood and tested
+without configuring the production-hardening control plane.
 
-For a private internal/TestFlight export, inject all values through the build environment:
+For configuration modes, private deployment constraints, migration safety, and canary behavior,
+read the [Development Guide](docs/development-guide.md#configuration-and-startup).
 
-```bash
-cd apps/mobile
-EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=private_single_user \
-EXPO_PUBLIC_NUTRITION_API_URL=https://api.example.invalid/api/v1 \
-EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN='<build-secret>' \
-  npx expo export --platform ios
-```
+## Documentation
 
-Do not put a real token in source, examples, logs, screenshots, or build transcripts. Expo public
-configuration is embedded in the application; the token is therefore extractable. The central API
-client adds the bearer header, and feature clients must not duplicate it.
+Start at the [Documentation Index](docs/README.md), or choose a path:
 
-Release/private validation rejects missing URLs, localhost/loopback/emulator aliases, insecure HTTP,
-credentials/query strings in the URL, arbitrary paths, duplicate `/api/v1`, and a missing private
-credential. Public production configuration is rejected until a real provider is implemented.
+| Goal | Read first |
+| --- | --- |
+| Understand the codebase quickly | [Repository Tour](docs/repository-tour.md) |
+| Understand layer boundaries | [Architecture Guide](docs/architecture.md) |
+| Change Foods, servings, USDA, Search, or Targets | [Foods and Nutrition Domain](docs/foods-and-nutrition.md) |
+| Change Recipes, publication, revisions, or Daily Logs | [Recipes and Nutrition History](docs/recipes-and-logging.md) |
+| Change OCR, mobile data flow, or offline behavior | [OCR, Search, and Offline Behavior](docs/ocr-search-and-offline.md) |
+| Understand architectural decisions | [Why This Exists](docs/why-this-exists.md) |
+| Recall a specific decision quickly | [Architecture Decision Index](docs/architecture-decisions.md) |
+| Find the right code and tests for a change | [Development Guide](docs/development-guide.md) |
+| Run and extend qualification | [Testing Guide](docs/testing.md) |
+| Work on production promotion infrastructure | [Control Plane Guide](docs/control-plane.md) — optional |
 
-## Tests
+The `production-hardening-*` and stage files under `docs/` are detailed design and qualification
+records. They are valuable operational references but are not the recommended entry point for
+feature development.
+
+## Core invariants
+
+- Daily nutrition totals aggregate immutable log snapshots, never current mutable Food nutrients.
+- Missing nutrient data is different from an explicit zero.
+- Recipe publication creates an immutable revision; editing a Recipe does not rewrite that
+  revision.
+- Recipe-based logs bind to a published revision and its amount definition.
+- OCR confirmation stores bounded structured provenance, not label images or unbounded raw OCR
+  content.
+- Persisted resources are user-owned at API, service, and database relationship boundaries.
+- Retryable creates bind a client request ID to an exact payload and committed response.
+- Public production authentication is intentionally unavailable until a real identity provider is
+  installed; configuration fails closed rather than falling back to a development identity.
+
+The rationale is collected in [Why This Exists](docs/why-this-exists.md).
+
+## Testing
 
 ```bash
 cd apps/backend
@@ -204,33 +202,29 @@ npm test
 npm run typecheck
 ```
 
-PostgreSQL concurrency tests retain their dedicated URL and do not use release credentials:
+PostgreSQL concurrency, control-database, performance, and MinIO tests are opt-in because they need
+explicit disposable services. The [Testing Guide](docs/testing.md) maps each suite to the invariant
+it proves and gives the required commands.
 
-```bash
-cd apps/backend
-NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app \
-  pytest -m postgres_concurrency
-```
+## Roadmap and release status
 
-## Architectural invariants
+The original product roadmap—foundation, Foods and Daily Logs, USDA, Recipes, OCR, parser and
+confirmation, Targets, favorites, and discovery—is implementation-complete with automated contract
+coverage. Physical-device OCR, accessibility, populated lifecycle, theme, keyboard, and live
+failure-recovery QA remain release work; see [Roadmap Closeout](docs/stage7-roadmap-closeout.md) and
+[Release Candidate QA](docs/rc1-release-qa.md).
 
-- Daily log history aggregates immutable nutrient snapshots, not mutable current Food nutrients.
-- Missing nutrient data is distinct from zero.
-- FDA Daily Values are reference rows rather than nutrient columns.
-- Parser corrections retain structured provenance without storing raw label images/text.
-- Recipe publication revisions are immutable snapshots and ownership remains service-scoped.
-- Retryable create operations use owner- and operation-scoped `client_request_id` receipts in the
-  same transaction as the created resource. Replays with the same payload return the committed
-  resource; reuse with different payload data returns a conflict. Manual Food creation, Food
-  duplication, custom serving creation, Recipe creation, Recipe publication, Daily Log creation,
-  and OCR confirmation are covered. Favorites and targets remain naturally idempotent `PUT`
-  operations, while USDA import retains its owner/source identity deduplication.
+Production hardening is intentionally separate. The repository contains historical conversion,
+qualification, role separation, write-fence prerequisites, and an independent promotion admission
+control plane. Runtime consumption of the independent control gate, provider switching, activation,
+and public multi-user authentication are not claimed complete. See the optional
+[Control Plane Guide](docs/control-plane.md) for the exact boundary.
 
-Create-operation receipts retain the original response snapshot and are kept indefinitely so an
-accepted request ID never expires into permission to create a duplicate. If the exact mutable
-result is later archived or its created child is replaced, replay returns the structured
-`create_idempotency_result_unavailable` conflict instead of returning stale success or creating a
-replacement. Receipt cleanup is intentionally not part of the current retention model.
+## Next reading
 
-See [Production Hardening Phase 1](docs/production-hardening-phase1.md) for the configuration contract
-and [Stage 5A Apple Vision OCR](docs/stage5-ocr.md) for native OCR setup and limitations.
+- Start with the [Repository Tour](docs/repository-tour.md) when returning after a break.
+- Use the [Architecture Decision Index](docs/architecture-decisions.md) to refresh a remembered
+  design choice quickly.
+- Choose a feature guide from the [Documentation Index](docs/README.md) before opening code.
+- Read the optional [Control Plane Guide](docs/control-plane.md) only when working on Phase 5 or
+  production operations.
