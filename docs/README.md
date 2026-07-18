@@ -76,6 +76,8 @@ They are intentionally more detailed than the reader guides:
   [PostgreSQL role boundary](production-hardening-phase5c4.2a.md)
 - [OCR implementation](stage5-ocr.md), [confirmation](stage6-confirmation.md),
   [parser](stage6-parser.md), and [Food discovery](stage7-food-discovery.md)
+- [Manual QA evidence](evidence/qa/README.md) and the captured Phase 5C performance manifests
+  described by [Phase 5C3b](production-hardening-phase5c3b.md)
 
 These records should not be rewritten into introductory guides: the guides explain the stable
 architecture and link back when exact historical authority matters.

@@ -89,8 +89,10 @@ they are not the shortest path to understanding ordinary feature code.
 
 - `docker-compose.yml` runs the normal local PostgreSQL 16 database.
 - `docker-compose.phase5c4.yml` runs disposable MinIO for control-plane qualification.
-- `scripts/start-backend.sh` is a development convenience command, not a production deployment
-  mechanism.
+- `scripts/start-backend.sh` starts only the qualified runtime process with the
+  `nutrition_runtime` database identity. Apply migrations separately as `nutrition_migrator`.
+- `scripts/zip-project.sh` creates a bounded review archive without local secrets or generated
+  output.
 
 ## The persistence map
 
@@ -307,8 +309,8 @@ When working on ordinary features, you can initially ignore:
 Return to them if a change touches application migration 0018, database role topology, canary
 startup, historical conversion, immutable evidence, or promotion admission.
 
-The root `src/Main.java`, `.idea/`, `.DS_Store` files, build output, caches, virtual environments,
-and `node_modules/` are not architectural components.
+`.DS_Store` files, build output, caches, virtual environments, generated native projects, and
+`node_modules/` are not architectural components and remain untracked.
 
 ## Next reading
 

@@ -30,7 +30,7 @@ flowchart TD
 | `apps/mobile` | User experience, mobile state, typed API boundaries, and native Apple Vision integration |
 | `docs` | Reader-oriented guides plus detailed stage, production-hardening, and release records |
 | `packages` | Small shared contract references; not a generated client SDK |
-| `scripts` | Development conveniences and explicit offline/operator commands |
+| `scripts` | Qualified runtime launch, review packaging, and explicit offline/operator commands |
 | Compose files | Local application PostgreSQL and disposable Phase 5C4 MinIO qualification |
 
 The [Repository Tour](docs/repository-tour.md) explains where to begin for each feature and which
@@ -106,12 +106,6 @@ For layer responsibilities, persistence boundaries, and the two migration stream
 | Tests | Pytest, Jest, PostgreSQL concurrency suites, native Swift tests |
 | Quality | Ruff and TypeScript compiler |
 
-## Repository navigation
-
-The root `src/Main.java` and IDE metadata are not part of the Nutrition App runtime. See the
-[Repository Tour](docs/repository-tour.md#what-to-ignore) before inferring architecture from
-top-level files.
-
 ## Quick start
 
 ### 1. Start PostgreSQL
@@ -126,7 +120,8 @@ docker compose up -d postgres
 cd apps/backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+python -m pip install -r requirements-dev.lock
+python -m pip install --no-build-isolation --no-deps -e .
 cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload

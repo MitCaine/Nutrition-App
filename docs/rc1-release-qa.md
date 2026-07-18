@@ -4,6 +4,8 @@
 > Its internal/TestFlight recommendation is superseded by
 > [Production Hardening Phase 1](production-hardening-phase1.md): private builds now require an
 > explicit HTTPS API URL and shared private credential, while public production remains blocked.
+> All versions, test counts, device identifiers, and migration heads below are point-in-time RC1
+> evidence rather than statements of current repository state.
 
 Date: 2026-07-14 (America/Los_Angeles)
 

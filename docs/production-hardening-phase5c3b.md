@@ -130,7 +130,7 @@ NUTRITION_DATABASE_URL='<disposable-benchmark-url>' \
   --storage-environment 'isolated local SSD' \
   --cache-mode warm \
   --confirm-disposable-database nutrition_phase5c_benchmark_example \
-  --output phase5c-performance-t0.json
+  --output evidence/phase5c/phase5c-performance-t0.json
 ```
 
 Use `--available-memory-mib` when the operating system cannot provide available-memory evidence.
@@ -176,12 +176,12 @@ warm-cache declaration produced this comparison. Wall time is environment eviden
 | Independent-qualification wall time | 1.520 s | 1.484 s |
 | Subject p95 time / queries | 0.475 s / 72 | 0.046 s / 65 |
 
-The [initial manifest](../apps/backend/phase5c-performance-t0.json) and
-[optimized manifest](../apps/backend/phase5c-performance-t0-optimized.json) preserve the detailed
+The [initial manifest](../apps/backend/evidence/phase5c/phase5c-performance-t0.json) and
+[optimized manifest](../apps/backend/evidence/phase5c/phase5c-performance-t0-optimized.json) preserve the detailed
 aggregate evidence. Both independently qualified correctness and restart behavior.
 
 Phase 5C2.2 repeated the same T0 workload after the archive-index provisioning correction. The
-[requalification manifest](../apps/backend/phase5c-performance-t0-requalified.json) preserves that
+[requalification manifest](../apps/backend/evidence/phase5c/phase5c-performance-t0-requalified.json) preserves that
 evidence. Its aggregate and per-subject scan vectors exactly match the optimized manifest; the only
 structural query delta is 15 bridge/migration metadata queries. The exhaustive proof-obligation
 analysis and recommendation to stop optimization are documented in

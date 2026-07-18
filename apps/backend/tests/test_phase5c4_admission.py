@@ -789,7 +789,7 @@ def test_evaluate_t0_admission_binds_dimensions_manifest_ratification_policy_and
     source = _source_incarnation()
     dimensions = _dimensions(source_database_incarnation_digest=source["record_digest"])
     manifest = load_performance_manifest_file(
-        BACKEND_ROOT / "phase5c-performance-t0-requalified.json"
+        BACKEND_ROOT / "evidence" / "phase5c" / "phase5c-performance-t0-requalified.json"
     )
     ratification = build_performance_contract_ratification(
         source_manifest=manifest,

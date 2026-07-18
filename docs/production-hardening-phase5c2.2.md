@@ -16,8 +16,8 @@ existing fixture generator, tier, seed, and warm-cache declaration:
 - dimensions: 50 Recipes, 274 ingredients, 250 Foods, 5,000 Daily Logs, and 1,000 OCR records; and
 - manifest digest: `b9e28da1443f5861e942ae49d76063efa9a32c32f1db07cd05a6ba5d4eece070`.
 
-The [requalification manifest](../apps/backend/phase5c-performance-t0-requalified.json) is the
-canonical evidence. Database-bound receipt and manifest digests are expected to differ between
+The [requalification manifest](../apps/backend/evidence/phase5c/phase5c-performance-t0-requalified.json)
+is the canonical evidence. Database-bound receipt and manifest digests are expected to differ between
 disposable runs; the fixture blueprint, logical-data digest, dimensions, rules, and decision
 distribution are the reproducible workload identity.
 

@@ -332,7 +332,7 @@ def _quarantine_acceptance(
 
 
 def _manifest(name: str = "phase5c-performance-t0-requalified.json") -> dict:
-    return load_performance_manifest_file(BACKEND_ROOT / name)
+    return load_performance_manifest_file(BACKEND_ROOT / "evidence" / "phase5c" / name)
 
 
 def test_canonical_json_authority_has_stable_bytes_and_sha256() -> None:

@@ -26,8 +26,12 @@ trap cleanup EXIT
 
 INCLUDE_PATHS=(
   README.md
+  CONTRIBUTING.md
   .gitignore
   .env.example
+  .python-version
+  .nvmrc
+  .github
   docker-compose.yml
   docker-compose.phase5c4.yml
   docs
@@ -37,12 +41,11 @@ INCLUDE_PATHS=(
   apps/backend/tests
   apps/backend/scripts
   apps/backend/pyproject.toml
+  apps/backend/requirements-dev.lock
   apps/backend/alembic.ini
   apps/backend/alembic-control.ini
   apps/backend/.env.example
-  apps/backend/phase5c-performance-t0.json
-  apps/backend/phase5c-performance-t0-optimized.json
-  apps/backend/phase5c-performance-t0-requalified.json
+  apps/backend/evidence
   apps/mobile/App.js
   apps/mobile/src
   apps/mobile/modules

@@ -25,7 +25,8 @@ docker compose up -d postgres
 cd apps/backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+python -m pip install -r requirements-dev.lock
+python -m pip install --no-build-isolation --no-deps -e .
 cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload
@@ -33,7 +34,18 @@ uvicorn app.main:app --reload
 
 Normal development uses one application URL for runtime and Alembic. A qualified production-like
 role profile runs migrations separately as `nutrition_migrator` and the API as
-`nutrition_runtime`; the development convenience script is not that launch sequence.
+`nutrition_runtime`. The root `scripts/start-backend.sh` implements only that qualified runtime
+launch: it verifies the exact runtime database role and deliberately does not run Alembic.
+
+`pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
+Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented
+pip-tools version after changing `pyproject.toml`:
+
+```bash
+python -m pip install "pip-tools==7.6.0"
+pip-compile --strip-extras --all-build-deps --allow-unsafe --extra dev \
+  --output-file requirements-dev.lock pyproject.toml
+```
 
 ### Mobile
 

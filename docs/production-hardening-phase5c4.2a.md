@@ -36,10 +36,11 @@ ownership; and rejects any additional extension. Extension-member functions are 
 application routines and are not rewritten. It transfers only enumerated application schemas and
 objects; it never uses `REASSIGN OWNED`.
 
-The current development `start-backend.sh` also runs Alembic and the backend with one URL. That is
-convenient for unqualified development but is not an eligible 5C4.2a launch sequence. A qualified
-exercise runs Alembic separately with the migrator credential, then starts the backend with the
-runtime credential.
+At the time of this stage's root-cause inventory, the development `start-backend.sh` ran Alembic
+and the backend with one URL. That was convenient for unqualified development but was not an
+eligible 5C4.2a launch sequence. The current script implements only the qualified runtime half: it
+requires the `nutrition_runtime` identity and never runs Alembic. Apply migrations separately with
+the migrator credential.
 
 ## Final topology
 

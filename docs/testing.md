@@ -12,13 +12,17 @@ cd apps/backend
 source .venv/bin/activate
 pytest
 ruff check .
-ruff format --check .
 python -m compileall -q app tests scripts
 ```
 
 The default test configuration selects test deployment mode and in-memory SQLite where a test does
 not explicitly require PostgreSQL. This is appropriate for calculation, parser, schema, API, and
 most service behavior. It is not evidence for PostgreSQL locking or privilege claims.
+
+The reproducible Python 3.12 development and CI environment is pinned in
+`requirements-dev.lock`. `pyproject.toml` remains the dependency declaration; use the regeneration
+command in the [Development Guide](development-guide.md#configuration-and-startup) after changing
+dependencies.
 
 ### Mobile
 
@@ -145,9 +149,15 @@ at a shared or production object store.
 For a cross-cutting change, also run:
 
 ```bash
+python scripts/validate-docs.py
+bash -n scripts/*.sh
 docker compose -f docker-compose.yml config -q
 git diff --check
 ```
+
+GitHub Actions runs the fast backend, mobile, documentation, and shell baseline. PostgreSQL,
+control-database, MinIO, performance, and native iOS qualification remain manual or explicitly
+opt-in because their authority depends on disposable services or Apple tooling.
 
 Validate the Phase 5C4 Compose file with explicit disposable MinIO credentials. Review `git status`
 so generated build output, `.env`, credentials, evidence, database dumps, or screenshots containing
