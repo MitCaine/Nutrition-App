@@ -1,16 +1,17 @@
 # Production Hardening Phase 5C4.0: deployment and provider decision record
 
-Status: **accepted; Stage 5C4.2b architecture clarified, implementation pending**
+Status: **accepted historical decision; implementation complete through Stage 5C4.4**
 Decision date: 2026-07-16
 Stage 5C4.2b clarification date: 2026-07-16
 Decision owner: repository owner, acting as `portfolio_owner_v1`
 Selected profile: `phase5c4_controlled_portfolio_demo_v1`
 
-This record closes the infrastructure and policy choices required by Section 20 of
-[Production Hardening Phase 5C4](production-hardening-phase5c4.md). It makes no application,
-database, provider, or Phase 5C4 runtime change. Stage 5C4.1 contracts and Stage 5C4.2a role
-topology were completed under separate reviews. Stages 5C4.2b through 5C4.9 remain implementation
-work with their own exit gates.
+Current implementation boundary: [Control Plane Guide](control-plane.md#evolution-of-production-hardening).
+
+This record closed the infrastructure and policy choices required by Section 20 of
+[Production Hardening Phase 5C4](production-hardening-phase5c4.md). The decision itself made no
+application, database, provider, or runtime change. Later bounded implementation reviews completed
+Stages 5C4.1 through 5C4.4; Stages 5C4.5 through 5C4.9 retain their own exit gates.
 
 The graph-restart/idempotency and Alembic schema-authority blockers were corrected before this
 record. Migration 0018 may therefore be designed against an explicit runtime-plus-retained schema
@@ -722,10 +723,10 @@ The GO becomes NO-GO immediately if:
 No production-like promotion is authorized by this GO. Promotion remains blocked until every
 exercise-dependent row in Section 3 has passing evidence.
 
-**Current clarification:** Stage 5C4.1 and 5C4.2a passed their separate implementation reviews.
-Stage 5C4.2b may now implement only the bounded data-plane scope in Section 19 and the normative
-contracts in the primary design. This clarification grants neither control-plane authority nor a
-production path into `open_production`.
+**Historical clarification at acceptance:** Stage 5C4.1 and 5C4.2a had passed their separate
+implementation reviews. Stage 5C4.2b was authorized to implement only the bounded data-plane scope
+in Section 19 and the normative contracts in the primary design. That clarification granted
+neither control-plane authority nor a production path into `open_production`.
 
 ## 19. Revised bounded implementation sequence
 

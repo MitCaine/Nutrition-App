@@ -166,6 +166,7 @@ Start at the [Documentation Index](docs/README.md), or choose a path:
 | Change OCR, mobile data flow, or offline behavior | [OCR, Search, and Offline Behavior](docs/ocr-search-and-offline.md) |
 | Understand architectural decisions | [Why This Exists](docs/why-this-exists.md) |
 | Recall a specific decision quickly | [Architecture Decision Index](docs/architecture-decisions.md) |
+| Look up project terminology | [Glossary](docs/reference/glossary.md) |
 | Find the right code and tests for a change | [Development Guide](docs/development-guide.md) |
 | Run and extend qualification | [Testing Guide](docs/testing.md) |
 | Work on production promotion infrastructure | [Control Plane Guide](docs/control-plane.md) — optional |

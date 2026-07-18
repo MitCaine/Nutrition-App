@@ -4,6 +4,10 @@ This is a memory aid for the project's major architectural choices. It answers �
 this—but why?” and points to the guide that contains the full explanation. It is an index, not a
 replacement for the architecture or domain guides.
 
+Entries in this index describe accepted, implemented application decisions unless an entry says
+otherwise. The Phase 5C4.0 deployment-profile ADR is an accepted historical decision record; its
+current implementation boundary is maintained in the [Control Plane Guide](control-plane.md#evolution-of-production-hardening).
+
 ## Application and nutrition decisions
 
 ### Immutable Daily Log nutrition
@@ -253,5 +257,6 @@ authorship, migration authority, or an alternate path around write fencing and a
 ## See also
 
 - [Why This Exists](why-this-exists.md) provides longer-form rationale.
+- [Glossary](reference/glossary.md) defines the terms used by these decisions.
 - [Development Guide](development-guide.md) maps decisions to code and tests.
 - [Documentation index](README.md) provides role-based reading paths.

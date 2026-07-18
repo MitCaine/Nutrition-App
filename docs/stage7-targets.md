@@ -52,7 +52,7 @@ Example: a 30-year-old equation-male profile at 70 kg and 175 cm has resting ene
 Primary sources:
 
 - [Mifflin et al., 1990, PubMed PMID 2305711](https://pubmed.ncbi.nlm.nih.gov/2305711/)
-- [NIH/NIDDK Body Weight Planner activity-level and adult-use guidance](https://www.niddk.nih.gov/bwp.)
+- [NIH/NIDDK Body Weight Planner activity-level and adult-use guidance](https://www.niddk.nih.gov/bwp)
 
 Incomplete profiles return `target_profile_incomplete`. Ages outside 19–78 return `target_estimate_unsupported_age`. Pregnancy, lactation, and specialized-medical contexts return `target_estimate_unsupported_context`. The app does not estimate for those cases and describes estimates as general information, not medical advice.
 

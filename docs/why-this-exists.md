@@ -3,6 +3,24 @@
 This guide answers the architectural questions that are easy to forget when returning to the
 project. It describes the problem each invariant solves, not the implementation history.
 
+## Decision tradeoffs at a glance
+
+This table is the canonical short-form tradeoff summary. The sections below explain the reasoning;
+the [Architecture Decision Index](architecture-decisions.md) points to implementation detail.
+
+| Decision | Benefits | Tradeoffs | Why chosen here |
+| --- | --- | --- | --- |
+| Immutable Daily Log nutrition | Past totals remain explainable after Food edits or deletion. | Writes store duplicated nutrient snapshots, and explicit Log edits must rebuild them atomically. | Historical truth is more important than minimizing rows or recomputing from mutable Foods. |
+| Immutable Recipe revisions and retained history | Logs and nested Recipes keep exact published content. | Publication stores another graph and requires revision-resolution code. | Mutable authoring cannot safely serve as historical authority. |
+| Explicit publication workflow | Users can edit freely while “published” has one transactional meaning. | A Recipe may be stale and marked `needs_republish` until the user publishes again. | An explicit boundary is safer than silently changing every downstream consumer on save. |
+| Generated compatibility Food projection | Published Recipes reuse Food search, serving, ingredient, and logging paths. | Projection state must be regenerated and cannot be treated as historical authority. | Reuse is preferable to a parallel loggable-item hierarchy when the exact revision link remains authoritative. |
+| Service-first, selective repositories | Transaction and ownership authority stay visible while complex queries are reusable. | Persistence access is not mechanically uniform across every service. | A repository per table would add indirection without clarifying responsibility. |
+| No Repository Provider/Factory layer | Construction and transaction ownership remain direct and easy to trace. | Swapping an entire persistence backend is not a plug-in operation. | The application has one authoritative PostgreSQL backend; selective test seams provide enough substitution. |
+| Layered ownership enforcement | Friendly service errors and race-resistant database integrity reinforce each other. | Owner predicates and constraints appear at several layers and require coordinated tests. | One missed route check must not permit a cross-user relationship. |
+| PostgreSQL concurrency strategy | Row locks, deterministic ordering, constraints, and one transaction protect graph changes. | Lock-dependent claims require PostgreSQL tests and deliberate deadlock review. | In-process locks or SQLite behavior cannot protect concurrent API workers. |
+| Online-first mobile behavior | Server authority, conflict handling, and historical writes have one clear home. | Users cannot queue durable nutrition mutations while disconnected. | A correct sync engine would need explicit rules for every graph, owner, and immutable-history conflict. |
+| Bounded OCR provenance | Parser behavior and user corrections remain explainable with limited privacy exposure. | The trace cannot reproduce every detail of the original image or raw OCR response. | Structured evidence needed for diagnosis is worth retaining; sensitive, unbounded capture material is not. |
+
 ## Why immutable Recipe revisions?
 
 An authored Recipe is expected to change: ingredients, yields, and source Foods evolve. A logged

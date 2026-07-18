@@ -9,10 +9,11 @@ different reading paths.
 ### I am returning to the project
 
 1. Read the [Repository Tour](repository-tour.md).
-2. Read the [Architecture Guide](architecture.md).
-3. Use the [Architecture Decision Index](architecture-decisions.md) to refresh forgotten rationale.
-4. Read the domain guide for the area you plan to change.
+2. Read [Why This Exists](why-this-exists.md) for the reasoning behind the invariants.
+3. Read the [Architecture Guide](architecture.md) to map that reasoning to system boundaries.
+4. Read the subsystem or domain guide for the area you plan to change.
 5. Use the [Development Guide](development-guide.md) as a code-and-test index.
+6. Use the [Architecture Decision Index](architecture-decisions.md) to refresh a specific decision.
 
 ### I am working on application features
 
@@ -51,6 +52,7 @@ the center of the application domain.
 | [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) | What runs on-device, on the backend, or only while online? |
 | [Why This Exists](why-this-exists.md) | What problem is each architectural invariant solving? |
 | [Architecture Decision Index](architecture-decisions.md) | I remember a decision—where is its rationale? |
+| [Glossary](reference/glossary.md) | What does a project-specific term mean here? |
 | [Development Guide](development-guide.md) | Which files, APIs, migrations, and tests should I touch? |
 | [Testing Guide](testing.md) | Which suite proves which guarantee? |
 | [Control Plane Guide](control-plane.md) | What is Phase 5, and when do I need to understand it? |
@@ -81,7 +83,9 @@ architecture and link back when exact historical authority matters.
 ## Next reading
 
 - Returning after a break: [Repository Tour](repository-tour.md)
-- Refreshing rationale: [Architecture Decision Index](architecture-decisions.md)
+- Understanding rationale: [Why This Exists](why-this-exists.md)
+- Refreshing one decision or term: [Architecture Decision Index](architecture-decisions.md) or
+  [Glossary](reference/glossary.md)
 - Starting a change: [Development Guide](development-guide.md)
 
 ## See also
@@ -89,3 +93,4 @@ architecture and link back when exact historical authority matters.
 - [Project README](../README.md)
 - [Architecture Guide](architecture.md)
 - [Why This Exists](why-this-exists.md)
+- [Glossary](reference/glossary.md)

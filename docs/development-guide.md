@@ -211,4 +211,5 @@ Before finishing any feature change:
 
 - [Repository Tour](repository-tour.md) for directory navigation
 - [Architecture Guide](architecture.md) for responsibility boundaries
+- [Glossary](reference/glossary.md) for project-specific terms
 - [Control Plane Guide](control-plane.md) only for Phase 5 and production-operations changes
