@@ -22,6 +22,8 @@ from app.dependencies.database import get_db
 from app.main import app
 from app.models.user import User
 from app.operators import phase5c4_roles as roles
+from app.operators.phase5c4_control_evidence import collect_source_dimension_snapshot
+from app.operators.phase5c_performance_contracts import validate_source_dimensions
 from app.schemas.food import FoodCreateRequest
 from app.services.food_service import FoodService
 
@@ -818,3 +820,149 @@ def test_migrator_owns_alembic_path_and_downgrade_reupgrade_is_clean(
         assert evidence["qualified"] is True
     finally:
         qualifier.dispose()
+
+
+def test_source_dimension_collector_is_real_read_only_repeatable_read_and_nonmutating(
+    role_database: RoleDatabase,
+) -> None:
+    admin = role_database.admin_engine()
+    run_id = str(uuid4())
+    digest = "a" * 64
+    with admin.connect() as connection:
+        metadata = (
+            connection.execute(
+                text(
+                    """
+                SELECT archive_identity, archive_schema, clone_marker_digest
+                FROM public.phase5c_conversion_metadata
+                """
+                )
+            )
+            .mappings()
+            .one()
+        )
+    original_archive_identity = str(metadata["archive_identity"])
+    collector_archive_identity = "c" * 64
+    downgraded = _run_alembic(
+        role_database.role_urls[roles.MIGRATOR_ROLE],
+        "downgrade",
+        "0017_phase5c_indexes",
+    )
+    assert downgraded.returncode == 0, downgraded.stderr
+    with admin.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE public.phase5c_conversion_metadata "
+                "SET archive_identity = :new_identity "
+                "WHERE archive_identity = :old_identity"
+            ),
+            {
+                "new_identity": collector_archive_identity,
+                "old_identity": original_archive_identity,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO public.phase5c_conversion_runs(
+                    id, archive_identity, plan_version, plan_digest, inventory_digest,
+                    schema_signature, schema_signature_digest, conversion_rules_version,
+                    recipes_checksum, ingredients_checksum, archive_checksum,
+                    planning_source_checksum, clone_marker_digest,
+                    operator_attestation_digest, execution_isolation_contract_version,
+                    execution_attestation_version, execution_attestation_identity,
+                    execution_attestation_scope, execution_attestation_digest,
+                    converter_version, daily_log_state_digest, ocr_state_digest,
+                    execution_state, verification_state, failure_reason_code
+                ) VALUES (
+                    CAST(:run_id AS uuid), :archive_identity,
+                    'phase5c_conversion_plan_v2', :digest, :digest,
+                    'fixture_signature', :digest, 'fixture_conversion_rules_v1',
+                    :digest, :digest, :digest, :digest, :clone_marker_digest,
+                    :digest, 'fixture_execution_isolation_v1',
+                    'phase5c_operator_attestation_v2', 'fixture-execution-attestation',
+                    'execution', :digest, 'phase5c_checkpointed_converter_v1',
+                    :digest, :digest, 'completed', 'verified', NULL
+                )
+                """
+            ),
+            {
+                "run_id": run_id,
+                "archive_identity": collector_archive_identity,
+                "clone_marker_digest": metadata["clone_marker_digest"],
+                "digest": digest,
+            },
+        )
+    try:
+        with admin.connect() as connection:
+            before = tuple(
+                connection.execute(
+                    text(
+                        """
+                        SELECT
+                          (SELECT count(*) FROM public.users),
+                          (SELECT count(*) FROM public.recipes),
+                          (SELECT count(*) FROM public.food_items),
+                          (SELECT count(*) FROM public.daily_logs),
+                          (SELECT count(*) FROM public.ocr_scans),
+                          (SELECT count(*) FROM public.phase5c_conversion_metadata),
+                          (SELECT count(*) FROM public.phase5c_conversion_runs)
+                        """
+                    )
+                ).one()
+            )
+        observation = collect_source_dimension_snapshot(
+            role_database.role_urls[roles.QUALIFIER_ROLE],
+            observation_id=str(uuid4()),
+            environment=f"collector-{uuid4().hex[:12]}",
+            source_database_incarnation_digest="b" * 64,
+            observation_mode="preflight_normal",
+        )
+        assert validate_source_dimensions(observation) == observation
+        assert observation["contract_version"] == "phase5c4_source_dimensions_v1"
+        assert observation["snapshot"]["isolation_level"] == "repeatable_read"
+        assert observation["snapshot"]["read_only"] is True
+        assert observation["source_bindings"]["run_id"] == run_id
+        assert observation["source_bindings"]["archive_schema"] == metadata["archive_schema"]
+        with admin.connect() as connection:
+            after = tuple(
+                connection.execute(
+                    text(
+                        """
+                        SELECT
+                          (SELECT count(*) FROM public.users),
+                          (SELECT count(*) FROM public.recipes),
+                          (SELECT count(*) FROM public.food_items),
+                          (SELECT count(*) FROM public.daily_logs),
+                          (SELECT count(*) FROM public.ocr_scans),
+                          (SELECT count(*) FROM public.phase5c_conversion_metadata),
+                          (SELECT count(*) FROM public.phase5c_conversion_runs)
+                        """
+                    )
+                ).one()
+            )
+        assert after == before
+    finally:
+        with admin.begin() as connection:
+            connection.execute(
+                text("DELETE FROM public.phase5c_conversion_runs WHERE id = CAST(:run_id AS uuid)"),
+                {"run_id": run_id},
+            )
+            connection.execute(
+                text(
+                    "UPDATE public.phase5c_conversion_metadata "
+                    "SET archive_identity = :old_identity "
+                    "WHERE archive_identity = :new_identity"
+                ),
+                {
+                    "new_identity": collector_archive_identity,
+                    "old_identity": original_archive_identity,
+                },
+            )
+        upgraded = _run_alembic(
+            role_database.role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            roles.EXPECTED_ALEMBIC_REVISION,
+        )
+        assert upgraded.returncode == 0, upgraded.stderr
+        admin.dispose()

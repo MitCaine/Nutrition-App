@@ -971,6 +971,7 @@ def _install_typed_projection() -> None:
                 ordinal_value := 0;
                 FOR entry IN SELECT key, value
                     FROM pg_catalog.jsonb_each(payload->'raw_scan_counts')
+                    ORDER BY pg_catalog.length(key), key COLLATE "C"
                 LOOP
                     INSERT INTO phase5c4_control.phase5c4_performance_scan_rows (
                         artifact_id, scan_name, ordinal, result_digest, row_count

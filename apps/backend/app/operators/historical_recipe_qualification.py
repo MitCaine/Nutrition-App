@@ -45,8 +45,10 @@ from app.operators.phase5c_contracts import (
 )
 from app.operators.phase5c4_contracts import TARGET_SCHEMA_REVISION
 from app.operators.phase5c4_prerequisites import (
+    QUALIFICATION_FAILURE_CODES,
     Phase5C4PrerequisiteError,
     PromotionPrerequisiteState,
+    admit_qualification_prerequisites,
     qualification_reason,
     validate_prerequisite_observation,
 )
@@ -404,19 +406,17 @@ def qualify_historical_recipe_conversion_v2(
 def _admit_qualification_prerequisites(
     prerequisites: PromotionPrerequisiteState,
 ) -> None:
-    if prerequisites.session_role != "nutrition_qualifier":
-        raise Phase5CQualificationError("qualification_role_topology_invalid")
-    if not prerequisites.role_topology_valid:
-        raise Phase5CQualificationError("qualification_role_topology_invalid")
-    if not prerequisites.gate_trigger_coverage_valid:
-        raise Phase5CQualificationError("qualification_gate_trigger_coverage_invalid")
-    if not prerequisites.immutability_valid:
-        raise Phase5CQualificationError("qualification_immutability_invalid")
-    if (
-        prerequisites.state["mode"] != "closed_prequalification"
-        or prerequisites.state["epoch"] != 1
-    ):
-        raise Phase5CQualificationError("qualification_fence_state_invalid")
+    """Compatibility seam delegating to the single prerequisite policy authority."""
+
+    try:
+        admit_qualification_prerequisites(prerequisites)
+    except Phase5C4PrerequisiteError as exc:
+        reason = (
+            exc.reason_code
+            if exc.reason_code in QUALIFICATION_FAILURE_CODES
+            else qualification_reason(exc.reason_code)
+        )
+        raise Phase5CQualificationError(reason) from None
 
 
 def _bind_qualification_target(

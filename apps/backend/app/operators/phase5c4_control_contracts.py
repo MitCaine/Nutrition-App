@@ -38,6 +38,16 @@ REASONS = frozenset(
         "invalid_transition",
         "terminal_attempt",
         "evidence_not_anchored",
+        "evidence_missing",
+        "evidence_stale",
+        "semantic_mismatch",
+        "performance_tier_unsupported",
+        "performance_revoked",
+        "block_detected",
+        "quarantine_required",
+        "quarantine_unexpected",
+        "quarantine_expired",
+        "artifact_set_incomplete",
         "external_action_unknown",
         "external_result_conflict",
         "outbox_not_anchored",
@@ -227,9 +237,7 @@ def build_transition_request(
         raise Phase5C4ControlContractError("Attempt identity and expected version must agree")
     return {
         "attempt_id": _uuid_or_none(attempt_id, label="attempt_id"),
-        "authorization_digest": _digest_or_none(
-            authorization_digest, label="authorization_digest"
-        ),
+        "authorization_digest": _digest_or_none(authorization_digest, label="authorization_digest"),
         "command": command,
         "contract_version": TRANSITION_REQUEST_VERSION,
         "environment_id": _uuid_or_none(environment_id, label="environment_id"),
@@ -247,9 +255,7 @@ def validate_state(value: Any, *, nullable: bool = False) -> dict[str, Any] | No
         return None
     if not isinstance(value, dict) or set(value) != _STATE_KEYS:
         raise Phase5C4ControlContractError("Control state tuple has an unsupported shape")
-    if _digest_or_none(
-        value["active_deployment_digest"], label="active_deployment_digest"
-    ) is None:
+    if _digest_or_none(value["active_deployment_digest"], label="active_deployment_digest") is None:
         raise Phase5C4ControlContractError("Active deployment digest is missing")
     if (value["attempt_state"] is None) != (value["attempt_state_version"] is None):
         raise Phase5C4ControlContractError("Attempt state and version must agree")
@@ -319,9 +325,10 @@ def validate_control_event(
         raise Phase5C4ControlContractError("Control event genesis prior state is invalid")
     if (sequence == 1) != (value["previous_event_digest"] is None):
         raise Phase5C4ControlContractError("Control event genesis link is invalid")
-    if not isinstance(value["actor_principal"], str) or _PRINCIPAL.fullmatch(
-        value["actor_principal"]
-    ) is None:
+    if (
+        not isinstance(value["actor_principal"], str)
+        or _PRINCIPAL.fullmatch(value["actor_principal"]) is None
+    ):
         raise Phase5C4ControlContractError("Control event actor principal is invalid")
     if not isinstance(value["command"], str) or not 1 <= len(value["command"]) <= 128:
         raise Phase5C4ControlContractError("Control event command is invalid")
@@ -331,9 +338,10 @@ def validate_control_event(
         raise Phase5C4ControlContractError("Exact replay must not append a control event")
     if not isinstance(value["retryable"], bool):
         raise Phase5C4ControlContractError("Control event retryable value is invalid")
-    if not isinstance(value["occurred_at"], str) or _UTC_TIMESTAMP.fullmatch(
-        value["occurred_at"]
-    ) is None:
+    if (
+        not isinstance(value["occurred_at"], str)
+        or _UTC_TIMESTAMP.fullmatch(value["occurred_at"]) is None
+    ):
         raise Phase5C4ControlContractError("Control event timestamp is invalid")
     try:
         datetime.strptime(value["occurred_at"], "%Y-%m-%dT%H:%M:%S.%fZ")

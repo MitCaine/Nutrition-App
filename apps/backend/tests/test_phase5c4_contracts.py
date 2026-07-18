@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 
 from app.operators import phase5c_contracts as canonical
+from app.operators import phase5c4_admission as admission
 from app.operators.phase5c_performance_contracts import load_performance_manifest_file
 from app.operators.phase5c4_contracts import (
     ACTIVATION_AUTHORIZATION_VERSION,
@@ -122,12 +123,14 @@ def _timestamp(minutes: int = 0) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
-def _database_incarnation(*, purpose: str = "source", seed: int = 1) -> dict:
+def _database_incarnation(
+    *, purpose: str = "source", seed: int = 1, environment: str = "portfolio-demo"
+) -> dict:
     is_target = purpose in {"candidate", "target_restore", "promoted_target"}
     is_restore = purpose in {"source_restore", "target_restore"}
     unsigned = {
         "contract_version": DATABASE_INCARNATION_VERSION,
-        "environment": "portfolio-demo",
+        "environment": environment,
         "purpose": purpose,
         "attempt_id": _uuid(100),
         "observation_id": _uuid(100 + seed),
@@ -278,6 +281,7 @@ def _quarantine_acceptance(
     qualification_receipt_digest: str = _hex(304),
     outcome_ledger_digest: str = _hex(305),
     archive_identity_digest: str = _hex(306),
+    environment: str = "portfolio-demo",
 ) -> dict:
     subjects = subjects or [
         {
@@ -303,7 +307,7 @@ def _quarantine_acceptance(
         "outcome_ledger_digest": outcome_ledger_digest,
         "archive_identity_digest": archive_identity_digest,
         "policy_version": QUARANTINE_POLICY_VERSION,
-        "environment": "portfolio-demo",
+        "environment": environment,
         "subjects": subjects,
         "subject_count": len(subjects),
         "subject_set_digest": canonical.canonical_digest(
@@ -1030,7 +1034,7 @@ def _backup_evidence(
         "evidence_id": _uuid(1_100 + seed),
         "attempt_id": _uuid(100),
         "freeze_epoch_id": freeze_epoch_id,
-        "environment": "portfolio-demo",
+        "environment": incarnation["environment"],
         "role": role,
         "provider": {
             "provider_profile": PROVIDER_PROFILE_VERSION,
@@ -1177,17 +1181,70 @@ def _restore_receipt(*, role: str, seed: int, backup: dict) -> dict:
     return attach_contract_digest(unsigned, digest_field="receipt_digest")
 
 
-def _artifact_bundle(*, include_quarantine: bool = False):
+def _artifact_bundle(
+    *,
+    include_quarantine: bool = False,
+    environment: str = "portfolio-demo",
+    run_id: str = "00000000-0000-4000-8000-000000002300",
+    freeze_epoch_id: str = "00000000-0000-4000-8000-000000002400",
+    marker_identity: str = "phase5c-final-clone-marker",
+    ratification_id: str | None = None,
+    ratification_issued_at: str | None = None,
+):
     inventory = _inventory()
     inventory_digest = canonical.canonical_digest(inventory)
     safe_source = _safe_identity()
-    source = _database_incarnation(purpose="source", seed=21)
+    protected_relations = [
+        {
+            "qualified_name": name,
+            "row_count": ordinal,
+            "logical_root": _hex(3_000 + ordinal),
+        }
+        for ordinal, name in enumerate(
+            admission.candidate_protected_relation_names("phase5c_archive"), start=1
+        )
+    ]
+    protected_unsigned = {
+        "root_version": "phase5c_candidate_protected_root_v1",
+        "relations": protected_relations,
+        "sequences": [],
+        "schema_fingerprint_digest": _hex(103),
+        "constraint_index_fingerprint_digest": _hex(104),
+        "extension_collation_digest": _hex(105),
+        "row_count_digest": canonical.canonical_digest(
+            [
+                {
+                    "qualified_name": item["qualified_name"],
+                    "row_count": item["row_count"],
+                }
+                for item in protected_relations
+            ]
+        ),
+    }
+    protected_state = {
+        **protected_unsigned,
+        "protected_root_digest": canonical.canonical_digest(protected_unsigned),
+    }
+    schema_authority_digest = canonical.canonical_digest(
+        {
+            "constraint_index_fingerprint_digest": protected_state[
+                "constraint_index_fingerprint_digest"
+            ],
+            "extension_collation_digest": protected_state["extension_collation_digest"],
+            "schema_fingerprint_digest": protected_state["schema_fingerprint_digest"],
+        }
+    )
+    source = _database_incarnation(purpose="source", seed=21, environment=environment)
     source["database"]["safe_endpoint_digest"] = safe_source["identity_digest"]
+    source["schema"]["alembic_revision"] = "0017_phase5c_indexes"
+    source["schema"]["schema_authority_digest"] = schema_authority_digest
     source = _resign_document(source, "record_digest")
-    target = _database_incarnation(purpose="candidate", seed=22)
+    target = _database_incarnation(purpose="candidate", seed=22, environment=environment)
+    target["schema"]["schema_authority_digest"] = schema_authority_digest
+    target["fence"]["fence_epoch"] = 1
+    target["lineage"]["source_state_seal_digest"] = source["lineage"]["source_state_seal_digest"]
     target["lineage"]["parent_incarnation_digest"] = source["record_digest"]
 
-    marker_identity = "phase5c-final-clone-marker"
     clone_identity_digest = _hex(2_001)
     schema_signature_digest = _hex(2_002)
     planning_attestation = _phase5c_attestation(
@@ -1301,7 +1358,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
             "contract_version": BRIDGE_METADATA_VERSION,
             "evidence_id": _uuid(2_200),
             "attempt_id": _uuid(100),
-            "environment": "portfolio-demo",
+            "environment": environment,
             "target_database_incarnation_digest": target["record_digest"],
             "inventory_digest": inventory_digest,
             "clone_marker_digest": marker["clone_marker_digest"],
@@ -1327,7 +1384,6 @@ def _artifact_bundle(*, include_quarantine: bool = False):
         plan=plan,
     )
 
-    run_id = _uuid(2_300)
     execution_subjects = [
         {
             "source_recipe_id": decisions[0]["source_recipe_id"],
@@ -1372,7 +1428,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
             "contract_version": RUN_ADMISSION_RECEIPT_VERSION,
             "receipt_id": _uuid(2_305),
             "attempt_id": _uuid(100),
-            "environment": "portfolio-demo",
+            "environment": environment,
             "target_database_incarnation_digest": target["record_digest"],
             "plan_digest": plan["manifest_digest"],
             "execution_attestation_digest": execution_attestation["attestation_digest"],
@@ -1429,14 +1485,13 @@ def _artifact_bundle(*, include_quarantine: bool = False):
         **qualification_unsigned,
         "receipt_digest": canonical.canonical_digest(qualification_unsigned),
     }
-    freeze_epoch_id = _uuid(2_400)
     observation = attach_contract_digest(
         {
             "contract_version": QUALIFICATION_OBSERVATION_VERSION,
             "observation_id": _uuid(2_401),
             "attempt_id": _uuid(100),
             "freeze_epoch_id": freeze_epoch_id,
-            "environment": "portfolio-demo",
+            "environment": environment,
             "target_database_incarnation_digest": target["record_digest"],
             "qualification_receipt_digest": qualification_receipt["receipt_digest"],
             "plan_digest": plan["manifest_digest"],
@@ -1463,30 +1518,45 @@ def _artifact_bundle(*, include_quarantine: bool = False):
         qualification_observation_digest=observation["observation_digest"],
         schema_authority_digest=target["schema"]["schema_authority_digest"],
     )
+    seal["protected_state"] = protected_state
+    seal["snapshot"]["snapshot_id_digest"] = observation["snapshot"]["snapshot_id_digest"]
+    seal["snapshot"]["timeline"] = observation["snapshot"]["timeline"]
+    seal["snapshot"]["lsn"] = observation["snapshot"]["lsn"]
+    seal["fence_binding"] = {
+        "mode": "closed_prequalification",
+        "target_identity_digest": target["schema"]["target_identity_digest"],
+        "event_chain_digest": target["fence"]["fence_event_chain_digest"],
+        "epoch": target["fence"]["fence_epoch"],
+    }
+    seal = _resign_document(seal, "seal_digest")
+    reconciliation_projection = admission.build_reconciliation_projection(
+        protected_state,
+        schema_authority_digest=schema_authority_digest,
+    )
     reconciliation_roots = [
         {
             "category": "archive",
             "relationship": "equal",
-            "source_digest": source_checksums["archive"],
-            "target_digest": source_checksums["archive"],
+            "source_digest": reconciliation_projection["archive_root_digest"],
+            "target_digest": reconciliation_projection["archive_root_digest"],
         },
         {
             "category": "authorized_conversion",
             "relationship": "plan_authorized",
-            "source_digest": _hex(2_410),
-            "target_digest": seal["protected_state"]["protected_root_digest"],
+            "source_digest": reconciliation_projection["authorized_conversion_root_digest"],
+            "target_digest": reconciliation_projection["authorized_conversion_root_digest"],
         },
         {
             "category": "common_source_state",
             "relationship": "equal",
-            "source_digest": _hex(2_411),
-            "target_digest": _hex(2_411),
+            "source_digest": reconciliation_projection["common_source_state_root_digest"],
+            "target_digest": reconciliation_projection["common_source_state_root_digest"],
         },
         {
             "category": "schema_authority",
             "relationship": "plan_authorized",
-            "source_digest": source["schema"]["schema_authority_digest"],
-            "target_digest": target["schema"]["schema_authority_digest"],
+            "source_digest": reconciliation_projection["schema_authority_digest"],
+            "target_digest": reconciliation_projection["schema_authority_digest"],
         },
     ]
     reconciliation = attach_contract_digest(
@@ -1495,7 +1565,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
             "reconciliation_id": _uuid(2_412),
             "attempt_id": _uuid(100),
             "freeze_epoch_id": freeze_epoch_id,
-            "environment": "portfolio-demo",
+            "environment": environment,
             "source_database_incarnation_digest": source["record_digest"],
             "target_database_incarnation_digest": target["record_digest"],
             "source_state_seal_digest": source["lineage"]["source_state_seal_digest"],
@@ -1518,7 +1588,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
             "receipt_id": _uuid(2_420),
             "attempt_id": _uuid(100),
             "freeze_epoch_id": freeze_epoch_id,
-            "environment": "portfolio-demo",
+            "environment": environment,
             "provider_profile": PROVIDER_PROFILE_VERSION,
             "provider_operation_id": _uuid(2_421),
             "backup_provider_id": "pgbackrest-clone-origin-1",
@@ -1569,9 +1639,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
         run_id=run_id,
         state_root=seal["protected_state"]["protected_root_digest"],
     )
-    source_restore = _restore_receipt(
-        role="frozen_source_cutback", seed=1, backup=source_backup
-    )
+    source_restore = _restore_receipt(role="frozen_source_cutback", seed=1, backup=source_backup)
     target_restore = _restore_receipt(
         role="promoted_target_recovery_seed", seed=2, backup=target_backup
     )
@@ -1580,7 +1648,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
             "contract_version": DEPLOYMENT_DESCRIPTOR_VERSION,
             "descriptor_id": _uuid(2_430),
             "attempt_id": _uuid(100),
-            "environment": "portfolio-demo",
+            "environment": environment,
             "deployment_scope": DEPLOYMENT_SCOPE,
             "provider_profile": PROVIDER_PROFILE_VERSION,
             "promotion_policy_version": PROMOTION_POLICY_VERSION,
@@ -1598,9 +1666,9 @@ def _artifact_bundle(*, include_quarantine: bool = False):
     manifest = _manifest()
     ratification = build_performance_contract_ratification(
         source_manifest=manifest,
-        ratification_id=_uuid(801),
+        ratification_id=ratification_id or _uuid(801),
         signing_key_id=_hex(801),
-        issued_at=_timestamp(),
+        issued_at=ratification_issued_at or _timestamp(),
         signature=_signature(8),
     )
     special = {
@@ -1671,6 +1739,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
                 qualification_receipt_digest=qualification_receipt["receipt_digest"],
                 outcome_ledger_digest=outcome_ledger_digest,
                 archive_identity_digest=archive_identity_digest,
+                environment=environment,
             )
         ).encode("utf-8")
         documents[(artifact_type, logical_id)] = document
@@ -1685,7 +1754,7 @@ def _artifact_bundle(*, include_quarantine: bool = False):
             )
         )
     artifact_set = build_artifact_set(
-        environment="portfolio-demo",
+        environment=environment,
         deployment_digest=deployment["descriptor_digest"],
         source_database_incarnation_digest=source["record_digest"],
         target_database_incarnation_digest=target["record_digest"],
@@ -1705,29 +1774,21 @@ def _replace_artifact_document(
     changed_documents[key] = changed_bytes
     changed_members = deepcopy(artifact_set["members"])
     member = next(
-        item
-        for item in changed_members
-        if (item["artifact_type"], item["logical_id"]) == key
+        item for item in changed_members if (item["artifact_type"], item["logical_id"]) == key
     )
     member["sha256_digest"] = canonical.sha256_digest_bytes(changed_bytes)
     member["byte_count"] = len(changed_bytes)
     changed_set = build_artifact_set(
         environment=artifact_set["environment"],
         deployment_digest=artifact_set["deployment_digest"],
-        source_database_incarnation_digest=artifact_set[
-            "source_database_incarnation_digest"
-        ],
-        target_database_incarnation_digest=artifact_set[
-            "target_database_incarnation_digest"
-        ],
+        source_database_incarnation_digest=artifact_set["source_database_incarnation_digest"],
+        target_database_incarnation_digest=artifact_set["target_database_incarnation_digest"],
         members=changed_members,
     )
     return changed_set, changed_documents
 
 
-def _artifact_payload(
-    documents: dict[tuple[str, str], bytes], key: tuple[str, str]
-) -> dict:
+def _artifact_payload(documents: dict[tuple[str, str], bytes], key: tuple[str, str]) -> dict:
     return deepcopy(canonical.parse_canonical_json(documents[key]))
 
 
@@ -2134,9 +2195,7 @@ def test_prose_derived_contract_semantic_tamper_matrix(
         ),
     ],
 )
-def test_prose_derived_contract_self_digest_tamper_fails(
-    key: tuple[str, str], validator
-) -> None:
+def test_prose_derived_contract_self_digest_tamper_fails(key: tuple[str, str], validator) -> None:
     _, documents = _artifact_bundle()
     payload = _artifact_payload(documents, key)
     payload["environment"] = "other-environment"

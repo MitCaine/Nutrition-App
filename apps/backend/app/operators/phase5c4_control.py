@@ -136,22 +136,26 @@ class Phase5C4ControlDatabase:
         active_deployment_digest: str,
     ) -> dict[str, Any]:
         def operation(connection):
-            row = connection.execute(
-                text(
-                    """
+            row = (
+                connection.execute(
+                    text(
+                        """
                     SELECT * FROM phase5c4_api.initialize_environment_v1(
                         CAST(:request_id AS uuid), :environment_key,
                         CAST(:source_id AS uuid), :deployment_digest
                     )
                     """
-                ),
-                {
-                    "request_id": request_id,
-                    "environment_key": environment_key,
-                    "source_id": source_database_instance_id,
-                    "deployment_digest": active_deployment_digest,
-                },
-            ).mappings().one()
+                    ),
+                    {
+                        "request_id": request_id,
+                        "environment_key": environment_key,
+                        "source_id": source_database_instance_id,
+                        "deployment_digest": active_deployment_digest,
+                    },
+                )
+                .mappings()
+                .one()
+            )
             return _row_to_result("initialize-environment", row)
 
         return self._serializable(operation)
@@ -170,9 +174,10 @@ class Phase5C4ControlDatabase:
         dry_run: bool = False,
     ) -> dict[str, Any]:
         def operation(connection):
-            row = connection.execute(
-                text(
-                    """
+            row = (
+                connection.execute(
+                    text(
+                        """
                     SELECT * FROM phase5c4_api.create_attempt_v1(
                         CAST(:request_id AS uuid), CAST(:environment_id AS uuid),
                         :expected_generation, :expected_environment_version,
@@ -180,19 +185,22 @@ class Phase5C4ControlDatabase:
                         :policy_version, :policy_digest, :dry_run
                     )
                     """
-                ),
-                {
-                    "request_id": request_id,
-                    "environment_id": environment_id,
-                    "expected_generation": expected_environment_generation,
-                    "expected_environment_version": expected_environment_state_version,
-                    "source_id": source_database_instance_id,
-                    "target_id": target_database_instance_id,
-                    "policy_version": promotion_policy_version,
-                    "policy_digest": promotion_policy_digest,
-                    "dry_run": dry_run,
-                },
-            ).mappings().one()
+                    ),
+                    {
+                        "request_id": request_id,
+                        "environment_id": environment_id,
+                        "expected_generation": expected_environment_generation,
+                        "expected_environment_version": expected_environment_state_version,
+                        "source_id": source_database_instance_id,
+                        "target_id": target_database_instance_id,
+                        "policy_version": promotion_policy_version,
+                        "policy_digest": promotion_policy_digest,
+                        "dry_run": dry_run,
+                    },
+                )
+                .mappings()
+                .one()
+            )
             return _row_to_result("create-attempt", row)
 
         return self._serializable(operation)
@@ -213,9 +221,10 @@ class Phase5C4ControlDatabase:
         dry_run: bool = False,
     ) -> dict[str, Any]:
         def operation(connection):
-            row = connection.execute(
-                text(
-                    """
+            row = (
+                connection.execute(
+                    text(
+                        """
                     SELECT * FROM phase5c4_api.request_transition_v1(
                         CAST(:request_id AS uuid), CAST(:environment_id AS uuid),
                         CAST(:attempt_id AS uuid), :command, :expected_generation,
@@ -224,22 +233,166 @@ class Phase5C4ControlDatabase:
                         CAST(:external_action_id AS uuid), :dry_run
                     )
                     """
-                ),
-                {
-                    "request_id": request_id,
-                    "environment_id": environment_id,
-                    "attempt_id": attempt_id,
-                    "command": command,
-                    "expected_generation": expected_environment_generation,
-                    "expected_environment_version": expected_environment_state_version,
-                    "expected_attempt_version": expected_attempt_state_version,
-                    "authorization_digest": authorization_digest,
-                    "evidence_digest": evidence_digest,
-                    "external_action_id": external_action_id,
-                    "dry_run": dry_run,
-                },
-            ).mappings().one()
+                    ),
+                    {
+                        "request_id": request_id,
+                        "environment_id": environment_id,
+                        "attempt_id": attempt_id,
+                        "command": command,
+                        "expected_generation": expected_environment_generation,
+                        "expected_environment_version": expected_environment_state_version,
+                        "expected_attempt_version": expected_attempt_state_version,
+                        "authorization_digest": authorization_digest,
+                        "evidence_digest": evidence_digest,
+                        "external_action_id": external_action_id,
+                        "dry_run": dry_run,
+                    },
+                )
+                .mappings()
+                .one()
+            )
             return _row_to_result("request-transition", row)
+
+        return self._serializable(operation)
+
+    def admit_preflight(
+        self,
+        *,
+        request_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+        evidence: Mapping[str, str],
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        return self._admit_evidence(
+            routine="admit_preflight_v1",
+            command="admit-preflight",
+            request_id=request_id,
+            environment_id=environment_id,
+            attempt_id=attempt_id,
+            expected_environment_generation=expected_environment_generation,
+            expected_environment_state_version=expected_environment_state_version,
+            expected_attempt_state_version=expected_attempt_state_version,
+            evidence=evidence,
+            dry_run=dry_run,
+        )
+
+    def admit_final_source(
+        self,
+        *,
+        request_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+        evidence: Mapping[str, str],
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        return self._admit_evidence(
+            routine="admit_final_source_v1",
+            command="admit-final-source",
+            request_id=request_id,
+            environment_id=environment_id,
+            attempt_id=attempt_id,
+            expected_environment_generation=expected_environment_generation,
+            expected_environment_state_version=expected_environment_state_version,
+            expected_attempt_state_version=expected_attempt_state_version,
+            evidence=evidence,
+            dry_run=dry_run,
+        )
+
+    def _admit_evidence(
+        self,
+        *,
+        routine: str,
+        command: str,
+        request_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+        evidence: Mapping[str, str],
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        if routine not in {"admit_preflight_v1", "admit_final_source_v1"}:
+            raise Phase5C4ControlError("internal_failure")
+
+        def operation(connection):
+            row = (
+                connection.execute(
+                    text(
+                        f"""
+                    SELECT * FROM phase5c4_api.{routine}(
+                        CAST(:request_id AS uuid), CAST(:environment_id AS uuid),
+                        CAST(:attempt_id AS uuid), :expected_generation,
+                        :expected_environment_version, :expected_attempt_version,
+                        CAST(:evidence AS jsonb), :dry_run
+                    )
+                    """
+                    ),
+                    {
+                        "request_id": request_id,
+                        "environment_id": environment_id,
+                        "attempt_id": attempt_id,
+                        "expected_generation": expected_environment_generation,
+                        "expected_environment_version": expected_environment_state_version,
+                        "expected_attempt_version": expected_attempt_state_version,
+                        "evidence": canonical_json(dict(evidence)),
+                        "dry_run": dry_run,
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_result(command, row)
+
+        return self._serializable(operation)
+
+    def finalize_artifact_set(
+        self,
+        *,
+        request_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+        artifact_set_id: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        def operation(connection):
+            row = (
+                connection.execute(
+                    text(
+                        """
+                    SELECT * FROM phase5c4_api.finalize_artifact_set_v1(
+                        CAST(:request_id AS uuid), CAST(:environment_id AS uuid),
+                        CAST(:attempt_id AS uuid), :expected_generation,
+                        :expected_environment_version, :expected_attempt_version,
+                        CAST(:artifact_set_id AS uuid), :dry_run
+                    )
+                    """
+                    ),
+                    {
+                        "request_id": request_id,
+                        "environment_id": environment_id,
+                        "attempt_id": attempt_id,
+                        "expected_generation": expected_environment_generation,
+                        "expected_environment_version": expected_environment_state_version,
+                        "expected_attempt_version": expected_attempt_state_version,
+                        "artifact_set_id": artifact_set_id,
+                        "dry_run": dry_run,
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_result("finalize-artifact-set", row)
 
         return self._serializable(operation)
 
@@ -260,7 +413,9 @@ class Phase5C4ControlDatabase:
                         """
                     ),
                     values,
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
 
         return self._serializable(operation)
@@ -295,7 +450,9 @@ class Phase5C4ControlDatabase:
                         "database_instance_id": database_instance_id,
                         "bindings": canonical_json(bindings),
                     },
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
 
         return self._serializable(operation)
@@ -314,7 +471,9 @@ class Phase5C4ControlDatabase:
                         """
                     ),
                     values,
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
 
         return self._serializable(operation)
@@ -331,7 +490,9 @@ class Phase5C4ControlDatabase:
                         """
                     ),
                     {"canonical_bytes": canonical_bytes},
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
 
         return self._serializable(operation)
@@ -352,7 +513,9 @@ class Phase5C4ControlDatabase:
                         """
                     ),
                     values,
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
 
         return self._serializable(operation)
@@ -375,7 +538,9 @@ class Phase5C4ControlDatabase:
                         """
                     ),
                     values,
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
 
         return self._serializable(operation)
@@ -397,7 +562,9 @@ class Phase5C4ControlDatabase:
                         """
                     ),
                     values,
-                ).mappings().one()
+                )
+                .mappings()
+                .one()
             )
         )
 
@@ -405,13 +572,17 @@ class Phase5C4ControlDatabase:
         engine = create_control_engine(self.database_url, serializable=False)
         try:
             with engine.begin() as connection:
-                row = connection.execute(
-                    text(
-                        "SELECT * FROM phase5c4_api.read_control_status_v1("
-                        "CAST(:environment_id AS uuid))"
-                    ),
-                    {"environment_id": environment_id},
-                ).mappings().one_or_none()
+                row = (
+                    connection.execute(
+                        text(
+                            "SELECT * FROM phase5c4_api.read_control_status_v1("
+                            "CAST(:environment_id AS uuid))"
+                        ),
+                        {"environment_id": environment_id},
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
                 return None if row is None else dict(row)
         except DBAPIError as exc:
             raise _database_error(exc) from None
@@ -473,7 +644,9 @@ class Phase5C4ControlDatabase:
                             """
                         ),
                         values,
-                    ).mappings().one()
+                    )
+                    .mappings()
+                    .one()
                 )
         except DBAPIError as exc:
             raise _database_error(exc) from None
@@ -495,16 +668,16 @@ class Phase5C4ControlDatabase:
                             """
                         ),
                         values,
-                    ).mappings().one()
+                    )
+                    .mappings()
+                    .one()
                 )
         except DBAPIError as exc:
             raise _database_error(exc) from None
         finally:
             engine.dispose()
 
-    def release_expired_outbox(
-        self, *, message_id: str, lease_token: str
-    ) -> dict[str, Any]:
+    def release_expired_outbox(self, *, message_id: str, lease_token: str) -> dict[str, Any]:
         engine = create_control_engine(self.database_url, serializable=False)
         try:
             with engine.begin() as connection:
@@ -518,7 +691,9 @@ class Phase5C4ControlDatabase:
                             """
                         ),
                         {"message_id": message_id, "lease_token": lease_token},
-                    ).mappings().one()
+                    )
+                    .mappings()
+                    .one()
                 )
         except DBAPIError as exc:
             raise _database_error(exc) from None

@@ -233,6 +233,31 @@ class PromotionPrerequisiteState:
         return projection
 
 
+def admit_qualification_prerequisites(
+    prerequisites: PromotionPrerequisiteState,
+) -> None:
+    """Apply the single qualifier-v2 prerequisite admission policy.
+
+    Both independent qualification and Stage 5C4.4 evidence collection call this function so a
+    false topology/trigger/immutability observation or a non-initial fence can never be accepted by
+    one path and rejected by the other.
+    """
+
+    if prerequisites.session_role != "nutrition_qualifier":
+        raise Phase5C4PrerequisiteError("qualification_role_topology_invalid")
+    if not prerequisites.role_topology_valid:
+        raise Phase5C4PrerequisiteError("qualification_role_topology_invalid")
+    if not prerequisites.gate_trigger_coverage_valid:
+        raise Phase5C4PrerequisiteError("qualification_gate_trigger_coverage_invalid")
+    if not prerequisites.immutability_valid:
+        raise Phase5C4PrerequisiteError("qualification_immutability_invalid")
+    if (
+        prerequisites.state["mode"] != "closed_prequalification"
+        or prerequisites.state["epoch"] != 1
+    ):
+        raise Phase5C4PrerequisiteError("qualification_fence_state_invalid")
+
+
 @dataclass(frozen=True)
 class LocalReadiness:
     ready: bool

@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
 import stat
 from threading import Barrier
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
 from app.operators import phase5c4_control_evidence as evidence
+from app.operators import phase5c4_admission as admission
 from app.operators import phase5c4_contracts
-from app.operators.phase5c_contracts import canonical_json
+from app.operators.phase5c_contracts import canonical_digest, canonical_json
 from app.operators.phase5c4_control_contracts import (
     COMMAND_RESULT_VERSION,
     Phase5C4ControlContractError,
@@ -24,13 +26,20 @@ from app.operators.phase5c4_control_contracts import (
 )
 from app.operators.phase5c4_control_evidence import (
     Phase5C4EvidenceError,
+    collect_and_register_source_dimension_artifact,
     prepare_artifact,
+    prepare_source_dimension_artifact,
     write_private_file,
 )
 from app.operators.phase5c4_contracts import (
     PERFORMANCE_MANIFEST_VERSION,
     PROMOTION_POLICY_VERSION,
     build_promotion_policy,
+)
+from app.operators.phase5c4_minio import EVIDENCE_BUCKET, WormReceipt, evidence_object_key
+from app.operators.phase5c_performance_contracts import (
+    SOURCE_DIMENSION_VERSION,
+    build_source_dimensions,
 )
 from scripts import manage_phase5c_promotion as cli
 
@@ -56,6 +65,76 @@ def _state(*, environment_version: int) -> dict:
 
 def _policy_document() -> bytes:
     return canonical_json(build_promotion_policy()).encode("utf-8")
+
+
+def _source_dimension_document() -> dict[str, object]:
+    relation = {
+        "logical_root": "1" * 64,
+        "qualified_name": "public.users",
+        "row_count": 0,
+    }
+    root_unsigned = {
+        "constraint_index_fingerprint_digest": "2" * 64,
+        "extension_collation_digest": "3" * 64,
+        "relations": [relation],
+        "root_version": "phase5c_candidate_protected_root_v1",
+        "row_count_digest": canonical_digest([{"qualified_name": "public.users", "row_count": 0}]),
+        "schema_fingerprint_digest": "4" * 64,
+        "sequences": [],
+    }
+    protected = {
+        **root_unsigned,
+        "protected_root_digest": canonical_digest(root_unsigned),
+    }
+    schema_digest = canonical_digest(
+        {
+            "constraint_index_fingerprint_digest": "2" * 64,
+            "extension_collation_digest": "3" * 64,
+            "schema_fingerprint_digest": "4" * 64,
+        }
+    )
+    return build_source_dimensions(
+        observation_id=str(uuid4()),
+        environment="portfolio-demo",
+        source_database_incarnation_digest="5" * 64,
+        source_role_qualification_digest="6" * 64,
+        observation_mode="preflight_normal",
+        freeze_epoch_id=None,
+        snapshot_id_digest="7" * 64,
+        timeline=1,
+        lsn="0/16B6B00",
+        observed_at="2026-07-17T12:00:00Z",
+        recipes=1,
+        foods=2,
+        daily_logs=3,
+        ocr_records=4,
+        max_servings_per_food=1,
+        max_nutrients_per_food=2,
+        ingredient_p50=1,
+        ingredient_p95=2,
+        graph_depth=1,
+        graph_breadth=1,
+        source_bindings={
+            "archive_identity_digest": None,
+            "archive_root_digest": None,
+            "archive_schema": None,
+            "clone_database_identity_digest": None,
+            "clone_marker_digest": None,
+            "conversion_clone_identity_digest": None,
+            "database_identity_digest": "8" * 64,
+            "inventory_digest": None,
+            "plan_digest": None,
+            "planning_source_root_digest": None,
+            "run_id": None,
+            "source_production_identity_digest": None,
+        },
+        protected_state=protected,
+        reconciliation_projection=admission.build_reconciliation_projection(
+            protected,
+            schema_authority_digest=schema_digest,
+        ),
+        schema_authority_digest=schema_digest,
+    )
 
 
 def _prepare_policy(path: Path):
@@ -104,12 +183,116 @@ def test_evidence_ingest_accepts_exact_canonical_bytes_without_rewriting(
     assert canonical_json(prepared.parsed).encode("utf-8") == document
 
 
+def test_source_dimension_artifact_preparation_preserves_exact_canonical_authority() -> None:
+    observation = _source_dimension_document()
+
+    prepared = prepare_source_dimension_artifact(observation)
+
+    assert prepared.artifact_type == SOURCE_DIMENSION_VERSION
+    assert prepared.contract_version == SOURCE_DIMENSION_VERSION
+    assert prepared.logical_id == "source"
+    assert prepared.canonical_bytes == canonical_json(observation).encode("utf-8")
+    assert prepared.artifact_digest == canonical_digest(observation)
+    assert json.loads(prepared.logical_identity_bytes) == {
+        "artifact_type": SOURCE_DIMENSION_VERSION,
+        "contract_version": SOURCE_DIMENSION_VERSION,
+        "identity_contract_version": evidence.LOGICAL_IDENTITY_VERSION,
+        "logical_id": "source",
+        "scope": observation["observation_id"],
+    }
+
+
+def test_collector_uploads_registers_and_binds_the_same_source_observation_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = _source_dimension_document()
+    prepared = prepare_source_dimension_artifact(observation)
+    source_instance_id = str(uuid4())
+    artifact_id = str(uuid4())
+    calls: dict[str, object] = {}
+
+    def collect(source_url: str, **values):
+        calls["collection"] = (source_url, values)
+        return deepcopy(observation)
+
+    class Adapter:
+        def deliver(self, *, bucket: str, key: str, payload: bytes) -> WormReceipt:
+            calls["delivery"] = (bucket, key, payload)
+            now = datetime.now(timezone.utc)
+            return WormReceipt(
+                bucket=bucket,
+                object_key=key,
+                object_version="exact-version-1",
+                etag="exact-etag-1",
+                byte_count=len(payload),
+                payload_digest=prepared.artifact_digest,
+                lock_mode="COMPLIANCE",
+                retain_until=now + timedelta(days=180),
+                observed_at=now,
+            )
+
+    class Control:
+        def __init__(self, database_url: str) -> None:
+            calls["control_url"] = database_url
+
+        def register_artifact(self, **values):
+            calls["registration"] = values
+            return {
+                "anchored": False,
+                "artifact_id": artifact_id,
+                "result": "accepted",
+            }
+
+        def record_artifact_object_binding(self, **values):
+            calls["binding"] = values
+            return {"artifact_id": artifact_id, "reason": "ok", "result": "accepted"}
+
+    from app.operators import phase5c4_control
+
+    monkeypatch.setattr(evidence, "collect_source_dimension_snapshot", collect)
+    monkeypatch.setattr(phase5c4_control, "Phase5C4ControlDatabase", Control)
+
+    reference = collect_and_register_source_dimension_artifact(
+        "postgresql+psycopg://nutrition_qualifier:secret@source/app",
+        control_database_url=(
+            "postgresql+psycopg://nutrition_control_collector:secret@control/control"
+        ),
+        source_database_instance_id=source_instance_id,
+        observation_id=str(observation["observation_id"]),
+        environment=str(observation["environment"]),
+        source_database_incarnation_digest=str(observation["source_database_incarnation_digest"]),
+        observation_mode=str(observation["observation_mode"]),
+        minio_adapter=Adapter(),
+    )
+
+    assert calls["delivery"] == (
+        EVIDENCE_BUCKET,
+        evidence_object_key(SOURCE_DIMENSION_VERSION, prepared.artifact_digest),
+        prepared.canonical_bytes,
+    )
+    registration = calls["registration"]
+    assert registration["canonical_bytes"] == calls["delivery"][2]
+    assert registration["artifact_type"] == SOURCE_DIMENSION_VERSION
+    assert registration["contract_version"] == SOURCE_DIMENSION_VERSION
+    assert registration["database_instance_id"] == source_instance_id
+    binding = calls["binding"]
+    assert binding["artifact_id"] == artifact_id
+    assert binding["payload_digest"] == prepared.artifact_digest
+    assert binding["object_version"] == "exact-version-1"
+    assert binding["retain_until"] > datetime.now(timezone.utc)
+    assert reference.artifact_id == artifact_id
+    assert reference.artifact_digest == prepared.artifact_digest
+    assert reference.observation_digest == observation["observation_digest"]
+
+
 def test_evidence_ingest_rejects_metadata_version_before_reading_path(
     tmp_path: Path,
 ) -> None:
     missing = tmp_path / "must-not-be-opened.json"
 
-    with pytest.raises(Phase5C4EvidenceError, match="Unsupported artifact type or contract version"):
+    with pytest.raises(
+        Phase5C4EvidenceError, match="Unsupported artifact type or contract version"
+    ):
         prepare_artifact(
             artifact_type=PROMOTION_POLICY_VERSION,
             contract_version="phase5c_promotion_policy_v2",
@@ -404,9 +587,7 @@ def test_cli_redacts_typed_evidence_failures_and_emits_exact_null_shape(
 
 def test_normal_backend_startup_never_runs_application_or_control_migrations() -> None:
     repository = Path(__file__).resolve().parents[3]
-    startup = (repository / "scripts" / "start-backend.sh").read_text(
-        encoding="utf-8"
-    )
+    startup = (repository / "scripts" / "start-backend.sh").read_text(encoding="utf-8")
     assert "alembic upgrade" not in startup
     assert "alembic-control.ini" not in startup
     assert 'session_user != "nutrition_runtime"' in startup

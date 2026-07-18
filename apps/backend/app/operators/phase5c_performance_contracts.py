@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import math
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Mapping
+from uuid import UUID
 
 from app.operators.phase5c_contracts import (
     Phase5CAdmissionError,
@@ -70,6 +72,9 @@ FIXTURE_TABLE_COUNT_KEYS = (
 
 _MIB = 1024 * 1024
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_CANONICAL_UUID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
 _REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{2,127}$")
 _SAFE_DESCRIPTION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,_()+/\-]{0,159}$")
 _SAFE_METADATA = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .,_()+/\-]{0,95}$")
@@ -316,9 +321,7 @@ class PerformanceQualificationManifest:
             ),
             "Restart verification: "
             + (
-                "passed"
-                if self.payload["correctness"]["restart_verification_passed"]
-                else "failed"
+                "passed" if self.payload["correctness"]["restart_verification_passed"] else "failed"
             ),
             f"Result: {self.payload['overall_result']}",
             f"Budget metrics passed: {len(_METRIC_NAMES) - len(failed)}/{len(_METRIC_NAMES)}",
@@ -355,6 +358,401 @@ def budget_for_tier(tier: str) -> dict[str, Any]:
     return deepcopy(TIER_BUDGETS[tier])
 
 
+SOURCE_DIMENSION_VERSION = "phase5c4_source_dimensions_v1"
+SOURCE_DIMENSION_SCHEMA_REVISION = "0017_phase5c_indexes"
+SOURCE_RECONCILIATION_PROJECTION_VERSION = "phase5c4_reconciliation_projection_v1"
+
+
+def validate_source_dimensions(value: Any) -> dict[str, Any]:
+    """Validate the live, promotion-facing dimension vector.
+
+    Performance fixture dimensions intentionally include fixture-only totals and disposition
+    counts.  Admission needs a smaller exact vector observed from the frozen source.  Keeping this
+    validator here makes the tier definition authoritative in one module while preserving the
+    immutable performance-manifest v1 shape.
+    """
+
+    expected = {
+        "contract_version",
+        "observation_id",
+        "environment",
+        "source_database_incarnation_digest",
+        "source_schema_revision",
+        "source_role_qualification_digest",
+        "observation_mode",
+        "freeze_epoch_id",
+        "snapshot",
+        "recipes",
+        "foods",
+        "daily_logs",
+        "ocr_records",
+        "max_servings_per_food",
+        "max_nutrients_per_food",
+        "ingredients_per_recipe",
+        "nested_graph",
+        "source_bindings",
+        "protected_state",
+        "reconciliation_projection",
+        "schema_authority_digest",
+        "observation_digest",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise Phase5CPerformanceContractError("Source dimension evidence has an invalid shape")
+    if value["contract_version"] != SOURCE_DIMENSION_VERSION:
+        raise Phase5CPerformanceContractError("Source dimension evidence version is unsupported")
+    observation_id = value["observation_id"]
+    if not isinstance(observation_id, str) or not _CANONICAL_UUID.fullmatch(observation_id):
+        raise Phase5CPerformanceContractError(
+            "Source dimension observation ID is invalid"
+        ) from None
+    try:
+        if str(UUID(observation_id)) != observation_id:
+            raise ValueError
+    except ValueError:
+        raise Phase5CPerformanceContractError(
+            "Source dimension observation ID is invalid"
+        ) from None
+    if not isinstance(value["environment"], str) or not _SAFE_METADATA.fullmatch(
+        value["environment"]
+    ):
+        raise Phase5CPerformanceContractError("Source dimension environment is invalid")
+    if not _is_digest(value["source_database_incarnation_digest"]):
+        raise Phase5CPerformanceContractError("Source dimension incarnation is invalid")
+    if value["source_schema_revision"] != SOURCE_DIMENSION_SCHEMA_REVISION:
+        raise Phase5CPerformanceContractError("Source dimension schema revision is unsupported")
+    if not _is_digest(value["source_role_qualification_digest"]):
+        raise Phase5CPerformanceContractError("Source role qualification digest is invalid")
+    mode = value["observation_mode"]
+    if mode not in {"preflight_normal", "final_frozen"}:
+        raise Phase5CPerformanceContractError("Source dimension observation mode is invalid")
+    freeze_epoch_id = value["freeze_epoch_id"]
+    if (mode == "final_frozen") != (freeze_epoch_id is not None):
+        raise Phase5CPerformanceContractError("Source dimension freeze binding is invalid")
+    if freeze_epoch_id is not None:
+        if not isinstance(freeze_epoch_id, str) or not _CANONICAL_UUID.fullmatch(freeze_epoch_id):
+            raise Phase5CPerformanceContractError(
+                "Source dimension freeze epoch is invalid"
+            ) from None
+        try:
+            if str(UUID(freeze_epoch_id)) != freeze_epoch_id:
+                raise ValueError
+        except ValueError:
+            raise Phase5CPerformanceContractError(
+                "Source dimension freeze epoch is invalid"
+            ) from None
+    snapshot = value["snapshot"]
+    if not isinstance(snapshot, dict) or set(snapshot) != {
+        "isolation_level",
+        "read_only",
+        "snapshot_id_digest",
+        "timeline",
+        "lsn",
+        "observed_at",
+    }:
+        raise Phase5CPerformanceContractError("Source dimension snapshot is invalid")
+    if snapshot["isolation_level"] != "repeatable_read" or snapshot["read_only"] is not True:
+        raise Phase5CPerformanceContractError("Source dimension snapshot is not read-only")
+    if not _is_digest(snapshot["snapshot_id_digest"]):
+        raise Phase5CPerformanceContractError("Source dimension snapshot digest is invalid")
+    if not _is_positive_int(snapshot["timeline"]):
+        raise Phase5CPerformanceContractError("Source dimension timeline is invalid")
+    if not isinstance(snapshot["lsn"], str) or not re.fullmatch(
+        r"[0-9A-F]+/[0-9A-F]+", snapshot["lsn"]
+    ):
+        raise Phase5CPerformanceContractError("Source dimension LSN is invalid")
+    if not isinstance(snapshot["observed_at"], str):
+        raise Phase5CPerformanceContractError("Source dimension time is invalid")
+    try:
+        observed_at = datetime.fromisoformat(snapshot["observed_at"].replace("Z", "+00:00"))
+    except ValueError:
+        raise Phase5CPerformanceContractError("Source dimension time is invalid") from None
+    if observed_at.tzinfo is None:
+        raise Phase5CPerformanceContractError("Source dimension time is invalid")
+    for name in (
+        "recipes",
+        "foods",
+        "daily_logs",
+        "ocr_records",
+        "max_servings_per_food",
+        "max_nutrients_per_food",
+    ):
+        if not _is_nonnegative_int(value[name]):
+            raise Phase5CPerformanceContractError("Source dimension value is invalid")
+    ingredients = value["ingredients_per_recipe"]
+    if (
+        not isinstance(ingredients, dict)
+        or set(ingredients) != {"p50", "p95"}
+        or any(not _is_nonnegative_int(item) for item in ingredients.values())
+        or ingredients["p50"] > ingredients["p95"]
+    ):
+        raise Phase5CPerformanceContractError("Source ingredient dimensions are invalid")
+    graph = value["nested_graph"]
+    if (
+        not isinstance(graph, dict)
+        or set(graph) != {"depth", "breadth"}
+        or any(not _is_nonnegative_int(item) for item in graph.values())
+    ):
+        raise Phase5CPerformanceContractError("Source graph dimensions are invalid")
+    bindings = value["source_bindings"]
+    if not isinstance(bindings, dict) or set(bindings) != {
+        "archive_identity_digest",
+        "archive_schema",
+        "archive_root_digest",
+        "clone_database_identity_digest",
+        "clone_marker_digest",
+        "conversion_clone_identity_digest",
+        "database_identity_digest",
+        "inventory_digest",
+        "plan_digest",
+        "planning_source_root_digest",
+        "run_id",
+        "source_production_identity_digest",
+    }:
+        raise Phase5CPerformanceContractError("Source observation bindings are invalid")
+    if not _is_digest(bindings["database_identity_digest"]):
+        raise Phase5CPerformanceContractError("Source database identity binding is invalid")
+    optional_digests = (
+        "archive_identity_digest",
+        "archive_root_digest",
+        "clone_database_identity_digest",
+        "clone_marker_digest",
+        "conversion_clone_identity_digest",
+        "inventory_digest",
+        "plan_digest",
+        "planning_source_root_digest",
+        "source_production_identity_digest",
+    )
+    if any(
+        bindings[field] is not None and not _is_digest(bindings[field])
+        for field in optional_digests
+    ):
+        raise Phase5CPerformanceContractError("Source conversion digest binding is invalid")
+    archive_schema = bindings["archive_schema"]
+    if archive_schema is not None and (
+        not isinstance(archive_schema, str)
+        or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", archive_schema)
+    ):
+        raise Phase5CPerformanceContractError("Source archive schema binding is invalid")
+    run_id = bindings["run_id"]
+    if run_id is not None and (
+        not isinstance(run_id, str) or not _CANONICAL_UUID.fullmatch(run_id)
+    ):
+        raise Phase5CPerformanceContractError("Source conversion run binding is invalid")
+    conversion_present = [
+        bindings[field] is not None for field in (*optional_digests, "archive_schema", "run_id")
+    ]
+    if any(conversion_present) and not all(conversion_present):
+        raise Phase5CPerformanceContractError("Source conversion binding is incomplete")
+    if mode == "final_frozen" and not all(conversion_present):
+        raise Phase5CPerformanceContractError("Frozen source conversion binding is incomplete")
+    protected = value["protected_state"]
+    if not isinstance(protected, dict) or set(protected) != {
+        "root_version",
+        "relations",
+        "sequences",
+        "schema_fingerprint_digest",
+        "constraint_index_fingerprint_digest",
+        "extension_collation_digest",
+        "row_count_digest",
+        "protected_root_digest",
+    }:
+        raise Phase5CPerformanceContractError("Source protected state has an invalid shape")
+    if protected["root_version"] != "phase5c_candidate_protected_root_v1":
+        raise Phase5CPerformanceContractError("Source protected-root version is unsupported")
+    relations = protected["relations"]
+    if not isinstance(relations, list) or not relations:
+        raise Phase5CPerformanceContractError("Source protected relations are invalid")
+    relation_names: list[str] = []
+    row_counts: list[dict[str, Any]] = []
+    for relation in relations:
+        if not isinstance(relation, dict) or set(relation) != {
+            "qualified_name",
+            "row_count",
+            "logical_root",
+        }:
+            raise Phase5CPerformanceContractError("Source protected relation is invalid")
+        name = relation["qualified_name"]
+        if not isinstance(name, str) or not re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*", name
+        ):
+            raise Phase5CPerformanceContractError("Source protected relation name is invalid")
+        if not _is_nonnegative_int(relation["row_count"]) or not _is_digest(
+            relation["logical_root"]
+        ):
+            raise Phase5CPerformanceContractError("Source protected relation root is invalid")
+        relation_names.append(name)
+        row_counts.append({"qualified_name": name, "row_count": relation["row_count"]})
+    if relation_names != sorted(set(relation_names)) or protected["sequences"] != []:
+        raise Phase5CPerformanceContractError("Source protected inventory is not exact")
+    for field in (
+        "schema_fingerprint_digest",
+        "constraint_index_fingerprint_digest",
+        "extension_collation_digest",
+        "row_count_digest",
+        "protected_root_digest",
+    ):
+        if not _is_digest(protected[field]):
+            raise Phase5CPerformanceContractError("Source protected-state digest is invalid")
+    if canonical_digest(row_counts) != protected["row_count_digest"]:
+        raise Phase5CPerformanceContractError("Source row-count digest is invalid")
+    protected_unsigned = {
+        key: item for key, item in protected.items() if key != "protected_root_digest"
+    }
+    if canonical_digest(protected_unsigned) != protected["protected_root_digest"]:
+        raise Phase5CPerformanceContractError("Source protected-root digest is invalid")
+    if not _is_digest(value["schema_authority_digest"]) or value[
+        "schema_authority_digest"
+    ] != canonical_digest(
+        {
+            "constraint_index_fingerprint_digest": protected["constraint_index_fingerprint_digest"],
+            "extension_collation_digest": protected["extension_collation_digest"],
+            "schema_fingerprint_digest": protected["schema_fingerprint_digest"],
+        }
+    ):
+        raise Phase5CPerformanceContractError("Source schema-authority digest is invalid")
+    projection = value["reconciliation_projection"]
+    if not isinstance(projection, dict) or set(projection) != {
+        "contract_version",
+        "relations",
+        "archive_root_digest",
+        "authorized_conversion_root_digest",
+        "common_source_state_root_digest",
+        "schema_authority_digest",
+        "projection_digest",
+    }:
+        raise Phase5CPerformanceContractError("Source reconciliation projection is invalid")
+    if (
+        projection["contract_version"] != SOURCE_RECONCILIATION_PROJECTION_VERSION
+        or projection["relations"] != relations
+        or projection["schema_authority_digest"] != value["schema_authority_digest"]
+        or any(
+            not _is_digest(projection[field])
+            for field in (
+                "archive_root_digest",
+                "authorized_conversion_root_digest",
+                "common_source_state_root_digest",
+                "schema_authority_digest",
+                "projection_digest",
+            )
+        )
+    ):
+        raise Phase5CPerformanceContractError("Source reconciliation projection is invalid")
+    projection_unsigned = {
+        key: item for key, item in projection.items() if key != "projection_digest"
+    }
+    if canonical_digest(projection_unsigned) != projection["projection_digest"]:
+        raise Phase5CPerformanceContractError("Source reconciliation projection digest is invalid")
+    if not _is_digest(value["observation_digest"]):
+        raise Phase5CPerformanceContractError("Source dimension digest is invalid")
+    unsigned = {key: item for key, item in value.items() if key != "observation_digest"}
+    if canonical_digest(unsigned) != value["observation_digest"]:
+        raise Phase5CPerformanceContractError("Source dimension digest verification failed")
+    return value
+
+
+def build_source_dimensions(
+    *,
+    observation_id: str,
+    environment: str,
+    source_database_incarnation_digest: str,
+    source_role_qualification_digest: str,
+    observation_mode: str,
+    freeze_epoch_id: str | None,
+    snapshot_id_digest: str,
+    timeline: int,
+    lsn: str,
+    observed_at: str,
+    recipes: int,
+    foods: int,
+    daily_logs: int,
+    ocr_records: int,
+    max_servings_per_food: int,
+    max_nutrients_per_food: int,
+    ingredient_p50: int,
+    ingredient_p95: int,
+    graph_depth: int,
+    graph_breadth: int,
+    source_bindings: Mapping[str, Any],
+    protected_state: Mapping[str, Any],
+    reconciliation_projection: Mapping[str, Any],
+    schema_authority_digest: str,
+) -> dict[str, Any]:
+    """Build the embedded Stage 5C4.4 source observation used by admission.
+
+    This remains outside the frozen promotion artifact set, but Stage 5C4.4 registers its exact
+    canonical bytes as dedicated collector-authored WORM evidence.  Admission references that
+    immutable artifact and never accepts this document directly from the executor.
+    """
+
+    unsigned = {
+        "contract_version": SOURCE_DIMENSION_VERSION,
+        "observation_id": observation_id,
+        "environment": environment,
+        "source_database_incarnation_digest": source_database_incarnation_digest,
+        "source_schema_revision": SOURCE_DIMENSION_SCHEMA_REVISION,
+        "source_role_qualification_digest": source_role_qualification_digest,
+        "observation_mode": observation_mode,
+        "freeze_epoch_id": freeze_epoch_id,
+        "snapshot": {
+            "isolation_level": "repeatable_read",
+            "read_only": True,
+            "snapshot_id_digest": snapshot_id_digest,
+            "timeline": timeline,
+            "lsn": lsn,
+            "observed_at": observed_at,
+        },
+        "recipes": recipes,
+        "foods": foods,
+        "daily_logs": daily_logs,
+        "ocr_records": ocr_records,
+        "max_servings_per_food": max_servings_per_food,
+        "max_nutrients_per_food": max_nutrients_per_food,
+        "ingredients_per_recipe": {"p50": ingredient_p50, "p95": ingredient_p95},
+        "nested_graph": {"depth": graph_depth, "breadth": graph_breadth},
+        "source_bindings": deepcopy(dict(source_bindings)),
+        "protected_state": deepcopy(dict(protected_state)),
+        "reconciliation_projection": deepcopy(dict(reconciliation_projection)),
+        "schema_authority_digest": schema_authority_digest,
+    }
+    return validate_source_dimensions(
+        {**unsigned, "observation_digest": canonical_digest(unsigned)}
+    )
+
+
+def derive_smallest_performance_tier(value: Any) -> str:
+    """Return the smallest frozen tier covering every observed source dimension.
+
+    Missing ceilings never become implicit authority.  T3's historical contract omitted the
+    shape ceilings, so a vector that exceeds the last explicit shape ceiling has no admissible
+    tier and fails closed.
+    """
+
+    dimensions = validate_source_dimensions(value)
+    for tier in PERFORMANCE_TIERS:
+        ceilings = TIER_DIMENSION_CEILINGS[tier]
+        if any(
+            dimensions[name] > ceilings[name]
+            for name in ("recipes", "foods", "daily_logs", "ocr_records")
+        ):
+            continue
+        # T3 publishes count ceilings only.  It may classify a larger-count source only while
+        # every unlisted shape dimension remains within the last explicit (T2) ceiling.
+        shape_ceilings = ceilings if tier != "T3" else TIER_DIMENSION_CEILINGS["T2"]
+        scalar_shape = ("max_servings_per_food", "max_nutrients_per_food")
+        if any(dimensions[name] > shape_ceilings[name] for name in scalar_shape):
+            continue
+        if any(
+            any(
+                dimensions[section][name] > ceiling
+                for name, ceiling in shape_ceilings[section].items()
+            )
+            for section in ("ingredients_per_recipe", "nested_graph")
+        ):
+            continue
+        return tier
+    raise Phase5CPerformanceContractError("Source dimensions exceed every ratified tier")
+
+
 def validate_tier_dimensions(tier: str, dimensions: Any) -> dict[str, Any]:
     dimensions = _validate_dimensions(dimensions)
     if tier not in TIER_DIMENSION_CEILINGS:
@@ -381,10 +779,8 @@ def validate_tier_dimensions(tier: str, dimensions: Any) -> dict[str, Any]:
                 "Fixture dimensions do not identify the selected performance tier"
             )
     if (
-        dimensions["servings"]
-        != dimensions["foods"] * dimensions["max_servings_per_food"]
-        or dimensions["nutrients"]
-        != dimensions["foods"] * dimensions["max_nutrients_per_food"]
+        dimensions["servings"] != dimensions["foods"] * dimensions["max_servings_per_food"]
+        or dimensions["nutrients"] != dimensions["foods"] * dimensions["max_nutrients_per_food"]
     ):
         raise Phase5CPerformanceContractError(
             "Fixture relation counts do not identify the selected performance tier"
@@ -431,18 +827,14 @@ def evaluate_performance_budgets(
         "subject_query_p95": measurements["subject_query_distribution"]["p95"],
         "subject_query_p99": measurements["subject_query_distribution"]["p99"],
         **measurements["scan_counts"],
-        "qualification_receipt_bytes": measurements["artifact_bytes"][
-            "qualification_receipt"
-        ],
+        "qualification_receipt_bytes": measurements["artifact_bytes"]["qualification_receipt"],
         "execution_receipt_bytes": measurements["artifact_bytes"]["execution_receipt"],
     }
     ceilings = {
         "bridge_wall_seconds": budgets["time_seconds"]["bridge"],
         "planning_wall_seconds": budgets["time_seconds"]["planning"],
         "conversion_wall_seconds": budgets["time_seconds"]["conversion"],
-        "qualification_wall_seconds": budgets["time_seconds"][
-            "independent_qualification"
-        ],
+        "qualification_wall_seconds": budgets["time_seconds"]["independent_qualification"],
         "subject_p95_seconds": budgets["time_seconds"]["subject_p95"],
         "subject_p99_seconds": budgets["time_seconds"]["subject_p99"],
         "peak_python_rss_bytes": budgets["memory_bytes"]["peak_python_rss"],
@@ -450,9 +842,7 @@ def evaluate_performance_budgets(
         "subject_query_p95": budgets["query_counts"]["subject_p95"],
         "subject_query_p99": budgets["query_counts"]["subject_p99"],
         **budgets["scan_counts"],
-        "qualification_receipt_bytes": budgets["artifact_bytes"][
-            "qualification_receipt"
-        ],
+        "qualification_receipt_bytes": budgets["artifact_bytes"]["qualification_receipt"],
         "execution_receipt_bytes": budgets["artifact_bytes"]["execution_receipt"],
     }
     return {
@@ -663,25 +1053,28 @@ def _validate_dimensions(value: Any) -> dict[str, Any]:
             raise Phase5CPerformanceContractError("Performance fixture count is invalid")
     distribution = _validate_distribution(value["ingredients_per_recipe"], integral=True)
     if distribution["count"] != value["recipes"]:
-        raise Phase5CPerformanceContractError(
-            "Ingredient distribution does not cover every Recipe"
-        )
+        raise Phase5CPerformanceContractError("Ingredient distribution does not cover every Recipe")
     graph = value["nested_graph"]
-    if not isinstance(graph, dict) or set(graph) != {"depth", "breadth"} or any(
-        not _is_nonnegative_int(item) for item in graph.values()
+    if (
+        not isinstance(graph, dict)
+        or set(graph) != {"depth", "breadth"}
+        or any(not _is_nonnegative_int(item) for item in graph.values())
     ):
         raise Phase5CPerformanceContractError("Nested Recipe graph dimensions are invalid")
     dispositions = value["dispositions"]
-    if not isinstance(dispositions, dict) or set(dispositions) != {
-        "convert",
-        "quarantine",
-        "block",
-    } or any(not _is_nonnegative_int(item) for item in dispositions.values()):
+    if (
+        not isinstance(dispositions, dict)
+        or set(dispositions)
+        != {
+            "convert",
+            "quarantine",
+            "block",
+        }
+        or any(not _is_nonnegative_int(item) for item in dispositions.values())
+    ):
         raise Phase5CPerformanceContractError("Performance disposition counts are invalid")
     if sum(dispositions.values()) != value["recipes"]:
-        raise Phase5CPerformanceContractError(
-            "Performance dispositions do not cover every Recipe"
-        )
+        raise Phase5CPerformanceContractError("Performance dispositions do not cover every Recipe")
     return value
 
 
@@ -699,8 +1092,10 @@ def _validate_fixture_evidence(
     if not _is_digest(value["blueprint_digest"]) or not _is_digest(value["logical_digest"]):
         raise Phase5CPerformanceContractError("Performance fixture digest is invalid")
     counts = value["table_counts"]
-    if not isinstance(counts, dict) or set(counts) != set(FIXTURE_TABLE_COUNT_KEYS) or any(
-        not _is_nonnegative_int(item) for item in counts.values()
+    if (
+        not isinstance(counts, dict)
+        or set(counts) != set(FIXTURE_TABLE_COUNT_KEYS)
+        or any(not _is_nonnegative_int(item) for item in counts.values())
     ):
         raise Phase5CPerformanceContractError("Performance fixture table counts are invalid")
     dimension_counts = {
@@ -755,7 +1150,9 @@ def _validate_measurements(value: Any) -> dict[str, Any]:
     peak = value["peak_python_rss_bytes"]
     if method == "unavailable":
         if peak is not None:
-            raise Phase5CPerformanceContractError("Unavailable memory evidence must not have a value")
+            raise Phase5CPerformanceContractError(
+                "Unavailable memory evidence must not have a value"
+            )
     elif not _is_nonnegative_int(peak):
         raise Phase5CPerformanceContractError("Peak Python memory evidence is invalid")
     for stage in stages.values():
@@ -782,9 +1179,7 @@ def _validate_measurements(value: Any) -> dict[str, Any]:
         raise Phase5CPerformanceContractError("Stage query counts do not match the run total")
     for name in SCAN_COUNT_KEYS:
         if sum(stage["scan_counts"][name] for stage in stages.values()) != scan_counts[name]:
-            raise Phase5CPerformanceContractError(
-                "Stage scan counts do not match the run totals"
-            )
+            raise Phase5CPerformanceContractError("Stage scan counts do not match the run totals")
     _validate_distribution(value["subject_query_distribution"], integral=True)
     if not _is_nonnegative_int(value["subject_dependency_query_count"]):
         raise Phase5CPerformanceContractError(
@@ -797,10 +1192,15 @@ def _validate_measurements(value: Any) -> dict[str, Any]:
     if not _is_nonnegative_int(value["retry_count"]):
         raise Phase5CPerformanceContractError("Performance retry count is invalid")
     artifacts = value["artifact_bytes"]
-    if not isinstance(artifacts, dict) or set(artifacts) != {
-        "execution_receipt",
-        "qualification_receipt",
-    } or any(item is not None and not _is_nonnegative_int(item) for item in artifacts.values()):
+    if (
+        not isinstance(artifacts, dict)
+        or set(artifacts)
+        != {
+            "execution_receipt",
+            "qualification_receipt",
+        }
+        or any(item is not None and not _is_nonnegative_int(item) for item in artifacts.values())
+    ):
         raise Phase5CPerformanceContractError("Performance artifact sizes are invalid")
     artifact_stages = {
         "execution_receipt": "execution_receipt_generation",
@@ -855,31 +1255,34 @@ def _validate_stage_measurement(value: Any) -> None:
     if value["rss_high_water_growth_bytes"] is not None and not _is_nonnegative_int(
         value["rss_high_water_growth_bytes"]
     ):
-        raise Phase5CPerformanceContractError(
-            "Performance stage RSS high-water growth is invalid"
-        )
-    if value["artifact_bytes"] is not None and not _is_nonnegative_int(
-        value["artifact_bytes"]
-    ):
+        raise Phase5CPerformanceContractError("Performance stage RSS high-water growth is invalid")
+    if value["artifact_bytes"] is not None and not _is_nonnegative_int(value["artifact_bytes"]):
         raise Phase5CPerformanceContractError("Performance stage artifact size is invalid")
 
 
 def _validate_scan_counts(value: Any) -> dict[str, int]:
-    if not isinstance(value, dict) or set(value) != set(SCAN_COUNT_KEYS) or any(
-        not _is_nonnegative_int(item) for item in value.values()
+    if (
+        not isinstance(value, dict)
+        or set(value) != set(SCAN_COUNT_KEYS)
+        or any(not _is_nonnegative_int(item) for item in value.values())
     ):
         raise Phase5CPerformanceContractError("Performance scan counts are invalid")
     return value
 
 
 def _validate_distribution(value: Any, *, integral: bool) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != {
-        "count",
-        "p50",
-        "p95",
-        "p99",
-        "maximum",
-    } or not _is_nonnegative_int(value.get("count")):
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
+            "count",
+            "p50",
+            "p95",
+            "p99",
+            "maximum",
+        }
+        or not _is_nonnegative_int(value.get("count"))
+    ):
         raise Phase5CPerformanceContractError("Performance distribution is invalid")
     values = [value[name] for name in ("p50", "p95", "p99", "maximum")]
     if value["count"] == 0:
@@ -895,16 +1298,21 @@ def _validate_distribution(value: Any, *, integral: bool) -> dict[str, Any]:
 
 
 def _validate_correctness(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != {
-        "independent_qualification_passed",
-        "restart_verification_passed",
-        "qualification_receipt_digest",
-        "failure_reason_code",
-    } or not all(
-        isinstance(value[name], bool)
-        for name in (
+    if (
+        not isinstance(value, dict)
+        or set(value)
+        != {
             "independent_qualification_passed",
             "restart_verification_passed",
+            "qualification_receipt_digest",
+            "failure_reason_code",
+        }
+        or not all(
+            isinstance(value[name], bool)
+            for name in (
+                "independent_qualification_passed",
+                "restart_verification_passed",
+            )
         )
     ):
         raise Phase5CPerformanceContractError("Performance correctness evidence is invalid")
@@ -954,9 +1362,7 @@ def _validate_measurement_coverage(
 
 
 def _correctness_passed(value: dict[str, Any]) -> bool:
-    return value["independent_qualification_passed"] and value[
-        "restart_verification_passed"
-    ]
+    return value["independent_qualification_passed"] and value["restart_verification_passed"]
 
 
 def _validate_safe_metadata(value: Any, label: str) -> str:
