@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.models.target import NutritionTarget
-from app.models.user import UserProfile
+from app.models.user import User, UserProfile
 from app.schemas.target import TargetConfigurationUpdate
 from app.services.log_service import LogService
 from app.targets.comparison import EffectiveTarget, compare_daily_totals
@@ -128,57 +128,93 @@ class TargetService:
                 )
 
     def update(self, user_id: UUID, payload: TargetConfigurationUpdate, as_of: date):
+        """Own one serialized Target update transaction for this user."""
         self._validate_update(payload, as_of)
-        profile = self._profile(user_id)
-        if profile is None:
-            profile = UserProfile(user_id=user_id)
-            self.db.add(profile)
-        profile.birth_date = payload.profile.birth_date
-        profile.biological_sex_for_reference_calculations = payload.profile.sex_for_equation
-        profile.height_cm = height_to_cm(payload.profile.height_cm, payload.profile.height_unit)
-        profile.weight_kg = weight_to_kg(payload.profile.weight_kg, payload.profile.weight_unit)
-        profile.activity_level = payload.profile.activity_level
-        profile.energy_estimation_context = payload.profile.energy_estimation_context
+        try:
+            self._lock_target_owner(user_id)
+            profile = self._profile(user_id)
+            if profile is None:
+                profile = UserProfile(user_id=user_id)
+                self.db.add(profile)
+            profile.birth_date = payload.profile.birth_date
+            profile.biological_sex_for_reference_calculations = payload.profile.sex_for_equation
+            profile.height_cm = height_to_cm(payload.profile.height_cm, payload.profile.height_unit)
+            profile.weight_kg = weight_to_kg(payload.profile.weight_kg, payload.profile.weight_unit)
+            profile.activity_level = payload.profile.activity_level
+            profile.energy_estimation_context = payload.profile.energy_estimation_context
 
-        existing = {item.nutrient_id: item for item in self._overrides(user_id)}
-        for nutrient_id, amount in payload.manual_overrides.model_dump().items():
-            row = existing.get(nutrient_id)
-            if amount is None:
-                if row is not None:
-                    self.db.delete(row)
-                continue
-            if row is None:
-                row = NutritionTarget(
-                    user_id=user_id,
-                    target_type="manual_override",
-                    nutrient_id=nutrient_id,
-                    unit=MANUAL_TARGET_UNITS[nutrient_id],
-                    basis="per_day",
-                    source="user",
-                )
-                self.db.add(row)
-            row.target_amount = amount
-        self.db.commit()
-        return self.configuration(user_id, as_of)
+            existing = {item.nutrient_id: item for item in self._overrides(user_id)}
+            for nutrient_id, amount in payload.manual_overrides.model_dump().items():
+                row = existing.get(nutrient_id)
+                if amount is None:
+                    if row is not None:
+                        self.db.delete(row)
+                    continue
+                if row is None:
+                    row = NutritionTarget(
+                        user_id=user_id,
+                        target_type="manual_override",
+                        nutrient_id=nutrient_id,
+                        unit=MANUAL_TARGET_UNITS[nutrient_id],
+                        basis="per_day",
+                        source="user",
+                    )
+                    self.db.add(row)
+                row.target_amount = amount
+            self.db.flush()
+            self._after_target_update_flush(user_id)
+            self.db.expire_all()
+            result = self.configuration(user_id, as_of)
+            self.db.commit()
+            return result
+        except Exception:
+            self.db.rollback()
+            raise
 
     def reset_override(self, user_id: UUID, nutrient_id: str, as_of: date):
+        """Own one serialized Target reset transaction for this user."""
         if nutrient_id not in MANUAL_TARGET_UNITS:
             raise TargetDomainError(
                 "target_unit_invalid",
                 "This nutrient does not support a personal override.",
                 "nutrient_id",
             )
-        row = self.db.scalars(
-            select(NutritionTarget).where(
-                NutritionTarget.user_id == user_id,
-                NutritionTarget.target_type == "manual_override",
-                NutritionTarget.nutrient_id == nutrient_id,
-            )
-        ).first()
-        if row is not None:
-            self.db.delete(row)
+        try:
+            self._lock_target_owner(user_id)
+            row = self.db.scalars(
+                select(NutritionTarget).where(
+                    NutritionTarget.user_id == user_id,
+                    NutritionTarget.target_type == "manual_override",
+                    NutritionTarget.nutrient_id == nutrient_id,
+                )
+            ).first()
+            if row is not None:
+                self.db.delete(row)
+            self.db.flush()
+            self._after_target_reset_flush(user_id, nutrient_id)
+            self.db.expire_all()
+            result = self.configuration(user_id, as_of)
             self.db.commit()
-        return self.configuration(user_id, as_of)
+            return result
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _lock_target_owner(self, user_id: UUID) -> None:
+        """Serialize Target rows in User-before-profile/Target lock order."""
+        locked_user_id = self.db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if locked_user_id is None:
+            raise LookupError("User not found")
+        self._after_target_owner_lock(user_id)
+
+    def _after_target_owner_lock(self, _user_id: UUID) -> None:
+        """Test seam after the per-user Target serialization lock."""
+
+    def _after_target_update_flush(self, _user_id: UUID) -> None:
+        """Test seam after profile and override changes are flushed."""
+
+    def _after_target_reset_flush(self, _user_id: UUID, _nutrient_id: str) -> None:
+        """Test seam after an override reset is flushed."""
 
     def effective_targets(self, user_id: UUID, as_of: date) -> list[EffectiveTarget]:
         overrides = {item.nutrient_id: item for item in self._overrides(user_id)}

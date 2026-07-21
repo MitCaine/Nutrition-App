@@ -13,7 +13,6 @@ from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from app.models.recipe import Recipe
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
-from app.services.recipe_revision_capture_service import RecipeRevisionCaptureService
 from app.services.retention_audit_service import (
     RetentionAuditService,
     RetentionCategory,
@@ -369,14 +368,16 @@ def test_capture_origin_revision_is_retained_as_provenance(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    recipe, _projection = _legacy_published_recipe(client, db_session)
-    captured = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-    assert captured.captured
+    recipe, _projection = _legacy_published_recipe(
+        client,
+        db_session,
+        seed_transition_baseline=True,
+    )
 
     record = _record(
         RetentionAuditService(db_session).audit_owner(recipe.user_id),
         "publication_revision",
-        captured.captured_revision_id,
+        recipe.active_publication_revision_id,
     )
 
     assert "capture_baseline_provenance" in record.reason_codes

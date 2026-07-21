@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import delete, inspect, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.food import ServingDefinition
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
 
 
@@ -79,6 +80,32 @@ class LogRepository:
             setattr(log, key, value)
         return log
 
+    def lock_for_food_serving_replacement(
+        self,
+        food_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Lock referencing DailyLogs before a Food's serving rows can be replaced.
+
+        PostgreSQL implements the serving foreign key's ON DELETE SET NULL by
+        updating DailyLogs. Explicit log edits already lock DailyLog before Food,
+        so every serving replacement must pre-lock the same log rows in UUID order.
+        """
+        self.db.scalars(
+            select(DailyLog)
+            .join(
+                ServingDefinition,
+                ServingDefinition.id == DailyLog.serving_definition_id,
+            )
+            .where(
+                DailyLog.user_id == user_id,
+                DailyLog.food_item_id == food_id,
+                ServingDefinition.food_item_id == food_id,
+            )
+            .order_by(DailyLog.id)
+            .with_for_update(of=DailyLog)
+        ).all()
+
     def list_for_date(self, user_id: UUID, logged_date: date) -> list[DailyLog]:
         statement = (
             select(DailyLog)
@@ -88,7 +115,9 @@ class LogRepository:
         )
         return list(self.db.scalars(statement).all())
 
-    def snapshots_for_date(self, user_id: UUID, logged_date: date) -> list[DailyLogNutrientSnapshot]:
+    def snapshots_for_date(
+        self, user_id: UUID, logged_date: date
+    ) -> list[DailyLogNutrientSnapshot]:
         statement = (
             select(DailyLogNutrientSnapshot)
             .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)

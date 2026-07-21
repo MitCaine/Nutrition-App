@@ -12,6 +12,10 @@ from sqlalchemy.exc import DBAPIError
 from app.api.v1.routers import foods, health, logs, nutrients, ocr, recipes, targets, usda
 from app.core.config import ProcessMode, Settings, settings
 from app.core.database import engine
+from app.core.database_errors import (
+    RuntimeDatabaseErrorCategory,
+    classify_runtime_database_error,
+)
 from app.dependencies.user import get_current_user
 from app.operators.phase5c4_prerequisites import (
     CANARY_FENCE_MODES,
@@ -117,12 +121,60 @@ def create_app(
         try:
             return await call_next(request)
         except DBAPIError as exc:
-            if _sqlstate(exc) != "P5C01":
-                raise
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Service is not ready"},
-            )
+            classification = classify_runtime_database_error(exc)
+            if classification.category is RuntimeDatabaseErrorCategory.WRITE_FENCE_CLOSED:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Service is not ready"},
+                )
+            if classification.category in {
+                RuntimeDatabaseErrorCategory.SERIALIZATION_FAILURE,
+                RuntimeDatabaseErrorCategory.DEADLOCK_DETECTED,
+            }:
+                return JSONResponse(
+                    status_code=409,
+                    headers={"Retry-After": "1"},
+                    content={
+                        "detail": {
+                            "code": "database_transaction_conflict",
+                            "message": (
+                                "The request conflicted with another database transaction. "
+                                "Retry the request."
+                            ),
+                            "retryable": True,
+                        }
+                    },
+                )
+            if classification.category is RuntimeDatabaseErrorCategory.CONNECTION_FAILURE:
+                if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "detail": {
+                                "code": "database_write_outcome_unknown",
+                                "message": (
+                                    "The database connection was lost before the write outcome "
+                                    "could be confirmed. Reconcile by reading the resource or "
+                                    "reusing its idempotency key before retrying."
+                                ),
+                                "retryable": False,
+                            }
+                        },
+                    )
+                return JSONResponse(
+                    status_code=503,
+                    headers={"Retry-After": "1"},
+                    content={
+                        "detail": {
+                            "code": "database_unavailable",
+                            "message": "The database is temporarily unavailable. Try again later.",
+                            "retryable": True,
+                        }
+                    },
+                )
+            # 55P03 is classified centrally but is not a public runtime contract
+            # until a specific NOWAIT/lock-timeout operation deliberately opts in.
+            raise
 
     return app
 
@@ -206,20 +258,6 @@ def _admit_canary_startup(config: Settings, database_engine: Engine) -> None:
         raise
     except Exception:
         raise RuntimeError("canary_startup_admission_failed") from None
-
-
-def _sqlstate(exc: BaseException) -> str | None:
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        for attribute in ("sqlstate", "pgcode"):
-            value = getattr(current, attribute, None)
-            if isinstance(value, str):
-                return value
-        next_exception = getattr(current, "orig", None) or current.__cause__
-        current = next_exception if isinstance(next_exception, BaseException) else None
-    return None
 
 
 app = create_app()

@@ -41,7 +41,7 @@ export const foodNutrientSchema = z
 
 export const foodMutationSchema = z
   .object({
-    name: z.string().min(1),
+    name: z.string().trim().min(1, "Food name is required."),
     brand: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     serving_definitions: z.array(servingSchema).min(1),

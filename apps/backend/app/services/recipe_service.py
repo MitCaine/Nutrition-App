@@ -36,6 +36,7 @@ from app.publication.recipe_revision import (
     validate_revision_resolver_input,
 )
 from app.repositories.food_repository import FoodRepository
+from app.repositories.log_repository import LogRepository
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
 from app.schemas.food import FoodResponse
@@ -62,6 +63,7 @@ from app.services.food_service import FoodService
 UNITS_BY_NUTRIENT_ID = {nutrient.id: nutrient.default_unit for nutrient in NUTRIENT_CATALOG}
 DECIMAL_PLACES = Decimal("0.000001")
 PUBLICATION_DEPENDENCY_RESTART_LIMIT = 3
+RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,20 @@ class RecipePublicationDependenciesUnstableError(ValueError):
         return {"code": self.code, "message": self.message}
 
 
+class RecipeDependenciesUnstableError(ValueError):
+    code = "recipe_dependencies_unstable"
+    message = (
+        "Recipe dependencies changed repeatedly during deletion. "
+        "Try again when Recipe edits are complete."
+    )
+
+    def __init__(self):
+        super().__init__(self.message)
+
+    def detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.message}
+
+
 class RecipeGraphCycleError(ValueError):
     code = "recipe_graph_cycle_conflict"
     message = (
@@ -120,6 +136,7 @@ class RecipeService:
     def __init__(self, db: Session):
         self.db = db
         self.foods = FoodRepository(db)
+        self.logs = LogRepository(db)
         self.recipes = RecipeRepository(db)
         self.publications = RecipePublicationRepository(db)
         self.create_idempotency = CreateIdempotencyCoordinator(db)
@@ -159,9 +176,7 @@ class RecipeService:
             created = self.recipes.add(recipe)
             response = self._recipe_response(user_id, created)
             if receipt is not None:
-                self.create_idempotency.complete(
-                    receipt, response.model_dump(mode="json")
-                )
+                self.create_idempotency.complete(receipt, response.model_dump(mode="json"))
             self.db.commit()
             return response
         except IntegrityError as exc:
@@ -183,16 +198,12 @@ class RecipeService:
             self.recipes.get_required(receipt.resource_id, user_id)
         except LookupError as exc:
             raise CreateOperationResultUnavailableError() from exc
-        return RecipeResponse.model_validate(
-            self.create_idempotency.replay_snapshot(receipt)
-        )
+        return RecipeResponse.model_validate(self.create_idempotency.replay_snapshot(receipt))
 
     def _recipe_response(self, user_id: UUID, recipe: Recipe) -> RecipeResponse:
         self.db.flush()
         self.db.expire(recipe)
-        return RecipeResponse.model_validate(
-            self.recipes.get_required(recipe.id, user_id)
-        )
+        return RecipeResponse.model_validate(self.recipes.get_required(recipe.id, user_id))
 
     def list_recipes(self, user_id: UUID, query: str | None = None) -> list[Recipe]:
         return self.recipes.list(user_id, query)
@@ -201,52 +212,62 @@ class RecipeService:
         return self.recipes.get_required(recipe_id, user_id)
 
     def update_recipe(self, user_id: UUID, recipe_id: UUID, payload: RecipeUpdateRequest) -> Recipe:
-        if payload.ingredients is not None:
-            self._lock_recipe_graph_owner(user_id)
-        locked_foods = (
-            self._lock_ingredient_foods(user_id, payload.ingredients)
-            if payload.ingredients is not None
-            else None
-        )
-        recipe = self.recipes.get_for_update(recipe_id, user_id)
-        if payload.ingredients is not None:
-            self._after_recipe_graph_initial_locks(recipe)
-        fields = payload.model_fields_set
-        if payload.name is not None:
-            recipe.name = payload.name.strip()
-        if "notes" in fields:
-            recipe.notes = payload.notes
-        if "serving_count_yield" in fields:
-            recipe.serving_count_yield = payload.serving_count_yield
-        self._apply_final_cooked_weight_update(recipe, payload)
-        if payload.ingredients is not None:
-            ingredients = self._build_ingredients(
-                user_id,
-                recipe,
-                payload.ingredients,
-                locked_foods=locked_foods,
+        """Own the complete update transaction; callers must not nest this mutation."""
+        try:
+            if payload.ingredients is not None:
+                self._lock_recipe_graph_owner(user_id)
+            locked_foods = (
+                self._lock_ingredient_foods(user_id, payload.ingredients)
+                if payload.ingredients is not None
+                else None
             )
-            recipe.ingredients.clear()
+            recipe = self.recipes.get_for_update(recipe_id, user_id)
+            if payload.ingredients is not None:
+                self._after_recipe_graph_initial_locks(recipe)
+            fields = payload.model_fields_set
+            if payload.name is not None:
+                recipe.name = payload.name.strip()
+            if "notes" in fields:
+                recipe.notes = payload.notes
+            if "serving_count_yield" in fields:
+                recipe.serving_count_yield = payload.serving_count_yield
+            self._apply_final_cooked_weight_update(recipe, payload)
+            if payload.ingredients is not None:
+                ingredients = self._build_ingredients(
+                    user_id,
+                    recipe,
+                    payload.ingredients,
+                    locked_foods=locked_foods,
+                )
+                recipe.ingredients.clear()
+                self.db.flush()
+                recipe.ingredients.extend(ingredients)
+            if recipe.published_food_item_id is not None and fields:
+                recipe.needs_republish = True
+            recipe.updated_at = datetime.now(timezone.utc)
             self.db.flush()
-            recipe.ingredients.extend(ingredients)
-        if recipe.published_food_item_id is not None and fields:
-            recipe.needs_republish = True
-        recipe.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        return self.recipes.get_required(recipe_id, user_id)
+            self._after_recipe_update_flush(recipe)
+            self.db.commit()
+            return self.recipes.get_required(recipe_id, user_id)
+        except Exception:
+            self.db.rollback()
+            raise
 
     def _after_recipe_graph_initial_locks(self, _recipe: Recipe) -> None:
         """Test seam after ingredient-update locks and before graph validation."""
 
+    def _after_recipe_update_flush(self, _recipe: Recipe) -> None:
+        """Test seam after the complete Recipe update is flushed."""
+
     def _lock_recipe_graph_owner(self, user_id: UUID) -> None:
         """Serialize authored Recipe-edge mutations for one owner transaction."""
-        locked_user_id = self.db.scalar(
-            select(User.id).where(User.id == user_id).with_for_update()
-        )
+        locked_user_id = self.db.scalar(select(User.id).where(User.id == user_id).with_for_update())
         if locked_user_id is None:
             raise LookupError("User not found")
 
-    def _apply_final_cooked_weight_update(self, recipe: Recipe, payload: RecipeUpdateRequest) -> None:
+    def _apply_final_cooked_weight_update(
+        self, recipe: Recipe, payload: RecipeUpdateRequest
+    ) -> None:
         fields = payload.model_fields_set
         grams_supplied = "final_cooked_weight_grams" in fields
         display_supplied = bool(
@@ -289,8 +310,9 @@ class RecipeService:
         *,
         remove_from_recipes: bool = False,
     ) -> None:
+        """Own deletion and its bounded graph-stabilization transaction."""
         try:
-            while True:
+            for _attempt in range(RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT):
                 candidate = self.recipes.get_required(recipe_id, user_id)
                 initial_projection_id = candidate.published_food_item_id
                 initial_dependency_ids = (
@@ -326,6 +348,8 @@ class RecipeService:
                     self.db.rollback()
                     continue
                 break
+            else:
+                raise RecipeDependenciesUnstableError()
 
             if projection is not None:
                 classification = classify_recipe_projection(projection, recipe)
@@ -391,8 +415,7 @@ class RecipeService:
                 recipe_id=parent.id,
                 recipe_name=parent.name,
                 ingredient_occurrence_count=sum(
-                    ingredient.food_item_id == projection.id
-                    for ingredient in parent.ingredients
+                    ingredient.food_item_id == projection.id for ingredient in parent.ingredients
                 ),
                 is_published=parent.published_food_item_id is not None,
                 will_require_republish=parent.published_food_item_id is not None,
@@ -447,7 +470,9 @@ class RecipeService:
     def _after_projection_soft_delete(self, _projection: FoodItem) -> None:
         """Test seam after compatibility projection retirement is flushed."""
 
-    def nutrition(self, user_id: UUID, recipe_id: UUID) -> dict[str, list[AggregatedNutrientTotal] | None]:
+    def nutrition(
+        self, user_id: UUID, recipe_id: UUID
+    ) -> dict[str, list[AggregatedNutrientTotal] | None]:
         recipe = self.recipes.get_required(recipe_id, user_id)
         totals = self._calculate_totals(recipe)
         return {
@@ -455,7 +480,9 @@ class RecipeService:
             "per_serving": self._divide_totals(totals, recipe.serving_count_yield),
             "per_100g": self._divide_totals(
                 totals,
-                recipe.final_cooked_weight_grams / Decimal("100") if recipe.final_cooked_weight_grams else None,
+                recipe.final_cooked_weight_grams / Decimal("100")
+                if recipe.final_cooked_weight_grams
+                else None,
             ),
         }
 
@@ -565,9 +592,7 @@ class RecipeService:
                 food=FoodService(self.db)._food_response(user_id, created_food),
             )
             if receipt is not None:
-                self.create_idempotency.complete(
-                    receipt, response.model_dump(mode="json")
-                )
+                self.create_idempotency.complete(receipt, response.model_dump(mode="json"))
             self.db.commit()
             return RecipePublicationResult(
                 recipe=created_recipe,
@@ -638,6 +663,11 @@ class RecipeService:
                     if initial_projection_id is not None
                     else set()
                 )
+                if initial_projection_id is not None:
+                    self.logs.lock_for_food_serving_replacement(
+                        initial_projection_id,
+                        user_id,
+                    )
                 projection = (
                     self.foods.get_for_update(initial_projection_id, user_id)
                     if initial_projection_id is not None
@@ -759,7 +789,9 @@ class RecipeService:
     def _after_parent_serving_remaps(self, _parents: list[Recipe]) -> None:
         """Test seam after parent ingredient remaps and staleness are flushed."""
 
-    def _replace_ingredients(self, user_id: UUID, recipe: Recipe, ingredients: list[RecipeIngredientInput]) -> None:
+    def _replace_ingredients(
+        self, user_id: UUID, recipe: Recipe, ingredients: list[RecipeIngredientInput]
+    ) -> None:
         recipe.ingredients.extend(self._build_ingredients(user_id, recipe, ingredients))
 
     def _build_ingredients(
@@ -851,7 +883,9 @@ class RecipeService:
                 continue
             if ingredient_recipe_id == target_recipe_id:
                 return True
-            if self._recipe_references_recipe(user_id, ingredient_recipe_id, target_recipe_id, seen):
+            if self._recipe_references_recipe(
+                user_id, ingredient_recipe_id, target_recipe_id, seen
+            ):
                 return True
         return False
 

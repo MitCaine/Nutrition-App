@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -24,6 +24,17 @@ from app.repositories.recipe_publication_repository import RecipePublicationRepo
 
 CAPTURE_ORIGIN = "legacy_projection_capture"
 CAPTURE_CONFIDENCE = "transition_baseline"
+CAPTURE_APPLY_RETIRED_MESSAGE = (
+    "Legacy Recipe revision capture apply mode is retired; "
+    "only dry-run inspection is supported."
+)
+
+
+class RecipeRevisionCaptureApplyRetiredError(RuntimeError):
+    """Raised when obsolete legacy revision-capture mutation is requested."""
+
+    def __init__(self) -> None:
+        super().__init__(CAPTURE_APPLY_RETIRED_MESSAGE)
 
 
 class CaptureCategory(str, Enum):
@@ -115,25 +126,27 @@ class _Assessment:
 
 
 class RecipeRevisionCaptureService:
-    """Deliberate, rerunnable transition-baseline capture for legacy Recipe projections."""
+    """Read-only inspection of legacy Recipe compatibility projections."""
 
     def __init__(self, db: Session):
         self.db = db
         self.revisions = RecipePublicationRepository(db)
 
     def capture_all(self, *, dry_run: bool = True) -> CaptureReport:
+        self._require_dry_run(dry_run)
         recipe_ids = list(self.db.scalars(select(Recipe.id).order_by(Recipe.id)).all())
-        results = tuple(self.capture_one(recipe_id, dry_run=dry_run) for recipe_id in recipe_ids)
-        return CaptureReport(dry_run=dry_run, results=results)
+        results = tuple(self.capture_one(recipe_id) for recipe_id in recipe_ids)
+        return CaptureReport(dry_run=True, results=results)
 
     def capture_one(self, recipe_id: UUID, *, dry_run: bool = True) -> CaptureResult:
-        recipe = self._load_recipe(recipe_id, lock=not dry_run)
+        self._require_dry_run(dry_run)
+        recipe = self._load_recipe(recipe_id)
         if recipe is None:
             raise LookupError("Recipe not found")
         recipe_user_id = recipe.user_id
         stale_state = recipe.needs_republish
         try:
-            assessment = self._assess(recipe, dry_run=dry_run, lock=not dry_run)
+            assessment = self._assess(recipe)
         except Exception as exc:
             self.db.rollback()
             return CaptureResult(
@@ -142,54 +155,25 @@ class RecipeRevisionCaptureService:
                 category=CaptureCategory.UNEXPECTED_FAILURE,
                 reason=f"classification failed: {type(exc).__name__}",
                 stale_state_preserved=stale_state,
-                dry_run=dry_run,
+                dry_run=True,
             )
-        if dry_run or assessment.proposal is None or assessment.projection is None:
-            return assessment.result
+        return assessment.result
 
-        revision = assessment.proposal.revision
-        try:
-            self.revisions.add(revision)
-            self._assign_links(assessment.recipe, assessment.projection, revision)
-            self.db.flush()
-            result = replace(
-                assessment.result,
-                captured_revision_id=revision.id,
-                captured=True,
-                dry_run=False,
-            )
-            self.db.commit()
-            return result
-        except Exception as exc:
-            self.db.rollback()
-            return CaptureResult(
-                recipe_id=assessment.recipe.id,
-                user_id=recipe_user_id,
-                category=CaptureCategory.UNEXPECTED_FAILURE,
-                reason=f"capture transaction failed: {type(exc).__name__}",
-                stale_state_preserved=stale_state,
-                proposed_revision_number=assessment.proposal.revision_number,
-                proposed_origin=CAPTURE_ORIGIN,
-                proposed_provenance_confidence=CAPTURE_CONFIDENCE,
-                proposed_content_digest=assessment.proposal.content_digest,
-                dry_run=False,
-            )
+    @staticmethod
+    def _require_dry_run(dry_run: bool) -> None:
+        if not dry_run:
+            raise RecipeRevisionCaptureApplyRetiredError
 
-    def _load_recipe(self, recipe_id: UUID, *, lock: bool) -> Recipe | None:
+    def _load_recipe(self, recipe_id: UUID) -> Recipe | None:
         # This deliberately unscoped lookup belongs to the operator-only capture
         # utility. User-facing services must load Recipes through an explicit owner
         # boundary rather than treating this as a general repository convention.
-        statement = select(Recipe).where(Recipe.id == recipe_id)
-        if lock:
-            statement = statement.with_for_update()
-        return self.db.scalars(statement).first()
+        return self.db.scalars(select(Recipe).where(Recipe.id == recipe_id)).first()
 
     def _load_projection(
         self,
         food_id: UUID,
         user_id: UUID,
-        *,
-        lock: bool,
     ) -> FoodItem | None:
         statement = (
             select(FoodItem)
@@ -200,16 +184,14 @@ class RecipeRevisionCaptureService:
                 selectinload(FoodItem.sources),
             )
         )
-        if lock:
-            statement = statement.with_for_update()
         return self.db.scalars(statement).first()
 
-    def _assess(self, recipe: Recipe, *, dry_run: bool, lock: bool) -> _Assessment:
+    def _assess(self, recipe: Recipe) -> _Assessment:
         base = {
             "recipe_id": recipe.id,
             "user_id": recipe.user_id,
             "stale_state_preserved": recipe.needs_republish,
-            "dry_run": dry_run,
+            "dry_run": True,
         }
         if recipe.deleted_at is not None:
             return _Assessment(
@@ -253,7 +235,6 @@ class RecipeRevisionCaptureService:
         projection = self._load_projection(
             recipe.published_food_item_id,
             recipe.user_id,
-            lock=lock,
         )
         if projection is None:
             return _Assessment(
@@ -529,15 +510,6 @@ class RecipeRevisionCaptureService:
             revision_number=revision_number,
             content_digest=revision.content_digest,
         )
-
-    def _assign_links(
-        self,
-        recipe: Recipe,
-        projection: FoodItem,
-        revision: RecipePublicationRevision,
-    ) -> None:
-        recipe.active_publication_revision_id = revision.id
-        projection.recipe_publication_revision_id = revision.id
 
     def _blocked(
         self,

@@ -28,7 +28,6 @@ from app.publication.recipe_revision import (
 )
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
-from app.services.recipe_revision_capture_service import RecipeRevisionCaptureService
 from app.services.recipe_service import RecipeService
 from tests.test_recipe_revision_capture import _published_recipe as _legacy_published_recipe
 from tests.test_stage4_recipes import _per_100g_food
@@ -342,9 +341,11 @@ def test_projection_builder_preserves_statuses_units_and_mixed_bases() -> None:
 def test_publish_after_transition_baseline_uses_next_revision_number(
     client: TestClient, db_session: Session
 ) -> None:
-    recipe, _projection = _legacy_published_recipe(client, db_session)
-    captured = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-    assert captured.captured is True
+    recipe, _projection = _legacy_published_recipe(
+        client,
+        db_session,
+        seed_transition_baseline=True,
+    )
     db_session.expire_all()
     recipe = db_session.get(Recipe, recipe.id)
     baseline = _history(db_session, recipe)[0]

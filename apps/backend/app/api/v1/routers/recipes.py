@@ -24,6 +24,7 @@ from app.services.create_idempotency import (
     CreateOperationResultUnavailableError,
 )
 from app.services.recipe_service import (
+    RecipeDependenciesUnstableError,
     RecipeDependencyError,
     RecipeGraphCycleError,
     RecipePublicationDependenciesUnstableError,
@@ -113,6 +114,11 @@ def delete_recipe(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.dependency.model_dump(mode="json"),
+        ) from exc
+    except RecipeDependenciesUnstableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
         ) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

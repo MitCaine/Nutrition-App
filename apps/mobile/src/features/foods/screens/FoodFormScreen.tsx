@@ -82,6 +82,9 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
               <TextInput {...focusProps(foodFocusKey("notes"))} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
 
+            {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
+            {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
+
             <Text style={styles.sectionTitle}>Amounts</Text>
             <ServingDefinitionsEditor
               servings={form.servings}
@@ -95,8 +98,6 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
 
             <Text style={styles.sectionTitle}>Nutrients</Text>
             <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} />
-            {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
-            {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
           </>
         )}
       </KeyboardSafeScrollView>

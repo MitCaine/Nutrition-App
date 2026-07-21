@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
@@ -14,20 +16,21 @@ from app.models.food import FoodItem
 from app.models.recipe import Recipe
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
-from app.nutrition.resolution import resolve_nutrition
-from app.nutrition.revision_resolution import resolve_revision_nutrition
 from app.publication.recipe_revision import (
     apply_revision_to_projection,
     build_revision,
     content_from_recipe_output,
 )
-from app.services.recipe_service import RecipeService
 from app.services.recipe_revision_capture_service import (
+    CAPTURE_APPLY_RETIRED_MESSAGE,
     CAPTURE_CONFIDENCE,
     CAPTURE_ORIGIN,
     CaptureCategory,
+    RecipeRevisionCaptureApplyRetiredError,
     RecipeRevisionCaptureService,
 )
+from app.services.recipe_service import RecipeService
+from scripts import capture_recipe_publication_revisions as capture_cli
 from tests.test_stage4_recipes import _per_100g_food
 
 
@@ -39,7 +42,10 @@ def _published_recipe(
     serving_count: str | None = "2",
     cooked_grams: str | None = "400",
     runtime_publish: bool = False,
+    seed_transition_baseline: bool = False,
 ) -> tuple[Recipe, FoodItem]:
+    if runtime_publish and seed_transition_baseline:
+        raise ValueError("Choose runtime publication or a seeded transition baseline")
     ingredient = _per_100g_food(client, name=f"{name} ingredient")
     payload = {
         "name": name,
@@ -79,8 +85,8 @@ def _published_recipe(
             recipe_id=recipe.id,
             user_id=recipe.user_id,
             revision_number=1,
-            creation_origin="legacy_projection_capture",
-            provenance_confidence="transition_baseline",
+            creation_origin=CAPTURE_ORIGIN,
+            provenance_confidence=CAPTURE_CONFIDENCE,
             content=content_from_recipe_output(
                 published_name=recipe.name,
                 published_notes=recipe.notes,
@@ -98,19 +104,24 @@ def _published_recipe(
             source_id=str(recipe.id),
             is_recipe=True,
         )
-        projection_time = datetime.now(timezone.utc)
         apply_revision_to_projection(
             projection,
             transient_revision,
             recipe_id=recipe.id,
             user_id=recipe.user_id,
-            updated_at=projection_time,
+            updated_at=datetime.now(timezone.utc),
         )
         db.add(projection)
         recipe.published_food_item = projection
         recipe.needs_republish = False
         recipe.updated_at = datetime.now(timezone.utc)
         db.commit()
+        if seed_transition_baseline:
+            db.add(transient_revision)
+            db.flush()
+            recipe.active_publication_revision_id = transient_revision.id
+            projection.recipe_publication_revision_id = transient_revision.id
+            db.commit()
     db.expire_all()
     recipe = db.get(Recipe, recipe_id)
     assert recipe is not None and recipe.published_food_item_id is not None
@@ -123,51 +134,55 @@ def _revision_count(db: Session) -> int:
     return db.scalar(select(func.count()).select_from(RecipePublicationRevision)) or 0
 
 
-def _nutrient_values(resolved) -> list[tuple]:
-    return [
-        (
-            nutrient.nutrient_id,
-            nutrient.amount,
-            nutrient.unit,
-            nutrient.data_status.value,
-            nutrient.source_basis.value,
-        )
-        for nutrient in resolved.nutrients
-    ]
-
-
-def test_eligible_projection_captures_complete_transition_baseline(
-    client: TestClient, db_session: Session
+def test_dry_run_report_is_stable_and_executes_no_database_writes(
+    client: TestClient,
+    db_session: Session,
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    original_stale = recipe.needs_republish
+    eligible, projection = _published_recipe(client, db_session)
+    user = ensure_dev_user(db_session)
+    unpublished = Recipe(id=uuid4(), user_id=user.id, name="Draft")
+    db_session.add(unpublished)
+    db_session.commit()
+    write_statements: list[str] = []
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
+    def record_database_write(_conn, _cursor, statement, _parameters, _context, _many):
+        operation = statement.lstrip().partition(" ")[0].upper()
+        if operation in {"INSERT", "UPDATE", "DELETE"}:
+            write_statements.append(statement)
 
-    assert result.category == CaptureCategory.ELIGIBLE
-    assert result.captured is True
-    assert result.proposed_origin == CAPTURE_ORIGIN
-    assert result.proposed_provenance_confidence == CAPTURE_CONFIDENCE
-    db_session.expire_all()
-    recipe = db_session.get(Recipe, recipe.id)
-    projection = db_session.get(FoodItem, projection.id)
-    revision = db_session.get(RecipePublicationRevision, result.captured_revision_id)
-    assert recipe.active_publication_revision_id == revision.id
-    assert projection.recipe_publication_revision_id == revision.id
-    assert recipe.needs_republish is original_stale
-    assert revision.published_name == projection.name
-    assert revision.published_notes == projection.notes
-    assert revision.creation_origin == "legacy_projection_capture"
-    assert revision.provenance_confidence == "transition_baseline"
-    assert {row.basis for row in revision.nutrients} == {"per_serving", "per_100g"}
-    assert len([row for row in revision.amount_definitions if row.semantic_mode == "g"]) == 1
-    gram = next(row for row in revision.amount_definitions if row.semantic_mode == "g")
-    assert gram.display_quantity is None
-    assert gram.gram_equivalent is None
+    event.listen(db_session.bind, "before_cursor_execute", record_database_write)
+    try:
+        service = RecipeRevisionCaptureService(db_session)
+        first = service.capture_all()
+        second = service.capture_all()
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", record_database_write)
+
+    assert first.to_dict() == second.to_dict()
+    assert first.dry_run is True
+    assert first.counts["total_recipes_inspected"] == 2
+    assert first.counts["eligible_captures"] == 1
+    assert first.counts["unpublished"] == 1
+    eligible_result = next(result for result in first.results if result.recipe_id == eligible.id)
+    assert eligible_result.category == CaptureCategory.ELIGIBLE
+    assert eligible_result.proposed_revision_number == 1
+    assert eligible_result.proposed_origin == CAPTURE_ORIGIN
+    assert eligible_result.proposed_provenance_confidence == CAPTURE_CONFIDENCE
+    assert eligible_result.proposed_content_digest is not None
+    assert write_statements == []
+    assert not db_session.new
+    assert not db_session.dirty
+    assert not db_session.deleted
+    assert _revision_count(db_session) == 0
+    db_session.refresh(eligible)
+    db_session.refresh(projection)
+    assert eligible.active_publication_revision_id is None
+    assert projection.recipe_publication_revision_id is None
 
 
-def test_stale_recipe_captures_projection_not_authored_draft(
-    client: TestClient, db_session: Session
+def test_dry_run_preserves_stale_draft_and_classifies_projection_content(
+    client: TestClient,
+    db_session: Session,
 ) -> None:
     recipe, projection = _published_recipe(client, db_session, name="Published Name")
     response = client.patch(
@@ -175,21 +190,24 @@ def test_stale_recipe_captures_projection_not_authored_draft(
         json={"name": "Unpublished Draft Name", "notes": "draft notes"},
     )
     assert response.status_code == 200
-    assert response.json()["needs_republish"] is True
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
+    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.STALE_ELIGIBLE
+    assert result.stale_state_preserved is True
+    assert result.captured is False
+    assert _revision_count(db_session) == 0
     db_session.expire_all()
-    refreshed = db_session.get(Recipe, recipe.id)
-    revision = db_session.get(RecipePublicationRevision, result.captured_revision_id)
-    assert refreshed.name == "Unpublished Draft Name"
-    assert refreshed.needs_republish is True
-    assert revision.published_name == projection.name == "Published Name"
-    assert revision.published_notes == projection.notes == "published projection notes"
+    refreshed_recipe = db_session.get(Recipe, recipe.id)
+    refreshed_projection = db_session.get(FoodItem, projection.id)
+    assert refreshed_recipe.name == "Unpublished Draft Name"
+    assert refreshed_recipe.notes == "draft notes"
+    assert refreshed_recipe.needs_republish is True
+    assert refreshed_projection.name == "Published Name"
+    assert refreshed_projection.notes == "published projection notes"
 
 
-def test_unpublished_and_deleted_recipe_are_classified_without_writes(
+def test_dry_run_classifies_unpublished_and_deleted_recipes_without_writes(
     db_session: Session,
 ) -> None:
     user = ensure_dev_user(db_session)
@@ -209,14 +227,15 @@ def test_unpublished_and_deleted_recipe_are_classified_without_writes(
     assert _revision_count(db_session) == 0
 
 
-def test_deleted_projection_is_not_reactivated_or_captured(
-    client: TestClient, db_session: Session
+def test_dry_run_reports_deleted_projection_without_reactivating_it(
+    client: TestClient,
+    db_session: Session,
 ) -> None:
     recipe, projection = _published_recipe(client, db_session)
     projection.deleted_at = datetime.now(timezone.utc)
     db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
+    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.DELETED_PROJECTION
     assert result.captured is False
@@ -226,25 +245,23 @@ def test_deleted_projection_is_not_reactivated_or_captured(
     assert _revision_count(db_session) == 0
 
 
-def test_missing_projection_is_reported_without_fabricating_history(
-    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+def test_dry_run_reports_missing_projection_without_fabricating_history(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recipe, _projection = _published_recipe(client, db_session)
     service = RecipeRevisionCaptureService(db_session)
-    monkeypatch.setattr(
-        service,
-        "_load_projection",
-        lambda _food_id, _user_id, lock: None,
-    )
+    monkeypatch.setattr(service, "_load_projection", lambda _food_id, _user_id: None)
 
-    result = service.capture_one(recipe.id, dry_run=False)
+    result = service.capture_one(recipe.id)
 
     assert result.category == CaptureCategory.MISSING_PROJECTION
     assert _revision_count(db_session) == 0
 
 
 @pytest.mark.parametrize("inconsistency", ["owner", "source_type", "source_id"])
-def test_inconsistent_projection_linkage_creates_no_partial_revision(
+def test_dry_run_reports_inconsistent_projection_linkage(
     client: TestClient,
     db_session: Session,
     inconsistency: str,
@@ -261,7 +278,7 @@ def test_inconsistent_projection_linkage_creates_no_partial_revision(
         projection.source_id = str(uuid4())
     db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
+    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
 
     assert result.category == (
         CaptureCategory.MISSING_PROJECTION
@@ -272,63 +289,15 @@ def test_inconsistent_projection_linkage_creates_no_partial_revision(
     assert _revision_count(db_session) == 0
 
 
-def test_multiple_active_generated_projections_are_inconsistent(
-    client: TestClient, db_session: Session
-) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    conflict = FoodItem(
-        id=uuid4(),
-        user_id=recipe.user_id,
-        name="Conflicting projection",
-        source_type="recipe",
-        source_id=str(recipe.id),
-        is_recipe=True,
-    )
-    db_session.add(conflict)
-    db_session.commit()
-
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-
-    assert result.category == CaptureCategory.INCONSISTENT_LINKAGE
-    assert projection.recipe_publication_revision_id is None
-    assert _revision_count(db_session) == 0
-
-
-def test_conflicting_existing_revision_linkage_is_not_repaired(
-    client: TestClient, db_session: Session
-) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    other = Recipe(id=uuid4(), user_id=recipe.user_id, name="Other")
-    revision = RecipePublicationRevision(
-        id=uuid4(),
-        recipe_id=other.id,
-        user_id=other.user_id,
-        revision_number=1,
-        creation_origin="normal_publication",
-        provenance_confidence="complete",
-        published_name="Other",
-        content_digest="diagnostic",
-    )
-    db_session.add_all([other, revision])
-    db_session.flush()
-    projection.recipe_publication_revision_id = revision.id
-    db_session.commit()
-
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-
-    assert result.category == CaptureCategory.INCONSISTENT_LINKAGE
-    assert recipe.active_publication_revision_id is None
-    assert _revision_count(db_session) == 1
-
-
-def test_independently_modified_projection_is_ambiguous_and_unlinked(
-    client: TestClient, db_session: Session
+def test_dry_run_reports_ambiguous_independent_projection_edit(
+    client: TestClient,
+    db_session: Session,
 ) -> None:
     recipe, projection = _published_recipe(client, db_session)
     projection.serving_definitions[0].source = "manual"
     db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
+    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.AMBIGUOUS
     assert result.captured is False
@@ -337,195 +306,77 @@ def test_independently_modified_projection_is_ambiguous_and_unlinked(
     assert _revision_count(db_session) == 0
 
 
-def test_resolver_invalid_projection_is_reported_as_failed_validation(
-    client: TestClient, db_session: Session
+def test_dry_run_reports_invalid_projection_without_creating_revision(
+    client: TestClient,
+    db_session: Session,
 ) -> None:
     recipe, projection = _published_recipe(client, db_session)
     for serving in projection.serving_definitions:
         serving.is_default = False
     db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
+    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.FAILED_VALIDATION
     assert result.captured is False
     assert _revision_count(db_session) == 0
 
 
-def test_capture_and_dry_run_are_rerunnable_without_duplicate_revision(
-    client: TestClient, db_session: Session
+def test_dry_run_reports_already_managed_runtime_publication(
+    client: TestClient,
+    db_session: Session,
 ) -> None:
-    recipe, _projection = _published_recipe(client, db_session)
-    service = RecipeRevisionCaptureService(db_session)
-    dry_first = service.capture_one(recipe.id)
-    dry_second = service.capture_one(recipe.id)
-    assert dry_first.proposed_content_digest == dry_second.proposed_content_digest
-    assert _revision_count(db_session) == 0
+    recipe, _projection = _published_recipe(client, db_session, runtime_publish=True)
 
-    captured = service.capture_one(recipe.id, dry_run=False)
-    rerun = service.capture_one(recipe.id, dry_run=False)
-    dry_after = service.capture_one(recipe.id)
+    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
 
-    assert captured.captured is True
-    assert rerun.category == CaptureCategory.ALREADY_MANAGED
-    assert dry_after.category == CaptureCategory.ALREADY_MANAGED
+    assert result.category == CaptureCategory.ALREADY_MANAGED
+    assert result.captured is False
+    assert result.captured_revision_id == recipe.active_publication_revision_id
     assert _revision_count(db_session) == 1
 
 
-def test_already_managed_capture_detects_projection_drift(
-    client: TestClient, db_session: Session
-) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    service = RecipeRevisionCaptureService(db_session)
-    captured = service.capture_one(recipe.id, dry_run=False)
-    assert captured.captured is True
-    calories = next(row for row in projection.nutrients if row.nutrient_id == "calories")
-    calories.amount += Decimal("1")
-    db_session.commit()
+@pytest.mark.parametrize("entry_point", ["capture_one", "capture_all"])
+def test_apply_entry_points_fail_before_any_database_operation(entry_point: str) -> None:
+    db = Mock(spec=Session)
+    service = RecipeRevisionCaptureService(db)
 
-    rerun = service.capture_one(recipe.id)
+    with pytest.raises(
+        RecipeRevisionCaptureApplyRetiredError,
+        match="only dry-run inspection is supported",
+    ) as exc_info:
+        if entry_point == "capture_one":
+            service.capture_one(uuid4(), dry_run=False)
+        else:
+            service.capture_all(dry_run=False)
 
-    assert rerun.category == CaptureCategory.INCONSISTENT_LINKAGE
-    assert rerun.captured is False
-    assert _revision_count(db_session) == 1
-
-
-def test_count_only_projection_does_not_fabricate_gram_mode(
-    client: TestClient, db_session: Session
-) -> None:
-    recipe, _projection = _published_recipe(client, db_session, cooked_grams=None)
-
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-    revision = db_session.get(RecipePublicationRevision, result.captured_revision_id)
-
-    assert result.captured is True
-    assert all(amount.semantic_mode != "g" for amount in revision.amount_definitions)
-    serving = next(
-        amount for amount in revision.amount_definitions if amount.semantic_mode == "serving"
-    )
-    assert serving.gram_equivalent is None
+    assert str(exc_info.value) == CAPTURE_APPLY_RETIRED_MESSAGE
+    db.scalars.assert_not_called()
+    db.add.assert_not_called()
+    db.flush.assert_not_called()
+    db.commit.assert_not_called()
+    db.rollback.assert_not_called()
 
 
-def test_captured_revision_resolution_matches_projection_for_servings_and_grams(
-    client: TestClient, db_session: Session
-) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    calories = [row for row in projection.nutrients if row.nutrient_id == "calories"]
-    for row in calories:
-        row.data_status = "estimated"
-    db_session.commit()
-
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id, dry_run=False)
-    revision = db_session.get(RecipePublicationRevision, result.captured_revision_id)
-    serving_amount = next(
-        amount
-        for amount in revision.amount_definitions
-        if amount.semantic_mode == "serving" and amount.display_label == "1 serving"
-    )
-    source_serving = next(
-        serving for serving in projection.serving_definitions if serving.label == "1 serving"
-    )
-    projection_serving = resolve_nutrition(
-        projection,
-        Decimal("1.5"),
-        "serving",
-        source_serving.id,
-    )
-    revision_serving = resolve_revision_nutrition(
-        revision,
-        serving_amount.id,
-        Decimal("1.5"),
-    )
-    assert _nutrient_values(revision_serving) == _nutrient_values(projection_serving)
-
-    gram_amount = next(
-        amount for amount in revision.amount_definitions if amount.semantic_mode == "g"
-    )
-    projection_grams = resolve_nutrition(projection, Decimal("50"), "g")
-    revision_grams = resolve_revision_nutrition(revision, gram_amount.id, Decimal("50"))
-    assert _nutrient_values(revision_grams) == _nutrient_values(projection_grams)
-    statuses = {nutrient.data_status.value for nutrient in revision_grams.nutrients}
-    assert {"estimated", "zero", "unknown"}.issubset(statuses)
-
-
-def test_capture_transaction_rolls_back_revision_and_links_on_child_failure(
-    client: TestClient,
-    db_session: Session,
+def test_cli_apply_fails_before_opening_database_session(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    response = client.patch(f"/api/v1/recipes/{recipe.id}", json={"name": "Stale draft"})
-    assert response.status_code == 200
-    service = RecipeRevisionCaptureService(db_session)
-    original_add = service.revisions.add
+    session_factory = Mock(side_effect=AssertionError("database session must not be opened"))
+    monkeypatch.setattr(capture_cli, "SessionLocal", session_factory)
+    monkeypatch.setattr(sys, "argv", ["capture_recipe_publication_revisions.py", "--apply"])
 
-    def fail_after_insert(revision):
-        original_add(revision)
-        raise RuntimeError("injected child failure")
+    with pytest.raises(SystemExit) as exc_info:
+        capture_cli.main()
 
-    monkeypatch.setattr(service.revisions, "add", fail_after_insert)
-    result = service.capture_one(recipe.id, dry_run=False)
-
-    assert result.category == CaptureCategory.UNEXPECTED_FAILURE
-    assert _revision_count(db_session) == 0
-    db_session.refresh(recipe)
-    db_session.refresh(projection)
-    assert recipe.active_publication_revision_id is None
-    assert projection.recipe_publication_revision_id is None
-    assert recipe.needs_republish is True
-
-
-def test_capture_transaction_rolls_back_when_link_assignment_is_invalid(
-    client: TestClient,
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recipe, projection = _published_recipe(client, db_session)
-    service = RecipeRevisionCaptureService(db_session)
-
-    def invalid_links(recipe_to_link, projection_to_link, _revision):
-        invalid_id = uuid4()
-        recipe_to_link.active_publication_revision_id = invalid_id
-        projection_to_link.recipe_publication_revision_id = invalid_id
-
-    monkeypatch.setattr(service, "_assign_links", invalid_links)
-    result = service.capture_one(recipe.id, dry_run=False)
-
-    assert result.category == CaptureCategory.UNEXPECTED_FAILURE
-    assert _revision_count(db_session) == 0
-    db_session.refresh(recipe)
-    db_session.refresh(projection)
-    assert recipe.active_publication_revision_id is None
-    assert projection.recipe_publication_revision_id is None
-
-
-def test_dry_run_report_is_structured_stable_and_writes_nothing(
-    client: TestClient, db_session: Session
-) -> None:
-    eligible, _projection = _published_recipe(client, db_session)
-    user = ensure_dev_user(db_session)
-    unpublished = Recipe(id=uuid4(), user_id=user.id, name="Draft")
-    db_session.add(unpublished)
-    db_session.commit()
-    service = RecipeRevisionCaptureService(db_session)
-
-    first = service.capture_all()
-    second = service.capture_all()
-
-    assert first.to_dict() == second.to_dict()
-    assert first.counts["total_recipes_inspected"] == 2
-    assert first.counts["eligible_captures"] == 1
-    assert first.counts["unpublished"] == 1
-    eligible_result = next(result for result in first.results if result.recipe_id == eligible.id)
-    assert eligible_result.proposed_revision_number == 1
-    assert eligible_result.proposed_origin == "legacy_projection_capture"
-    assert eligible_result.proposed_provenance_confidence == "transition_baseline"
-    assert eligible_result.proposed_content_digest is not None
-    assert _revision_count(db_session) == 0
+    assert exc_info.value.code == 2
+    assert capsys.readouterr().err.strip() == CAPTURE_APPLY_RETIRED_MESSAGE
+    session_factory.assert_not_called()
 
 
 def test_runtime_publish_and_new_logs_are_revision_backed(
-    client: TestClient, db_session: Session
+    client: TestClient,
+    db_session: Session,
 ) -> None:
     recipe, projection = _published_recipe(client, db_session, runtime_publish=True)
     assert recipe.active_publication_revision_id is not None

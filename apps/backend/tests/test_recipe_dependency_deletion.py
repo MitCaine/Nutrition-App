@@ -15,7 +15,10 @@ from app.models.recipe import Recipe, RecipeIngredient
 from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
-from app.services.recipe_service import RecipeService
+from app.services.recipe_service import (
+    RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT,
+    RecipeService,
+)
 from tests.test_recipe_revision_logging import _post_log, _published
 from tests.test_stage2_foods import create_food
 
@@ -62,10 +65,7 @@ def _projection_state(projection: FoodItem) -> tuple:
             (row.id, row.label, row.quantity, row.unit, row.gram_weight)
             for row in projection.serving_definitions
         ),
-        tuple(
-            (row.id, row.nutrient_id, row.amount, row.basis)
-            for row in projection.nutrients
-        ),
+        tuple((row.id, row.nutrient_id, row.amount, row.basis) for row in projection.nutrients),
     )
 
 
@@ -197,6 +197,55 @@ def test_dependency_rediscovery_restarts_and_reacquires_complete_sorted_lock_set
     assert client.get(f"/api/v1/recipes/{second['id']}").json()["ingredients"] == []
 
 
+def test_dependency_rediscovery_exhaustion_is_bounded_non_mutating_and_retryable_later(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child_id, child_food = _published(client)
+    first = _parent_recipe(client, child_food, "Initially Visible Parent")
+    second = _parent_recipe(client, child_food, "Rediscovered Parent")
+    original_dependencies = RecipeService._dependent_recipe_ids
+    dependency_scans = 0
+
+    def never_stable(service, user_id, projection_id):
+        nonlocal dependency_scans
+        dependency_scans += 1
+        if dependency_scans % 2:
+            return {UUID(first["id"])}
+        return {UUID(first["id"]), UUID(second["id"])}
+
+    monkeypatch.setattr(RecipeService, "_dependent_recipe_ids", never_stable)
+    exhausted = client.delete(
+        f"/api/v1/recipes/{child_id}",
+        params={"remove_from_recipes": "true"},
+    )
+
+    assert exhausted.status_code == 409
+    assert exhausted.json() == {
+        "detail": {
+            "code": "recipe_dependencies_unstable",
+            "message": (
+                "Recipe dependencies changed repeatedly during deletion. "
+                "Try again when Recipe edits are complete."
+            ),
+        }
+    }
+    assert dependency_scans == RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT * 2
+    assert client.get(f"/api/v1/recipes/{child_id}").status_code == 200
+    assert len(client.get(f"/api/v1/recipes/{first['id']}").json()["ingredients"]) == 1
+    assert len(client.get(f"/api/v1/recipes/{second['id']}").json()["ingredients"]) == 1
+
+    monkeypatch.setattr(RecipeService, "_dependent_recipe_ids", original_dependencies)
+    retried = client.delete(
+        f"/api/v1/recipes/{child_id}",
+        params={"remove_from_recipes": "true"},
+    )
+
+    assert retried.status_code == 204
+    assert client.get(f"/api/v1/recipes/{first['id']}").json()["ingredients"] == []
+    assert client.get(f"/api/v1/recipes/{second['id']}").json()["ingredients"] == []
+
+
 def test_confirmed_delete_preserves_parent_order_and_published_state(
     client: TestClient,
     db_session: Session,
@@ -210,10 +259,30 @@ def test_confirmed_delete_preserves_parent_order_and_published_state(
             "name": "Published Parent",
             "serving_count_yield": "2",
             "ingredients": [
-                {"food_item_id": first_kept["id"], "position": 0, "amount_quantity": "20", "amount_unit": "g"},
-                {"food_item_id": child_food["id"], "position": 1, "amount_quantity": "50", "amount_unit": "g"},
-                {"food_item_id": second_kept["id"], "position": 2, "amount_quantity": "30", "amount_unit": "g"},
-                {"food_item_id": child_food["id"], "position": 3, "amount_quantity": "25", "amount_unit": "g"},
+                {
+                    "food_item_id": first_kept["id"],
+                    "position": 0,
+                    "amount_quantity": "20",
+                    "amount_unit": "g",
+                },
+                {
+                    "food_item_id": child_food["id"],
+                    "position": 1,
+                    "amount_quantity": "50",
+                    "amount_unit": "g",
+                },
+                {
+                    "food_item_id": second_kept["id"],
+                    "position": 2,
+                    "amount_quantity": "30",
+                    "amount_unit": "g",
+                },
+                {
+                    "food_item_id": child_food["id"],
+                    "position": 3,
+                    "amount_quantity": "25",
+                    "amount_unit": "g",
+                },
             ],
         },
     )
@@ -458,9 +527,9 @@ def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
     blocked = client.delete(f"/api/v1/recipes/{child_id}")
 
     assert blocked.status_code == 409
-    assert [
-        row["recipe_id"] for row in blocked.json()["detail"]["affected_recipes"]
-    ] == [same_user_parent["id"]]
+    assert [row["recipe_id"] for row in blocked.json()["detail"]["affected_recipes"]] == [
+        same_user_parent["id"]
+    ]
     assert str(foreign_parent.id) not in blocked.text
     assert "Secret Foreign Parent" not in blocked.text
 
@@ -470,9 +539,7 @@ def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
     )
 
     assert confirmed.status_code == 204
-    assert client.get(f"/api/v1/recipes/{same_user_parent['id']}").json()[
-        "ingredients"
-    ] == []
+    assert client.get(f"/api/v1/recipes/{same_user_parent['id']}").json()["ingredients"] == []
     db_session.expire_all()
     assert len(db_session.get(Recipe, foreign_parent.id).ingredients) == 1
 
@@ -481,10 +548,13 @@ def test_repeated_confirmed_delete_returns_existing_not_found_semantics(
     client: TestClient,
 ) -> None:
     child_id, _ = _published(client)
-    assert client.delete(
-        f"/api/v1/recipes/{child_id}",
-        params={"remove_from_recipes": "true"},
-    ).status_code == 204
+    assert (
+        client.delete(
+            f"/api/v1/recipes/{child_id}",
+            params={"remove_from_recipes": "true"},
+        ).status_code
+        == 204
+    )
 
     repeated = client.delete(
         f"/api/v1/recipes/{child_id}",

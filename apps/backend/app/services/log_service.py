@@ -122,10 +122,7 @@ class LogService:
             return created
         except IntegrityError as exc:
             self.db.rollback()
-            if (
-                payload.client_request_id is None
-                or not _is_idempotency_unique_conflict(exc)
-            ):
+            if payload.client_request_id is None or not _is_idempotency_unique_conflict(exc):
                 raise
             existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
             if existing is None:
@@ -198,7 +195,9 @@ class LogService:
             or recipe.active_publication_revision_id is None
             or food.recipe_publication_revision_id != recipe.active_publication_revision_id
         ):
-            raise ValueError("Recipe compatibility projection is not linked to its active publication")
+            raise ValueError(
+                "Recipe compatibility projection is not linked to its active publication"
+            )
 
         revision = self.publications.get_required(
             recipe.active_publication_revision_id,
@@ -310,6 +309,7 @@ class LogService:
         )
 
     def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
+        """Own one DailyLog edit transaction; existing log rows lock before Food rows."""
         try:
             log = self.logs.get_for_update(log_id, user_id)
             if log.recipe_publication_revision_id is not None:
@@ -330,8 +330,14 @@ class LogService:
     ) -> None:
         if not log.is_editable:
             raise LogEditConflictError(LogEditConflictError.message)
-        food = self.foods.get_required(log.food_item_id, user_id)
-        amount_quantity = payload.amount_quantity if payload.amount_quantity is not None else log.amount_quantity
+        # No mutation path locks an existing DailyLog after holding its Food.
+        # Keep explicit edits in DailyLog-then-Food order and refresh all Food
+        # children under that lock so serving and nutrient inputs are coherent.
+        food = self.foods.get_for_update(log.food_item_id, user_id)
+        self._after_edit_mutable_food_lock(food)
+        amount_quantity = (
+            payload.amount_quantity if payload.amount_quantity is not None else log.amount_quantity
+        )
         amount_unit = payload.amount_unit if payload.amount_unit is not None else log.amount_unit
         serving_definition_id = (
             payload.serving_definition_id
@@ -355,6 +361,8 @@ class LogService:
         log.package_fraction = None
         log.updated_at = datetime.now(timezone.utc)
         log.snapshots = build_log_snapshots(food, resolved)
+        self.db.flush()
+        self._after_edit_snapshot_regeneration(log)
 
     def _update_revision_aware_log(
         self,
@@ -483,8 +491,7 @@ class LogService:
             candidates = [
                 amount
                 for amount in revision.amount_definitions
-                if amount.semantic_mode == amount_unit
-                and (amount_unit == "g" or amount.is_default)
+                if amount.semantic_mode == amount_unit and (amount_unit == "g" or amount.is_default)
             ]
             if len(candidates) != 1:
                 raise RecipeNutritionValidationError(
@@ -505,7 +512,9 @@ class LogService:
         log: DailyLog,
         payload: DailyLogUpdateRequest,
     ) -> None:
-        log.logged_date = payload.logged_date if payload.logged_date is not None else log.logged_date
+        log.logged_date = (
+            payload.logged_date if payload.logged_date is not None else log.logged_date
+        )
         log.meal_type = payload.meal_type if payload.meal_type is not None else log.meal_type
         log.notes = payload.notes if payload.notes is not None else log.notes
 
@@ -518,10 +527,23 @@ class LogService:
     def _after_edit_snapshot_regeneration(self, _log: DailyLog) -> None:
         """Test seam after replacement snapshots are flushed."""
 
+    def _after_edit_mutable_food_lock(self, _food: FoodItem) -> None:
+        """Test seam after an explicit edit locks its mutable Food generation."""
+
     def delete_log(self, user_id: UUID, log_id: UUID) -> None:
-        log = self.logs.get_required(log_id, user_id)
-        self.logs.delete(log)
-        self.db.commit()
+        """Own the complete DailyLog deletion transaction."""
+        try:
+            log = self.logs.get_required(log_id, user_id)
+            self.logs.delete(log)
+            self.db.flush()
+            self._after_log_delete_flush(log)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def _after_log_delete_flush(self, _log: DailyLog) -> None:
+        """Test seam after DailyLog deletion and cascades are flushed."""
 
     def daily_summary(self, user_id: UUID, logged_date: date):
         snapshots = [

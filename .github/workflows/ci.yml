@@ -35,6 +35,65 @@ jobs:
       - name: Pytest
         run: pytest
 
+  backend-postgres:
+    name: Backend PostgreSQL 16 contracts
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: nutrition_app
+          POSTGRES_PASSWORD: nutrition_app
+          POSTGRES_USER: nutrition_app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nutrition_app -d nutrition_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NUTRITION_TEST_POSTGRES_URL: postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app
+      REQUIRE_POSTGRES_TESTS: "1"
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: apps/backend/requirements-dev.lock
+      - id: install
+        name: Install locked dependencies
+        run: |
+          python -m pip install -r requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+      - name: Verify PostgreSQL major version
+        run: >-
+          python -c "from sqlalchemy import create_engine, text; import os;
+          engine = create_engine(os.environ['NUTRITION_TEST_POSTGRES_URL']);
+          connection = engine.connect();
+          version = connection.execute(text('SHOW server_version')).scalar_one();
+          connection.close(); engine.dispose();
+          assert version.split('.')[0] == '16', f'expected PostgreSQL 16, found {version}'"
+      - name: Runtime contention and idempotency contracts
+        run: >-
+          pytest -q --strict-markers
+          tests/test_postgres_test_support.py
+          tests/test_log_concurrency_postgres.py
+          tests/test_graph_restart_idempotency_postgres.py
+      - name: Verify isolated schema cleanup
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: >-
+          python -c "from sqlalchemy import create_engine, text; import os;
+          engine = create_engine(os.environ['NUTRITION_TEST_POSTGRES_URL']);
+          connection = engine.connect();
+          residual = connection.execute(text(\"SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'test_pg_support_%' OR schema_name LIKE 'test_phase3n_%' OR schema_name LIKE 'test_graph_restart_idem_%'\")).scalars().all();
+          connection.close(); engine.dispose();
+          assert not residual, f'residual PostgreSQL test schemas: {residual}'"
+
   mobile:
     name: Mobile baseline
     runs-on: ubuntu-latest

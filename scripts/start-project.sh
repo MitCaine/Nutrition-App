@@ -3,15 +3,17 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MOBILE_DIR="$ROOT_DIR/apps/mobile"
 RUNTIME_DIR="$ROOT_DIR/.project-runtime"
+
 BACKEND_PID_FILE="$RUNTIME_DIR/backend.pid"
 EXPO_PID_FILE="$RUNTIME_DIR/expo.pid"
 SIMULATOR_UDID_FILE="$RUNTIME_DIR/simulator-udid"
 SIMULATOR_STARTED_FILE="$RUNTIME_DIR/simulator-started"
+
 BACKEND_LOG="$RUNTIME_DIR/backend.log"
 EXPO_LOG="$RUNTIME_DIR/expo.log"
 
-MOBILE_DIR="$ROOT_DIR/apps/mobile"
 SIMULATOR_NAME="${SIMULATOR_NAME:-iPhone 17 Pro Max}"
 PORT="${PORT:-8000}"
 
@@ -19,7 +21,9 @@ mkdir -p "$RUNTIME_DIR"
 
 process_is_running() {
   local pid="$1"
-  kill -0 "$pid" 2>/dev/null
+
+  [[ "$pid" =~ ^[0-9]+$ ]] &&
+    kill -0 "$pid" 2>/dev/null
 }
 
 remove_stale_pid_file() {
@@ -33,7 +37,7 @@ remove_stale_pid_file() {
   local pid
   pid="$(cat "$pid_file")"
 
-  if [[ "$pid" =~ ^[0-9]+$ ]] && process_is_running "$pid"; then
+  if process_is_running "$pid"; then
     echo "Error: $service_name is already running with PID $pid."
     echo "Run scripts/stop-project.sh first."
     exit 1
@@ -43,13 +47,12 @@ remove_stale_pid_file() {
 }
 
 find_simulator_udid() {
-  SIMULATOR_NAME="$SIMULATOR_NAME" xcrun simctl list devices available -j |
+  xcrun simctl list devices available -j |
     python3 -c '
 import json
-import os
 import sys
 
-target = os.environ["SIMULATOR_NAME"]
+target = sys.argv[1]
 data = json.load(sys.stdin)
 
 for runtime_devices in data.get("devices", {}).values():
@@ -62,14 +65,80 @@ for runtime_devices in data.get("devices", {}).values():
             raise SystemExit(0)
 
 raise SystemExit(1)
-'
+' "$SIMULATOR_NAME"
 }
+
+get_simulator_state() {
+  local simulator_udid="$1"
+
+  xcrun simctl list devices -j |
+    python3 -c '
+import json
+import sys
+
+target = sys.argv[1]
+data = json.load(sys.stdin)
+
+for runtime_devices in data.get("devices", {}).values():
+    for device in runtime_devices:
+        if device.get("udid") == target:
+            print(device.get("state", "Unknown"))
+            raise SystemExit(0)
+
+print("Unknown")
+' "$simulator_udid"
+}
+
+wait_for_log_pattern() {
+  local pid="$1"
+  local log_file="$2"
+  local pattern="$3"
+  local timeout_seconds="$4"
+  local service_name="$5"
+
+  local elapsed=0
+
+  while (( elapsed < timeout_seconds )); do
+    if grep -Eq "$pattern" "$log_file" 2>/dev/null; then
+      return 0
+    fi
+
+    if ! process_is_running "$pid"; then
+      echo "Error: $service_name exited during startup."
+      echo
+      cat "$log_file"
+      return 1
+    fi
+
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "Error: Timed out waiting for $service_name to become ready."
+  echo
+  tail -n 100 "$log_file" 2>/dev/null || true
+  return 1
+}
+
+cleanup_failed_start() {
+  echo
+  echo "Startup failed. Cleaning up partially started services..."
+
+  "$ROOT_DIR/scripts/stop-project.sh" || true
+}
+
+trap cleanup_failed_start ERR
 
 remove_stale_pid_file "$BACKEND_PID_FILE" "Backend"
 remove_stale_pid_file "$EXPO_PID_FILE" "Expo"
 
 if [[ ! -x "$ROOT_DIR/scripts/start-backend.sh" ]]; then
   echo "Error: scripts/start-backend.sh is missing or not executable."
+  exit 1
+fi
+
+if [[ ! -x "$ROOT_DIR/scripts/stop-project.sh" ]]; then
+  echo "Error: scripts/stop-project.sh is missing or not executable."
   exit 1
 fi
 
@@ -90,6 +159,11 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Error: python3 is not installed or is not on PATH."
+  exit 1
+fi
+
 echo "Locating simulator: $SIMULATOR_NAME"
 
 if ! simulator_udid="$(find_simulator_udid)"; then
@@ -104,25 +178,7 @@ fi
 printf '%s\n' "$simulator_udid" >"$SIMULATOR_UDID_FILE"
 rm -f "$SIMULATOR_STARTED_FILE"
 
-simulator_state="$(
-  xcrun simctl list devices -j |
-    SIMULATOR_UDID="$simulator_udid" python3 -c '
-import json
-import os
-import sys
-
-target = os.environ["SIMULATOR_UDID"]
-data = json.load(sys.stdin)
-
-for runtime_devices in data.get("devices", {}).values():
-    for device in runtime_devices:
-        if device.get("udid") == target:
-            print(device.get("state", "Unknown"))
-            raise SystemExit(0)
-
-print("Unknown")
-'
-)"
+simulator_state="$(get_simulator_state "$simulator_udid")"
 
 if [[ "$simulator_state" == "Booted" ]]; then
   echo "$SIMULATOR_NAME is already booted."
@@ -139,50 +195,51 @@ echo "Opening Simulator..."
 open -a Simulator --args -CurrentDeviceUDID "$simulator_udid"
 
 echo "Starting backend..."
+
+: >"$BACKEND_LOG"
+
 nohup "$ROOT_DIR/scripts/start-backend.sh" \
   >"$BACKEND_LOG" 2>&1 &
 
 backend_pid=$!
 printf '%s\n' "$backend_pid" >"$BACKEND_PID_FILE"
 
-# Give start-backend.sh enough time to perform its configuration and
-# database-identity checks. Failure details will be in backend.log.
-sleep 3
+wait_for_log_pattern \
+  "$backend_pid" \
+  "$BACKEND_LOG" \
+  "Uvicorn running on|Application startup complete" \
+  45 \
+  "backend"
 
-if ! process_is_running "$backend_pid"; then
-  echo "Error: Backend startup failed."
-  echo
-  cat "$BACKEND_LOG"
-  rm -f "$BACKEND_PID_FILE"
-  exit 1
-fi
+echo "Backend is ready with PID $backend_pid."
 
-echo "Backend started with PID $backend_pid."
+echo "Starting iOS development build..."
 
-echo "Starting Expo and opening the iOS application..."
 cd "$MOBILE_DIR"
 
-nohup npx expo start --ios \
+: >"$EXPO_LOG"
+
+nohup npx expo run:ios \
+  --device "$SIMULATOR_NAME" \
   >"$EXPO_LOG" 2>&1 &
 
 expo_pid=$!
 printf '%s\n' "$expo_pid" >"$EXPO_PID_FILE"
 
-sleep 3
+wait_for_log_pattern \
+  "$expo_pid" \
+  "$EXPO_LOG" \
+  "Bundling complete|Build Succeeded|Installing on|Opening on|Metro waiting on|Waiting on" \
+  300 \
+  "Expo iOS build"
 
-if ! process_is_running "$expo_pid"; then
-  echo "Error: Expo startup failed."
-  echo
-  cat "$EXPO_LOG"
-  rm -f "$EXPO_PID_FILE"
-  exit 1
-fi
+trap - ERR
 
 echo
 echo "Nutrition App started."
 echo
 echo "Backend:"
-echo "  http://localhost:$PORT"
+echo "  URL: http://localhost:$PORT"
 echo "  PID: $backend_pid"
 echo "  Log: $BACKEND_LOG"
 echo

@@ -27,6 +27,7 @@ from app.nutrition.resolution import (
 )
 from app.nutrition.revision_resolution import resolve_revision_nutrition
 from app.repositories.food_repository import FoodRepository
+from app.repositories.log_repository import LogRepository
 from app.repositories.recipe_repository import RecipeRepository
 from app.schemas.food import (
     FoodCreateRequest,
@@ -68,8 +69,7 @@ def _is_favorite_identity_conflict(exc: IntegrityError) -> bool:
         return True
     message = str(exc.orig).lower()
     return (
-        "unique constraint failed: food_favorites.user_id, food_favorites.food_item_id"
-        in message
+        "unique constraint failed: food_favorites.user_id, food_favorites.food_item_id" in message
     )
 
 
@@ -103,6 +103,7 @@ class FoodService:
     def __init__(self, db: Session):
         self.db = db
         self.foods = FoodRepository(db)
+        self.logs = LogRepository(db)
         self.recipes = RecipeRepository(db)
         self.create_idempotency = CreateIdempotencyCoordinator(db)
 
@@ -130,9 +131,7 @@ class FoodService:
             created = self.foods.add(food)
             response = self._food_response(user_id, created)
             if receipt is not None:
-                self.create_idempotency.complete(
-                    receipt, response.model_dump(mode="json")
-                )
+                self.create_idempotency.complete(receipt, response.model_dump(mode="json"))
             self.db.commit()
             return response
         except IntegrityError as exc:
@@ -261,9 +260,7 @@ class FoodService:
             result.append(food)
         return result
 
-    def _valid_duplicate_source_ids(
-        self, user_id: UUID, foods: list[FoodItem]
-    ) -> set[UUID]:
+    def _valid_duplicate_source_ids(self, user_id: UUID, foods: list[FoodItem]) -> set[UUID]:
         """Return candidate Food IDs whose immediate duplicate source is owner-valid.
 
         The source lookup deliberately includes soft-deleted Foods so a duplicate's
@@ -298,9 +295,7 @@ class FoodService:
             )
         )
         return {
-            food_id
-            for food_id, source_id in candidates.items()
-            if source_id in existing_source_ids
+            food_id for food_id, source_id in candidates.items() if source_id in existing_source_ids
         }
 
     def list_favorites(self, user_id: UUID) -> list[FoodItem]:
@@ -323,17 +318,19 @@ class FoodService:
         return result
 
     def set_favorite(self, user_id: UUID, food_id: UUID, *, favorite: bool) -> FoodItem:
-        food = self.foods.get_saved(user_id, food_id)
-        if food is None:
-            raise LookupError("Food not found")
-        row = self.db.get(FoodFavorite, (user_id, food_id))
-        attempted_creation = favorite and row is None
-        if attempted_creation:
-            favorite_row = FoodFavorite(user_id=user_id, food_item_id=food_id)
-            self.db.add(favorite_row)
-        elif not favorite and row is not None:
-            self.db.delete(row)
+        """Own one favorite mutation transaction and its duplicate reconciliation."""
+        attempted_creation = False
         try:
+            food = self.foods.get_saved(user_id, food_id)
+            if food is None:
+                raise LookupError("Food not found")
+            row = self.db.get(FoodFavorite, (user_id, food_id))
+            attempted_creation = favorite and row is None
+            if attempted_creation:
+                favorite_row = FoodFavorite(user_id=user_id, food_item_id=food_id)
+                self.db.add(favorite_row)
+            elif not favorite and row is not None:
+                self.db.delete(row)
             if attempted_creation:
                 self.db.flush()
                 self._after_favorite_creation(favorite_row)
@@ -342,8 +339,17 @@ class FoodService:
             self.db.rollback()
             if not attempted_creation or not _is_favorite_identity_conflict(exc):
                 raise
-            if self.db.get(FoodFavorite, (user_id, food_id)) is None:
+            try:
+                stored_favorite = self.db.get(FoodFavorite, (user_id, food_id))
+            except Exception:
+                self.db.rollback()
                 raise
+            if stored_favorite is None:
+                self.db.rollback()
+                raise
+        except Exception:
+            self.db.rollback()
+            raise
         return self.present_food(user_id, self.foods.get_required(food_id, user_id))
 
     def _after_favorite_creation(self, _favorite: FoodFavorite) -> None:
@@ -494,6 +500,8 @@ class FoodService:
 
     def update_food(self, user_id: UUID, food_id: UUID, payload: FoodUpdateRequest) -> FoodItem:
         try:
+            if payload.serving_definitions is not None:
+                self.logs.lock_for_food_serving_replacement(food_id, user_id)
             food, parents = self._lock_food_dependency_graph(user_id, food_id)
             self._assert_generic_mutation_allowed(food, user_id, "update")
             if payload.name is not None:
@@ -635,9 +643,7 @@ class FoodService:
             created = self.foods.add(duplicate)
             response = self._food_response(user_id, created)
             if receipt is not None:
-                self.create_idempotency.complete(
-                    receipt, response.model_dump(mode="json")
-                )
+                self.create_idempotency.complete(receipt, response.model_dump(mode="json"))
             self.db.commit()
             return response
         except IntegrityError as exc:
@@ -705,9 +711,7 @@ class FoodService:
                 self._mark_published_parents_stale(parents, now)
             response = self._food_response(user_id, food)
             if receipt is not None:
-                self.create_idempotency.complete(
-                    receipt, response.model_dump(mode="json")
-                )
+                self.create_idempotency.complete(receipt, response.model_dump(mode="json"))
             self.db.commit()
             return response
         except IntegrityError as exc:
@@ -741,9 +745,7 @@ class FoodService:
             self.foods.get_required(receipt.resource_id, user_id)
         except LookupError as exc:
             raise CreateOperationResultUnavailableError() from exc
-        return FoodResponse.model_validate(
-            self.create_idempotency.replay_snapshot(receipt)
-        )
+        return FoodResponse.model_validate(self.create_idempotency.replay_snapshot(receipt))
 
     def _replay_serving_response(
         self,
@@ -763,9 +765,7 @@ class FoodService:
         )
         if serving is None:
             raise CreateOperationResultUnavailableError()
-        return FoodResponse.model_validate(
-            self.create_idempotency.replay_snapshot(receipt)
-        )
+        return FoodResponse.model_validate(self.create_idempotency.replay_snapshot(receipt))
 
     def _assert_generic_mutation_allowed(
         self,
@@ -870,15 +870,18 @@ class FoodService:
         raise FoodDependenciesUnstableError()
 
     def _has_foreign_dependencies(self, user_id: UUID, food_id: UUID) -> bool:
-        return self.db.scalar(
-            select(func.count(RecipeIngredient.id))
-            .join(Recipe, Recipe.id == RecipeIngredient.recipe_id)
-            .where(
-                Recipe.user_id != user_id,
-                Recipe.deleted_at.is_(None),
-                RecipeIngredient.food_item_id == food_id,
+        return (
+            self.db.scalar(
+                select(func.count(RecipeIngredient.id))
+                .join(Recipe, Recipe.id == RecipeIngredient.recipe_id)
+                .where(
+                    Recipe.user_id != user_id,
+                    Recipe.deleted_at.is_(None),
+                    RecipeIngredient.food_item_id == food_id,
+                )
             )
-        ) > 0
+            > 0
+        )
 
     def _after_food_dependency_lock(
         self,
@@ -921,7 +924,9 @@ class FoodService:
                     recipe_conflicts.append(
                         FoodRecipeServingConflictIngredientResponse(
                             position=ingredient.position,
-                            old_serving_label=old.label if old is not None else "Unavailable serving",
+                            old_serving_label=old.label
+                            if old is not None
+                            else "Unavailable serving",
                         )
                     )
             if recipe_conflicts:

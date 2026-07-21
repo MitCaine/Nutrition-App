@@ -5,15 +5,11 @@ import os
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import MetaData, create_engine, event, func, select, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event, func, select
 
 from app import models  # noqa: F401
-from app.catalog.nutrients import nutrient_seed_rows
-from app.core.database import Base
 from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.food import ServingDefinition
-from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
@@ -21,6 +17,7 @@ from app.schemas.food import FoodCreateRequest, ServingDefinitionCreateRequest
 from app.schemas.recipe import RecipeCreateRequest
 from app.services.food_service import FoodService
 from app.services.recipe_service import RecipeService
+from tests.postgres_test_support import isolated_postgres_session_factory
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -32,35 +29,11 @@ POSTGRES_URL = os.getenv(
 
 @pytest.fixture()
 def restart_postgres_sessions():
-    admin = create_engine(POSTGRES_URL, pool_pre_ping=True)
-    try:
-        with admin.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    except Exception as exc:  # pragma: no cover - depends on developer environment.
-        pytest.skip(f"PostgreSQL concurrency database unavailable: {exc}")
-    schema = f"test_graph_restart_idem_{uuid4().hex}"
-    with admin.begin() as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    engine = create_engine(
-        POSTGRES_URL,
-        connect_args={"options": f"-csearch_path={schema}"},
-        pool_pre_ping=True,
-    )
-    isolated_metadata = MetaData()
-    for table in Base.metadata.tables.values():
-        table.to_metadata(isolated_metadata)
-    isolated_metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    try:
-        with factory() as db:
-            db.add_all([Nutrient(**row) for row in nutrient_seed_rows()])
-            db.commit()
+    with isolated_postgres_session_factory(
+        database_url=POSTGRES_URL,
+        schema_prefix="test_graph_restart_idem",
+    ) as factory:
         yield factory
-    finally:
-        engine.dispose()
-        with admin.begin() as connection:
-            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        admin.dispose()
 
 
 def _manual_food_payload(name: str) -> FoodCreateRequest:
