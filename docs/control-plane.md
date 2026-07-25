@@ -49,6 +49,7 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Resource membership 0019 | Database-enforced ownership/membership, read-only corruption inventory, and distinct current-schema admission | `production-hardening-resource-membership.md`, application migration 0019, ops migration 0005 |
 | Immutable provenance 0020 | Database-enforced historical immutability and exact current-schema admission | `production-hardening-immutable-provenance.md`, application migration 0020, ops migration 0006 |
 | Stage 5C4.5 | Idempotent local restore execution, atomic restored-database qualification, and immutable recovery evidence | `production-hardening-phase5c4.5.md`, ops migration 0007 |
+| Stage 5C4.6 | Purpose-specific Ed25519 target-activation authorization admission; no consumption or activation | `production-hardening-phase5c4.6.md`, ops migration 0008 |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
@@ -113,6 +114,8 @@ The independent database has its own non-overlapping role family:
 - `nutrition_control_outbox` for leased delivery;
 - `nutrition_control_audit` for read-only evidence review;
 - `nutrition_control_gate` for the minimal environment gate.
+- `nutrition_control_authorization_verifier` for trusted-public-key reads and exact authorization
+  admission only.
 
 Possessing more than one credential operationally does not merge their PostgreSQL authority. The
 collector cannot admit or advance attempts; the executor cannot author registered source evidence.

@@ -93,11 +93,17 @@ a separate optimization decision; it cannot waive conversion, lineage, or immuta
 
 ## Control-database qualification
 
-The complete control PostgreSQL suite is:
+The complete control PostgreSQL suite through Phase 5C4.6 is:
 
 ```bash
 NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app \
-  pytest -q tests/test_phase5c4_control_postgres.py
+  pytest -q \
+    tests/test_phase5c4_control_postgres.py \
+    tests/test_resource_membership_control_postgres.py \
+    tests/test_immutable_provenance_control_postgres.py \
+    tests/test_phase5c4_recovery_control_postgres.py \
+    tests/test_phase5c4_authorization_control_postgres.py \
+    tests/test_phase5c4_authorization_migration_postgres.py
 ```
 
 It provisions an isolated control database and managed roles, migrates through ops revisions,
