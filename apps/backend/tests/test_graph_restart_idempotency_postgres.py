@@ -71,6 +71,7 @@ def _add_parent(
     db.add(
         RecipeIngredient(
             id=uuid4(),
+            user_id=parent.user_id,
             recipe_id=parent.id,
             food_item_id=food_id,
             position=0,

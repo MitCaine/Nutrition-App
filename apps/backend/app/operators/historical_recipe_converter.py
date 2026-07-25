@@ -9,6 +9,7 @@ from uuid import UUID, uuid5
 from sqlalchemy import Connection, Engine, func, inspect, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.domain.nutrition import AggregatedNutrientTotal, NutrientSnapshot
 from app.models.food import FoodItem
@@ -841,24 +842,39 @@ def _convert_subject(
         session.flush()
         _call_hook(failure_hook, "after_recipe_insert", recipe_id)
 
-        current_ingredients = []
-        for row in source_ingredients:
-            ingredient = RecipeIngredient(
-                id=row["id"],
-                recipe_id=recipe.id,
-                food_item_id=row["ingredient_food_item_id"],
-                position=row["sort_order"],
-                amount_quantity=row["quantity"],
-                amount_unit=row["unit"],
-                serving_definition_id=row["serving_definition_id"],
-                resolved_gram_amount=row["gram_amount"],
-                preparation_note=row["preparation_note"],
+        ingredient_rows = [
+            {
+                "id": row["id"],
+                "recipe_id": recipe.id,
+                "food_item_id": row["ingredient_food_item_id"],
+                "position": row["sort_order"],
+                "amount_quantity": row["quantity"],
+                "amount_unit": row["unit"],
+                "serving_definition_id": row["serving_definition_id"],
+                "resolved_gram_amount": row["gram_amount"],
+                "preparation_note": row["preparation_note"],
+            }
+            for row in source_ingredients
+        ]
+        if ingredient_rows:
+            # Execution is intentionally frozen at schema 0017.  Supplying an
+            # explicit Core mapping omits the 0019-only redundant owner column;
+            # migration 0019 later derives it from the owning Recipe.
+            connection.execute(RecipeIngredient.__table__.insert(), ingredient_rows)
+        current_ingredients = list(
+            session.scalars(
+                select(RecipeIngredient)
+                .where(RecipeIngredient.recipe_id == recipe.id)
+                .order_by(RecipeIngredient.position, RecipeIngredient.id)
+            ).all()
+        )
+        for ingredient in current_ingredients:
+            set_committed_value(
+                ingredient,
+                "food_item",
+                food_by_id[ingredient.food_item_id],
             )
-            ingredient.food_item = food_by_id[ingredient.food_item_id]
-            session.add(ingredient)
-            current_ingredients.append(ingredient)
-        session.flush()
-        recipe.ingredients = current_ingredients
+        set_committed_value(recipe, "ingredients", current_ingredients)
         _call_hook(failure_hook, "after_ingredient_insert", recipe_id)
 
         revision = build_revision(

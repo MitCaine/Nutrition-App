@@ -19,9 +19,13 @@ from app.core.database_errors import (
 from app.dependencies.user import get_current_user
 from app.operators.phase5c4_prerequisites import (
     CANARY_FENCE_MODES,
-    validate_local_admission,
+    validate_immutable_provenance_local_admission,
 )
 from app.operators.phase5c4_contracts import CANARY_GET_ALLOWLIST_V1
+from app.operators.immutable_provenance_contracts import (
+    CURRENT_LOCAL_ADMISSION_ROUTINE,
+    CURRENT_RUNTIME_SCHEMA_REVISION,
+)
 
 
 CANARY_ROUTE_ALLOWLIST = frozenset(("GET", path) for path in CANARY_GET_ALLOWLIST_V1)
@@ -214,18 +218,21 @@ def _admit_canary_startup(config: Settings, database_engine: Engine) -> None:
                 ):
                     raise RuntimeError("canary_startup_admission_failed")
                 reader_available = connection.execute(
-                    text("SELECT pg_catalog.to_regprocedure('public.phase5c_local_admission_v1()')")
+                    text("SELECT pg_catalog.to_regprocedure(:routine)"),
+                    {"routine": CURRENT_LOCAL_ADMISSION_ROUTINE},
                 ).scalar_one()
                 if reader_available is None:
                     raise RuntimeError("canary_startup_admission_failed")
                 raw = (
-                    connection.execute(text("SELECT * FROM public.phase5c_local_admission_v1()"))
+                    connection.execute(
+                        text(f"SELECT * FROM {CURRENT_LOCAL_ADMISSION_ROUTINE}")
+                    )
                     .mappings()
                     .one()
                 )
-                admission = validate_local_admission(dict(raw))
+                admission = validate_immutable_provenance_local_admission(dict(raw))
                 if (
-                    admission.schema_revision != "0018_phase5c_promotion_prerequisites"
+                    admission.schema_revision != CURRENT_RUNTIME_SCHEMA_REVISION
                     or not admission.identity_present
                     or not admission.identity_valid
                     or not admission.composite_bindings_valid
@@ -237,6 +244,8 @@ def _admit_canary_startup(config: Settings, database_engine: Engine) -> None:
                     or not admission.role_topology_valid
                     or not admission.gate_trigger_coverage_valid
                     or not admission.immutability_valid
+                    or not admission.resource_membership_integrity_valid
+                    or not admission.immutable_provenance_integrity_valid
                 ):
                     raise RuntimeError("canary_startup_admission_failed")
                 if config.private_user_id is None or config.private_user_email is None:

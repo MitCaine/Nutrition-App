@@ -39,6 +39,19 @@ class FoodItem(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("id", "user_id", name="uq_food_items_identity_user"),
+        UniqueConstraint(
+            "id",
+            "recipe_publication_revision_id",
+            "user_id",
+            name="uq_food_items_projection_identity_revision_owner",
+        ),
+        Index(
+            "uq_food_items_publication_revision_projection",
+            "recipe_publication_revision_id",
+            unique=True,
+            sqlite_where=text("recipe_publication_revision_id IS NOT NULL"),
+            postgresql_where=text("recipe_publication_revision_id IS NOT NULL"),
+        ),
         Index(
             "ix_food_items_active_source_identity",
             "user_id",
@@ -91,6 +104,7 @@ class FoodItem(Base):
     ocr_confirmation_trace: Mapped[Optional[OcrNutritionConfirmationTrace]] = relationship(
         back_populates="food_item",
         uselist=False,
+        foreign_keys="OcrNutritionConfirmationTrace.food_item_id",
     )
     favorites: Mapped[list[FoodFavorite]] = relationship(back_populates="food_item")
 
@@ -122,6 +136,14 @@ class OcrNutritionConfirmationTrace(Base):
     __table_args__ = (
         UniqueConstraint("food_item_id", name="uq_ocr_confirmation_food"),
         UniqueConstraint("user_id", "client_request_id", name="uq_ocr_confirmation_user_request"),
+        ForeignKeyConstraint(
+            ["food_item_id", "user_id"],
+            ["food_items.id", "food_items.user_id"],
+            name="fk_ocr_confirmation_traces_food_owner",
+            match="SIMPLE",
+            onupdate="NO ACTION",
+            ondelete="NO ACTION",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
@@ -137,7 +159,10 @@ class OcrNutritionConfirmationTrace(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    food_item: Mapped[FoodItem] = relationship(back_populates="ocr_confirmation_trace")
+    food_item: Mapped[FoodItem] = relationship(
+        back_populates="ocr_confirmation_trace",
+        foreign_keys=[food_item_id],
+    )
 
 
 class FoodSource(Base):
@@ -159,7 +184,15 @@ class FoodSource(Base):
 
 class FoodNutrient(Base):
     __tablename__ = "food_nutrients"
-    __table_args__ = (Index("ix_food_nutrients_food_item_id", "food_item_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "food_item_id",
+            "nutrient_id",
+            name="uq_food_nutrients_identity_food_nutrient",
+        ),
+        Index("ix_food_nutrients_food_item_id", "food_item_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
     food_item_id: Mapped[UUID] = mapped_column(GUID(), ForeignKey("food_items.id"))
@@ -183,6 +216,11 @@ class FoodNutrient(Base):
 class ServingDefinition(Base):
     __tablename__ = "serving_definitions"
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "food_item_id",
+            name="uq_serving_definitions_identity_food",
+        ),
         Index(
             "uq_serving_definitions_one_default_per_food",
             "food_item_id",

@@ -74,6 +74,10 @@ They are intentionally more detailed than the reader guides:
 - [Phase 5C4 design](production-hardening-phase5c4.md),
   [deployment profile decision](production-hardening-phase5c4.0.md), and
   [PostgreSQL role boundary](production-hardening-phase5c4.2a.md)
+- [Database-enforced ownership and resource membership](production-hardening-resource-membership.md)
+  for the frozen 0019 preflight, migration, qualification, and recovery runbook
+- [Immutable historical provenance and OCR persistence readiness](production-hardening-immutable-provenance.md)
+  for the current 0020 enforcement, qualification, deployment, and bounded OCR design contract
 - [OCR implementation](stage5-ocr.md), [confirmation](stage6-confirmation.md),
   [parser](stage6-parser.md), and [Food discovery](stage7-food-discovery.md)
 - [Manual QA evidence](evidence/qa/README.md) and the captured Phase 5C performance manifests

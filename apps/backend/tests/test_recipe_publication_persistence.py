@@ -380,13 +380,23 @@ def test_revisions_preserve_different_values_for_same_nutrient(db_session: Sessi
     assert second.nutrients[1].data_status == "zero"
 
 
-def test_active_revision_is_nullable_owned_and_repository_readable(db_session: Session) -> None:
+def test_active_revision_projection_pair_is_owned_and_repository_readable(
+    db_session: Session,
+) -> None:
     recipe = _recipe(db_session)
     revision = _revision(recipe, 1)
     repository = RecipePublicationRepository(db_session)
     repository.add(revision)
+    db_session.flush()
     assert recipe.active_publication_revision_id is None
 
+    projection = _food(db_session)
+    projection.source_type = "recipe"
+    projection.source_id = str(recipe.id)
+    projection.is_recipe = True
+    projection.recipe_publication_revision_id = revision.id
+    db_session.flush()
+    recipe.published_food_item_id = projection.id
     recipe.active_publication_revision_id = revision.id
     db_session.flush()
     assert repository.get_active_for_recipe(recipe.id, recipe.user_id).id == revision.id
@@ -398,6 +408,13 @@ def test_cross_recipe_active_revision_is_rejected(db_session: Session) -> None:
     revision = _revision(owner, 1)
     db_session.add(revision)
     db_session.flush()
+    projection = _food(db_session)
+    projection.source_type = "recipe"
+    projection.source_id = str(owner.id)
+    projection.is_recipe = True
+    projection.recipe_publication_revision_id = revision.id
+    db_session.flush()
+    other.published_food_item_id = projection.id
     other.active_publication_revision_id = revision.id
     with pytest.raises(IntegrityError):
         db_session.flush()

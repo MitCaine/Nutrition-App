@@ -795,16 +795,18 @@ def test_maintenance_session_drain_reconnect_denial_and_exact_restore(
             engine.dispose()
 
 
-def test_migrator_owns_alembic_path_and_downgrade_reupgrade_is_clean(
+def test_migrator_owns_historical_alembic_path_and_downgrade_reupgrade_is_clean(
     role_database: RoleDatabase,
 ) -> None:
     migrator_url = role_database.role_urls[roles.MIGRATOR_ROLE]
     qualifier = role_database.engine(roles.QUALIFIER_ROLE)
 
-    upgraded_to_head = _run_alembic(migrator_url, "upgrade", "head")
+    upgraded_to_head = _run_alembic(
+        migrator_url,
+        "upgrade",
+        "0018_phase5c_promotion_prerequisites",
+    )
     assert upgraded_to_head.returncode == 0, upgraded_to_head.stderr
-    check = _run_alembic(migrator_url, "check")
-    assert check.returncode == 0, check.stdout + check.stderr
 
     downgraded = _run_alembic(migrator_url, "downgrade", "0016_phase5c_execution")
     assert downgraded.returncode == 0, downgraded.stderr
@@ -966,3 +968,538 @@ def test_source_dimension_collector_is_real_read_only_repeatable_read_and_nonmut
         )
         assert upgraded.returncode == 0, upgraded.stderr
         admin.dispose()
+
+
+def test_real_operator_sequence_0017_through_current_head(
+    role_database: RoleDatabase,
+) -> None:
+    """Exercise the composed path that isolated migration fixtures did not cover."""
+    from tests import test_phase5c4_prerequisites_postgres as prerequisite_support
+
+    root = make_url(role_database.admin_url)
+    database_name = f"test_phase5c4_sequence_{uuid4().hex}"
+    control = create_engine(
+        root.set(database="postgres").render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+        hide_parameters=True,
+    )
+    admin_url = root.set(database=database_name).render_as_string(
+        hide_password=False
+    )
+    admin = create_engine(admin_url, poolclass=NullPool, hide_parameters=True)
+    role_urls = {
+        role: make_url(url)
+        .set(database=database_name)
+        .render_as_string(hide_password=False)
+        for role, url in role_database.role_urls.items()
+    }
+    engines = {
+        role: create_engine(
+            url,
+            poolclass=NullPool,
+            pool_pre_ping=True,
+            hide_parameters=True,
+        )
+        for role, url in role_urls.items()
+    }
+    held_runtime = None
+    try:
+        with control.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+        migrated = _run_alembic(
+            admin_url,
+            "upgrade",
+            roles.EXPECTED_ALEMBIC_REVISION,
+        )
+        assert migrated.returncode == 0, migrated.stderr
+        (
+            archive_identity,
+            marker_digest,
+            clone_digest,
+            run_id,
+            _canary_user_id,
+            _canary_user_email,
+        ) = prerequisite_support._seed_target_candidate(admin_url)
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE public.phase5c_conversion_runs "
+                    "SET execution_state = 'completed', "
+                    "verification_state = 'verified'"
+                )
+            )
+
+        provisioned = roles.provision_role_policy(admin, disposable=True)
+        assert provisioned["qualified"] is True
+        with engines[roles.QUALIFIER_ROLE].connect() as connection:
+            assert roles.qualify_source_role_policy(connection)["qualified"] is True
+
+        migrated = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            roles.PROMOTION_PREREQUISITES_REVISION,
+        )
+        assert migrated.returncode == 0, migrated.stderr
+        with engines[roles.QUALIFIER_ROLE].connect() as connection:
+            transitional = roles.qualify_source_role_policy(connection)
+            object_observation = roles._object_observation(
+                connection,
+                roles.discover_archive_schemas(connection),
+                roles._revision_role_policy(
+                    roles.PROMOTION_PREREQUISITES_REVISION
+                ),
+            )
+            legacy_policy = roles.qualify_source_role_policy(
+                connection,
+                policy_revision=roles.EXPECTED_ALEMBIC_REVISION,
+            )
+        assert transitional["qualified"] is True, (
+            transitional["reason_codes"],
+            object_observation[2]["validation_error"],
+            sorted(
+                set(object_observation[2]["actual_relations"])
+                - set(object_observation[2]["expected_relations"])
+            ),
+            sorted(
+                set(object_observation[2]["expected_relations"])
+                - set(object_observation[2]["actual_relations"])
+            ),
+            object_observation[2]["owner_relation_missing"],
+        )
+        assert transitional["policy_revision"] == roles.PROMOTION_PREREQUISITES_REVISION
+        assert legacy_policy["qualified"] is False
+        assert "alembic_revision_unsupported" in legacy_policy["reason_codes"]
+
+        with engines[roles.OPS_ROLE].begin() as connection:
+            initialized = connection.scalar(
+                text(
+                    "SELECT public.phase5c_initialize_promotion_target("
+                    "CAST(:command AS uuid), :archive, CAST(:run AS uuid), "
+                    ":marker, :clone)"
+                ),
+                {
+                    "command": uuid4(),
+                    "archive": archive_identity,
+                    "run": run_id,
+                    "marker": marker_digest,
+                    "clone": clone_digest,
+                },
+            )
+        assert initialized["state"]["mode"] == "closed_prequalification"
+        held_runtime = engines[roles.RUNTIME_ROLE].connect()
+        held_runtime.scalar(text("SELECT count(*) FROM public.users"))
+
+        closed = roles.close_runtime_maintenance(
+            engines[roles.OPS_ROLE],
+            quiet_period_seconds=0.05,
+            drain_timeout_seconds=5,
+            poll_interval_seconds=0.01,
+        )
+        assert closed["state"] == "maintenance"
+        assert closed["terminated_session_count"] >= 1
+        repeated_close = roles.close_runtime_maintenance(
+            engines[roles.OPS_ROLE],
+            quiet_period_seconds=0,
+            drain_timeout_seconds=5,
+            poll_interval_seconds=0.01,
+        )
+        assert repeated_close["resumed"] is True
+        with pytest.raises(OperationalError):
+            with engines[roles.RUNTIME_ROLE].connect():
+                pass
+        with engines[roles.QUALIFIER_ROLE].connect() as connection:
+            maintenance = roles.qualify_source_role_policy(
+                connection,
+                expected_state="maintenance",
+            )
+            fence_mode = connection.scalar(
+                text(
+                    "SELECT public.phase5c_read_qualifier_evidence_v2() "
+                    "-> 'state' ->> 'mode'"
+                )
+            )
+        assert maintenance["qualified"] is True
+        assert fence_mode == "closed_prequalification"
+        with pytest.raises(
+            roles.Phase5C4RoleError,
+            match="not legal at revision",
+        ):
+            roles.restore_runtime_privileges(engines[roles.OPS_ROLE])
+
+        migrated = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            "head",
+        )
+        assert migrated.returncode == 0, migrated.stderr
+        with engines[roles.QUALIFIER_ROLE].connect() as connection:
+            final_maintenance = roles.qualify_source_role_policy(
+                connection,
+                expected_state="maintenance",
+            )
+        assert final_maintenance["qualified"] is True
+        assert final_maintenance["policy_revision"] == (
+            roles.IMMUTABLE_PROVENANCE_REVISION
+        )
+
+        restored = roles.restore_runtime_privileges(engines[roles.OPS_ROLE])
+        assert restored["state"] == "normal"
+        assert restored["already_restored"] is False
+        assert roles.restore_runtime_privileges(
+            engines[roles.OPS_ROLE]
+        )["already_restored"] is True
+        with engines[roles.QUALIFIER_ROLE].connect() as connection:
+            assert roles.qualify_source_role_policy(connection)["qualified"] is True
+
+        # Phase 5C4.7 activation is intentionally not part of this stage.  The
+        # restored runtime has the exact write ACL, and its representative write
+        # reaches (and is rejected by) the still-closed domain write fence.
+        with engines[roles.RUNTIME_ROLE].connect() as connection:
+            assert connection.scalar(
+                text(
+                    "SELECT pg_catalog.has_table_privilege("
+                    "current_user, 'public.users', 'INSERT')"
+                )
+            )
+            with pytest.raises(DBAPIError) as fenced:
+                connection.execute(
+                    text(
+                        "INSERT INTO public.users (id, email) "
+                        "VALUES (:id, :email)"
+                    ),
+                    {
+                        "id": uuid4(),
+                        "email": f"sequence-{uuid4()}@example.test",
+                    },
+                )
+            assert getattr(fenced.value.orig, "sqlstate", None) == "P5C01"
+            connection.rollback()
+    finally:
+        if held_runtime is not None:
+            try:
+                held_runtime.close()
+            except DBAPIError:
+                pass
+        for engine in (*engines.values(), admin):
+            engine.dispose()
+        with control.connect() as connection:
+            connection.execute(
+                text(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
+            )
+        control.dispose()
+
+
+def test_0018_transition_drift_and_failed_0019_are_fail_closed(
+    role_database: RoleDatabase,
+) -> None:
+    from tests import test_phase5c4_prerequisites_postgres as prerequisite_support
+
+    root = make_url(role_database.admin_url)
+    database_name = f"test_phase5c4_transition_negative_{uuid4().hex}"
+    control = create_engine(
+        root.set(database="postgres").render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+        hide_parameters=True,
+    )
+    admin_url = root.set(database=database_name).render_as_string(
+        hide_password=False
+    )
+    admin = create_engine(admin_url, poolclass=NullPool, hide_parameters=True)
+    role_urls = {
+        role: make_url(url)
+        .set(database=database_name)
+        .render_as_string(hide_password=False)
+        for role, url in role_database.role_urls.items()
+    }
+    engines = {
+        role: create_engine(
+            url,
+            poolclass=NullPool,
+            pool_pre_ping=True,
+            hide_parameters=True,
+        )
+        for role, url in role_urls.items()
+    }
+    try:
+        with control.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+        migrated = _run_alembic(
+            admin_url,
+            "upgrade",
+            roles.EXPECTED_ALEMBIC_REVISION,
+        )
+        assert migrated.returncode == 0, migrated.stderr
+        (
+            archive_identity,
+            marker_digest,
+            clone_digest,
+            run_id,
+            _canary_user_id,
+            _canary_user_email,
+        ) = prerequisite_support._seed_target_candidate(admin_url)
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE public.phase5c_conversion_runs "
+                    "SET execution_state = 'completed', "
+                    "verification_state = 'verified'"
+                )
+            )
+        assert roles.provision_role_policy(admin, disposable=True)["qualified"] is True
+        migrated = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            roles.PROMOTION_PREREQUISITES_REVISION,
+        )
+        assert migrated.returncode == 0, migrated.stderr
+
+        def qualify(
+            expected_state: str = "normal",
+        ) -> dict[str, object]:
+            with engines[roles.QUALIFIER_ROLE].connect() as connection:
+                return roles.qualify_source_role_policy(
+                    connection,
+                    expected_state=expected_state,
+                )
+
+        with engines[roles.MIGRATOR_ROLE].begin() as connection:
+            roles.assume_migration_owner(connection)
+            roles._create_maintenance_routines(
+                connection,
+                roles._revision_role_policy(roles.EXPECTED_ALEMBIC_REVISION),
+            )
+        legacy = qualify()
+        assert legacy["qualified"] is False
+        assert "security_definer_unsafe" in legacy["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(
+                text("CREATE TABLE public.unrelated_refresh_drift (id integer)")
+            )
+        with pytest.raises(
+            roles.Phase5C4RoleError,
+            match="refused unrelated drift",
+        ):
+            roles.refresh_legacy_0018_maintenance_policy(
+                engines[roles.MIGRATOR_ROLE]
+            )
+        assert "security_definer_unsafe" in qualify()["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(text("DROP TABLE public.unrelated_refresh_drift"))
+        refreshed = roles.refresh_legacy_0018_maintenance_policy(
+            engines[roles.MIGRATOR_ROLE]
+        )
+        assert refreshed["policy_revision"] == (
+            roles.PROMOTION_PREREQUISITES_REVISION
+        )
+        assert qualify()["qualified"] is True
+
+        with admin.begin() as connection:
+            connection.execute(text("CREATE TABLE public.unexpected_0018 (id integer)"))
+        unexpected = qualify()
+        assert "unexpected_object" in unexpected["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(text("DROP TABLE public.unexpected_0018"))
+
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_write_fence_events "
+                    "RENAME TO phase5c_write_fence_events_missing"
+                )
+            )
+        missing = qualify()
+        assert "unexpected_object" in missing["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_write_fence_events_missing "
+                    "RENAME TO phase5c_write_fence_events"
+                )
+            )
+
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_write_fence_events "
+                    "OWNER TO nutrition_runtime"
+                )
+            )
+        wrong_relation_owner = qualify()
+        assert "object_owner_mismatch" in wrong_relation_owner["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_write_fence_events "
+                    "OWNER TO nutrition_owner"
+                )
+            )
+
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER FUNCTION public.phase5c_read_qualifier_evidence_v2() "
+                    "OWNER TO nutrition_runtime"
+                )
+            )
+        wrong_routine_owner = qualify()
+        assert "security_definer_unsafe" in wrong_routine_owner["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER FUNCTION public.phase5c_read_qualifier_evidence_v2() "
+                    "OWNER TO nutrition_owner"
+                )
+            )
+
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER FUNCTION public.phase5c_read_qualifier_evidence_v2() "
+                    "SET search_path = public"
+                )
+            )
+        unsafe_path = qualify()
+        assert "security_definer_unsafe" in unsafe_path["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER FUNCTION public.phase5c_read_qualifier_evidence_v2() "
+                    "SET search_path = pg_catalog, public"
+                )
+            )
+
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "GRANT EXECUTE ON FUNCTION "
+                    "public.phase5c_read_qualifier_evidence_v2() TO nutrition_ops"
+                )
+            )
+        unsafe_acl = qualify()
+        assert "routine_privilege_drift" in unsafe_acl["reason_codes"]
+        with admin.begin() as connection:
+            connection.execute(
+                text(
+                    "REVOKE EXECUTE ON FUNCTION "
+                    "public.phase5c_read_qualifier_evidence_v2() FROM nutrition_ops"
+                )
+            )
+
+        with admin.begin() as connection:
+            connection.execute(
+                text("GRANT UPDATE ON public.users TO nutrition_runtime")
+            )
+        with pytest.raises(
+            roles.Phase5C4RoleError,
+            match="Privilege drift prevents maintenance close",
+        ):
+            roles.close_runtime_maintenance(
+                engines[roles.OPS_ROLE],
+                quiet_period_seconds=0,
+                drain_timeout_seconds=1,
+            )
+        with admin.begin() as connection:
+            connection.execute(
+                text("REVOKE UPDATE ON public.users FROM nutrition_runtime")
+            )
+
+        with engines[roles.OPS_ROLE].begin() as connection:
+            initialized = connection.scalar(
+                text(
+                    "SELECT public.phase5c_initialize_promotion_target("
+                    "CAST(:command AS uuid), :archive, CAST(:run AS uuid), "
+                    ":marker, :clone)"
+                ),
+                {
+                    "command": uuid4(),
+                    "archive": archive_identity,
+                    "run": run_id,
+                    "marker": marker_digest,
+                    "clone": clone_digest,
+                },
+            )
+        assert initialized["state"]["mode"] == "closed_prequalification"
+        assert roles.close_runtime_maintenance(
+            engines[roles.OPS_ROLE],
+            quiet_period_seconds=0,
+            drain_timeout_seconds=5,
+            poll_interval_seconds=0.01,
+        )["state"] == "maintenance"
+
+        with admin.begin() as connection:
+            connection.execute(
+                text("GRANT UPDATE ON public.users TO nutrition_runtime_write")
+            )
+        failed = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            roles.RESOURCE_MEMBERSHIP_REVISION,
+        )
+        assert failed.returncode != 0
+        assert "Revision role-policy drift prevents migration" in failed.stderr
+        with admin.connect() as connection:
+            assert connection.scalar(
+                text("SELECT version_num FROM public.alembic_version")
+            ) == roles.PROMOTION_PREREQUISITES_REVISION
+            assert connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_catalog.pg_attribute "
+                    "WHERE attrelid = 'public.recipe_ingredients'::regclass "
+                    "AND attname = 'user_id' AND NOT attisdropped"
+                )
+            ) == 0
+            assert connection.scalar(
+                text("SELECT mode FROM public.phase5c_write_fence_state")
+            ) == "closed_prequalification"
+        assert qualify("maintenance")["qualified"] is False
+        with admin.begin() as connection:
+            connection.execute(
+                text("REVOKE UPDATE ON public.users FROM nutrition_runtime_write")
+            )
+        assert qualify("maintenance")["qualified"] is True
+        assert roles.close_runtime_maintenance(
+            engines[roles.OPS_ROLE],
+            quiet_period_seconds=0,
+            drain_timeout_seconds=5,
+            poll_interval_seconds=0.01,
+        )["resumed"] is True
+
+        migrated = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            roles.RESOURCE_MEMBERSHIP_REVISION,
+        )
+        assert migrated.returncode == 0, migrated.stderr
+        with admin.begin() as connection:
+            connection.execute(
+                text("GRANT UPDATE ON public.users TO nutrition_runtime")
+            )
+        with pytest.raises(
+            roles.Phase5C4RoleError,
+            match="drift prevents restoration",
+        ):
+            roles.restore_runtime_privileges(engines[roles.OPS_ROLE])
+        with admin.connect() as connection:
+            assert connection.scalar(
+                text(
+                    "SELECT pg_catalog.has_table_privilege("
+                    "'nutrition_runtime', 'public.users', 'UPDATE')"
+                )
+            )
+        with admin.begin() as connection:
+            connection.execute(
+                text("REVOKE UPDATE ON public.users FROM nutrition_runtime")
+            )
+        assert roles.restore_runtime_privileges(
+            engines[roles.OPS_ROLE]
+        )["state"] == "normal"
+    finally:
+        for engine in (*engines.values(), admin):
+            engine.dispose()
+        with control.connect() as connection:
+            connection.execute(
+                text(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
+            )
+        control.dispose()

@@ -6,7 +6,9 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.dependencies.user import ensure_dev_user
 from app.models.food import FoodItem
@@ -17,6 +19,8 @@ from app.models.recipe_publication import (
     RecipePublicationRevision,
 )
 from app.models.user import User
+from app.repositories.log_repository import LogRepository
+from app.repositories.recipe_repository import RecipeRepository
 from app.services.food_service import FoodService
 from app.services.recipe_revision_capture_service import (
     CaptureCategory,
@@ -24,6 +28,7 @@ from app.services.recipe_revision_capture_service import (
 )
 from tests.test_recipe_revision_log_editing import _create_serving_log
 from tests.test_recipe_revision_logging import _published
+from tests.test_stage2_foods import create_food
 
 
 def _other_user(db: Session, label: str) -> User:
@@ -131,12 +136,12 @@ def test_same_user_nested_recipe_projection_remains_valid(client: TestClient) ->
     assert response.json()["ingredients"][0]["food_item_id"] == projection["id"]
 
 
-def test_corrupted_foreign_ingredient_cannot_influence_recipe_nutrition(
-    client: TestClient,
+def test_corrupted_foreign_ingredient_is_rejected_before_recipe_nutrition(
     db_session: Session,
 ) -> None:
     owner = ensure_dev_user(db_session)
     foreign = _foreign_food(db_session, _other_user(db_session, "corrupt-ingredient"))
+    db_session.commit()
     recipe = Recipe(
         id=uuid4(),
         user_id=owner.id,
@@ -144,6 +149,7 @@ def test_corrupted_foreign_ingredient_cannot_influence_recipe_nutrition(
         ingredients=[
             RecipeIngredient(
                 id=uuid4(),
+                user_id=owner.id,
                 food_item_id=foreign.id,
                 position=0,
                 amount_quantity=Decimal("1"),
@@ -152,8 +158,55 @@ def test_corrupted_foreign_ingredient_cannot_influence_recipe_nutrition(
         ],
     )
     db_session.add(recipe)
+    recipe_id = recipe.id
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+    assert db_session.get(Recipe, recipe_id) is None
+
+
+def test_corrupted_foreign_ingredient_cannot_influence_recipe_nutrition(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owned_food = create_food(client, "Owned ingredient")
+    created = client.post(
+        "/api/v1/recipes",
+        json={
+            "name": "Corrupted Recipe",
+            "ingredients": [
+                {
+                    "food_item_id": owned_food["id"],
+                    "position": 0,
+                    "amount_quantity": "1",
+                    "amount_unit": "g",
+                }
+            ],
+        },
+    ).json()
+    recipe = db_session.get(Recipe, UUID(created["id"]))
+    ingredient = recipe.ingredients[0]
+    foreign = _foreign_food(db_session, _other_user(db_session, "corrupt-ingredient-read"))
     db_session.commit()
 
+    # Model a legacy row already loaded from a pre-constraint database without
+    # attempting a now-forbidden direct write in the current schema.
+    set_committed_value(ingredient, "food_item_id", foreign.id)
+    set_committed_value(ingredient, "food_item", foreign)
+    original_get_required = RecipeRepository.get_required
+
+    def corrupted_recipe(
+        repository: RecipeRepository,
+        recipe_id: UUID,
+        user_id: UUID,
+    ) -> Recipe:
+        if recipe_id == recipe.id and user_id == recipe.user_id:
+            return recipe
+        return original_get_required(repository, recipe_id, user_id)
+
+    monkeypatch.setattr(RecipeRepository, "get_required", corrupted_recipe)
     response = client.get(f"/api/v1/recipes/{recipe.id}/nutrition")
 
     assert response.status_code == 400
@@ -230,12 +283,12 @@ def test_foreign_revision_amount_is_unavailable_to_log_update(
     assert str(foreign_revision.id) not in response.text
 
 
-def test_corrupted_foreign_log_source_is_reported_unavailable_without_state_leak(
-    client: TestClient,
+def test_corrupted_foreign_log_source_is_rejected_before_runtime_reads(
     db_session: Session,
 ) -> None:
     owner = ensure_dev_user(db_session)
     foreign = _foreign_food(db_session, _other_user(db_session, "foreign-log-source"))
+    db_session.commit()
     log = DailyLog(
         id=uuid4(),
         user_id=owner.id,
@@ -246,7 +299,57 @@ def test_corrupted_foreign_log_source_is_reported_unavailable_without_state_leak
         amount_unit="g",
     )
     db_session.add(log)
+    log_id = log.id
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+    assert db_session.get(DailyLog, log_id) is None
+
+
+def test_corrupted_foreign_log_source_is_reported_unavailable_without_state_leak(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    food = create_food(client, "Owned log source")
+    logged = client.post(
+        "/api/v1/logs",
+        json={
+            "food_item_id": food["id"],
+            "logged_date": "2026-07-14",
+            "amount_quantity": "1",
+            "amount_unit": "g",
+        },
+    ).json()
+    log = db_session.get(DailyLog, UUID(logged["id"]))
+    foreign = _foreign_food(db_session, _other_user(db_session, "foreign-log-read"))
     db_session.commit()
+
+    set_committed_value(log, "food_item_id", foreign.id)
+    set_committed_value(log, "food_item", foreign)
+    original_list = LogRepository.list_for_date
+    original_get_required = LogRepository.get_required
+    original_get_for_update = LogRepository.get_for_update
+
+    def corrupted_list(repository: LogRepository, user_id: UUID, logged_date: date):
+        if user_id == log.user_id and logged_date == log.logged_date:
+            return [log]
+        return original_list(repository, user_id, logged_date)
+
+    def corrupted_required(repository: LogRepository, log_id: UUID, user_id: UUID):
+        if log_id == log.id and user_id == log.user_id:
+            return log
+        return original_get_required(repository, log_id, user_id)
+
+    def corrupted_for_update(repository: LogRepository, log_id: UUID, user_id: UUID):
+        if log_id == log.id and user_id == log.user_id:
+            return log
+        return original_get_for_update(repository, log_id, user_id)
+
+    monkeypatch.setattr(LogRepository, "list_for_date", corrupted_list)
+    monkeypatch.setattr(LogRepository, "get_required", corrupted_required)
+    monkeypatch.setattr(LogRepository, "get_for_update", corrupted_for_update)
 
     listed = client.get("/api/v1/logs", params={"date": "2026-07-14"})
     context = client.get(f"/api/v1/logs/{log.id}/edit-context")
@@ -261,16 +364,45 @@ def test_corrupted_foreign_log_source_is_reported_unavailable_without_state_leak
     assert "Foreign private food" not in listed.text + context.text + updated.text
 
 
-def test_revision_log_edit_rejects_corrupted_foreign_source_food(
+def test_revision_log_foreign_source_corruption_is_rejected_before_edit(
     client: TestClient,
     db_session: Session,
 ) -> None:
     _, _, log = _create_serving_log(client, db_session)
+    original_food_id = log.food_item_id
     foreign = _foreign_food(db_session, _other_user(db_session, "revision-log-source"))
-    log.food_item_id = foreign.id
     db_session.commit()
-    db_session.expire_all()
+    log = db_session.get(DailyLog, log.id)
+    log.food_item_id = foreign.id
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
+    response = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+
+    assert response.status_code == 200, response.text
+    assert "Foreign private food" not in response.text
+    assert db_session.get(DailyLog, log.id).food_item_id == original_food_id
+
+
+def test_revision_log_edit_rejects_loaded_foreign_source_food(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, log = _create_serving_log(client, db_session)
+    foreign = _foreign_food(db_session, _other_user(db_session, "revision-log-read"))
+    db_session.commit()
+    set_committed_value(log, "food_item_id", foreign.id)
+    set_committed_value(log, "food_item", foreign)
+    original_get_for_update = LogRepository.get_for_update
+
+    def corrupted_for_update(repository: LogRepository, log_id: UUID, user_id: UUID):
+        if log_id == log.id and user_id == log.user_id:
+            return log
+        return original_get_for_update(repository, log_id, user_id)
+
+    monkeypatch.setattr(LogRepository, "get_for_update", corrupted_for_update)
     response = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
 
     assert response.status_code == 400

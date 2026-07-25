@@ -15,7 +15,6 @@ from uuid import uuid4
 
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-from alembic.autogenerate.api import compare_metadata
 import pytest
 from sqlalchemy import Connection, Engine, create_engine, event, make_url, text
 from sqlalchemy.exc import DBAPIError
@@ -30,9 +29,7 @@ from app.operators.phase5c4_prerequisites import (
     validate_prerequisite_observation,
 )
 from app.core.config import DeploymentMode, ProcessMode, Settings
-from app.core.database import Base
 from app.main import _admit_canary_startup
-from app.migrations.schema_authority import build_alembic_metadata
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -87,6 +84,22 @@ class TargetDatabase:
                 # exact login-role security boundary without rotating shared test
                 # cluster passwords.
                 connection.execute(text(f"SET SESSION AUTHORIZATION {role}"))
+                row = connection.execute(
+                    text(
+                        """
+                        SELECT
+                            session_user,
+                            current_user,
+                            (
+                                SELECT usename
+                                FROM pg_catalog.pg_stat_activity
+                                WHERE pid = pg_backend_pid()
+                            ) AS activity_user
+                        """
+                    )
+                ).one()
+
+                print(row)
                 connection.commit()
                 yield connection
         finally:
@@ -1073,27 +1086,28 @@ def test_catalog_qualification_detects_new_grants_and_hardening_tamper(
         engine.dispose()
 
 
-def test_0018_schema_authority_has_no_target_table_drift(
+def test_0018_historical_schema_boundary_remains_frozen(
     target_database: TargetDatabase,
 ) -> None:
     engine = target_database.engine()
     try:
         with engine.connect() as connection:
-            context = MigrationContext.configure(
-                connection,
-                opts={
-                    "compare_type": True,
-                    "include_object": lambda object_, name, type_, reflected, compare_to: (
-                        not (
-                            type_ == "table"
-                            and reflected
-                            and name == "phase5c_conversion_clone_marker"
-                        )
-                    ),
-                },
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+                TARGET_REVISION
             )
-            differences = compare_metadata(context, build_alembic_metadata(Base.metadata))
-        assert differences == []
+            assert connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_catalog.pg_attribute "
+                    "WHERE attrelid = 'public.recipe_ingredients'::regclass "
+                    "AND attname = 'user_id' AND NOT attisdropped"
+                )
+            ) == 0
+            assert connection.scalar(
+                text(
+                    "SELECT pg_catalog.to_regprocedure("
+                    "'public.phase5c_local_admission_v2()')"
+                )
+            ) is None
     finally:
         engine.dispose()
 
@@ -1253,7 +1267,7 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
     with target_database.connect_as(roles.RUNTIME_ROLE) as connection:
         prequalification_readiness = evaluate_local_readiness(connection)
         assert prequalification_readiness.ready is False
-        assert prequalification_readiness.reason_code == "write_fence_closed_prequalification"
+        assert prequalification_readiness.reason_code == "schema_revision_mismatch"
     for statement in (
         "UPDATE daily_logs SET logged_date = logged_date WHERE false",
         "DELETE FROM daily_logs WHERE false",
@@ -1348,7 +1362,8 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
                     "(SELECT count(*) FROM users)"
                 )
             ).one()
-        _admit_canary_startup(canary_config, canary_engine)
+        with pytest.raises(RuntimeError, match="canary_startup_admission_failed"):
+            _admit_canary_startup(canary_config, canary_engine)
         with target_database.engine().connect() as connection:
             rows_after_canary = connection.execute(
                 text(
@@ -1497,7 +1512,8 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
 
     cutover_canary_engine = _engine_as(target_database, roles.CANARY_ROLE, read_only=True)
     try:
-        _admit_canary_startup(canary_config, cutover_canary_engine)
+        with pytest.raises(RuntimeError, match="canary_startup_admission_failed"):
+            _admit_canary_startup(canary_config, cutover_canary_engine)
     finally:
         cutover_canary_engine.dispose()
     _assert_runtime_gate_closed(
@@ -1509,7 +1525,7 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
     with target_database.connect_as(roles.RUNTIME_ROLE) as connection:
         readiness = evaluate_local_readiness(connection)
         assert readiness.ready is False
-        assert readiness.reason_code == "write_fence_closed_cutover"
+        assert readiness.reason_code == "schema_revision_mismatch"
 
     _force_owner_fence_event(
         target_database,
@@ -1538,7 +1554,9 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
         assert forbidden_from_open[0] == "P5C02"
         assert "invalid_closed_fence_transition" in forbidden_from_open[1]
     with target_database.connect_as(roles.RUNTIME_ROLE) as connection:
-        assert evaluate_local_readiness(connection).ready is True
+        readiness = evaluate_local_readiness(connection)
+        assert readiness.ready is False
+        assert readiness.reason_code == "schema_revision_mismatch"
         connection.execute(text("UPDATE daily_logs SET logged_date = logged_date WHERE false"))
         connection.execute(text("DELETE FROM daily_logs WHERE false"))
         connection.rollback()
@@ -1660,7 +1678,7 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
     assert incident_state.state["mode"] == "closed_incident"
     with target_database.connect_as(roles.RUNTIME_ROLE) as connection:
         incident_readiness = evaluate_local_readiness(connection)
-        assert incident_readiness.reason_code == "write_fence_closed_incident"
+        assert incident_readiness.reason_code == "schema_revision_mismatch"
     _assert_runtime_gate_closed(
         target_database,
         "INSERT INTO users (id, email, display_name) VALUES "
@@ -1716,7 +1734,7 @@ def test_initializer_replay_closed_transition_and_forward_only_downgrade(
     assert run_transition(transition_parameters) == changed
     with target_database.connect_as(roles.RUNTIME_ROLE) as connection:
         retired_readiness = evaluate_local_readiness(connection)
-        assert retired_readiness.reason_code == "write_fence_retired"
+        assert retired_readiness.reason_code == "schema_revision_mismatch"
     _assert_runtime_gate_closed(
         target_database,
         "INSERT INTO users (id, email, display_name) VALUES "

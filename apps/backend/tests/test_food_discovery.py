@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 import sqlite3
 from uuid import UUID, uuid4
 
@@ -32,6 +33,35 @@ def _log(client, food: dict, logged_date: str = "2020-01-01"):
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def _insert_log_at(
+    db_session: Session,
+    food: dict,
+    *,
+    logged_date: str = "2020-01-01",
+    created_at: datetime,
+) -> dict[str, str]:
+    """Construct chronology at insert time without mutating immutable history."""
+
+    log_id = uuid4()
+    db_session.execute(
+        DailyLog.__table__.insert().values(
+            id=log_id,
+            user_id=ensure_dev_user(db_session).id,
+            food_item_id=UUID(food["id"]),
+            food_name_snapshot=food["name"],
+            logged_date=date.fromisoformat(logged_date),
+            amount_quantity=Decimal("1"),
+            amount_unit="serving",
+            serving_definition_id=UUID(food["serving_definitions"][0]["id"]),
+            gram_amount=Decimal("100"),
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    )
+    db_session.commit()
+    return {"id": str(log_id)}
 
 
 def test_favorite_create_remove_is_idempotent_owner_scoped_and_retained_on_delete(
@@ -95,17 +125,23 @@ def test_recents_use_immutable_created_time_not_logged_date_and_recompute_after_
 ):
     first = create_food(client, "First Used")
     second = create_food(client, "Second Used")
-    old_first = _log(client, first, "2035-12-31")
-    second_log = _log(client, second, "2020-01-01")
-    newest_first = _log(client, first, "2019-01-01")
-    times = {
-        old_first["id"]: datetime(2026, 1, 1, 10, tzinfo=timezone.utc),
-        second_log["id"]: datetime(2026, 1, 2, 10, tzinfo=timezone.utc),
-        newest_first["id"]: datetime(2026, 1, 3, 10, tzinfo=timezone.utc),
-    }
-    for log_id, used_at in times.items():
-        db_session.get(DailyLog, UUID(log_id)).created_at = used_at
-    db_session.commit()
+    old_first = _insert_log_at(
+        db_session,
+        first,
+        logged_date="2035-12-31",
+        created_at=datetime(2026, 1, 1, 10, tzinfo=timezone.utc),
+    )
+    _insert_log_at(
+        db_session,
+        second,
+        created_at=datetime(2026, 1, 2, 10, tzinfo=timezone.utc),
+    )
+    newest_first = _insert_log_at(
+        db_session,
+        first,
+        logged_date="2019-01-01",
+        created_at=datetime(2026, 1, 3, 10, tzinfo=timezone.utc),
+    )
 
     recent = client.get("/api/v1/foods/recent", params={"limit": 10}).json()["foods"]
     assert [row["food"]["id"] for row in recent] == [first["id"], second["id"]]
@@ -127,9 +163,7 @@ def test_recents_tie_break_limit_soft_delete_and_bounded_query_count(client, db_
     foods = [create_food(client, f"Recent {index}") for index in range(3)]
     timestamp = datetime(2026, 2, 1, 8, tzinfo=timezone.utc)
     for food in foods:
-        log = _log(client, food)
-        db_session.get(DailyLog, UUID(log["id"])).created_at = timestamp
-    db_session.commit()
+        _insert_log_at(db_session, food, created_at=timestamp)
     expected = sorted(food["id"] for food in foods)[:2]
     response = client.get("/api/v1/foods/recent", params={"limit": 2})
     assert [row["food"]["id"] for row in response.json()["foods"]] == expected

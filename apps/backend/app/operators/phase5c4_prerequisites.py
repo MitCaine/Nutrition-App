@@ -21,6 +21,15 @@ from app.operators.phase5c4_contracts import (
     QUALIFIER_VERSION,
     TARGET_SCHEMA_REVISION,
 )
+from app.operators.immutable_provenance_contracts import (
+    CURRENT_LOCAL_ADMISSION_ROUTINE as IMMUTABLE_CURRENT_LOCAL_ADMISSION_ROUTINE,
+    CURRENT_RUNTIME_SCHEMA_REVISION as IMMUTABLE_CURRENT_RUNTIME_SCHEMA_REVISION,
+    IMMUTABLE_PROVENANCE_LOCAL_ADMISSION_VERSION,
+)
+from app.operators.resource_membership_contracts import (
+    CURRENT_RUNTIME_SCHEMA_REVISION,
+    LOCAL_ADMISSION_VERSION,
+)
 
 
 # Compatibility seam for existing test callers without importing application
@@ -79,6 +88,8 @@ READINESS_REASONS = frozenset(
         "write_fence_retired",
         "runtime_role_mismatch",
         "role_topology_invalid",
+        "resource_membership_integrity_invalid",
+        "immutable_provenance_integrity_invalid",
     }
 )
 
@@ -169,6 +180,15 @@ LOCAL_ADMISSION_KEYS = frozenset(
         "schema_revision",
         "session_role_valid",
     }
+)
+CURRENT_LOCAL_ADMISSION_KEYS = LOCAL_ADMISSION_KEYS | frozenset(
+    {
+        "admission_contract_version",
+        "resource_membership_integrity_valid",
+    }
+)
+IMMUTABLE_LOCAL_ADMISSION_KEYS = CURRENT_LOCAL_ADMISSION_KEYS | frozenset(
+    {"immutable_provenance_integrity_valid"}
 )
 _PROJECTION_KEYS = frozenset(
     {
@@ -280,6 +300,43 @@ class LocalAdmission:
     immutability_valid: bool
 
 
+@dataclass(frozen=True)
+class CurrentLocalAdmission:
+    admission_contract_version: str
+    schema_revision: str | None
+    identity_present: bool
+    identity_valid: bool
+    composite_bindings_valid: bool
+    fence_state_present: bool
+    fence_state_valid: bool
+    event_chain_valid: bool
+    fence_mode: str | None
+    session_role_valid: bool
+    role_topology_valid: bool
+    gate_trigger_coverage_valid: bool
+    immutability_valid: bool
+    resource_membership_integrity_valid: bool
+
+
+@dataclass(frozen=True)
+class ImmutableProvenanceLocalAdmission:
+    admission_contract_version: str
+    schema_revision: str | None
+    identity_present: bool
+    identity_valid: bool
+    composite_bindings_valid: bool
+    fence_state_present: bool
+    fence_state_valid: bool
+    event_chain_valid: bool
+    fence_mode: str | None
+    session_role_valid: bool
+    role_topology_valid: bool
+    gate_trigger_coverage_valid: bool
+    immutability_valid: bool
+    resource_membership_integrity_valid: bool
+    immutable_provenance_integrity_valid: bool
+
+
 def validate_local_admission(payload: Any) -> LocalAdmission:
     admission = _require_mapping(payload, LOCAL_ADMISSION_KEYS, "database_unavailable")
     schema_revision = admission["schema_revision"]
@@ -292,6 +349,54 @@ def validate_local_admission(payload: Any) -> LocalAdmission:
     if any(not isinstance(admission[field], bool) for field in boolean_fields):
         raise Phase5C4PrerequisiteError("database_unavailable")
     return LocalAdmission(**admission)
+
+
+def validate_current_local_admission(payload: Any) -> CurrentLocalAdmission:
+    admission = _require_mapping(payload, CURRENT_LOCAL_ADMISSION_KEYS, "database_unavailable")
+    if admission["admission_contract_version"] != LOCAL_ADMISSION_VERSION:
+        raise Phase5C4PrerequisiteError("schema_revision_mismatch")
+    schema_revision = admission["schema_revision"]
+    if schema_revision is not None and not isinstance(schema_revision, str):
+        raise Phase5C4PrerequisiteError("database_unavailable")
+    fence_mode = admission["fence_mode"]
+    if fence_mode is not None and not isinstance(fence_mode, str):
+        raise Phase5C4PrerequisiteError("database_unavailable")
+    boolean_fields = CURRENT_LOCAL_ADMISSION_KEYS - {
+        "admission_contract_version",
+        "fence_mode",
+        "schema_revision",
+    }
+    if any(not isinstance(admission[field], bool) for field in boolean_fields):
+        raise Phase5C4PrerequisiteError("database_unavailable")
+    return CurrentLocalAdmission(**admission)
+
+
+def validate_immutable_provenance_local_admission(
+    payload: Any,
+) -> ImmutableProvenanceLocalAdmission:
+    admission = _require_mapping(
+        payload,
+        IMMUTABLE_LOCAL_ADMISSION_KEYS,
+        "database_unavailable",
+    )
+    if admission["admission_contract_version"] != (
+        IMMUTABLE_PROVENANCE_LOCAL_ADMISSION_VERSION
+    ):
+        raise Phase5C4PrerequisiteError("schema_revision_mismatch")
+    schema_revision = admission["schema_revision"]
+    if schema_revision is not None and not isinstance(schema_revision, str):
+        raise Phase5C4PrerequisiteError("database_unavailable")
+    fence_mode = admission["fence_mode"]
+    if fence_mode is not None and not isinstance(fence_mode, str):
+        raise Phase5C4PrerequisiteError("database_unavailable")
+    boolean_fields = IMMUTABLE_LOCAL_ADMISSION_KEYS - {
+        "admission_contract_version",
+        "fence_mode",
+        "schema_revision",
+    }
+    if any(not isinstance(admission[field], bool) for field in boolean_fields):
+        raise Phase5C4PrerequisiteError("database_unavailable")
+    return ImmutableProvenanceLocalAdmission(**admission)
 
 
 def classify_local_admission(admission: LocalAdmission) -> LocalReadiness:
@@ -324,6 +429,54 @@ def classify_local_admission(admission: LocalAdmission) -> LocalReadiness:
         "retired": "write_fence_retired",
     }.get(admission.fence_mode, "fence_state_invalid")
     return LocalReadiness(False, reason)
+
+
+def classify_current_local_admission(admission: CurrentLocalAdmission) -> LocalReadiness:
+    if admission.schema_revision != CURRENT_RUNTIME_SCHEMA_REVISION:
+        return LocalReadiness(False, "schema_revision_mismatch")
+    if not admission.resource_membership_integrity_valid:
+        return LocalReadiness(False, "resource_membership_integrity_invalid")
+    historical_shape = LocalAdmission(
+        schema_revision=TARGET_SCHEMA_REVISION,
+        identity_present=admission.identity_present,
+        identity_valid=admission.identity_valid,
+        composite_bindings_valid=admission.composite_bindings_valid,
+        fence_state_present=admission.fence_state_present,
+        fence_state_valid=admission.fence_state_valid,
+        event_chain_valid=admission.event_chain_valid,
+        fence_mode=admission.fence_mode,
+        session_role_valid=admission.session_role_valid,
+        role_topology_valid=admission.role_topology_valid,
+        gate_trigger_coverage_valid=admission.gate_trigger_coverage_valid,
+        immutability_valid=admission.immutability_valid,
+    )
+    return classify_local_admission(historical_shape)
+
+
+def classify_immutable_provenance_local_admission(
+    admission: ImmutableProvenanceLocalAdmission,
+) -> LocalReadiness:
+    if admission.schema_revision != IMMUTABLE_CURRENT_RUNTIME_SCHEMA_REVISION:
+        return LocalReadiness(False, "schema_revision_mismatch")
+    if not admission.resource_membership_integrity_valid:
+        return LocalReadiness(False, "resource_membership_integrity_invalid")
+    if not admission.immutable_provenance_integrity_valid:
+        return LocalReadiness(False, "immutable_provenance_integrity_invalid")
+    historical_shape = LocalAdmission(
+        schema_revision=TARGET_SCHEMA_REVISION,
+        identity_present=admission.identity_present,
+        identity_valid=admission.identity_valid,
+        composite_bindings_valid=admission.composite_bindings_valid,
+        fence_state_present=admission.fence_state_present,
+        fence_state_valid=admission.fence_state_valid,
+        event_chain_valid=admission.event_chain_valid,
+        fence_mode=admission.fence_mode,
+        session_role_valid=admission.session_role_valid,
+        role_topology_valid=admission.role_topology_valid,
+        gate_trigger_coverage_valid=admission.gate_trigger_coverage_valid,
+        immutability_valid=admission.immutability_valid,
+    )
+    return classify_local_admission(historical_shape)
 
 
 def format_contract_timestamp(value: datetime | str) -> str:
@@ -455,15 +608,20 @@ def evaluate_local_readiness(
         return LocalReadiness(True)
     try:
         reader_available = db.execute(
-            text("SELECT pg_catalog.to_regprocedure('public.phase5c_local_admission_v1()')")
+            text("SELECT pg_catalog.to_regprocedure(:routine)"),
+            {"routine": IMMUTABLE_CURRENT_LOCAL_ADMISSION_ROUTINE},
         ).scalar_one()
         if reader_available is None:
             return LocalReadiness(False, "schema_revision_mismatch")
         session_role, current_role = db.execute(text("SELECT session_user, current_user")).one()
         if (str(session_role), str(current_role)) != (expected_role, expected_role):
             return LocalReadiness(False, "runtime_role_mismatch")
-        raw = db.execute(text("SELECT * FROM public.phase5c_local_admission_v1()")).mappings().one()
-        return classify_local_admission(validate_local_admission(dict(raw)))
+        raw = db.execute(
+            text(f"SELECT * FROM {IMMUTABLE_CURRENT_LOCAL_ADMISSION_ROUTINE}")
+        ).mappings().one()
+        return classify_immutable_provenance_local_admission(
+            validate_immutable_provenance_local_admission(dict(raw))
+        )
     except Phase5C4PrerequisiteError as exc:
         reason = exc.reason_code
         if reason in READINESS_REASONS:

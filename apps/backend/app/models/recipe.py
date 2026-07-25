@@ -37,6 +37,11 @@ class Recipe(Base):
             "final_cooked_weight_grams IS NULL OR final_cooked_weight_grams > 0",
             name="ck_recipes_final_weight_positive",
         ),
+        CheckConstraint(
+            "(published_food_item_id IS NULL) = "
+            "(active_publication_revision_id IS NULL)",
+            name="ck_recipes_publication_links_paired",
+        ),
         UniqueConstraint("id", "user_id", name="uq_recipes_id_user_id"),
         ForeignKeyConstraint(
             ["active_publication_revision_id", "id", "user_id"],
@@ -47,6 +52,26 @@ class Recipe(Base):
             ],
             name="fk_recipes_active_publication_revision_owner",
             ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["published_food_item_id", "active_publication_revision_id", "user_id"],
+            [
+                "food_items.id",
+                "food_items.recipe_publication_revision_id",
+                "food_items.user_id",
+            ],
+            name="fk_recipes_publication_projection",
+            match="SIMPLE",
+            onupdate="NO ACTION",
+            ondelete="NO ACTION",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        Index(
+            "ix_recipes_publication_projection",
+            "published_food_item_id",
+            "active_publication_revision_id",
+            "user_id",
         ),
     )
 
@@ -78,6 +103,7 @@ class Recipe(Base):
         back_populates="recipe",
         cascade="all, delete-orphan",
         order_by="RecipeIngredient.position",
+        foreign_keys="RecipeIngredient.recipe_id",
     )
 
 
@@ -85,8 +111,41 @@ class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredients"
     __table_args__ = (
         UniqueConstraint("recipe_id", "position", name="uq_recipe_ingredients_recipe_position"),
+        ForeignKeyConstraint(
+            ["recipe_id", "user_id"],
+            ["recipes.id", "recipes.user_id"],
+            name="fk_recipe_ingredients_recipe_owner",
+            match="SIMPLE",
+            onupdate="NO ACTION",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["food_item_id", "user_id"],
+            ["food_items.id", "food_items.user_id"],
+            name="fk_recipe_ingredients_food_owner",
+            match="SIMPLE",
+            onupdate="NO ACTION",
+            ondelete="NO ACTION",
+        ),
+        ForeignKeyConstraint(
+            ["serving_definition_id", "food_item_id"],
+            ["serving_definitions.id", "serving_definitions.food_item_id"],
+            name="fk_recipe_ingredients_serving_food",
+            match="SIMPLE",
+            onupdate="NO ACTION",
+            ondelete="NO ACTION",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         Index("ix_recipe_ingredients_food_item_id", "food_item_id"),
         Index("ix_recipe_ingredients_serving_definition_id", "serving_definition_id"),
+        Index("ix_recipe_ingredients_recipe_owner", "recipe_id", "user_id"),
+        Index("ix_recipe_ingredients_food_owner", "food_item_id", "user_id"),
+        Index(
+            "ix_recipe_ingredients_serving_food",
+            "serving_definition_id",
+            "food_item_id",
+        ),
         CheckConstraint("amount_quantity > 0", name="ck_recipe_ingredients_amount_positive"),
         CheckConstraint(
             "resolved_gram_amount IS NULL OR resolved_gram_amount > 0",
@@ -95,6 +154,11 @@ class RecipeIngredient(Base):
     )
 
     id: Mapped[UUID] = mapped_column(GUID(), primary_key=True)
+    # The current writer always supplies this value explicitly.  Keep reads
+    # deferred so the frozen 0017 historical converter/qualifier can continue
+    # loading legacy RecipeIngredient rows before migration 0019 adds the
+    # redundant owner column.
+    user_id: Mapped[UUID] = mapped_column(GUID(), nullable=False, deferred=True)
     recipe_id: Mapped[UUID] = mapped_column(
         GUID(), ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False
     )
@@ -110,6 +174,12 @@ class RecipeIngredient(Base):
     resolved_gram_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
     preparation_note: Mapped[Optional[str]] = mapped_column(Text)
 
-    recipe: Mapped[Recipe] = relationship(back_populates="ingredients")
+    recipe: Mapped[Recipe] = relationship(
+        back_populates="ingredients",
+        foreign_keys=[recipe_id],
+    )
     food_item: Mapped[FoodItem] = relationship("FoodItem", foreign_keys=[food_item_id])
-    serving_definition: Mapped[Optional[ServingDefinition]] = relationship("ServingDefinition")
+    serving_definition: Mapped[Optional[ServingDefinition]] = relationship(
+        "ServingDefinition",
+        foreign_keys=[serving_definition_id],
+    )

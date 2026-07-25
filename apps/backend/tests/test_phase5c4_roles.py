@@ -21,6 +21,60 @@ def test_privilege_manifest_is_exact_versioned_and_canonical() -> None:
     assert manifest["manifest_digest"] == canonical.canonical_digest(unsigned)
 
 
+@pytest.mark.parametrize(
+    "revision",
+    roles.SUPPORTED_ROLE_POLICY_REVISIONS[1:],
+)
+def test_revisioned_privilege_manifests_are_exact_and_tamper_evident(
+    revision: str,
+) -> None:
+    manifest = roles.build_revision_privilege_manifest(revision)
+
+    assert roles.validate_privilege_manifest(manifest) == manifest
+    assert roles.serialize_privilege_manifest(manifest) == canonical.canonical_json(
+        manifest
+    )
+    assert manifest["manifest_version"] == (
+        roles.TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION
+    )
+    assert manifest["revision_policy"]["revision"] == revision
+
+    tampered = deepcopy(manifest)
+    tampered["revision_policy"]["restore_allowed"] = not tampered[
+        "revision_policy"
+    ]["restore_allowed"]
+    with pytest.raises(roles.Phase5C4RoleError, match="exact versioned authority"):
+        roles.validate_privilege_manifest(tampered)
+
+
+def test_revision_policy_transition_legality_is_explicit() -> None:
+    policies = {
+        revision: roles._revision_role_policy(revision)
+        for revision in roles.SUPPORTED_ROLE_POLICY_REVISIONS
+    }
+
+    assert policies[roles.EXPECTED_ALEMBIC_REVISION].restore_allowed is True
+    assert policies[roles.PROMOTION_PREREQUISITES_REVISION].restore_allowed is False
+    assert policies[roles.RESOURCE_MEMBERSHIP_REVISION].restore_allowed is True
+    assert policies[roles.IMMUTABLE_PROVENANCE_REVISION].restore_allowed is True
+    assert (
+        "phase5c_promotion_target_identity"
+        in policies[
+            roles.PROMOTION_PREREQUISITES_REVISION
+        ].required_public_relations
+    )
+    assert (
+        "phase5c_local_admission_v2"
+        in {item.name for item in policies[roles.RESOURCE_MEMBERSHIP_REVISION].routines}
+    )
+    assert "DELETE" not in policies[
+        roles.IMMUTABLE_PROVENANCE_REVISION
+    ].runtime_writes["daily_log_nutrient_snapshots"]
+
+    with pytest.raises(roles.Phase5C4RoleError, match="Unsupported role-policy revision"):
+        roles._revision_role_policy("9999_unrelated")
+
+
 def test_every_contract_serialization_uses_shared_canonical_authority(monkeypatch) -> None:
     calls = []
     original = canonical.canonical_json
@@ -199,6 +253,37 @@ def test_source_eligibility_contract_is_strict_and_tamper_evident() -> None:
         multiple_unsigned
     )
     assert roles.validate_source_eligibility(multiple_archives) == multiple_archives
+
+
+def test_transitional_source_eligibility_binds_revision_manifest() -> None:
+    evidence = _eligibility_fixture()
+    revision = roles.PROMOTION_PREREQUISITES_REVISION
+    manifest = roles.build_revision_privilege_manifest(revision)
+    evidence.update(
+        {
+            "contract_version": roles.TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION,
+            "privilege_manifest_version": manifest["manifest_version"],
+            "privilege_manifest_digest": manifest["manifest_digest"],
+            "policy_revision": revision,
+        }
+    )
+    unsigned = {
+        key: value for key, value in evidence.items() if key != "qualification_digest"
+    }
+    evidence["qualification_digest"] = canonical.canonical_digest(unsigned)
+
+    assert roles.validate_source_eligibility(evidence) == evidence
+
+    mismatched = deepcopy(evidence)
+    mismatched["policy_revision"] = roles.RESOURCE_MEMBERSHIP_REVISION
+    unsigned = {
+        key: value
+        for key, value in mismatched.items()
+        if key != "qualification_digest"
+    }
+    mismatched["qualification_digest"] = canonical.canonical_digest(unsigned)
+    with pytest.raises(roles.Phase5C4RoleError, match="manifest is unsupported"):
+        roles.validate_source_eligibility(mismatched)
 
 
 class _FakeConnection:

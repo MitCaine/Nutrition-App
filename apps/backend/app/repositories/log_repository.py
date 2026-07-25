@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.food import ServingDefinition
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
+from app.operators.immutable_provenance_postgres import (
+    POSTGRES_SCHEMA_SESSION_INFO_KEY,
+    PRODUCTION_SCHEMA,
+    snapshot_replacement_routine_name,
+)
+from app.operators.immutable_provenance_sqlite import (
+    allow_sqlite_snapshot_replacement,
+)
 
 
 class LogRepository:
@@ -125,10 +135,44 @@ class LogRepository:
         )
         return list(self.db.scalars(statement).all())
 
-    def delete_snapshots(self, log_id: UUID) -> None:
-        self.db.execute(
-            delete(DailyLogNutrientSnapshot).where(DailyLogNutrientSnapshot.daily_log_id == log_id)
-        )
+    def delete_snapshots(self, log_id: UUID, user_id: UUID) -> None:
+        """Delete one owned Log's complete snapshot set through the approved boundary."""
 
-    def delete(self, log: DailyLog) -> None:
-        self.db.delete(log)
+        if self.db.get_bind().dialect.name == "postgresql":
+            schema = self.db.info.get(
+                POSTGRES_SCHEMA_SESSION_INFO_KEY,
+                PRODUCTION_SCHEMA,
+            )
+            routine = snapshot_replacement_routine_name(schema)
+            self.db.execute(
+                text(
+                    f"SELECT {routine}(:log_id, :user_id)"
+                ),
+                {"log_id": log_id, "user_id": user_id},
+            )
+            return
+        with allow_sqlite_snapshot_replacement(self.db, user_id, log_id):
+            self.db.execute(
+                delete(DailyLogNutrientSnapshot).where(
+                    DailyLogNutrientSnapshot.daily_log_id == log_id
+                )
+            )
+
+    @contextmanager
+    def snapshot_replacement_scope(
+        self,
+        user_id: UUID,
+        log_id: UUID,
+    ) -> Iterator[None]:
+        """Keep SQLite's behavioral guard open through one complete replacement."""
+
+        with allow_sqlite_snapshot_replacement(self.db, user_id, log_id):
+            yield
+
+    def delete(self, log: DailyLog, user_id: UUID) -> None:
+        self.delete_snapshots(log.id, user_id)
+        result = self.db.execute(
+            delete(DailyLog).where(DailyLog.id == log.id, DailyLog.user_id == user_id)
+        )
+        if result.rowcount != 1:
+            raise LookupError("Daily log not found")

@@ -6,13 +6,16 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.dependencies.user import ensure_dev_user
 from app.models.food import FoodItem
 from app.models.log import DailyLog
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.user import User
+from app.repositories.food_repository import FoodRepository
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
 from app.services.recipe_service import (
@@ -449,24 +452,66 @@ def test_confirmed_delete_rolls_back_every_mutation_boundary(
     assert restored_parent.needs_republish is False
 
 
-def test_inconsistent_projection_linkage_blocks_recipe_deletion(
+def test_inconsistent_projection_linkage_is_rejected_before_recipe_deletion(
     client: TestClient,
     db_session: Session,
 ) -> None:
     child_id, child_food = _published(client)
     projection = db_session.get(FoodItem, UUID(child_food["id"]))
     projection.recipe_publication_revision_id = None
-    db_session.commit()
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
+    recipe = db_session.get(Recipe, child_id)
+    projection = db_session.get(FoodItem, UUID(child_food["id"]))
+    assert projection.recipe_publication_revision_id == recipe.active_publication_revision_id
+    assert recipe.deleted_at is None
+    assert projection.deleted_at is None
+
+
+def test_loaded_inconsistent_projection_linkage_blocks_recipe_deletion(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child_id, child_food = _published(client)
+    projection_id = UUID(child_food["id"])
+    projection = db_session.get(FoodItem, projection_id)
+    original_revision_id = projection.recipe_publication_revision_id
+    corrupted = FoodItem(
+        id=projection.id,
+        user_id=projection.user_id,
+        name=projection.name,
+        source_type=projection.source_type,
+        source_id=projection.source_id,
+        is_recipe=projection.is_recipe,
+        recipe_publication_revision_id=None,
+    )
+    original_get_for_update = FoodRepository.get_for_update
+
+    def corrupted_projection(
+        repository: FoodRepository,
+        food_id: UUID,
+        user_id: UUID,
+    ) -> FoodItem:
+        if food_id == projection_id and user_id == projection.user_id:
+            return corrupted
+        return original_get_for_update(repository, food_id, user_id)
+
+    monkeypatch.setattr(FoodRepository, "get_for_update", corrupted_projection)
     response = client.delete(f"/api/v1/recipes/{child_id}")
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "recipe_projection_integrity_invalid"
+    db_session.expire_all()
     assert db_session.get(Recipe, child_id).deleted_at is None
-    assert projection.deleted_at is None
+    stored_projection = db_session.get(FoodItem, projection_id)
+    assert stored_projection.deleted_at is None
+    assert stored_projection.recipe_publication_revision_id == original_revision_id
 
 
-def test_cross_user_dependencies_are_not_exposed_or_mutated(
+def test_cross_user_dependency_is_rejected_before_recipe_deletion(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -481,6 +526,7 @@ def test_cross_user_dependencies_are_not_exposed_or_mutated(
         ingredients=[
             RecipeIngredient(
                 id=uuid4(),
+                user_id=other_user.id,
                 food_item_id=UUID(child_food["id"]),
                 position=0,
                 amount_quantity=Decimal("1"),
@@ -489,13 +535,63 @@ def test_cross_user_dependencies_are_not_exposed_or_mutated(
         ],
     )
     db_session.add(foreign_parent)
-    db_session.commit()
+    foreign_parent_id = foreign_parent.id
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
     response = client.delete(f"/api/v1/recipes/{child_id}")
 
     assert response.status_code == 204
+    assert db_session.get(Recipe, foreign_parent_id) is None
+
+
+def test_loaded_cross_user_dependency_is_not_exposed_or_mutated(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    child_id, child_food = _published(client)
+    other_user = User(id=uuid4(), email=f"other-loaded-{uuid4()}@example.test")
+    foreign_food = FoodItem(
+        id=uuid4(),
+        user_id=other_user.id,
+        name="Foreign safe ingredient",
+        source_type="manual",
+        is_recipe=False,
+    )
+    foreign_parent = Recipe(
+        id=uuid4(),
+        user_id=other_user.id,
+        name="Secret Foreign Parent",
+        ingredients=[
+            RecipeIngredient(
+                id=uuid4(),
+                user_id=other_user.id,
+                food_item_id=foreign_food.id,
+                position=0,
+                amount_quantity=Decimal("1"),
+                amount_unit="g",
+            )
+        ],
+    )
+    db_session.add(other_user)
+    db_session.flush()
+    db_session.add(foreign_food)
+    db_session.flush()
+    db_session.add(foreign_parent)
+    db_session.commit()
+    foreign_ingredient = foreign_parent.ingredients[0]
+    set_committed_value(foreign_ingredient, "food_item_id", UUID(child_food["id"]))
+
+    response = client.delete(f"/api/v1/recipes/{child_id}")
+
+    assert response.status_code == 204
+    assert "Secret Foreign Parent" not in response.text
     db_session.expire_all()
-    assert len(db_session.get(Recipe, foreign_parent.id).ingredients) == 1
+    stored_foreign = db_session.get(Recipe, foreign_parent.id)
+    assert stored_foreign.deleted_at is None
+    assert len(stored_foreign.ingredients) == 1
+    assert stored_foreign.ingredients[0].food_item_id == foreign_food.id
 
 
 def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
@@ -514,6 +610,7 @@ def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
         ingredients=[
             RecipeIngredient(
                 id=uuid4(),
+                user_id=other_user.id,
                 food_item_id=UUID(child_food["id"]),
                 position=0,
                 amount_quantity=Decimal("1"),
@@ -522,7 +619,70 @@ def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
         ],
     )
     db_session.add(foreign_parent)
+    foreign_parent_id = foreign_parent.id
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+    blocked = client.delete(f"/api/v1/recipes/{child_id}")
+
+    assert blocked.status_code == 409
+    assert [row["recipe_id"] for row in blocked.json()["detail"]["affected_recipes"]] == [
+        same_user_parent["id"]
+    ]
+    assert str(foreign_parent_id) not in blocked.text
+    assert "Secret Foreign Parent" not in blocked.text
+
+    confirmed = client.delete(
+        f"/api/v1/recipes/{child_id}",
+        params={"remove_from_recipes": "true"},
+    )
+
+    assert confirmed.status_code == 204
+    assert client.get(f"/api/v1/recipes/{same_user_parent['id']}").json()["ingredients"] == []
+    assert db_session.get(Recipe, foreign_parent_id) is None
+
+
+def test_loaded_cross_user_dependency_is_omitted_when_owner_dependency_blocks(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    child_id, child_food = _published(client)
+    same_user_parent = _parent_recipe(client, child_food, "Visible Parent")
+    other_user = User(id=uuid4(), email=f"hidden-loaded-{uuid4()}@example.test")
+    foreign_food = FoodItem(
+        id=uuid4(),
+        user_id=other_user.id,
+        name="Foreign safe ingredient",
+        source_type="manual",
+        is_recipe=False,
+    )
+    foreign_parent = Recipe(
+        id=uuid4(),
+        user_id=other_user.id,
+        name="Secret Foreign Parent",
+        ingredients=[
+            RecipeIngredient(
+                id=uuid4(),
+                user_id=other_user.id,
+                food_item_id=foreign_food.id,
+                position=0,
+                amount_quantity=Decimal("1"),
+                amount_unit="g",
+            )
+        ],
+    )
+    db_session.add(other_user)
+    db_session.flush()
+    db_session.add(foreign_food)
+    db_session.flush()
+    db_session.add(foreign_parent)
     db_session.commit()
+    set_committed_value(
+        foreign_parent.ingredients[0],
+        "food_item_id",
+        UUID(child_food["id"]),
+    )
 
     blocked = client.delete(f"/api/v1/recipes/{child_id}")
 
@@ -541,7 +701,10 @@ def test_cross_user_dependency_is_omitted_when_same_user_dependency_blocks(
     assert confirmed.status_code == 204
     assert client.get(f"/api/v1/recipes/{same_user_parent['id']}").json()["ingredients"] == []
     db_session.expire_all()
-    assert len(db_session.get(Recipe, foreign_parent.id).ingredients) == 1
+    stored_foreign = db_session.get(Recipe, foreign_parent.id)
+    assert stored_foreign.deleted_at is None
+    assert len(stored_foreign.ingredients) == 1
+    assert stored_foreign.ingredients[0].food_item_id == foreign_food.id
 
 
 def test_repeated_confirmed_delete_returns_existing_not_found_semantics(

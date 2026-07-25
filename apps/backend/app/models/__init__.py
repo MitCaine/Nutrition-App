@@ -18,6 +18,10 @@ from app.models.recipe_publication import (
 from app.models.user import User, UserProfile
 from app.models.target import NutritionTarget
 
+# Import after all mapped tables exist so SQLite can attach the bounded
+# immutable-provenance trigger DDL to the shared metadata.
+from app.operators import immutable_provenance_sqlite as _immutable_provenance_sqlite  # noqa: F401, E402
+
 __all__ = [
     "DailyLog",
     "CreateOperationIdempotency",

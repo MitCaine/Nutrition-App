@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
@@ -75,7 +77,7 @@ def test_saved_view_conservatively_excludes_partial_recipe_markers(
     assert detail.json()["detail"]["code"] == "recipe_projection_integrity_invalid"
 
 
-def test_foreign_recipe_backlink_does_not_hide_or_reclassify_user_food(
+def test_foreign_recipe_backlink_is_rejected_without_reclassifying_user_food(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -90,7 +92,9 @@ def test_foreign_recipe_backlink_does_not_hide_or_reclassify_user_food(
         published_food_item_id=UUID(own["id"]),
     )
     db_session.add(foreign_recipe)
-    db_session.commit()
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
     assert _ids(client.get("/api/v1/foods", params={"view": "saved"})) == {own["id"]}
     detail = client.get(f"/api/v1/foods/{own['id']}/resolved-nutrition")

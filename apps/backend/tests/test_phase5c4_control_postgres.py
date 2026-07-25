@@ -59,6 +59,7 @@ POSTGRES_URL = os.getenv(
 )
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 CONTROL_LOCK_ID = 5_542_043
+HISTORICAL_CONTROL_HEAD = "ops_0004_phase5c4_admission"
 
 
 @dataclass(frozen=True)
@@ -297,7 +298,11 @@ def control_database() -> ControlDatabase:
             ).render_as_string(hide_password=False)
             for role in roles.LOGIN_ROLES
         }
-        migrated = _run_alembic(role_urls[roles.MIGRATOR_ROLE], "upgrade", "head")
+        migrated = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            HISTORICAL_CONTROL_HEAD,
+        )
         assert migrated.returncode == 0, migrated.stderr
         audit = create_engine(
             role_urls[roles.AUDIT_ROLE],
@@ -408,7 +413,11 @@ def control_database() -> ControlDatabase:
                 )
         finally:
             audit.dispose()
-        one_revision_up = _run_alembic(role_urls[roles.MIGRATOR_ROLE], "upgrade", "head")
+        one_revision_up = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            HISTORICAL_CONTROL_HEAD,
+        )
         assert one_revision_up.returncode == 0, one_revision_up.stderr
         with admin.connect() as connection:
             assert (
@@ -449,7 +458,11 @@ def control_database() -> ControlDatabase:
             audit.dispose()
         empty_downgrade = _run_alembic(role_urls[roles.MIGRATOR_ROLE], "downgrade", "base")
         assert empty_downgrade.returncode == 0, empty_downgrade.stderr
-        remigrated = _run_alembic(role_urls[roles.MIGRATOR_ROLE], "upgrade", "head")
+        remigrated = _run_alembic(
+            role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            HISTORICAL_CONTROL_HEAD,
+        )
         assert remigrated.returncode == 0, remigrated.stderr
         yield ControlDatabase(database_name, admin_url, role_urls)
     finally:

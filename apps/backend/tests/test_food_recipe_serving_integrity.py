@@ -7,13 +7,16 @@ from uuid import UUID, uuid4
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import inspect, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.food import ServingDefinition
 from app.models.food import FoodItem
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.user import User
+from app.services.food_service import FoodService
 
 
 integrity_migration = import_module(
@@ -313,7 +316,7 @@ def test_sqlite_migration_repairs_multiple_defaults_and_round_trips_indexes(
         integrity_migration.upgrade()
 
 
-def test_foreign_parent_dependency_is_not_exposed_or_mutated(
+def test_foreign_parent_dependency_is_rejected_before_food_mutation(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -325,6 +328,7 @@ def test_foreign_parent_dependency_is_not_exposed_or_mutated(
     foreign_recipe = Recipe(id=uuid4(), user_id=foreign_user.id, name="Secret Recipe")
     foreign_ingredient = RecipeIngredient(
         id=uuid4(),
+        user_id=foreign_user.id,
         recipe=foreign_recipe,
         food_item_id=UUID(food["id"]),
         position=0,
@@ -334,7 +338,10 @@ def test_foreign_parent_dependency_is_not_exposed_or_mutated(
         resolved_gram_amount=Decimal("30"),
     )
     db_session.add_all([foreign_recipe, foreign_ingredient])
-    db_session.commit()
+    foreign_ingredient_id = foreign_ingredient.id
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
     response = client.patch(
         f"/api/v1/foods/{food['id']}",
@@ -351,15 +358,61 @@ def test_foreign_parent_dependency_is_not_exposed_or_mutated(
         },
     )
 
+    assert response.status_code == 200, response.text
+    assert "Secret Recipe" not in response.text
+    assert db_session.get(RecipeIngredient, foreign_ingredient_id) is None
+
+
+def test_loaded_foreign_parent_dependency_is_not_exposed_or_mutated(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    food = _two_serving_food(client)
+    food_id = UUID(food["id"])
+    before = tuple(
+        (row.id, row.label, row.quantity, row.unit, row.gram_weight, row.is_default)
+        for row in db_session.get(FoodItem, food_id).serving_definitions
+    )
+    foreign_user = User(id=uuid4(), email=f"foreign-read-{uuid4()}@example.test")
+    db_session.add(foreign_user)
+    db_session.flush()
+    foreign_recipe = Recipe(id=uuid4(), user_id=foreign_user.id, name="Secret Recipe")
+    db_session.add(foreign_recipe)
+    db_session.commit()
+
+    def report_foreign_dependency(
+        _service: FoodService,
+        user_id: UUID,
+        candidate_food_id: UUID,
+    ) -> bool:
+        assert candidate_food_id == food_id
+        assert user_id != foreign_user.id
+        return True
+
+    monkeypatch.setattr(FoodService, "_has_foreign_dependencies", report_foreign_dependency)
+    response = client.patch(
+        f"/api/v1/foods/{food_id}",
+        json={
+            "serving_definitions": [
+                {
+                    "label": "Cup",
+                    "quantity": "1",
+                    "unit": "cup",
+                    "gram_weight": "100",
+                    "is_default": True,
+                }
+            ]
+        },
+    )
+
     assert response.status_code == 409
-    assert response.json()["detail"] == {
-        "code": "food_dependencies_unstable",
-        "message": (
-            "Food dependencies changed repeatedly during this operation. "
-            "Try again when Recipe edits are complete."
-        ),
-    }
+    assert response.json()["detail"]["code"] == "food_dependencies_unstable"
     assert "Secret Recipe" not in response.text
     db_session.expire_all()
-    stored = db_session.get(RecipeIngredient, foreign_ingredient.id)
-    assert stored.serving_definition_id == UUID(selected["id"])
+    stored = db_session.get(FoodItem, food_id)
+    assert tuple(
+        (row.id, row.label, row.quantity, row.unit, row.gram_weight, row.is_default)
+        for row in stored.serving_definitions
+    ) == before
+    assert db_session.get(Recipe, foreign_recipe.id).deleted_at is None

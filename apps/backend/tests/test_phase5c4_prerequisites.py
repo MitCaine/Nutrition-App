@@ -310,7 +310,8 @@ def test_valid_projection_is_exact_and_does_not_extend_receipt_v1() -> None:
     assert projection["event_chain_digest"] == prerequisites.events[-1]["event_digest"]
     assert QUALIFICATION_FAILURE_CODES <= _FAILURE_CODES
     assert len(QUALIFICATION_FAILURE_CODES) == 9
-    assert len(READINESS_REASONS) == 13
+    assert len(READINESS_REASONS) == 15
+    assert "resource_membership_integrity_invalid" in READINESS_REASONS
 
 
 def test_local_admission_contract_is_exact_bounded_and_strict() -> None:

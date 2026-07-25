@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
@@ -292,6 +293,12 @@ def test_recipe_log_rejects_missing_revision_projection_or_amount_mapping(
         food.recipe_publication_revision_id = None
     else:
         serving.label = "No matching immutable amount"
+    if break_integrity in {"active", "projection"}:
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+        db_session.rollback()
+        assert db_session.scalar(select(func.count(DailyLog.id))) == 0
+        return
     db_session.commit()
 
     response = _post_log(

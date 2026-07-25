@@ -13,21 +13,32 @@ from app.core.database_identity import database_connect_args
 from app.operators.phase5c_contracts import canonical_json
 from app.operators.phase5c4_roles import (
     Phase5C4RoleError,
+    SUPPORTED_ROLE_POLICY_REVISIONS,
+    build_revision_privilege_manifest,
     close_runtime_maintenance,
     provision_role_policy,
     qualify_source_role_policy,
+    refresh_legacy_0018_maintenance_policy,
     restore_runtime_privileges,
     serialize_privilege_manifest,
     serialize_source_eligibility,
 )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Provision or inspect the bounded Stage 5C4.2a PostgreSQL role policy."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("manifest", help="Print the canonical privilege manifest.")
+    manifest = subparsers.add_parser(
+        "manifest",
+        help="Print the canonical privilege manifest.",
+    )
+    manifest.add_argument(
+        "--revision",
+        choices=SUPPORTED_ROLE_POLICY_REVISIONS,
+        default=SUPPORTED_ROLE_POLICY_REVISIONS[0],
+    )
 
     provision = subparsers.add_parser(
         "provision", help="Provision a disposable database using the bootstrap administrator."
@@ -43,6 +54,10 @@ def parse_args() -> argparse.Namespace:
         "qualify", help="Emit canonical read-only source-eligibility evidence."
     )
     qualify.add_argument("--expected-state", choices=("normal", "maintenance"), default="normal")
+    qualify.add_argument(
+        "--policy-revision",
+        choices=SUPPORTED_ROLE_POLICY_REVISIONS,
+    )
 
     close = subparsers.add_parser(
         "close-maintenance", help="Revoke runtime writes/connect and drain sessions as operations."
@@ -55,7 +70,15 @@ def parse_args() -> argparse.Namespace:
         "restore", help="Restore only the exact runtime privilege manifest as operations."
     )
     restore.add_argument("--confirm-database", required=True)
-    return parser.parse_args()
+    refresh = subparsers.add_parser(
+        "refresh-legacy-0018-policy",
+        help=(
+            "Replace only exact legacy 0017 maintenance bodies on an otherwise "
+            "qualified 0018 database."
+        ),
+    )
+    refresh.add_argument("--confirm-database", required=True)
+    return parser.parse_args(argv)
 
 
 def _database_url() -> str:
@@ -89,13 +112,23 @@ def _confirm_database(engine, expected: str) -> None:
 def main() -> None:
     args = parse_args()
     if args.command == "manifest":
-        sys.stdout.write(serialize_privilege_manifest() + "\n")
+        sys.stdout.write(
+            serialize_privilege_manifest(
+                build_revision_privilege_manifest(args.revision)
+            )
+            + "\n"
+        )
         return
 
     engine = None
     try:
         engine = _engine(_database_url())
-        if args.command in {"provision", "close-maintenance", "restore"}:
+        if args.command in {
+            "provision",
+            "close-maintenance",
+            "restore",
+            "refresh-legacy-0018-policy",
+        }:
             _confirm_database(engine, args.confirm_database)
         if args.command == "provision":
             output = serialize_source_eligibility(
@@ -110,6 +143,7 @@ def main() -> None:
                     qualify_source_role_policy(
                         connection,
                         expected_state=args.expected_state,
+                        policy_revision=args.policy_revision,
                     )
                 )
         elif args.command == "close-maintenance":
@@ -119,6 +153,10 @@ def main() -> None:
                     quiet_period_seconds=args.quiet_period_seconds,
                     drain_timeout_seconds=args.drain_timeout_seconds,
                 )
+            )
+        elif args.command == "refresh-legacy-0018-policy":
+            output = canonical_json(
+                refresh_legacy_0018_maintenance_policy(engine)
             )
         else:
             output = canonical_json(restore_runtime_privileges(engine))

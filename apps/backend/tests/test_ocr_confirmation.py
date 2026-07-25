@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.food import FoodItem, OcrNutritionConfirmationTrace
 from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
@@ -330,7 +331,7 @@ def test_ordinary_manual_food_has_no_ocr_trace(client, db_session):
     ) == 0
 
 
-def test_trace_snapshot_is_not_food_resolver_authority(client, db_session):
+def test_trace_snapshot_is_immutable_and_not_food_resolver_authority(client, db_session):
     created = client.post(
         "/api/v1/ocr/nutrition-label/confirm", json=confirmation_payload()
     ).json()
@@ -348,11 +349,20 @@ def test_trace_snapshot_is_not_food_resolver_authority(client, db_session):
     )
     calories["confirmed_value"] = "999999"
     trace.trace_snapshot = changed
-    db_session.commit()
+    with pytest.raises(IntegrityError, match="phase0020_immutable_row_mutation"):
+        db_session.flush()
+    db_session.rollback()
 
-    after = client.get(
-        f"/api/v1/foods/{created['food']['id']}/resolved-nutrition"
-    )
+    # Preserve the original defensive boundary test without persisting a row
+    # shape that 0020 intentionally rejects.  A loaded legacy/corrupt object is
+    # still not a resolver input.
+    trace = db_session.get(OcrNutritionConfirmationTrace, UUID(created["trace_id"]))
+    set_committed_value(trace, "trace_snapshot", changed)
+
+    with db_session.no_autoflush:
+        after = client.get(
+            f"/api/v1/foods/{created['food']['id']}/resolved-nutrition"
+        )
     assert after.status_code == 200
     assert after.json() == before.json()
 

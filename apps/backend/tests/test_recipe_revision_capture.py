@@ -15,7 +15,6 @@ from app.dependencies.user import ensure_dev_user
 from app.models.food import FoodItem
 from app.models.recipe import Recipe
 from app.models.recipe_publication import RecipePublicationRevision
-from app.models.user import User
 from app.publication.recipe_revision import (
     apply_revision_to_projection,
     build_revision,
@@ -46,6 +45,11 @@ def _published_recipe(
 ) -> tuple[Recipe, FoodItem]:
     if runtime_publish and seed_transition_baseline:
         raise ValueError("Choose runtime publication or a seeded transition baseline")
+    if not runtime_publish and not seed_transition_baseline:
+        raise ValueError(
+            "Unrevisioned legacy publication rows are not valid in the current schema; "
+            "use _legacy_projection_scenario for read-only legacy diagnostics"
+        )
     ingredient = _per_100g_food(client, name=f"{name} ingredient")
     payload = {
         "name": name,
@@ -111,23 +115,131 @@ def _published_recipe(
             user_id=recipe.user_id,
             updated_at=datetime.now(timezone.utc),
         )
+        db.add(transient_revision)
+        db.flush()
+        projection.recipe_publication_revision_id = transient_revision.id
         db.add(projection)
-        recipe.published_food_item = projection
+        db.flush()
+        recipe.published_food_item_id = projection.id
+        recipe.active_publication_revision_id = transient_revision.id
         recipe.needs_republish = False
         recipe.updated_at = datetime.now(timezone.utc)
         db.commit()
-        if seed_transition_baseline:
-            db.add(transient_revision)
-            db.flush()
-            recipe.active_publication_revision_id = transient_revision.id
-            projection.recipe_publication_revision_id = transient_revision.id
-            db.commit()
     db.expire_all()
     recipe = db.get(Recipe, recipe_id)
     assert recipe is not None and recipe.published_food_item_id is not None
     projection = db.get(FoodItem, recipe.published_food_item_id)
     assert projection is not None
     return recipe, projection
+
+
+def _legacy_projection_scenario(
+    client: TestClient,
+    db: Session,
+    *,
+    name: str = "Captured Soup",
+    serving_count: str | None = "2",
+    cooked_grams: str | None = "400",
+) -> tuple[Recipe, FoodItem]:
+    """Build an in-memory 0018-era publication graph without corrupting the current schema."""
+    ingredient = _per_100g_food(client, name=f"{name} ingredient")
+    created = client.post(
+        "/api/v1/recipes",
+        json={
+            "name": name,
+            "notes": "published projection notes",
+            "serving_count_yield": serving_count,
+            "final_cooked_weight_grams": cooked_grams,
+            "ingredients": [
+                {
+                    "food_item_id": ingredient["id"],
+                    "position": 0,
+                    "amount_quantity": "200",
+                    "amount_unit": "g",
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    recipe = db.get(Recipe, UUID(created.json()["id"]))
+    assert recipe is not None
+    service = RecipeService(db)
+    totals = service._calculate_totals(recipe)
+    per_serving = service._divide_totals(totals, recipe.serving_count_yield)
+    per_100g = service._divide_totals(
+        totals,
+        (
+            recipe.final_cooked_weight_grams / Decimal("100")
+            if recipe.final_cooked_weight_grams
+            else None
+        ),
+    )
+    transient_revision = build_revision(
+        recipe_id=recipe.id,
+        user_id=recipe.user_id,
+        revision_number=1,
+        creation_origin=CAPTURE_ORIGIN,
+        provenance_confidence=CAPTURE_CONFIDENCE,
+        content=content_from_recipe_output(
+            published_name=recipe.name,
+            published_notes=recipe.notes,
+            serving_count_yield=recipe.serving_count_yield,
+            final_cooked_weight_grams=recipe.final_cooked_weight_grams,
+            per_serving=per_serving,
+            per_100g=per_100g,
+        ),
+    )
+    projection = FoodItem(
+        id=uuid4(),
+        user_id=recipe.user_id,
+        name=recipe.name,
+        source_type="recipe",
+        source_id=str(recipe.id),
+        is_recipe=True,
+    )
+    projection_time = datetime.now(timezone.utc)
+    apply_revision_to_projection(
+        projection,
+        transient_revision,
+        recipe_id=recipe.id,
+        user_id=recipe.user_id,
+        updated_at=projection_time,
+    )
+
+    # Detaching the Recipe lets the retired inspector assess an authentic legacy
+    # object shape without attempting to persist a row forbidden by 0019.
+    db.expunge(recipe)
+    recipe.published_food_item_id = projection.id
+    recipe.active_publication_revision_id = None
+    recipe.needs_republish = False
+    recipe.updated_at = projection_time
+    return recipe, projection
+
+
+def _legacy_capture_service(
+    db: Session,
+    recipe: Recipe,
+    projection: FoodItem,
+) -> RecipeRevisionCaptureService:
+    service = RecipeRevisionCaptureService(db)
+    service._load_recipe = lambda recipe_id: recipe if recipe_id == recipe.id else None
+    service._load_projection = lambda food_id, user_id: (
+        projection
+        if food_id == projection.id and user_id == projection.user_id
+        else None
+    )
+    service._source_matches = lambda candidate: (
+        [projection]
+        if (
+            candidate.id == recipe.id
+            and projection.user_id == candidate.user_id
+            and projection.source_type == "recipe"
+            and projection.source_id == str(candidate.id)
+        )
+        else []
+    )
+    service.revisions.list_for_recipe = lambda _recipe_id, _user_id: []
+    return service
 
 
 def _revision_count(db: Session) -> int:
@@ -138,7 +250,7 @@ def test_dry_run_report_is_stable_and_executes_no_database_writes(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    eligible, projection = _published_recipe(client, db_session)
+    eligible, projection = _legacy_projection_scenario(client, db_session)
     user = ensure_dev_user(db_session)
     unpublished = Recipe(id=uuid4(), user_id=user.id, name="Draft")
     db_session.add(unpublished)
@@ -152,7 +264,10 @@ def test_dry_run_report_is_stable_and_executes_no_database_writes(
 
     event.listen(db_session.bind, "before_cursor_execute", record_database_write)
     try:
-        service = RecipeRevisionCaptureService(db_session)
+        service = _legacy_capture_service(db_session, eligible, projection)
+        service._load_recipe = lambda recipe_id: (
+            eligible if recipe_id == eligible.id else db_session.get(Recipe, recipe_id)
+        )
         first = service.capture_all()
         second = service.capture_all()
     finally:
@@ -174,37 +289,35 @@ def test_dry_run_report_is_stable_and_executes_no_database_writes(
     assert not db_session.dirty
     assert not db_session.deleted
     assert _revision_count(db_session) == 0
-    db_session.refresh(eligible)
-    db_session.refresh(projection)
     assert eligible.active_publication_revision_id is None
     assert projection.recipe_publication_revision_id is None
+    persisted_recipe = db_session.get(Recipe, eligible.id)
+    assert persisted_recipe is not None
+    assert persisted_recipe.published_food_item_id is None
+    assert db_session.get(FoodItem, projection.id) is None
 
 
 def test_dry_run_preserves_stale_draft_and_classifies_projection_content(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session, name="Published Name")
-    response = client.patch(
-        f"/api/v1/recipes/{recipe.id}",
-        json={"name": "Unpublished Draft Name", "notes": "draft notes"},
-    )
-    assert response.status_code == 200
+    recipe, projection = _legacy_projection_scenario(client, db_session, name="Published Name")
+    recipe.name = "Unpublished Draft Name"
+    recipe.notes = "draft notes"
+    recipe.needs_republish = True
+    recipe.updated_at = datetime.now(timezone.utc)
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
+    result = _legacy_capture_service(db_session, recipe, projection).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.STALE_ELIGIBLE
     assert result.stale_state_preserved is True
     assert result.captured is False
     assert _revision_count(db_session) == 0
-    db_session.expire_all()
-    refreshed_recipe = db_session.get(Recipe, recipe.id)
-    refreshed_projection = db_session.get(FoodItem, projection.id)
-    assert refreshed_recipe.name == "Unpublished Draft Name"
-    assert refreshed_recipe.notes == "draft notes"
-    assert refreshed_recipe.needs_republish is True
-    assert refreshed_projection.name == "Published Name"
-    assert refreshed_projection.notes == "published projection notes"
+    assert recipe.name == "Unpublished Draft Name"
+    assert recipe.notes == "draft notes"
+    assert recipe.needs_republish is True
+    assert projection.name == "Published Name"
+    assert projection.notes == "published projection notes"
 
 
 def test_dry_run_classifies_unpublished_and_deleted_recipes_without_writes(
@@ -231,15 +344,13 @@ def test_dry_run_reports_deleted_projection_without_reactivating_it(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
+    recipe, projection = _legacy_projection_scenario(client, db_session)
     projection.deleted_at = datetime.now(timezone.utc)
-    db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
+    result = _legacy_capture_service(db_session, recipe, projection).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.DELETED_PROJECTION
     assert result.captured is False
-    db_session.refresh(projection)
     assert projection.deleted_at is not None
     assert recipe.active_publication_revision_id is None
     assert _revision_count(db_session) == 0
@@ -250,8 +361,8 @@ def test_dry_run_reports_missing_projection_without_fabricating_history(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    recipe, _projection = _published_recipe(client, db_session)
-    service = RecipeRevisionCaptureService(db_session)
+    recipe, projection = _legacy_projection_scenario(client, db_session)
+    service = _legacy_capture_service(db_session, recipe, projection)
     monkeypatch.setattr(service, "_load_projection", lambda _food_id, _user_id: None)
 
     result = service.capture_one(recipe.id)
@@ -266,19 +377,14 @@ def test_dry_run_reports_inconsistent_projection_linkage(
     db_session: Session,
     inconsistency: str,
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
+    recipe, projection = _legacy_projection_scenario(client, db_session)
     if inconsistency == "owner":
-        other = User(id=uuid4(), email=f"other-{uuid4()}@example.test")
-        db_session.add(other)
-        db_session.flush()
-        projection.user_id = other.id
+        projection.user_id = uuid4()
     elif inconsistency == "source_type":
         projection.source_type = "manual"
     else:
         projection.source_id = str(uuid4())
-    db_session.commit()
-
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
+    result = _legacy_capture_service(db_session, recipe, projection).capture_one(recipe.id)
 
     assert result.category == (
         CaptureCategory.MISSING_PROJECTION
@@ -293,11 +399,10 @@ def test_dry_run_reports_ambiguous_independent_projection_edit(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
+    recipe, projection = _legacy_projection_scenario(client, db_session)
     projection.serving_definitions[0].source = "manual"
-    db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
+    result = _legacy_capture_service(db_session, recipe, projection).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.AMBIGUOUS
     assert result.captured is False
@@ -310,12 +415,11 @@ def test_dry_run_reports_invalid_projection_without_creating_revision(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    recipe, projection = _published_recipe(client, db_session)
+    recipe, projection = _legacy_projection_scenario(client, db_session)
     for serving in projection.serving_definitions:
         serving.is_default = False
-    db_session.commit()
 
-    result = RecipeRevisionCaptureService(db_session).capture_one(recipe.id)
+    result = _legacy_capture_service(db_session, recipe, projection).capture_one(recipe.id)
 
     assert result.category == CaptureCategory.FAILED_VALIDATION
     assert result.captured is False

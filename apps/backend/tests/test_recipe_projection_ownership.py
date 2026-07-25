@@ -3,11 +3,15 @@ from __future__ import annotations
 from copy import deepcopy
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.food import FoodItem
 from app.models.recipe import Recipe
+from app.services.food_service import FoodService
 from tests.test_recipe_revision_logging import _post_log, _published
 from tests.test_stage2_foods import create_food
 
@@ -208,16 +212,43 @@ def test_projection_duplicate_is_independent_manual_food_across_republish(
     ] == before_nutrients
 
 
-def test_inconsistent_recipe_projection_fails_conservatively(
+def test_inconsistent_recipe_projection_update_is_rejected_by_database(
     client: TestClient,
     db_session: Session,
 ) -> None:
     recipe_id, food_data = _published(client)
     projection = db_session.get(FoodItem, UUID(food_data["id"]))
-    projection.recipe_publication_revision_id = None
-    db_session.commit()
     before = _projection_state(projection)
+    projection.recipe_publication_revision_id = None
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
+    db_session.expire_all()
+    assert _projection_state(db_session.get(FoodItem, projection.id)) == before
+    assert db_session.get(Recipe, recipe_id).active_publication_revision_id == before[7]
+
+
+def test_loaded_inconsistent_recipe_projection_fails_conservatively(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_id, food_data = _published(client)
+    projection = db_session.get(FoodItem, UUID(food_data["id"]))
+    before = _projection_state(projection)
+    set_committed_value(projection, "recipe_publication_revision_id", None)
+
+    def corrupted_graph(
+        _service: FoodService,
+        user_id: UUID,
+        food_id: UUID,
+    ) -> tuple[FoodItem, list[Recipe]]:
+        assert user_id == projection.user_id
+        assert food_id == projection.id
+        return projection, []
+
+    monkeypatch.setattr(FoodService, "_lock_food_dependency_graph", corrupted_graph)
     response = client.patch(
         f"/api/v1/foods/{projection.id}",
         json={"name": "Silent Manual Conversion"},
@@ -229,7 +260,7 @@ def test_inconsistent_recipe_projection_fails_conservatively(
         "message": "This food appears to be generated from a Recipe, but its ownership links are inconsistent. Republish the Recipe or repair the projection before changing it.",
         "food_item_id": str(projection.id),
         "recipe_id": str(recipe_id),
-        "food_name": projection.name,
+        "food_name": before[0],
         "operation": "update",
     }
     db_session.expire_all()

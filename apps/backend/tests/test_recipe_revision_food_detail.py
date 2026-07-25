@@ -3,8 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.dependencies.user import ensure_dev_user
 from app.models.food import FoodItem
@@ -118,14 +121,41 @@ def test_republish_switches_detail_authority_without_mutating_old_revision(
     ) == old_revision_state
 
 
-def test_partial_recipe_markers_fail_resolved_detail_conservatively(
+def test_partial_recipe_markers_are_rejected_before_resolved_detail(
     client: TestClient,
     db_session: Session,
 ) -> None:
     recipe_id, food = _published(client)
     projection = db_session.get(FoodItem, UUID(food["id"]))
     projection.recipe_publication_revision_id = None
-    db_session.commit()
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+    response = client.get(f"/api/v1/foods/{food['id']}/resolved-nutrition")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["recipe_id"] == str(recipe_id)
+
+
+def test_loaded_partial_recipe_markers_fail_resolved_detail_conservatively(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_id, food = _published(client)
+    projection = db_session.get(FoodItem, UUID(food["id"]))
+    recipe = db_session.get(Recipe, recipe_id)
+    revision = RecipePublicationRepository(db_session).get_required(
+        recipe.active_publication_revision_id,
+        recipe.user_id,
+    )
+    set_committed_value(projection, "recipe_publication_revision_id", None)
+    monkeypatch.setattr(
+        FoodService,
+        "_food_detail_authorities",
+        lambda _self, _user_id, _food_id: (projection, recipe, revision),
+    )
 
     response = client.get(f"/api/v1/foods/{food['id']}/resolved-nutrition")
 
@@ -138,6 +168,11 @@ def test_partial_recipe_markers_fail_resolved_detail_conservatively(
         "food_name": projection.name,
         "operation": "read",
     }
+    db_session.rollback()
+    assert (
+        db_session.get(FoodItem, UUID(food["id"])).recipe_publication_revision_id
+        == revision.id
+    )
 
 
 def test_cross_user_recipe_linkage_is_rejected(

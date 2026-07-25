@@ -14,6 +14,11 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from app.catalog.nutrients import nutrient_seed_rows
 from app.core.database import Base
 from app.models.nutrient import Nutrient
+from app.operators.immutable_provenance_postgres import (
+    POSTGRES_SCHEMA_SESSION_INFO_KEY,
+    snapshot_replacement_acl_sql,
+    snapshot_replacement_function_sql,
+)
 
 
 REQUIRE_POSTGRES_TESTS_ENV = "REQUIRE_POSTGRES_TESTS"
@@ -63,7 +68,29 @@ def isolated_postgres_session_factory(
         for table in Base.metadata.tables.values():
             table.to_metadata(isolated_metadata)
         isolated_metadata.create_all(engine)
-        factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        with engine.begin() as connection:
+            fixture_role = connection.scalar(text("SELECT session_user"))
+            if not isinstance(fixture_role, str) or not fixture_role:
+                raise RuntimeError("PostgreSQL fixture session user is unavailable")
+            connection.execute(
+                text(
+                    snapshot_replacement_function_sql(
+                        schema=schema,
+                        authorized_session_users=(fixture_role,),
+                    )
+                )
+            )
+            for statement in snapshot_replacement_acl_sql(
+                schema=schema,
+                owner=fixture_role,
+            ):
+                connection.execute(text(statement))
+        factory = sessionmaker(
+            bind=engine,
+            autoflush=False,
+            autocommit=False,
+            info={POSTGRES_SCHEMA_SESSION_INFO_KEY: schema},
+        )
         with factory() as db:
             db.add_all([Nutrient(**row) for row in nutrient_seed_rows()])
             db.commit()

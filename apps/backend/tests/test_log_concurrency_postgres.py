@@ -11,13 +11,13 @@ import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import func, inspect, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app import models  # noqa: F401
 from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
 from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.food import OcrNutritionConfirmationTrace
-from app.models.log import DailyLog
+from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User, UserProfile
@@ -36,6 +36,7 @@ from app.schemas.food import FoodCreateRequest, FoodUpdateRequest, ServingDefini
 from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.schemas.target import TargetConfigurationUpdate
 from app.services.log_service import LogService
+from app.repositories.log_repository import LogRepository
 from app.services.food_service import FoodService
 from app.services.recipe_service import (
     RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT,
@@ -266,6 +267,58 @@ def _manual_create_target(factory) -> tuple:
         db.add(food)
         db.commit()
         return user.id, food.id, serving.id
+
+
+def test_snapshot_replacement_routine_rejects_wrong_owner_and_is_targeted(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    first_user_id, first_log_id = _manual_log(factory)
+    second_user_id, second_log_id = _manual_log(factory)
+
+    with factory() as db:
+        before_second = tuple(
+            db.execute(
+                select(
+                    DailyLogNutrientSnapshot.id,
+                    DailyLogNutrientSnapshot.amount,
+                    DailyLogNutrientSnapshot.consumed_amount_quantity,
+                    DailyLogNutrientSnapshot.calculation_metadata,
+                ).where(DailyLogNutrientSnapshot.daily_log_id == second_log_id)
+            ).all()
+        )
+        with pytest.raises(DBAPIError) as caught:
+            LogRepository(db).delete_snapshots(first_log_id, second_user_id)
+        assert getattr(caught.value.orig, "sqlstate", None) == "P0027"
+        db.rollback()
+
+        LogService(db).update_log(
+            first_user_id,
+            first_log_id,
+            DailyLogUpdateRequest(amount_quantity=Decimal("2")),
+        )
+
+    with factory() as db:
+        first_amounts = tuple(
+            db.scalars(
+                select(DailyLogNutrientSnapshot.amount).where(
+                    DailyLogNutrientSnapshot.daily_log_id == first_log_id
+                )
+            ).all()
+        )
+        after_second = tuple(
+            db.execute(
+                select(
+                    DailyLogNutrientSnapshot.id,
+                    DailyLogNutrientSnapshot.amount,
+                    DailyLogNutrientSnapshot.consumed_amount_quantity,
+                    DailyLogNutrientSnapshot.calculation_metadata,
+                ).where(DailyLogNutrientSnapshot.daily_log_id == second_log_id)
+            ).all()
+        )
+
+    assert first_amounts == (Decimal("200"),)
+    assert after_second == before_second
 
 
 def _target_payload(
@@ -1030,6 +1083,7 @@ def test_food_dependency_set_change_restarts_before_mutation(postgres_sessions) 
         db.add(
             RecipeIngredient(
                 id=uuid4(),
+                user_id=parent.user_id,
                 recipe_id=parent.id,
                 food_item_id=food_id,
                 position=0,

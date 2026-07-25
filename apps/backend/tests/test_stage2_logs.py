@@ -3,6 +3,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.dependencies.user import ensure_dev_user
 from app.models.log import DailyLog
@@ -350,10 +351,13 @@ def test_older_log_without_food_name_snapshot_still_serializes(client: TestClien
     ).json()
     db_log = db_session.get(DailyLog, log["id"])
     assert db_log is not None
-    db_log.food_name_snapshot = None
-    db_session.commit()
+    # Exercise the legacy read shape without mutating a 0020-protected row.
+    set_committed_value(db_log, "food_name_snapshot", None)
 
-    historical = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()["logs"][0]
+    with db_session.no_autoflush:
+        historical = client.get("/api/v1/logs", params={"date": "2026-07-08"}).json()[
+            "logs"
+        ][0]
     assert historical["food_name_snapshot"] is None
 
 

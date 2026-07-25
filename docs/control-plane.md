@@ -46,6 +46,7 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Stage 5C4.2 | Least-privilege application roles, local target identity/write fence, canary prerequisites | `production-hardening-phase5c4.2a.md`, migration 0018 |
 | Stage 5C4.3 | Independent control DB, immutable evidence/events, leases/outbox, MinIO anchoring, gate API | ops migrations 0001–0003 |
 | Stage 5C4.4 | Collector-authored source observations and semantic admission/performance decisions | ops migration 0004 and admission modules |
+| Resource membership 0019 | Database-enforced ownership/membership, read-only corruption inventory, and distinct current-schema admission | `production-hardening-resource-membership.md`, application migration 0019, ops migration 0005 |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
@@ -119,6 +120,17 @@ collector cannot admit or advance attempts; the executor cannot author registere
 Application migration `0018_phase5c_promotion_prerequisites` adds target identity, append-only fence
 events, a validated fence projection, database write-fence triggers, schema/role admission readers,
 and immutability hardening without changing domain data.
+
+Application migration `0019_resource_membership_integrity` retains those historical prerequisites
+and adds database-enforced ownership and child-membership constraints. Its operator preflight,
+closed-fence and drained-runtime requirements, qualification boundary, and forward-only recovery
+rules are in [Database-Enforced Resource Membership](production-hardening-resource-membership.md).
+
+Application migration `0020_immutable_provenance_enforcement` carries that exact constraint
+contract forward and adds immutable publication/OCR guards, guarded Daily Log snapshot replacement,
+current local admission v3, and independent immutable-provenance qualification. Control revision
+`ops_0006_immutable_provenance` admits only that exact versioned artifact. See
+[Immutable Historical Provenance](production-hardening-immutable-provenance.md).
 
 The local database fence is defense in depth. It prevents ordinary runtime DML unless the target is
 in the allowed production state and turns its SQLSTATE into a bounded API 503. It does not decide
@@ -220,8 +232,8 @@ cutover are later work.
 
 Therefore:
 
-- the application 0018 trigger remains the active local write-fence prerequisite;
-- canary startup validates local application-database state only;
+- the application trigger introduced by 0018 remains the active local write-fence prerequisite;
+- normal runtime readiness and canary startup validate the current 0020 local-admission state only;
 - control admission does not by itself route traffic or enable production writes;
 - no documentation should claim a completed production cutover pipeline.
 
@@ -232,13 +244,15 @@ Therefore:
 | Historical inventory/bridge/plan/conversion/qualification | `app/operators/historical_*`, `scripts/*historical*` |
 | Canonical contracts | `app/operators/phase5c*_contracts.py` |
 | Application role policy | `phase5c4_roles.py`, `phase5c4_prerequisites.py`, role-management script |
-| Application fence prerequisites | migration `0018_phase5c_promotion_prerequisites.py` |
+| Application fence, membership, and immutable-provenance prerequisites | migrations `0018_phase5c_promotion_prerequisites.py` through `0020_immutable_provenance_enforcement.py` |
 | Control role policy | `phase5c4_control_roles.py`, `manage_phase5c4_control_roles.py` |
 | Evidence collection and WORM delivery | `phase5c4_control_evidence.py`, `phase5c4_minio.py` |
 | Python control client | `phase5c4_control.py` |
-| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0004` |
+| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0006` |
 | Admission rules | `phase5c4_admission.py`, `phase5c_performance_contracts.py`, ops 0004 |
-| Qualification | control migration routines and `test_phase5c4_control_postgres.py` |
+| Current resource-membership operations | `resource_membership_*` operator modules, preflight script, and the 0019 runbook |
+| Current immutable-provenance operations | `immutable_provenance_*` operator modules, qualification script, and the 0020 runbook |
+| Qualification | control migration routines, resource-membership and immutable-provenance qualification, and PostgreSQL qualification tests |
 
 Always follow the SQL routine and role grant reached by a Python wrapper. The wrapper alone does not
 prove the transaction or authority boundary.

@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.food import FoodItem
@@ -393,7 +394,7 @@ def test_soft_deleted_projection_is_not_resurrected_during_republish(
     assert recipe.published_food_item_id == new_projection.id
 
 
-def test_unrelated_legacy_projection_is_not_reused_or_mutated(
+def test_unrelated_food_cannot_be_installed_as_a_publication_projection(
     client: TestClient, db_session: Session
 ) -> None:
     recipe_id = _create_recipe(client)
@@ -407,14 +408,23 @@ def test_unrelated_legacy_projection_is_not_reused_or_mutated(
         is_recipe=False,
     )
     db_session.add(unrelated)
-    db_session.flush()
-    recipe.published_food_item_id = unrelated.id
     db_session.commit()
+    unrelated_id = unrelated.id
+    recipe.published_food_item_id = unrelated.id
+
+    with pytest.raises(IntegrityError, match="ck_recipes_publication_links_paired"):
+        db_session.commit()
+    db_session.rollback()
+
+    db_session.expire_all()
+    recipe = db_session.get(Recipe, recipe_id)
+    assert recipe.published_food_item_id is None
+    assert recipe.active_publication_revision_id is None
 
     response = _publish(client, recipe_id)
 
     db_session.expire_all()
-    unrelated = db_session.get(FoodItem, unrelated.id)
+    unrelated = db_session.get(FoodItem, unrelated_id)
     recipe = db_session.get(Recipe, recipe_id)
     projection = db_session.get(FoodItem, UUID(response["food"]["id"]))
     assert projection.id != unrelated.id

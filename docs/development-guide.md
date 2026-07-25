@@ -172,8 +172,12 @@ Use `NUTRITION_DATABASE_URL` explicitly. Review both a fresh upgrade and the old
 populated path.
 
 Migration 0004 refuses populated legacy Recipe state by design. Migrations 0015–0017 support the
-offline historical bridge/converter, and 0018 adds promotion prerequisites. Read the corresponding
-Phase 5 record before touching them.
+offline historical bridge/converter, 0018 adds promotion prerequisites, and 0019 adds
+database-enforced ownership and resource membership. Read the corresponding Phase 5 record before
+touching them. For 0019 operations, follow the
+[resource-membership runbook](production-hardening-resource-membership.md); its preflight is
+read-only, the application migration requires a closed fence and drained runtime, and the revision
+is forward-only.
 
 ### Control migrations
 

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
@@ -279,7 +280,7 @@ def test_ambiguous_equivalent_successors_abort_publication(
     assert response.json()["detail"]["code"] == "recipe_publication_parent_amount_conflict"
 
 
-def test_foreign_owner_parent_is_neither_reported_nor_changed(
+def test_foreign_owner_parent_is_rejected_and_not_reported(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -293,6 +294,7 @@ def test_foreign_owner_parent_is_neither_reported_nor_changed(
     foreign_parent.ingredients.append(
         RecipeIngredient(
             id=uuid4(),
+            user_id=owner.id,
             food_item_id=UUID(child_food["id"]),
             position=0,
             amount_quantity=Decimal("1"),
@@ -302,7 +304,10 @@ def test_foreign_owner_parent_is_neither_reported_nor_changed(
         )
     )
     db_session.add(foreign_parent)
-    db_session.commit()
+    foreign_parent_id = foreign_parent.id
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
     changed = client.patch(
         f"/api/v1/recipes/{child_id}", json={"final_cooked_weight_grams": "600"}
     )
@@ -313,10 +318,7 @@ def test_foreign_owner_parent_is_neither_reported_nor_changed(
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["affected_recipes"][0]["recipe_id"] == visible["id"]
     assert "Secret Parent" not in response.text
-    db_session.expire_all()
-    stored = db_session.get(Recipe, foreign_parent.id)
-    assert stored.ingredients[0].serving_definition_id == UUID(selected["id"])
-    assert stored.needs_republish is False
+    assert db_session.get(Recipe, foreign_parent_id) is None
 
 
 def test_dependency_change_restarts_with_complete_recipe_lock_set(

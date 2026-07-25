@@ -9,13 +9,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
+from app.models.food import FoodItem
 from app.models.log import DailyLog
 from app.models.recipe import Recipe
 from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
-from tests.test_recipe_revision_capture import _published_recipe as _legacy_published_recipe
 from tests.test_recipe_revision_logging import _post_log, _published, _stored_log
 
 
@@ -428,6 +428,13 @@ def test_manual_log_edit_context_preserves_compatibility_contract(
         "selected_amount_definition_id": None,
         "amount_choices": [],
     }
+    edited = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+
+    assert edited.status_code == 200, edited.text
+    updated = _stored_log(db_session, edited)
+    assert updated.recipe_publication_revision_id is None
+    assert updated.recipe_publication_amount_definition_id is None
+    assert updated.amount_quantity == Decimal("2")
 
 
 def test_missing_stored_revision_returns_structured_validation(
@@ -534,13 +541,35 @@ def test_revision_edit_failures_roll_back_all_changes(
     ) == original
 
 
-def test_legacy_recipe_log_remains_on_compatibility_edit_path(
+def test_legacy_recipe_marker_log_remains_on_compatibility_edit_path(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    recipe, projection = _legacy_published_recipe(client, db_session)
-    serving = next(value for value in projection.serving_definitions if value.is_default)
     user = ensure_dev_user(db_session)
+    recipe = Recipe(id=uuid4(), user_id=user.id, name="Legacy Recipe")
+    created_food = client.post(
+        "/api/v1/foods",
+        json={
+            "name": "Legacy Recipe Projection",
+            "serving_definitions": [
+                {
+                    "label": "1 serving",
+                    "quantity": "1",
+                    "unit": "serving",
+                    "gram_weight": "100",
+                    "is_default": True,
+                }
+            ],
+        },
+    ).json()
+    projection = db_session.get(FoodItem, UUID(created_food["id"]))
+    projection.source_type = "recipe"
+    projection.source_id = str(recipe.id)
+    projection.is_recipe = True
+    db_session.add(recipe)
+    db_session.commit()
+    serving = next(value for value in projection.serving_definitions if value.is_default)
+
     service = LogService(db_session)
     legacy = service._create_food_log(
         user.id,
@@ -560,7 +589,7 @@ def test_legacy_recipe_log_remains_on_compatibility_edit_path(
 
     assert response.status_code == 200, response.text
     updated = _stored_log(db_session, response)
-    assert recipe.active_publication_revision_id is None
+    assert db_session.get(Recipe, recipe.id).active_publication_revision_id is None
     assert updated.recipe_publication_revision_id is None
     assert updated.recipe_publication_amount_definition_id is None
     assert updated.amount_quantity == Decimal("2")

@@ -257,6 +257,9 @@ def upgrade() -> None:
     _install_gate_triggers()
     _install_grants()
     _assert_gate_coverage()
+    from app.operators.phase5c4_roles import install_revision_maintenance_policy
+
+    install_revision_maintenance_policy(op.get_bind(), revision)
 
 
 def _create_canonical_functions() -> None:
@@ -2072,3 +2075,9 @@ def downgrade() -> None:
             DROP CONSTRAINT IF EXISTS uq_phase5c_metadata_identity_binding;
         """
     )
+    from app.operators.phase5c4_roles import (
+        EXPECTED_ALEMBIC_REVISION,
+        install_revision_maintenance_policy,
+    )
+
+    install_revision_maintenance_policy(op.get_bind(), EXPECTED_ALEMBIC_REVISION)

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
@@ -319,7 +322,7 @@ def test_operator_reports_owner_unknown_orphan_revision_children(
     )
 
 
-def test_orphan_projection_is_conservative_and_cross_user_corruption_is_unsafe(
+def test_orphan_projection_is_conservative_and_cross_user_link_is_rejected(
     db_session: Session,
 ) -> None:
     owner = ensure_dev_user(db_session)
@@ -332,8 +335,6 @@ def test_orphan_projection_is_conservative_and_cross_user_corruption_is_unsafe(
         is_recipe=True,
     )
     other = User(id=uuid4(), email=f"retention-other-{uuid4()}@example.test")
-    db_session.add_all([orphan, other])
-    db_session.flush()
     cross_linked = FoodItem(
         id=uuid4(),
         user_id=owner.id,
@@ -341,8 +342,9 @@ def test_orphan_projection_is_conservative_and_cross_user_corruption_is_unsafe(
         source_type="manual",
         is_recipe=False,
     )
-    db_session.add(cross_linked)
-    db_session.flush()
+    db_session.add_all([orphan, other, cross_linked])
+    db_session.commit()
+    orphan_id = orphan.id
     foreign_recipe = Recipe(
         id=uuid4(),
         user_id=other.id,
@@ -350,18 +352,54 @@ def test_orphan_projection_is_conservative_and_cross_user_corruption_is_unsafe(
         published_food_item_id=cross_linked.id,
     )
     db_session.add(foreign_recipe)
-    db_session.commit()
+
+    with pytest.raises(IntegrityError, match="ck_recipes_publication_links_paired"):
+        db_session.commit()
+    db_session.rollback()
 
     report = RetentionAuditService(db_session).audit_operator()
-    orphan_record = _record(report, "food_projection", orphan.id)
-    foreign_record = _record(report, "food_projection", cross_linked.id)
+    orphan_record = _record(report, "food_projection", orphan_id)
 
     assert orphan_record.category == RetentionCategory.ORPHANED_INCONSISTENT
     assert "no_positive_purge_proof" in orphan_record.reason_codes
-    assert foreign_record.category == RetentionCategory.ORPHANED_INCONSISTENT
-    assert "cross_user_reference_inconsistent" in foreign_record.reason_codes
     assert not orphan_record.purge_eligible
-    assert not foreign_record.purge_eligible
+    assert db_session.get(Recipe, foreign_recipe.id) is None
+
+
+def test_loaded_cross_user_projection_link_is_classified_unsafe(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = ensure_dev_user(db_session)
+    other = User(id=uuid4(), email=f"retention-loaded-{uuid4()}@example.test")
+    cross_linked = FoodItem(
+        id=uuid4(),
+        user_id=owner.id,
+        name="Cross-linked owner food",
+        source_type="manual",
+        is_recipe=False,
+    )
+    foreign_recipe = Recipe(id=uuid4(), user_id=other.id, name="Foreign Recipe")
+    db_session.add_all([other, cross_linked, foreign_recipe])
+    db_session.commit()
+
+    service = RetentionAuditService(db_session)
+    stored_recipes = service._recipes(None)
+    synthetic_recipes = [
+        replace(row, projection_id=cross_linked.id)
+        if row.id == foreign_recipe.id
+        else row
+        for row in stored_recipes
+    ]
+    monkeypatch.setattr(service, "_recipes", lambda _owner_id: synthetic_recipes)
+
+    report = service.audit_operator()
+    record = _record(report, "food_projection", cross_linked.id)
+
+    assert record.category == RetentionCategory.ORPHANED_INCONSISTENT
+    assert "cross_user_reference_inconsistent" in record.reason_codes
+    assert record.protected
+    assert not record.purge_eligible
 
 
 def test_capture_origin_revision_is_retained_as_provenance(

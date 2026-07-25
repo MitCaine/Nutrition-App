@@ -348,21 +348,22 @@ class LogService:
         # mutable-source compatibility behavior.
         resolved = resolve_nutrition(food, amount_quantity, amount_unit, serving_definition_id)
 
-        self.logs.delete_snapshots(log.id)
-        self._apply_log_metadata(log, payload)
-        log.amount_quantity = amount_quantity
-        log.amount_unit = amount_unit
-        log.serving_definition_id = (
-            resolved.amount.serving_definition.id
-            if resolved.amount.serving_definition is not None
-            else None
-        )
-        log.gram_amount = resolved.amount.gram_amount
-        log.package_fraction = None
-        log.updated_at = datetime.now(timezone.utc)
-        log.snapshots = build_log_snapshots(food, resolved)
-        self.db.flush()
-        self._after_edit_snapshot_regeneration(log)
+        with self.logs.snapshot_replacement_scope(user_id, log.id):
+            self.logs.delete_snapshots(log.id, user_id)
+            self._apply_log_metadata(log, payload)
+            log.amount_quantity = amount_quantity
+            log.amount_unit = amount_unit
+            log.serving_definition_id = (
+                resolved.amount.serving_definition.id
+                if resolved.amount.serving_definition is not None
+                else None
+            )
+            log.gram_amount = resolved.amount.gram_amount
+            log.package_fraction = None
+            log.updated_at = datetime.now(timezone.utc)
+            log.snapshots = build_log_snapshots(food, resolved)
+            self.db.flush()
+            self._after_edit_snapshot_regeneration(log)
 
     def _update_revision_aware_log(
         self,
@@ -444,22 +445,23 @@ class LogService:
         compatibility_serving_id = (
             log.serving_definition_id if selected_amount.id == stored_amount.id else None
         )
-        self.logs.delete_snapshots(log.id)
-        self._apply_log_metadata(log, payload)
-        log.amount_quantity = resolved.entered_quantity
-        log.amount_unit = resolved.semantic_amount_mode
-        log.serving_definition_id = compatibility_serving_id
-        log.recipe_publication_amount_definition_id = selected_amount.id
-        log.gram_amount = resolved.resolved_grams
-        log.package_fraction = None
-        log.updated_at = datetime.now(timezone.utc)
-        log.snapshots = build_revision_log_snapshots(
-            log.food_item,
-            resolved,
-            compatibility_serving_id,
-        )
-        self.db.flush()
-        self._after_edit_snapshot_regeneration(log)
+        with self.logs.snapshot_replacement_scope(user_id, log.id):
+            self.logs.delete_snapshots(log.id, user_id)
+            self._apply_log_metadata(log, payload)
+            log.amount_quantity = resolved.entered_quantity
+            log.amount_unit = resolved.semantic_amount_mode
+            log.serving_definition_id = compatibility_serving_id
+            log.recipe_publication_amount_definition_id = selected_amount.id
+            log.gram_amount = resolved.resolved_grams
+            log.package_fraction = None
+            log.updated_at = datetime.now(timezone.utc)
+            log.snapshots = build_revision_log_snapshots(
+                log.food_item,
+                resolved,
+                compatibility_serving_id,
+            )
+            self.db.flush()
+            self._after_edit_snapshot_regeneration(log)
 
     def _select_revision_edit_amount(
         self,
@@ -534,7 +536,7 @@ class LogService:
         """Own the complete DailyLog deletion transaction."""
         try:
             log = self.logs.get_required(log_id, user_id)
-            self.logs.delete(log)
+            self.logs.delete(log, user_id)
             self.db.flush()
             self._after_log_delete_flush(log)
             self.db.commit()

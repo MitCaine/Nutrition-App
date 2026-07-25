@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.dependencies.user import ensure_dev_user
@@ -346,7 +347,10 @@ def test_force_delete_food_rolls_back_recipe_changes_and_food_delete_on_failure(
     assert len(retrieved_recipe.json()["ingredients"]) == 1
 
 
-def test_food_delete_does_not_expose_cross_user_recipe_references(client: TestClient, db_session: Session) -> None:
+def test_cross_user_recipe_dependency_is_rejected_before_food_delete(
+    client: TestClient,
+    db_session: Session,
+) -> None:
     from uuid import UUID
 
     from app.models.food import FoodItem
@@ -365,6 +369,7 @@ def test_food_delete_does_not_expose_cross_user_recipe_references(client: TestCl
             ingredients=[
                 RecipeIngredient(
                     id=UUID("00000000-0000-0000-0000-000000000299"),
+                    user_id=other_user_id,
                     food_item_id=food["id"],
                     position=0,
                     amount_quantity=Decimal("50"),
@@ -374,13 +379,56 @@ def test_food_delete_does_not_expose_cross_user_recipe_references(client: TestCl
             ],
         )
     )
-    db_session.commit()
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
 
     response = client.delete(f"/api/v1/foods/{food['id']}")
 
-    assert response.status_code == 409, response.text
+    assert response.status_code == 200, response.text
+    assert "Other User Recipe" not in response.text
+    assert db_session.get(
+        RecipeIngredient,
+        UUID("00000000-0000-0000-0000-000000000299"),
+    ) is None
+    assert db_session.get(FoodItem, UUID(food["id"])).deleted_at is not None
+
+
+def test_loaded_cross_user_recipe_dependency_is_not_exposed_before_food_delete(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import UUID, uuid4
+
+    from app.models.food import FoodItem
+    from app.models.recipe import Recipe
+    from app.models.user import User
+
+    food = create_food(client, "Private Food")
+    food_id = UUID(food["id"])
+    other = User(id=uuid4(), email=f"other-loaded-{uuid4()}@nutrition.local")
+    db_session.add(other)
+    db_session.flush()
+    foreign_recipe = Recipe(id=uuid4(), user_id=other.id, name="Other User Recipe")
+    db_session.add(foreign_recipe)
+    db_session.commit()
+
+    def report_foreign_dependency(
+        _service: FoodService,
+        user_id: UUID,
+        candidate_food_id: UUID,
+    ) -> bool:
+        assert candidate_food_id == food_id
+        assert user_id != other.id
+        return True
+
+    monkeypatch.setattr(FoodService, "_has_foreign_dependencies", report_foreign_dependency)
+    response = client.delete(f"/api/v1/foods/{food_id}")
+
+    assert response.status_code == 409
     assert response.json()["detail"]["code"] == "food_dependencies_unstable"
     assert "Other User Recipe" not in response.text
     db_session.expire_all()
-    assert db_session.get(RecipeIngredient, UUID("00000000-0000-0000-0000-000000000299")) is not None
-    assert db_session.get(FoodItem, UUID(food["id"])).deleted_at is None
+    assert db_session.get(FoodItem, food_id).deleted_at is None
+    assert db_session.get(Recipe, foreign_recipe.id).deleted_at is None

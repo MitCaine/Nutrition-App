@@ -2,7 +2,7 @@
 
 Alembic remains the schema authority.  This module is a separately reviewed,
 PostgreSQL-16-only bootstrap and qualification boundary: it owns no domain
-semantics and deliberately admits only the exact 0017 object surface.
+semantics and admits only explicitly versioned 0017-through-current surfaces.
 """
 
 from __future__ import annotations
@@ -16,6 +16,15 @@ from typing import Any, Iterable, Literal, Mapping
 from sqlalchemy import Connection, Engine, text
 
 from app.operators import phase5c_contracts as canonical
+from app.operators.immutable_provenance_contracts import (
+    CURRENT_RUNTIME_SCHEMA_REVISION as IMMUTABLE_PROVENANCE_REVISION,
+    POSTGRES_TRIGGER_CONTRACTS as IMMUTABLE_PROVENANCE_TRIGGERS,
+    ROUTINE_CONTRACTS as IMMUTABLE_PROVENANCE_ROUTINES,
+)
+from app.operators.resource_membership_contracts import (
+    CURRENT_RUNTIME_SCHEMA_REVISION as RESOURCE_MEMBERSHIP_REVISION,
+    LOCAL_ADMISSION_V2_RESULT,
+)
 
 
 DEPLOYMENT_SCOPE = "phase5c4_controlled_portfolio_demo_v1"
@@ -23,6 +32,13 @@ ROLE_POLICY_VERSION = "phase5c4_postgresql_role_policy_v1"
 PRIVILEGE_MANIFEST_VERSION = "phase5c4_postgresql_privilege_manifest_v1"
 SOURCE_ELIGIBILITY_VERSION = "phase5c4_source_role_eligibility_v1"
 EXPECTED_ALEMBIC_REVISION = "0017_phase5c_indexes"
+TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION = (
+    "phase5c4_source_role_eligibility_transition_v1"
+)
+TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION = (
+    "phase5c4_postgresql_privilege_manifest_transition_v1"
+)
+PROMOTION_PREREQUISITES_REVISION = "0018_phase5c_promotion_prerequisites"
 MAINTENANCE_SCHEMA = "phase5c4_maintenance"
 ARCHIVE_RELATIONS = ("bridge_metadata", "recipe_ingredients", "recipes")
 OPTIONAL_PUBLIC_RELATIONS = ("phase5c_conversion_clone_marker",)
@@ -109,6 +125,46 @@ class Membership:
     set_role: bool
 
 
+@dataclass(frozen=True, order=True)
+class RoutineSurface:
+    schema: str
+    name: str
+    identity_arguments: str
+    result_type: str
+    language: str
+    volatility: str
+    security_definer: bool
+    strict: bool
+    returns_set: bool
+    search_path: tuple[str, ...]
+    execute_roles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, order=True)
+class TriggerSurface:
+    schema: str
+    table: str
+    name: str
+    function_schema: str
+    function_name: str
+    trigger_type: int
+
+
+@dataclass(frozen=True)
+class RevisionRolePolicy:
+    revision: str
+    required_public_relations: tuple[str, ...]
+    required_public_sequences: tuple[str, ...]
+    runtime_write_privileges: tuple[tuple[str, tuple[str, ...]], ...]
+    routines: tuple[RoutineSurface, ...]
+    triggers: tuple[TriggerSurface, ...]
+    restore_allowed: bool
+
+    @property
+    def runtime_writes(self) -> dict[str, tuple[str, ...]]:
+        return dict(self.runtime_write_privileges)
+
+
 EXPECTED_MEMBERSHIPS = frozenset(
     {
         Membership(OWNER_ROLE, MIGRATOR_ROLE, False, False, True),
@@ -190,6 +246,474 @@ RUNTIME_WRITE_PRIVILEGES: dict[str, tuple[str, ...]] = {
 ROUTINES = (
     (MAINTENANCE_SCHEMA, "close_runtime_writes", "expected_manifest_digest text"),
     (MAINTENANCE_SCHEMA, "restore_runtime_writes", "expected_manifest_digest text"),
+)
+
+_LOCAL_ADMISSION_V1_RESULT = (
+    "TABLE(schema_revision text, identity_present boolean, "
+    "identity_valid boolean, composite_bindings_valid boolean, "
+    "fence_state_present boolean, fence_state_valid boolean, "
+    "event_chain_valid boolean, fence_mode text, "
+    "session_role_valid boolean, role_topology_valid boolean, "
+    "gate_trigger_coverage_valid boolean, immutability_valid boolean)"
+)
+
+_PHASE5C_0018_ROUTINES = (
+    RoutineSurface(
+        "public",
+        "phase5c_canonical_json",
+        "value jsonb",
+        "text",
+        "sql",
+        "i",
+        False,
+        True,
+        False,
+        ("pg_catalog", "public"),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_canonical_sha256",
+        "value jsonb",
+        "text",
+        "sql",
+        "i",
+        False,
+        True,
+        False,
+        ("pg_catalog", "public"),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_target_identity_digest",
+        (
+            "p_archive_identity text, p_clone_marker_digest text, "
+            "p_conversion_clone_identity_digest text, p_conversion_run_id uuid, "
+            "p_initialized_at timestamp with time zone, "
+            "p_target_instance_id uuid, p_target_nonce uuid"
+        ),
+        "text",
+        "sql",
+        "i",
+        False,
+        True,
+        False,
+        ("pg_catalog", "public"),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_write_fence_event_digest",
+        (
+            "p_artifact_set_digest text, p_attempt_id uuid, "
+            "p_authorization_digest text, p_command_id uuid, p_epoch bigint, "
+            "p_event_id uuid, p_from_mode text, "
+            "p_occurred_at timestamp with time zone, "
+            "p_previous_event_digest text, p_target_instance_id uuid, p_to_mode text"
+        ),
+        "text",
+        "sql",
+        "i",
+        False,
+        False,
+        False,
+        ("pg_catalog", "public"),
+    ),
+    *(
+        RoutineSurface(
+            "public",
+            name,
+            "",
+            "boolean",
+            "sql",
+            "s",
+            True,
+            False,
+            False,
+            ("pg_catalog", "public"),
+        )
+        for name in (
+            "phase5c_role_topology_valid",
+            "phase5c_gate_trigger_coverage_valid",
+            "phase5c_immutability_valid",
+        )
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_local_admission_v1",
+        "",
+        _LOCAL_ADMISSION_V1_RESULT,
+        "plpgsql",
+        "s",
+        True,
+        False,
+        True,
+        ("pg_catalog", "public"),
+        (RUNTIME_ROLE, CANARY_ROLE),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_read_qualifier_evidence_v2",
+        "",
+        "jsonb",
+        "plpgsql",
+        "s",
+        True,
+        False,
+        False,
+        ("pg_catalog", "public"),
+        (QUALIFIER_ROLE,),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_fence_command_result",
+        "p_command_id uuid",
+        "jsonb",
+        "sql",
+        "s",
+        True,
+        False,
+        False,
+        ("pg_catalog", "public"),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_initialize_promotion_target",
+        (
+            "p_command_id uuid, p_archive_identity text, "
+            "p_conversion_run_id uuid, p_clone_marker_digest text, "
+            "p_conversion_clone_identity_digest text"
+        ),
+        "jsonb",
+        "plpgsql",
+        "v",
+        True,
+        False,
+        False,
+        ("pg_catalog", "public"),
+        (OPS_ROLE,),
+    ),
+    RoutineSurface(
+        "public",
+        "phase5c_transition_closed_write_fence",
+        (
+            "p_target_instance_id uuid, p_command_id uuid, "
+            "p_expected_epoch bigint, p_expected_mode text, "
+            "p_expected_last_event_digest text, p_to_mode text, "
+            "p_attempt_id uuid, p_authorization_digest text, "
+            "p_artifact_set_digest text"
+        ),
+        "jsonb",
+        "plpgsql",
+        "v",
+        True,
+        False,
+        False,
+        ("pg_catalog", "public"),
+        (OPS_ROLE,),
+    ),
+    *(
+        RoutineSurface(
+            "public",
+            name,
+            "",
+            "trigger",
+            "plpgsql",
+            "v",
+            security_definer,
+            False,
+            False,
+            ("pg_catalog", "public"),
+        )
+        for name, security_definer in (
+            ("phase5c_reject_immutable_row_mutation", False),
+            ("phase5c_reject_immutable_truncate", False),
+            ("phase5c_guard_conversion_run", False),
+            ("phase5c_guard_conversion_outcome", False),
+            ("phase5c_enforce_write_fence", True),
+        )
+    ),
+)
+
+_PHASE5C_0018_PUBLIC_RELATIONS = (
+    "phase5c_conversion_clone_marker",
+    "phase5c_promotion_target_identity",
+    "phase5c_write_fence_events",
+    "phase5c_write_fence_state",
+)
+_PHASE5C_0018_PUBLIC_SEQUENCES = (
+    "phase5c_promotion_target_identity_singleton_key_seq",
+)
+
+_PHASE5C_GATED_TABLES = tuple(RUNTIME_WRITE_PRIVILEGES)
+
+
+def _phase5c_0018_triggers() -> tuple[TriggerSurface, ...]:
+    values = [
+        TriggerSurface(
+            "public",
+            table,
+            "phase5c_write_fence_gate",
+            "public",
+            "phase5c_enforce_write_fence",
+            30,
+        )
+        for table in _PHASE5C_GATED_TABLES
+    ]
+    values.extend(
+        (
+            TriggerSurface(
+                "public",
+                "phase5c_promotion_target_identity",
+                "phase5c_target_identity_immutable_row",
+                "public",
+                "phase5c_reject_immutable_row_mutation",
+                27,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_promotion_target_identity",
+                "phase5c_target_identity_immutable_truncate",
+                "public",
+                "phase5c_reject_immutable_truncate",
+                34,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_write_fence_events",
+                "phase5c_fence_events_immutable_row",
+                "public",
+                "phase5c_reject_immutable_row_mutation",
+                27,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_write_fence_events",
+                "phase5c_fence_events_immutable_truncate",
+                "public",
+                "phase5c_reject_immutable_truncate",
+                34,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_clone_marker",
+                "phase5c_clone_marker_immutable_row",
+                "public",
+                "phase5c_reject_immutable_row_mutation",
+                27,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_clone_marker",
+                "phase5c_clone_marker_immutable_truncate",
+                "public",
+                "phase5c_reject_immutable_truncate",
+                34,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_metadata",
+                "phase5c_conversion_metadata_immutable_row",
+                "public",
+                "phase5c_reject_immutable_row_mutation",
+                27,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_metadata",
+                "phase5c_conversion_metadata_immutable_truncate",
+                "public",
+                "phase5c_reject_immutable_truncate",
+                34,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_runs",
+                "phase5c_conversion_runs_terminal_guard",
+                "public",
+                "phase5c_guard_conversion_run",
+                27,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_runs",
+                "phase5c_conversion_runs_immutable_truncate",
+                "public",
+                "phase5c_reject_immutable_truncate",
+                34,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_outcomes",
+                "phase5c_conversion_outcomes_terminal_guard",
+                "public",
+                "phase5c_guard_conversion_outcome",
+                27,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_conversion_outcomes",
+                "phase5c_conversion_outcomes_immutable_truncate",
+                "public",
+                "phase5c_reject_immutable_truncate",
+                34,
+            ),
+        )
+    )
+    return tuple(sorted(values))
+
+
+def _maintenance_routine_surfaces() -> tuple[RoutineSurface, ...]:
+    return tuple(
+        RoutineSurface(
+            schema,
+            name,
+            arguments,
+            "text",
+            "plpgsql",
+            "v",
+            True,
+            False,
+            False,
+            ("pg_catalog", "pg_temp"),
+            (OPS_ROLE,),
+        )
+        for schema, name, arguments in ROUTINES
+    )
+
+
+_RESOURCE_MEMBERSHIP_ROUTINE = RoutineSurface(
+    "public",
+    "phase5c_local_admission_v2",
+    "",
+    LOCAL_ADMISSION_V2_RESULT,
+    "plpgsql",
+    "s",
+    True,
+    False,
+    True,
+    ("pg_catalog", "public"),
+    (RUNTIME_ROLE, CANARY_ROLE),
+)
+
+
+def _immutable_routine_surfaces() -> tuple[RoutineSurface, ...]:
+    volatility_codes = {"volatile": "v", "stable": "s", "immutable": "i"}
+    return tuple(
+        RoutineSurface(
+            "public",
+            item.name,
+            item.identity_arguments,
+            item.result,
+            "plpgsql",
+            volatility_codes[item.volatility],
+            item.security_definer,
+            False,
+            item.returns_set,
+            ("pg_catalog", "public"),
+            tuple(
+                role
+                for role, _grantable in item.execute_acl
+                if role != OWNER_ROLE
+            ),
+        )
+        for item in IMMUTABLE_PROVENANCE_ROUTINES
+    )
+
+
+def _immutable_trigger_surfaces() -> tuple[TriggerSurface, ...]:
+    event_bits = {"DELETE": 8, "INSERT": 4, "UPDATE": 16, "TRUNCATE": 32}
+    return tuple(
+        TriggerSurface(
+            "public",
+            item.table,
+            item.name,
+            "public",
+            item.function,
+            sum(event_bits[event] for event in item.events)
+            + (2 if item.timing == "BEFORE" else 0)
+            + (1 if item.orientation == "ROW" else 0),
+        )
+        for item in IMMUTABLE_PROVENANCE_TRIGGERS
+    )
+
+
+def _revision_role_policy(revision: str) -> RevisionRolePolicy:
+    baseline_writes = tuple(
+        sorted((name, tuple(privileges)) for name, privileges in RUNTIME_WRITE_PRIVILEGES.items())
+    )
+    maintenance_routines = _maintenance_routine_surfaces()
+    if revision == EXPECTED_ALEMBIC_REVISION:
+        return RevisionRolePolicy(
+            revision,
+            (),
+            (),
+            baseline_writes,
+            maintenance_routines,
+            (),
+            True,
+        )
+
+    routines = (*maintenance_routines, *_PHASE5C_0018_ROUTINES)
+    triggers = _phase5c_0018_triggers()
+    if revision == PROMOTION_PREREQUISITES_REVISION:
+        return RevisionRolePolicy(
+            revision,
+            _PHASE5C_0018_PUBLIC_RELATIONS,
+            _PHASE5C_0018_PUBLIC_SEQUENCES,
+            baseline_writes,
+            tuple(sorted(routines)),
+            triggers,
+            False,
+        )
+    if revision == RESOURCE_MEMBERSHIP_REVISION:
+        return RevisionRolePolicy(
+            revision,
+            _PHASE5C_0018_PUBLIC_RELATIONS,
+            _PHASE5C_0018_PUBLIC_SEQUENCES,
+            baseline_writes,
+            tuple(sorted((*routines, _RESOURCE_MEMBERSHIP_ROUTINE))),
+            triggers,
+            True,
+        )
+    if revision == IMMUTABLE_PROVENANCE_REVISION:
+        immutable_writes = tuple(
+            (
+                name,
+                tuple(
+                    privilege
+                    for privilege in privileges
+                    if not (
+                        name == "daily_log_nutrient_snapshots"
+                        and privilege == "DELETE"
+                    )
+                ),
+            )
+            for name, privileges in baseline_writes
+        )
+        return RevisionRolePolicy(
+            revision,
+            _PHASE5C_0018_PUBLIC_RELATIONS,
+            _PHASE5C_0018_PUBLIC_SEQUENCES,
+            immutable_writes,
+            tuple(
+                sorted(
+                    (
+                        *routines,
+                        _RESOURCE_MEMBERSHIP_ROUTINE,
+                        *_immutable_routine_surfaces(),
+                    )
+                )
+            ),
+            tuple(sorted((*triggers, *_immutable_trigger_surfaces()))),
+            True,
+        )
+    raise Phase5C4RoleError(f"Unsupported role-policy revision: {revision}")
+
+
+SUPPORTED_ROLE_POLICY_REVISIONS = (
+    EXPECTED_ALEMBIC_REVISION,
+    PROMOTION_PREREQUISITES_REVISION,
+    RESOURCE_MEMBERSHIP_REVISION,
+    IMMUTABLE_PROVENANCE_REVISION,
 )
 
 REASON_CODES = frozenset(
@@ -391,11 +915,100 @@ PRIVILEGE_MANIFEST = build_privilege_manifest()
 PRIVILEGE_MANIFEST_DIGEST = PRIVILEGE_MANIFEST["manifest_digest"]
 
 
+def build_revision_privilege_manifest(revision: str) -> dict[str, Any]:
+    """Build the exact role-policy authority for one supported schema revision."""
+
+    profile = _revision_role_policy(revision)
+    if revision == EXPECTED_ALEMBIC_REVISION:
+        return build_privilege_manifest()
+
+    payload = _unsigned_manifest()
+    payload["manifest_version"] = TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION
+    runtime_writes = profile.runtime_writes
+    for relation in payload["relations"]:
+        name = str(relation["name"])
+        relation["grants"] = [
+            grant
+            for grant in relation["grants"]
+            if grant["role"] != RUNTIME_WRITE_ROLE
+        ]
+        if name in runtime_writes:
+            relation["grants"].append(
+                {
+                    "role": RUNTIME_WRITE_ROLE,
+                    "privileges": list(runtime_writes[name]),
+                }
+            )
+            relation["grants"].sort(key=lambda item: item["role"])
+    payload["revision_policy"] = {
+        "revision": revision,
+        "required_public_relations": list(profile.required_public_relations),
+        "required_public_sequences": list(profile.required_public_sequences),
+        "runtime_write_privileges": [
+            {"relation": name, "privileges": list(privileges)}
+            for name, privileges in profile.runtime_write_privileges
+        ],
+        "routines": [
+            {
+                "schema": item.schema,
+                "name": item.name,
+                "identity_arguments": item.identity_arguments,
+                "result_type": item.result_type,
+                "language": item.language,
+                "volatility": item.volatility,
+                "security_definer": item.security_definer,
+                "strict": item.strict,
+                "returns_set": item.returns_set,
+                "search_path": list(item.search_path),
+                "execute_roles": list(item.execute_roles),
+            }
+            for item in profile.routines
+        ],
+        "triggers": [
+            {
+                "schema": item.schema,
+                "table": item.table,
+                "name": item.name,
+                "function_schema": item.function_schema,
+                "function_name": item.function_name,
+                "trigger_type": item.trigger_type,
+            }
+            for item in profile.triggers
+        ],
+        "restore_allowed": profile.restore_allowed,
+    }
+    payload["manifest_digest"] = canonical.canonical_digest(payload)
+    return payload
+
+
+def revision_privilege_manifest_digest(revision: str) -> str:
+    return str(build_revision_privilege_manifest(revision)["manifest_digest"])
+
+
 def validate_privilege_manifest(value: Any) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise Phase5C4RoleError("Privilege manifest must be an object")
     payload = deepcopy(dict(value))
-    expected = build_privilege_manifest()
+    if payload.get("manifest_version") == PRIVILEGE_MANIFEST_VERSION:
+        expected = build_privilege_manifest()
+    elif payload.get("manifest_version") == TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION:
+        revision_policy = payload.get("revision_policy")
+        revision = (
+            revision_policy.get("revision")
+            if isinstance(revision_policy, Mapping)
+            else None
+        )
+        if (
+            not isinstance(revision, str)
+            or revision == EXPECTED_ALEMBIC_REVISION
+            or revision not in SUPPORTED_ROLE_POLICY_REVISIONS
+        ):
+            raise Phase5C4RoleError(
+                "Privilege manifest revision policy is unsupported"
+            )
+        expected = build_revision_privilege_manifest(revision)
+    else:
+        raise Phase5C4RoleError("Privilege manifest version is unsupported")
     if payload != expected:
         raise Phase5C4RoleError("Privilege manifest does not match the exact versioned authority")
     unsigned = {key: item for key, item in payload.items() if key != "manifest_digest"}
@@ -655,8 +1268,13 @@ def discover_archive_schemas(connection: Connection) -> tuple[str, ...]:
     return _archive_schemas_from_catalog(connection)
 
 
-def _expected_relation_names(archive_schemas: Iterable[str]) -> set[tuple[str, str]]:
+def _expected_relation_names(
+    archive_schemas: Iterable[str],
+    profile: RevisionRolePolicy,
+) -> set[tuple[str, str]]:
     names = {("public", name) for name in PUBLIC_RELATIONS}
+    names.update(("public", name) for name in profile.required_public_relations)
+    names.update(("public", name) for name in profile.required_public_sequences)
     names.update((schema, name) for schema in archive_schemas for name in ARCHIVE_RELATIONS)
     return names
 
@@ -678,8 +1296,9 @@ def _validate_object_inventory(
     archive_schemas: tuple[str, ...],
     *,
     allowed_owners: set[str],
+    profile: RevisionRolePolicy,
 ) -> None:
-    expected = _expected_relation_names(archive_schemas)
+    expected = _expected_relation_names(archive_schemas, profile)
     optional = {("public", name) for name in OPTIONAL_PUBLIC_RELATIONS}
     rows = _application_relation_rows(connection, archive_schemas)
     actual_base = {
@@ -694,8 +1313,16 @@ def _validate_object_inventory(
         for row in rows
         if row["relkind"] not in {"i", "I"}
     }
-    required_kind_names = expected | (actual_base & optional)
-    if any(kinds.get(name) not in {"r", "p"} for name in required_kind_names):
+    required_table_names = (
+        expected
+        - {("public", name) for name in profile.required_public_sequences}
+    ) | (actual_base & optional)
+    required_sequence_names = {
+        ("public", name) for name in profile.required_public_sequences
+    }
+    if any(kinds.get(name) not in {"r", "p"} for name in required_table_names) or any(
+        kinds.get(name) != "S" for name in required_sequence_names
+    ):
         raise Phase5C4RoleError("Application relation kind differs from Alembic authority")
     if any(bool(row["relrowsecurity"]) or bool(row["relforcerowsecurity"]) for row in rows):
         raise Phase5C4RoleError("Unreviewed row-level security is present")
@@ -703,15 +1330,77 @@ def _validate_object_inventory(
         raise Phase5C4RoleError("Application relation has an unexpected owner")
 
     application_schemas = ["public", *archive_schemas, MAINTENANCE_SCHEMA]
-    trigger_count = int(
+    actual_triggers = {
+        TriggerSurface(
+            str(row["schema_name"]),
+            str(row["table_name"]),
+            str(row["trigger_name"]),
+            str(row["function_schema"]),
+            str(row["function_name"]),
+            int(row["trigger_type"]),
+        )
+        for row in connection.execute(
+            text(
+                """
+                SELECT schema.nspname AS schema_name,
+                       relation.relname AS table_name,
+                       trigger.tgname AS trigger_name,
+                       function_schema.nspname AS function_schema,
+                       routine.proname AS function_name,
+                       trigger.tgtype AS trigger_type
+                FROM pg_catalog.pg_trigger trigger
+                JOIN pg_catalog.pg_class relation ON relation.oid = trigger.tgrelid
+                JOIN pg_catalog.pg_namespace schema
+                  ON schema.oid = relation.relnamespace
+                JOIN pg_catalog.pg_proc routine ON routine.oid = trigger.tgfoid
+                JOIN pg_catalog.pg_namespace function_schema
+                  ON function_schema.oid = routine.pronamespace
+                WHERE schema.nspname = ANY(:schemas)
+                  AND NOT trigger.tgisinternal
+                  AND trigger.tgenabled = 'O'
+                """
+            ),
+            {"schemas": application_schemas},
+        ).mappings()
+    }
+    expected_triggers = set(profile.triggers)
+    if profile.revision != EXPECTED_ALEMBIC_REVISION:
+        expected_triggers.update(
+            TriggerSurface(
+                schema,
+                table,
+                trigger_name,
+                "public",
+                function_name,
+                trigger_type,
+            )
+            for schema in archive_schemas
+            for table in ARCHIVE_RELATIONS
+            for trigger_name, function_name, trigger_type in (
+                (
+                    "phase5c_archive_immutable_row",
+                    "phase5c_reject_immutable_row_mutation",
+                    27,
+                ),
+                (
+                    "phase5c_archive_immutable_truncate",
+                    "phase5c_reject_immutable_truncate",
+                    34,
+                ),
+            )
+        )
+    disabled_trigger_count = int(
         connection.scalar(
             text(
                 """
                 SELECT count(*)
                 FROM pg_catalog.pg_trigger trigger
                 JOIN pg_catalog.pg_class relation ON relation.oid = trigger.tgrelid
-                JOIN pg_catalog.pg_namespace schema ON schema.oid = relation.relnamespace
-                WHERE schema.nspname = ANY(:schemas) AND NOT trigger.tgisinternal
+                JOIN pg_catalog.pg_namespace schema
+                  ON schema.oid = relation.relnamespace
+                WHERE schema.nspname = ANY(:schemas)
+                  AND NOT trigger.tgisinternal
+                  AND trigger.tgenabled <> 'O'
                 """
             ),
             {"schemas": application_schemas},
@@ -752,7 +1441,13 @@ def _validate_object_inventory(
     event_trigger_count = int(
         connection.scalar(text("SELECT count(*) FROM pg_catalog.pg_event_trigger")) or 0
     )
-    if trigger_count or policy_count or rewrite_rule_count or event_trigger_count:
+    if (
+        actual_triggers != expected_triggers
+        or disabled_trigger_count
+        or policy_count
+        or rewrite_rule_count
+        or event_trigger_count
+    ):
         raise Phase5C4RoleError(
             "Unreviewed trigger, rewrite rule, or row-level policy is present"
         )
@@ -783,7 +1478,10 @@ def _validate_object_inventory(
         raise Phase5C4RoleError("Application schema has an unexpected owner")
 
     routines = _routine_rows(connection)
-    allowed_routines = {(schema, name, arguments) for schema, name, arguments in ROUTINES}
+    allowed_routines = {
+        (item.schema, item.name, item.identity_arguments)
+        for item in profile.routines
+    }
     actual_routines = {
         (row["schema_name"], row["routine_name"], row["identity_arguments"])
         for row in routines
@@ -881,6 +1579,7 @@ def _expected_relation_acls(
     archive_schemas: Iterable[str],
     *,
     state: Literal["normal", "maintenance"],
+    profile: RevisionRolePolicy,
     optional_present: Iterable[str] = (),
 ) -> set[tuple[str, str, str, str, bool]]:
     expected: set[tuple[str, str, str, str, bool]] = set()
@@ -890,7 +1589,7 @@ def _expected_relation_acls(
         if state == "normal":
             expected.update(
                 ("public", name, RUNTIME_WRITE_ROLE, privilege, False)
-                for privilege in RUNTIME_WRITE_PRIVILEGES.get(name, ())
+                for privilege in profile.runtime_writes.get(name, ())
             )
         if name in CANARY_RELATIONS:
             expected.add(("public", name, CANARY_READ_ROLE, "SELECT", False))
@@ -997,7 +1696,7 @@ def _routine_rows(connection: Connection) -> list[dict[str, Any]]:
                            AS identity_arguments,
                        owner.rolname AS owner_name, p.prosecdef,
                        p.proconfig, p.prosrc, p.proisstrict, p.provolatile,
-                       p.proparallel, p.prokind,
+                       p.proparallel, p.prokind, p.proretset, p.proleakproof,
                        pg_catalog.pg_get_function_result(p.oid) AS result_type,
                        l.lanname AS language_name,
                        EXISTS (
@@ -1595,6 +2294,7 @@ def _maintenance_state_expression(
     connection: Connection,
     *,
     state: Literal["normal", "maintenance"],
+    profile: RevisionRolePolicy,
     archive_schemas: tuple[str, ...] | None = None,
     require_zero_runtime_sessions: bool = False,
 ) -> str:
@@ -1610,14 +2310,23 @@ def _maintenance_state_expression(
         _expected_relation_acls(
             archive_schemas,
             state=state,
+            profile=profile,
             optional_present=optional_present,
         )
     )
     expected_database_values = _values_sql(_expected_database_acls(state))
     expected_routine_values = _values_sql(
         {
-            (schema, name, arguments, OPS_ROLE, "EXECUTE", False)
-            for schema, name, arguments in ROUTINES
+            (
+                item.schema,
+                item.name,
+                item.identity_arguments,
+                role,
+                "EXECUTE",
+                False,
+            )
+            for item in profile.routines
+            for role in item.execute_roles
         }
     )
     archive_values = ", ".join(_sql_literal(schema) for schema in archive_schemas)
@@ -1690,7 +2399,11 @@ def _maintenance_state_expression(
     effective_checks: list[str] = []
     relations = [
         ("public", name)
-        for name in (*PUBLIC_RELATIONS, *sorted(optional_present))
+        for name in (
+            *PUBLIC_RELATIONS,
+            *profile.required_public_relations,
+            *sorted(optional_present),
+        )
     ]
     relations.extend(
         (schema, name)
@@ -1712,13 +2425,20 @@ def _maintenance_state_expression(
                 privilege == "SELECT"
                 or (
                     state == "normal"
-                    and privilege in RUNTIME_WRITE_PRIVILEGES.get(name, ())
+                    and privilege in profile.runtime_writes.get(name, ())
                 )
             )
             effective_checks.append(
                 "pg_catalog.has_table_privilege("
                 f"'{RUNTIME_ROLE}', '{relation}', '{privilege}') IS "
                 f"{'true' if expected else 'false'}"
+            )
+    for name in profile.required_public_sequences:
+        sequence = _qualified(connection, "public", name)
+        for privilege in ("SELECT", "UPDATE", "USAGE"):
+            effective_checks.append(
+                "pg_catalog.has_sequence_privilege("
+                f"'{RUNTIME_ROLE}', '{sequence}', '{privilege}') IS false"
             )
     effective_checks.extend(
         [
@@ -1783,7 +2503,7 @@ def _maintenance_state_expression(
         )
         AND ARRAY(
             SELECT version_num::text FROM public.alembic_version ORDER BY version_num
-        ) = ARRAY['{EXPECTED_ALEMBIC_REVISION}']::text[]
+        ) = ARRAY['{profile.revision}']::text[]
         AND ARRAY(
             SELECT archive_schema::text
             FROM public.phase5c_conversion_metadata
@@ -1815,11 +2535,26 @@ def _maintenance_body(
     connection: Connection,
     *,
     restore: bool,
+    profile: RevisionRolePolicy,
     archive_schemas: tuple[str, ...] | None = None,
 ) -> str:
     operation = "restore" if restore else "close"
+    manifest_digest = revision_privilege_manifest_digest(profile.revision)
+    if restore and not profile.restore_allowed:
+        return f"""
+BEGIN
+    IF session_user <> '{OPS_ROLE}' THEN
+        RAISE EXCEPTION 'phase5c4_unauthorized_caller' USING ERRCODE = '42501';
+    END IF;
+    IF expected_manifest_digest IS DISTINCT FROM '{manifest_digest}' THEN
+        RAISE EXCEPTION 'phase5c4_manifest_digest_mismatch' USING ERRCODE = '22023';
+    END IF;
+    RAISE EXCEPTION 'phase5c4_restore_revision_unsupported' USING ERRCODE = '55000';
+END
+""".strip()
+
     statements: list[str] = []
-    for table_name, privileges in sorted(RUNTIME_WRITE_PRIVILEGES.items()):
+    for table_name, privileges in profile.runtime_write_privileges:
         relation = _qualified(connection, "public", table_name)
         verb = "GRANT" if restore else "REVOKE"
         direction = "TO" if restore else "FROM"
@@ -1841,12 +2576,14 @@ def _maintenance_body(
     precondition = _maintenance_state_expression(
         connection,
         state=expected_state,
+        profile=profile,
         archive_schemas=archive_schemas,
         require_zero_runtime_sessions=restore,
     )
     postcondition = _maintenance_state_expression(
         connection,
         state=result_state,
+        profile=profile,
         archive_schemas=archive_schemas,
     )
     statement_text = "\n    ".join(statements)
@@ -1856,7 +2593,7 @@ BEGIN
     IF session_user <> '{OPS_ROLE}' THEN
         RAISE EXCEPTION 'phase5c4_unauthorized_caller' USING ERRCODE = '42501';
     END IF;
-    IF expected_manifest_digest IS DISTINCT FROM '{PRIVILEGE_MANIFEST_DIGEST}' THEN
+    IF expected_manifest_digest IS DISTINCT FROM '{manifest_digest}' THEN
         RAISE EXCEPTION 'phase5c4_manifest_digest_mismatch' USING ERRCODE = '22023';
     END IF;
     IF NOT (
@@ -1875,9 +2612,16 @@ END
 """.strip()
 
 
-def _create_maintenance_routines(connection: Connection) -> None:
+def _create_maintenance_routines(
+    connection: Connection,
+    profile: RevisionRolePolicy,
+) -> None:
     for name, restore in (("close_runtime_writes", False), ("restore_runtime_writes", True)):
-        body = _maintenance_body(connection, restore=restore).replace("'", "''")
+        body = _maintenance_body(
+            connection,
+            restore=restore,
+            profile=profile,
+        ).replace("'", "''")
         routine = _qualified(connection, MAINTENANCE_SCHEMA, name)
         connection.execute(
             text(
@@ -1902,6 +2646,68 @@ def _create_maintenance_routines(connection: Connection) -> None:
                     text(f"REVOKE ALL ON FUNCTION {routine}(text) FROM {role}")
                 )
         connection.execute(text(f"GRANT EXECUTE ON FUNCTION {routine}(text) TO {OPS_ROLE}"))
+
+
+def install_revision_maintenance_policy(
+    connection: Connection,
+    revision: str,
+) -> None:
+    """Install the exact maintenance routines for a migration revision.
+
+    Alembic calls this inside its existing transaction after the revision's
+    object and ACL surface has been installed. It never changes domain rows or
+    commits independently.
+    """
+
+    if connection.dialect.name != "postgresql":
+        raise Phase5C4RoleError("Revision role-policy installation requires PostgreSQL")
+    if str(connection.scalar(text("SELECT current_user"))) != OWNER_ROLE:
+        raise Phase5C4RoleError(
+            "Revision role-policy installation requires nutrition_owner"
+        )
+    _create_maintenance_routines(connection, _revision_role_policy(revision))
+
+
+def refresh_legacy_0018_maintenance_policy(engine: Engine) -> dict[str, Any]:
+    """Replace only the known 0017 routine bodies on an otherwise exact 0018 DB."""
+
+    with engine.begin() as connection:
+        _require_postgresql_16(connection)
+        assume_migration_owner(connection)
+        profile = _revision_role_policy(PROMOTION_PREREQUISITES_REVISION)
+        legacy_body_profile = _revision_role_policy(EXPECTED_ALEMBIC_REVISION)
+        checks, reasons, _archive_schemas = _inspect_policy_state(
+            connection,
+            expected_state="normal",
+            require_revision=True,
+            profile=profile,
+            maintenance_body_profile=legacy_body_profile,
+        )
+        if reasons or not all(check["passed"] for check in checks):
+            raise Phase5C4RoleError(
+                "Legacy 0018 maintenance refresh refused unrelated drift: "
+                + ",".join(sorted(reasons))
+            )
+        _create_maintenance_routines(connection, profile)
+        checks, reasons, _archive_schemas = _inspect_policy_state(
+            connection,
+            expected_state="normal",
+            require_revision=True,
+            profile=profile,
+        )
+        if reasons or not all(check["passed"] for check in checks):
+            raise Phase5C4RoleError(
+                "Legacy 0018 maintenance refresh postcondition failed: "
+                + ",".join(sorted(reasons))
+            )
+        return {
+            "state": "normal",
+            "policy_revision": profile.revision,
+            "privilege_manifest_digest": revision_privilege_manifest_digest(
+                profile.revision
+            ),
+            "refreshed_legacy_maintenance_routines": True,
+        }
 
 
 def _check_observation(code: str, passed: bool, observation: Any) -> dict[str, Any]:
@@ -2033,8 +2839,9 @@ def _role_observations(connection: Connection) -> tuple[bool, bool, bool, dict[s
 def _object_observation(
     connection: Connection,
     archive_schemas: tuple[str, ...],
+    profile: RevisionRolePolicy,
 ) -> tuple[bool, bool, dict[str, Any]]:
-    expected = _expected_relation_names(archive_schemas)
+    expected = _expected_relation_names(archive_schemas, profile)
     optional = {("public", name) for name in OPTIONAL_PUBLIC_RELATIONS}
     rows = _application_relation_rows(connection, archive_schemas)
     actual = {
@@ -2048,6 +2855,7 @@ def _object_observation(
             connection,
             archive_schemas,
             allowed_owners={OWNER_ROLE},
+            profile=profile,
         )
     except Phase5C4RoleError as exc:
         validation_error = str(exc)
@@ -2160,9 +2968,18 @@ def _object_observation(
 def _security_definer_observation(
     connection: Connection,
     archive_schemas: tuple[str, ...],
+    profile: RevisionRolePolicy,
+    *,
+    maintenance_body_profile: RevisionRolePolicy | None = None,
 ) -> tuple[bool, dict[str, Any]]:
+    if maintenance_body_profile is None:
+        maintenance_body_profile = profile
     routines = [row for row in _routine_rows(connection) if not row["extension_member"]]
-    expected = {(schema, name, arguments) for schema, name, arguments in ROUTINES}
+    expected_by_identity = {
+        (item.schema, item.name, item.identity_arguments): item
+        for item in profile.routines
+    }
+    expected = set(expected_by_identity)
     actual = {
         (str(row["schema_name"]), str(row["routine_name"]), str(row["identity_arguments"]))
         for row in routines
@@ -2170,23 +2987,40 @@ def _security_definer_observation(
     safe = actual == expected
     details: list[dict[str, Any]] = []
     for row in routines:
+        identity = (
+            str(row["schema_name"]),
+            str(row["routine_name"]),
+            str(row["identity_arguments"]),
+        )
+        item = expected_by_identity.get(identity)
         config = tuple(row["proconfig"] or ())
-        expected_body = _maintenance_body(
-            connection,
-            restore=row["routine_name"] == "restore_runtime_writes",
-            archive_schemas=archive_schemas,
+        expected_body = (
+            _maintenance_body(
+                connection,
+                restore=row["routine_name"] == "restore_runtime_writes",
+                archive_schemas=archive_schemas,
+                profile=maintenance_body_profile,
+            )
+            if item is not None and item.schema == MAINTENANCE_SCHEMA
+            else None
         )
         row_safe = (
-            row["owner_name"] == OWNER_ROLE
-            and bool(row["prosecdef"])
-            and row["language_name"] == "plpgsql"
-            and not bool(row["proisstrict"])
-            and row["provolatile"] == "v"
+            item is not None
+            and row["owner_name"] == OWNER_ROLE
+            and bool(row["prosecdef"]) == item.security_definer
+            and row["language_name"] == item.language
+            and bool(row["proisstrict"]) == item.strict
+            and row["provolatile"] == item.volatility
             and row["proparallel"] == "u"
             and row["prokind"] == "f"
-            and row["result_type"] == "text"
-            and config == ("search_path=pg_catalog, pg_temp",)
-            and str(row["prosrc"]).strip() == expected_body
+            and bool(row["proretset"]) == item.returns_set
+            and not bool(row["proleakproof"])
+            and row["result_type"] == item.result_type
+            and config == ("search_path=" + ", ".join(item.search_path),)
+            and (
+                expected_body is None
+                or str(row["prosrc"]).strip() == expected_body
+            )
             and bool(
                 connection.scalar(
                     text(
@@ -2225,13 +3059,24 @@ def _security_definer_observation(
                 "result_type": row["result_type"],
                 "settings": list(config),
                 "body_digest": canonical.canonical_digest(str(row["prosrc"]).strip()),
-                "expected_body_digest": canonical.canonical_digest(expected_body),
+                "expected_body_digest": (
+                    None
+                    if expected_body is None
+                    else canonical.canonical_digest(expected_body)
+                ),
                 "safe": row_safe,
             }
         )
     expected_acl = {
-        (schema, name, arguments, OPS_ROLE, False)
-        for schema, name, arguments in ROUTINES
+        (
+            item.schema,
+            item.name,
+            item.identity_arguments,
+            role,
+            False,
+        )
+        for item in profile.routines
+        for role in item.execute_roles
     }
     routine_acls = _routine_acl_rows(connection)
     safe &= routine_acls == expected_acl
@@ -2243,6 +3088,8 @@ def _inspect_policy_state(
     *,
     expected_state: Literal["normal", "maintenance"],
     require_revision: bool,
+    profile: RevisionRolePolicy,
+    maintenance_body_profile: RevisionRolePolicy | None = None,
 ) -> tuple[list[dict[str, Any]], set[str], tuple[str, ...]]:
     checks: list[dict[str, Any]] = []
     reasons: set[str] = set()
@@ -2257,7 +3104,7 @@ def _inspect_policy_state(
     revision_ok = True
     if require_revision:
         revisions = _alembic_revisions(connection)
-        revision_ok = revisions == (EXPECTED_ALEMBIC_REVISION,)
+        revision_ok = revisions == (profile.revision,)
     checks.append(
         _check_observation(
             "alembic_schema_authority",
@@ -2306,7 +3153,9 @@ def _inspect_policy_state(
     try:
         archive_schemas = _archive_schemas_from_catalog(connection)
         inventory_ok, ownership_ok, object_details = _object_observation(
-            connection, archive_schemas
+            connection,
+            archive_schemas,
+            profile,
         )
     except Phase5C4RoleError as exc:
         archive_schemas = ()
@@ -2350,6 +3199,7 @@ def _inspect_policy_state(
     expected_relation_acls = _expected_relation_acls(
         archive_schemas,
         state=expected_state,
+        profile=profile,
         optional_present=optional_present,
     )
     relation_acl_ok = actual_relation_acls == expected_relation_acls
@@ -2423,6 +3273,8 @@ def _inspect_policy_state(
     security_definer_ok, routine_details = _security_definer_observation(
         connection,
         archive_schemas,
+        profile,
+        maintenance_body_profile=maintenance_body_profile,
     )
     checks.append(
         _check_observation("security_definer_routines", security_definer_ok, routine_details)
@@ -2520,27 +3372,48 @@ def _inspect_policy_state(
     return checks, reasons, archive_schemas
 
 
+def _select_role_policy(
+    connection: Connection,
+    policy_revision: str | None,
+) -> RevisionRolePolicy:
+    if policy_revision is not None:
+        return _revision_role_policy(policy_revision)
+    revisions = _alembic_revisions(connection)
+    if len(revisions) == 1 and revisions[0] in SUPPORTED_ROLE_POLICY_REVISIONS:
+        return _revision_role_policy(revisions[0])
+    return _revision_role_policy(EXPECTED_ALEMBIC_REVISION)
+
+
 def qualify_source_role_policy(
     connection: Connection,
     *,
     expected_state: Literal["normal", "maintenance"] = "normal",
+    policy_revision: str | None = None,
 ) -> dict[str, Any]:
-    """Return deterministic, content-free Stage 5C4.2a exercise evidence."""
+    """Return deterministic evidence for one exact supported revision policy."""
     if expected_state not in {"normal", "maintenance"}:
         raise ValueError("Expected role-policy state must be normal or maintenance")
+    profile = _select_role_policy(connection, policy_revision)
     checks, reasons, archive_schemas = _inspect_policy_state(
         connection,
         expected_state=expected_state,
         require_revision=True,
+        profile=profile,
     )
     if not reasons <= REASON_CODES:
         raise Phase5C4RoleError("Eligibility checker emitted an unbounded reason code")
+    manifest = build_revision_privilege_manifest(profile.revision)
+    transitional = profile.revision != EXPECTED_ALEMBIC_REVISION
     unsigned = {
-        "contract_version": SOURCE_ELIGIBILITY_VERSION,
+        "contract_version": (
+            TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION
+            if transitional
+            else SOURCE_ELIGIBILITY_VERSION
+        ),
         "deployment_scope": DEPLOYMENT_SCOPE,
         "role_policy_version": ROLE_POLICY_VERSION,
-        "privilege_manifest_version": PRIVILEGE_MANIFEST_VERSION,
-        "privilege_manifest_digest": PRIVILEGE_MANIFEST_DIGEST,
+        "privilege_manifest_version": manifest["manifest_version"],
+        "privilege_manifest_digest": manifest["manifest_digest"],
         "database_identity_digest": canonical.canonical_digest(
             {"database_name": _database_name(connection)}
         ),
@@ -2553,6 +3426,8 @@ def qualify_source_role_policy(
         "reason_codes": sorted(reasons),
         "qualified": not reasons,
     }
+    if transitional:
+        unsigned["policy_revision"] = profile.revision
     unsigned["qualification_digest"] = canonical.canonical_digest(unsigned)
     return unsigned
 
@@ -2575,17 +3450,39 @@ def validate_source_eligibility(value: Any) -> dict[str, Any]:
         "qualified",
         "qualification_digest",
     }
+    transitional = (
+        payload.get("contract_version")
+        == TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION
+    )
+    if transitional:
+        expected_keys.add("policy_revision")
     if set(payload) != expected_keys:
         raise Phase5C4RoleError("Source eligibility evidence has unexpected fields")
-    if payload["contract_version"] != SOURCE_ELIGIBILITY_VERSION:
+    if payload["contract_version"] not in {
+        SOURCE_ELIGIBILITY_VERSION,
+        TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION,
+    }:
         raise Phase5C4RoleError("Source eligibility contract version is unsupported")
     if payload["deployment_scope"] != DEPLOYMENT_SCOPE:
         raise Phase5C4RoleError("Source eligibility deployment scope is unsupported")
     if payload["role_policy_version"] != ROLE_POLICY_VERSION:
         raise Phase5C4RoleError("Source eligibility role policy is unsupported")
+    if transitional:
+        policy_revision = payload["policy_revision"]
+        if (
+            not isinstance(policy_revision, str)
+            or policy_revision == EXPECTED_ALEMBIC_REVISION
+            or policy_revision not in SUPPORTED_ROLE_POLICY_REVISIONS
+        ):
+            raise Phase5C4RoleError(
+                "Source eligibility revision policy is unsupported"
+            )
+        manifest = build_revision_privilege_manifest(policy_revision)
+    else:
+        manifest = build_privilege_manifest()
     if (
-        payload["privilege_manifest_version"] != PRIVILEGE_MANIFEST_VERSION
-        or payload["privilege_manifest_digest"] != PRIVILEGE_MANIFEST_DIGEST
+        payload["privilege_manifest_version"] != manifest["manifest_version"]
+        or payload["privilege_manifest_digest"] != manifest["manifest_digest"]
     ):
         raise Phase5C4RoleError("Source eligibility privilege manifest is unsupported")
     if payload["expected_state"] not in {"normal", "maintenance"}:
@@ -2730,6 +3627,7 @@ def provision_role_policy(
             connection,
             archive_schemas,
             allowed_owners={session_role},
+            profile=_revision_role_policy(EXPECTED_ALEMBIC_REVISION),
         )
         _assert_preprovision_acl_surface(connection, archive_schemas)
         _transfer_ownership(connection, archive_schemas)
@@ -2737,7 +3635,10 @@ def provision_role_policy(
         _apply_public_mutating_routine_denials(connection)
         _apply_database_and_schema_acls(connection, archive_schemas)
         _apply_relation_acls(connection, archive_schemas)
-        _create_maintenance_routines(connection)
+        _create_maintenance_routines(
+            connection,
+            _revision_role_policy(EXPECTED_ALEMBIC_REVISION),
+        )
         evidence = qualify_source_role_policy(connection)
         validate_source_eligibility(evidence)
         if not evidence["qualified"]:
@@ -2751,13 +3652,39 @@ def provision_role_policy(
 def _policy_state_is_exact(
     connection: Connection,
     state: Literal["normal", "maintenance"],
+    *,
+    policy_revision: str | None = None,
 ) -> bool:
+    profile = _select_role_policy(connection, policy_revision)
     checks, reasons, _ = _inspect_policy_state(
         connection,
         expected_state=state,
         require_revision=True,
+        profile=profile,
     )
     return not reasons and all(check["passed"] for check in checks)
+
+
+def assert_revision_role_policy(
+    connection: Connection,
+    *,
+    revision: str,
+    expected_state: Literal["normal", "maintenance"],
+) -> None:
+    """Fail a migration before DDL when the exact composed policy has drifted."""
+
+    profile = _revision_role_policy(revision)
+    checks, reasons, _ = _inspect_policy_state(
+        connection,
+        expected_state=expected_state,
+        require_revision=True,
+        profile=profile,
+    )
+    if reasons or not all(check["passed"] for check in checks):
+        raise Phase5C4RoleError(
+            "Revision role-policy drift prevents migration: "
+            + ",".join(sorted(reasons))
+        )
 
 
 def _runtime_session_pids(connection: Connection) -> tuple[int, ...]:
@@ -2883,8 +3810,22 @@ def close_runtime_maintenance(
         _require_postgresql_16(connection)
         if connection.scalar(text("SELECT session_user")) != OPS_ROLE:
             raise Phase5C4RoleError("Maintenance close must run as nutrition_ops")
-        normal = _policy_state_is_exact(connection, "normal")
-        maintenance = False if normal else _policy_state_is_exact(connection, "maintenance")
+        profile = _select_role_policy(connection, None)
+        manifest_digest = revision_privilege_manifest_digest(profile.revision)
+        normal = _policy_state_is_exact(
+            connection,
+            "normal",
+            policy_revision=profile.revision,
+        )
+        maintenance = (
+            False
+            if normal
+            else _policy_state_is_exact(
+                connection,
+                "maintenance",
+                policy_revision=profile.revision,
+            )
+        )
         if not normal and not maintenance:
             raise Phase5C4RoleError(
                 "Privilege drift prevents maintenance close or drain resumption"
@@ -2900,7 +3841,7 @@ def close_runtime_maintenance(
                     f"SELECT {MAINTENANCE_SCHEMA}.close_runtime_writes("
                     ":manifest_digest)"
                 ),
-                {"manifest_digest": PRIVILEGE_MANIFEST_DIGEST},
+                {"manifest_digest": manifest_digest},
             )
             if result != "maintenance_closed":
                 raise Phase5C4RoleError(
@@ -2929,7 +3870,7 @@ def close_runtime_maintenance(
         "quiet_period_seconds": quiet_period_seconds,
         "terminated_session_count": terminated,
         "remaining_runtime_sessions": remaining,
-        "privilege_manifest_digest": PRIVILEGE_MANIFEST_DIGEST,
+        "privilege_manifest_digest": manifest_digest,
     }
 
 
@@ -2939,13 +3880,32 @@ def restore_runtime_privileges(engine: Engine) -> dict[str, Any]:
         _require_postgresql_16(connection)
         if connection.scalar(text("SELECT session_user")) != OPS_ROLE:
             raise Phase5C4RoleError("Maintenance restore must run as nutrition_ops")
-        maintenance = _policy_state_is_exact(connection, "maintenance")
-        normal = False if maintenance else _policy_state_is_exact(connection, "normal")
+        profile = _select_role_policy(connection, None)
+        manifest_digest = revision_privilege_manifest_digest(profile.revision)
+        if not profile.restore_allowed:
+            raise Phase5C4RoleError(
+                "Runtime restoration is not legal at revision "
+                f"{profile.revision}"
+            )
+        maintenance = _policy_state_is_exact(
+            connection,
+            "maintenance",
+            policy_revision=profile.revision,
+        )
+        normal = (
+            False
+            if maintenance
+            else _policy_state_is_exact(
+                connection,
+                "normal",
+                policy_revision=profile.revision,
+            )
+        )
         if normal:
             return {
                 "state": "normal",
                 "already_restored": True,
-                "privilege_manifest_digest": PRIVILEGE_MANIFEST_DIGEST,
+                "privilege_manifest_digest": manifest_digest,
             }
         if not maintenance:
             raise Phase5C4RoleError(
@@ -2961,12 +3921,12 @@ def restore_runtime_privileges(engine: Engine) -> dict[str, Any]:
                 f"SELECT {MAINTENANCE_SCHEMA}.restore_runtime_writes("
                 ":manifest_digest)"
             ),
-            {"manifest_digest": PRIVILEGE_MANIFEST_DIGEST},
+            {"manifest_digest": manifest_digest},
         )
         if result != "runtime_privileges_restored":
             raise Phase5C4RoleError("Maintenance restore routine returned an unexpected result")
     return {
         "state": "normal",
         "already_restored": False,
-        "privilege_manifest_digest": PRIVILEGE_MANIFEST_DIGEST,
+        "privilege_manifest_digest": manifest_digest,
     }

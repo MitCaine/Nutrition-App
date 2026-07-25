@@ -554,10 +554,14 @@ class RecipeService:
             self.publications.add(revision)
             self._after_revision_insert(revision)
 
+            projection = projection or self._select_or_create_projection(recipe, user_id)
+            # The paired publication check is immediate.  Establish both Recipe
+            # links before the first activation flush; the exact projection/revision
+            # backlink is a deferred FK and is completed later in this transaction.
+            recipe.published_food_item = projection
             self._assign_active_revision(recipe, revision.id)
             self.db.flush()
             self._after_active_revision_assignment(recipe)
-            projection = projection or self._select_or_create_projection(recipe, user_id)
             # A partial unique index permits only one default per Food. Release
             # the existing projection default before inserting the new revision's
             # serving generation; the publication transaction remains atomic.
@@ -819,6 +823,7 @@ class RecipeService:
             built.append(
                 RecipeIngredient(
                     id=uuid4(),
+                    user_id=recipe.user_id,
                     food_item_id=food.id,
                     position=ingredient.position,
                     amount_quantity=ingredient.amount_quantity,
