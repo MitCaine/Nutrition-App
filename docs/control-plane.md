@@ -47,6 +47,8 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Stage 5C4.3 | Independent control DB, immutable evidence/events, leases/outbox, MinIO anchoring, gate API | ops migrations 0001–0003 |
 | Stage 5C4.4 | Collector-authored source observations and semantic admission/performance decisions | ops migration 0004 and admission modules |
 | Resource membership 0019 | Database-enforced ownership/membership, read-only corruption inventory, and distinct current-schema admission | `production-hardening-resource-membership.md`, application migration 0019, ops migration 0005 |
+| Immutable provenance 0020 | Database-enforced historical immutability and exact current-schema admission | `production-hardening-immutable-provenance.md`, application migration 0020, ops migration 0006 |
+| Stage 5C4.5 | Idempotent local restore execution, atomic restored-database qualification, and immutable recovery evidence | `production-hardening-phase5c4.5.md`, ops migration 0007 |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
@@ -227,8 +229,9 @@ variables, credentials, databases, and ownership assumptions.
 
 The independent environment gate API exists as a minimal read-only control projection, but normal
 application runtime does **not** yet consume it per request or at startup. Runtime gate wiring,
-provider switching, activation, signature verification, backup/restore provider adapters, and
-cutover are later work.
+provider switching, activation, signature verification, and cutover are later work. Phase 5C4.5
+adds a bounded Docker Compose/pgBackRest recovery adapter and immutable restore validation, but it
+does not create backups, route traffic, or authorize activation.
 
 Therefore:
 
@@ -248,10 +251,11 @@ Therefore:
 | Control role policy | `phase5c4_control_roles.py`, `manage_phase5c4_control_roles.py` |
 | Evidence collection and WORM delivery | `phase5c4_control_evidence.py`, `phase5c4_minio.py` |
 | Python control client | `phase5c4_control.py` |
-| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0006` |
+| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0007` |
 | Admission rules | `phase5c4_admission.py`, `phase5c_performance_contracts.py`, ops 0004 |
 | Current resource-membership operations | `resource_membership_*` operator modules, preflight script, and the 0019 runbook |
 | Current immutable-provenance operations | `immutable_provenance_*` operator modules, qualification script, and the 0020 runbook |
+| Recovery execution and evidence | `phase5c4_recovery.py`, `manage_phase5c4_recovery.py`, the 5C4.5 runbook, and ops 0007 |
 | Qualification | control migration routines, resource-membership and immutable-provenance qualification, and PostgreSQL qualification tests |
 
 Always follow the SQL routine and role grant reached by a Python wrapper. The wrapper alone does not

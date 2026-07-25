@@ -569,6 +569,71 @@ def _validate_prerequisites(raw: Any):
     return prerequisites
 
 
+def qualify_immutable_provenance_connection(
+    connection: Connection,
+) -> ImmutableProvenanceQualification:
+    """Qualify an already protected qualifier-owned transaction."""
+
+    revisions = list(
+        connection.scalars(
+            text("SELECT version_num FROM public.alembic_version ORDER BY version_num")
+        )
+    )
+    if revisions != [CURRENT_RUNTIME_SCHEMA_REVISION]:
+        raise ImmutableProvenanceQualificationError(
+            "immutable_provenance_qualification_schema_invalid"
+        )
+    prerequisites = _validate_prerequisites(
+        connection.scalar(text("SELECT public.phase5c_read_qualifier_evidence_v2()"))
+    )
+    preflight = assert_no_blocking_findings(
+        connection,
+        observed_schema_revision=CURRENT_RUNTIME_SCHEMA_REVISION,
+        read_only=True,
+    ).to_dict()
+    constraints = qualify_constraint_manifest(connection)
+    if constraints != expected_constraint_manifest():
+        raise ImmutableProvenanceQualificationError(
+            "immutable_provenance_resource_membership_invalid"
+        )
+    immutable_manifest = qualify_immutable_provenance_manifest(connection)
+    runtime_privileges = qualify_runtime_privileges(connection)
+    constraint_payload = {
+        "constraint_manifest_version": CONSTRAINT_MANIFEST_VERSION,
+        "constraints": constraints,
+    }
+    unsigned: dict[str, Any] = {
+        "blocking_category_count": int(preflight["blocking_category_count"]),
+        "blocking_row_count": int(preflight["blocking_row_count"]),
+        "constraint_manifest_digest": canonical_digest(constraint_payload),
+        "constraint_manifest_version": CONSTRAINT_MANIFEST_VERSION,
+        "constraints": constraints,
+        "contract_version": IMMUTABLE_PROVENANCE_QUALIFICATION_VERSION,
+        "fence_event_chain_digest": prerequisites.event_chain_digest,
+        "fence_mode": prerequisites.state["mode"],
+        "historical_phase5_schema_revision": HISTORICAL_PHASE5_SCHEMA_REVISION,
+        "immutable_provenance_integrity_valid": True,
+        "immutable_provenance_manifest": immutable_manifest,
+        "immutable_provenance_manifest_digest": canonical_digest(immutable_manifest),
+        "immutable_provenance_manifest_version": (
+            IMMUTABLE_PROVENANCE_MANIFEST_VERSION
+        ),
+        "local_admission_contract_version": (
+            IMMUTABLE_PROVENANCE_LOCAL_ADMISSION_VERSION
+        ),
+        "preflight_contract_version": PREFLIGHT_VERSION,
+        "preflight_report_digest": str(preflight["report_digest"]),
+        "resource_membership_integrity_valid": True,
+        "runtime_privilege_digest": canonical_digest(runtime_privileges),
+        "runtime_privileges": runtime_privileges,
+        "schema_revision": CURRENT_RUNTIME_SCHEMA_REVISION,
+        "target_identity_digest": prerequisites.identity["identity_digest"],
+    }
+    return ImmutableProvenanceQualification(
+        {**unsigned, "qualification_digest": canonical_digest(unsigned)}
+    )
+
+
 def collect_immutable_provenance_qualification(
     database_url: str,
 ) -> ImmutableProvenanceQualification:
@@ -614,71 +679,7 @@ def collect_immutable_provenance_qualification(
                 text("SELECT pg_catalog.pg_advisory_xact_lock_shared(:lock_id)"),
                 {"lock_id": MIGRATION_ADVISORY_LOCK_KEY},
             )
-            revisions = list(
-                connection.scalars(
-                    text("SELECT version_num FROM public.alembic_version ORDER BY version_num")
-                )
-            )
-            if revisions != [CURRENT_RUNTIME_SCHEMA_REVISION]:
-                raise ImmutableProvenanceQualificationError(
-                    "immutable_provenance_qualification_schema_invalid"
-                )
-            prerequisites = _validate_prerequisites(
-                connection.scalar(
-                    text("SELECT public.phase5c_read_qualifier_evidence_v2()")
-                )
-            )
-            preflight = assert_no_blocking_findings(
-                connection,
-                observed_schema_revision=CURRENT_RUNTIME_SCHEMA_REVISION,
-                read_only=True,
-            ).to_dict()
-            constraints = qualify_constraint_manifest(connection)
-            if constraints != expected_constraint_manifest():
-                raise ImmutableProvenanceQualificationError(
-                    "immutable_provenance_resource_membership_invalid"
-                )
-            immutable_manifest = qualify_immutable_provenance_manifest(connection)
-            runtime_privileges = qualify_runtime_privileges(connection)
-            constraint_payload = {
-                "constraint_manifest_version": CONSTRAINT_MANIFEST_VERSION,
-                "constraints": constraints,
-            }
-            unsigned: dict[str, Any] = {
-                "blocking_category_count": int(preflight["blocking_category_count"]),
-                "blocking_row_count": int(preflight["blocking_row_count"]),
-                "constraint_manifest_digest": canonical_digest(constraint_payload),
-                "constraint_manifest_version": CONSTRAINT_MANIFEST_VERSION,
-                "constraints": constraints,
-                "contract_version": IMMUTABLE_PROVENANCE_QUALIFICATION_VERSION,
-                "fence_event_chain_digest": prerequisites.event_chain_digest,
-                "fence_mode": prerequisites.state["mode"],
-                "historical_phase5_schema_revision": HISTORICAL_PHASE5_SCHEMA_REVISION,
-                "immutable_provenance_integrity_valid": True,
-                "immutable_provenance_manifest": immutable_manifest,
-                "immutable_provenance_manifest_digest": canonical_digest(
-                    immutable_manifest
-                ),
-                "immutable_provenance_manifest_version": (
-                    IMMUTABLE_PROVENANCE_MANIFEST_VERSION
-                ),
-                "local_admission_contract_version": (
-                    IMMUTABLE_PROVENANCE_LOCAL_ADMISSION_VERSION
-                ),
-                "preflight_contract_version": PREFLIGHT_VERSION,
-                "preflight_report_digest": str(preflight["report_digest"]),
-                "resource_membership_integrity_valid": True,
-                "runtime_privilege_digest": canonical_digest(runtime_privileges),
-                "runtime_privileges": runtime_privileges,
-                "schema_revision": CURRENT_RUNTIME_SCHEMA_REVISION,
-                "target_identity_digest": prerequisites.identity["identity_digest"],
-            }
-            return ImmutableProvenanceQualification(
-                {
-                    **unsigned,
-                    "qualification_digest": canonical_digest(unsigned),
-                }
-            )
+            return qualify_immutable_provenance_connection(connection)
     except ImmutableProvenanceQualificationError:
         raise
     except (ResourceMembershipPreflightError, ResourceMembershipQualificationError):

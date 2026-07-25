@@ -1,6 +1,6 @@
 # Production Hardening Phase 5C4.0: deployment and provider decision record
 
-Status: **accepted historical decision; implementation complete through Stage 5C4.4**
+Status: **accepted historical decision; implementation complete through Stage 5C4.5**
 Decision date: 2026-07-16
 Stage 5C4.2b clarification date: 2026-07-16
 Decision owner: repository owner, acting as `portfolio_owner_v1`
@@ -11,7 +11,7 @@ Current implementation boundary: [Control Plane Guide](control-plane.md#evolutio
 This record closed the infrastructure and policy choices required by Section 20 of
 [Production Hardening Phase 5C4](production-hardening-phase5c4.md). The decision itself made no
 application, database, provider, or runtime change. Later bounded implementation reviews completed
-Stages 5C4.1 through 5C4.4; Stages 5C4.5 through 5C4.9 retain their own exit gates.
+Stages 5C4.1 through 5C4.5; Stages 5C4.6 through 5C4.9 retain their own exit gates.
 
 The graph-restart/idempotency and Alembic schema-authority blockers were corrected before this
 record. Migration 0018 may therefore be designed against an explicit runtime-plus-retained schema
