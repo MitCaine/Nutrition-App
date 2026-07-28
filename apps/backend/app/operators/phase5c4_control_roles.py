@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Any
+from typing import Any, Mapping
 
 from sqlalchemy import Connection, Engine, text
 
@@ -32,6 +32,12 @@ PROMOTION_AUTHORIZATION_VERIFIER_ROLE = "nutrition_control_promotion_authorizati
 PROMOTION_AUTHORIZATION_ROLE_POLICY_VERSION = (
     "phase5c4_promotion_authorization_verifier_role_policy_v1"
 )
+EXECUTION_AUTHORIZATION_VERIFIER_ROLE = "nutrition_control_execution_authorization_verifier"
+EXECUTION_AUTHORIZATION_ROLE_POLICY_VERSION = (
+    "phase5c4_execution_authorization_verifier_role_policy_v1"
+)
+EMERGENCY_CLOSE_ROLE = "nutrition_control_emergency_closer"
+EMERGENCY_CLOSE_ROLE_POLICY_VERSION = "phase5c4_emergency_close_operator_role_policy_v1"
 
 MANAGED_ROLES = (
     OWNER_ROLE,
@@ -57,10 +63,7 @@ class ControlRole:
     inherit: bool = False
 
 
-ROLE_SPECS = tuple(
-    ControlRole(role, role != OWNER_ROLE)
-    for role in MANAGED_ROLES
-)
+ROLE_SPECS = tuple(ControlRole(role, role != OWNER_ROLE) for role in MANAGED_ROLES)
 
 
 def privilege_manifest() -> dict[str, Any]:
@@ -144,6 +147,56 @@ def serialize_promotion_authorization_privilege_manifest() -> str:
     return canonical_json(promotion_authorization_privilege_manifest())
 
 
+def execution_authorization_privilege_manifest() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "contract_version": EXECUTION_AUTHORIZATION_ROLE_POLICY_VERSION,
+        "base_manifest_digest": privilege_manifest()["manifest_digest"],
+        "database": CONTROL_DATABASE,
+        "role": {
+            "name": EXECUTION_AUTHORIZATION_VERIFIER_ROLE,
+            "login": True,
+            "inherit": False,
+            "read_only": False,
+            "connect": True,
+            "base_table_dml": False,
+            "allowed_functions": [
+                "phase5c4_api.admit_execution_authorization_v1(bytea)",
+                "phase5c4_api.read_execution_authorization_key_v1(text)",
+            ],
+        },
+    }
+    return {**payload, "manifest_digest": canonical_digest(payload)}
+
+
+def serialize_execution_authorization_privilege_manifest() -> str:
+    return canonical_json(execution_authorization_privilege_manifest())
+
+
+def emergency_close_privilege_manifest() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "contract_version": EMERGENCY_CLOSE_ROLE_POLICY_VERSION,
+        "base_manifest_digest": privilege_manifest()["manifest_digest"],
+        "database": CONTROL_DATABASE,
+        "role": {
+            "name": EMERGENCY_CLOSE_ROLE,
+            "login": True,
+            "inherit": False,
+            "read_only": False,
+            "connect": True,
+            "base_table_dml": False,
+            "allowed_functions": [
+                "phase5c4_api.finalize_emergency_close_v1(uuid,uuid,uuid,uuid,bigint,bigint,bigint)",
+                "phase5c4_api.request_emergency_close_v1(uuid,uuid,uuid,uuid,bigint,bigint,bigint,text,text)",
+            ],
+        },
+    }
+    return {**payload, "manifest_digest": canonical_digest(payload)}
+
+
+def serialize_emergency_close_privilege_manifest() -> str:
+    return canonical_json(emergency_close_privilege_manifest())
+
+
 def _require_bootstrap(connection: Connection) -> None:
     version = int(connection.scalar(text("SHOW server_version_num")) or 0)
     if not 160000 <= version < 170000:
@@ -158,9 +211,10 @@ def _require_bootstrap(connection: Connection) -> None:
 
 def provision_control_roles(engine: Engine, *, expected_database: str) -> dict[str, Any]:
     """Provision exact roles and database ownership on a new control database."""
-    if expected_database != CONTROL_DATABASE and re.fullmatch(
-        r"test_phase5c4_[a-z0-9_]{1,48}", expected_database
-    ) is None:
+    if (
+        expected_database != CONTROL_DATABASE
+        and re.fullmatch(r"test_phase5c4_[a-z0-9_]{1,48}", expected_database) is None
+    ):
         raise Phase5C4ControlRoleError("Refusing to provision an unexpected control database")
     with engine.begin() as connection:
         _require_bootstrap(connection)
@@ -217,9 +271,10 @@ def provision_authorization_verifier_role(
 ) -> dict[str, Any]:
     """Add the bounded verifier identity before the ops-0008 migration."""
 
-    if expected_database != CONTROL_DATABASE and re.fullmatch(
-        r"test_phase5c4_[a-z0-9_]{1,48}", expected_database
-    ) is None:
+    if (
+        expected_database != CONTROL_DATABASE
+        and re.fullmatch(r"test_phase5c4_[a-z0-9_]{1,48}", expected_database) is None
+    ):
         raise Phase5C4ControlRoleError("Refusing to provision an unexpected control database")
     with engine.begin() as connection:
         _require_bootstrap(connection)
@@ -321,14 +376,13 @@ def provision_promotion_authorization_verifier_role(
     )
 
 
-def remove_authorization_verifier_role(
-    engine: Engine, *, expected_database: str
-) -> dict[str, Any]:
+def remove_authorization_verifier_role(engine: Engine, *, expected_database: str) -> dict[str, Any]:
     """Remove the external verifier identity after an empty ops-0008 downgrade."""
 
-    if expected_database != CONTROL_DATABASE and re.fullmatch(
-        r"test_phase5c4_[a-z0-9_]{1,48}", expected_database
-    ) is None:
+    if (
+        expected_database != CONTROL_DATABASE
+        and re.fullmatch(r"test_phase5c4_[a-z0-9_]{1,48}", expected_database) is None
+    ):
         raise Phase5C4ControlRoleError("Refusing to modify an unexpected control database")
     with engine.begin() as connection:
         _require_bootstrap(connection)
@@ -736,6 +790,321 @@ def qualify_promotion_authorization_verifier_role(
         return {**payload, "qualification_digest": canonical_digest(payload)}
 
 
+def _validate_external_role_database(connection: Connection, *, expected_database: str) -> str:
+    if (
+        expected_database != CONTROL_DATABASE
+        and re.fullmatch(r"test_phase5c4_[a-z0-9_]{1,48}", expected_database) is None
+    ):
+        raise Phase5C4ControlRoleError("Refusing to modify an unexpected control database")
+    actual = str(connection.scalar(text("SELECT current_database()")))
+    if actual != expected_database:
+        raise Phase5C4ControlRoleError("Configured database does not match expected database")
+    return actual
+
+
+def _provision_external_role(
+    engine: Engine,
+    *,
+    expected_database: str,
+    role: str,
+    qualification: Any,
+) -> dict[str, Any]:
+    with engine.begin() as connection:
+        _require_bootstrap(connection)
+        actual = _validate_external_role_database(connection, expected_database=expected_database)
+        connection.execute(text("SELECT pg_catalog.pg_advisory_xact_lock(5542048)"))
+        existing = connection.execute(
+            text(
+                """
+                SELECT rolcanlogin, rolinherit, rolsuper, rolcreatedb,
+                       rolcreaterole, rolreplication, rolbypassrls, rolconfig
+                FROM pg_catalog.pg_roles WHERE rolname = :role
+                """
+            ),
+            {"role": role},
+        ).one_or_none()
+        if existing is None:
+            connection.execute(
+                text(
+                    f"""
+                    CREATE ROLE {role}
+                        LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
+                        NOREPLICATION NOBYPASSRLS;
+                    GRANT CONNECT ON DATABASE "{actual}" TO {role};
+                    """
+                )
+            )
+        elif (
+            bool(existing.rolcanlogin) is not True
+            or bool(existing.rolinherit)
+            or bool(existing.rolsuper)
+            or bool(existing.rolcreatedb)
+            or bool(existing.rolcreaterole)
+            or bool(existing.rolreplication)
+            or bool(existing.rolbypassrls)
+            or list(existing.rolconfig or [])
+        ):
+            raise Phase5C4ControlRoleError("Phase 5C4.7b external role is invalid")
+    return qualification(engine, expected_database=expected_database, require_api=False)
+
+
+def _qualify_external_role(
+    engine: Engine,
+    *,
+    expected_database: str,
+    role: str,
+    contract_version: str,
+    manifest: Mapping[str, Any],
+    expected_functions: set[str],
+    require_api: bool,
+) -> dict[str, Any]:
+    with engine.connect() as connection:
+        _validate_external_role_database(connection, expected_database=expected_database)
+        row = connection.execute(
+            text(
+                """
+                SELECT rolcanlogin, rolinherit, rolsuper, rolcreatedb,
+                       rolcreaterole, rolreplication, rolbypassrls, rolconfig
+                FROM pg_catalog.pg_roles WHERE rolname = :role
+                """
+            ),
+            {"role": role},
+        ).one_or_none()
+        errors: list[str] = []
+        if row is None:
+            errors.append("role_missing")
+        elif (
+            bool(row.rolcanlogin) is not True
+            or bool(row.rolinherit)
+            or bool(row.rolsuper)
+            or bool(row.rolcreatedb)
+            or bool(row.rolcreaterole)
+            or bool(row.rolreplication)
+            or bool(row.rolbypassrls)
+            or list(row.rolconfig or [])
+        ):
+            errors.append("role_attributes")
+        if not bool(
+            connection.scalar(
+                text(
+                    "SELECT pg_catalog.has_database_privilege(:role, current_database(), 'CONNECT')"
+                ),
+                {"role": role},
+            )
+        ):
+            errors.append("database_connect")
+        allowed = {
+            str(value)
+            for value in connection.scalars(
+                text(
+                    """
+                    SELECT function.oid::regprocedure::text
+                    FROM pg_catalog.pg_proc function
+                    JOIN pg_catalog.pg_namespace schema
+                      ON schema.oid = function.pronamespace
+                    WHERE schema.nspname IN (
+                        'phase5c4_api','phase5c4_control'
+                    )
+                      AND pg_catalog.has_function_privilege(
+                          :role, function.oid, 'EXECUTE'
+                      )
+                    """
+                ),
+                {"role": role},
+            )
+        }
+        if allowed != (expected_functions if require_api else set()):
+            errors.append("function_execute")
+        schema_usage = {
+            str(value)
+            for value in connection.scalars(
+                text(
+                    """
+                    SELECT schema.nspname
+                    FROM pg_catalog.pg_namespace schema
+                    WHERE schema.nspname IN (
+                        'phase5c4_api','phase5c4_control','phase5c4_ext'
+                    )
+                      AND pg_catalog.has_schema_privilege(
+                          :role, schema.oid, 'USAGE'
+                      )
+                    """
+                ),
+                {"role": role},
+            )
+        }
+        if schema_usage != ({"phase5c4_api"} if require_api else set()):
+            errors.append("schema_usage")
+        table_grants = int(
+            connection.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM pg_catalog.pg_class relation
+                    JOIN pg_catalog.pg_namespace schema
+                      ON schema.oid = relation.relnamespace
+                    WHERE schema.nspname = 'phase5c4_control'
+                      AND relation.relkind IN ('r','p','v','m')
+                      AND pg_catalog.has_any_column_privilege(
+                          :role, relation.oid,
+                          'SELECT,INSERT,UPDATE,REFERENCES'
+                      )
+                    """
+                ),
+                {"role": role},
+            )
+            or 0
+        )
+        memberships = int(
+            connection.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM pg_catalog.pg_auth_members membership
+                    JOIN pg_catalog.pg_roles granted
+                      ON granted.oid = membership.roleid
+                    JOIN pg_catalog.pg_roles member
+                      ON member.oid = membership.member
+                    WHERE granted.rolname = :role OR member.rolname = :role
+                    """
+                ),
+                {"role": role},
+            )
+            or 0
+        )
+        if table_grants:
+            errors.append("base_table_access")
+        if memberships:
+            errors.append("role_membership")
+        payload = {
+            "contract_version": contract_version,
+            "database": expected_database,
+            "manifest_digest": manifest["manifest_digest"],
+            "qualified": not errors,
+            "reason_codes": sorted(set(errors)),
+        }
+        return {
+            **payload,
+            "qualification_digest": canonical_digest(payload),
+        }
+
+
+def provision_execution_authorization_verifier_role(
+    engine: Engine, *, expected_database: str
+) -> dict[str, Any]:
+    return _provision_external_role(
+        engine,
+        expected_database=expected_database,
+        role=EXECUTION_AUTHORIZATION_VERIFIER_ROLE,
+        qualification=qualify_execution_authorization_verifier_role,
+    )
+
+
+def qualify_execution_authorization_verifier_role(
+    engine: Engine, *, expected_database: str, require_api: bool = True
+) -> dict[str, Any]:
+    return _qualify_external_role(
+        engine,
+        expected_database=expected_database,
+        role=EXECUTION_AUTHORIZATION_VERIFIER_ROLE,
+        contract_version=EXECUTION_AUTHORIZATION_ROLE_POLICY_VERSION,
+        manifest=execution_authorization_privilege_manifest(),
+        expected_functions={
+            "phase5c4_api.admit_execution_authorization_v1(bytea)",
+            "phase5c4_api.read_execution_authorization_key_v1(text)",
+        },
+        require_api=require_api,
+    )
+
+
+def provision_emergency_close_role(engine: Engine, *, expected_database: str) -> dict[str, Any]:
+    return _provision_external_role(
+        engine,
+        expected_database=expected_database,
+        role=EMERGENCY_CLOSE_ROLE,
+        qualification=qualify_emergency_close_role,
+    )
+
+
+def qualify_emergency_close_role(
+    engine: Engine, *, expected_database: str, require_api: bool = True
+) -> dict[str, Any]:
+    return _qualify_external_role(
+        engine,
+        expected_database=expected_database,
+        role=EMERGENCY_CLOSE_ROLE,
+        contract_version=EMERGENCY_CLOSE_ROLE_POLICY_VERSION,
+        manifest=emergency_close_privilege_manifest(),
+        expected_functions={
+            ("phase5c4_api.finalize_emergency_close_v1(uuid,uuid,uuid,uuid,bigint,bigint,bigint)"),
+            (
+                "phase5c4_api.request_emergency_close_v1("
+                "uuid,uuid,uuid,uuid,bigint,bigint,bigint,text,text)"
+            ),
+        },
+        require_api=require_api,
+    )
+
+
+def _remove_external_role(
+    engine: Engine,
+    *,
+    expected_database: str,
+    role: str,
+    api_signature: str,
+    contract_version: str,
+) -> dict[str, Any]:
+    with engine.begin() as connection:
+        _require_bootstrap(connection)
+        actual = _validate_external_role_database(connection, expected_database=expected_database)
+        connection.execute(text("SELECT pg_catalog.pg_advisory_xact_lock(5542048)"))
+        if bool(
+            connection.scalar(
+                text("SELECT pg_catalog.to_regprocedure(:signature) IS NOT NULL"),
+                {"signature": api_signature},
+            )
+        ):
+            raise Phase5C4ControlRoleError("Downgrade Phase 5C4.7b before removing its role")
+        if bool(
+            connection.scalar(
+                text("SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :role)"),
+                {"role": role},
+            )
+        ):
+            connection.execute(text(f'REVOKE CONNECT ON DATABASE "{actual}" FROM {role}'))
+            connection.execute(text(f"DROP ROLE {role}"))
+    return {
+        "contract_version": contract_version,
+        "database": expected_database,
+        "removed": True,
+    }
+
+
+def remove_execution_authorization_verifier_role(
+    engine: Engine, *, expected_database: str
+) -> dict[str, Any]:
+    return _remove_external_role(
+        engine,
+        expected_database=expected_database,
+        role=EXECUTION_AUTHORIZATION_VERIFIER_ROLE,
+        api_signature="phase5c4_api.admit_execution_authorization_v1(bytea)",
+        contract_version=EXECUTION_AUTHORIZATION_ROLE_POLICY_VERSION,
+    )
+
+
+def remove_emergency_close_role(engine: Engine, *, expected_database: str) -> dict[str, Any]:
+    return _remove_external_role(
+        engine,
+        expected_database=expected_database,
+        role=EMERGENCY_CLOSE_ROLE,
+        api_signature=(
+            "phase5c4_api.request_emergency_close_v1("
+            "uuid,uuid,uuid,uuid,bigint,bigint,bigint,text,text)"
+        ),
+        contract_version=EMERGENCY_CLOSE_ROLE_POLICY_VERSION,
+    )
+
+
 def assume_control_owner(connection: Connection) -> None:
     session_user = str(connection.scalar(text("SELECT session_user")))
     if session_user != MIGRATOR_ROLE:
@@ -784,9 +1153,7 @@ def qualify_control_roles(engine: Engine, *, expected_database: str) -> dict[str
             ):
                 errors.append("role_escalation")
             expected_config = (
-                ["default_transaction_read_only=on"]
-                if spec.name in READ_ONLY_ROLES
-                else []
+                ["default_transaction_read_only=on"] if spec.name in READ_ONLY_ROLES else []
             )
             if sorted(row.rolconfig or []) != expected_config:
                 errors.append("role_configuration_mismatch")
@@ -867,18 +1234,12 @@ def qualify_control_roles(engine: Engine, *, expected_database: str) -> dict[str
         }
         if any(grantee == "PUBLIC" for grantee, _, _ in database_acl):
             errors.append("public_database_privilege")
-        expected_database_grants = {
-            (role, "CONNECT", False) for role in LOGIN_ROLES
-        }
-        operational_database_grants = {
-            item for item in database_acl if item[0] in LOGIN_ROLES
-        }
+        expected_database_grants = {(role, "CONNECT", False) for role in LOGIN_ROLES}
+        operational_database_grants = {item for item in database_acl if item[0] in LOGIN_ROLES}
         if operational_database_grants != expected_database_grants:
             errors.append("database_acl_mismatch")
         unexpected_grantees = {
-            grantee
-            for grantee, _, _ in database_acl
-            if grantee not in {OWNER_ROLE, *LOGIN_ROLES}
+            grantee for grantee, _, _ in database_acl if grantee not in {OWNER_ROLE, *LOGIN_ROLES}
         }
         if unexpected_grantees:
             errors.append("database_acl_mismatch")

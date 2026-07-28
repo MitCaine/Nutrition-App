@@ -262,12 +262,12 @@ snapshot or rewrite an existing value in place. SQLite cannot provide equivalent
 constraint security and remains a service/trigger regression boundary.
 
 All protection and validation routines are owned by `nutrition_owner`, with exact signatures,
-language/properties, `search_path`, definitions, and ACLs included in current qualification. Of the
-new 0020 routines, runtime and canary may execute the current local admission routine; runtime
-additionally may execute the snapshot replacement routine. Frozen pre-0020 routine grants remain
-independently qualified. Owner-only validator/rejector functions do not grant an ordinary caller a
-mutation path. The resource-membership validator independently proves that the complete 0019
-constraint contract is still validated before immutable provenance can qualify.
+language/properties, `search_path`, definitions, and ACLs included in the stage qualification. At
+revision 0020, runtime and canary may execute the v3 local admission routine; runtime additionally
+may execute the snapshot replacement routine. Frozen pre-0020 routine grants remain independently
+qualified. Owner-only validator/rejector functions do not grant an ordinary caller a mutation
+path. The resource-membership validator independently proves that the complete 0019 constraint
+contract is still validated before immutable provenance can qualify.
 
 The migration uses the established advisory lock, five-second lock timeout, fifteen-minute
 statement timeout, closed write fence, and drained runtime requirement. It acquires

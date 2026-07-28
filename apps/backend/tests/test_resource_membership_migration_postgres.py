@@ -1417,8 +1417,21 @@ def test_0019_sqlalchemy_metadata_has_no_domain_drift(
                     "include_object": lambda object_, name, type_, reflected, compare_to: (
                         not (
                             type_ == "table"
-                            and reflected
-                            and name == "phase5c_conversion_clone_marker"
+                            and (
+                                (
+                                    reflected
+                                    and name
+                                    == "phase5c_conversion_clone_marker"
+                                )
+                                or (
+                                    not reflected
+                                    and name
+                                    in {
+                                        "phase5c_activation_runtime_commands",
+                                        "phase5c_activation_schema_evidence",
+                                    }
+                                )
+                            )
                         )
                     ),
                 },

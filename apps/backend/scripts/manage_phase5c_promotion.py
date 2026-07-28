@@ -1,8 +1,8 @@
 """Bounded Phase 5C4 control-plane CLI.
 
-The Phase 5C4.7a commands are fixed-purpose evidence and transition surfaces.
-This intentionally exposes no target activation, open-production, cutback,
-authorization-consumption, or general resume command.
+The Phase 5C4.7a promotion commands and Phase 5C4.7b target-activation commands
+are fixed-purpose evidence and transition surfaces.  This intentionally
+exposes no route cutback, source reopen, general resume, or private-key command.
 """
 
 from __future__ import annotations
@@ -172,6 +172,84 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _add_request(post_finalize)
     _add_environment_cas(post_finalize, attempt=True)
     post_finalize.add_argument("--receipt-id", required=True, type=_uuid)
+
+    schema_request = commands.add_parser("request-schema-migration")
+    _add_request(schema_request)
+    _add_environment_cas(schema_request, attempt=True)
+    schema_request.add_argument(
+        "--execution-authorization-id",
+        required=True,
+        type=_uuid,
+    )
+
+    schema_observation = commands.add_parser("record-schema-migration-observation")
+    schema_observation.add_argument("--file", required=True, type=Path)
+
+    activation_request = commands.add_parser("request-target-activation")
+    _add_request(activation_request)
+    _add_environment_cas(activation_request, attempt=True)
+    activation_request.add_argument(
+        "--execution-authorization-id",
+        required=True,
+        type=_uuid,
+    )
+    activation_request.add_argument(
+        "--schema-migration-observation-id",
+        required=True,
+        type=_uuid,
+    )
+
+    runtime_observation = commands.add_parser("record-activation-runtime-observation")
+    runtime_observation.add_argument("--file", required=True, type=Path)
+
+    activation_reconcile = commands.add_parser("reconcile-target-activation")
+    _add_request(activation_reconcile)
+    _add_environment_cas(activation_reconcile, attempt=True)
+    activation_reconcile.add_argument(
+        "--activation-request-id",
+        required=True,
+        type=_uuid,
+    )
+    activation_reconcile.add_argument(
+        "--runtime-observation-id",
+        required=True,
+        type=_uuid,
+    )
+
+    activation_status = commands.add_parser("activation-status")
+    activation_status.add_argument(
+        "--environment-id",
+        required=True,
+        type=_uuid,
+    )
+
+    emergency_request = commands.add_parser("request-emergency-close")
+    _add_request(emergency_request)
+    _add_environment_cas(emergency_request, attempt=True)
+    emergency_request.add_argument(
+        "--emergency-command-id",
+        required=True,
+        type=_uuid,
+    )
+    emergency_request.add_argument("--reason", required=True)
+    emergency_request.add_argument("--change-reference", required=True)
+
+    emergency_observation = commands.add_parser("record-emergency-close-observation")
+    emergency_observation.add_argument("--file", required=True, type=Path)
+
+    emergency_finalize = commands.add_parser("finalize-emergency-close")
+    _add_request(emergency_finalize)
+    _add_environment_cas(emergency_finalize, attempt=True)
+    emergency_finalize.add_argument(
+        "--emergency-command-id",
+        required=True,
+        type=_uuid,
+    )
+    emergency_finalize.add_argument(
+        "--observation-id",
+        required=True,
+        type=_uuid,
+    )
 
     status = commands.add_parser("status")
     status.add_argument("--environment-id", required=True, type=_uuid)
@@ -468,6 +546,137 @@ def execute(args: argparse.Namespace) -> dict:
             receipt_id=args.receipt_id,
             environment_id=args.environment_id,
             attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "request-schema-migration":
+        return database.request_schema_migration(
+            request_id=args.request_id,
+            execution_authorization_id=(args.execution_authorization_id),
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "record-schema-migration-observation":
+        document = _read_evidence(args.file)
+        row = database.record_schema_migration_observation(canonical_bytes=document)
+        return _generic_result(
+            args.command,
+            request_digest=sha256_digest_bytes(document),
+            result=str(row["result"]),
+            reason=(
+                "schema_migration_observation_recorded"
+                if row["result"] in {"accepted", "idempotent_replay"}
+                else "external_result_conflict"
+            ),
+            maintenance_required=True,
+            evidence_digests=[str(row["observation_digest"])],
+        )
+    if args.command == "request-target-activation":
+        return database.request_target_activation(
+            request_id=args.request_id,
+            execution_authorization_id=(args.execution_authorization_id),
+            schema_migration_observation_id=(args.schema_migration_observation_id),
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "record-activation-runtime-observation":
+        document = _read_evidence(args.file)
+        row = database.record_activation_runtime_observation(canonical_bytes=document)
+        return _generic_result(
+            args.command,
+            request_digest=sha256_digest_bytes(document),
+            result=str(row["result"]),
+            reason=(
+                "activation_runtime_observation_recorded"
+                if row["result"] in {"accepted", "idempotent_replay"}
+                else "external_result_conflict"
+            ),
+            maintenance_required=True,
+            evidence_digests=[str(row["observation_digest"])],
+        )
+    if args.command == "reconcile-target-activation":
+        return database.reconcile_target_activation(
+            request_id=args.request_id,
+            activation_request_id=args.activation_request_id,
+            runtime_observation_id=args.runtime_observation_id,
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "activation-status":
+        row = database.read_activation_execution(args.environment_id)
+        if row is None:
+            return _generic_result(
+                args.command,
+                environment_id=args.environment_id,
+                result="rejected",
+                reason="environment_not_found",
+                maintenance_required=True,
+            )
+        workflow = str(row["workflow_state"])
+        final_digest = row.get("final_evidence_digest")
+        if workflow == "TARGET_ACTIVE":
+            result, reason = "accepted", "target_activation_reconciled"
+        elif workflow == "EMERGENCY_CLOSED":
+            result, reason = "accepted", "emergency_close_reconciled"
+        elif workflow == "EMERGENCY_CLOSE_REQUESTED":
+            result, reason = "pending_reconcile", "emergency_close_unresolved"
+        else:
+            result, reason = (
+                "pending_reconcile",
+                "target_activation_unresolved",
+            )
+        return _generic_result(
+            args.command,
+            environment_id=args.environment_id,
+            attempt_id=str(row["attempt_id"]),
+            result=result,
+            reason=reason,
+            maintenance_required=bool(row["maintenance_required"]),
+            evidence_digests=([] if final_digest is None else [str(final_digest)]),
+        )
+    if args.command == "request-emergency-close":
+        return database.request_emergency_close(
+            request_id=args.request_id,
+            emergency_command_id=args.emergency_command_id,
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+            reason=args.reason,
+            change_reference=args.change_reference,
+        )
+    if args.command == "record-emergency-close-observation":
+        document = _read_evidence(args.file)
+        row = database.record_emergency_close_observation(canonical_bytes=document)
+        return _generic_result(
+            args.command,
+            request_digest=sha256_digest_bytes(document),
+            result=str(row["result"]),
+            reason=(
+                "emergency_close_observation_recorded"
+                if row["result"] in {"accepted", "idempotent_replay"}
+                else "external_result_conflict"
+            ),
+            maintenance_required=True,
+            evidence_digests=[str(row["observation_digest"])],
+        )
+    if args.command == "finalize-emergency-close":
+        return database.finalize_emergency_close(
+            request_id=args.request_id,
+            emergency_command_id=args.emergency_command_id,
+            observation_id=args.observation_id,
+            environment_id=args.environment_id,
             expected_environment_generation=(args.expected_environment_generation),
             expected_environment_state_version=(args.expected_environment_state_version),
             expected_attempt_state_version=(args.expected_attempt_state_version),

@@ -179,8 +179,12 @@ After external secret creation/rotation, process configuration is separated:
 - maintenance close/restore: authenticates as `nutrition_ops`.
 
 Do not supply the bootstrap administrator credential to the application, ordinary CLI, or Alembic
-after provisioning. Run `alembic upgrade head` before starting the runtime process; the existing
-application settings and API do not need a new configuration field.
+after provisioning. A preactivation deployment may advance through
+`0020_immutable_provenance_enforcement` before starting runtime. Revision
+`0021_target_activation_execution` is separately authorized and must be installed only through the
+[Phase 5C4.7b runbook](production-hardening-phase5c4.7b.md), never by an unqualified
+`alembic upgrade head`. The existing application settings and API do not need a new configuration
+field.
 
 For each process, verify `SELECT session_user, current_user`: Alembic must report
 `nutrition_migrator,nutrition_owner` after its explicit role assumption, while backend connections

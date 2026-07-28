@@ -970,7 +970,7 @@ def test_source_dimension_collector_is_real_read_only_repeatable_read_and_nonmut
         admin.dispose()
 
 
-def test_real_operator_sequence_0017_through_current_head(
+def test_real_operator_sequence_0017_through_0020_boundary(
     role_database: RoleDatabase,
 ) -> None:
     """Exercise the composed path that isolated migration fixtures did not cover."""
@@ -1127,10 +1127,12 @@ def test_real_operator_sequence_0017_through_current_head(
         ):
             roles.restore_runtime_privileges(engines[roles.OPS_ROLE])
 
+        # This sequence proves the preactivation role boundary. Schema 0021 is
+        # independently authorized and exercised by the target-activation suite.
         migrated = _run_alembic(
             role_urls[roles.MIGRATOR_ROLE],
             "upgrade",
-            "head",
+            roles.IMMUTABLE_PROVENANCE_REVISION,
         )
         assert migrated.returncode == 0, migrated.stderr
         with engines[roles.QUALIFIER_ROLE].connect() as connection:

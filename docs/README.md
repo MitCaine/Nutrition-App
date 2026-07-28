@@ -77,7 +77,10 @@ They are intentionally more detailed than the reader guides:
 - [Database-enforced ownership and resource membership](production-hardening-resource-membership.md)
   for the frozen 0019 preflight, migration, qualification, and recovery runbook
 - [Immutable historical provenance and OCR persistence readiness](production-hardening-immutable-provenance.md)
-  for the current 0020 enforcement, qualification, deployment, and bounded OCR design contract
+  for the frozen 0020 enforcement, qualification, deployment, and bounded OCR design contract
+- [Target-activation execution](production-hardening-phase5c4.7b.md)
+  for the authenticated current 0021 migration, runtime admission, reconciliation, and emergency
+  close boundary
 - [OCR implementation](stage5-ocr.md), [confirmation](stage6-confirmation.md),
   [parser](stage6-parser.md), and [Food discovery](stage7-food-discovery.md)
 - [Manual QA evidence](evidence/qa/README.md) and the captured Phase 5C performance manifests

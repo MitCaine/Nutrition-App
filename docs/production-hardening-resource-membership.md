@@ -1,6 +1,6 @@
 # Production Hardening: database-enforced resource membership
 
-Status: **current application schema contract at revision
+Status: **frozen application schema contract for revision
 `0019_resource_membership_integrity`**
 
 This bounded stage moves selected ownership and child-membership rules from application-only
@@ -90,7 +90,8 @@ Then run the application migration with the explicit migrator URL:
 
 ```bash
 cd apps/backend
-NUTRITION_DATABASE_URL='postgresql+psycopg://…' alembic upgrade head
+NUTRITION_DATABASE_URL='postgresql+psycopg://…' \
+  alembic upgrade 0019_resource_membership_integrity
 ```
 
 The migration verifies the closed fence and drained runtime itself. It sets a five-second lock
@@ -152,24 +153,24 @@ evidence.
 
 This stage adds a new current-schema evidence line without rewriting Phase 5C4 history:
 
-| Boundary | Current contract |
+| Boundary | Stage contract |
 | --- | --- |
 | Frozen historical application evidence | `0018_phase5c_promotion_prerequisites` and its existing signed v1 evidence remain unchanged |
-| Current application schema | `0019_resource_membership_integrity` |
+| Stage application schema | `0019_resource_membership_integrity` |
 | Preflight | `resource_membership_preflight_v1` |
 | Constraint manifest | `resource_membership_constraint_manifest_v1` |
-| Current qualification artifact | `resource_membership_qualification_v1` |
+| Stage qualification artifact | `resource_membership_qualification_v1` |
 | Local application admission | `phase5c_local_admission_v2()` returning `resource_membership_local_admission_v1` |
-| Current control schema | `ops_0005_resource_membership` |
+| Stage control schema | `ops_0005_resource_membership` |
 | Control admission | `phase5c4_api.admit_resource_membership_v1(bytea)` |
-| Current control qualification | `phase5c4_api.qualify_control_plane_v3()` returning `resource_membership_control_admission_v1` |
+| Stage control qualification | `phase5c4_api.qualify_control_plane_v3()` returning `resource_membership_control_admission_v1` |
 
-The current application qualification must prove exact 0019 constraint, index, owner-column,
-preflight, fence/identity, and runtime-privilege state. Normal runtime readiness and canary startup
-consume the v2 local admission routine; the previous local routine and signed 0018 evidence remain
-historical contracts and are not recomputed as 0019 evidence.
+The stage application qualification must prove exact 0019 constraint, index, owner-column,
+preflight, fence/identity, and runtime-privilege state. At revision 0019, runtime readiness and
+canary startup consume the v2 local admission routine; the previous local routine and signed 0018
+evidence remain historical contracts and are not recomputed as 0019 evidence.
 
-Generate the current qualification artifact with the independent application-database qualifier
+Generate the stage qualification artifact with the independent application-database qualifier
 credential:
 
 ```bash

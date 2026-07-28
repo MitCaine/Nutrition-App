@@ -18,8 +18,13 @@ from app.core.database_errors import (
 )
 from app.dependencies.user import get_current_user
 from app.operators.phase5c4_prerequisites import (
+    ACTIVATION_EXECUTION_LOCAL_ADMISSION_ROUTINE,
     CANARY_FENCE_MODES,
+    validate_activation_execution_local_admission,
     validate_immutable_provenance_local_admission,
+)
+from app.operators.phase5c4_activation_execution import (
+    EXECUTION_APPLICATION_SCHEMA_REVISION,
 )
 from app.operators.phase5c4_contracts import CANARY_GET_ALLOWLIST_V1
 from app.operators.immutable_provenance_contracts import (
@@ -217,22 +222,30 @@ def _admit_canary_startup(config: Settings, database_engine: Engine) -> None:
                     "on",
                 ):
                     raise RuntimeError("canary_startup_admission_failed")
+                activation_reader_available = connection.scalar(
+                    text("SELECT pg_catalog.to_regprocedure(:routine)"),
+                    {"routine": ACTIVATION_EXECUTION_LOCAL_ADMISSION_ROUTINE},
+                )
+                if activation_reader_available is not None:
+                    routine = ACTIVATION_EXECUTION_LOCAL_ADMISSION_ROUTINE
+                    validator = validate_activation_execution_local_admission
+                else:
+                    routine = CURRENT_LOCAL_ADMISSION_ROUTINE
+                    validator = validate_immutable_provenance_local_admission
                 reader_available = connection.execute(
                     text("SELECT pg_catalog.to_regprocedure(:routine)"),
-                    {"routine": CURRENT_LOCAL_ADMISSION_ROUTINE},
+                    {"routine": routine},
                 ).scalar_one()
                 if reader_available is None:
                     raise RuntimeError("canary_startup_admission_failed")
-                raw = (
-                    connection.execute(
-                        text(f"SELECT * FROM {CURRENT_LOCAL_ADMISSION_ROUTINE}")
-                    )
-                    .mappings()
-                    .one()
-                )
-                admission = validate_immutable_provenance_local_admission(dict(raw))
+                raw = connection.execute(text(f"SELECT * FROM {routine}")).mappings().one()
+                admission = validator(dict(raw))
                 if (
-                    admission.schema_revision != CURRENT_RUNTIME_SCHEMA_REVISION
+                    admission.schema_revision
+                    not in {
+                        CURRENT_RUNTIME_SCHEMA_REVISION,
+                        EXECUTION_APPLICATION_SCHEMA_REVISION,
+                    }
                     or not admission.identity_present
                     or not admission.identity_valid
                     or not admission.composite_bindings_valid
@@ -246,6 +259,11 @@ def _admit_canary_startup(config: Settings, database_engine: Engine) -> None:
                     or not admission.immutability_valid
                     or not admission.resource_membership_integrity_valid
                     or not admission.immutable_provenance_integrity_valid
+                ):
+                    raise RuntimeError("canary_startup_admission_failed")
+                if routine == ACTIVATION_EXECUTION_LOCAL_ADMISSION_ROUTINE and (
+                    not admission.activation_execution_schema_valid
+                    or admission.runtime_write_admitted
                 ):
                     raise RuntimeError("canary_startup_admission_failed")
                 if config.private_user_id is None or config.private_user_email is None:

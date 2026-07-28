@@ -51,6 +51,7 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Stage 5C4.5 | Idempotent local restore execution, atomic restored-database qualification, and immutable recovery evidence | `production-hardening-phase5c4.5.md`, ops migration 0007 |
 | Stage 5C4.6 | Purpose-specific Ed25519 target-activation authorization admission; no consumption or activation | `production-hardening-phase5c4.6.md`, ops migration 0008 |
 | Stage 5C4.7a | Purpose-specific promotion admission, one-use route intent, closed-target route/post-cutover evidence, and activation-evidence binding; no activation or opening | `production-hardening-phase5c4.7a.md`, ops migration 0009 |
+| Stage 5C4.7b | Separate schema-0021 execution authority, forward-only target migration, one-use activation, runtime observation/reconciliation, and emergency close | `production-hardening-phase5c4.7b.md`, application migration 0021, ops migration 0010 |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
@@ -232,17 +233,26 @@ variables, credentials, databases, and ownership assumptions.
 ## Current runtime boundary
 
 The independent environment gate API exists as a minimal read-only control projection, but normal
-application runtime does **not** yet consume it per request or at startup. Runtime gate wiring,
-provider switching, activation, signature verification, and cutover are later work. Phase 5C4.5
-adds a bounded Docker Compose/pgBackRest recovery adapter and immutable restore validation, but it
-does not create backups, route traffic, or authorize activation.
+application runtime does **not** consume it per request. Phase 5C4.6 and 5C4.7a provide
+purpose-specific signature verification, admission, route intent, and preactivation evidence.
+Phase 5C4.7b adds the separately authorized schema-0021 migration and fixed-purpose target-open,
+runtime-observation, reconciliation, and emergency-close boundaries. It does not supply a generic
+provider executor, automatic route cutback, source reopening, or deployment orchestrator. Phase
+5C4.5's bounded Docker Compose/pgBackRest recovery adapter still does not create backups, route
+traffic, or authorize activation.
 
 Therefore:
 
 - the application trigger introduced by 0018 remains the active local write-fence prerequisite;
-- normal runtime readiness and canary startup validate the current 0020 local-admission state only;
-- control admission does not by itself route traffic or enable production writes;
-- no documentation should claim a completed production cutover pipeline.
+- schema-0020 runtime readiness and canary startup continue to validate local admission v3;
+- schema-0021 runtime readiness and canary startup validate local admission v4, including the
+  execution-schema evidence and runtime-write admission state;
+- authorization admission, migration intent, and external command return do not by themselves
+  enable or prove production writes;
+- only the schema-0021 maintenance routine can alter local runtime-write admission, and the control
+  workflow reaches `TARGET_ACTIVE` only after an authoritative matching observation;
+- no documentation should claim automatic route cutback or a generic production deployment
+  pipeline.
 
 ## Where to look
 
@@ -251,15 +261,16 @@ Therefore:
 | Historical inventory/bridge/plan/conversion/qualification | `app/operators/historical_*`, `scripts/*historical*` |
 | Canonical contracts | `app/operators/phase5c*_contracts.py` |
 | Application role policy | `phase5c4_roles.py`, `phase5c4_prerequisites.py`, role-management script |
-| Application fence, membership, and immutable-provenance prerequisites | migrations `0018_phase5c_promotion_prerequisites.py` through `0020_immutable_provenance_enforcement.py` |
+| Application fence, membership, immutable provenance, and activation execution | migrations `0018_phase5c_promotion_prerequisites.py` through `0021_target_activation_execution.py` |
 | Control role policy | `phase5c4_control_roles.py`, `manage_phase5c4_control_roles.py` |
 | Evidence collection and WORM delivery | `phase5c4_control_evidence.py`, `phase5c4_minio.py` |
 | Python control client | `phase5c4_control.py` |
-| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0007` |
+| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0010` |
 | Admission rules | `phase5c4_admission.py`, `phase5c_performance_contracts.py`, ops 0004 |
 | Current resource-membership operations | `resource_membership_*` operator modules, preflight script, and the 0019 runbook |
 | Current immutable-provenance operations | `immutable_provenance_*` operator modules, qualification script, and the 0020 runbook |
 | Recovery execution and evidence | `phase5c4_recovery.py`, `manage_phase5c4_recovery.py`, the 5C4.5 runbook, and ops 0007 |
+| Activation execution and emergency close | `phase5c4_activation_execution.py`, `0021_target_activation_execution.py`, the 5C4.7b runbook, and ops 0010 |
 | Qualification | control migration routines, resource-membership and immutable-provenance qualification, and PostgreSQL qualification tests |
 
 Always follow the SQL routine and role grant reached by a Python wrapper. The wrapper alone does not

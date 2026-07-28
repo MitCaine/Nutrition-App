@@ -51,7 +51,7 @@ def test_cli_failure_redacts_database_and_object_store_secrets(monkeypatch, caps
     assert json.loads(output)["reason"] == "internal_failure"
 
 
-def test_cli_surface_includes_only_fixed_purpose_5c4_7a_extensions() -> None:
+def test_cli_surface_includes_fixed_purpose_5c4_7b_extensions() -> None:
     parser = cli.parse_args
     for command in (
         "initialize-environment",
@@ -67,6 +67,15 @@ def test_cli_surface_includes_only_fixed_purpose_5c4_7a_extensions() -> None:
         "start-post-cutover-verification",
         "record-post-cutover-verification",
         "finalize-post-cutover-verification",
+        "request-schema-migration",
+        "record-schema-migration-observation",
+        "request-target-activation",
+        "record-activation-runtime-observation",
+        "reconcile-target-activation",
+        "activation-status",
+        "request-emergency-close",
+        "record-emergency-close-observation",
+        "finalize-emergency-close",
         "status",
         "export-evidence",
         "deliver-outbox",
@@ -83,7 +92,8 @@ def test_cli_surface_includes_only_fixed_purpose_5c4_7a_extensions() -> None:
         "cutback",
         "open-production",
         "consume-activation",
-        "request-target-activation",
+        "rollback-target",
+        "reopen-source",
     ):
         assert f'add_parser("{forbidden}")' not in source
 
@@ -96,9 +106,7 @@ def test_control_cli_does_not_read_application_database_url(monkeypatch) -> None
     assert os.environ["NUTRITION_DATABASE_URL"].endswith("application-secret")
 
 
-def test_deliver_outbox_does_not_turn_stale_ack_into_failure_mutation(
-    monkeypatch, capsys
-) -> None:
+def test_deliver_outbox_does_not_turn_stale_ack_into_failure_mutation(monkeypatch, capsys) -> None:
     message_id = _uuid(10)
     lease_token = _uuid(11)
     payload = b'{"event":"exact"}'
@@ -186,8 +194,6 @@ def test_deliver_outbox_surfaces_database_terminal_mismatch(monkeypatch) -> None
 
     monkeypatch.setattr(cli, "Phase5C4ControlDatabase", Database)
     monkeypatch.setattr(cli, "Phase5C4MinioAdapter", Adapter)
-    result = cli.execute(
-        cli.parse_args(["deliver-outbox", "--request-id", _uuid(22)])
-    )
+    result = cli.execute(cli.parse_args(["deliver-outbox", "--request-id", _uuid(22)]))
     assert result["result"] == "terminal_mismatch"
     assert result["reason"] == "object_store_mismatch"

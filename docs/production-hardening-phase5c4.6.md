@@ -86,8 +86,10 @@ the verifier role before v5 qualification. Downgrade refuses once any key, revoc
 authorization, conflict, or consumption row exists. Operational recovery after use is restore or
 forward correction, never deletion of authority history.
 
-Every admitted authorization remains unused. Phase 5C4.6 provides no consumption routine, workflow
-transition, production-open authority, target grant, route mutation, provider orchestration,
-cutback, or emergency-close behavior. Phase 5C4.7a separately defines preactivation promotion and
-closed-target evidence binding. Phase 5C4.7b must define target-activation consumption and the
-`TARGET_ACTIVATION_REQUESTED` execution-schema contract before any target can be activated.
+Every authorization admitted by this stage remains unused. Phase 5C4.6 provides no consumption
+routine, workflow transition, production-open authority, target grant, route mutation, provider
+orchestration, cutback, or emergency-close behavior. Phase 5C4.7a separately defines preactivation
+promotion and closed-target evidence binding.
+[Phase 5C4.7b](production-hardening-phase5c4.7b.md) separately defines target-activation consumption
+and the `TARGET_ACTIVATION_REQUESTED` execution-schema boundary; it does not retroactively broaden
+Phase 5C4.6 authority.

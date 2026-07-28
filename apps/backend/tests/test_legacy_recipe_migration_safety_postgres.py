@@ -328,7 +328,7 @@ def test_empty_0004_downgrade_and_reupgrade_remain_valid(legacy_0003_engine: Eng
     assert "food_item_id" not in current_columns
 
 
-def test_empty_baseline_upgrades_to_head_and_latest_revision_round_trips(
+def test_empty_baseline_upgrades_to_0017_and_round_trips(
     empty_postgres_schema: tuple[Engine, str],
 ) -> None:
     engine, migration_url = empty_postgres_schema
@@ -383,13 +383,15 @@ def test_empty_baseline_upgrades_to_head_and_latest_revision_round_trips(
         "ix_food_nutrients_food_item_id",
         "ix_food_sources_food_item_id",
     } <= index_names
-    phase5c4_target_tables = {
+    post_0017_operator_tables = {
         "phase5c_promotion_target_identity",
         "phase5c_write_fence_state",
         "phase5c_write_fence_events",
+        "phase5c_activation_schema_evidence",
+        "phase5c_activation_runtime_commands",
     }
     assert table_names - set(Base.metadata.tables) - {"alembic_version"} == (
-        set(MIGRATION_OWNED_TABLES) - phase5c4_target_tables
+        set(MIGRATION_OWNED_TABLES) - post_0017_operator_tables
     )
 
     # This suite intentionally freezes the conversion/source schema at 0017.

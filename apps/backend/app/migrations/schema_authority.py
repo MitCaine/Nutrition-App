@@ -21,6 +21,8 @@ MIGRATION_OWNED_TABLES = frozenset(
         "phase5c_promotion_target_identity",
         "phase5c_write_fence_state",
         "phase5c_write_fence_events",
+        "phase5c_activation_schema_evidence",
+        "phase5c_activation_runtime_commands",
     }
 )
 
@@ -566,3 +568,56 @@ def _add_phase5c_control_tables(metadata: MetaData) -> None:
         ),
     )
     sa.Index("ix_phase5c_fence_events_attempt", fence_events.c.attempt_id)
+
+    _table(
+        "phase5c_activation_schema_evidence",
+        metadata,
+        sa.Column("singleton_key", sa.SmallInteger(), primary_key=True),
+        sa.Column("contract_version", sa.Text(), nullable=False),
+        sa.Column("prior_schema_revision", sa.Text(), nullable=False),
+        sa.Column("installed_schema_revision", sa.Text(), nullable=False),
+        sa.Column("migration_identity", sa.Text(), nullable=False),
+        sa.Column("migration_digest", sa.Text(), nullable=False),
+        sa.Column("execution_authorization_id", GUID(), nullable=False),
+        sa.Column("execution_authorization_envelope_digest", sa.Text(), nullable=False),
+        sa.Column("migration_command_id", GUID(), nullable=False, unique=True),
+        sa.Column("migration_action_id", GUID(), nullable=False, unique=True),
+        sa.Column("environment_id", GUID(), nullable=False),
+        sa.Column("attempt_id", GUID(), nullable=False),
+        sa.Column(
+            "target_database_instance_id",
+            GUID(),
+            sa.ForeignKey(
+                "phase5c_promotion_target_identity.target_instance_id",
+                ondelete="RESTRICT",
+            ),
+            nullable=False,
+        ),
+        sa.Column("target_identity_digest", sa.Text(), nullable=False),
+        sa.Column("deployment_descriptor_digest", sa.Text(), nullable=False),
+        sa.Column("installed_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    _table(
+        "phase5c_activation_runtime_commands",
+        metadata,
+        sa.Column("command_id", GUID(), primary_key=True),
+        sa.Column("command_kind", sa.Text(), nullable=False),
+        sa.Column("activation_request_id", GUID(), nullable=True),
+        sa.Column("request_digest", sa.Text(), nullable=False, unique=True),
+        sa.Column(
+            "target_database_instance_id",
+            GUID(),
+            sa.ForeignKey(
+                "phase5c_promotion_target_identity.target_instance_id",
+                ondelete="RESTRICT",
+            ),
+            nullable=False,
+        ),
+        sa.Column("prior_epoch", sa.BigInteger(), nullable=False),
+        sa.Column("resulting_epoch", sa.BigInteger(), nullable=False),
+        sa.Column("prior_mode", sa.Text(), nullable=False),
+        sa.Column("resulting_mode", sa.Text(), nullable=False),
+        sa.Column("fence_event_digest", sa.Text(), nullable=False, unique=True),
+        sa.Column("result_document", json_document_type(), nullable=False),
+        sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
+    )

@@ -28,7 +28,7 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-build-isolation --no-deps -e .
 cp .env.example .env
-alembic upgrade head
+alembic upgrade 0020_immutable_provenance_enforcement
 uvicorn app.main:app --reload
 ```
 
@@ -36,6 +36,9 @@ Normal development uses one application URL for runtime and Alembic. A qualified
 role profile runs migrations separately as `nutrition_migrator` and the API as
 `nutrition_runtime`. The root `scripts/start-backend.sh` implements only that qualified runtime
 launch: it verifies the exact runtime database role and deliberately does not run Alembic.
+Application revision 0021 is an authenticated target-activation operation, not an ordinary
+development upgrade. Install it only through the
+[Phase 5C4.7b runbook](production-hardening-phase5c4.7b.md).
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
 Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented

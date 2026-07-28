@@ -93,7 +93,7 @@ a separate optimization decision; it cannot waive conversion, lineage, or immuta
 
 ## Control-database qualification
 
-The complete control PostgreSQL suite through Phase 5C4.7a is:
+The complete control PostgreSQL suite through Phase 5C4.7b is:
 
 ```bash
 NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app \
@@ -104,7 +104,8 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
     tests/test_phase5c4_recovery_control_postgres.py \
     tests/test_phase5c4_authorization_control_postgres.py \
     tests/test_phase5c4_authorization_migration_postgres.py \
-    tests/test_phase5c4_promotion_authorization_control_postgres.py
+    tests/test_phase5c4_promotion_authorization_control_postgres.py \
+    tests/test_phase5c4_target_activation_control_postgres.py
 ```
 
 It provisions an isolated control database and managed roles, migrates through ops revisions,
@@ -114,6 +115,26 @@ qualified objects, and exercises empty-only downgrade/re-upgrade behavior.
 Qualification tests are security tests. When adding an authoritative table, routine, trigger,
 constraint, grant, or registry row, add both a positive inventory assertion and a tamper case that
 makes qualification fail.
+
+Phase 5C4.7b also requires the application-migration, contract, signerless CLI,
+target-local CLI, and target concurrency boundary:
+
+```bash
+pytest -q \
+  tests/test_phase5c4_activation_execution.py \
+  tests/test_phase5c4_execution_authorization_cli.py \
+  tests/test_phase5c4_target_activation_cli.py
+
+NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app \
+  pytest -q tests/test_phase5c4_target_activation_postgres.py
+```
+
+The target PostgreSQL suite must use a disposable PostgreSQL 16 database. It
+proves authorized schema-0021 installation, the closed-after-migration
+boundary, exact target role admission, one-use activation, authoritative
+observation, emergency close, replay/conflict handling, and the forward-only
+application downgrade policy. A successful application or control migration
+alone is not evidence that these tests passed.
 
 ## MinIO object-lock integration
 

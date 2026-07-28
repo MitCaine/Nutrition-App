@@ -64,8 +64,8 @@ baseline. Any Phase 5C4.7a trust, authorization, consumption, observation,
 receipt, binding, event, or conflict history blocks downgrade. Operators must
 not delete or rewrite evidence to force rollback.
 
-Application migration 0021 and target opening are Phase 5C4.7b work.
-Phase 5C4.7b must define a separate execution-schema contract and may not
-reinterpret a signed schema-0020 field as schema 0021. Before any open
-transition can be committed, 5C4.7b must also provide and prove emergency-close
-authority and behavior.
+Application migration 0021 and target opening remain outside Phase 5C4.7a.
+[Phase 5C4.7b](production-hardening-phase5c4.7b.md) defines their separate
+execution-schema authority and emergency-close boundary. It consumes the
+immutable 5C4.7a evidence chain without reinterpreting or changing any signed
+schema-0020 field.

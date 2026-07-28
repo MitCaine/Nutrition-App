@@ -26,6 +26,8 @@ def test_migration_owned_tables_are_exact_and_disjoint_from_runtime_metadata() -
         "phase5c_promotion_target_identity",
         "phase5c_write_fence_state",
         "phase5c_write_fence_events",
+        "phase5c_activation_schema_evidence",
+        "phase5c_activation_runtime_commands",
     }
     validate_schema_authority(Base.metadata)
     alembic_metadata = build_alembic_metadata(Base.metadata)

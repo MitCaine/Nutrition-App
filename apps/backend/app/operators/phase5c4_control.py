@@ -58,6 +58,26 @@ _PRIMARY_REASON = {
     "route_observation_binding_stale": "evidence_not_anchored",
     "route_observation_invalid": "artifact_invalid",
     "route_observation_stale": "evidence_not_anchored",
+    "activation_authorization_replayed": "authorization_replayed",
+    "activation_authorization_unusable": "unauthorized",
+    "activation_reconcile_binding_stale": "evidence_not_anchored",
+    "activation_reconcile_conflict": "request_conflict",
+    "emergency_close_binding_stale": "evidence_not_anchored",
+    "emergency_close_command_conflict": "external_result_conflict",
+    "emergency_close_observation_binding_stale": "evidence_not_anchored",
+    "emergency_close_observation_conflict": "external_result_conflict",
+    "emergency_close_request_conflict": "request_conflict",
+    "execution_authorization_replayed": "authorization_replayed",
+    "execution_authorization_unknown": "authorization_unknown",
+    "execution_authorization_unusable": "unauthorized",
+    "schema_migration_binding_stale": "evidence_not_anchored",
+    "schema_migration_observation_binding_stale": "evidence_not_anchored",
+    "schema_migration_observation_conflict": "external_result_conflict",
+    "schema_migration_request_conflict": "request_conflict",
+    "target_activation_binding_stale": "evidence_not_anchored",
+    "target_activation_request_conflict": "request_conflict",
+    "activation_runtime_observation_binding_stale": "evidence_not_anchored",
+    "activation_runtime_observation_conflict": "external_result_conflict",
 }
 
 
@@ -843,6 +863,262 @@ class Phase5C4ControlDatabase:
                 .one()
             )
         )
+
+    def _phase5c47b_request(
+        self,
+        *,
+        routine: str,
+        command: str,
+        parameters: tuple[str, ...],
+        values: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        allowed = {
+            "request_schema_migration_v1",
+            "request_target_activation_v1",
+            "reconcile_target_activation_v1",
+            "request_emergency_close_v1",
+            "finalize_emergency_close_v1",
+        }
+        if routine not in allowed:
+            raise Phase5C4ControlError("internal_failure")
+        placeholders = ", ".join(
+            (f"CAST(:{name} AS uuid)" if name.endswith("_id") else f":{name}")
+            for name in parameters
+        )
+
+        def operation(connection):
+            row = (
+                connection.execute(
+                    text(f"SELECT * FROM phase5c4_api.{routine}({placeholders})"),
+                    dict(values),
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_result(command, row)
+
+        return self._serializable(operation)
+
+    def request_schema_migration(self, **values: Any) -> dict[str, Any]:
+        return self._phase5c47b_request(
+            routine="request_schema_migration_v1",
+            command="request-schema-migration",
+            parameters=(
+                "request_id",
+                "execution_authorization_id",
+                "environment_id",
+                "attempt_id",
+                "expected_environment_generation",
+                "expected_environment_state_version",
+                "expected_attempt_state_version",
+            ),
+            values=values,
+        )
+
+    def request_target_activation(self, **values: Any) -> dict[str, Any]:
+        return self._phase5c47b_request(
+            routine="request_target_activation_v1",
+            command="request-target-activation",
+            parameters=(
+                "request_id",
+                "execution_authorization_id",
+                "schema_migration_observation_id",
+                "environment_id",
+                "attempt_id",
+                "expected_environment_generation",
+                "expected_environment_state_version",
+                "expected_attempt_state_version",
+            ),
+            values=values,
+        )
+
+    def reconcile_target_activation(self, **values: Any) -> dict[str, Any]:
+        return self._phase5c47b_request(
+            routine="reconcile_target_activation_v1",
+            command="reconcile-target-activation",
+            parameters=(
+                "request_id",
+                "activation_request_id",
+                "runtime_observation_id",
+                "environment_id",
+                "attempt_id",
+                "expected_environment_generation",
+                "expected_environment_state_version",
+                "expected_attempt_state_version",
+            ),
+            values=values,
+        )
+
+    def request_emergency_close(self, **values: Any) -> dict[str, Any]:
+        return self._phase5c47b_request(
+            routine="request_emergency_close_v1",
+            command="request-emergency-close",
+            parameters=(
+                "request_id",
+                "emergency_command_id",
+                "environment_id",
+                "attempt_id",
+                "expected_environment_generation",
+                "expected_environment_state_version",
+                "expected_attempt_state_version",
+                "reason",
+                "change_reference",
+            ),
+            values=values,
+        )
+
+    def finalize_emergency_close(self, **values: Any) -> dict[str, Any]:
+        return self._phase5c47b_request(
+            routine="finalize_emergency_close_v1",
+            command="finalize-emergency-close",
+            parameters=(
+                "request_id",
+                "emergency_command_id",
+                "observation_id",
+                "environment_id",
+                "expected_environment_generation",
+                "expected_environment_state_version",
+                "expected_attempt_state_version",
+            ),
+            values=values,
+        )
+
+    def _record_phase5c47b_observation(
+        self,
+        *,
+        routine: str,
+        canonical_bytes: bytes,
+    ) -> dict[str, Any]:
+        parsers: dict[str, Callable[[bytes], dict[str, Any]]] = {}
+        from app.operators.phase5c4_activation_execution import (
+            parse_activation_runtime_observation,
+            parse_emergency_close_observation,
+            parse_schema_migration_observation,
+        )
+
+        parsers.update(
+            {
+                "record_schema_migration_observation_v1": (parse_schema_migration_observation),
+                "record_activation_runtime_observation_v1": (parse_activation_runtime_observation),
+                "record_emergency_close_observation_v1": (parse_emergency_close_observation),
+            }
+        )
+        parser = parsers.get(routine)
+        if parser is None:
+            raise Phase5C4ControlError("internal_failure")
+        parser(canonical_bytes)
+
+        def operation(connection):
+            return dict(
+                connection.execute(
+                    text(f"SELECT * FROM phase5c4_api.{routine}(:canonical_bytes)"),
+                    {"canonical_bytes": canonical_bytes},
+                )
+                .mappings()
+                .one()
+            )
+
+        return self._serializable(operation)
+
+    def record_schema_migration_observation(
+        self,
+        *,
+        canonical_bytes: bytes,
+    ) -> dict[str, Any]:
+        return self._record_phase5c47b_observation(
+            routine="record_schema_migration_observation_v1",
+            canonical_bytes=canonical_bytes,
+        )
+
+    def record_activation_runtime_observation(
+        self,
+        *,
+        canonical_bytes: bytes,
+    ) -> dict[str, Any]:
+        return self._record_phase5c47b_observation(
+            routine="record_activation_runtime_observation_v1",
+            canonical_bytes=canonical_bytes,
+        )
+
+    def record_emergency_close_observation(
+        self,
+        *,
+        canonical_bytes: bytes,
+    ) -> dict[str, Any]:
+        return self._record_phase5c47b_observation(
+            routine="record_emergency_close_observation_v1",
+            canonical_bytes=canonical_bytes,
+        )
+
+    def read_activation_execution(
+        self,
+        environment_id: str,
+    ) -> dict[str, Any] | None:
+        return self._read_json_api(
+            "read_activation_execution_v1",
+            environment_id,
+        )
+
+    def read_schema_migration_action(
+        self,
+        action_id: str,
+    ) -> dict[str, Any] | None:
+        return self._read_json_api(
+            "read_schema_migration_action_v1",
+            action_id,
+        )
+
+    def read_target_activation_action(
+        self,
+        action_id: str,
+    ) -> dict[str, Any] | None:
+        return self._read_json_api(
+            "read_target_activation_action_v1",
+            action_id,
+        )
+
+    def read_emergency_close_action(
+        self,
+        action_id: str,
+    ) -> dict[str, Any] | None:
+        return self._read_json_api(
+            "read_emergency_close_action_v1",
+            action_id,
+        )
+
+    def _read_json_api(
+        self,
+        routine: str,
+        identifier: str,
+    ) -> dict[str, Any] | None:
+        allowed = {
+            "read_activation_execution_v1",
+            "read_schema_migration_action_v1",
+            "read_target_activation_action_v1",
+            "read_emergency_close_action_v1",
+        }
+        if routine not in allowed:
+            raise Phase5C4ControlError("internal_failure")
+        engine = create_control_engine(
+            self.database_url,
+            serializable=False,
+        )
+        try:
+            with engine.begin() as connection:
+                value = connection.scalar(
+                    text(f"SELECT phase5c4_api.{routine}(CAST(:identifier AS uuid))"),
+                    {"identifier": identifier},
+                )
+                return None if value is None else dict(value)
+        except DBAPIError as exc:
+            raise _database_error(exc) from None
+        except SQLAlchemyError:
+            raise Phase5C4ControlError(
+                "internal_failure",
+                retryable=True,
+            ) from None
+        finally:
+            engine.dispose()
 
     def status(self, environment_id: str) -> dict[str, Any] | None:
         engine = create_control_engine(self.database_url, serializable=False)

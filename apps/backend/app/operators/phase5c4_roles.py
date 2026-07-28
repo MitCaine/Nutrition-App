@@ -25,6 +25,9 @@ from app.operators.resource_membership_contracts import (
     CURRENT_RUNTIME_SCHEMA_REVISION as RESOURCE_MEMBERSHIP_REVISION,
     LOCAL_ADMISSION_V2_RESULT,
 )
+from app.operators.phase5c4_activation_execution import (
+    EXECUTION_APPLICATION_SCHEMA_REVISION,
+)
 
 
 DEPLOYMENT_SCOPE = "phase5c4_controlled_portfolio_demo_v1"
@@ -32,13 +35,10 @@ ROLE_POLICY_VERSION = "phase5c4_postgresql_role_policy_v1"
 PRIVILEGE_MANIFEST_VERSION = "phase5c4_postgresql_privilege_manifest_v1"
 SOURCE_ELIGIBILITY_VERSION = "phase5c4_source_role_eligibility_v1"
 EXPECTED_ALEMBIC_REVISION = "0017_phase5c_indexes"
-TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION = (
-    "phase5c4_source_role_eligibility_transition_v1"
-)
-TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION = (
-    "phase5c4_postgresql_privilege_manifest_transition_v1"
-)
+TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION = "phase5c4_source_role_eligibility_transition_v1"
+TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION = "phase5c4_postgresql_privilege_manifest_transition_v1"
 PROMOTION_PREREQUISITES_REVISION = "0018_phase5c_promotion_prerequisites"
+ACTIVATION_EXECUTION_REVISION = EXECUTION_APPLICATION_SCHEMA_REVISION
 MAINTENANCE_SCHEMA = "phase5c4_maintenance"
 ARCHIVE_RELATIONS = ("bridge_metadata", "recipe_ingredients", "recipes")
 OPTIONAL_PUBLIC_RELATIONS = ("phase5c_conversion_clone_marker",)
@@ -107,11 +107,7 @@ ROLE_ATTRIBUTES: dict[str, dict[str, bool]] = {
     CANARY_READ_ROLE: {"login": False, "inherit": False},
 }
 ROLE_SETTINGS: dict[str, tuple[str, ...]] = {
-    role: (
-        ("default_transaction_read_only=on",)
-        if role in {CANARY_ROLE, QUALIFIER_ROLE}
-        else ()
-    )
+    role: (("default_transaction_read_only=on",) if role in {CANARY_ROLE, QUALIFIER_ROLE} else ())
     for role in MANAGED_ROLES
 }
 
@@ -214,10 +210,7 @@ PUBLIC_RELATIONS = tuple(sorted((*RUNTIME_RELATIONS, *RETAINED_RELATIONS, "alemb
 # "recent foods" route.  Stage 5C4.2b's exact HTTP canary allowlist owns that
 # routing boundary.  This stage supplies only the required read-only SQL surface.
 CANARY_RELATIONS = tuple(
-    sorted(
-        set(RUNTIME_RELATIONS)
-        - {"create_operation_idempotency", "food_favorites"}
-    )
+    sorted(set(RUNTIME_RELATIONS) - {"create_operation_idempotency", "food_favorites"})
 )
 
 # These are the exact statements emitted by the existing service layer.  In
@@ -439,9 +432,7 @@ _PHASE5C_0018_PUBLIC_RELATIONS = (
     "phase5c_write_fence_events",
     "phase5c_write_fence_state",
 )
-_PHASE5C_0018_PUBLIC_SEQUENCES = (
-    "phase5c_promotion_target_identity_singleton_key_seq",
-)
+_PHASE5C_0018_PUBLIC_SEQUENCES = ("phase5c_promotion_target_identity_singleton_key_seq",)
 
 _PHASE5C_GATED_TABLES = tuple(RUNTIME_WRITE_PRIVILEGES)
 
@@ -595,6 +586,137 @@ _RESOURCE_MEMBERSHIP_ROUTINE = RoutineSurface(
 )
 
 
+_ACTIVATION_EXECUTION_LOCAL_ADMISSION_RESULT = (
+    "TABLE(admission_contract_version text, schema_revision text, "
+    "identity_present boolean, identity_valid boolean, "
+    "composite_bindings_valid boolean, fence_state_present boolean, "
+    "fence_state_valid boolean, event_chain_valid boolean, fence_mode text, "
+    "session_role_valid boolean, role_topology_valid boolean, "
+    "gate_trigger_coverage_valid boolean, immutability_valid boolean, "
+    "resource_membership_integrity_valid boolean, "
+    "immutable_provenance_integrity_valid boolean, "
+    "activation_execution_schema_valid boolean, "
+    "runtime_write_admitted boolean)"
+)
+
+
+def _activation_execution_routine_surfaces() -> tuple[RoutineSurface, ...]:
+    return (
+        RoutineSurface(
+            "public",
+            "phase5c_activation_runtime_admitted_v1",
+            "",
+            "boolean",
+            "sql",
+            "s",
+            True,
+            False,
+            False,
+            ("pg_catalog", "public"),
+        ),
+        RoutineSurface(
+            "public",
+            "phase5c_local_admission_v4",
+            "",
+            _ACTIVATION_EXECUTION_LOCAL_ADMISSION_RESULT,
+            "plpgsql",
+            "s",
+            True,
+            False,
+            True,
+            ("pg_catalog", "public"),
+            (RUNTIME_ROLE, CANARY_ROLE),
+        ),
+        RoutineSurface(
+            "public",
+            "phase5c_activation_schema_evidence_v1",
+            "",
+            "jsonb",
+            "plpgsql",
+            "s",
+            True,
+            False,
+            False,
+            ("pg_catalog", "public"),
+            (QUALIFIER_ROLE, OPS_ROLE),
+        ),
+        RoutineSurface(
+            MAINTENANCE_SCHEMA,
+            "open_runtime_writes_v1",
+            (
+                "p_command_id uuid, p_activation_request_id uuid, "
+                "p_expected_epoch bigint, p_expected_last_event_digest text, "
+                "p_attempt_id uuid, p_activation_authorization_digest text, "
+                "p_artifact_set_digest text, "
+                "p_expected_manifest_digest text"
+            ),
+            "jsonb",
+            "plpgsql",
+            "v",
+            True,
+            False,
+            False,
+            ("pg_catalog", "public"),
+            (OPS_ROLE,),
+        ),
+        RoutineSurface(
+            MAINTENANCE_SCHEMA,
+            "emergency_close_runtime_writes_v1",
+            (
+                "p_command_id uuid, p_expected_epoch bigint, "
+                "p_expected_last_event_digest text, p_attempt_id uuid, "
+                "p_authorization_digest text, p_artifact_set_digest text, "
+                "p_reason text, p_change_reference text"
+            ),
+            "jsonb",
+            "plpgsql",
+            "v",
+            True,
+            False,
+            False,
+            ("pg_catalog", "public"),
+            (OPS_ROLE,),
+        ),
+    )
+
+
+def _activation_execution_trigger_surfaces() -> tuple[TriggerSurface, ...]:
+    return (
+        TriggerSurface(
+            "public",
+            "phase5c_activation_schema_evidence",
+            "phase5c_activation_schema_immutable_row",
+            "public",
+            "phase5c_reject_immutable_row_mutation",
+            27,
+        ),
+        TriggerSurface(
+            "public",
+            "phase5c_activation_schema_evidence",
+            "phase5c_activation_schema_immutable_truncate",
+            "public",
+            "phase5c_reject_immutable_truncate",
+            34,
+        ),
+        TriggerSurface(
+            "public",
+            "phase5c_activation_runtime_commands",
+            "phase5c_activation_command_immutable_row",
+            "public",
+            "phase5c_reject_immutable_row_mutation",
+            27,
+        ),
+        TriggerSurface(
+            "public",
+            "phase5c_activation_runtime_commands",
+            "phase5c_activation_command_immutable_truncate",
+            "public",
+            "phase5c_reject_immutable_truncate",
+            34,
+        ),
+    )
+
+
 def _immutable_routine_surfaces() -> tuple[RoutineSurface, ...]:
     volatility_codes = {"volatile": "v", "stable": "s", "immutable": "i"}
     return tuple(
@@ -609,11 +731,7 @@ def _immutable_routine_surfaces() -> tuple[RoutineSurface, ...]:
             False,
             item.returns_set,
             ("pg_catalog", "public"),
-            tuple(
-                role
-                for role, _grantable in item.execute_acl
-                if role != OWNER_ROLE
-            ),
+            tuple(role for role, _grantable in item.execute_acl if role != OWNER_ROLE),
         )
         for item in IMMUTABLE_PROVENANCE_ROUTINES
     )
@@ -681,10 +799,7 @@ def _revision_role_policy(revision: str) -> RevisionRolePolicy:
                 tuple(
                     privilege
                     for privilege in privileges
-                    if not (
-                        name == "daily_log_nutrient_snapshots"
-                        and privilege == "DELETE"
-                    )
+                    if not (name == "daily_log_nutrient_snapshots" and privilege == "DELETE")
                 ),
             )
             for name, privileges in baseline_writes
@@ -706,6 +821,48 @@ def _revision_role_policy(revision: str) -> RevisionRolePolicy:
             tuple(sorted((*triggers, *_immutable_trigger_surfaces()))),
             True,
         )
+    if revision == ACTIVATION_EXECUTION_REVISION:
+        immutable_writes = tuple(
+            (
+                name,
+                tuple(
+                    privilege
+                    for privilege in privileges
+                    if not (name == "daily_log_nutrient_snapshots" and privilege == "DELETE")
+                ),
+            )
+            for name, privileges in baseline_writes
+        )
+        return RevisionRolePolicy(
+            revision,
+            (
+                *_PHASE5C_0018_PUBLIC_RELATIONS,
+                "phase5c_activation_schema_evidence",
+                "phase5c_activation_runtime_commands",
+            ),
+            _PHASE5C_0018_PUBLIC_SEQUENCES,
+            immutable_writes,
+            tuple(
+                sorted(
+                    (
+                        *routines,
+                        _RESOURCE_MEMBERSHIP_ROUTINE,
+                        *_immutable_routine_surfaces(),
+                        *_activation_execution_routine_surfaces(),
+                    )
+                )
+            ),
+            tuple(
+                sorted(
+                    (
+                        *triggers,
+                        *_immutable_trigger_surfaces(),
+                        *_activation_execution_trigger_surfaces(),
+                    )
+                )
+            ),
+            False,
+        )
     raise Phase5C4RoleError(f"Unsupported role-policy revision: {revision}")
 
 
@@ -714,6 +871,7 @@ SUPPORTED_ROLE_POLICY_REVISIONS = (
     PROMOTION_PREREQUISITES_REVISION,
     RESOURCE_MEMBERSHIP_REVISION,
     IMMUTABLE_PROVENANCE_REVISION,
+    ACTIVATION_EXECUTION_REVISION,
 )
 
 REASON_CODES = frozenset(
@@ -856,9 +1014,7 @@ def _unsigned_manifest() -> dict[str, Any]:
             for name in OPTIONAL_PUBLIC_RELATIONS
         ],
         "sequences": [],
-        "archive_relation_grants": [
-            {"role": QUALIFIER_ROLE, "privileges": ["SELECT"]}
-        ],
+        "archive_relation_grants": [{"role": QUALIFIER_ROLE, "privileges": ["SELECT"]}],
         "routines": [
             {
                 "schema": schema,
@@ -928,9 +1084,7 @@ def build_revision_privilege_manifest(revision: str) -> dict[str, Any]:
     for relation in payload["relations"]:
         name = str(relation["name"])
         relation["grants"] = [
-            grant
-            for grant in relation["grants"]
-            if grant["role"] != RUNTIME_WRITE_ROLE
+            grant for grant in relation["grants"] if grant["role"] != RUNTIME_WRITE_ROLE
         ]
         if name in runtime_writes:
             relation["grants"].append(
@@ -993,19 +1147,13 @@ def validate_privilege_manifest(value: Any) -> dict[str, Any]:
         expected = build_privilege_manifest()
     elif payload.get("manifest_version") == TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION:
         revision_policy = payload.get("revision_policy")
-        revision = (
-            revision_policy.get("revision")
-            if isinstance(revision_policy, Mapping)
-            else None
-        )
+        revision = revision_policy.get("revision") if isinstance(revision_policy, Mapping) else None
         if (
             not isinstance(revision, str)
             or revision == EXPECTED_ALEMBIC_REVISION
             or revision not in SUPPORTED_ROLE_POLICY_REVISIONS
         ):
-            raise Phase5C4RoleError(
-                "Privilege manifest revision policy is unsupported"
-            )
+            raise Phase5C4RoleError("Privilege manifest revision policy is unsupported")
         expected = build_revision_privilege_manifest(revision)
     else:
         raise Phase5C4RoleError("Privilege manifest version is unsupported")
@@ -1124,8 +1272,7 @@ def _create_or_verify_roles(connection: Connection) -> None:
         if settings and current != settings:
             connection.execute(
                 text(
-                    f"ALTER ROLE {_quote(connection, role)} "
-                    "SET default_transaction_read_only = on"
+                    f"ALTER ROLE {_quote(connection, role)} SET default_transaction_read_only = on"
                 )
             )
 
@@ -1161,8 +1308,7 @@ def _managed_memberships(memberships: Iterable[Membership]) -> tuple[Membership,
     return tuple(
         edge
         for edge in memberships
-        if edge.member_role in MANAGED_ROLES
-        or edge.granted_role in MANAGED_ROLES
+        if edge.member_role in MANAGED_ROLES or edge.granted_role in MANAGED_ROLES
     )
 
 
@@ -1224,11 +1370,7 @@ def _archive_schemas_from_catalog(connection: Connection) -> tuple[str, ...]:
         if schema in {"public", MAINTENANCE_SCHEMA}:
             continue
         relations.setdefault(schema, set()).add(str(row["relname"]))
-    candidates = {
-        schema
-        for schema, names in relations.items()
-        if names == set(ARCHIVE_RELATIONS)
-    }
+    candidates = {schema for schema, names in relations.items() if names == set(ARCHIVE_RELATIONS)}
     if any(names != set(ARCHIVE_RELATIONS) for names in relations.values()):
         raise Phase5C4RoleError("Unknown application schema or archive relation surface")
 
@@ -1246,9 +1388,7 @@ def _archive_schemas_from_catalog(connection: Connection) -> tuple[str, ...]:
         )
     )
     if not can_read_metadata:
-        raise Phase5C4RoleError(
-            "Archive discovery requires retained metadata read authority"
-        )
+        raise Phase5C4RoleError("Archive discovery requires retained metadata read authority")
     recorded = {
         str(value)
         for value in connection.scalars(
@@ -1314,12 +1454,9 @@ def _validate_object_inventory(
         if row["relkind"] not in {"i", "I"}
     }
     required_table_names = (
-        expected
-        - {("public", name) for name in profile.required_public_sequences}
+        expected - {("public", name) for name in profile.required_public_sequences}
     ) | (actual_base & optional)
-    required_sequence_names = {
-        ("public", name) for name in profile.required_public_sequences
-    }
+    required_sequence_names = {("public", name) for name in profile.required_public_sequences}
     if any(kinds.get(name) not in {"r", "p"} for name in required_table_names) or any(
         kinds.get(name) != "S" for name in required_sequence_names
     ):
@@ -1448,9 +1585,7 @@ def _validate_object_inventory(
         or rewrite_rule_count
         or event_trigger_count
     ):
-        raise Phase5C4RoleError(
-            "Unreviewed trigger, rewrite rule, or row-level policy is present"
-        )
+        raise Phase5C4RoleError("Unreviewed trigger, rewrite rule, or row-level policy is present")
 
     schemas = {
         str(row["schema_name"]): str(row["owner_name"])
@@ -1471,16 +1606,12 @@ def _validate_object_inventory(
         expected_schemas.add(MAINTENANCE_SCHEMA)
     if set(schemas) != expected_schemas:
         raise Phase5C4RoleError("Unknown application schema")
-    if any(
-        owner not in allowed_owners | {"pg_database_owner"}
-        for owner in schemas.values()
-    ):
+    if any(owner not in allowed_owners | {"pg_database_owner"} for owner in schemas.values()):
         raise Phase5C4RoleError("Application schema has an unexpected owner")
 
     routines = _routine_rows(connection)
     allowed_routines = {
-        (item.schema, item.name, item.identity_arguments)
-        for item in profile.routines
+        (item.schema, item.name, item.identity_arguments) for item in profile.routines
     }
     actual_routines = {
         (row["schema_name"], row["routine_name"], row["identity_arguments"])
@@ -1596,9 +1727,7 @@ def _expected_relation_acls(
         expected.add(("public", name, QUALIFIER_ROLE, "SELECT", False))
         if name in OPS_INSPECTION_RELATIONS:
             expected.add(("public", name, OPS_ROLE, "SELECT", False))
-    expected.update(
-        ("public", name, QUALIFIER_ROLE, "SELECT", False) for name in optional_present
-    )
+    expected.update(("public", name, QUALIFIER_ROLE, "SELECT", False) for name in optional_present)
     expected.update(
         (schema, name, QUALIFIER_ROLE, "SELECT", False)
         for schema in archive_schemas
@@ -1647,9 +1776,7 @@ def _expected_schema_acls(
         ("public", OPS_ROLE, "USAGE", False),
         (MAINTENANCE_SCHEMA, OPS_ROLE, "USAGE", False),
     }
-    expected.update(
-        (schema, QUALIFIER_ROLE, "USAGE", False) for schema in archive_schemas
-    )
+    expected.update((schema, QUALIFIER_ROLE, "USAGE", False) for schema in archive_schemas)
     return expected
 
 
@@ -1671,16 +1798,17 @@ def _database_acl_rows(connection: Connection) -> set[tuple[str, str, bool]]:
         )
     ).mappings()
     return {
-        (str(row["grantee"]), str(row["privilege_type"]), bool(row["is_grantable"]))
-        for row in rows
+        (str(row["grantee"]), str(row["privilege_type"]), bool(row["is_grantable"])) for row in rows
     }
 
 
 def _expected_database_acls(
     state: Literal["normal", "maintenance"],
 ) -> set[tuple[str, str, bool]]:
-    roles = LOGIN_ROLES if state == "normal" else tuple(
-        role for role in LOGIN_ROLES if role != RUNTIME_ROLE
+    roles = (
+        LOGIN_ROLES
+        if state == "normal"
+        else tuple(role for role in LOGIN_ROLES if role != RUNTIME_ROLE)
     )
     return {(role, "CONNECT", False) for role in roles}
 
@@ -1992,10 +2120,7 @@ def _readonly_mutating_routine_observation(
         managed_execute = any(
             bool(
                 connection.scalar(
-                    text(
-                        "SELECT pg_catalog.has_function_privilege("
-                        ":role, :oid, 'EXECUTE')"
-                    ),
+                    text("SELECT pg_catalog.has_function_privilege(:role, :oid, 'EXECUTE')"),
                     {"role": role, "oid": oid},
                 )
             )
@@ -2005,8 +2130,7 @@ def _readonly_mutating_routine_observation(
             (f"{schema}.{name}({arguments})", "present", public_execute or managed_execute)
         )
     large_object_count = int(
-        connection.scalar(text("SELECT count(*) FROM pg_catalog.pg_largeobject_metadata"))
-        or 0
+        connection.scalar(text("SELECT count(*) FROM pg_catalog.pg_largeobject_metadata")) or 0
     )
     safe = all(state == "present" and not executable for _, state, executable in routine_states)
     safe &= large_object_count == 0
@@ -2071,10 +2195,7 @@ def _effective_owner_default_acl_rows(
             """
         )
     ).mappings()
-    return {
-        (str(row["objtype"]), str(row["grantee"]))
-        for row in rows
-    }
+    return {(str(row["objtype"]), str(row["grantee"])) for row in rows}
 
 
 def _assert_preprovision_acl_surface(
@@ -2129,9 +2250,7 @@ def _transfer_ownership(
     database = _quote(connection, _database_name(connection))
     connection.execute(text(f"ALTER DATABASE {database} OWNER TO {OWNER_ROLE}"))
     for schema in ("public", *archive_schemas):
-        connection.execute(
-            text(f"ALTER SCHEMA {_quote(connection, schema)} OWNER TO {OWNER_ROLE}")
-        )
+        connection.execute(text(f"ALTER SCHEMA {_quote(connection, schema)} OWNER TO {OWNER_ROLE}"))
     connection.execute(
         text(f"CREATE SCHEMA IF NOT EXISTS {MAINTENANCE_SCHEMA} AUTHORIZATION {OWNER_ROLE}")
     )
@@ -2172,9 +2291,7 @@ def _apply_public_mutating_routine_denials(connection: Connection) -> None:
     grantees = ", ".join([*MANAGED_ROLES, "PUBLIC"])
     for schema, name, arguments in PUBLIC_MUTATING_ROUTINES:
         routine = _qualified(connection, schema, name)
-        connection.execute(
-            text(f"REVOKE ALL ON FUNCTION {routine}({arguments}) FROM {grantees}")
-        )
+        connection.execute(text(f"REVOKE ALL ON FUNCTION {routine}({arguments}) FROM {grantees}"))
 
 
 def _revoke_all_from_managed(
@@ -2184,11 +2301,7 @@ def _revoke_all_from_managed(
 ) -> None:
     grantees = ", ".join(
         [
-            *(
-                _quote(connection, role)
-                for role in MANAGED_ROLES
-                if role != OWNER_ROLE
-            ),
+            *(_quote(connection, role) for role in MANAGED_ROLES if role != OWNER_ROLE),
             "PUBLIC",
         ]
     )
@@ -2202,9 +2315,7 @@ def _apply_database_and_schema_acls(
     database = _quote(connection, _database_name(connection))
     _revoke_all_from_managed(connection, "DATABASE", database)
     connection.execute(
-        text(
-            f"GRANT CREATE, CONNECT, TEMPORARY ON DATABASE {database} TO {OWNER_ROLE}"
-        )
+        text(f"GRANT CREATE, CONNECT, TEMPORARY ON DATABASE {database} TO {OWNER_ROLE}")
     )
     for role in LOGIN_ROLES:
         connection.execute(text(f"GRANT CONNECT ON DATABASE {database} TO {role}"))
@@ -2212,9 +2323,7 @@ def _apply_database_and_schema_acls(
     for schema in ("public", MAINTENANCE_SCHEMA, *archive_schemas):
         _revoke_all_from_managed(connection, "SCHEMA", _quote(connection, schema))
         connection.execute(
-            text(
-                f"GRANT CREATE, USAGE ON SCHEMA {_quote(connection, schema)} TO {OWNER_ROLE}"
-            )
+            text(f"GRANT CREATE, USAGE ON SCHEMA {_quote(connection, schema)} TO {OWNER_ROLE}")
         )
     for role in (RUNTIME_READ_ROLE, CANARY_READ_ROLE, QUALIFIER_ROLE, OPS_ROLE):
         connection.execute(text(f"GRANT USAGE ON SCHEMA public TO {role}"))
@@ -2250,10 +2359,7 @@ def _apply_relation_acls(
         privileges = RUNTIME_WRITE_PRIVILEGES.get(name, ())
         if privileges:
             connection.execute(
-                text(
-                    f"GRANT {', '.join(privileges)} ON TABLE {relation} "
-                    f"TO {RUNTIME_WRITE_ROLE}"
-                )
+                text(f"GRANT {', '.join(privileges)} ON TABLE {relation} TO {RUNTIME_WRITE_ROLE}")
             )
         if name in CANARY_RELATIONS:
             connection.execute(text(f"GRANT SELECT ON TABLE {relation} TO {CANARY_READ_ROLE}"))
@@ -2285,8 +2391,7 @@ def _values_sql(rows: Iterable[tuple[Any, ...]]) -> str:
     if not materialized:
         raise Phase5C4RoleError("Internal exact-state SQL requires a non-empty authority set")
     return "VALUES " + ", ".join(
-        "(" + ", ".join(_sql_literal(value) for value in row) + ")"
-        for row in materialized
+        "(" + ", ".join(_sql_literal(value) for value in row) + ")" for row in materialized
     )
 
 
@@ -2303,8 +2408,7 @@ def _maintenance_state_expression(
     optional_present = {
         str(row["relname"])
         for row in _catalog_relations(connection)
-        if row["schema_name"] == "public"
-        and row["relname"] in OPTIONAL_PUBLIC_RELATIONS
+        if row["schema_name"] == "public" and row["relname"] in OPTIONAL_PUBLIC_RELATIONS
     }
     expected_relation_values = _values_sql(
         _expected_relation_acls(
@@ -2405,11 +2509,7 @@ def _maintenance_state_expression(
             *sorted(optional_present),
         )
     ]
-    relations.extend(
-        (schema, name)
-        for schema in archive_schemas
-        for name in ARCHIVE_RELATIONS
-    )
+    relations.extend((schema, name) for schema in archive_schemas for name in ARCHIVE_RELATIONS)
     for schema, name in relations:
         relation = _qualified(connection, schema, name)
         for privilege in (
@@ -2421,11 +2521,12 @@ def _maintenance_state_expression(
             "REFERENCES",
             "TRIGGER",
         ):
-            expected = schema == "public" and name in RUNTIME_RELATIONS and (
-                privilege == "SELECT"
-                or (
-                    state == "normal"
-                    and privilege in profile.runtime_writes.get(name, ())
+            expected = (
+                schema == "public"
+                and name in RUNTIME_RELATIONS
+                and (
+                    privilege == "SELECT"
+                    or (state == "normal" and privilege in profile.runtime_writes.get(name, ()))
                 )
             )
             effective_checks.append(
@@ -2445,10 +2546,8 @@ def _maintenance_state_expression(
             "pg_catalog.has_database_privilege("
             f"'{RUNTIME_ROLE}', pg_catalog.current_database(), 'CONNECT') IS "
             f"{'true' if state == 'normal' else 'false'}",
-            "pg_catalog.has_schema_privilege("
-            f"'{RUNTIME_ROLE}', 'public', 'USAGE') IS true",
-            "pg_catalog.has_schema_privilege("
-            f"'{RUNTIME_ROLE}', 'public', 'CREATE') IS false",
+            f"pg_catalog.has_schema_privilege('{RUNTIME_ROLE}', 'public', 'USAGE') IS true",
+            f"pg_catalog.has_schema_privilege('{RUNTIME_ROLE}', 'public', 'CREATE') IS false",
             *(
                 "pg_catalog.has_schema_privilege("
                 f"'{RUNTIME_ROLE}', {_sql_literal(schema)}, 'USAGE') IS false"
@@ -2527,7 +2626,7 @@ def _maintenance_state_expression(
                   )
               )
         )
-        AND {' AND '.join(effective_checks)}
+        AND {" AND ".join(effective_checks)}
     """.strip()
 
 
@@ -2559,20 +2658,15 @@ END
         verb = "GRANT" if restore else "REVOKE"
         direction = "TO" if restore else "FROM"
         statements.append(
-            f"{verb} {', '.join(privileges)} ON TABLE {relation} "
-            f"{direction} {RUNTIME_WRITE_ROLE};"
+            f"{verb} {', '.join(privileges)} ON TABLE {relation} {direction} {RUNTIME_WRITE_ROLE};"
         )
     database = _quote(connection, _database_name(connection))
     if restore:
         statements.append(f"GRANT CONNECT ON DATABASE {database} TO {RUNTIME_ROLE};")
     else:
         statements.append(f"REVOKE CONNECT ON DATABASE {database} FROM {RUNTIME_ROLE};")
-    expected_state: Literal["normal", "maintenance"] = (
-        "maintenance" if restore else "normal"
-    )
-    result_state: Literal["normal", "maintenance"] = (
-        "normal" if restore else "maintenance"
-    )
+    expected_state: Literal["normal", "maintenance"] = "maintenance" if restore else "normal"
+    result_state: Literal["normal", "maintenance"] = "normal" if restore else "maintenance"
     precondition = _maintenance_state_expression(
         connection,
         state=expected_state,
@@ -2642,9 +2736,7 @@ def _create_maintenance_routines(
         connection.execute(text(f"REVOKE ALL ON FUNCTION {routine}(text) FROM PUBLIC"))
         for role in MANAGED_ROLES:
             if role not in {OWNER_ROLE, OPS_ROLE}:
-                connection.execute(
-                    text(f"REVOKE ALL ON FUNCTION {routine}(text) FROM {role}")
-                )
+                connection.execute(text(f"REVOKE ALL ON FUNCTION {routine}(text) FROM {role}"))
         connection.execute(text(f"GRANT EXECUTE ON FUNCTION {routine}(text) TO {OPS_ROLE}"))
 
 
@@ -2662,9 +2754,7 @@ def install_revision_maintenance_policy(
     if connection.dialect.name != "postgresql":
         raise Phase5C4RoleError("Revision role-policy installation requires PostgreSQL")
     if str(connection.scalar(text("SELECT current_user"))) != OWNER_ROLE:
-        raise Phase5C4RoleError(
-            "Revision role-policy installation requires nutrition_owner"
-        )
+        raise Phase5C4RoleError("Revision role-policy installation requires nutrition_owner")
     _create_maintenance_routines(connection, _revision_role_policy(revision))
 
 
@@ -2697,15 +2787,12 @@ def refresh_legacy_0018_maintenance_policy(engine: Engine) -> dict[str, Any]:
         )
         if reasons or not all(check["passed"] for check in checks):
             raise Phase5C4RoleError(
-                "Legacy 0018 maintenance refresh postcondition failed: "
-                + ",".join(sorted(reasons))
+                "Legacy 0018 maintenance refresh postcondition failed: " + ",".join(sorted(reasons))
             )
         return {
             "state": "normal",
             "policy_revision": profile.revision,
-            "privilege_manifest_digest": revision_privilege_manifest_digest(
-                profile.revision
-            ),
+            "privilege_manifest_digest": revision_privilege_manifest_digest(profile.revision),
             "refreshed_legacy_maintenance_routines": True,
         }
 
@@ -2792,18 +2879,13 @@ def _role_observations(connection: Connection) -> tuple[bool, bool, bool, dict[s
         ).mappings()
     ]
     session_replication_role = str(
-        connection.scalar(
-            text("SELECT pg_catalog.current_setting('session_replication_role')")
-        )
+        connection.scalar(text("SELECT pg_catalog.current_setting('session_replication_role')"))
     )
     settings_ok &= not database_settings and session_replication_role == "origin"
     memberships = _membership_rows(connection)
     managed = _managed_memberships(memberships)
     managed_edges = frozenset(managed)
-    membership_ok = (
-        managed_edges == EXPECTED_MEMBERSHIPS
-        and len(managed) == len(managed_edges)
-    )
+    membership_ok = managed_edges == EXPECTED_MEMBERSHIPS and len(managed) == len(managed_edges)
     expected_paths = {
         MIGRATOR_ROLE: {OWNER_ROLE},
         RUNTIME_ROLE: {RUNTIME_READ_ROLE, RUNTIME_WRITE_ROLE},
@@ -2811,9 +2893,7 @@ def _role_observations(connection: Connection) -> tuple[bool, bool, bool, dict[s
         QUALIFIER_ROLE: set(),
         OPS_ROLE: {"pg_signal_backend"},
     }
-    actual_paths = {
-        role: _transitive_roles(memberships, role) for role in LOGIN_ROLES
-    }
+    actual_paths = {role: _transitive_roles(memberships, role) for role in LOGIN_ROLES}
     escalation_ok = actual_paths == expected_paths
     runtime_paths = actual_paths[RUNTIME_ROLE]
     runtime_row = rows.get(RUNTIME_ROLE, {})
@@ -2821,19 +2901,24 @@ def _role_observations(connection: Connection) -> tuple[bool, bool, bool, dict[s
         bool(runtime_row.get(key))
         for key in ("rolsuper", "rolcreatedb", "rolcreaterole", "rolreplication", "rolbypassrls")
     )
-    return attributes_ok, settings_ok, membership_ok and escalation_ok, {
-        "attributes": attributes,
-        "settings": settings,
-        "database_settings": database_settings,
-        "session_replication_role": session_replication_role,
-        "memberships": [edge.__dict__ for edge in sorted(managed)],
-        "transitive_paths": {
-            role: sorted(paths) for role, paths in sorted(actual_paths.items())
+    return (
+        attributes_ok,
+        settings_ok,
+        membership_ok and escalation_ok,
+        {
+            "attributes": attributes,
+            "settings": settings,
+            "database_settings": database_settings,
+            "session_replication_role": session_replication_role,
+            "memberships": [edge.__dict__ for edge in sorted(managed)],
+            "transitive_paths": {
+                role: sorted(paths) for role, paths in sorted(actual_paths.items())
+            },
+            "runtime_paths": sorted(runtime_paths),
+            "membership_exact": membership_ok,
+            "runtime_escalation_absent": escalation_ok,
         },
-        "runtime_paths": sorted(runtime_paths),
-        "membership_exact": membership_ok,
-        "runtime_escalation_absent": escalation_ok,
-    }
+    )
 
 
 def _object_observation(
@@ -2860,9 +2945,7 @@ def _object_observation(
     except Phase5C4RoleError as exc:
         validation_error = str(exc)
     inventory_ok = (
-        validation_error is None
-        and expected <= actual
-        and not (actual - expected - optional)
+        validation_error is None and expected <= actual and not (actual - expected - optional)
     )
     ownership_ok = validation_error is None and all(
         str(row["owner_name"]) == OWNER_ROLE for row in rows
@@ -2914,10 +2997,7 @@ def _object_observation(
         for schema in expected_schemas
         for privilege in ("CREATE", "USAGE")
         if not connection.scalar(
-            text(
-                "SELECT pg_catalog.has_schema_privilege("
-                f"'{OWNER_ROLE}', :schema, :privilege)"
-            ),
+            text(f"SELECT pg_catalog.has_schema_privilege('{OWNER_ROLE}', :schema, :privilege)"),
             {"schema": schema, "privilege": privilege},
         )
     ]
@@ -2947,22 +3027,23 @@ def _object_observation(
     ]
     ownership_ok &= all(owner_database_privileges.values())
     ownership_ok &= not owner_schema_missing and not owner_relation_missing
-    return inventory_ok, ownership_ok, {
-        "actual_relations": sorted(f"{schema}.{name}" for schema, name in actual),
-        "expected_relations": sorted(f"{schema}.{name}" for schema, name in expected),
-        "database_owner": database_owner,
-        "schema_owners": schema_owners,
-        "relation_owners": sorted(
-            {
-                f"{row['schema_name']}.{row['relname']}:{row['owner_name']}"
-                for row in rows
-            }
-        ),
-        "owner_database_privileges": owner_database_privileges,
-        "owner_schema_missing": owner_schema_missing,
-        "owner_relation_missing": owner_relation_missing,
-        "validation_error": validation_error,
-    }
+    return (
+        inventory_ok,
+        ownership_ok,
+        {
+            "actual_relations": sorted(f"{schema}.{name}" for schema, name in actual),
+            "expected_relations": sorted(f"{schema}.{name}" for schema, name in expected),
+            "database_owner": database_owner,
+            "schema_owners": schema_owners,
+            "relation_owners": sorted(
+                {f"{row['schema_name']}.{row['relname']}:{row['owner_name']}" for row in rows}
+            ),
+            "owner_database_privileges": owner_database_privileges,
+            "owner_schema_missing": owner_schema_missing,
+            "owner_relation_missing": owner_relation_missing,
+            "validation_error": validation_error,
+        },
+    )
 
 
 def _security_definer_observation(
@@ -2976,8 +3057,7 @@ def _security_definer_observation(
         maintenance_body_profile = profile
     routines = [row for row in _routine_rows(connection) if not row["extension_member"]]
     expected_by_identity = {
-        (item.schema, item.name, item.identity_arguments): item
-        for item in profile.routines
+        (item.schema, item.name, item.identity_arguments): item for item in profile.routines
     }
     expected = set(expected_by_identity)
     actual = {
@@ -3001,7 +3081,12 @@ def _security_definer_observation(
                 archive_schemas=archive_schemas,
                 profile=maintenance_body_profile,
             )
-            if item is not None and item.schema == MAINTENANCE_SCHEMA
+            if (
+                item is not None
+                and item.schema == MAINTENANCE_SCHEMA
+                and item.name
+                in {"close_runtime_writes", "restore_runtime_writes"}
+            )
             else None
         )
         row_safe = (
@@ -3017,10 +3102,7 @@ def _security_definer_observation(
             and not bool(row["proleakproof"])
             and row["result_type"] == item.result_type
             and config == ("search_path=" + ", ".join(item.search_path),)
-            and (
-                expected_body is None
-                or str(row["prosrc"]).strip() == expected_body
-            )
+            and (expected_body is None or str(row["prosrc"]).strip() == expected_body)
             and bool(
                 connection.scalar(
                     text(
@@ -3060,9 +3142,7 @@ def _security_definer_observation(
                 "settings": list(config),
                 "body_digest": canonical.canonical_digest(str(row["prosrc"]).strip()),
                 "expected_body_digest": (
-                    None
-                    if expected_body is None
-                    else canonical.canonical_digest(expected_body)
+                    None if expected_body is None else canonical.canonical_digest(expected_body)
                 ),
                 "safe": row_safe,
             }
@@ -3183,17 +3263,14 @@ def _inspect_policy_state(
 
     ambient_authority = _ambient_managed_authority_rows(connection)
     ambient_ok = not ambient_authority
-    checks.append(
-        _check_observation("ambient_authority", ambient_ok, ambient_authority)
-    )
+    checks.append(_check_observation("ambient_authority", ambient_ok, ambient_authority))
     if not ambient_ok:
         reasons.add("ambient_authority_drift")
 
     optional_present = {
         str(row["relname"])
         for row in _catalog_relations(connection)
-        if row["schema_name"] == "public"
-        and row["relname"] in OPTIONAL_PUBLIC_RELATIONS
+        if row["schema_name"] == "public" and row["relname"] in OPTIONAL_PUBLIC_RELATIONS
     }
     actual_relation_acls = _relation_acl_rows(connection)
     expected_relation_acls = _expected_relation_acls(
@@ -3247,9 +3324,7 @@ def _inspect_policy_state(
 
     column_acl_count = _column_acl_count(connection)
     checks.append(
-        _check_observation(
-            "column_privileges", column_acl_count == 0, {"count": column_acl_count}
-        )
+        _check_observation("column_privileges", column_acl_count == 0, {"count": column_acl_count})
     )
     if column_acl_count:
         reasons.add("column_privilege_drift")
@@ -3286,10 +3361,7 @@ def _inspect_policy_state(
     runtime_archive = any(
         bool(
             connection.scalar(
-                text(
-                    "SELECT pg_catalog.has_schema_privilege("
-                    f"'{RUNTIME_ROLE}', :schema, 'USAGE')"
-                ),
+                text(f"SELECT pg_catalog.has_schema_privilege('{RUNTIME_ROLE}', :schema, 'USAGE')"),
                 {"schema": schema},
             )
         )
@@ -3337,8 +3409,8 @@ def _inspect_policy_state(
             {"schemas": ["public", *archive_schemas]},
         ).mappings()
     ]
-    routine_readonly_ok, routine_readonly_details = (
-        _readonly_mutating_routine_observation(connection)
+    routine_readonly_ok, routine_readonly_details = _readonly_mutating_routine_observation(
+        connection
     )
     readonly_ok = not readonly_mutations and routine_readonly_ok
     checks.append(
@@ -3406,9 +3478,7 @@ def qualify_source_role_policy(
     transitional = profile.revision != EXPECTED_ALEMBIC_REVISION
     unsigned = {
         "contract_version": (
-            TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION
-            if transitional
-            else SOURCE_ELIGIBILITY_VERSION
+            TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION if transitional else SOURCE_ELIGIBILITY_VERSION
         ),
         "deployment_scope": DEPLOYMENT_SCOPE,
         "role_policy_version": ROLE_POLICY_VERSION,
@@ -3419,8 +3489,7 @@ def qualify_source_role_policy(
         ),
         "expected_state": expected_state,
         "archive_schema_digests": sorted(
-            canonical.canonical_digest({"archive_schema": schema})
-            for schema in archive_schemas
+            canonical.canonical_digest({"archive_schema": schema}) for schema in archive_schemas
         ),
         "checks": sorted(checks, key=lambda item: item["check_code"]),
         "reason_codes": sorted(reasons),
@@ -3450,10 +3519,7 @@ def validate_source_eligibility(value: Any) -> dict[str, Any]:
         "qualified",
         "qualification_digest",
     }
-    transitional = (
-        payload.get("contract_version")
-        == TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION
-    )
+    transitional = payload.get("contract_version") == TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION
     if transitional:
         expected_keys.add("policy_revision")
     if set(payload) != expected_keys:
@@ -3474,9 +3540,7 @@ def validate_source_eligibility(value: Any) -> dict[str, Any]:
             or policy_revision == EXPECTED_ALEMBIC_REVISION
             or policy_revision not in SUPPORTED_ROLE_POLICY_REVISIONS
         ):
-            raise Phase5C4RoleError(
-                "Source eligibility revision policy is unsupported"
-            )
+            raise Phase5C4RoleError("Source eligibility revision policy is unsupported")
         manifest = build_revision_privilege_manifest(policy_revision)
     else:
         manifest = build_privilege_manifest()
@@ -3491,9 +3555,7 @@ def validate_source_eligibility(value: Any) -> dict[str, Any]:
         isinstance(item, dict) for item in payload["checks"]
     ):
         raise Phase5C4RoleError("Source eligibility checks are invalid")
-    if payload["checks"] != sorted(
-        payload["checks"], key=lambda item: item.get("check_code", "")
-    ):
+    if payload["checks"] != sorted(payload["checks"], key=lambda item: item.get("check_code", "")):
         raise Phase5C4RoleError("Source eligibility checks are not canonical-sorted")
     check_codes: list[str] = []
     for check in payload["checks"]:
@@ -3562,14 +3624,10 @@ def assume_migration_owner(connection: Connection) -> None:
             raise Phase5C4RoleError("Migrator failed to assume nutrition_owner")
         return
     if database_owner == OWNER_ROLE:
-        raise Phase5C4RoleError(
-            "Only nutrition_migrator may run Alembic in a qualified database"
-        )
+        raise Phase5C4RoleError("Only nutrition_migrator may run Alembic in a qualified database")
     session = _role_rows(connection).get(session_role)
     if database_owner != session_role or not session or not session["rolsuper"]:
-        raise Phase5C4RoleError(
-            "Bootstrap Alembic requires the current sealed database owner"
-        )
+        raise Phase5C4RoleError("Bootstrap Alembic requires the current sealed database owner")
 
 
 def provision_role_policy(
@@ -3602,9 +3660,7 @@ def provision_role_policy(
             or 0
         )
         if other_sessions:
-            raise Phase5C4RoleError(
-                "Disposable provisioning requires exclusive database access"
-            )
+            raise Phase5C4RoleError("Disposable provisioning requires exclusive database access")
         if _alembic_revisions(connection) != (EXPECTED_ALEMBIC_REVISION,):
             raise Phase5C4RoleError("Role provisioning requires exact Alembic revision 0017")
 
@@ -3682,8 +3738,7 @@ def assert_revision_role_policy(
     )
     if reasons or not all(check["passed"] for check in checks):
         raise Phase5C4RoleError(
-            "Revision role-policy drift prevents migration: "
-            + ",".join(sorted(reasons))
+            "Revision role-policy drift prevents migration: " + ",".join(sorted(reasons))
         )
 
 
@@ -3831,22 +3886,15 @@ def close_runtime_maintenance(
                 "Privilege drift prevents maintenance close or drain resumption"
             )
         if _unexpected_maintenance_session_count(connection):
-            raise Phase5C4RoleError(
-                "Unexpected database login identity prevents maintenance close"
-            )
+            raise Phase5C4RoleError("Unexpected database login identity prevents maintenance close")
         resumed = maintenance
         if normal:
             result = connection.scalar(
-                text(
-                    f"SELECT {MAINTENANCE_SCHEMA}.close_runtime_writes("
-                    ":manifest_digest)"
-                ),
+                text(f"SELECT {MAINTENANCE_SCHEMA}.close_runtime_writes(:manifest_digest)"),
                 {"manifest_digest": manifest_digest},
             )
             if result != "maintenance_closed":
-                raise Phase5C4RoleError(
-                    "Maintenance close routine returned an unexpected result"
-                )
+                raise Phase5C4RoleError("Maintenance close routine returned an unexpected result")
 
     terminated, remaining = _drain_runtime_sessions(
         engine,
@@ -3884,8 +3932,7 @@ def restore_runtime_privileges(engine: Engine) -> dict[str, Any]:
         manifest_digest = revision_privilege_manifest_digest(profile.revision)
         if not profile.restore_allowed:
             raise Phase5C4RoleError(
-                "Runtime restoration is not legal at revision "
-                f"{profile.revision}"
+                f"Runtime restoration is not legal at revision {profile.revision}"
             )
         maintenance = _policy_state_is_exact(
             connection,
@@ -3908,19 +3955,12 @@ def restore_runtime_privileges(engine: Engine) -> dict[str, Any]:
                 "privilege_manifest_digest": manifest_digest,
             }
         if not maintenance:
-            raise Phase5C4RoleError(
-                "Maintenance privilege drift prevents restoration"
-            )
+            raise Phase5C4RoleError("Maintenance privilege drift prevents restoration")
         remaining = len(_runtime_session_pids(connection))
         if remaining:
-            raise Phase5C4RoleError(
-                "Runtime sessions must be zero before privilege restoration"
-            )
+            raise Phase5C4RoleError("Runtime sessions must be zero before privilege restoration")
         result = connection.scalar(
-            text(
-                f"SELECT {MAINTENANCE_SCHEMA}.restore_runtime_writes("
-                ":manifest_digest)"
-            ),
+            text(f"SELECT {MAINTENANCE_SCHEMA}.restore_runtime_writes(:manifest_digest)"),
             {"manifest_digest": manifest_digest},
         )
         if result != "runtime_privileges_restored":
