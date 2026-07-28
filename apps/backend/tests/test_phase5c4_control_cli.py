@@ -51,7 +51,7 @@ def test_cli_failure_redacts_database_and_object_store_secrets(monkeypatch, caps
     assert json.loads(output)["reason"] == "internal_failure"
 
 
-def test_cli_surface_is_exactly_stage_5c4_3() -> None:
+def test_cli_surface_includes_only_fixed_purpose_5c4_7a_extensions() -> None:
     parser = cli.parse_args
     for command in (
         "initialize-environment",
@@ -61,6 +61,12 @@ def test_cli_surface_is_exactly_stage_5c4_3() -> None:
         "record-action-intent",
         "record-action-result",
         "reconcile-action",
+        "request-route-switch",
+        "record-route-observation",
+        "finalize-route-switch",
+        "start-post-cutover-verification",
+        "record-post-cutover-verification",
+        "finalize-post-cutover-verification",
         "status",
         "export-evidence",
         "deliver-outbox",
@@ -75,6 +81,9 @@ def test_cli_surface_is_exactly_stage_5c4_3() -> None:
         "create-backup",
         "verify-restore",
         "cutback",
+        "open-production",
+        "consume-activation",
+        "request-target-activation",
     ):
         assert f'add_parser("{forbidden}")' not in source
 

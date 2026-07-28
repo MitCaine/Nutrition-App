@@ -28,6 +28,10 @@ OUTBOX_ROLE = "nutrition_control_outbox"
 GATE_ROLE = "nutrition_control_gate"
 AUTHORIZATION_VERIFIER_ROLE = "nutrition_control_authorization_verifier"
 AUTHORIZATION_ROLE_POLICY_VERSION = "phase5c4_authorization_verifier_role_policy_v1"
+PROMOTION_AUTHORIZATION_VERIFIER_ROLE = "nutrition_control_promotion_authorization_verifier"
+PROMOTION_AUTHORIZATION_ROLE_POLICY_VERSION = (
+    "phase5c4_promotion_authorization_verifier_role_policy_v1"
+)
 
 MANAGED_ROLES = (
     OWNER_ROLE,
@@ -113,6 +117,31 @@ def authorization_privilege_manifest() -> dict[str, Any]:
 
 def serialize_authorization_privilege_manifest() -> str:
     return canonical_json(authorization_privilege_manifest())
+
+
+def promotion_authorization_privilege_manifest() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "contract_version": PROMOTION_AUTHORIZATION_ROLE_POLICY_VERSION,
+        "base_manifest_digest": privilege_manifest()["manifest_digest"],
+        "database": CONTROL_DATABASE,
+        "role": {
+            "name": PROMOTION_AUTHORIZATION_VERIFIER_ROLE,
+            "login": True,
+            "inherit": False,
+            "read_only": False,
+            "connect": True,
+            "base_table_dml": False,
+            "allowed_functions": [
+                "phase5c4_api.admit_promotion_authorization_v2(bytea)",
+                "phase5c4_api.read_promotion_authorization_key_v1(text)",
+            ],
+        },
+    }
+    return {**payload, "manifest_digest": canonical_digest(payload)}
+
+
+def serialize_promotion_authorization_privilege_manifest() -> str:
+    return canonical_json(promotion_authorization_privilege_manifest())
 
 
 def _require_bootstrap(connection: Connection) -> None:
@@ -237,6 +266,61 @@ def provision_authorization_verifier_role(
     )
 
 
+def provision_promotion_authorization_verifier_role(
+    engine: Engine, *, expected_database: str
+) -> dict[str, Any]:
+    """Add the isolated promotion verifier before the ops-0009 migration."""
+
+    if (
+        expected_database != CONTROL_DATABASE
+        and re.fullmatch(r"test_phase5c4_[a-z0-9_]{1,48}", expected_database) is None
+    ):
+        raise Phase5C4ControlRoleError("Refusing to provision an unexpected control database")
+    with engine.begin() as connection:
+        _require_bootstrap(connection)
+        actual_database = str(connection.scalar(text("SELECT current_database()")))
+        if actual_database != expected_database:
+            raise Phase5C4ControlRoleError("Configured database does not match expected database")
+        connection.execute(text("SELECT pg_catalog.pg_advisory_xact_lock(5542047)"))
+        existing = connection.execute(
+            text(
+                """
+                SELECT rolcanlogin, rolinherit, rolsuper, rolcreatedb,
+                       rolcreaterole, rolreplication, rolbypassrls, rolconfig
+                FROM pg_catalog.pg_roles
+                WHERE rolname = :role
+                """
+            ),
+            {"role": PROMOTION_AUTHORIZATION_VERIFIER_ROLE},
+        ).one_or_none()
+        if existing is None:
+            connection.execute(
+                text(
+                    f"""
+                    CREATE ROLE {PROMOTION_AUTHORIZATION_VERIFIER_ROLE}
+                        LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
+                        NOREPLICATION NOBYPASSRLS;
+                    GRANT CONNECT ON DATABASE "{actual_database}"
+                        TO {PROMOTION_AUTHORIZATION_VERIFIER_ROLE};
+                    """
+                )
+            )
+        elif (
+            bool(existing.rolcanlogin) is not True
+            or bool(existing.rolinherit)
+            or bool(existing.rolsuper)
+            or bool(existing.rolcreatedb)
+            or bool(existing.rolcreaterole)
+            or bool(existing.rolreplication)
+            or bool(existing.rolbypassrls)
+            or list(existing.rolconfig or [])
+        ):
+            raise Phase5C4ControlRoleError("Promotion authorization verifier role is invalid")
+    return qualify_promotion_authorization_verifier_role(
+        engine, expected_database=expected_database, require_api=False
+    )
+
+
 def remove_authorization_verifier_role(
     engine: Engine, *, expected_database: str
 ) -> dict[str, Any]:
@@ -292,6 +376,67 @@ def remove_authorization_verifier_role(
             )
     return {
         "contract_version": AUTHORIZATION_ROLE_POLICY_VERSION,
+        "database": expected_database,
+        "removed": True,
+    }
+
+
+def remove_promotion_authorization_verifier_role(
+    engine: Engine, *, expected_database: str
+) -> dict[str, Any]:
+    """Remove the promotion verifier after an empty ops-0009 downgrade."""
+
+    if (
+        expected_database != CONTROL_DATABASE
+        and re.fullmatch(r"test_phase5c4_[a-z0-9_]{1,48}", expected_database) is None
+    ):
+        raise Phase5C4ControlRoleError("Refusing to modify an unexpected control database")
+    with engine.begin() as connection:
+        _require_bootstrap(connection)
+        actual_database = str(connection.scalar(text("SELECT current_database()")))
+        if actual_database != expected_database:
+            raise Phase5C4ControlRoleError("Configured database does not match expected database")
+        connection.execute(text("SELECT pg_catalog.pg_advisory_xact_lock(5542047)"))
+        api_exists = bool(
+            connection.scalar(
+                text(
+                    """
+                    SELECT pg_catalog.to_regprocedure(
+                        'phase5c4_api.admit_promotion_authorization_v2(bytea)'
+                    ) IS NOT NULL
+                    """
+                )
+            )
+        )
+        if api_exists:
+            raise Phase5C4ControlRoleError(
+                "Downgrade promotion schema before removing its verifier role"
+            )
+        role_exists = bool(
+            connection.scalar(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_roles
+                        WHERE rolname = :role
+                    )
+                    """
+                ),
+                {"role": PROMOTION_AUTHORIZATION_VERIFIER_ROLE},
+            )
+        )
+        if role_exists:
+            connection.execute(
+                text(
+                    f"""
+                    REVOKE CONNECT ON DATABASE "{actual_database}"
+                        FROM {PROMOTION_AUTHORIZATION_VERIFIER_ROLE};
+                    DROP ROLE {PROMOTION_AUTHORIZATION_VERIFIER_ROLE};
+                    """
+                )
+            )
+    return {
+        "contract_version": PROMOTION_AUTHORIZATION_ROLE_POLICY_VERSION,
         "database": expected_database,
         "removed": True,
     }
@@ -438,6 +583,153 @@ def qualify_authorization_verifier_role(
             "contract_version": AUTHORIZATION_ROLE_POLICY_VERSION,
             "database": expected_database,
             "manifest_digest": authorization_privilege_manifest()["manifest_digest"],
+            "qualified": not errors,
+            "reason_codes": sorted(set(errors)),
+        }
+        return {**payload, "qualification_digest": canonical_digest(payload)}
+
+
+def qualify_promotion_authorization_verifier_role(
+    engine: Engine, *, expected_database: str, require_api: bool = True
+) -> dict[str, Any]:
+    """Qualify the promotion verifier's exact two-function surface."""
+
+    role = PROMOTION_AUTHORIZATION_VERIFIER_ROLE
+    with engine.connect() as connection:
+        if str(connection.scalar(text("SELECT current_database()"))) != expected_database:
+            raise Phase5C4ControlRoleError("Configured database does not match expected database")
+        row = connection.execute(
+            text(
+                """
+                SELECT rolcanlogin, rolinherit, rolsuper, rolcreatedb,
+                       rolcreaterole, rolreplication, rolbypassrls, rolconfig
+                FROM pg_catalog.pg_roles WHERE rolname = :role
+                """
+            ),
+            {"role": role},
+        ).one_or_none()
+        errors: list[str] = []
+        if row is None:
+            errors.append("promotion_authorization_verifier_missing")
+        elif (
+            bool(row.rolcanlogin) is not True
+            or bool(row.rolinherit)
+            or bool(row.rolsuper)
+            or bool(row.rolcreatedb)
+            or bool(row.rolcreaterole)
+            or bool(row.rolreplication)
+            or bool(row.rolbypassrls)
+            or list(row.rolconfig or [])
+        ):
+            errors.append("promotion_authorization_verifier_attributes")
+        if not bool(
+            connection.scalar(
+                text(
+                    """
+                    SELECT pg_catalog.has_database_privilege(
+                        :role, current_database(), 'CONNECT'
+                    )
+                    """
+                ),
+                {"role": role},
+            )
+        ):
+            errors.append("promotion_authorization_verifier_connect")
+        allowed = {
+            str(value)
+            for value in connection.scalars(
+                text(
+                    """
+                    SELECT function.oid::regprocedure::text
+                    FROM pg_catalog.pg_proc function
+                    JOIN pg_catalog.pg_namespace schema
+                      ON schema.oid = function.pronamespace
+                    WHERE schema.nspname IN (
+                        'phase5c4_api','phase5c4_control'
+                    )
+                      AND pg_catalog.has_function_privilege(
+                          :role, function.oid, 'EXECUTE'
+                      )
+                    """
+                ),
+                {"role": role},
+            )
+        }
+        expected = (
+            {
+                "phase5c4_api.admit_promotion_authorization_v2(bytea)",
+                "phase5c4_api.read_promotion_authorization_key_v1(text)",
+            }
+            if require_api
+            else set()
+        )
+        if allowed != expected:
+            errors.append("promotion_authorization_verifier_execute")
+        schema_usage = {
+            str(value)
+            for value in connection.scalars(
+                text(
+                    """
+                    SELECT schema.nspname
+                    FROM pg_catalog.pg_namespace schema
+                    WHERE schema.nspname IN (
+                        'phase5c4_api','phase5c4_control','phase5c4_ext'
+                    )
+                      AND pg_catalog.has_schema_privilege(
+                          :role, schema.oid, 'USAGE'
+                      )
+                    """
+                ),
+                {"role": role},
+            )
+        }
+        if schema_usage != ({"phase5c4_api"} if require_api else set()):
+            errors.append("promotion_authorization_verifier_schema")
+        relation_grants = int(
+            connection.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM pg_catalog.pg_class relation
+                    JOIN pg_catalog.pg_namespace schema
+                      ON schema.oid = relation.relnamespace
+                    WHERE schema.nspname = 'phase5c4_control'
+                      AND relation.relkind IN ('r','p','v','m')
+                      AND pg_catalog.has_any_column_privilege(
+                          :role, relation.oid,
+                          'SELECT,INSERT,UPDATE,REFERENCES'
+                      )
+                    """
+                ),
+                {"role": role},
+            )
+            or 0
+        )
+        memberships = int(
+            connection.scalar(
+                text(
+                    """
+                    SELECT count(*)
+                    FROM pg_catalog.pg_auth_members membership
+                    JOIN pg_catalog.pg_roles granted
+                      ON granted.oid = membership.roleid
+                    JOIN pg_catalog.pg_roles member
+                      ON member.oid = membership.member
+                    WHERE granted.rolname = :role OR member.rolname = :role
+                    """
+                ),
+                {"role": role},
+            )
+            or 0
+        )
+        if relation_grants:
+            errors.append("promotion_authorization_verifier_table")
+        if memberships:
+            errors.append("promotion_authorization_verifier_membership")
+        payload = {
+            "contract_version": PROMOTION_AUTHORIZATION_ROLE_POLICY_VERSION,
+            "database": expected_database,
+            "manifest_digest": (promotion_authorization_privilege_manifest()["manifest_digest"]),
             "qualified": not errors,
             "reason_codes": sorted(set(errors)),
         }

@@ -59,6 +59,11 @@ REASONS = frozenset(
         "object_store_unavailable",
         "object_store_mismatch",
         "outbox_lease_expired",
+        "post_cutover_verification_passed",
+        "post_cutover_verification_started",
+        "promotion_authorization_replayed",
+        "route_switch_finalized",
+        "route_switch_requested",
         "unauthorized",
         "internal_failure",
     }

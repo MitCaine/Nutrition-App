@@ -1,14 +1,17 @@
-"""Bounded Stage 5C4.3 control-plane CLI.
+"""Bounded Phase 5C4 control-plane CLI.
 
-This intentionally exposes no admission, backup, restore, routing, activation,
-cutback, authorization-consumption, or general resume command.
+The Phase 5C4.7a commands are fixed-purpose evidence and transition surfaces.
+This intentionally exposes no target activation, open-production, cutback,
+authorization-consumption, or general resume command.
 """
 
 from __future__ import annotations
 
 import argparse
 from datetime import timezone
+import os
 from pathlib import Path
+import stat
 import sys
 from uuid import UUID
 
@@ -18,6 +21,7 @@ from app.operators.phase5c4_control_contracts import (
     command_exit_code,
     serialize_command_result,
 )
+from app.operators.phase5c_contracts import sha256_digest_bytes
 from app.operators.phase5c4_control_evidence import (
     Phase5C4EvidenceError,
     prepare_artifact,
@@ -59,6 +63,32 @@ def _add_environment_cas(parser: argparse.ArgumentParser, *, attempt: bool) -> N
     if attempt:
         parser.add_argument("--attempt-id", required=True, type=_uuid)
         parser.add_argument("--expected-attempt-state-version", required=True, type=int)
+
+
+def _read_evidence(path: Path) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        raise Phase5C4EvidenceError("artifact_invalid") from None
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0 or metadata.st_size > 65_536:
+            raise Phase5C4EvidenceError("artifact_invalid")
+        document = os.read(descriptor, metadata.st_size + 1)
+        after = os.fstat(descriptor)
+        if (
+            len(document) != metadata.st_size
+            or metadata.st_dev != after.st_dev
+            or metadata.st_ino != after.st_ino
+            or metadata.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise Phase5C4EvidenceError("artifact_invalid")
+        return document
+    finally:
+        os.close(descriptor)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -117,6 +147,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _add_request(reconcile)
     _add_environment_cas(reconcile, attempt=True)
     reconcile.add_argument("--action-id", required=True, type=_uuid)
+
+    route_request = commands.add_parser("request-route-switch")
+    _add_request(route_request)
+    _add_environment_cas(route_request, attempt=True)
+    route_request.add_argument("--authorization-id", required=True, type=_uuid)
+
+    route_observation = commands.add_parser("record-route-observation")
+    route_observation.add_argument("--file", required=True, type=Path)
+
+    route_finalize = commands.add_parser("finalize-route-switch")
+    _add_request(route_finalize)
+    _add_environment_cas(route_finalize, attempt=True)
+    route_finalize.add_argument("--route-observation-id", required=True, type=_uuid)
+
+    post_start = commands.add_parser("start-post-cutover-verification")
+    _add_request(post_start)
+    _add_environment_cas(post_start, attempt=True)
+
+    post_receipt = commands.add_parser("record-post-cutover-verification")
+    post_receipt.add_argument("--file", required=True, type=Path)
+
+    post_finalize = commands.add_parser("finalize-post-cutover-verification")
+    _add_request(post_finalize)
+    _add_environment_cas(post_finalize, attempt=True)
+    post_finalize.add_argument("--receipt-id", required=True, type=_uuid)
 
     status = commands.add_parser("status")
     status.add_argument("--environment-id", required=True, type=_uuid)
@@ -347,6 +402,75 @@ def execute(args: argparse.Namespace) -> dict:
             reason=str(row["reason"]),
             retryable=bool(row["retryable"]),
             maintenance_required=bool(row["maintenance_required"]),
+        )
+    if args.command == "request-route-switch":
+        return database.request_route_switch(
+            request_id=args.request_id,
+            authorization_id=args.authorization_id,
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "record-route-observation":
+        document = _read_evidence(args.file)
+        row = database.record_route_observation(canonical_bytes=document)
+        return _generic_result(
+            args.command,
+            request_digest=sha256_digest_bytes(document),
+            result=str(row["result"]),
+            reason=(
+                "ok"
+                if row["result"] in {"accepted", "idempotent_replay"}
+                else "external_result_conflict"
+            ),
+            maintenance_required=True,
+            evidence_digests=[str(row["observation_digest"])],
+        )
+    if args.command == "finalize-route-switch":
+        return database.finalize_route_switch(
+            request_id=args.request_id,
+            route_observation_id=args.route_observation_id,
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "start-post-cutover-verification":
+        return database.start_post_cutover_verification(
+            request_id=args.request_id,
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
+        )
+    if args.command == "record-post-cutover-verification":
+        document = _read_evidence(args.file)
+        row = database.record_post_cutover_verification(canonical_bytes=document)
+        return _generic_result(
+            args.command,
+            request_digest=sha256_digest_bytes(document),
+            result=str(row["result"]),
+            reason=(
+                "ok"
+                if row["result"] in {"accepted", "idempotent_replay"}
+                else "external_result_conflict"
+            ),
+            maintenance_required=True,
+            evidence_digests=[str(row["receipt_digest"])],
+        )
+    if args.command == "finalize-post-cutover-verification":
+        return database.finalize_post_cutover_verification(
+            request_id=args.request_id,
+            receipt_id=args.receipt_id,
+            environment_id=args.environment_id,
+            attempt_id=args.attempt_id,
+            expected_environment_generation=(args.expected_environment_generation),
+            expected_environment_state_version=(args.expected_environment_state_version),
+            expected_attempt_state_version=(args.expected_attempt_state_version),
         )
     if args.command == "status":
         return _status_result(database, args.environment_id)

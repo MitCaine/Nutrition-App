@@ -29,6 +29,7 @@ class Phase5C4ControlError(RuntimeError):
 
 _SQLSTATE_REASON = {
     "40001": "serialization_retry",
+    "40P01": "serialization_retry",
     "42501": "unauthorized",
     "22023": "artifact_invalid",
     "P5C43": "internal_failure",
@@ -40,6 +41,23 @@ _SQLSTATE_REASON = {
     "P5C49": "evidence_not_anchored",
     "P5C50": "attempt_not_found",
     "P5C51": "external_action_unknown",
+}
+
+_PRIMARY_REASON = {
+    "authorization_evidence_binding_stale": "evidence_not_anchored",
+    "phase5c4_route_switch_action_conflict": "external_result_conflict",
+    "post_cutover_receipt_binding_stale": "evidence_not_anchored",
+    "post_cutover_receipt_invalid": "artifact_invalid",
+    "post_cutover_receipt_stale": "evidence_not_anchored",
+    "promotion_authorization_binding_stale": "evidence_not_anchored",
+    "promotion_authorization_key_untrusted": "unauthorized",
+    "promotion_authorization_replayed": "authorization_replayed",
+    "promotion_authorization_revoked": "unauthorized",
+    "promotion_authorization_time_invalid": "authorization_expired",
+    "promotion_authorization_unknown": "authorization_unknown",
+    "route_observation_binding_stale": "evidence_not_anchored",
+    "route_observation_invalid": "artifact_invalid",
+    "route_observation_stale": "evidence_not_anchored",
 }
 
 
@@ -68,13 +86,19 @@ def create_control_engine(database_url: str | None = None, *, serializable: bool
 
 
 def _database_error(exc: DBAPIError) -> Phase5C4ControlError:
-    sqlstate = getattr(exc.orig, "sqlstate", None)
+    sqlstate = str(getattr(exc.orig, "sqlstate", "") or "")
     primary = str(getattr(getattr(exc.orig, "diag", None), "message_primary", ""))
-    if str(sqlstate) == "P5C48" and primary == "phase5c4_outbox_lease_invalid":
+    primary_reason = next(
+        (mapped for prefix, mapped in _PRIMARY_REASON.items() if primary.startswith(prefix)),
+        None,
+    )
+    if primary_reason is not None:
+        reason = primary_reason
+    elif sqlstate == "P5C48" and primary == "phase5c4_outbox_lease_invalid":
         reason = "invalid_transition"
     else:
-        reason = _SQLSTATE_REASON.get(str(sqlstate), "internal_failure")
-    retryable = str(sqlstate) == "40001" or str(sqlstate).startswith("08")
+        reason = _SQLSTATE_REASON.get(sqlstate, "internal_failure")
+    retryable = sqlstate in {"40001", "40P01"} or sqlstate.startswith("08")
     return Phase5C4ControlError(reason, retryable=retryable)
 
 
@@ -252,6 +276,258 @@ class Phase5C4ControlDatabase:
                 .one()
             )
             return _row_to_result("request-transition", row)
+
+        return self._serializable(operation)
+
+    def request_route_switch(
+        self,
+        *,
+        request_id: str,
+        authorization_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+    ) -> dict[str, Any]:
+        def operation(connection):
+            row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM phase5c4_api.request_route_switch_v1(
+                            CAST(:request_id AS uuid),
+                            CAST(:authorization_id AS uuid),
+                            CAST(:environment_id AS uuid),
+                            CAST(:attempt_id AS uuid),
+                            :expected_environment_generation,
+                            :expected_environment_state_version,
+                            :expected_attempt_state_version
+                        )
+                        """
+                    ),
+                    {
+                        "request_id": request_id,
+                        "authorization_id": authorization_id,
+                        "environment_id": environment_id,
+                        "attempt_id": attempt_id,
+                        "expected_environment_generation": (expected_environment_generation),
+                        "expected_environment_state_version": (expected_environment_state_version),
+                        "expected_attempt_state_version": (expected_attempt_state_version),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            result = _row_to_result("request-route-switch", row)
+            result["promotion_authorization_id"] = _uuid_text(row.get("promotion_authorization_id"))
+            result["route_switch_action_id"] = _uuid_text(row.get("route_switch_action_id"))
+            return result
+
+        return self._serializable(operation)
+
+    def record_route_observation(self, *, canonical_bytes: bytes) -> dict[str, Any]:
+        from app.operators.phase5c4_promotion_authorization import (
+            parse_route_observation,
+        )
+
+        parse_route_observation(canonical_bytes)
+
+        def operation(connection):
+            return dict(
+                connection.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM phase5c4_api.record_route_observation_v1(
+                            :canonical_bytes
+                        )
+                        """
+                    ),
+                    {"canonical_bytes": canonical_bytes},
+                )
+                .mappings()
+                .one()
+            )
+
+        return self._serializable(operation)
+
+    def finalize_route_switch(
+        self,
+        *,
+        request_id: str,
+        route_observation_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+    ) -> dict[str, Any]:
+        return self._post_switch_transition(
+            routine="finalize_route_switch_v1",
+            command="finalize-route-switch",
+            request_id=request_id,
+            evidence_id=route_observation_id,
+            evidence_parameter="route_observation_id",
+            environment_id=environment_id,
+            attempt_id=attempt_id,
+            expected_environment_generation=(expected_environment_generation),
+            expected_environment_state_version=(expected_environment_state_version),
+            expected_attempt_state_version=expected_attempt_state_version,
+        )
+
+    def start_post_cutover_verification(
+        self,
+        *,
+        request_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+    ) -> dict[str, Any]:
+        def operation(connection):
+            row = (
+                connection.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM phase5c4_api.
+                            start_post_cutover_verification_v1(
+                                CAST(:request_id AS uuid),
+                                CAST(:environment_id AS uuid),
+                                CAST(:attempt_id AS uuid),
+                                :expected_environment_generation,
+                                :expected_environment_state_version,
+                                :expected_attempt_state_version
+                            )
+                        """
+                    ),
+                    {
+                        "request_id": request_id,
+                        "environment_id": environment_id,
+                        "attempt_id": attempt_id,
+                        "expected_environment_generation": (expected_environment_generation),
+                        "expected_environment_state_version": (expected_environment_state_version),
+                        "expected_attempt_state_version": (expected_attempt_state_version),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_result("start-post-cutover-verification", row)
+
+        return self._serializable(operation)
+
+    def record_post_cutover_verification(self, *, canonical_bytes: bytes) -> dict[str, Any]:
+        from app.operators.phase5c4_promotion_authorization import (
+            parse_post_cutover_receipt,
+        )
+
+        parse_post_cutover_receipt(canonical_bytes)
+
+        def operation(connection):
+            return dict(
+                connection.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM phase5c4_api.
+                            record_post_cutover_verification_v1(
+                                :canonical_bytes
+                            )
+                        """
+                    ),
+                    {"canonical_bytes": canonical_bytes},
+                )
+                .mappings()
+                .one()
+            )
+
+        return self._serializable(operation)
+
+    def finalize_post_cutover_verification(
+        self,
+        *,
+        request_id: str,
+        receipt_id: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+    ) -> dict[str, Any]:
+        return self._post_switch_transition(
+            routine="finalize_post_cutover_verification_v1",
+            command="finalize-post-cutover-verification",
+            request_id=request_id,
+            evidence_id=receipt_id,
+            evidence_parameter="receipt_id",
+            environment_id=environment_id,
+            attempt_id=attempt_id,
+            expected_environment_generation=(expected_environment_generation),
+            expected_environment_state_version=(expected_environment_state_version),
+            expected_attempt_state_version=expected_attempt_state_version,
+        )
+
+    def _post_switch_transition(
+        self,
+        *,
+        routine: str,
+        command: str,
+        request_id: str,
+        evidence_id: str,
+        evidence_parameter: str,
+        environment_id: str,
+        attempt_id: str,
+        expected_environment_generation: int,
+        expected_environment_state_version: int,
+        expected_attempt_state_version: int,
+    ) -> dict[str, Any]:
+        allowed = {
+            (
+                "finalize_route_switch_v1",
+                "route_observation_id",
+            ),
+            (
+                "finalize_post_cutover_verification_v1",
+                "receipt_id",
+            ),
+        }
+        if (routine, evidence_parameter) not in allowed:
+            raise Phase5C4ControlError("internal_failure")
+
+        def operation(connection):
+            row = (
+                connection.execute(
+                    text(
+                        f"""
+                        SELECT * FROM phase5c4_api.{routine}(
+                            CAST(:request_id AS uuid),
+                            CAST(:evidence_id AS uuid),
+                            CAST(:environment_id AS uuid),
+                            CAST(:attempt_id AS uuid),
+                            :expected_environment_generation,
+                            :expected_environment_state_version,
+                            :expected_attempt_state_version
+                        )
+                        """
+                    ),
+                    {
+                        "request_id": request_id,
+                        "evidence_id": evidence_id,
+                        "environment_id": environment_id,
+                        "attempt_id": attempt_id,
+                        "expected_environment_generation": (expected_environment_generation),
+                        "expected_environment_state_version": (expected_environment_state_version),
+                        "expected_attempt_state_version": (expected_attempt_state_version),
+                    },
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_result(command, row)
 
         return self._serializable(operation)
 

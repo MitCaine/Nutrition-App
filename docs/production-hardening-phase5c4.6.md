@@ -88,5 +88,6 @@ forward correction, never deletion of authority history.
 
 Every admitted authorization remains unused. Phase 5C4.6 provides no consumption routine, workflow
 transition, production-open authority, target grant, route mutation, provider orchestration,
-cutback, or emergency-close behavior. Phase 5C4.7 must separately define the atomic consumption and
-`TARGET_ACTIVATION_REQUESTED` contract before any target can be activated.
+cutback, or emergency-close behavior. Phase 5C4.7a separately defines preactivation promotion and
+closed-target evidence binding. Phase 5C4.7b must define target-activation consumption and the
+`TARGET_ACTIVATION_REQUESTED` execution-schema contract before any target can be activated.

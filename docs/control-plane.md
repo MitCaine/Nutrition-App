@@ -50,6 +50,7 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Immutable provenance 0020 | Database-enforced historical immutability and exact current-schema admission | `production-hardening-immutable-provenance.md`, application migration 0020, ops migration 0006 |
 | Stage 5C4.5 | Idempotent local restore execution, atomic restored-database qualification, and immutable recovery evidence | `production-hardening-phase5c4.5.md`, ops migration 0007 |
 | Stage 5C4.6 | Purpose-specific Ed25519 target-activation authorization admission; no consumption or activation | `production-hardening-phase5c4.6.md`, ops migration 0008 |
+| Stage 5C4.7a | Purpose-specific promotion admission, one-use route intent, closed-target route/post-cutover evidence, and activation-evidence binding; no activation or opening | `production-hardening-phase5c4.7a.md`, ops migration 0009 |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
