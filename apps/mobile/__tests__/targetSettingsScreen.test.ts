@@ -48,7 +48,7 @@ test("settings distinguishes FDA Daily Values from optional personal estimates a
   for (const label of ["Birth date", "Height in centimeters", "Weight in kilograms", "Calories personal target", "Protein personal target"]) expect(input(renderer.root, label)).toBeDefined();
   expect(action(renderer.root, "Save nutrition targets").props.accessibilityState).toMatchObject({ disabled: false, busy: false });
   expect(action(renderer.root, "Equation sex female").props.accessibilityRole).toBe("radio");
-  expect(action(renderer.root, "Estimation context general adult").props.accessibilityRole).toBe("radio");
+  expect(action(renderer.root, "Estimation context General adult").props.accessibilityRole).toBe("radio");
   expect(text).toContain("Mostly seated with little intentional activity.");
   expect(text).toContain("Some routine walking or light exercise.");
   expect(text).toContain("Activity categories are estimates");
