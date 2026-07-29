@@ -2,7 +2,7 @@
 
 Status: **executable preactivation cutback and bounded recovery qualification
 implemented at control revision `ops_0011_phase5c4_recovery_audit`;
-production provider/restart/PITR exercises remain separate gates**
+local disposable infrastructure qualification is opt-in and vendor-neutral**
 
 Phase 5C4.8 qualifies recovery at the irreversible target-activation boundary.
 The original Phase 5C4 roadmap names crash injection across every transition,
@@ -236,9 +236,52 @@ replacement requires a separate purpose-specific architecture and authority.
 
 This is a qualification contract over a restore performed outside the control
 transaction. It is not permission for the application or control plane to
-perform a restore. The current working tree does not implement this qualifier
-and has not run a Docker, pgBackRest, provider, destructive PITR, or measured
-RPO/RTO exercise.
+perform a restore.
+
+The repository includes one destructive, opt-in local infrastructure
+qualifier:
+
+```bash
+NUTRITION_PHASE5C4_QUALIFICATION_CONFIRM=phase5c4_infrastructure_destroy_disposable \
+NUTRITION_PHASE5C4_QUALIFICATION_RETAIN_EVIDENCE=1 \
+  ./scripts/qualify-phase5c4-infrastructure.sh
+```
+
+Each run creates a generated `nutrition-p5c4q-*` Compose project containing
+PostgreSQL 16 source/restored/control databases, pgBackRest 2.58.0, TLS-enabled
+MinIO with COMPLIANCE retention, and a persistent local routing-provider
+stand-in. Credentials and the MinIO TLS key are generated per run; the key is
+held in a temporary directory and removed even when evidence is retained.
+All published service ports bind only to loopback.
+
+The executable scenarios prove command/readback separation, operation-bound
+replay and changed-input rejection, provider restart reconciliation, partial
+and conflicting provider observations, source-last restoration ordering, full
+and differential backup, WAL archiving, exact-LSN PITR,
+latest-durable-LSN restore, unreachable-LSN fail-closed behavior, read-only
+restored history, MinIO duplicate/conflict behavior, COMPLIANCE deletion
+refusal and restart persistence, and selected cutback/activation/cumulative
+PostgreSQL authority tests. RPO and RTO use database timestamps and WAL
+positions; a positive subsecond RPO rounds up rather than reporting zero.
+
+The canonical summary is retained only when requested under
+`.project-runtime/phase5c4-qualification/<project>/qualification-summary.json`.
+It includes scenario status and digests, provider operation/readback
+documents, backup and LSN identities, protected root, WORM receipt, measured
+timings, selected control-test digest, skipped scenarios, and cleanup result.
+Raw command output, credentials, TLS keys, and host-specific container IDs are
+not evidence.
+
+This local run deliberately does not install schema 0021 through the live
+activation migrator or restore representative application-domain tables.
+Raw Alembic advancement would bypass the established closed-fence activation
+protocol, so `application_schema_and_domain_restore` remains an explicit
+skipped scenario. The provider process exercises and the selected control
+authority tests run in the same qualification but are not one cross-bound
+control saga; `control_provider_end_to_end_binding` is therefore also skipped.
+The run is not certification of a production routing vendor, and a local
+Docker administrator can physically destroy the MinIO volume despite
+object-level COMPLIANCE enforcement.
 
 Test harnesses must create isolated databases, containers, volumes, operation
 directories, and credentials and must clean up only resources they created.
@@ -330,10 +373,10 @@ Further operational qualification must additionally add:
 - resource-lifecycle tests proving that only harness-created disposable
   resources are cleaned and immutable evidence is retained.
 
-Mocks may prove deterministic provider and crash behavior. Real PostgreSQL 16,
-Docker/pgBackRest, routing/readback, restart, and PITR exercises remain
-separate qualification results and must be reported as unavailable when their
-required environment is unavailable.
+Mocks may prove deterministic provider and crash behavior. The local
+Docker/pgBackRest/MinIO/provider qualifier is a separate result and must be
+reported as unavailable when its prerequisites are unavailable. It does not
+replace application-domain restore qualification or vendor certification.
 
 ## Explicit exclusions
 
@@ -374,11 +417,11 @@ The implementation is code-complete only when:
 8. unavailable Docker, pgBackRest, routing, PITR, provider-fault or
    control-restoration exercises are reported as not run.
 
-Operational qualification is a separate gate. It requires the production-like
-provider, route, restart and disposable postactivation PITR exercises to
-produce their own evidence, including measured RPO and RTO. Unit tests,
-PostgreSQL control tests, or the existence of a read-only qualifier do not
-substitute for those exercises.
+Operational qualification remains a separate gate for the production-like
+provider and schema-0021 application-domain restore path. The local qualifier
+produces measured evidence for its own disposable topology only; unit tests,
+PostgreSQL control tests, or a local-provider pass do not substitute for
+vendor and application-domain qualification.
 
 Phase 5C4.9 may then perform measured full rehearsals, communications/tabletop
 work, sealed evidence review, and the final operational release decision. It

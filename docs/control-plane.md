@@ -242,6 +242,16 @@ provider executor, automatic route cutback, source reopening, or deployment orch
 5C4.5's bounded Docker Compose/pgBackRest recovery adapter still does not create backups, route
 traffic, or authorize activation.
 
+The Phase 5C4.8 opt-in infrastructure qualifier composes that adapter with a
+disposable PostgreSQL 16 source/restored pair, real pgBackRest backup/WAL/PITR,
+TLS MinIO object lock, a persistent PostgreSQL routing-provider stand-in, and
+a separate disposable control database. A provider command result is never
+success evidence: independent readback must bind the same operation ID,
+request digest, provider revision, route, source-write, and target-fence
+state. This qualifies local provider semantics only and grants no runtime or
+control authority. It intentionally does not route traffic or invoke the
+schema-0021 activation migrator.
+
 Phase 5C4.8 freezes a distinct Ed25519
 preactivation-cutback contract plus safety, route, and source-restoration observation shapes. Ops
 0011 installs the matching trust store, admission, one-use consumption, route intent and

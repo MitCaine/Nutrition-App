@@ -1,0 +1,135 @@
+name: ${NUTRITION_PHASE5C4_QUALIFICATION_PROJECT:?set an isolated qualification project}
+
+x-pgbackrest-environment: &pgbackrest-environment
+  PGBACKREST_REPO1_CIPHER_PASS: ${NUTRITION_PHASE5C4_QUALIFICATION_REPO_CIPHER:?set a disposable repository cipher}
+  PGBACKREST_REPO1_S3_KEY: ${NUTRITION_PHASE5C4_QUALIFICATION_MINIO_USER:?set a disposable MinIO user}
+  PGBACKREST_REPO1_S3_KEY_SECRET: ${NUTRITION_PHASE5C4_QUALIFICATION_MINIO_PASSWORD:?set a disposable MinIO password}
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data", "--address", ":9000"]
+    environment:
+      MINIO_ROOT_USER: ${NUTRITION_PHASE5C4_QUALIFICATION_MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${NUTRITION_PHASE5C4_QUALIFICATION_MINIO_PASSWORD}
+    ports:
+      - "127.0.0.1:${NUTRITION_PHASE5C4_QUALIFICATION_MINIO_PORT:-59100}:9000"
+    volumes:
+      - minio_data:/data
+      - ${NUTRITION_PHASE5C4_QUALIFICATION_MINIO_CERTS:?set generated MinIO certificates}:/root/.minio/certs:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mc alias set qualification https://localhost:9000
+          "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" --insecure >/dev/null
+          && mc ready qualification --insecure
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  source:
+    build:
+      context: .
+      dockerfile: docker/phase5c4/qualification-postgres.Dockerfile
+    image: ${NUTRITION_PHASE5C4_QUALIFICATION_POSTGRES_IMAGE:-nutrition-phase5c4-pgbackrest:2.58.0-pg16}
+    environment:
+      <<: *pgbackrest-environment
+      POSTGRES_DB: qualification
+      POSTGRES_PASSWORD: ${NUTRITION_PHASE5C4_QUALIFICATION_POSTGRES_PASSWORD:?set a disposable PostgreSQL password}
+      POSTGRES_USER: postgres
+    ports:
+      - "127.0.0.1:${NUTRITION_PHASE5C4_QUALIFICATION_SOURCE_PORT:-59101}:5432"
+    volumes:
+      - source_data:/var/lib/postgresql/data
+      - ./docker/phase5c4/source-init.sql:/docker-entrypoint-initdb.d/010-source.sql:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qualification"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  restored:
+    profiles: ["restore"]
+    image: ${NUTRITION_PHASE5C4_QUALIFICATION_POSTGRES_IMAGE:-nutrition-phase5c4-pgbackrest:2.58.0-pg16}
+    command:
+      - postgres
+      - -c
+      - default_transaction_read_only=on
+      - -c
+      - archive_mode=off
+      - -c
+      - archive_command=
+    environment:
+      <<: *pgbackrest-environment
+      POSTGRES_DB: qualification
+      POSTGRES_PASSWORD: ${NUTRITION_PHASE5C4_QUALIFICATION_POSTGRES_PASSWORD}
+      POSTGRES_USER: postgres
+    ports:
+      - "127.0.0.1:${NUTRITION_PHASE5C4_QUALIFICATION_RESTORED_PORT:-59102}:5432"
+    volumes:
+      - restored_data:/var/lib/postgresql/data
+    depends_on:
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qualification"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  restore-tool:
+    profiles: ["restore-tool"]
+    image: ${NUTRITION_PHASE5C4_QUALIFICATION_POSTGRES_IMAGE:-nutrition-phase5c4-pgbackrest:2.58.0-pg16}
+    environment:
+      <<: *pgbackrest-environment
+    volumes:
+      - restored_data:/var/lib/postgresql/data
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  route-provider:
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+    environment:
+      POSTGRES_DB: provider
+      POSTGRES_PASSWORD: ${NUTRITION_PHASE5C4_QUALIFICATION_PROVIDER_PASSWORD:?set a disposable provider password}
+      POSTGRES_USER: provider_admin
+    ports:
+      - "127.0.0.1:${NUTRITION_PHASE5C4_QUALIFICATION_PROVIDER_PORT:-59103}:5432"
+    volumes:
+      - provider_data:/var/lib/postgresql/data
+      - ./docker/phase5c4/provider-init.sql:/docker-entrypoint-initdb.d/010-provider.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U provider_admin -d provider"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  control:
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+    environment:
+      POSTGRES_DB: nutrition_control_test
+      POSTGRES_PASSWORD: ${NUTRITION_PHASE5C4_QUALIFICATION_CONTROL_PASSWORD:?set a disposable control password}
+      POSTGRES_USER: nutrition_control_admin
+    ports:
+      - "127.0.0.1:${NUTRITION_PHASE5C4_QUALIFICATION_CONTROL_PORT:-59104}:5432"
+    volumes:
+      - control_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U nutrition_control_admin -d nutrition_control_test
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  control_data:
+  minio_data:
+  provider_data:
+  restored_data:
+  source_data:

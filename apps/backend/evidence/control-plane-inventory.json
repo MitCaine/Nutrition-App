@@ -379,6 +379,26 @@
       "value": "phase5c4_source_restore_observation_v1"
     },
     {
+      "constant": "EVIDENCE_SCHEMA_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_infrastructure_qualification.py",
+      "value": "phase5c4_infrastructure_evidence_schema_v1"
+    },
+    {
+      "constant": "PROVIDER_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_infrastructure_qualification.py",
+      "value": "phase5c4_disposable_routing_provider_v1"
+    },
+    {
+      "constant": "QUALIFICATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_infrastructure_qualification.py",
+      "value": "phase5c4_infrastructure_qualification_v1"
+    },
+    {
+      "constant": "TIMING_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_infrastructure_qualification.py",
+      "value": "phase5c4_authoritative_recovery_timing_v1"
+    },
+    {
       "constant": "ACTIVATION_EXECUTION_LOCAL_ADMISSION_VERSION",
       "file": "apps/backend/app/operators/phase5c4_prerequisites.py",
       "value": "phase5c4_local_admission_v4"
@@ -477,7 +497,7 @@
   "control_heads": [
     "ops_0011_phase5c4_recovery_audit"
   ],
-  "inventory_sha256": "3fd612407c158e1e46879db3f7ab824d9d373f6b36dd74016a73309163bda7f2",
+  "inventory_sha256": "f0bd53da1e2b22ee63650bf9a77beaf8a845bb9203692f42830a02fb1dfb4d66",
   "roles": [
     "nutrition_canary",
     "nutrition_canary_read",

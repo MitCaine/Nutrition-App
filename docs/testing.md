@@ -159,11 +159,30 @@ trusted admission, concurrent replay, one-use consumption, route failure and
 later authoritative success, source-restoration ambiguity and reconciliation,
 terminal convergence, immutability, and downgrade refusal.
 
-Real Docker/pgBackRest execution, provider restart, routing/readback,
-destructive PITR, measured RPO/RTO, MinIO restart, and control-database
-restoration remain separately gated results. A parser, mock, or read-only
-qualification test cannot be reported as proof that one of those exercises
-passed.
+Run the destructive local infrastructure qualifier explicitly:
+
+```bash
+NUTRITION_PHASE5C4_QUALIFICATION_CONFIRM=phase5c4_infrastructure_destroy_disposable \
+NUTRITION_PHASE5C4_QUALIFICATION_RETAIN_EVIDENCE=1 \
+  ./scripts/qualify-phase5c4-infrastructure.sh
+```
+
+Prerequisites are Docker with Compose, OpenSSL, the repository virtual
+environment, and unused loopback ports 59100–59104. The command generates all
+credentials and refuses caller-supplied qualification credentials. It removes
+the generated Compose project, including profile-scoped restored volumes, on
+success and failure. Retention preserves only the canonical summary and
+private restore intent/completion journals; it never preserves the generated
+TLS private key.
+
+The opt-in pytest wrapper is
+`tests/test_phase5c4_infrastructure_integration.py` under
+`phase5c4_docker_integration`; ordinary and session-end suites do not start
+Docker. A qualified summary proves the local provider, PostgreSQL/pgBackRest,
+MinIO, and selected control scenarios named in that summary. It explicitly
+skips schema-0021 application-domain restoration, one-saga binding between
+provider observations and control admission, and production-vendor
+certification, so it must not be cited as proof of those gates.
 
 ## MinIO object-lock integration
 
