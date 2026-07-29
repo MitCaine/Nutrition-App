@@ -1,0 +1,739 @@
+{
+  "application_heads": [
+    "0021_target_activation_execution"
+  ],
+  "authorization_contract_constants": [
+    {
+      "constant": "ACTIVATION_EXECUTION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_target_open_execution_policy_v1"
+    },
+    {
+      "constant": "ACTIVATION_OBSERVATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_activation_runtime_observation_v1"
+    },
+    {
+      "constant": "EMERGENCY_CLOSE_OBSERVATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_emergency_close_observation_v1"
+    },
+    {
+      "constant": "EMERGENCY_CLOSE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_emergency_close_policy_v1"
+    },
+    {
+      "constant": "EXECUTION_AUTHORIZATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_execution_schema_authorization_v1"
+    },
+    {
+      "constant": "EXECUTION_AUTHORIZATION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_target_activation_execution_policy_v1"
+    },
+    {
+      "constant": "EXECUTION_AUTHORIZATION_PURPOSE",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "production_target_activation_execution"
+    },
+    {
+      "constant": "EXECUTION_AUTHORIZATION_TRUST_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_execution_ed25519_trust_policy_v1"
+    },
+    {
+      "constant": "EXECUTION_SCHEMA_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_schema_0021_execution_policy_v1"
+    },
+    {
+      "constant": "SCHEMA_MIGRATION_OBSERVATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_activation_execution.py",
+      "value": "phase5c4_schema_migration_observation_v1"
+    },
+    {
+      "constant": "ADMISSION_DECISION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_admission.py",
+      "value": "phase5c4_admission_decision_v1"
+    },
+    {
+      "constant": "ALLOWED_DIFFERENCE_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_admission.py",
+      "value": "phase5c_source_candidate_allowed_differences_v1"
+    },
+    {
+      "constant": "AUTHORIZATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "phase5c4_target_activation_authorization_v2"
+    },
+    {
+      "constant": "AUTHORIZATION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "phase5c4_target_activation_policy_v1"
+    },
+    {
+      "constant": "AUTHORIZATION_PURPOSE",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "production_target_activation"
+    },
+    {
+      "constant": "AUTHORIZATION_ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "phase5c4_postgresql_role_policy_v1"
+    },
+    {
+      "constant": "AUTHORIZATION_TRUST_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "phase5c4_local_ed25519_trust_policy_v1"
+    },
+    {
+      "constant": "POST_CUTOVER_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "phase5c4_post_cutover_verification_policy_v1"
+    },
+    {
+      "constant": "ROUTE_OBSERVATION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_authorization.py",
+      "value": "phase5c4_route_observation_policy_v1"
+    },
+    {
+      "constant": "ACTIVATION_AUTHORIZATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_target_activation_authorization_v1"
+    },
+    {
+      "constant": "ARTIFACT_SET_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_promotion_artifact_set_v1"
+    },
+    {
+      "constant": "AUTH_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_private_single_user_auth_policy_v1"
+    },
+    {
+      "constant": "BACKUP_EVIDENCE_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_backup_evidence_v1"
+    },
+    {
+      "constant": "BRIDGE_METADATA_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_bridge_metadata_evidence_v1"
+    },
+    {
+      "constant": "CANARY_HTTP_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_private_canary_http_policy_v1"
+    },
+    {
+      "constant": "CANARY_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_private_canary_policy_v1"
+    },
+    {
+      "constant": "CANDIDATE_SEAL_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_candidate_state_seal_v1"
+    },
+    {
+      "constant": "CLONE_ORIGIN_RECEIPT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_clone_origin_receipt_v1"
+    },
+    {
+      "constant": "CUTBACK_AUTHORIZATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_cutback_authorization_v1"
+    },
+    {
+      "constant": "DATABASE_INCARNATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_database_incarnation_v1"
+    },
+    {
+      "constant": "DEPLOYMENT_DESCRIPTOR_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_deployment_routing_descriptor_v1"
+    },
+    {
+      "constant": "MAINTENANCE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_t0_four_hour_window_policy_v1"
+    },
+    {
+      "constant": "PERFORMANCE_EVALUATOR_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_performance_structural_exact_match_v1"
+    },
+    {
+      "constant": "PERFORMANCE_RATIFICATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_performance_contract_ratification_v1"
+    },
+    {
+      "constant": "PERFORMANCE_RULES_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_performance_contract_t0_v2"
+    },
+    {
+      "constant": "PROMOTION_AUTHORIZATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_promotion_authorization_v1"
+    },
+    {
+      "constant": "PROMOTION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_promotion_policy_v1"
+    },
+    {
+      "constant": "PROTECTED_ROOT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_candidate_protected_root_v1"
+    },
+    {
+      "constant": "PROVIDER_PROFILE_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_local_docker_provider_profile_v1"
+    },
+    {
+      "constant": "QUALIFICATION_OBSERVATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_qualification_observation_v1"
+    },
+    {
+      "constant": "QUALIFIER_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_independent_qualifier_v2"
+    },
+    {
+      "constant": "QUARANTINE_ACCEPTANCE_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_quarantine_acceptance_v1"
+    },
+    {
+      "constant": "QUARANTINE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_quarantine_policy_v1"
+    },
+    {
+      "constant": "RECOVERY_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_pgbackrest_minio_recovery_policy_v1"
+    },
+    {
+      "constant": "RESTORE_CHECK_SET_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_restore_check_set_v1"
+    },
+    {
+      "constant": "RESTORE_RECEIPT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_restore_test_receipt_v1"
+    },
+    {
+      "constant": "ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_postgresql_role_policy_v1"
+    },
+    {
+      "constant": "RUN_ADMISSION_RECEIPT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_run_outcomes_admission_receipt_v1"
+    },
+    {
+      "constant": "SOURCE_RECONCILIATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_source_candidate_reconciliation_v1"
+    },
+    {
+      "constant": "SWITCH_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_docker_compose_switch_contract_v1"
+    },
+    {
+      "constant": "TRUST_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c4_local_ed25519_trust_policy_v1"
+    },
+    {
+      "constant": "ZERO_BLOCK_QUERY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_zero_block_query_v1"
+    },
+    {
+      "constant": "ZERO_BLOCK_RECEIPT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_contracts.py",
+      "value": "phase5c_zero_block_receipt_v1"
+    },
+    {
+      "constant": "COMMAND_RESULT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_contracts.py",
+      "value": "phase5c4_control_command_result_v1"
+    },
+    {
+      "constant": "CONTROL_EVENT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_contracts.py",
+      "value": "phase5c4_control_event_v1"
+    },
+    {
+      "constant": "EXTERNAL_ACTION_INTENT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_contracts.py",
+      "value": "phase5c4_external_action_intent_v1"
+    },
+    {
+      "constant": "OUTBOX_MESSAGE_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_contracts.py",
+      "value": "phase5c4_audit_outbox_message_v1"
+    },
+    {
+      "constant": "SINK_RECEIPT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_contracts.py",
+      "value": "phase5c4_worm_sink_receipt_v1"
+    },
+    {
+      "constant": "TRANSITION_REQUEST_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_contracts.py",
+      "value": "phase5c4_transition_request_v1"
+    },
+    {
+      "constant": "LOGICAL_IDENTITY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_evidence.py",
+      "value": "phase5c4_artifact_logical_identity_v1"
+    },
+    {
+      "constant": "AUTHORIZATION_ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_roles.py",
+      "value": "phase5c4_authorization_verifier_role_policy_v1"
+    },
+    {
+      "constant": "EMERGENCY_CLOSE_ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_roles.py",
+      "value": "phase5c4_emergency_close_operator_role_policy_v1"
+    },
+    {
+      "constant": "EXECUTION_AUTHORIZATION_ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_roles.py",
+      "value": "phase5c4_execution_authorization_verifier_role_policy_v1"
+    },
+    {
+      "constant": "PROMOTION_AUTHORIZATION_ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_roles.py",
+      "value": "phase5c4_promotion_authorization_verifier_role_policy_v1"
+    },
+    {
+      "constant": "ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_control_roles.py",
+      "value": "phase5c4_control_role_policy_v1"
+    },
+    {
+      "constant": "CUTBACK_AUTHORIZATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_preactivation_cutback_authorization_v2"
+    },
+    {
+      "constant": "CUTBACK_AUTHORIZATION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_preactivation_cutback_policy_v1"
+    },
+    {
+      "constant": "CUTBACK_AUTHORIZATION_PURPOSE",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "production_preactivation_cutback"
+    },
+    {
+      "constant": "CUTBACK_AUTHORIZATION_TRUST_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_cutback_ed25519_trust_policy_v1"
+    },
+    {
+      "constant": "CUTBACK_ROUTE_OBSERVATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_cutback_route_observation_v1"
+    },
+    {
+      "constant": "CUTBACK_ROUTE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_route_back_to_source_policy_v1"
+    },
+    {
+      "constant": "CUTBACK_SAFETY_OBSERVATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_cutback_safety_observation_v1"
+    },
+    {
+      "constant": "CUTBACK_SOURCE_RESTORE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_source_restore_last_policy_v1"
+    },
+    {
+      "constant": "SOURCE_RESTORE_OBSERVATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_cutback.py",
+      "value": "phase5c4_source_restore_observation_v1"
+    },
+    {
+      "constant": "ACTIVATION_EXECUTION_LOCAL_ADMISSION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_prerequisites.py",
+      "value": "phase5c4_local_admission_v4"
+    },
+    {
+      "constant": "FENCE_EVENT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_prerequisites.py",
+      "value": "phase5c_write_fence_event_v1"
+    },
+    {
+      "constant": "TARGET_IDENTITY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_prerequisites.py",
+      "value": "phase5c_promotion_target_identity_v1"
+    },
+    {
+      "constant": "POST_CUTOVER_RECEIPT_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "phase5c4_post_cutover_verification_receipt_v1"
+    },
+    {
+      "constant": "PROMOTION_AUTHORIZATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "phase5c4_promotion_authorization_v2"
+    },
+    {
+      "constant": "PROMOTION_AUTHORIZATION_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "phase5c4_production_promotion_policy_v2"
+    },
+    {
+      "constant": "PROMOTION_AUTHORIZATION_PURPOSE",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "production_historical_conversion_promotion"
+    },
+    {
+      "constant": "PROMOTION_AUTHORIZATION_TRUST_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "phase5c4_promotion_ed25519_trust_policy_v1"
+    },
+    {
+      "constant": "ROUTE_OBSERVATION_CONTRACT_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "phase5c4_route_observation_v1"
+    },
+    {
+      "constant": "ROUTE_SWITCH_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_promotion_authorization.py",
+      "value": "phase5c4_route_switch_policy_v1"
+    },
+    {
+      "constant": "RECOVERY_PROVIDER_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_recovery.py",
+      "value": "phase5c4_docker_compose_pgbackrest_v1"
+    },
+    {
+      "constant": "RECOVERY_VALIDATION_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_recovery.py",
+      "value": "phase5c4_recovery_validation_v1"
+    },
+    {
+      "constant": "PRIVILEGE_MANIFEST_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_roles.py",
+      "value": "phase5c4_postgresql_privilege_manifest_v1"
+    },
+    {
+      "constant": "ROLE_POLICY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_roles.py",
+      "value": "phase5c4_postgresql_role_policy_v1"
+    },
+    {
+      "constant": "SOURCE_ELIGIBILITY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_roles.py",
+      "value": "phase5c4_source_role_eligibility_v1"
+    },
+    {
+      "constant": "TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_roles.py",
+      "value": "phase5c4_postgresql_privilege_manifest_transition_v1"
+    },
+    {
+      "constant": "TRANSITIONAL_SOURCE_ELIGIBILITY_VERSION",
+      "file": "apps/backend/app/operators/phase5c4_roles.py",
+      "value": "phase5c4_source_role_eligibility_transition_v1"
+    }
+  ],
+  "control_heads": [
+    "ops_0010_phase5c4_activation"
+  ],
+  "inventory_sha256": "347ac21961ca5719921dc36be8cfd716bc9632f5cb331493811ec351ce046630",
+  "roles": [
+    "nutrition_canary",
+    "nutrition_canary_read",
+    "nutrition_control_audit",
+    "nutrition_control_authorization_verifier",
+    "nutrition_control_collector",
+    "nutrition_control_emergency_closer",
+    "nutrition_control_execution_authorization_verifier",
+    "nutrition_control_executor",
+    "nutrition_control_gate",
+    "nutrition_control_migrator",
+    "nutrition_control_outbox",
+    "nutrition_control_owner",
+    "nutrition_control_promotion_authorization_verifier",
+    "nutrition_history",
+    "nutrition_migrator",
+    "nutrition_ops",
+    "nutrition_owner",
+    "nutrition_phase5c4_control",
+    "nutrition_qualifier",
+    "nutrition_runtime",
+    "nutrition_runtime_read",
+    "nutrition_runtime_write",
+    "nutrition_targets"
+  ],
+  "sql_functions": [
+    "phase5c4_api.admit_execution_authorization_v1",
+    "phase5c4_api.admit_final_source_v1",
+    "phase5c4_api.admit_immutable_provenance_v1",
+    "phase5c4_api.admit_preflight_v1",
+    "phase5c4_api.admit_promotion_authorization_v2",
+    "phase5c4_api.admit_recovery_validation_v1",
+    "phase5c4_api.admit_resource_membership_v1",
+    "phase5c4_api.admit_target_activation_authorization_v2",
+    "phase5c4_api.bootstrap_authorization_key_v1",
+    "phase5c4_api.bootstrap_execution_authorization_key_v1",
+    "phase5c4_api.bootstrap_promotion_authorization_key_v1",
+    "phase5c4_api.claim_audit_outbox_v1",
+    "phase5c4_api.create_attempt_v1",
+    "phase5c4_api.export_event_manifest_v1",
+    "phase5c4_api.finalize_artifact_set_v1",
+    "phase5c4_api.finalize_emergency_close_v1",
+    "phase5c4_api.finalize_post_cutover_verification_v1",
+    "phase5c4_api.finalize_route_switch_v1",
+    "phase5c4_api.initialize_environment_v1",
+    "phase5c4_api.mark_external_action_reconcile_required_v1",
+    "phase5c4_api.qualify_control_plane_v1",
+    "phase5c4_api.qualify_control_plane_v2",
+    "phase5c4_api.qualify_control_plane_v3",
+    "phase5c4_api.qualify_control_plane_v4",
+    "phase5c4_api.qualify_control_plane_v5",
+    "phase5c4_api.qualify_control_plane_v6",
+    "phase5c4_api.qualify_control_plane_v7",
+    "phase5c4_api.qualify_control_plane_v8",
+    "phase5c4_api.read_activation_execution_v1",
+    "phase5c4_api.read_authorization_key_v1",
+    "phase5c4_api.read_control_status_v1",
+    "phase5c4_api.read_emergency_close_action_v1",
+    "phase5c4_api.read_environment_gate_v1",
+    "phase5c4_api.read_execution_authorization_key_v1",
+    "phase5c4_api.read_execution_authorization_v1",
+    "phase5c4_api.read_post_cutover_verification_v1",
+    "phase5c4_api.read_promotion_authorization_key_v1",
+    "phase5c4_api.read_promotion_authorization_v2",
+    "phase5c4_api.read_recovery_validation_v1",
+    "phase5c4_api.read_route_observation_v1",
+    "phase5c4_api.read_schema_migration_action_v1",
+    "phase5c4_api.read_target_activation_action_v1",
+    "phase5c4_api.read_target_activation_authorization_v2",
+    "phase5c4_api.reconcile_target_activation_v1",
+    "phase5c4_api.record_activation_runtime_observation_v1",
+    "phase5c4_api.record_artifact_object_binding_v1",
+    "phase5c4_api.record_audit_delivery_failure_v1",
+    "phase5c4_api.record_audit_delivery_v1",
+    "phase5c4_api.record_emergency_close_observation_v1",
+    "phase5c4_api.record_external_action_intent_v1",
+    "phase5c4_api.record_external_action_observation_v1",
+    "phase5c4_api.record_post_cutover_verification_v1",
+    "phase5c4_api.record_route_observation_v1",
+    "phase5c4_api.record_schema_migration_observation_v1",
+    "phase5c4_api.register_artifact_set_v1",
+    "phase5c4_api.register_artifact_v1",
+    "phase5c4_api.register_database_instance_observation_v1",
+    "phase5c4_api.release_expired_audit_lease_v1",
+    "phase5c4_api.request_emergency_close_v1",
+    "phase5c4_api.request_route_switch_v1",
+    "phase5c4_api.request_schema_migration_v1",
+    "phase5c4_api.request_target_activation_v1",
+    "phase5c4_api.request_transition_v1",
+    "phase5c4_api.revoke_authorization_key_v1",
+    "phase5c4_api.revoke_execution_authorization_key_v1",
+    "phase5c4_api.revoke_execution_authorization_v1",
+    "phase5c4_api.revoke_promotion_authorization_key_v1",
+    "phase5c4_api.revoke_promotion_authorization_v2",
+    "phase5c4_api.revoke_target_activation_authorization_v2",
+    "phase5c4_api.start_post_cutover_verification_v1",
+    "phase5c4_control.phase5c4_5c47b_request_result",
+    "phase5c4_control.phase5c4_activation_binding_digest_v1",
+    "phase5c4_control.phase5c4_advance_performance_admission_epoch",
+    "phase5c4_control.phase5c4_append_event",
+    "phase5c4_control.phase5c4_apply_5c47a_transition",
+    "phase5c4_control.phase5c4_artifact_document",
+    "phase5c4_control.phase5c4_canonical_json",
+    "phase5c4_control.phase5c4_canonical_sha256",
+    "phase5c4_control.phase5c4_catalog_v2_actual",
+    "phase5c4_control.phase5c4_event_head_state",
+    "phase5c4_control.phase5c4_execute_admission",
+    "phase5c4_control.phase5c4_expected_admission_artifacts",
+    "phase5c4_control.phase5c4_expected_candidate_relations",
+    "phase5c4_control.phase5c4_find_artifact",
+    "phase5c4_control.phase5c4_guard_action_status",
+    "phase5c4_control.phase5c4_guard_delivery",
+    "phase5c4_control.phase5c4_guard_projection_change",
+    "phase5c4_control.phase5c4_insert_admission_decision",
+    "phase5c4_control.phase5c4_json_keys_exact",
+    "phase5c4_control.phase5c4_lock_admission_evidence",
+    "phase5c4_control.phase5c4_lock_and_validate_artifact_set",
+    "phase5c4_control.phase5c4_lock_artifact_set_graph",
+    "phase5c4_control.phase5c4_lock_delivery_authority",
+    "phase5c4_control.phase5c4_lock_performance_authority",
+    "phase5c4_control.phase5c4_project_artifact",
+    "phase5c4_control.phase5c4_project_source_dimensions",
+    "phase5c4_control.phase5c4_record_request_conflict",
+    "phase5c4_control.phase5c4_reject_immutable_change",
+    "phase5c4_control.phase5c4_reject_source_dimension_set_member",
+    "phase5c4_control.phase5c4_require_principal",
+    "phase5c4_control.phase5c4_require_serializable",
+    "phase5c4_control.phase5c4_state_json",
+    "phase5c4_control.phase5c4_store_request",
+    "phase5c4_control.phase5c4_transition_request_json",
+    "phase5c4_control.phase5c4_utc_timestamp",
+    "phase5c4_control.phase5c4_valid_state_json",
+    "phase5c4_control.phase5c4_validate_admission_decision",
+    "phase5c4_control.phase5c4_validate_final_admission",
+    "phase5c4_control.phase5c4_validate_performance_admission",
+    "phase5c4_control.phase5c4_validate_preflight_admission",
+    "phase5c4_control.phase5c4_validate_projection_tuple",
+    "phase5c4_control.phase5c4_validate_source_dimensions",
+    "phase5c4_control.phase5c4_verify_event_chain"
+  ],
+  "sql_tables": [
+    "phase5c4_control.",
+    "phase5c4_control.phase5c4_activation_authorization_evidence_bindings",
+    "phase5c4_control.phase5c4_activation_execution_conflicts",
+    "phase5c4_control.phase5c4_activation_executions",
+    "phase5c4_control.phase5c4_activation_runtime_observations",
+    "phase5c4_control.phase5c4_admission_decision_artifacts",
+    "phase5c4_control.phase5c4_admission_decisions",
+    "phase5c4_control.phase5c4_artifact_bindings",
+    "phase5c4_control.phase5c4_artifact_identity_conflicts",
+    "phase5c4_control.phase5c4_artifact_logical_identities",
+    "phase5c4_control.phase5c4_artifact_object_bindings",
+    "phase5c4_control.phase5c4_artifact_set_members",
+    "phase5c4_control.phase5c4_artifact_sets",
+    "phase5c4_control.phase5c4_artifacts",
+    "phase5c4_control.phase5c4_attempts",
+    "phase5c4_control.phase5c4_audit_deliveries",
+    "phase5c4_control.phase5c4_audit_delivery_attempts",
+    "phase5c4_control.phase5c4_audit_messages",
+    "phase5c4_control.phase5c4_audit_sink_receipts",
+    "phase5c4_control.phase5c4_authorization_admission_conflicts",
+    "phase5c4_control.phase5c4_authorization_consumptions",
+    "phase5c4_control.phase5c4_authorization_envelope_bindings",
+    "phase5c4_control.phase5c4_authorization_key_revocations",
+    "phase5c4_control.phase5c4_authorization_keys",
+    "phase5c4_control.phase5c4_authorization_revocations",
+    "phase5c4_control.phase5c4_authorizations",
+    "phase5c4_control.phase5c4_backup_evidence",
+    "phase5c4_control.phase5c4_bridge_metadata_evidence",
+    "phase5c4_control.phase5c4_candidate_seal_bindings",
+    "phase5c4_control.phase5c4_candidate_seals",
+    "phase5c4_control.phase5c4_clone_origins",
+    "phase5c4_control.phase5c4_constraint_manifests",
+    "phase5c4_control.phase5c4_contract_types",
+    "phase5c4_control.phase5c4_database_instance_observations",
+    "phase5c4_control.phase5c4_database_instances",
+    "phase5c4_control.phase5c4_database_physical_components",
+    "phase5c4_control.phase5c4_deployment_descriptors",
+    "phase5c4_control.phase5c4_emergency_close_executions",
+    "phase5c4_control.phase5c4_emergency_close_observations",
+    "phase5c4_control.phase5c4_environments",
+    "phase5c4_control.phase5c4_events",
+    "phase5c4_control.phase5c4_execution_authorization_conflicts",
+    "phase5c4_control.phase5c4_execution_authorization_key_revocations",
+    "phase5c4_control.phase5c4_execution_authorization_keys",
+    "phase5c4_control.phase5c4_execution_authorization_revocations",
+    "phase5c4_control.phase5c4_execution_authorizations",
+    "phase5c4_control.phase5c4_external_action_conflicts",
+    "phase5c4_control.phase5c4_external_action_intents",
+    "phase5c4_control.phase5c4_external_action_observations",
+    "phase5c4_control.phase5c4_external_action_status",
+    "phase5c4_control.phase5c4_final_activation_evidence",
+    "phase5c4_control.phase5c4_function_manifests",
+    "phase5c4_control.phase5c4_immutable_provenance_admissions",
+    "phase5c4_control.phase5c4_performance_admission_epochs",
+    "phase5c4_control.phase5c4_performance_component_rows",
+    "phase5c4_control.phase5c4_performance_contract_revocations",
+    "phase5c4_control.phase5c4_performance_contracts",
+    "phase5c4_control.phase5c4_performance_scan_rows",
+    "phase5c4_control.phase5c4_performance_structural_rules",
+    "phase5c4_control.phase5c4_post_cutover_verification_checks",
+    "phase5c4_control.phase5c4_post_cutover_verification_receipts",
+    "phase5c4_control.phase5c4_principals",
+    "phase5c4_control.phase5c4_promotion_authorization_consumptions",
+    "phase5c4_control.phase5c4_promotion_authorization_key_revocations",
+    "phase5c4_control.phase5c4_promotion_authorization_keys",
+    "phase5c4_control.phase5c4_promotion_authorization_revocations",
+    "phase5c4_control.phase5c4_promotion_authorizations",
+    "phase5c4_control.phase5c4_qualification_observations",
+    "phase5c4_control.phase5c4_qualification_v2_catalog_manifest",
+    "phase5c4_control.phase5c4_qualification_v3_catalog_manifest",
+    "phase5c4_control.phase5c4_qualification_v4_catalog_manifest",
+    "phase5c4_control.phase5c4_qualification_v5_catalog_manifest",
+    "phase5c4_control.phase5c4_qualification_v6_catalog_manifest",
+    "phase5c4_control.phase5c4_qualification_v7_catalog_manifest",
+    "phase5c4_control.phase5c4_qualification_v8_catalog_manifest",
+    "phase5c4_control.phase5c4_quarantine_acceptances",
+    "phase5c4_control.phase5c4_quarantine_reason_counts",
+    "phase5c4_control.phase5c4_quarantine_subjects",
+    "phase5c4_control.phase5c4_reconciliation_roots",
+    "phase5c4_control.phase5c4_recovery_validations",
+    "phase5c4_control.phase5c4_request_conflicts",
+    "phase5c4_control.phase5c4_resource_membership_admissions",
+    "phase5c4_control.phase5c4_restore_checks",
+    "phase5c4_control.phase5c4_restore_receipts",
+    "phase5c4_control.phase5c4_route_observation_conflicts",
+    "phase5c4_control.phase5c4_route_observation_vantages",
+    "phase5c4_control.phase5c4_route_observations",
+    "phase5c4_control.phase5c4_run_admissions",
+    "phase5c4_control.phase5c4_schema_migration_executions",
+    "phase5c4_control.phase5c4_schema_migration_observations",
+    "phase5c4_control.phase5c4_source_dimension_observations",
+    "phase5c4_control.phase5c4_source_reconciliations",
+    "phase5c4_control.phase5c4_transition_requests",
+    "phase5c4_control.phase5c4_verification_checks",
+    "phase5c4_control.phase5c4_verification_runs",
+    "phase5c4_control.phase5c4_zero_block_receipts"
+  ],
+  "state_tokens": [
+    "ACTIVATION_INTERVENTION_REQUIRED",
+    "CUTBACK_AUTHORIZATION_CONTRACT_VERSION",
+    "CUTBACK_AUTHORIZATION_PURPOSE",
+    "CUTBACK_AUTHORIZATION_SIGNING_DOMAIN",
+    "CUTBACK_AUTHORIZATION_TRUST_POLICY_VERSION",
+    "CUTBACK_COMPLETED",
+    "CUTBACK_CONTROL_REVISION",
+    "CUTBACK_INITIATED",
+    "CUTBACK_ROUTE_CONFIRMED",
+    "CUTBACK_ROUTE_OBSERVATION_VERSION",
+    "CUTBACK_SAFETY_OBSERVATION_VERSION",
+    "CUTBACK_SWITCH_REQUESTED",
+    "EMERGENCY_CLOSED",
+    "EMERGENCY_CLOSE_REQUESTED",
+    "FINAL_SOURCE_VERIFIED",
+    "NUTRITION_PHASE5C4_SCHEMA_MIGRATION_ACTION_ID",
+    "NUTRITION_PHASE5C4_SCHEMA_MIGRATION_COMMAND_ID",
+    "NUTRITION_PHASE5C4_TARGET_MIGRATION_DATABASE_URL",
+    "POST_CUTOVER_VERIFIED",
+    "PROMOTION_AUTHORIZATION_APPROVER_SUBJECT",
+    "PROMOTION_AUTHORIZATION_AUDIENCE",
+    "PROMOTION_AUTHORIZATION_CONTRACT_VERSION",
+    "PROMOTION_AUTHORIZATION_ISSUER",
+    "PROMOTION_AUTHORIZATION_POLICY_VERSION",
+    "PROMOTION_AUTHORIZATION_PURPOSE",
+    "PROMOTION_AUTHORIZATION_SIGNING_DOMAIN",
+    "PROMOTION_AUTHORIZATION_TRUST_POLICY_VERSION",
+    "PROMOTION_AUTHORIZED",
+    "PROMOTION_COMPLETED",
+    "PROMOTION_CONTROL_REVISION",
+    "PROMOTION_REQUIRED_FENCE_MODE",
+    "PROMOTION_REQUIRED_WORKFLOW_STATE",
+    "TARGET_ACTIVE"
+  ]
+}

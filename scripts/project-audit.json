@@ -1,0 +1,36 @@
+{
+  "control_revision_max_length": 32,
+  "expected_application_heads": [
+    "0021_target_activation_execution"
+  ],
+  "expected_control_heads": [
+    "ops_0010_phase5c4_activation"
+  ],
+  "focused_audit_tests": [
+    "apps/backend/tests/test_project_audit.py"
+  ],
+  "forbidden_change_prefixes": [
+    "apps/mobile/"
+  ],
+  "forbidden_placeholders": [
+    "REPLACE_SIGNING_MESSAGE_DIGEST"
+  ],
+  "operational_migration_forbidden_tokens": [
+    "daily_logs",
+    "recipe_revisions",
+    "ocr_corrections"
+  ],
+  "placeholder_scan_excludes": [
+    "scripts/project-audit.py",
+    "scripts/project-audit.json",
+    "apps/backend/tests/test_project_audit.py"
+  ],
+  "generated_control_inventory": "apps/backend/evidence/control-plane-inventory.json",
+  "warnings_are_blocking": false,
+  "pre_commit_opt_in_suites": [
+    "PostgreSQL 16 control and concurrency suites",
+    "MinIO object-lock suites",
+    "Docker/provider restart and recovery suites",
+    "Phase 5C performance and T0 suites"
+  ]
+}
