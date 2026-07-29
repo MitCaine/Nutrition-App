@@ -20,6 +20,83 @@
     "recipe_revisions",
     "ocr_corrections"
   ],
+  "operator_document_contracts": {
+    "README.md": {
+      "required": [
+        "0021_target_activation_execution"
+      ],
+      "forbidden": [
+        "alembic upgrade head"
+      ]
+    },
+    "docs/README.md": {
+      "required": [
+        "production-hardening-phase5c4.9.md"
+      ],
+      "forbidden": [
+        "in-progress purpose-specific preactivation cutback"
+      ]
+    },
+    "docs/architecture.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit"
+      ],
+      "forbidden": [
+        "It currently runs through\n   `0018_phase5c_promotion_prerequisites`",
+        "It currently runs through\n   `ops_0004_phase5c4_admission`"
+      ]
+    },
+    "docs/control-plane.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit",
+        "production-hardening-phase5c4.9.md"
+      ],
+      "forbidden": [
+        "no executable cutback SQL authority"
+      ]
+    },
+    "docs/development-guide.md": {
+      "required": [
+        "0021_target_activation_execution"
+      ],
+      "forbidden": []
+    },
+    "docs/production-hardening-phase5c4.9.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit",
+        "dirty_tree: false"
+      ],
+      "forbidden": []
+    },
+    "docs/production-hardening-phase5c4.8.md": {
+      "required": [
+        "frozen migration-0001 seed data",
+        "exact clean release commit"
+      ],
+      "forbidden": [
+        "Phase 5C4.9 may then perform measured full rehearsals"
+      ]
+    },
+    "docs/repository-tour.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit",
+        "docker-compose.phase5c4-qualification.yml"
+      ],
+      "forbidden": []
+    },
+    "docs/testing.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit",
+        "test_initial_migration_replay_postgres.py"
+      ],
+      "forbidden": []
+    }
+  },
   "placeholder_scan_excludes": [
     "scripts/project-audit.py",
     "scripts/project-audit.json",

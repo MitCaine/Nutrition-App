@@ -123,13 +123,15 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-build-isolation --no-deps -e .
 cp .env.example .env
-alembic upgrade head
+alembic upgrade 0020_immutable_provenance_enforcement
 uvicorn app.main:app --reload
 ```
 
 The example explicitly selects `development` mode and PostgreSQL at `localhost:5432`. The API is
 available at `http://localhost:8000`; FastAPI's interactive schema is at `/docs`. Liveness is
-`/api/v1/health` and database-backed readiness is `/api/v1/ready`.
+`/api/v1/health` and database-backed readiness is `/api/v1/ready`. The repository application
+migration head is `0021_target_activation_execution`, but that revision is an authenticated
+target-activation operation and is not part of ordinary development startup.
 
 ### 3. Start the mobile client
 

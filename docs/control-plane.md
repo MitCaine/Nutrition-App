@@ -53,6 +53,7 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Stage 5C4.7a | Purpose-specific promotion admission, one-use route intent, closed-target route/post-cutover evidence, and activation-evidence binding; no activation or opening | `production-hardening-phase5c4.7a.md`, ops migration 0009 |
 | Stage 5C4.7b | Separate schema-0021 execution authority, forward-only target migration, one-use activation, runtime observation/reconciliation, and emergency close | `production-hardening-phase5c4.7b.md`, application migration 0021, ops migration 0010 |
 | Stage 5C4.8 (bounded recovery qualification) | Purpose-specific executable preactivation cutback, crash/reconciliation correction, cumulative recovery qualification, and read-only postactivation PITR qualification | `production-hardening-phase5c4.8.md`; ops 0011 installs the cutback authority lifecycle, v9, and the audit snapshot |
+| Stage 5C4.9 (Version 1.0 release gate) | PostgreSQL fixture cleanup, frozen 0001 nutrient seed, synchronized operator contracts, and clean-commit qualification evidence | `production-hardening-phase5c4.9.md`; application and control heads remain unchanged |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
@@ -230,6 +231,8 @@ would destroy evidence or authority that cannot be reconstructed safely.
 
 The application and control Alembic streams use different configuration files, environment
 variables, credentials, databases, and ownership assumptions.
+Their current heads are `0021_target_activation_execution` and
+`ops_0011_phase5c4_recovery_audit`, respectively.
 
 ## Current runtime boundary
 
@@ -289,7 +292,7 @@ Therefore:
 | Current immutable-provenance operations | `immutable_provenance_*` operator modules, qualification script, and the 0020 runbook |
 | Recovery execution and evidence | `phase5c4_recovery.py`, `manage_phase5c4_recovery.py`, the 5C4.5 runbook, and ops 0007 |
 | Activation execution and emergency close | `phase5c4_activation_execution.py`, `0021_target_activation_execution.py`, the 5C4.7b runbook, and ops 0010 |
-| Cutback contracts and cumulative recovery qualification | `phase5c4_cutback.py`, `phase5c4_recovery_qualification.py`, ops 0011, the 5C4.8 runbook, and focused tests; no executable cutback SQL authority |
+| Cutback contracts and cumulative recovery qualification | `phase5c4_cutback.py`, `phase5c4_recovery_qualification.py`, ops 0011, the 5C4.8 runbook, and focused tests; executable authority is limited to the purpose-specific preactivation cutback saga |
 | Qualification | control migration routines, resource-membership and immutable-provenance qualification, and PostgreSQL qualification tests |
 
 Always follow the SQL routine and role grant reached by a Python wrapper. The wrapper alone does not

@@ -82,8 +82,10 @@ They are intentionally more detailed than the reader guides:
   for the authenticated current 0021 migration, runtime admission, reconciliation, and emergency
   close boundary
 - [Phase 5C4.8 crash and recovery qualification](production-hardening-phase5c4.8.md)
-  for the in-progress purpose-specific preactivation cutback and bounded recovery-qualification
+  for the completed purpose-specific preactivation cutback and bounded recovery-qualification
   boundary
+- [Phase 5C4.9 Version 1.0 release gate](production-hardening-phase5c4.9.md)
+  for the bounded release corrections and clean-commit qualification requirements
 - [OCR implementation](stage5-ocr.md), [confirmation](stage6-confirmation.md),
   [parser](stage6-parser.md), and [Food discovery](stage7-food-discovery.md)
 - [Manual QA evidence](evidence/qa/README.md) and the captured Phase 5C performance manifests

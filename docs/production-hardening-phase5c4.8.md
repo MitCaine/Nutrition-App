@@ -423,6 +423,7 @@ produces measured evidence for its own disposable topology only; unit tests,
 PostgreSQL control tests, or a local-provider pass do not substitute for
 vendor and application-domain qualification.
 
-Phase 5C4.9 may then perform measured full rehearsals, communications/tabletop
-work, sealed evidence review, and the final operational release decision. It
-must not introduce new recovery semantics.
+Phase 5C4.9 closes the remaining bounded Version 1.0 release findings: fixture
+cleanup, frozen migration-0001 seed data, operator-document synchronization,
+and fresh qualification evidence from the exact clean release commit. It does
+not introduce new recovery semantics.

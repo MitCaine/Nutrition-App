@@ -363,6 +363,85 @@ def placeholder_findings(
     return findings
 
 
+def operator_document_contract_findings(
+    config: dict[str, Any],
+    *,
+    root: Path = ROOT,
+) -> list[Finding]:
+    contracts = config.get("operator_document_contracts", {})
+    if not isinstance(contracts, dict):
+        return [
+            Finding(
+                "ERROR",
+                "CONFIG_INVALID",
+                "operator_document_contracts must be an object",
+            )
+        ]
+
+    findings: list[Finding] = []
+    for relative, contract in sorted(contracts.items()):
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or Path(relative).is_absolute()
+            or ".." in Path(relative).parts
+            or not isinstance(contract, dict)
+        ):
+            findings.append(
+                Finding(
+                    "ERROR",
+                    "CONFIG_INVALID",
+                    "operator document contract path or value is invalid",
+                )
+            )
+            continue
+        required = contract.get("required", [])
+        forbidden = contract.get("forbidden", [])
+        if not all(
+            isinstance(values, list)
+            and all(isinstance(value, str) and value for value in values)
+            for values in (required, forbidden)
+        ):
+            findings.append(
+                Finding(
+                    "ERROR",
+                    "CONFIG_INVALID",
+                    f"operator document contract for {relative} is invalid",
+                )
+            )
+            continue
+        path = root / relative
+        if not path.is_file():
+            findings.append(
+                Finding(
+                    "ERROR",
+                    "OPERATOR_DOCUMENT_MISSING",
+                    relative,
+                )
+            )
+            continue
+        text_value = path.read_text(encoding="utf-8")
+        for value in required:
+            if value not in text_value:
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        "OPERATOR_DOCUMENT_CONTRACT_MISSING",
+                        f"{relative} does not contain {value!r}",
+                    )
+                )
+        for value in forbidden:
+            if value in text_value:
+                findings.append(
+                    Finding(
+                        "ERROR",
+                        "OPERATOR_DOCUMENT_CONTRACT_STALE",
+                        f"{relative} contains stale statement {value!r}",
+                    )
+                )
+    return findings
+
+
 def check_boundaries(config: dict[str, Any] | None = None) -> list[Finding]:
     config = load_config() if config is None else config
     findings: list[Finding] = []
@@ -422,6 +501,7 @@ def check_boundaries(config: dict[str, Any] | None = None) -> list[Finding]:
                     )
 
     findings.extend(placeholder_findings(config))
+    findings.extend(operator_document_contract_findings(config))
     return findings
 
 

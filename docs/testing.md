@@ -184,6 +184,27 @@ skips schema-0021 application-domain restoration, one-saga binding between
 provider observations and control admission, and production-vendor
 certification, so it must not be cited as proof of those gates.
 
+### Phase 5C4.9 Version 1.0 release gate
+
+The current application migration head is `0021_target_activation_execution`;
+the current control migration head is `ops_0011_phase5c4_recovery_audit`.
+Release qualification does not change either head.
+
+Run the frozen-0001 replay comparison against disposable PostgreSQL 16:
+
+```bash
+REQUIRE_POSTGRES_TESTS=1 \
+  pytest -q tests/test_initial_migration_replay_postgres.py
+```
+
+Before creating final infrastructure evidence, commit the exact release source
+state and verify `git status --porcelain` is empty. Then run the destructive
+local infrastructure qualifier above with evidence retention enabled. Its
+canonical summary records the exact commit, clean/dirty state, control-plane
+inventory digest, Compose/pgBackRest/qualifier configuration digests,
+qualification result, RPO/RTO measurements, and individual scenario results.
+Evidence with `dirty_tree: true` is not Version 1.0 release evidence.
+
 ## MinIO object-lock integration
 
 Use only the disposable loopback profile and explicit confirmation variables:

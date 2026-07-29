@@ -89,8 +89,12 @@ they are not the shortest path to understanding ordinary feature code.
 
 - `docker-compose.yml` runs the normal local PostgreSQL 16 database.
 - `docker-compose.phase5c4.yml` runs disposable MinIO for control-plane qualification.
+- `docker-compose.phase5c4-qualification.yml` runs the opt-in, fully disposable local recovery
+  qualification topology; it is not an application development stack.
 - `scripts/start-backend.sh` starts only the qualified runtime process with the
   `nutrition_runtime` database identity. Apply migrations separately as `nutrition_migrator`.
+- `scripts/session-start.sh` and `scripts/session-end.sh` report and validate the authoritative
+  repository state.
 - `scripts/zip-project.sh` creates a bounded review archive without local secrets or generated
   output.
 
@@ -105,6 +109,8 @@ There are two independent database domains:
 
 Most developers use only the application database. Never run the control migration stream against
 the application database or infer that a control-table model belongs in the user-facing API.
+The current application head is `0021_target_activation_execution`; the current control head is
+`ops_0011_phase5c4_recovery_audit`.
 
 ## Find your change
 

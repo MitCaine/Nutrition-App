@@ -38,7 +38,7 @@ def test_session_json_reports_current_migration_heads() -> None:
     assert payload["migration_heads"]["control"] == [
         "ops_0011_phase5c4_recovery_audit"
     ]
-    assert payload["latest_phase_document"].endswith("production-hardening-phase5c4.8.md")
+    assert payload["latest_phase_document"].endswith("production-hardening-phase5c4.9.md")
 
 
 def test_inventory_is_deterministic() -> None:
@@ -119,6 +119,35 @@ def test_audit_implementation_config_and_fixture_are_self_excluded(
     )
 
     assert findings == []
+
+
+def test_operator_document_contract_detects_missing_and_stale_statements(
+    tmp_path: Path,
+) -> None:
+    document = tmp_path / "docs" / "operator.md"
+    document.parent.mkdir()
+    document.write_text("old control head\n", encoding="utf-8")
+    config = {
+        "operator_document_contracts": {
+            "docs/operator.md": {
+                "required": ["current control head"],
+                "forbidden": ["old control head"],
+            }
+        }
+    }
+
+    findings = AUDIT.operator_document_contract_findings(config, root=tmp_path)
+
+    assert [(finding.code, finding.message) for finding in findings] == [
+        (
+            "OPERATOR_DOCUMENT_CONTRACT_MISSING",
+            "docs/operator.md does not contain 'current control head'",
+        ),
+        (
+            "OPERATOR_DOCUMENT_CONTRACT_STALE",
+            "docs/operator.md contains stale statement 'old control head'",
+        ),
+    ]
 
 
 @pytest.mark.parametrize(

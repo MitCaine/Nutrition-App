@@ -5,9 +5,11 @@ import os
 import pytest
 from sqlalchemy import create_engine, text
 
+from tests import postgres_test_support
 from tests.postgres_test_support import (
     isolated_postgres_session_factory,
     postgres_unavailable,
+    qualified_postgres_migration_database,
 )
 from app.operators.immutable_provenance_contracts import (
     SNAPSHOT_REPLACEMENT_FUNCTION,
@@ -59,6 +61,38 @@ def test_postgres_unavailable_does_not_expose_connection_details(
         )
 
     assert "operator:secret" not in str(caught.value)
+
+
+def test_unavailable_qualified_fixture_skips_without_running_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnavailableControlEngine:
+        connect_calls = 0
+        disposed = False
+
+        def connect(self):
+            self.connect_calls += 1
+            raise ConnectionError("fixture acquisition unavailable")
+
+        def dispose(self) -> None:
+            self.disposed = True
+
+    control = UnavailableControlEngine()
+    monkeypatch.delenv("REQUIRE_POSTGRES_TESTS", raising=False)
+    monkeypatch.setattr(postgres_test_support, "create_engine", lambda *args, **kwargs: control)
+
+    with pytest.raises(
+        pytest.skip.Exception,
+        match="PostgreSQL migration database unavailable",
+    ):
+        with qualified_postgres_migration_database(
+            database_url="postgresql+psycopg://fixture.invalid/nutrition",
+            database_prefix="unavailable_fixture",
+        ):
+            raise AssertionError("unavailable fixture yielded")
+
+    assert control.connect_calls == 1
+    assert control.disposed is True
 
 
 @pytest.mark.postgres_concurrency

@@ -1367,7 +1367,7 @@ Each stage is independently reviewable and must land only after its named tests 
 | 5C4.6 Authorization and CLI | Immutable local Ed25519 public-key trust/revocation, purpose-specific target-activation verification and admission, stable CLI/JSON/exits; authorization remains unused | GPT-5.3-Codex / xhigh |
 | 5C4.7 Cutover and verification | Maintenance drain/freeze, one endpoint CAS adapter, route/pool readback, bounded read-only smoke, and target activation; cutback remains a later distinct authority | GPT-5.3-Codex / xhigh |
 | 5C4.8 Crash and recovery qualification | Crash injection across every transition, concurrent controllers, mixed routing, safe prewrite cutback, read-only postactivation PITR qualification, and fail-closed local control restoration qualification | GPT-5.3-Codex / xhigh |
-| 5C4.9 Operational release | Production-like rehearsal, measured maintenance/RTO/RPO, runbook/communications/tabletop, evidence retention and release gate; no new semantics | GPT-5.6 Sol / high |
+| 5C4.9 Version 1.0 release gate | Fixture cleanup, frozen migration-0001 seed, synchronized operator contracts, and clean-commit qualification evidence; no new semantics | GPT-5.6 Sol / high |
 
 No stage may opportunistically rewrite the converter or combine independent qualification with
 conversion. Provider support is intentionally one adapter at a time; a generic orchestration

@@ -155,6 +155,9 @@ def qualified_postgres_migration_database(
         hide_parameters=True,
     )
     lock_connection = None
+    fixture_acquired = False
+    advisory_lock_acquired = False
+    managed_role_inventory_acquired = False
     admin: Engine | None = None
     database_name: str | None = None
     existing_managed_roles: set[str] = set()
@@ -182,17 +185,20 @@ def qualified_postgres_migration_database(
         except Exception as exc:  # pragma: no cover - depends on test infrastructure.
             postgres_unavailable(purpose="PostgreSQL migration database", error=exc)
 
+        fixture_acquired = True
         lock_connection = control.connect()
         lock_connection.execute(
             text("SELECT pg_catalog.pg_advisory_lock(:lock_id)"),
             {"lock_id": QUALIFIED_MIGRATION_FIXTURE_LOCK_ID},
         )
+        advisory_lock_acquired = True
         existing_managed_roles = set(
             lock_connection.scalars(
                 text("SELECT rolname FROM pg_roles WHERE rolname = ANY(:roles)"),
                 {"roles": list(roles.MANAGED_ROLES)},
             )
         )
+        managed_role_inventory_acquired = True
         if existing_managed_roles and existing_managed_roles != set(roles.MANAGED_ROLES):
             raise RuntimeError("local managed-role surface is incomplete")
 
@@ -247,14 +253,14 @@ def qualified_postgres_migration_database(
         cleanup_errors: list[tuple[str, Exception]] = []
         if admin is not None:
             admin.dispose()
-        if database_name is not None:
+        if fixture_acquired and database_name is not None:
             try:
                 with control.connect() as connection:
                     quoted = connection.dialect.identifier_preparer.quote(database_name)
                     connection.execute(text(f"DROP DATABASE IF EXISTS {quoted} WITH (FORCE)"))
             except Exception as exc:  # pragma: no cover - cleanup failure is environment-specific.
                 cleanup_errors.append(("drop_database", exc))
-        if migrator_password_changed:
+        if fixture_acquired and migrator_password_changed:
             try:
                 with control.begin() as connection:
                     raw_connection = connection.connection.driver_connection
@@ -272,7 +278,11 @@ def qualified_postgres_migration_database(
                         )
             except Exception as exc:  # pragma: no cover - cleanup failure is environment-specific.
                 cleanup_errors.append(("restore_migrator_password", exc))
-        if not existing_managed_roles:
+        if (
+            fixture_acquired
+            and managed_role_inventory_acquired
+            and not existing_managed_roles
+        ):
             try:
                 with control.connect() as connection:
                     managed = sql.SQL(", ").join(
@@ -284,17 +294,17 @@ def qualified_postgres_migration_database(
             except Exception as exc:  # pragma: no cover - cleanup failure is environment-specific.
                 cleanup_errors.append(("drop_managed_roles", exc))
         if lock_connection is not None:
-            try:
-                lock_connection.execute(
-                    text("SELECT pg_catalog.pg_advisory_unlock(:lock_id)"),
-                    {"lock_id": QUALIFIED_MIGRATION_FIXTURE_LOCK_ID},
-                )
-            except Exception as exc:  # pragma: no cover - cleanup failure is environment-specific.
-                cleanup_errors.append(("release_advisory_lock", exc))
-            finally:
-                lock_connection.close()
+            if advisory_lock_acquired:
+                try:
+                    lock_connection.execute(
+                        text("SELECT pg_catalog.pg_advisory_unlock(:lock_id)"),
+                        {"lock_id": QUALIFIED_MIGRATION_FIXTURE_LOCK_ID},
+                    )
+                except Exception as exc:  # pragma: no cover - cleanup failure is environment-specific.
+                    cleanup_errors.append(("release_advisory_lock", exc))
+            lock_connection.close()
         control.dispose()
-        if cleanup_errors:
+        if fixture_acquired and cleanup_errors:
             labels = ",".join(label for label, _error in cleanup_errors)
             raise RuntimeError(
                 f"qualified PostgreSQL migration fixture cleanup failed: {labels}"

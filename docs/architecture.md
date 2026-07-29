@@ -149,10 +149,10 @@ PostgreSQL concurrency tests—not SQLite behavior—are the authority for those
 
 Two Alembic streams exist:
 
-1. `app/migrations` changes the application database. It currently runs through
-   `0018_phase5c_promotion_prerequisites`.
-2. `app/control_migrations` changes the independent operations database. It currently runs through
-   `ops_0004_phase5c4_admission`.
+1. `app/migrations` changes the application database. Its current head is
+   `0021_target_activation_execution`.
+2. `app/control_migrations` changes the independent operations database. Its current head is
+   `ops_0011_phase5c4_recovery_audit`.
 
 Application migration 0004 deliberately refuses unsafe in-place migration of populated legacy
 Recipe tables. The Phase 5 offline bridge and converter are the supported historical path. See the
@@ -181,13 +181,14 @@ Normal `runtime` mode exposes the full application API. `canary` mode is a delib
 allowlisted process:
 
 - it requires private-single-user configuration;
-- startup validates the local application database's 0018 admission view under a read-only
-  repeatable snapshot and shared advisory lock;
+- startup validates the exact schema-specific local admission view under a read-only repeatable
+  snapshot and shared advisory lock: v3 at schema 0020 or v4 at schema 0021;
 - the database session must be exactly `nutrition_canary`;
 - only the frozen GET allowlist is mounted.
 
-The independent control-plane gate is not yet consumed by normal request handling. The local 0018
-write-fence trigger and canary checks are prerequisites, not a completed production cutover path.
+The independent control-plane gate is not consumed by normal request handling. The local 0018
+write-fence trigger remains active; schema 0021 adds separately authorized runtime-write admission,
+authoritative activation observation, reconciliation, and emergency close.
 
 ## Testing architecture
 

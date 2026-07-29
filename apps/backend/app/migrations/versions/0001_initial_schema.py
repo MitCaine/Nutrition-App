@@ -8,7 +8,6 @@ Create Date: 2026-07-08
 from collections.abc import Sequence
 
 from alembic import op
-from app.catalog.nutrients import nutrient_seed_rows
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -16,6 +15,49 @@ revision: str = "0001_initial_schema"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+# This is migration-owned historical data. Do not import the runtime nutrient
+# catalog here or append future nutrients here; add a new forward migration.
+_INITIAL_NUTRIENT_ROWS: tuple[
+    tuple[str, str, str, str, str | None, int], ...
+] = (
+    ("calories", "Calories", "energy", "kcal", None, 10),
+    ("total_fat", "Total Fat", "macro", "g", None, 20),
+    ("saturated_fat", "Saturated Fat", "macro", "g", "total_fat", 21),
+    ("trans_fat", "Trans Fat", "macro", "g", "total_fat", 22),
+    ("cholesterol", "Cholesterol", "other", "mg", None, 30),
+    ("sodium", "Sodium", "mineral", "mg", None, 40),
+    ("total_carbohydrate", "Total Carbohydrate", "macro", "g", None, 50),
+    (
+        "dietary_fiber",
+        "Dietary Fiber",
+        "macro",
+        "g",
+        "total_carbohydrate",
+        51,
+    ),
+    ("total_sugars", "Total Sugars", "macro", "g", "total_carbohydrate", 52),
+    ("added_sugars", "Added Sugars", "macro", "g", "total_sugars", 53),
+    ("protein", "Protein", "macro", "g", None, 60),
+    ("vitamin_d", "Vitamin D", "vitamin", "mcg", None, 70),
+    ("calcium", "Calcium", "mineral", "mg", None, 80),
+    ("iron", "Iron", "mineral", "mg", None, 90),
+    ("potassium", "Potassium", "mineral", "mg", None, 100),
+    ("magnesium", "Magnesium", "mineral", "mg", None, 110),
+)
+
+
+def _initial_nutrient_seed_rows() -> list[dict[str, str | int | None]]:
+    columns = (
+        "id",
+        "display_name",
+        "nutrient_kind",
+        "default_unit",
+        "parent_nutrient_id",
+        "display_order",
+    )
+    return [dict(zip(columns, row, strict=True)) for row in _INITIAL_NUTRIENT_ROWS]
 
 
 def upgrade() -> None:
@@ -60,7 +102,7 @@ def upgrade() -> None:
             sa.column("parent_nutrient_id", sa.Text()),
             sa.column("display_order", sa.Integer()),
         ),
-        nutrient_seed_rows(),
+        _initial_nutrient_seed_rows(),
     )
 
     op.create_table(
