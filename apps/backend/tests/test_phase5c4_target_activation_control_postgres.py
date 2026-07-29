@@ -48,6 +48,7 @@ from app.operators.phase5c4_execution_authorization_control import (
     verify_and_admit_execution_authorization,
 )
 from app.operators.phase5c4_control import Phase5C4ControlDatabase
+from app.operators.phase5c4_cutback import CUTBACK_CONTROL_REVISION
 from app.operators.phase5c4_target_activation import (
     build_activation_runtime_observation,
     build_emergency_close_observation,
@@ -71,14 +72,24 @@ class ActivationControlDatabase:
     bindings: dict[str, object]
     verifier_url: str
     emergency_url: str
+    cutback_verifier_url: str
 
 
 def _qualify(database: object) -> dict[str, object]:
     engine = database.engine(roles.AUDIT_ROLE)
     try:
         with engine.connect() as connection:
+            routine = connection.scalar(
+                text("SELECT pg_catalog.to_regprocedure('phase5c4_api.qualify_control_plane_v9()')")
+            )
             return dict(
-                connection.execute(text("SELECT * FROM phase5c4_api.qualify_control_plane_v8()"))
+                connection.execute(
+                    text(
+                        "SELECT * FROM phase5c4_api.qualify_control_plane_v9()"
+                        if routine is not None
+                        else "SELECT * FROM phase5c4_api.qualify_control_plane_v8()"
+                    )
+                )
                 .mappings()
                 .one()
             )
@@ -103,6 +114,7 @@ def _drop_external_roles() -> None:
                 for role in (
                     roles.EXECUTION_AUTHORIZATION_VERIFIER_ROLE,
                     roles.EMERGENCY_CLOSE_ROLE,
+                    roles.CUTBACK_AUTHORIZATION_VERIFIER_ROLE,
                 ):
                     cursor.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
     finally:
@@ -169,10 +181,26 @@ def control_database() -> Generator[ActivationControlDatabase, None, None]:
                 assert result["qualified"] is True, result
         finally:
             admin.dispose()
-        reupgraded = promotion_support.authorization_support._run_alembic(
+        reinstalled_ops10 = promotion_support.authorization_support._run_alembic(
             database.role_urls[roles.MIGRATOR_ROLE],
             "upgrade",
             EXECUTION_CONTROL_REVISION,
+        )
+        assert reinstalled_ops10.returncode == 0, reinstalled_ops10.stderr
+        assert _qualify(database)["qualified"] is True
+        admin = database.admin_engine()
+        try:
+            provisioned_cutback = roles.provision_cutback_authorization_verifier_role(
+                admin,
+                expected_database=database.database_name,
+            )
+            assert provisioned_cutback["qualified"] is True
+        finally:
+            admin.dispose()
+        reupgraded = promotion_support.authorization_support._run_alembic(
+            database.role_urls[roles.MIGRATOR_ROLE],
+            "upgrade",
+            "head",
         )
         assert reupgraded.returncode == 0, reupgraded.stderr
         verifier_url = promotion_support._set_role_password(
@@ -183,11 +211,16 @@ def control_database() -> Generator[ActivationControlDatabase, None, None]:
             database,
             roles.EMERGENCY_CLOSE_ROLE,
         )
+        cutback_verifier_url = promotion_support._set_role_password(
+            database,
+            roles.CUTBACK_AUTHORIZATION_VERIFIER_ROLE,
+        )
         yield ActivationControlDatabase(
             database=database,
             bindings=bindings,
             verifier_url=verifier_url,
             emergency_url=emergency_url,
+            cutback_verifier_url=cutback_verifier_url,
         )
     finally:
         try:
@@ -197,11 +230,11 @@ def control_database() -> Generator[ActivationControlDatabase, None, None]:
         _drop_external_roles()
 
 
-def test_ops10_qualifies_exact_v8_surface(
+def test_current_control_head_qualifies_exact_surface(
     control_database: ActivationControlDatabase,
 ) -> None:
     qualified = _qualify(control_database.database)
-    assert qualified["control_revision"] == EXECUTION_CONTROL_REVISION
+    assert qualified["control_revision"] == CUTBACK_CONTROL_REVISION
     assert qualified["catalog_mismatches"] == 0
     assert qualified["role_errors"] == 0
     assert qualified["integrity_errors"] == 0
@@ -217,10 +250,12 @@ def test_narrow_roles_have_no_direct_table_authority(
         for qualify in (
             roles.qualify_execution_authorization_verifier_role,
             roles.qualify_emergency_close_role,
+            roles.qualify_cutback_authorization_verifier_role,
         ):
             result = qualify(
                 admin,
                 expected_database=database.database_name,
+                require_api=True,
             )
             assert result["qualified"] is True, result
     finally:
@@ -569,8 +604,24 @@ def test_execution_authorization_migration_activation_and_emergency_close(
     assert migration_request["result"] == "accepted"
     migration_action = audit.read_schema_migration_action(payload["migration_command_id"])
     assert migration_action is not None
-    schema_observation_id = "00000000-0000-4000-8000-000000047204"
-    schema_observation = build_schema_migration_observation(
+    failed_schema_observation = build_schema_migration_observation(
+        migration_action,
+        {
+            "fence_mode": "unknown",
+            "schema_revision": CURRENT_APPLICATION_SCHEMA_REVISION,
+        },
+        result="failed",
+        observation_id="00000000-0000-4000-8000-000000047204",
+    )
+    recorded_failed_schema = collector.record_schema_migration_observation(
+        canonical_bytes=failed_schema_observation
+    )
+    assert recorded_failed_schema["result"] == "accepted"
+
+    # A failed target-local attempt does not replace the durable action.  A
+    # later successful retry must remain admissible against that same action.
+    schema_observation_id = "00000000-0000-4000-8000-000000047205"
+    installed_schema_observation = build_schema_migration_observation(
         migration_action,
         {
             "fence_mode": "closed_cutover",
@@ -580,7 +631,7 @@ def test_execution_authorization_migration_activation_and_emergency_close(
         observation_id=schema_observation_id,
     )
     recorded_schema = collector.record_schema_migration_observation(
-        canonical_bytes=schema_observation
+        canonical_bytes=installed_schema_observation
     )
     assert recorded_schema["result"] == "accepted"
 
@@ -610,7 +661,40 @@ def test_execution_authorization_migration_activation_and_emergency_close(
     activation_action_id = payload["activation_authority"]["activation_command_id"]
     activation_action = audit.read_target_activation_action(activation_action_id)
     assert activation_action is not None
-    runtime_observation_id = "00000000-0000-4000-8000-000000047205"
+    closed_runtime_observation_id = "00000000-0000-4000-8000-000000047206"
+    closed_runtime_observation = build_activation_runtime_observation(
+        activation_action,
+        {
+            "fence_mode": "closed_cutover",
+            "runtime_write_admitted": False,
+            "schema_revision": EXECUTION_APPLICATION_SCHEMA_REVISION,
+        },
+        result="closed",
+        target_identity_digest=payload["target"]["target_identity_digest"],
+        observation_id=closed_runtime_observation_id,
+    )
+    recorded_closed_runtime = collector.record_activation_runtime_observation(
+        canonical_bytes=closed_runtime_observation
+    )
+    assert recorded_closed_runtime["result"] == "accepted"
+    state = current_state()
+    pending_activation = executor.reconcile_target_activation(
+        request_id="00000000-0000-4000-8000-000000047207",
+        activation_request_id=payload["activation_request_id"],
+        runtime_observation_id=closed_runtime_observation_id,
+        environment_id=payload["environment"]["environment_id"],
+        attempt_id=payload["attempt"]["attempt_id"],
+        expected_environment_generation=state["fencing_generation"],
+        expected_environment_state_version=state["environment_state_version"],
+        expected_attempt_state_version=state["attempt_state_version"],
+    )
+    assert pending_activation["result"] == "pending_reconcile"
+    assert current_state()["workflow_state"] == "TARGET_ACTIVATION_RECONCILING"
+
+    # A closed observation is immutable evidence, not a terminal disposition of
+    # the action.  A later authoritative open observation reconciles the same
+    # durable activation intent.
+    runtime_observation_id = "00000000-0000-4000-8000-000000047208"
     runtime_observation = build_activation_runtime_observation(
         activation_action,
         {
@@ -628,7 +712,7 @@ def test_execution_authorization_migration_activation_and_emergency_close(
     assert recorded_runtime["result"] == "accepted"
     state = current_state()
     reconciled = executor.reconcile_target_activation(
-        request_id="00000000-0000-4000-8000-000000047206",
+        request_id="00000000-0000-4000-8000-000000047209",
         activation_request_id=payload["activation_request_id"],
         runtime_observation_id=runtime_observation_id,
         environment_id=payload["environment"]["environment_id"],
@@ -641,9 +725,9 @@ def test_execution_authorization_migration_activation_and_emergency_close(
     assert current_state()["workflow_state"] == "TARGET_ACTIVE"
 
     state = current_state()
-    emergency_command_id = "00000000-0000-4000-8000-000000047207"
+    emergency_command_id = "00000000-0000-4000-8000-000000047210"
     requested_close = emergency.request_emergency_close(
-        request_id="00000000-0000-4000-8000-000000047208",
+        request_id="00000000-0000-4000-8000-000000047211",
         emergency_command_id=emergency_command_id,
         environment_id=payload["environment"]["environment_id"],
         attempt_id=payload["attempt"]["attempt_id"],
@@ -657,7 +741,40 @@ def test_execution_authorization_migration_activation_and_emergency_close(
     assert current_state()["workflow_state"] == "EMERGENCY_CLOSE_REQUESTED"
     emergency_action = audit.read_emergency_close_action(emergency_command_id)
     assert emergency_action is not None
-    emergency_observation_id = "00000000-0000-4000-8000-000000047209"
+    ambiguous_close_observation_id = "00000000-0000-4000-8000-000000047212"
+    ambiguous_close_observation = build_emergency_close_observation(
+        emergency_action,
+        {
+            "fence_mode": "open_production",
+            "runtime_write_admitted": True,
+            "schema_revision": EXECUTION_APPLICATION_SCHEMA_REVISION,
+        },
+        result="partial",
+        deployment_descriptor_digest=payload["deployment"]["descriptor_digest"],
+        target_identity_digest=payload["target"]["target_identity_digest"],
+        observation_id=ambiguous_close_observation_id,
+    )
+    recorded_ambiguous_close = collector.record_emergency_close_observation(
+        canonical_bytes=ambiguous_close_observation
+    )
+    assert recorded_ambiguous_close["result"] == "accepted"
+    state = current_state()
+    pending_close = emergency.finalize_emergency_close(
+        request_id="00000000-0000-4000-8000-000000047213",
+        emergency_command_id=emergency_command_id,
+        observation_id=ambiguous_close_observation_id,
+        environment_id=payload["environment"]["environment_id"],
+        expected_environment_generation=state["fencing_generation"],
+        expected_environment_state_version=state["environment_state_version"],
+        expected_attempt_state_version=state["attempt_state_version"],
+    )
+    assert pending_close["result"] == "pending_reconcile"
+    assert current_state()["workflow_state"] == "ACTIVATION_INTERVENTION_REQUIRED"
+
+    # The operator reconciles the original close action after a later
+    # authoritative closed observation; issuing a replacement close command
+    # would break the external-action identity contract.
+    emergency_observation_id = "00000000-0000-4000-8000-000000047214"
     emergency_observation = build_emergency_close_observation(
         emergency_action,
         {
@@ -676,7 +793,7 @@ def test_execution_authorization_migration_activation_and_emergency_close(
     assert recorded_close["result"] == "accepted"
     state = current_state()
     finalized_close = emergency.finalize_emergency_close(
-        request_id="00000000-0000-4000-8000-000000047210",
+        request_id="00000000-0000-4000-8000-000000047215",
         emergency_command_id=emergency_command_id,
         observation_id=emergency_observation_id,
         environment_id=payload["environment"]["environment_id"],

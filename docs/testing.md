@@ -136,6 +136,35 @@ observation, emergency close, replay/conflict handling, and the forward-only
 application downgrade policy. A successful application or control migration
 alone is not evidence that these tests passed.
 
+### Phase 5C4.8 bounded recovery qualification
+
+The pure preactivation-cutback contract suite is:
+
+```bash
+pytest -q tests/test_phase5c4_cutback.py
+```
+
+It covers deterministic Ed25519 framing, canonical JSON, signature and key
+substitution, validity boundaries, exact authority bindings, and strict
+safety, route, and source-restoration observation shapes.
+
+`tests/test_phase5c4_recovery_qualification_control_postgres.py` proves the
+ops-0011 cumulative qualifier and audit-only recovery snapshot behavior against
+disposable PostgreSQL 16. `tests/test_phase5c4_recovery_qualification.py`
+proves the mutation-free postactivation PITR evidence contract.
+
+`tests/test_phase5c4_cutback_control_postgres.py` proves the executable ops-0011
+authority chain against disposable PostgreSQL 16: exact verifier grants,
+trusted admission, concurrent replay, one-use consumption, route failure and
+later authoritative success, source-restoration ambiguity and reconciliation,
+terminal convergence, immutability, and downgrade refusal.
+
+Real Docker/pgBackRest execution, provider restart, routing/readback,
+destructive PITR, measured RPO/RTO, MinIO restart, and control-database
+restoration remain separately gated results. A parser, mock, or read-only
+qualification test cannot be reported as proof that one of those exercises
+passed.
+
 ## MinIO object-lock integration
 
 Use only the disposable loopback profile and explicit confirmation variables:

@@ -12,6 +12,7 @@ from sqlalchemy.pool import NullPool
 from app.operators.phase5c_contracts import canonical_json
 from app.operators.phase5c4_control_roles import (
     Phase5C4ControlRoleError,
+    provision_cutback_authorization_verifier_role,
     provision_emergency_close_role,
     provision_execution_authorization_verifier_role,
     provision_promotion_authorization_verifier_role,
@@ -20,12 +21,15 @@ from app.operators.phase5c4_control_roles import (
     qualify_promotion_authorization_verifier_role,
     qualify_authorization_verifier_role,
     qualify_control_roles,
+    qualify_cutback_authorization_verifier_role,
     qualify_emergency_close_role,
     qualify_execution_authorization_verifier_role,
     remove_promotion_authorization_verifier_role,
     remove_authorization_verifier_role,
     remove_emergency_close_role,
     remove_execution_authorization_verifier_role,
+    remove_cutback_authorization_verifier_role,
+    serialize_cutback_authorization_privilege_manifest,
     serialize_emergency_close_privilege_manifest,
     serialize_execution_authorization_privilege_manifest,
     serialize_promotion_authorization_privilege_manifest,
@@ -54,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser("promotion-authorization-manifest")
     subparsers.add_parser("execution-authorization-manifest")
     subparsers.add_parser("emergency-close-manifest")
+    subparsers.add_parser("cutback-authorization-manifest")
     for name in ("provision", "qualify"):
         command = subparsers.add_parser(name)
         command.add_argument("--confirm-database", required=True)
@@ -70,6 +75,9 @@ def parse_args() -> argparse.Namespace:
         "provision-emergency-close",
         "qualify-emergency-close",
         "remove-emergency-close",
+        "provision-cutback-authorization-verifier",
+        "qualify-cutback-authorization-verifier",
+        "remove-cutback-authorization-verifier",
     ):
         command = subparsers.add_parser(name)
         command.add_argument("--confirm-database", required=True)
@@ -92,6 +100,9 @@ def main() -> None:
         return
     if args.command == "emergency-close-manifest":
         sys.stdout.write(serialize_emergency_close_privilege_manifest() + "\n")
+        return
+    if args.command == "cutback-authorization-manifest":
+        sys.stdout.write(serialize_cutback_authorization_privilege_manifest() + "\n")
         return
     engine = None
     try:
@@ -151,6 +162,21 @@ def main() -> None:
             )
         elif args.command == "qualify-emergency-close":
             result = qualify_emergency_close_role(
+                engine,
+                expected_database=args.confirm_database,
+            )
+        elif args.command == "provision-cutback-authorization-verifier":
+            result = provision_cutback_authorization_verifier_role(
+                engine,
+                expected_database=args.confirm_database,
+            )
+        elif args.command == "qualify-cutback-authorization-verifier":
+            result = qualify_cutback_authorization_verifier_role(
+                engine,
+                expected_database=args.confirm_database,
+            )
+        elif args.command == "remove-cutback-authorization-verifier":
+            result = remove_cutback_authorization_verifier_role(
                 engine,
                 expected_database=args.confirm_database,
             )

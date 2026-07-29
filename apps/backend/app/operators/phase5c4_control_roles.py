@@ -38,6 +38,12 @@ EXECUTION_AUTHORIZATION_ROLE_POLICY_VERSION = (
 )
 EMERGENCY_CLOSE_ROLE = "nutrition_control_emergency_closer"
 EMERGENCY_CLOSE_ROLE_POLICY_VERSION = "phase5c4_emergency_close_operator_role_policy_v1"
+CUTBACK_AUTHORIZATION_VERIFIER_ROLE = (
+    "nutrition_control_cutback_authorization_verifier"
+)
+CUTBACK_AUTHORIZATION_ROLE_POLICY_VERSION = (
+    "phase5c4_cutback_authorization_verifier_role_policy_v1"
+)
 
 MANAGED_ROLES = (
     OWNER_ROLE,
@@ -195,6 +201,31 @@ def emergency_close_privilege_manifest() -> dict[str, Any]:
 
 def serialize_emergency_close_privilege_manifest() -> str:
     return canonical_json(emergency_close_privilege_manifest())
+
+
+def cutback_authorization_privilege_manifest() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "contract_version": CUTBACK_AUTHORIZATION_ROLE_POLICY_VERSION,
+        "base_manifest_digest": privilege_manifest()["manifest_digest"],
+        "database": CONTROL_DATABASE,
+        "role": {
+            "name": CUTBACK_AUTHORIZATION_VERIFIER_ROLE,
+            "login": True,
+            "inherit": False,
+            "read_only": False,
+            "connect": True,
+            "base_table_dml": False,
+            "allowed_functions": [
+                "phase5c4_api.admit_cutback_authorization_v1(bytea)",
+                "phase5c4_api.read_cutback_authorization_key_v1(text)",
+            ],
+        },
+    }
+    return {**payload, "manifest_digest": canonical_digest(payload)}
+
+
+def serialize_cutback_authorization_privilege_manifest() -> str:
+    return canonical_json(cutback_authorization_privilege_manifest())
 
 
 def _require_bootstrap(connection: Connection) -> None:
@@ -1102,6 +1133,46 @@ def remove_emergency_close_role(engine: Engine, *, expected_database: str) -> di
             "uuid,uuid,uuid,uuid,bigint,bigint,bigint,text,text)"
         ),
         contract_version=EMERGENCY_CLOSE_ROLE_POLICY_VERSION,
+    )
+
+
+def provision_cutback_authorization_verifier_role(
+    engine: Engine, *, expected_database: str
+) -> dict[str, Any]:
+    return _provision_external_role(
+        engine,
+        expected_database=expected_database,
+        role=CUTBACK_AUTHORIZATION_VERIFIER_ROLE,
+        qualification=qualify_cutback_authorization_verifier_role,
+    )
+
+
+def qualify_cutback_authorization_verifier_role(
+    engine: Engine, *, expected_database: str, require_api: bool = True
+) -> dict[str, Any]:
+    return _qualify_external_role(
+        engine,
+        expected_database=expected_database,
+        role=CUTBACK_AUTHORIZATION_VERIFIER_ROLE,
+        contract_version=CUTBACK_AUTHORIZATION_ROLE_POLICY_VERSION,
+        manifest=cutback_authorization_privilege_manifest(),
+        expected_functions={
+            "phase5c4_api.admit_cutback_authorization_v1(bytea)",
+            "phase5c4_api.read_cutback_authorization_key_v1(text)",
+        },
+        require_api=require_api,
+    )
+
+
+def remove_cutback_authorization_verifier_role(
+    engine: Engine, *, expected_database: str
+) -> dict[str, Any]:
+    return _remove_external_role(
+        engine,
+        expected_database=expected_database,
+        role=CUTBACK_AUTHORIZATION_VERIFIER_ROLE,
+        api_signature="phase5c4_api.admit_cutback_authorization_v1(bytea)",
+        contract_version=CUTBACK_AUTHORIZATION_ROLE_POLICY_VERSION,
     )
 
 

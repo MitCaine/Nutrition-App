@@ -1365,8 +1365,8 @@ Each stage is independently reviewable and must land only after its named tests 
 | 5C4.4 Admission and performance | Artifact ingestion/finalization, live DB re-query, candidate/root reconciliation, T0 v2 ratification evaluator, tier gating, zero-block/quarantine workflows | GPT-5.3-Codex / xhigh |
 | 5C4.5 Backup and restore | One approved provider adapter, physical identity/LSN/timeline evidence, exact restore verifier, PITR/WAL checks, corruption/timeout simulations | GPT-5.3-Codex / xhigh |
 | 5C4.6 Authorization and CLI | Immutable local Ed25519 public-key trust/revocation, purpose-specific target-activation verification and admission, stable CLI/JSON/exits; authorization remains unused | GPT-5.3-Codex / xhigh |
-| 5C4.7 Cutover and verification | Maintenance drain/freeze, one endpoint CAS adapter, route/pool readback, bounded read-only smoke, activation/cutback transitions | GPT-5.3-Codex / xhigh |
-| 5C4.8 Crash and recovery qualification | Crash injection across every transition, concurrent controllers, mixed routing, safe prewrite cutback, postwrite forward/PITR recovery, control-plane failover | GPT-5.3-Codex / xhigh |
+| 5C4.7 Cutover and verification | Maintenance drain/freeze, one endpoint CAS adapter, route/pool readback, bounded read-only smoke, and target activation; cutback remains a later distinct authority | GPT-5.3-Codex / xhigh |
+| 5C4.8 Crash and recovery qualification | Crash injection across every transition, concurrent controllers, mixed routing, safe prewrite cutback, read-only postactivation PITR qualification, and fail-closed local control restoration qualification | GPT-5.3-Codex / xhigh |
 | 5C4.9 Operational release | Production-like rehearsal, measured maintenance/RTO/RPO, runbook/communications/tabletop, evidence retention and release gate; no new semantics | GPT-5.6 Sol / high |
 
 No stage may opportunistically rewrite the converter or combine independent qualification with

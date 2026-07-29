@@ -81,6 +81,9 @@ They are intentionally more detailed than the reader guides:
 - [Target-activation execution](production-hardening-phase5c4.7b.md)
   for the authenticated current 0021 migration, runtime admission, reconciliation, and emergency
   close boundary
+- [Phase 5C4.8 crash and recovery qualification](production-hardening-phase5c4.8.md)
+  for the in-progress purpose-specific preactivation cutback and bounded recovery-qualification
+  boundary
 - [OCR implementation](stage5-ocr.md), [confirmation](stage6-confirmation.md),
   [parser](stage6-parser.md), and [Food discovery](stage7-food-discovery.md)
 - [Manual QA evidence](evidence/qa/README.md) and the captured Phase 5C performance manifests

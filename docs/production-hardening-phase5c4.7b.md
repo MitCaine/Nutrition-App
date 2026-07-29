@@ -192,6 +192,14 @@ unknown observation remains immutable and leaves activation unresolved in
 `TARGET_ACTIVATION_RECONCILING`. A later separate observation may reconcile
 the same durable action when it satisfies the exact contract.
 
+The ops-0010 action-status guard does not fully realize the last sentence for
+an action already recorded `observed_failed`: it treats that status as
+terminal. Phase 5C4.8 owns the narrowly scoped forward correction that permits
+the same migration or target-open action to reconcile from failed or unknown
+observation to later authoritative success. Until that migration exists,
+operators must not describe an ops-0010-only installation as supporting that
+reconciliation.
+
 Exact committed request retries return the stored result. Reuse with changed
 bytes, identifiers, nonces, commands, observations, or compare-and-swap
 versions fails closed and records conflict evidence where the contract defines
@@ -225,6 +233,12 @@ does not switch the route, reopen the source, or perform a general rollback.
 When the external result is ambiguous, keep the environment closed or
 unresolved and reconcile the stored action; do not issue an unrelated new
 command.
+
+Ops 0010 also cannot finalize later authoritative closure evidence after the
+same emergency-close action has advanced to
+`ACTIVATION_INTERVENTION_REQUIRED`. Phase 5C4.8 owns the same-action
+reconciliation correction. It does not authorize a new close command, route
+change, source reopen, or rollback.
 
 ## Operator command boundary
 
@@ -439,3 +453,8 @@ Phase 5C4.7b does not implement automatic route cutback or source reopening.
 Those remain separate authorities and operations. Ambiguous activation or
 close outcomes require reconciliation or explicit intervention, not unsafe
 automation.
+
+This section intentionally records the historical ops-0010 qualifier and
+downgrade boundary. The current control qualifier must always match the
+installed control head. Phase 5C4.8 ops 0011 supplies qualifier v9 rather than
+treating v8 as current.

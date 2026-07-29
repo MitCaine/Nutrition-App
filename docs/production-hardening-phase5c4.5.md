@@ -147,3 +147,10 @@ tests pass with the existing Phase 5C and backend suites.
 The next stage may consume a passing recovery receipt as one prerequisite for
 post-restore readiness. It must not infer activation authority from the
 existence of a restore or a failed validation.
+
+Phase 5C4.8 may reuse this evidence boundary to qualify a separately restored
+postactivation target in a read-only transaction. That later qualification
+does not mutate a 5C4.5 receipt, replace the live target, route traffic, grant
+runtime writes, or make the retired source a rollback target. The provider
+restore and measured RPO/RTO exercise remain separate evidence and must not be
+inferred from a parser or qualification result.

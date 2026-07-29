@@ -4,7 +4,7 @@
     "0021_target_activation_execution"
   ],
   "expected_control_heads": [
-    "ops_0010_phase5c4_activation"
+    "ops_0011_phase5c4_recovery_audit"
   ],
   "focused_audit_tests": [
     "apps/backend/tests/test_project_audit.py"

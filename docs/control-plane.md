@@ -52,6 +52,7 @@ complexity matches that operational risk rather than the complexity of nutrition
 | Stage 5C4.6 | Purpose-specific Ed25519 target-activation authorization admission; no consumption or activation | `production-hardening-phase5c4.6.md`, ops migration 0008 |
 | Stage 5C4.7a | Purpose-specific promotion admission, one-use route intent, closed-target route/post-cutover evidence, and activation-evidence binding; no activation or opening | `production-hardening-phase5c4.7a.md`, ops migration 0009 |
 | Stage 5C4.7b | Separate schema-0021 execution authority, forward-only target migration, one-use activation, runtime observation/reconciliation, and emergency close | `production-hardening-phase5c4.7b.md`, application migration 0021, ops migration 0010 |
+| Stage 5C4.8 (bounded recovery qualification) | Purpose-specific executable preactivation cutback, crash/reconciliation correction, cumulative recovery qualification, and read-only postactivation PITR qualification | `production-hardening-phase5c4.8.md`; ops 0011 installs the cutback authority lifecycle, v9, and the audit snapshot |
 
 The broad [Phase 5C4 design record](production-hardening-phase5c4.md) describes later promotion,
 cutover, recovery, and authorization goals as well as implemented foundations. Do not read every
@@ -241,6 +242,13 @@ provider executor, automatic route cutback, source reopening, or deployment orch
 5C4.5's bounded Docker Compose/pgBackRest recovery adapter still does not create backups, route
 traffic, or authorize activation.
 
+Phase 5C4.8 freezes a distinct Ed25519
+preactivation-cutback contract plus safety, route, and source-restoration observation shapes. Ops
+0011 installs the matching trust store, admission, one-use consumption, route intent and
+reconciliation, source-last restoration evidence, terminal `CUTBACK_COMPLETED` evidence,
+cumulative qualification, and audit-only recovery inspection. Provider route changes and source
+runtime changes still occur outside database transactions and require authoritative observations.
+
 Therefore:
 
 - the application trigger introduced by 0018 remains the active local write-fence prerequisite;
@@ -251,8 +259,8 @@ Therefore:
   enable or prove production writes;
 - only the schema-0021 maintenance routine can alter local runtime-write admission, and the control
   workflow reaches `TARGET_ACTIVE` only after an authoritative matching observation;
-- no documentation should claim automatic route cutback or a generic production deployment
-  pipeline.
+- cutback is executable only before target activation authority exists; it is not automatic route
+  cutback, postactivation rollback, or a generic production deployment pipeline.
 
 ## Where to look
 
@@ -265,12 +273,13 @@ Therefore:
 | Control role policy | `phase5c4_control_roles.py`, `manage_phase5c4_control_roles.py` |
 | Evidence collection and WORM delivery | `phase5c4_control_evidence.py`, `phase5c4_minio.py` |
 | Python control client | `phase5c4_control.py` |
-| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0010` |
+| Control authority | `app/control_migrations/versions/ops_0001` through `ops_0011` |
 | Admission rules | `phase5c4_admission.py`, `phase5c_performance_contracts.py`, ops 0004 |
 | Current resource-membership operations | `resource_membership_*` operator modules, preflight script, and the 0019 runbook |
 | Current immutable-provenance operations | `immutable_provenance_*` operator modules, qualification script, and the 0020 runbook |
 | Recovery execution and evidence | `phase5c4_recovery.py`, `manage_phase5c4_recovery.py`, the 5C4.5 runbook, and ops 0007 |
 | Activation execution and emergency close | `phase5c4_activation_execution.py`, `0021_target_activation_execution.py`, the 5C4.7b runbook, and ops 0010 |
+| Cutback contracts and cumulative recovery qualification | `phase5c4_cutback.py`, `phase5c4_recovery_qualification.py`, ops 0011, the 5C4.8 runbook, and focused tests; no executable cutback SQL authority |
 | Qualification | control migration routines, resource-membership and immutable-provenance qualification, and PostgreSQL qualification tests |
 
 Always follow the SQL routine and role grant reached by a Python wrapper. The wrapper alone does not

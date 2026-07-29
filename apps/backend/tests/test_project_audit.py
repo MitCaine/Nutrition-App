@@ -35,7 +35,9 @@ def test_session_json_reports_current_migration_heads() -> None:
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["migration_heads"]["application"] == ["0021_target_activation_execution"]
-    assert payload["migration_heads"]["control"] == ["ops_0010_phase5c4_activation"]
+    assert payload["migration_heads"]["control"] == [
+        "ops_0011_phase5c4_recovery_audit"
+    ]
     assert payload["latest_phase_document"].endswith("production-hardening-phase5c4.8.md")
 
 
@@ -47,19 +49,15 @@ def test_inventory_is_deterministic() -> None:
     assert first.stdout == second.stdout
     payload = json.loads(first.stdout)
     assert payload["application_heads"] == ["0021_target_activation_execution"]
-    assert payload["control_heads"] == ["ops_0010_phase5c4_activation"]
+    assert payload["control_heads"] == ["ops_0011_phase5c4_recovery_audit"]
     assert len(payload["inventory_sha256"]) == 64
 
 
-def test_boundaries_finds_known_unfinished_cutback_vector() -> None:
+def test_boundaries_accepts_completed_cutback_vector() -> None:
     result = _run("boundaries", "--json")
-    assert result.returncode == 1
+    assert result.returncode == 0
     findings = json.loads(result.stdout)
-    assert any(
-        finding["code"] == "PLACEHOLDER"
-        and finding["message"].endswith("REPLACE_SIGNING_MESSAGE_DIGEST")
-        for finding in findings
-    )
+    assert all(finding["code"] != "PLACEHOLDER" for finding in findings)
 
 
 def _placeholder_config(*excludes: str) -> dict[str, object]:
