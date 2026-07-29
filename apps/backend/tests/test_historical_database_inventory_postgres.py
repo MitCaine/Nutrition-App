@@ -8,12 +8,13 @@ import sys
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Engine, create_engine, event, make_url, text
+from sqlalchemy import Engine, event, make_url, text
 
 from app.operators.historical_database_inventory import (
     REPORT_SCHEMA_VERSION,
     inventory_database,
 )
+from tests.postgres_test_support import qualified_postgres_migration_database
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -62,32 +63,21 @@ def _run_inventory_cli(database_url: str, output_format: str) -> subprocess.Comp
     )
 
 
-@pytest.fixture()
-def isolated_postgres_schema() -> tuple[Engine, str]:
-    admin = create_engine(POSTGRES_URL, pool_pre_ping=True)
-    try:
-        with admin.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    except Exception as exc:  # pragma: no cover - depends on developer environment.
-        admin.dispose()
-        pytest.skip(f"PostgreSQL inventory database unavailable: {exc}")
+@pytest.fixture(scope="module")
+def qualified_migration_database():
+    with qualified_postgres_migration_database(
+        database_url=POSTGRES_URL,
+        database_prefix="test_historical_inventory",
+    ) as database:
+        yield database
 
-    schema = f"test_historical_inventory_{uuid4().hex}"
-    with admin.begin() as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    database_url = (
-        make_url(POSTGRES_URL)
-        .update_query_dict({"options": f"-csearch_path={schema}"})
-        .render_as_string(hide_password=False)
-    )
-    engine = create_engine(database_url, pool_pre_ping=True)
-    try:
-        yield engine, database_url
-    finally:
-        engine.dispose()
-        with admin.begin() as connection:
-            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        admin.dispose()
+
+@pytest.fixture()
+def isolated_postgres_schema(qualified_migration_database) -> tuple[Engine, str, str]:
+    with qualified_migration_database.isolated_schema(
+        schema_prefix="test_historical_inventory",
+    ) as schema:
+        yield schema.application_engine, schema.application_url, schema.migration_url
 
 
 def _upgrade(database_url: str, revision: str = "0017_phase5c_indexes") -> None:
@@ -147,10 +137,10 @@ def _insert_revision(connection, user_id, recipe_id):
 
 
 def test_empty_current_database_inventory_is_stable_and_aggregate_only(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
 
     first = inventory_database(engine)
     second = inventory_database(engine)
@@ -188,10 +178,10 @@ def test_empty_current_database_inventory_is_stable_and_aggregate_only(
 
 
 def test_phase5c_0016_database_remains_a_known_restartable_revision(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url, "0016_phase5c_execution")
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url, "0016_phase5c_execution")
 
     payload = inventory_database(engine).to_dict()
 
@@ -210,30 +200,30 @@ def test_phase5c_0016_database_remains_a_known_restartable_revision(
 
 
 def test_operator_cli_emits_human_and_machine_readable_reports_without_database_url(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    _engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    _engine, application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
 
-    json_result = _run_inventory_cli(database_url, "json")
-    human_result = _run_inventory_cli(database_url, "human")
+    json_result = _run_inventory_cli(application_url, "json")
+    human_result = _run_inventory_cli(application_url, "human")
 
     assert json_result.returncode == 0, json_result.stderr
     assert human_result.returncode == 0, human_result.stderr
     assert json.loads(json_result.stdout)["classification"]["value"] == "empty_database"
     assert "Classification: empty_database" in human_result.stdout
     rendered = json_result.stdout + json_result.stderr + human_result.stdout + human_result.stderr
-    assert database_url not in rendered
-    password = make_url(database_url).password
+    assert application_url not in rendered
+    password = make_url(application_url).password
     if password:
         assert password not in rendered
 
 
 def test_inventory_uses_only_read_only_queries_and_changes_no_domain_rows(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
     with engine.begin() as connection:
         user_id = _insert_user(connection)
         recipe_id = _insert_current_draft(connection, user_id)
@@ -271,10 +261,10 @@ def test_inventory_uses_only_read_only_queries_and_changes_no_domain_rows(
 
 
 def test_current_published_recipe_revision_and_projection_are_counted_cleanly(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
     with engine.begin() as connection:
         user_id = _insert_user(connection)
         recipe_id = _insert_current_draft(connection, user_id)
@@ -404,10 +394,10 @@ def test_current_published_recipe_revision_and_projection_are_counted_cleanly(
 
 
 def test_legacy_recipe_tables_and_rows_are_counted_without_upgrading(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url, "0003_usda_source_identity")
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url, "0003_usda_source_identity")
     with engine.begin() as connection:
         user_id = _insert_user(connection, email="legacy-sensitive@example.test")
         recipe_food_id = uuid4()
@@ -484,10 +474,10 @@ def test_legacy_recipe_tables_and_rows_are_counted_without_upgrading(
 
 
 def test_missing_projection_is_classified_as_historical_repair(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
     with engine.begin() as connection:
         user_id = _insert_user(connection)
         recipe_id = _insert_current_draft(connection, user_id)
@@ -508,10 +498,10 @@ def test_missing_projection_is_classified_as_historical_repair(
 
 
 def test_projection_source_revision_and_inactive_mismatches_are_detected(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
     with engine.begin() as connection:
         user_id = _insert_user(connection)
         recipe_id = _insert_current_draft(connection, user_id)
@@ -555,10 +545,10 @@ def test_projection_source_revision_and_inactive_mismatches_are_detected(
 
 
 def test_orphan_revision_is_detected_in_disposable_broken_schema(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
     with engine.begin() as connection:
         user_id = _insert_user(connection)
         connection.execute(
@@ -577,10 +567,10 @@ def test_orphan_revision_is_detected_in_disposable_broken_schema(
 
 
 def test_ocr_idempotency_and_sensitive_values_are_reported_only_as_counts(
-    isolated_postgres_schema: tuple[Engine, str],
+    isolated_postgres_schema: tuple[Engine, str, str],
 ) -> None:
-    engine, database_url = isolated_postgres_schema
-    _upgrade(database_url)
+    engine, _application_url, migration_url = isolated_postgres_schema
+    _upgrade(migration_url)
     secrets = {
         "sensitive-email-token@example.test",
         "SENSITIVE_DISPLAY_NAME_TOKEN",

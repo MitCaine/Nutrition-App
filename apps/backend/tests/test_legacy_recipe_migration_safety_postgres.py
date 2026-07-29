@@ -11,11 +11,16 @@ from uuid import UUID, uuid4
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Connection, Engine, create_engine, inspect, make_url, text
+from sqlalchemy import Connection, inspect, make_url, text
 
 from app import models as runtime_models  # noqa: F401
 from app.core.database import Base
 from app.migrations.schema_authority import MIGRATION_OWNED_TABLES
+from app.operators import phase5c4_roles as roles
+from tests.postgres_test_support import (
+    IsolatedPostgresMigrationSchema,
+    qualified_postgres_migration_database,
+)
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -33,6 +38,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run_migration(connection: Connection, migration: ModuleType, direction: str) -> None:
+    roles.assume_migration_owner(connection)
     context = MigrationContext.configure(connection)
     with Operations.context(context):
         getattr(migration, direction)()
@@ -56,65 +62,37 @@ def _run_alembic(database_url: str, *arguments: str) -> subprocess.CompletedProc
     )
 
 
+@pytest.fixture(scope="module")
+def qualified_migration_database():
+    with qualified_postgres_migration_database(
+        database_url=POSTGRES_URL,
+        database_prefix="test_legacy_recipe_migration",
+    ) as database:
+        yield database
+
+
 @pytest.fixture()
-def legacy_0003_engine() -> Engine:
-    admin = create_engine(POSTGRES_URL, pool_pre_ping=True)
-    try:
-        with admin.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    except Exception as exc:  # pragma: no cover - depends on developer environment.
-        admin.dispose()
-        pytest.skip(f"PostgreSQL migration database unavailable: {exc}")
-
-    schema = f"test_legacy_recipe_migration_{uuid4().hex}"
-    with admin.begin() as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-
-    engine = create_engine(
-        POSTGRES_URL,
-        connect_args={"options": f"-csearch_path={schema}"},
-        pool_pre_ping=True,
-    )
-    try:
-        with engine.begin() as connection:
+def legacy_0003_schema(
+    qualified_migration_database,
+) -> IsolatedPostgresMigrationSchema:
+    with qualified_migration_database.isolated_schema(
+        schema_prefix="test_legacy_recipe_migration",
+    ) as schema:
+        with schema.migration_engine.begin() as connection:
             _run_migration(connection, initial_migration, "upgrade")
             _run_migration(connection, snapshot_migration, "upgrade")
             _run_migration(connection, usda_migration, "upgrade")
-        yield engine
-    finally:
-        engine.dispose()
-        with admin.begin() as connection:
-            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        admin.dispose()
+        yield schema
 
 
 @pytest.fixture()
-def empty_postgres_schema() -> tuple[Engine, str]:
-    admin = create_engine(POSTGRES_URL, pool_pre_ping=True)
-    try:
-        with admin.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    except Exception as exc:  # pragma: no cover - depends on developer environment.
-        admin.dispose()
-        pytest.skip(f"PostgreSQL migration database unavailable: {exc}")
-
-    schema = f"test_alembic_baseline_{uuid4().hex}"
-    with admin.begin() as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-
-    migration_url = (
-        make_url(POSTGRES_URL)
-        .update_query_dict({"options": f"-csearch_path={schema}"})
-        .render_as_string(hide_password=False)
-    )
-    engine = create_engine(migration_url, pool_pre_ping=True)
-    try:
-        yield engine, migration_url
-    finally:
-        engine.dispose()
-        with admin.begin() as connection:
-            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        admin.dispose()
+def empty_postgres_schema(
+    qualified_migration_database,
+) -> IsolatedPostgresMigrationSchema:
+    with qualified_migration_database.isolated_schema(
+        schema_prefix="test_alembic_baseline",
+    ) as schema:
+        yield schema
 
 
 def _seed_legacy_recipe(
@@ -203,20 +181,20 @@ def _seed_legacy_recipe(
 
 @pytest.mark.parametrize("include_ingredient", [False, True])
 def test_populated_legacy_recipe_tables_fail_before_destructive_ddl_and_preserve_rows(
-    legacy_0003_engine: Engine,
+    legacy_0003_schema: IsolatedPostgresMigrationSchema,
     include_ingredient: bool,
 ) -> None:
-    with legacy_0003_engine.begin() as connection:
+    with legacy_0003_schema.application_engine.begin() as connection:
         ids = _seed_legacy_recipe(connection, include_ingredient=include_ingredient)
 
     migration_error: RuntimeError | None = None
     try:
-        with legacy_0003_engine.begin() as connection:
+        with legacy_0003_schema.migration_engine.begin() as connection:
             _run_migration(connection, recipe_migration, "upgrade")
     except RuntimeError as exc:
         migration_error = exc
 
-    with legacy_0003_engine.connect() as connection:
+    with legacy_0003_schema.application_engine.connect() as connection:
         inspector = inspect(connection)
         table_names = set(inspector.get_table_names())
         recipe_columns = {column["name"] for column in inspector.get_columns("recipes")}
@@ -296,11 +274,13 @@ def test_populated_legacy_recipe_tables_fail_before_destructive_ddl_and_preserve
     assert ingredient_rows == expected_ingredients
 
 
-def test_empty_legacy_recipe_tables_upgrade_successfully(legacy_0003_engine: Engine) -> None:
-    with legacy_0003_engine.begin() as connection:
+def test_empty_legacy_recipe_tables_upgrade_successfully(
+    legacy_0003_schema: IsolatedPostgresMigrationSchema,
+) -> None:
+    with legacy_0003_schema.migration_engine.begin() as connection:
         _run_migration(connection, recipe_migration, "upgrade")
 
-    with legacy_0003_engine.connect() as connection:
+    with legacy_0003_schema.application_engine.connect() as connection:
         table_names = set(inspect(connection).get_table_names())
         recipe_columns = {column["name"] for column in inspect(connection).get_columns("recipes")}
 
@@ -311,17 +291,23 @@ def test_empty_legacy_recipe_tables_upgrade_successfully(legacy_0003_engine: Eng
     assert "food_item_id" not in recipe_columns
 
 
-def test_empty_0004_downgrade_and_reupgrade_remain_valid(legacy_0003_engine: Engine) -> None:
-    with legacy_0003_engine.begin() as connection:
+def test_empty_0004_downgrade_and_reupgrade_remain_valid(
+    legacy_0003_schema: IsolatedPostgresMigrationSchema,
+) -> None:
+    with legacy_0003_schema.migration_engine.begin() as connection:
         _run_migration(connection, recipe_migration, "upgrade")
         _run_migration(connection, recipe_migration, "downgrade")
 
+    with legacy_0003_schema.application_engine.connect() as connection:
         legacy_columns = {column["name"] for column in inspect(connection).get_columns("recipes")}
         assert {"food_item_id", "serving_count", "final_yield_quantity"} <= legacy_columns
         assert connection.scalar(text("SELECT count(*) FROM recipes")) == 0
         assert connection.scalar(text("SELECT count(*) FROM recipe_ingredients")) == 0
 
+    with legacy_0003_schema.migration_engine.begin() as connection:
         _run_migration(connection, recipe_migration, "upgrade")
+
+    with legacy_0003_schema.application_engine.connect() as connection:
         current_columns = {column["name"] for column in inspect(connection).get_columns("recipes")}
 
     assert {"name", "published_food_item_id", "serving_count_yield"} <= current_columns
@@ -329,14 +315,27 @@ def test_empty_0004_downgrade_and_reupgrade_remain_valid(legacy_0003_engine: Eng
 
 
 def test_empty_baseline_upgrades_to_0017_and_round_trips(
-    empty_postgres_schema: tuple[Engine, str],
+    empty_postgres_schema: IsolatedPostgresMigrationSchema,
 ) -> None:
-    engine, migration_url = empty_postgres_schema
+    engine = empty_postgres_schema.application_engine
+    migration_url = empty_postgres_schema.migration_url
+
+    rejected_runtime = _run_alembic(
+        empty_postgres_schema.application_url,
+        "upgrade",
+        "0017_phase5c_indexes",
+    )
+    assert rejected_runtime.returncode != 0
+    assert (
+        "Only nutrition_migrator may run Alembic in a qualified database"
+        in rejected_runtime.stderr
+    )
 
     result = _run_alembic(migration_url, "upgrade", "0017_phase5c_indexes")
 
     assert result.returncode == 0, result.stderr
     with engine.connect() as connection:
+        assert connection.scalar(text("SELECT session_user")) == make_url(POSTGRES_URL).username
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
             "0017_phase5c_indexes"
         )
@@ -358,6 +357,44 @@ def test_empty_baseline_upgrades_to_0017_and_round_trips(
             )
             for index in inspect(connection).get_indexes(table)
         }
+        application_is_schema_owner_member = connection.scalar(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_auth_members membership
+                    JOIN pg_catalog.pg_roles granted
+                      ON granted.oid = membership.roleid
+                    JOIN pg_catalog.pg_roles member
+                      ON member.oid = membership.member
+                    WHERE granted.rolname = :owner
+                      AND member.rolname = :application
+                )
+                """
+            ),
+            {
+                "owner": roles.OWNER_ROLE,
+                "application": make_url(POSTGRES_URL).username,
+            },
+        )
+        relation_owners = set(
+            connection.scalars(
+                text(
+                    """
+                    SELECT owner.rolname
+                    FROM pg_catalog.pg_class relation
+                    JOIN pg_catalog.pg_namespace namespace
+                      ON namespace.oid = relation.relnamespace
+                    JOIN pg_catalog.pg_roles owner
+                      ON owner.oid = relation.relowner
+                    WHERE namespace.nspname = current_schema()
+                      AND relation.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+                    """
+                )
+            )
+        )
+    assert application_is_schema_owner_member is False
+    assert relation_owners == {roles.OWNER_ROLE}
     assert {"recipes", "recipe_ingredients", "recipe_publication_revisions"} <= table_names
     assert {
         "clone_marker_identity",
@@ -433,9 +470,10 @@ def test_empty_baseline_upgrades_to_0017_and_round_trips(
 
 
 def test_alembic_populated_0003_to_0004_failure_keeps_revision_and_rows(
-    empty_postgres_schema: tuple[Engine, str],
+    empty_postgres_schema: IsolatedPostgresMigrationSchema,
 ) -> None:
-    engine, migration_url = empty_postgres_schema
+    engine = empty_postgres_schema.application_engine
+    migration_url = empty_postgres_schema.migration_url
     upgrade_to_0003 = _run_alembic(migration_url, "upgrade", "0003_usda_source_identity")
     assert upgrade_to_0003.returncode == 0, upgrade_to_0003.stderr
 
