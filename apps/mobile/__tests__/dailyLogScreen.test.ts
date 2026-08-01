@@ -48,13 +48,14 @@ function log(meal_type: string | null): DailyLog {
   };
 }
 
-async function render(date = "2026-07-14", onAddFood = jest.fn()) {
+async function render(date = "2026-07-14", onAddFood = jest.fn(), onGeneralAddFood = jest.fn()) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(DailyLogScreen, {
       date,
       setDate: jest.fn(),
       onAddFood,
+      onGeneralAddFood,
       onOpenFood: jest.fn(),
       onEditLog: jest.fn(),
       onOpenSettings: jest.fn(),
@@ -63,7 +64,7 @@ async function render(date = "2026-07-14", onAddFood = jest.fn()) {
       onScrollOffsetChange: jest.fn(),
     }));
   });
-  return { renderer, onAddFood };
+  return { renderer, onAddFood, onGeneralAddFood };
 }
 
 function addFoodButtons(root: TestRenderer.ReactTestInstance): TestRenderer.ReactTestInstance[] {
@@ -80,14 +81,16 @@ test("empty supported days render all named meal Add Food actions with context",
   const rendered = await render();
   expect(screenText(rendered.renderer.root)).toContain("No food logged for this date.");
   const buttons = addFoodButtons(rendered.renderer.root);
-  expect(buttons).toHaveLength(4);
-  for (const button of buttons) {
+  expect(buttons).toHaveLength(5);
+  for (const button of buttons.filter((item) => item.props.accessibilityLabel !== "Add Food without meal")) {
     await act(async () => button.props.onPress());
   }
   expect(rendered.onAddFood).toHaveBeenNthCalledWith(1, "breakfast");
   expect(rendered.onAddFood).toHaveBeenNthCalledWith(2, "lunch");
   expect(rendered.onAddFood).toHaveBeenNthCalledWith(3, "dinner");
   expect(rendered.onAddFood).toHaveBeenNthCalledWith(4, "snack");
+  await act(async () => buttons.find((item) => item.props.accessibilityLabel === "Add Food without meal")?.props.onPress());
+  expect(rendered.onGeneralAddFood).toHaveBeenCalledTimes(1);
   await act(async () => rendered.renderer.unmount());
 });
 
@@ -95,7 +98,7 @@ test("Unassigned remains actionless while named groups retain actions", async ()
   mockLogs = { ...mockLogs, data: [log(null)] };
   const rendered = await render();
   expect(screenText(rendered.renderer.root)).toContain("Unassigned");
-  expect(addFoodButtons(rendered.renderer.root)).toHaveLength(4);
+  expect(addFoodButtons(rendered.renderer.root)).toHaveLength(5);
   await act(async () => rendered.renderer.unmount());
 });
 

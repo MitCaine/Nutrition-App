@@ -261,3 +261,60 @@ Client-side date utilities should handle date-only navigation and provisional pr
 
 ---
 
+# E1-07 — Independent Read States and Confirmed Mutation Projection
+
+## Model presentation states explicitly
+
+Complex query presentation should use discriminated state models rather than
+multiple interacting booleans.
+
+Distinguish at least:
+
+- initial loading;
+- initial failure;
+- empty authoritative data;
+- success;
+- same-date refreshing;
+- refresh failure with retained stale data;
+- unavailable or unknown dependent state.
+
+## Keep related sections operationally independent
+
+Entries, totals, and target progress may share presentation context, but should
+retain separate caches, refreshes, failures, and retries.
+
+A failure in one section must not hide or invalidate confirmed content in
+another section.
+
+## Do not present unknown state as zero
+
+Unavailable entry consumption is not equivalent to authoritative zero intake.
+
+When source data is unknown:
+
+- suppress zero totals;
+- suppress successful 0% target progress;
+- show an explicit unavailable state;
+- preserve legitimate zero values only when authoritative data loaded
+  successfully.
+
+## Separate mutation confirmation from read refresh
+
+An authoritative mutation result remains confirmed even when later reads fail.
+
+After confirmation:
+
+- project the returned mutation result immediately;
+- refresh affected sections independently;
+- retain the confirmed projection on refresh failure;
+- mark surrounding data stale rather than reverting the mutation.
+
+## Retain stale data only within the same date key
+
+Same-date refresh may retain visible data with a clear refreshing or stale
+indicator.
+
+Cross-date navigation must retire all prior-date section data immediately.
+
+---
+

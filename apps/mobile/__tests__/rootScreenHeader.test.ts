@@ -4,6 +4,7 @@ test("the shared root header defines all root screen titles", () => {
   expect(ROOT_SCREEN_TITLES).toEqual({
     foods: "Saved Foods",
     "daily-log": "Daily Log",
+    "add-food": "Add Food",
     recipes: "Recipes",
   });
 });

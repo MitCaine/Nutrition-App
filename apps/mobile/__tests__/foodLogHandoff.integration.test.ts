@@ -420,3 +420,57 @@ test("default Recipe Detail-style caller has no warning", async () => {
     .filter((value) => value.includes("current default") || value.includes("invalid"));
   expect(warningTexts).toEqual([]);
 });
+
+test("Daily Log Add Food carries meal context and optional note into the shared confirmation", async () => {
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-14",
+    initialMealType: "breakfast",
+    showMealAndNotes: true,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  }));
+  expect(renderer.root.findByProps({ accessibilityLabel: "Log date 2026-07-14" })).toBeDefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: "Meal breakfast" }).props.accessibilityState.checked).toBe(true);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Meal lunch" }).props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Notes" }).props.onChangeText("after workout"));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress());
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ meal_type: "lunch", notes: "after workout", logged_date: "2026-07-14" }));
+  await act(async () => renderer.unmount());
+});
+
+test("strict Daily Log Add Food review blocks a changed source until current choices are reviewed", async () => {
+  mockCreateLog.mockClear();
+  const element = React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-14",
+    initialMealType: "breakfast",
+    showMealAndNotes: true,
+    strictSourceReview: true,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  });
+  const renderer = await render(element);
+  mockFoodQuery = { ...mockFoodQuery, data: { ...food, serving_definitions: [...food.serving_definitions, { ...food.serving_definitions[0], id: "replacement-serving", label: "Replacement serving" }] } };
+  mockResolvedQuery = {
+    ...mockResolvedQuery,
+    data: nutrition([amount("replacement-serving", "serving", "1", true)]),
+  };
+  await act(async () => renderer.update(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-14",
+    initialMealType: "breakfast",
+    showMealAndNotes: true,
+    strictSourceReview: true,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  })));
+  expect(renderer.root.findAllByType(Text).some((node) => textContent(node).includes("This Food changed"))).toBe(true);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress());
+  expect(mockCreateLog).not.toHaveBeenCalled();
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Meal breakfast" }).props.onPress());
+  await act(async () => renderer.root.findAllByProps({ accessibilityRole: "radio" }).find((node) => String(node.props.accessibilityLabel).startsWith("Replacement serving"))?.props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress());
+  expect(mockCreateLog).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});

@@ -37,6 +37,8 @@ type Props = {
   setDate: (date: string) => void;
   /** E1-08 consumes this intent; the discovery destination is intentionally not here. */
   onAddFood?: (meal: MealType) => void;
+  /** General Add Food entry point; it starts with no meal assignment. */
+  onGeneralAddFood?: () => void;
   onOpenFood: (foodId: string) => void;
   onEditLog: (logId: string) => void;
   onOpenSettings: () => void;
@@ -45,7 +47,7 @@ type Props = {
   onScrollOffsetChange: (offset: number) => void;
 };
 
-export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
+export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -159,7 +161,14 @@ export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog
           <Text style={styles.text}>{formatAggregatedTotal(total)}</Text>
         </View>
       )) : null}
-      <Text style={styles.sectionTitle}>Entries</Text>
+      <View style={styles.entriesHeader}>
+        <Text style={styles.sectionTitle}>Entries</Text>
+        {mutationsEnabled ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Add Food without meal" onPress={onGeneralAddFood} style={styles.addFoodButton}>
+            <Text style={styles.addFoodText}>Add Food</Text>
+          </Pressable>
+        ) : null}
+      </View>
       {isProvisional ? (
         <Text style={styles.calendarNotice}>
           {calendarStateLabel(calendar.data, provisionalTimeZone)}. Browsing is read-only until you confirm it in Settings.
@@ -188,7 +197,7 @@ export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog
             <View style={styles.groupHeader}>
               <Text style={styles.groupTitle}>{group.label}</Text>
               {mutationsEnabled && meal ? (
-                <Pressable onPress={() => onAddFood?.(meal)} style={styles.addFoodButton}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Add Food to ${group.label}`} onPress={() => onAddFood?.(meal)} style={styles.addFoodButton}>
                   <Text style={styles.addFoodText}>Add Food</Text>
                 </Pressable>
               ) : null}
@@ -370,6 +379,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   entryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 12 },
   compatibilityNotice: { color: theme.colors.warningText, fontSize: 13, lineHeight: 18 },
   errorRow: { alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" },
+  entriesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   groupTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   groupHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   addFoodButton: { paddingHorizontal: 8, paddingVertical: 4 },

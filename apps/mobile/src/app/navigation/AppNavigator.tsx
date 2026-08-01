@@ -12,7 +12,9 @@ import { getFood } from "../../features/foods/api/foodApi";
 import { useFood } from "../../features/foods/hooks/useFoods";
 import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
+import { AddFoodScreen } from "../../features/logging/screens/AddFoodScreen";
 import { LogFoodScreen } from "../../features/logging/screens/LogFoodScreen";
+import { createAddFoodFlow, updateAddFoodFlow, type AddFoodFlowState } from "../../features/logging/utils/addFoodFlow";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
 import { RecipeDetailScreen } from "../../features/recipes/screens/RecipeDetailScreen";
@@ -41,13 +43,15 @@ import type { NutritionConfirmationDraft } from "../../features/ocr/api/types";
 import { TargetSettingsScreen } from "../../features/targets/TargetSettingsScreen";
 import { useCalendarState } from "../../features/calendar/hooks/useCalendar";
 import { deviceTimeZone } from "../../features/calendar/api/calendarApi";
-import { calendarToday } from "../../features/calendar/calendarModel";
+import { calendarMutationsEnabled, calendarToday } from "../../features/calendar/calendarModel";
 
 type Route =
   | { name: "foods" }
   | { name: "new-food" }
   | { name: "food-detail"; foodId: string }
   | { name: "edit-food"; foodId: string }
+  | { name: "add-food" }
+  | { name: "add-log-food"; foodId: string; flow: AddFoodFlowState }
   | LogFoodRoute
   | { name: "edit-log"; logId: string }
   | { name: "usda-preview"; fdcId: number }
@@ -86,10 +90,10 @@ export function AppNavigator() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(emptyRecipeDraft());
   const [foodMessage, setFoodMessage] = useState<string | null>(null);
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
+  const [addFoodFlow, setAddFoodFlow] = useState<AddFoodFlowState | null>(null);
   const calendar = useCalendarState();
-  const calendarEstablished = calendar.data?.is_established === true;
   const [date, setDate] = useState(() => todayInTimeZone(deviceTimeZone()));
-  const calendarMutationsAvailable = calendarEstablished && date <= calendarToday(calendar.data, deviceTimeZone());
+  const calendarMutationsAvailable = calendarMutationsEnabled(calendar.data) && date <= calendarToday(calendar.data, deviceTimeZone());
   const foodSearchScroll = useRef({ query: "", offset: 0 });
   const recipeSearchScroll = useRef({ query: "", offset: 0 });
   const dailyLogScroll = useRef({ date, offset: 0 });
@@ -162,6 +166,42 @@ export function AppNavigator() {
     );
   } else if (route.name === "edit-food") {
     content = <EditFoodRoute foodId={route.foodId} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
+  } else if (route.name === "add-food" && addFoodFlow) {
+    const flowMutationEnabled = calendarMutationsEnabled(calendar.data) && addFoodFlow.originatingDate <= calendarToday(calendar.data, deviceTimeZone());
+    content = (
+      <AddFoodScreen
+        flow={addFoodFlow}
+        mutationEnabled={flowMutationEnabled}
+        onCancel={() => {
+          setDate(addFoodFlow.originatingDate);
+          setAddFoodFlow(null);
+          setRoute({ name: "daily-log" });
+        }}
+        onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
+        onSelectFood={(foodId) => setRoute({ name: "add-log-food", foodId, flow: addFoodFlow })}
+        onScrollSessionChange={(query, offset) => setAddFoodFlow(updateAddFoodFlow(addFoodFlow, { query, scrollOffset: offset }))}
+      />
+    );
+  } else if (route.name === "add-log-food") {
+    const flowMutationEnabled = calendarMutationsEnabled(calendar.data) && route.flow.originatingDate <= calendarToday(calendar.data, deviceTimeZone());
+    content = (
+      <LogFoodScreen
+        foodId={route.foodId}
+        date={route.flow.originatingDate}
+        calendarRevision={calendar.data?.calendar_revision}
+        initialMealType={route.flow.initialMeal}
+        mutationEnabled={flowMutationEnabled}
+        onSourceUnavailable={() => setRoute({ name: "add-food" })}
+        onCancel={() => setRoute({ name: "add-food" })}
+        onSaved={() => {
+          setDate(route.flow.originatingDate);
+          setAddFoodFlow(null);
+          setRoute({ name: "daily-log" });
+        }}
+        showMealAndNotes
+        strictSourceReview
+      />
+    );
   } else if (route.name === "log-food") {
     content = calendarMutationsAvailable ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "edit-log") {
@@ -289,6 +329,16 @@ export function AppNavigator() {
       onScrollOffsetChange={(offset) => { dailyLogScroll.current = { date, offset }; }}
       onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
       onEditLog={(logId) => setRoute({ name: "edit-log", logId })}
+      onAddFood={(meal) => {
+        const flow = createAddFoodFlow(date, meal);
+        setAddFoodFlow(flow);
+        setRoute({ name: "add-food" });
+      }}
+      onGeneralAddFood={() => {
+        const flow = createAddFoodFlow(date);
+        setAddFoodFlow(flow);
+        setRoute({ name: "add-food" });
+      }}
       onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
       onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })}
     />;

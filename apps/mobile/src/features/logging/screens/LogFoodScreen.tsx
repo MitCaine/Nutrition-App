@@ -29,6 +29,7 @@ import {
 } from "../utils/logFoodForm";
 import { logEditErrorMessage } from "../utils/logEditErrors";
 import { createClientRequestId } from "../utils/clientRequestId";
+import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { logInputSchema } from "../validation/logValidation";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
@@ -40,9 +41,17 @@ type Props = {
   onSaved: () => void;
   log?: DailyLog;
   initialAmount?: LogFoodInitialAmount;
+  initialMealType?: MealType | null;
+  /** Add Food enables the shared meal and note authoring controls. */
+  showMealAndNotes?: boolean;
+  /** Active Add Food flows remain mounted when calendar context becomes restricted. */
+  mutationEnabled?: boolean;
+  /** Add Food requires an explicit renewed review when authoritative source data drifts. */
+  strictSourceReview?: boolean;
+  onSourceUnavailable?: () => void;
 };
 
-export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount }: Props) {
+export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editContext = useLogEditContext(log?.id ?? null);
@@ -58,6 +67,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const [selectedAmountMode, setSelectedAmountMode] = useState<"serving" | "g" | null>(
     log?.amount_unit ?? null,
   );
+  const mealAndNotesEnabled = showMealAndNotes || initialMealType !== undefined;
+  const [mealType, setMealType] = useState<MealType | null>(
+    log && isSupportedMeal(log.meal_type) ? log.meal_type : initialMealType ?? null,
+  );
+  const [note, setNote] = useState(log?.notes ?? "");
   const initializedCreateFoodId = useRef<string | null>(null);
   const cancelClaimedRef = useRef(false);
   // This intent exists only for this mounted create screen. Unchanged retries reuse it;
@@ -70,6 +84,9 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const [error, setError] = useState<string | null>(null);
   const [initializationWarning, setInitializationWarning] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const sourceFingerprintRef = useRef<string | null>(null);
+  const [sourceReviewRequired, setSourceReviewRequired] = useState(false);
+  const [sourceUnavailable, setSourceUnavailable] = useState(false);
   const servings = useMemo(
     () =>
       log
@@ -133,8 +150,25 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     }
   }, [editContext.data, food.data, log?.serving_definition_id, selectedServingId, servings]);
 
+  useEffect(() => {
+    if (!strictSourceReview || log || !food.data || !resolvedNutrition.data || resolvedNutrition.isFetching) {
+      return;
+    }
+    const fingerprint = JSON.stringify({ food: food.data, nutrition: resolvedNutrition.data });
+    if (sourceFingerprintRef.current === null) {
+      sourceFingerprintRef.current = fingerprint;
+      return;
+    }
+    if (sourceFingerprintRef.current !== fingerprint) {
+      sourceFingerprintRef.current = fingerprint;
+      setSourceReviewRequired(true);
+      setInitializationWarning("This Food changed. Review the current amount choices before saving.");
+    }
+  }, [food.data, log, resolvedNutrition.data, resolvedNutrition.isFetching, strictSourceReview]);
+
   function selectUnit(nextUnit: "serving" | "g") {
     setInitializationWarning(null);
+    setSourceReviewRequired(false);
     setUnit(nextUnit);
     setSelectedAmountMode(null);
     if (nextUnit === "serving" && !servings.some((serving) => serving.id === selectedServingId)) {
@@ -152,6 +186,20 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
 
   async function save() {
     if (submissionClaimedRef.current || cancelClaimedRef.current) {
+      return;
+    }
+    if (!mutationEnabled) {
+      setError("This date is no longer eligible for logging. No entry was created.");
+      return;
+    }
+    if (strictSourceReview && sourceReviewRequired) {
+      void resolvedNutrition.refetch();
+      setError("This Food changed. Review the current amount choices before saving.");
+      return;
+    }
+    if (!log && strictSourceReview && resolvedNutrition.isError) {
+      setSourceUnavailable(true);
+      setError("This Food is no longer available for logging. Return to Add Food and choose another Food.");
       return;
     }
     if (!log && (!resolvedNutrition.data || resolvedNutrition.isFetching)) {
@@ -175,18 +223,22 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       return;
     }
     const resolvedServingId = selectedServingId ?? initialServingId(food.data, log?.serving_definition_id);
-    const input = {
-      ...buildLogInput({
+    const baseInput = buildLogInput({
         foodId,
         date,
         amount,
         unit,
         selectedServingId: resolvedServingId,
         selectedAmountMode,
-      }),
+      });
+    const input = mealAndNotesEnabled
+      ? { ...baseInput, meal_type: mealType, notes: note }
+      : baseInput;
+    const inputWithCalendar = {
+      ...input,
       ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
     };
-    const parsed = logInputSchema.safeParse(input);
+    const parsed = logInputSchema.safeParse(inputWithCalendar);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Invalid log");
       return;
@@ -261,12 +313,24 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           </Pressable>
         </View>
         <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
+        <Text accessibilityLabel={`Log date ${date}`} style={styles.calendarNotice}>Logging for {date}</Text>
         {calendarContextChanged ? (
           <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
             The authoritative calendar changed. Your selected date and entered values were kept; review the calendar context before saving.
           </Text>
         ) : null}
         {!log && food.data ? <Text accessibilityLabel={`Food source ${food.data.source_label}`} style={styles.meta}>{food.data.source_label}</Text> : null}
+        {mealAndNotesEnabled ? (
+          <View accessibilityLabel="Meal assignment" accessibilityRole="radiogroup" style={styles.mealPicker}>
+            <Text style={styles.label}>Meal</Text>
+            <View style={styles.mealOptions}>
+              <MealOption label="No meal" value={null} selected={mealType === null} disabled={isSubmitting} onPress={() => setMealType(null)} />
+              {(["breakfast", "lunch", "dinner", "snack"] as const).map((meal) => (
+                <MealOption key={meal} label={meal[0].toUpperCase() + meal.slice(1)} value={meal} selected={mealType === meal} disabled={isSubmitting} onPress={() => setMealType(meal)} />
+              ))}
+            </View>
+          </View>
+        ) : null}
         <TextInput
           accessibilityHint="Enter a quantity greater than zero"
           accessibilityLabel="Amount quantity"
@@ -276,6 +340,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           editable={!isSubmitting}
           onChangeText={(value) => {
             setInitializationWarning(null);
+            setSourceReviewRequired(false);
             setAmount(value);
           }}
           keyboardType="decimal-pad"
@@ -292,7 +357,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               selected: unit === "serving",
             }}
             disabled={isSubmitting}
-            onPress={() => selectUnit("serving")}
+          onPress={() => selectUnit("serving")}
             style={[styles.segmentButton, unit === "serving" && styles.active, isSubmitting && styles.disabled]}
           >
             <Text style={styles.text}>Servings</Text>
@@ -331,6 +396,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
                 disabled={isSubmitting}
                 onPress={() => {
                   setInitializationWarning(null);
+                  setSourceReviewRequired(false);
                   setSelectedServingId(serving.id);
                   setSelectedAmountMode("serving");
                 }}
@@ -368,9 +434,26 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           </View>
         ) : null}
         {error ? (
-          <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>
-            {error}
-          </Text>
+          <View>
+            <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text>
+            {sourceUnavailable && onSourceUnavailable ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Return to Add Food" onPress={onSourceUnavailable}>
+                <Text style={styles.warningDismiss}>Return to Add Food</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        {mealAndNotesEnabled ? (
+          <TextInput
+            accessibilityLabel="Notes"
+            editable={!isSubmitting}
+            multiline
+            onChangeText={setNote}
+            placeholder="Optional note"
+            placeholderTextColor={theme.colors.placeholder}
+            style={[styles.noteInput, isSubmitting && styles.disabled]}
+            value={note}
+          />
         ) : null}
         <Pressable
           accessibilityHint={log ? "Updates this Daily Log entry" : "Adds this food to the Daily Log"}
@@ -397,10 +480,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
   foodName: { color: theme.colors.text, fontSize: 18, fontWeight: "600" },
+  label: { color: theme.colors.text, fontWeight: "700" },
   meta: { color: theme.colors.secondaryText },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
   keyboard: { backgroundColor: theme.colors.background, flex: 1 },
+  mealOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  mealPicker: { gap: 8 },
+  noteInput: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, minHeight: 72, padding: 12, textAlignVertical: "top" },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   screen: { gap: 14, padding: 16, paddingBottom: 32 },
@@ -414,3 +501,20 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   warningDismiss: { color: theme.colors.warningText, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },
 }); }
+
+function MealOption({ label, value, selected, disabled, onPress }: { label: string; value: MealType | null; selected: boolean; disabled: boolean; onPress: () => void }) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return (
+    <Pressable
+      accessibilityLabel={`Meal ${value ?? "none"}`}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected, disabled, selected }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.segmentButton, selected && styles.active, disabled && styles.disabled]}
+    >
+      <Text style={styles.text}>{label}</Text>
+    </Pressable>
+  );
+}
