@@ -6,6 +6,7 @@ from hashlib import sha256
 import json
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.models.food import FoodItem
 from app.models.log import DailyLog
+from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.recipe_publication import (
     RecipePublicationAmountDefinition,
     RecipePublicationRevision,
@@ -36,13 +38,21 @@ from app.repositories.recipe_publication_repository import RecipePublicationRepo
 from app.repositories.recipe_repository import RecipeRepository
 from app.schemas.log import (
     DailyLogCreateRequest,
+    DailyLogDeleteRequest,
     DailyLogEditAmountResponse,
     DailyLogEditContextResponse,
+    DailyLogMutationStatusResponse,
+    DailyLogResponse,
     DailyLogUpdateRequest,
 )
 from app.services.calendar_service import (
     CalendarService,
     require_authoritative_time_zone,
+)
+from app.services.create_idempotency import (
+    CreateIdempotencyCoordinator,
+    CreateOperationIdempotencyConflictError,
+    CreateOperationResultUnavailableError,
 )
 
 
@@ -95,6 +105,105 @@ class LogIdempotencyConflictError(ValueError):
     message = "This logging attempt was already submitted with different details. Start a new log and try again."
 
 
+class LogMutationPayloadConflictError(ValueError):
+    """Raised when an intent identity is reused for a different mutation."""
+
+    code = "log_mutation_payload_conflict"
+    message = (
+        "This log mutation was already submitted with different details. "
+        "Start a new mutation and review the current entry."
+    )
+
+
+class StaleLogMutationError(ValueError):
+    """Raised when a mutation's entry precondition no longer matches."""
+
+    code = "stale_log_entry"
+    message = (
+        "This Daily Log entry changed or was deleted elsewhere. "
+        "Refresh it and review the latest state before trying again."
+    )
+
+
+class LogMutationResultUnavailableError(ValueError):
+    """Raised when a reserved intent has no durable terminal response."""
+
+    code = "log_mutation_unresolved"
+    message = (
+        "The outcome of this log mutation is not yet available. "
+        "Check its status before starting another mutation."
+    )
+
+
+class LogMutationReplay:
+    """A prior committed response returned without reapplying the mutation."""
+
+    def __init__(self, snapshot: dict, log_id: UUID):
+        self.snapshot = snapshot
+        self.log_id = log_id
+
+    @property
+    def id(self) -> UUID:
+        """Expose the affected resource identity for service-level callers."""
+
+        return self.log_id
+
+
+def _mutation_fingerprint(
+    operation: str,
+    log_id: UUID,
+    payload: DailyLogUpdateRequest | DailyLogDeleteRequest,
+) -> str:
+    """Hash the exact canonical intent, including PATCH presence semantics."""
+
+    values = payload.model_dump(mode="python", exclude={"client_request_id"})
+    if isinstance(payload, DailyLogUpdateRequest):
+        values["_fields_set"] = sorted(payload.model_fields_set)
+    canonical = {
+        "operation": operation,
+        "log_id": str(log_id),
+        "payload": _canonicalize_mutation_value(values),
+    }
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    return sha256(encoded).hexdigest()
+
+
+def _canonicalize_mutation_value(value):
+    if isinstance(value, Decimal):
+        return _canonical_decimal(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _canonicalize_mutation_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonicalize_mutation_value(item) for item in value]
+    return value
+
+
+def _same_timestamp(left: datetime, right: datetime) -> bool:
+    """Compare SQLite-naive and PostgreSQL-aware timestamps by UTC instant."""
+
+    def aware(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    return aware(left) == aware(right)
+
+
+def _parse_receipt_date(value: object) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 class LogService:
     def __init__(self, db: Session):
         self.db = db
@@ -102,6 +211,10 @@ class LogService:
         self.logs = LogRepository(db)
         self.publications = RecipePublicationRepository(db)
         self.recipes = RecipeRepository(db)
+        # The existing receipt table is operation-scoped and already stores a
+        # canonical fingerprint plus terminal response snapshot. Reusing it
+        # keeps log mutation replay within the established transaction model.
+        self.mutation_receipts = CreateIdempotencyCoordinator(db)
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
         if payload.calendar_revision is None:
@@ -340,16 +453,211 @@ class LogService:
             ],
         )
 
-    def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
-        """Own one DailyLog edit transaction; existing log rows lock before Food rows."""
+    def _find_mutation_receipt(
+        self,
+        user_id: UUID,
+        operation: str,
+        client_request_id: UUID,
+        fingerprint: str,
+    ):
+        try:
+            return self.mutation_receipts.find(
+                user_id,
+                operation,
+                client_request_id,
+                fingerprint,
+            )
+        except CreateOperationIdempotencyConflictError as exc:
+            raise LogMutationPayloadConflictError(LogMutationPayloadConflictError.message) from exc
+
+    def _replay_mutation_receipt(self, receipt) -> LogMutationReplay:
+        try:
+            snapshot = self.mutation_receipts.replay_snapshot(receipt)
+        except CreateOperationResultUnavailableError as exc:
+            raise LogMutationResultUnavailableError(LogMutationResultUnavailableError.message) from exc
+        return LogMutationReplay(snapshot, receipt.resource_id)
+
+    @staticmethod
+    def _update_response_snapshot(log: DailyLog, source_logged_date: date) -> dict:
+        snapshot = DailyLogResponse.model_validate(log).model_dump(mode="json")
+        # Keep move reconciliation self-contained without changing the public
+        # DailyLog response shape. Pydantic ignores these private receipt keys
+        # when the replay is returned through the normal update endpoint.
+        snapshot["_source_logged_date"] = source_logged_date.isoformat()
+        snapshot["_destination_logged_date"] = log.logged_date.isoformat()
+        return snapshot
+
+    def _mutation_status(
+        self,
+        user_id: UUID,
+        operation: str,
+        client_request_id: UUID,
+    ) -> DailyLogMutationStatusResponse:
+        """Read a receipt without changing domain state.
+
+        A missing receipt is a confirmed non-commit under the transaction model:
+        reservations and domain writes commit atomically, so no row means the
+        intent did not commit. An incomplete row is retained as unresolved.
+        """
+
+        if operation == "create":
+            log = self.logs.get_by_client_request_id(user_id, client_request_id)
+            return DailyLogMutationStatusResponse(
+                operation=operation,
+                client_request_id=client_request_id,
+                status="confirmed_success" if log is not None else "confirmed_non_commit",
+                log_id=log.id if log is not None else None,
+                result=DailyLogResponse.model_validate(log) if log is not None else None,
+            )
+
+        receipt = self.db.scalar(
+            select(CreateOperationIdempotency).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == f"log.{operation}",
+                CreateOperationIdempotency.client_request_id == client_request_id,
+            )
+        )
+        if receipt is None:
+            return DailyLogMutationStatusResponse(
+                operation=operation,
+                client_request_id=client_request_id,
+                status="confirmed_non_commit",
+            )
+        if receipt.response_snapshot is None or receipt.completed_at is None:
+            return DailyLogMutationStatusResponse(
+                operation=operation,
+                client_request_id=client_request_id,
+                status="unresolved",
+                log_id=receipt.resource_id,
+            )
+        if operation == "update":
+            result = DailyLogResponse.model_validate(receipt.response_snapshot)
+            return DailyLogMutationStatusResponse(
+                operation=operation,
+                client_request_id=client_request_id,
+                status="confirmed_success",
+                log_id=receipt.resource_id,
+                source_logged_date=_parse_receipt_date(
+                    receipt.response_snapshot.get("_source_logged_date")
+                ),
+                destination_logged_date=_parse_receipt_date(
+                    receipt.response_snapshot.get("_destination_logged_date")
+                ),
+                result=result,
+            )
+        return DailyLogMutationStatusResponse(
+            operation=operation,
+            client_request_id=client_request_id,
+            status="confirmed_success",
+            log_id=receipt.resource_id,
+        )
+
+    def mutation_status(
+        self,
+        user_id: UUID,
+        client_request_id: UUID,
+        operation: str | None = None,
+    ) -> DailyLogMutationStatusResponse:
+        """Return owner-scoped status for create, update, or delete intent."""
+
+        normalized = {
+            "log.create": "create",
+            "log.update": "update",
+            "log.edit": "update",
+            "log.move": "update",
+            "log.delete": "delete",
+            "edit": "update",
+            "move": "update",
+        }.get(operation or "", operation or "")
+        if normalized not in {"create", "update", "delete"}:
+            # A request identity is normally unique within one operation. If
+            # callers omit operation, prefer an existing terminal record in a
+            # stable order and otherwise report a non-commit create status.
+            create = self._mutation_status(user_id, "create", client_request_id)
+            if create.status == "confirmed_success":
+                return create
+            for candidate in ("update", "delete"):
+                status = self._mutation_status(user_id, candidate, client_request_id)
+                if status.status != "confirmed_non_commit":
+                    return status
+            return create
+        return self._mutation_status(user_id, normalized, client_request_id)
+
+    def update_log(
+        self,
+        user_id: UUID,
+        log_id: UUID,
+        payload: DailyLogUpdateRequest,
+    ) -> DailyLog | LogMutationReplay:
+        """Edit one DailyLog with a receipt and locked optimistic precondition."""
         if payload.calendar_revision is None:
             require_authoritative_time_zone(self.db, user_id)
         if "meal_type" in payload.model_fields_set:
             normalize_meal(payload.meal_type)
         if "notes" in payload.model_fields_set:
             normalize_note(payload.notes)
+        fingerprint = (
+            _mutation_fingerprint("log.update", log_id, payload)
+            if payload.client_request_id is not None
+            else None
+        )
         try:
-            log = self.logs.get_for_update(log_id, user_id)
+            receipt = None
+            if payload.client_request_id is not None:
+                receipt = self._find_mutation_receipt(
+                    user_id,
+                    "log.update",
+                    payload.client_request_id,
+                    fingerprint,
+                )
+                if receipt is not None:
+                    return self._replay_mutation_receipt(receipt)
+            try:
+                log = self.logs.get_for_update(log_id, user_id)
+            except LookupError as exc:
+                if payload.expected_updated_at is not None:
+                    raise StaleLogMutationError(StaleLogMutationError.message) from exc
+                raise
+            # A concurrent identical request may have waited on the row lock
+            # while the first request committed its receipt. Recheck before
+            # applying the stale precondition so it replays that outcome.
+            if payload.client_request_id is not None:
+                receipt = self._find_mutation_receipt(
+                    user_id,
+                    "log.update",
+                    payload.client_request_id,
+                    fingerprint,
+                )
+                if receipt is not None:
+                    return self._replay_mutation_receipt(receipt)
+            if (
+                payload.expected_updated_at is not None
+                and not _same_timestamp(log.updated_at, payload.expected_updated_at)
+            ):
+                raise StaleLogMutationError(StaleLogMutationError.message)
+            source_logged_date = log.logged_date
+            if payload.client_request_id is not None:
+                try:
+                    receipt = self.mutation_receipts.reserve(
+                        user_id,
+                        "log.update",
+                        payload.client_request_id,
+                        fingerprint,
+                        log.id,
+                    )
+                except IntegrityError:
+                    # A concurrent identical request may have committed while
+                    # this transaction waited for the entry lock.
+                    self.db.rollback()
+                    receipt = self._find_mutation_receipt(
+                        user_id,
+                        "log.update",
+                        payload.client_request_id,
+                        fingerprint,
+                    )
+                    if receipt is None:
+                        raise
+                    return self._replay_mutation_receipt(receipt)
             if payload.calendar_revision is not None:
                 CalendarService(self.db).validate_mutation_context(
                     user_id,
@@ -366,6 +674,16 @@ class LogService:
                     payload.calendar_revision,
                     log.logged_date,
                 )
+            # Serialize the same refreshed ORM view that will be returned after
+            # commit, so an exact replay is wire-equivalent to the first result.
+            self.db.flush()
+            self.db.expire(log)
+            response_snapshot = self._update_response_snapshot(
+                self.logs.get_required(log.id, user_id),
+                source_logged_date,
+            )
+            if receipt is not None:
+                self.mutation_receipts.complete(receipt, response_snapshot)
             self.db.commit()
             return self.logs.get_required(log.id, user_id)
         except Exception:
@@ -584,14 +902,91 @@ class LogService:
     def _after_edit_mutable_food_lock(self, _food: FoodItem) -> None:
         """Test seam after an explicit edit locks its mutable Food generation."""
 
-    def delete_log(self, user_id: UUID, log_id: UUID) -> None:
-        """Own the complete DailyLog deletion transaction."""
+    def delete_log(
+        self,
+        user_id: UUID,
+        log_id: UUID,
+        payload: DailyLogDeleteRequest | None = None,
+    ) -> None | LogMutationReplay:
+        """Delete one DailyLog exactly once, subject to its read precondition."""
         require_authoritative_time_zone(self.db, user_id)
+        intent = payload or DailyLogDeleteRequest()
+        fingerprint = (
+            _mutation_fingerprint("log.delete", log_id, intent)
+            if intent.client_request_id is not None
+            else None
+        )
         try:
-            log = self.logs.get_required(log_id, user_id)
+            receipt = None
+            if intent.client_request_id is not None:
+                receipt = self._find_mutation_receipt(
+                    user_id,
+                    "log.delete",
+                    intent.client_request_id,
+                    fingerprint,
+                )
+                if receipt is not None:
+                    return self._replay_mutation_receipt(receipt)
+            try:
+                # Serialize deletes with edits and other deletes using the
+                # established owned-row lock path before checking the
+                # precondition or reserving a replay receipt.
+                log = self.logs.get_for_update(log_id, user_id)
+            except LookupError as exc:
+                if intent.client_request_id is not None:
+                    receipt = self._find_mutation_receipt(
+                        user_id,
+                        "log.delete",
+                        intent.client_request_id,
+                        fingerprint,
+                    )
+                    if receipt is not None:
+                        return self._replay_mutation_receipt(receipt)
+                if intent.expected_updated_at is not None:
+                    raise StaleLogMutationError(StaleLogMutationError.message) from exc
+                raise
+            if intent.client_request_id is not None:
+                receipt = self._find_mutation_receipt(
+                    user_id,
+                    "log.delete",
+                    intent.client_request_id,
+                    fingerprint,
+                )
+                if receipt is not None:
+                    return self._replay_mutation_receipt(receipt)
+            if (
+                intent.expected_updated_at is not None
+                and not _same_timestamp(log.updated_at, intent.expected_updated_at)
+            ):
+                raise StaleLogMutationError(StaleLogMutationError.message)
+            if intent.client_request_id is not None:
+                try:
+                    receipt = self.mutation_receipts.reserve(
+                        user_id,
+                        "log.delete",
+                        intent.client_request_id,
+                        fingerprint,
+                        log.id,
+                    )
+                except IntegrityError:
+                    self.db.rollback()
+                    receipt = self._find_mutation_receipt(
+                        user_id,
+                        "log.delete",
+                        intent.client_request_id,
+                        fingerprint,
+                    )
+                    if receipt is None:
+                        raise
+                    return self._replay_mutation_receipt(receipt)
             self.logs.delete(log, user_id)
             self.db.flush()
             self._after_log_delete_flush(log)
+            if receipt is not None:
+                self.mutation_receipts.complete(
+                    receipt,
+                    {"deleted": True, "log_id": str(log.id)},
+                )
             self.db.commit()
         except Exception:
             self.db.rollback()

@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -14,8 +14,10 @@ from app.domain.recipe_nutrition_validation import RecipeNutritionValidationErro
 from app.models.user import User
 from app.schemas.log import (
     DailyLogCreateRequest,
+    DailyLogDeleteRequest,
     DailyLogEditContextResponse,
     DailyLogListResponse,
+    DailyLogMutationStatusResponse,
     DailyLogResponse,
     DailyLogUpdateRequest,
     DailySummaryResponse,
@@ -27,7 +29,11 @@ from app.services.calendar_service import (
 from app.services.log_service import (
     LogEditConflictError,
     LogIdempotencyConflictError,
+    LogMutationPayloadConflictError,
+    LogMutationResultUnavailableError,
+    LogMutationReplay,
     LogService,
+    StaleLogMutationError,
 )
 
 _LOG_CONTRACT_ERROR_CODES = frozenset({"meal_invalid", "note_invalid", "note_too_long"})
@@ -124,6 +130,21 @@ def daily_summary(
     return DailySummaryResponse(logged_date=date, totals=_service(db).daily_summary(user.id, date))
 
 
+@router.get(
+    "/mutations/{client_request_id}",
+    response_model=DailyLogMutationStatusResponse,
+)
+def mutation_status(
+    client_request_id: UUID,
+    operation: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DailyLogMutationStatusResponse:
+    """Return an owner-scoped terminal or recoverable mutation outcome."""
+
+    return _service(db).mutation_status(user.id, client_request_id, operation)
+
+
 @router.get("/{log_id}/edit-context", response_model=DailyLogEditContextResponse)
 def log_edit_context(
     log_id: UUID,
@@ -146,7 +167,10 @@ def update_log(
     user: User = Depends(get_current_user),
 ) -> DailyLogResponse:
     try:
-        return DailyLogResponse.model_validate(_service(db).update_log(user.id, log_id, payload))
+        result = _service(db).update_log(user.id, log_id, payload)
+        if isinstance(result, LogMutationReplay):
+            return DailyLogResponse.model_validate(result.snapshot)
+        return DailyLogResponse.model_validate(result)
     except LogContractError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.detail()) from exc
     except AuthoritativeTimeZoneRequiredError as exc:
@@ -164,6 +188,11 @@ def update_log(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": str(exc)},
         ) from exc
+    except (LogMutationPayloadConflictError, StaleLogMutationError, LogMutationResultUnavailableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except RecipeNutritionValidationError as exc:
         raise HTTPException(status_code=400, detail=exc.detail()) from exc
     except LookupError as exc:
@@ -175,15 +204,22 @@ def update_log(
 @router.delete("/{log_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_log(
     log_id: UUID,
+    payload: DailyLogDeleteRequest | None = Body(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> None:
+) -> Response:
     try:
-        _service(db).delete_log(user.id, log_id)
+        _service(db).delete_log(user.id, log_id, payload)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     except AuthoritativeTimeZoneRequiredError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.detail(),
+        ) from exc
+    except (LogMutationPayloadConflictError, StaleLogMutationError, LogMutationResultUnavailableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
         ) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

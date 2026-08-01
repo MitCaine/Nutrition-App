@@ -31,11 +31,11 @@ from app.publication.recipe_revision import (
 )
 from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
 from app.ocr.confirmation_service import OcrConfirmationService
-from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
+from app.schemas.log import DailyLogCreateRequest, DailyLogDeleteRequest, DailyLogUpdateRequest
 from app.schemas.food import FoodCreateRequest, FoodUpdateRequest, ServingDefinitionInput
 from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.schemas.target import TargetConfigurationUpdate
-from app.services.log_service import LogService
+from app.services.log_service import LogMutationReplay, LogService, StaleLogMutationError
 from app.repositories.log_repository import LogRepository
 from app.services.food_service import FoodService
 from app.services.recipe_service import (
@@ -51,6 +51,7 @@ from app.services.create_idempotency import (
     CreateOperationResultUnavailableError,
 )
 from tests.postgres_test_support import isolated_postgres_session_factory
+from tests.time_zone_test_support import establish_test_time_zone
 
 
 pytestmark = pytest.mark.postgres_concurrency
@@ -215,6 +216,7 @@ def _manual_log(factory) -> tuple:
             ],
         )
         db.add(food)
+        establish_test_time_zone(db, user.id)
         db.commit()
         log = LogService(db).create_log(
             user.id,
@@ -2957,3 +2959,209 @@ def test_recipe_delete_exhaustion_releases_postgres_locks_and_later_retry_succee
         assert db.get(Recipe, child_id).deleted_at is not None
         assert db.get(FoodItem, projection_id).deleted_at is not None
         assert db.get(Recipe, parent_id).ingredients == []
+
+
+def _log_updated_at(factory, log_id):
+    with factory() as db:
+        return db.get(DailyLog, log_id).updated_at
+
+
+def _run_delete(
+    factory,
+    user_id,
+    log_id,
+    payload,
+    *,
+    locked=None,
+    release=None,
+    waiting=None,
+    result=None,
+):
+    with factory() as db:
+        service = LogService(db)
+        if waiting is not None:
+            original_get_for_update = service.logs.get_for_update
+
+            def signal_get_for_update(*args, **kwargs):
+                waiting.set()
+                return original_get_for_update(*args, **kwargs)
+
+            service.logs.get_for_update = signal_get_for_update
+        if locked is not None:
+            original_delete = service.logs.delete
+
+            def hold_delete(log, owner_id):
+                locked.set()
+                assert release is not None and release.wait(5)
+                return original_delete(log, owner_id)
+
+            service.logs.delete = hold_delete
+        try:
+            replay = service.delete_log(
+                user_id,
+                log_id,
+                DailyLogDeleteRequest(**payload),
+            )
+            if result is not None:
+                result.append("replayed" if isinstance(replay, LogMutationReplay) else "committed")
+        except Exception as exc:  # assertions inspect the expected failure in the caller.
+            if result is not None:
+                result.append(exc)
+
+
+def test_concurrent_deletes_serialize_preconditions_and_report_stale_winner(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, log_id = _manual_log(factory)
+    expected = _log_updated_at(factory, log_id)
+    first_locked, second_waiting, release = Event(), Event(), Event()
+    first_result, second_result = [], []
+    first_payload = {
+        "client_request_id": uuid4(),
+        "expected_updated_at": expected,
+    }
+    second_payload = {
+        "client_request_id": uuid4(),
+        "expected_updated_at": expected,
+    }
+    first = Thread(
+        target=_run_delete,
+        args=(factory, user_id, log_id, first_payload),
+        kwargs={"locked": first_locked, "release": release, "result": first_result},
+    )
+    first.start()
+    assert first_locked.wait(5)
+    second = Thread(
+        target=_run_delete,
+        args=(factory, user_id, log_id, second_payload),
+        kwargs={"waiting": second_waiting, "result": second_result},
+    )
+    second.start()
+    assert second_waiting.wait(5)
+    release.set()
+    first.join(10)
+    second.join(10)
+
+    assert first_result == ["committed"]
+    assert len(second_result) == 1
+    assert isinstance(second_result[0], StaleLogMutationError)
+    with factory() as db:
+        assert db.get(DailyLog, log_id) is None
+        assert db.scalar(
+            select(func.count()).select_from(DailyLogNutrientSnapshot).where(
+                DailyLogNutrientSnapshot.daily_log_id == log_id
+            )
+        ) == 0
+        assert db.scalar(
+            select(func.count()).select_from(CreateOperationIdempotency).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == "log.delete",
+            )
+        ) == 1
+
+
+def test_concurrent_identical_deletes_replay_after_row_lock_wait(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, log_id = _manual_log(factory)
+    expected = _log_updated_at(factory, log_id)
+    request_id = uuid4()
+    payload = {"client_request_id": request_id, "expected_updated_at": expected}
+    first_locked, second_waiting, release = Event(), Event(), Event()
+    first_result, second_result = [], []
+    first = Thread(
+        target=_run_delete,
+        args=(factory, user_id, log_id, payload),
+        kwargs={"locked": first_locked, "release": release, "result": first_result},
+    )
+    first.start()
+    assert first_locked.wait(5)
+    second = Thread(
+        target=_run_delete,
+        args=(factory, user_id, log_id, payload),
+        kwargs={"waiting": second_waiting, "result": second_result},
+    )
+    second.start()
+    assert second_waiting.wait(5)
+    release.set()
+    first.join(10)
+    second.join(10)
+
+    assert first_result == ["committed"]
+    assert second_result == ["replayed"]
+    with factory() as db:
+        receipt = db.scalar(
+            select(CreateOperationIdempotency).where(
+                CreateOperationIdempotency.user_id == user_id,
+                CreateOperationIdempotency.operation == "log.delete",
+                CreateOperationIdempotency.client_request_id == request_id,
+            )
+        )
+        assert receipt is not None
+        assert receipt.response_snapshot == {"deleted": True, "log_id": str(log_id)}
+        assert receipt.completed_at is not None
+        assert db.get(DailyLog, log_id) is None
+
+
+def test_concurrent_update_and_delete_use_one_generation_precondition(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, log_id = _manual_log(factory)
+    expected = _log_updated_at(factory, log_id)
+    update_locked, delete_waiting, release = Event(), Event(), Event()
+    update_result, delete_result = [], []
+
+    def run_update_winner() -> None:
+        with factory() as db:
+            service = LogService(db)
+
+            def hold_after_food_lock(_food):
+                update_locked.set()
+                assert release.wait(5)
+
+            service._after_edit_mutable_food_lock = hold_after_food_lock
+            try:
+                service.update_log(
+                    user_id,
+                    log_id,
+                    DailyLogUpdateRequest(
+                        client_request_id=uuid4(),
+                        expected_updated_at=expected,
+                        notes="update wins",
+                    ),
+                )
+                update_result.append("committed")
+            except Exception as exc:  # pragma: no cover - reported by assertion.
+                update_result.append(exc)
+
+    def run_delete_loser() -> None:
+        _run_delete(
+            factory,
+            user_id,
+            log_id,
+            {"client_request_id": uuid4(), "expected_updated_at": expected},
+            waiting=delete_waiting,
+            result=delete_result,
+        )
+
+    first = Thread(target=run_update_winner)
+    first.start()
+    assert update_locked.wait(5)
+    second = Thread(target=run_delete_loser)
+    second.start()
+    assert delete_waiting.wait(5)
+    release.set()
+    first.join(10)
+    second.join(10)
+
+    assert update_result == ["committed"]
+    assert len(delete_result) == 1
+    assert isinstance(delete_result[0], StaleLogMutationError)
+    with factory() as db:
+        log = db.get(DailyLog, log_id)
+        assert log is not None
+        assert log.notes == "update wins"
+        assert len(log.snapshots) == 1

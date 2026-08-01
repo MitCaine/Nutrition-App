@@ -2,7 +2,9 @@ import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
 import type { MealType } from "../validation/logContracts";
 
 export type DailyLogInput = {
+  client_request_id?: string;
   calendar_revision?: number;
+  expected_updated_at?: string;
   food_item_id: string;
   logged_date: string;
   amount_quantity: string;
@@ -18,6 +20,11 @@ export type DailyLogCreateInput = DailyLogInput & {
 
 export type DailyLogUpdateInput = Omit<DailyLogInput, "food_item_id">;
 
+export type DailyLogDeleteInput = {
+  client_request_id?: string;
+  expected_updated_at?: string;
+};
+
 export type DailyLog = {
   id: string;
   food_item_id: string;
@@ -31,6 +38,16 @@ export type DailyLog = {
   serving_definition_id?: string | null;
   gram_amount?: string | null;
   notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DailyLogMutationStatus = {
+  operation: "create" | "update" | "delete";
+  client_request_id: string;
+  status: "confirmed_success" | "confirmed_non_commit" | "conflict" | "unresolved";
+  log_id: string | null;
+  result: DailyLog | null;
 };
 
 export type DailyLogEditAmount = {

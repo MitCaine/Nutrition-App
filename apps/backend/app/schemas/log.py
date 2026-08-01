@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -52,6 +53,13 @@ class DailyLogCreateRequest(BaseModel):
 
 
 class DailyLogUpdateRequest(BaseModel):
+    # Update and delete intents use the same owner-scoped request identity as
+    # creates. The identity is optional for older API callers, but current
+    # clients should provide it whenever a mutation may be retried.
+    client_request_id: UUID | None = None
+    # Captured from an authoritative Daily Log read and checked after the row
+    # is locked, preventing a stale client from overwriting another client.
+    expected_updated_at: datetime | None = None
     # See DailyLogCreateRequest.calendar_revision.
     calendar_revision: int | None = Field(default=None, ge=0)
     logged_date: date | None = None
@@ -108,6 +116,30 @@ class DailyLogResponse(BaseModel):
     snapshots: list[DailyLogSnapshotResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DailyLogDeleteRequest(BaseModel):
+    """Optional request body carrying delete intent and concurrency context."""
+
+    client_request_id: UUID | None = None
+    expected_updated_at: datetime | None = None
+
+
+class DailyLogMutationStatusResponse(BaseModel):
+    """Authoritative status of one owner-scoped Daily Log mutation intent."""
+
+    operation: Literal["create", "update", "delete"]
+    client_request_id: UUID
+    status: Literal[
+        "confirmed_success",
+        "confirmed_non_commit",
+        "conflict",
+        "unresolved",
+    ]
+    log_id: UUID | None = None
+    source_logged_date: date | None = None
+    destination_logged_date: date | None = None
+    result: DailyLogResponse | None = None
 
 
 class DailyLogEditAmountResponse(BaseModel):

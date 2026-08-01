@@ -1,5 +1,14 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { DailyLog, DailyLogCreateInput, DailyLogEditContext, DailyLogUpdateInput, DailySummary, DailySummaryResponse } from "./types";
+import type {
+  DailyLog,
+  DailyLogCreateInput,
+  DailyLogDeleteInput,
+  DailyLogEditContext,
+  DailyLogMutationStatus,
+  DailyLogUpdateInput,
+  DailySummary,
+  DailySummaryResponse,
+} from "./types";
 
 export async function listLogs(date: string): Promise<DailyLog[]> {
   const response = await apiRequest<{ logs: DailyLog[] }>(`/logs?date=${encodeURIComponent(date)}`);
@@ -18,8 +27,20 @@ export function getLogEditContext(logId: string): Promise<DailyLogEditContext> {
   return apiRequest<DailyLogEditContext>(`/logs/${logId}/edit-context`);
 }
 
-export function deleteLog(logId: string): Promise<void> {
-  return apiRequest<void>(`/logs/${logId}`, { method: "DELETE" });
+export function deleteLog(logId: string, input: DailyLogDeleteInput = {}): Promise<void> {
+  const options: RequestInit = { method: "DELETE" };
+  if (Object.keys(input).length > 0) {
+    options.body = JSON.stringify(input);
+  }
+  return apiRequest<void>(`/logs/${logId}`, options);
+}
+
+export function getLogMutationStatus(
+  clientRequestId: string,
+  operation?: DailyLogMutationStatus["operation"],
+): Promise<DailyLogMutationStatus> {
+  const suffix = operation ? `?operation=${encodeURIComponent(operation)}` : "";
+  return apiRequest<DailyLogMutationStatus>(`/logs/mutations/${clientRequestId}${suffix}`);
 }
 
 export async function getDailySummary(date: string): Promise<DailySummary> {
