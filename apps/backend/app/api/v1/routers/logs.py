@@ -1,11 +1,15 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
 from app.dependencies.user import get_current_user
+from app.domain.log_contracts import LogContractError
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.models.user import User
 from app.schemas.log import (
@@ -26,7 +30,47 @@ from app.services.log_service import (
     LogService,
 )
 
-router = APIRouter()
+_LOG_CONTRACT_ERROR_CODES = frozenset({"meal_invalid", "note_invalid", "note_too_long"})
+
+
+class DailyLogValidationRoute(APIRoute):
+    """Return stable field errors for meal and note contract violations."""
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def handler(request: Request) -> Response:
+            try:
+                return await original(request)
+            except RequestValidationError as exc:
+                contract_errors = [
+                    error for error in exc.errors() if error["type"] in _LOG_CONTRACT_ERROR_CODES
+                ]
+                if not contract_errors:
+                    raise
+                field_errors = [
+                    {
+                        "field": ".".join(str(item) for item in error["loc"] if item != "body"),
+                        "code": error["type"],
+                        "message": error["msg"],
+                    }
+                    for error in contract_errors
+                ]
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "detail": {
+                            "code": "invalid_daily_log_request",
+                            "message": "Review the meal and note fields and try again.",
+                            "field_errors": field_errors,
+                        }
+                    },
+                )
+
+        return handler
+
+
+router = APIRouter(route_class=DailyLogValidationRoute)
 
 
 def _service(db: Session) -> LogService:
@@ -41,6 +85,8 @@ def create_log(
 ) -> DailyLogResponse:
     try:
         return DailyLogResponse.model_validate(_service(db).create_log(user.id, payload))
+    except LogContractError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.detail()) from exc
     except AuthoritativeTimeZoneRequiredError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -101,6 +147,8 @@ def update_log(
 ) -> DailyLogResponse:
     try:
         return DailyLogResponse.model_validate(_service(db).update_log(user.id, log_id, payload))
+    except LogContractError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.detail()) from exc
     except AuthoritativeTimeZoneRequiredError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

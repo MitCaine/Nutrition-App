@@ -2,6 +2,7 @@ import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../../food
 import { defaultServing } from "../../foods/utils/foodDisplay";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
 import type { DailyLog, DailyLogEditContext, DailyLogInput, DailyLogUpdateInput } from "../api/types";
+import { normalizeLogMeal, normalizeLogNote } from "../validation/logContracts";
 
 export type LogServingChoice = {
   id: string;
@@ -213,8 +214,10 @@ export function buildLogInput(params: {
   unit: "serving" | "g";
   selectedServingId: string | null;
   selectedAmountMode?: "serving" | "g" | null;
+  mealType?: string | null;
+  notes?: string | null;
 }): DailyLogInput {
-  return {
+  const input: DailyLogInput = {
     food_item_id: params.foodId,
     logged_date: params.date,
     amount_quantity: params.amount,
@@ -224,10 +227,23 @@ export function buildLogInput(params: {
         ? params.selectedServingId
         : null,
   };
+  if ("mealType" in params) {
+    input.meal_type = normalizeLogMeal(params.mealType);
+  }
+  if ("notes" in params) {
+    input.notes = normalizeLogNote(params.notes);
+  }
+  return input;
 }
 
 export function buildLogUpdateInput(input: DailyLogInput): DailyLogUpdateInput {
   const { food_item_id: _foodItemId, ...supportedFields } = input;
+  if ("meal_type" in supportedFields) {
+    supportedFields.meal_type = normalizeLogMeal(supportedFields.meal_type);
+  }
+  if ("notes" in supportedFields) {
+    supportedFields.notes = normalizeLogNote(supportedFields.notes);
+  }
   return supportedFields;
 }
 

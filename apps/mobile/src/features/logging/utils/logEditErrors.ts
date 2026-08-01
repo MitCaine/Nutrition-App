@@ -28,6 +28,10 @@ function isStructuredLogErrorBody(
       detail.code === "log_idempotency_payload_conflict" ||
       detail.code === "calendar_context_changed" ||
       detail.code === "future_dated_mutation_blocked" ||
+      detail.code === "invalid_daily_log_request" ||
+      detail.code === "meal_invalid" ||
+      detail.code === "note_invalid" ||
+      detail.code === "note_too_long" ||
       detail.code.startsWith("recipe_log_")) &&
     "message" in detail &&
     typeof detail.message === "string" &&

@@ -4,10 +4,27 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
+from app.domain.log_contracts import MealType, normalize_meal, normalize_note
 from app.schemas.common import DecimalInput
 from app.schemas.nutrition import AggregatedNutrientTotalSchema
+
+
+def _validate_meal_field(value: object) -> str | None:
+    try:
+        return normalize_meal(value)
+    except ValueError as exc:
+        raise PydanticCustomError("meal_invalid", str(exc)) from exc
+
+
+def _validate_note_field(value: object) -> str | None:
+    try:
+        return normalize_note(value)
+    except ValueError as exc:
+        code = getattr(exc, "code", "note_invalid")
+        raise PydanticCustomError(code, str(exc)) from exc
 
 
 class DailyLogCreateRequest(BaseModel):
@@ -21,8 +38,11 @@ class DailyLogCreateRequest(BaseModel):
     amount_quantity: DecimalInput
     amount_unit: str = Field(pattern="^(serving|g)$")
     serving_definition_id: UUID | None = None
-    meal_type: str | None = None
+    meal_type: MealType | None = None
     notes: str | None = None
+
+    _meal_contract = field_validator("meal_type", mode="before")(_validate_meal_field)
+    _note_contract = field_validator("notes", mode="before")(_validate_note_field)
 
     @model_validator(mode="after")
     def validate_amount(self) -> DailyLogCreateRequest:
@@ -38,8 +58,11 @@ class DailyLogUpdateRequest(BaseModel):
     amount_quantity: DecimalInput = None
     amount_unit: str | None = Field(default=None, pattern="^(serving|g)$")
     serving_definition_id: UUID | None = None
-    meal_type: str | None = None
+    meal_type: MealType | None = None
     notes: str | None = None
+
+    _meal_contract = field_validator("meal_type", mode="before")(_validate_meal_field)
+    _note_contract = field_validator("notes", mode="before")(_validate_note_field)
 
     @model_validator(mode="after")
     def validate_amount(self) -> DailyLogUpdateRequest:

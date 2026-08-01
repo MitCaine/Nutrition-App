@@ -38,6 +38,10 @@ test.each([
   "log_idempotency_payload_conflict",
   "calendar_context_changed",
   "future_dated_mutation_blocked",
+  "invalid_daily_log_request",
+  "meal_invalid",
+  "note_invalid",
+  "note_too_long",
 ])("structured %s validation returns the backend message", (code) => {
   const error = new ApiError({
     status: 400,

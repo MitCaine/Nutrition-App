@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domain.log_contracts import normalize_meal, normalize_note
 from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.models.food import FoodItem
@@ -51,8 +52,8 @@ def _creation_fingerprint(payload: DailyLogCreateRequest) -> str:
         "amount_unit": payload.amount_unit,
         "food_item_id": str(payload.food_item_id),
         "logged_date": payload.logged_date.isoformat(),
-        "meal_type": payload.meal_type,
-        "notes": payload.notes,
+        "meal_type": normalize_meal(payload.meal_type),
+        "notes": normalize_note(payload.notes),
         "serving_definition_id": (
             str(payload.serving_definition_id)
             if payload.serving_definition_id is not None
@@ -115,7 +116,16 @@ class LogService:
             except Exception:
                 self.db.rollback()
                 raise
-        fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
+        # Revalidate at the authoritative service boundary for callers that do
+        # not arrive through Pydantic request parsing.  A revision check may
+        # have opened a transaction, so contract failures must roll it back.
+        try:
+            normalize_meal(payload.meal_type)
+            normalize_note(payload.notes)
+            fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
+        except Exception:
+            self.db.rollback()
+            raise
         if payload.client_request_id is not None:
             existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
             if existing is not None:
@@ -175,7 +185,7 @@ class LogService:
             food_item_id=food.id,
             food_name_snapshot=food.name,
             logged_date=payload.logged_date,
-            meal_type=payload.meal_type,
+            meal_type=normalize_meal(payload.meal_type),
             amount_quantity=payload.amount_quantity,
             amount_unit=payload.amount_unit,
             serving_definition_id=(
@@ -185,7 +195,7 @@ class LogService:
             ),
             gram_amount=resolved.amount.gram_amount,
             package_fraction=None,
-            notes=payload.notes,
+            notes=normalize_note(payload.notes),
         )
         log.snapshots = build_log_snapshots(food, resolved)
         return log
@@ -252,7 +262,7 @@ class LogService:
             food_item_id=food.id,
             food_name_snapshot=revision.published_name,
             logged_date=payload.logged_date,
-            meal_type=payload.meal_type,
+            meal_type=normalize_meal(payload.meal_type),
             amount_quantity=resolved.entered_quantity,
             amount_unit=resolved.semantic_amount_mode,
             serving_definition_id=compatibility_serving_id,
@@ -260,7 +270,7 @@ class LogService:
             recipe_publication_amount_definition_id=selection.revision_amount.id,
             gram_amount=resolved.resolved_grams,
             package_fraction=None,
-            notes=payload.notes,
+            notes=normalize_note(payload.notes),
         )
         log.snapshots = build_revision_log_snapshots(
             food,
@@ -334,6 +344,10 @@ class LogService:
         """Own one DailyLog edit transaction; existing log rows lock before Food rows."""
         if payload.calendar_revision is None:
             require_authoritative_time_zone(self.db, user_id)
+        if "meal_type" in payload.model_fields_set:
+            normalize_meal(payload.meal_type)
+        if "notes" in payload.model_fields_set:
+            normalize_note(payload.notes)
         try:
             log = self.logs.get_for_update(log_id, user_id)
             if payload.calendar_revision is not None:
@@ -553,8 +567,10 @@ class LogService:
         log.logged_date = (
             payload.logged_date if payload.logged_date is not None else log.logged_date
         )
-        log.meal_type = payload.meal_type if payload.meal_type is not None else log.meal_type
-        log.notes = payload.notes if payload.notes is not None else log.notes
+        if "meal_type" in payload.model_fields_set:
+            log.meal_type = normalize_meal(payload.meal_type)
+        if "notes" in payload.model_fields_set:
+            log.notes = normalize_note(payload.notes)
 
     def _after_edit_revision_lookup(self, _revision: RecipePublicationRevision) -> None:
         """Test seam after the stored revision is loaded."""
