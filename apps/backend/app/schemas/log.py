@@ -171,6 +171,40 @@ class DailyLogListResponse(BaseModel):
     logs: list[DailyLogResponse]
 
 
+class RecentEntryResponse(BaseModel):
+    """Historical logging intent exposed by the Repeat discovery section."""
+
+    id: UUID
+    food_item_id: UUID
+    food_name_snapshot: str | None
+    logged_date: date
+    meal_type: str | None
+    amount_quantity: Decimal
+    amount_unit: str
+    serving_definition_id: UUID | None
+    recipe_publication_revision_id: UUID | None
+    recipe_publication_amount_definition_id: UUID | None
+    historical_serving_label: str | None
+    notes: str | None
+    note_present: bool
+    note_reference: str | None
+    note_copy_allowed: bool
+    created_at: datetime
+    source_food_updated_at: datetime | None
+    source_recipe_publication_revision_id: UUID | None
+    current_source_loggable: bool
+    current_amount_unit: Literal["serving", "g"] | None
+    current_amount_definition_id: UUID | None
+    current_amount_label: str | None
+    reuse_status: Literal["exact", "equivalent", "ambiguous", "unavailable"]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RecentEntryListResponse(BaseModel):
+    entries: list[RecentEntryResponse]
+
+
 class DailySummaryResponse(BaseModel):
     logged_date: date
     totals: list[AggregatedNutrientTotalSchema]

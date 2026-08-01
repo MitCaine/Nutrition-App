@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { createLog, deleteLog, getDailySummary, getLogEditContext, listLogs, updateLog } from "../api/logApi";
-import type { DailyLog, DailyLogUpdateInput, DailySummary } from "../api/types";
+import { createLog, deleteLog, getDailySummary, getLogEditContext, listLogs, listRecentEntries, updateLog } from "../api/logApi";
+import type { DailyLog, DailyLogUpdateInput, DailySummary, RecentEntry } from "../api/types";
 
 export type DailyLogReadState =
   | { kind: "initial-loading"; data: null; retry: () => void }
@@ -108,6 +108,11 @@ export function invalidateFoodRecents(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ["foods", "recent"] });
 }
 
+/** Recent Entries is an event projection and must refresh after any log mutation. */
+export function invalidateRecentEntries(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["logs", "recent-entries"] });
+}
+
 /**
  * Project a confirmed server response before independent read refreshes run.
  * The cache is never treated as proof of commit; it is only the immediate
@@ -146,6 +151,13 @@ export function useDailyLogs(date: string) {
   return useQuery({ queryKey: ["logs", date], queryFn: () => listLogs(date) });
 }
 
+export function useRecentEntries() {
+  return useQuery<RecentEntry[]>({
+    queryKey: ["logs", "recent-entries"],
+    queryFn: listRecentEntries,
+  });
+}
+
 export function useDailySummary(date: string) {
   return useQuery({ queryKey: ["daily-summary", date], queryFn: () => getDailySummary(date) });
 }
@@ -161,7 +173,11 @@ export function useLogEditContext(logId: string | null) {
 export function useLogMutations(date: string) {
   const queryClient = useQueryClient();
   const invalidate = () => invalidateLogDateCaches(queryClient, date);
-  const invalidateUse = () => { invalidate(); invalidateFoodRecents(queryClient); };
+  const invalidateUse = () => {
+    invalidate();
+    invalidateFoodRecents(queryClient);
+    invalidateRecentEntries(queryClient);
+  };
   return {
     createLog: useMutation({
       mutationFn: createLog,

@@ -21,6 +21,7 @@ from app.schemas.log import (
     DailyLogResponse,
     DailyLogUpdateRequest,
     DailySummaryResponse,
+    RecentEntryListResponse,
 )
 from app.services.calendar_service import (
     AuthoritativeTimeZoneRequiredError,
@@ -127,6 +128,22 @@ def list_logs(
     user: User = Depends(get_current_user),
 ) -> DailyLogListResponse:
     return DailyLogListResponse(logs=_service(db).list_logs(user.id, date))
+
+
+@router.get("/recent-entries", response_model=RecentEntryListResponse)
+def list_recent_entries(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RecentEntryListResponse:
+    try:
+        return RecentEntryListResponse(
+            entries=_service(db).list_recent_entries(user.id),
+        )
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
 
 
 @router.get("/daily-summary", response_model=DailySummaryResponse)

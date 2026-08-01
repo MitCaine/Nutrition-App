@@ -5,11 +5,12 @@ from contextlib import contextmanager
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import delete, inspect, select, text
+from sqlalchemy import and_, delete, inspect, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.food import ServingDefinition
+from app.models.food import FoodItem, ServingDefinition
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
+from app.models.recipe import Recipe
 from app.operators.immutable_provenance_postgres import (
     POSTGRES_SCHEMA_SESSION_INFO_KEY,
     PRODUCTION_SCHEMA,
@@ -123,6 +124,59 @@ class LogRepository:
             .options(selectinload(DailyLog.snapshots), selectinload(DailyLog.food_item))
             .order_by(DailyLog.created_at, DailyLog.id)
         )
+        return list(self.db.scalars(statement).all())
+
+    def list_recent_entries(
+        self,
+        user_id: UUID,
+        through_date: date,
+        *,
+        limit: int | None = 10,
+    ) -> list[DailyLog]:
+        """Return the owner's newest currently repeatable historical entries.
+
+        Recent Entries is deliberately a query over DailyLog events rather than
+        a query over Foods.  The source joins only admit an active Food or an
+        active Recipe projection, so deleting a Food or unpublishing a Recipe
+        removes its historical events from this read without changing the
+        immutable entry or its snapshots.  The date predicate is evaluated in
+        the caller's authoritative calendar and excludes future compatibility
+        data.
+        """
+        active_recipe = and_(
+            FoodItem.is_recipe.is_(True),
+            FoodItem.source_type == "recipe",
+            Recipe.id.is_not(None),
+            Recipe.deleted_at.is_(None),
+            Recipe.published_food_item_id == FoodItem.id,
+            Recipe.active_publication_revision_id == FoodItem.recipe_publication_revision_id,
+        )
+        statement = (
+            select(DailyLog)
+            .join(FoodItem, FoodItem.id == DailyLog.food_item_id)
+            .outerjoin(
+                Recipe,
+                and_(
+                    Recipe.published_food_item_id == FoodItem.id,
+                    Recipe.user_id == user_id,
+                ),
+            )
+            .where(
+                DailyLog.user_id == user_id,
+                DailyLog.logged_date <= through_date,
+                FoodItem.user_id == user_id,
+                FoodItem.deleted_at.is_(None),
+                or_(FoodItem.is_recipe.is_(False), active_recipe),
+            )
+            .options(
+                selectinload(DailyLog.food_item).selectinload(FoodItem.serving_definitions),
+                selectinload(DailyLog.food_item).selectinload(FoodItem.nutrients),
+                selectinload(DailyLog.snapshots),
+            )
+            .order_by(DailyLog.created_at.desc(), DailyLog.id.desc())
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
         return list(self.db.scalars(statement).all())
 
     def snapshots_for_date(

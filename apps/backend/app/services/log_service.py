@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domain.log_contracts import normalize_meal, normalize_note
+from app.domain.log_contracts import MAX_NOTE_CODE_POINTS, normalize_meal, normalize_note
 from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.models.food import FoodItem
@@ -26,6 +26,7 @@ from app.nutrition.resolution import (
     AmbiguousNutrientBasisError,
     NutritionResolutionError,
     UnsupportedNutritionAmountError,
+    resolve_food_amount_definitions,
     resolve_nutrition,
 )
 from app.nutrition.revision_resolution import (
@@ -47,6 +48,7 @@ from app.schemas.log import (
 )
 from app.services.calendar_service import (
     CalendarService,
+    AuthoritativeTimeZoneRequiredError,
     require_authoritative_time_zone,
 )
 from app.services.create_idempotency import (
@@ -537,6 +539,244 @@ class LogService:
 
     def list_logs(self, user_id: UUID, logged_date: date) -> list[DailyLog]:
         return self.logs.list_for_date(user_id, logged_date)
+
+    def list_recent_entries(self, user_id: UUID) -> list[dict[str, object]]:
+        """Return the ten newest eligible historical intents for Repeat.
+
+        Eligibility is evaluated against the owner's authoritative calendar and
+        current source projection by the repository query.  This read never
+        reconstructs or mutates historical snapshots; the normal create-log
+        operation remains the authority when a user confirms a Repeat.
+        """
+        calendar = CalendarService(self.db).state(user_id)
+        if calendar.today is None:
+            raise AuthoritativeTimeZoneRequiredError()
+        entries = self.logs.list_recent_entries(user_id, calendar.today, limit=None)
+        eligible: list[dict[str, object]] = []
+        for entry in entries:
+            response = self._recent_entry_response(user_id, entry)
+            if not response["current_source_loggable"]:
+                continue
+            eligible.append(response)
+            if len(eligible) == 10:
+                break
+        return eligible
+
+    def _recent_entry_response(self, user_id: UUID, entry: DailyLog) -> dict[str, object]:
+        """Project one historical event plus an authoritative current reuse decision."""
+
+        food = entry.food_item
+        if food is None:
+            reuse = self._unavailable_reuse(False)
+            current_revision_id = None
+        elif food.is_recipe or food.source_type == "recipe":
+            reuse, current_revision_id = self._recipe_reuse(user_id, entry, food)
+        else:
+            reuse = self._food_reuse(entry, food)
+            current_revision_id = None
+
+        note_reference = entry.notes if isinstance(entry.notes, str) and entry.notes.strip() else None
+        note_copy_allowed = bool(
+            note_reference is not None
+            and len(note_reference) <= MAX_NOTE_CODE_POINTS
+        )
+        historical_label = reuse.pop("historical_serving_label", None)
+        return {
+            "id": entry.id,
+            "food_item_id": entry.food_item_id,
+            "food_name_snapshot": entry.food_name_snapshot,
+            "logged_date": entry.logged_date,
+            "meal_type": entry.meal_type,
+            "amount_quantity": entry.amount_quantity,
+            "amount_unit": entry.amount_unit,
+            "serving_definition_id": entry.serving_definition_id,
+            "recipe_publication_revision_id": entry.recipe_publication_revision_id,
+            "recipe_publication_amount_definition_id": entry.recipe_publication_amount_definition_id,
+            "historical_serving_label": historical_label,
+            "notes": entry.notes,
+            "note_present": note_reference is not None,
+            "note_reference": note_reference,
+            "note_copy_allowed": note_copy_allowed,
+            "created_at": entry.created_at,
+            "source_food_updated_at": food.updated_at if food is not None else None,
+            "source_recipe_publication_revision_id": current_revision_id,
+            **reuse,
+        }
+
+    @staticmethod
+    def _same_decimal(left: Decimal | None, right: Decimal | None) -> bool:
+        if left is None or right is None:
+            return left is right
+        return left.normalize() == right.normalize()
+
+    @classmethod
+    def _food_is_loggable(cls, food: FoodItem) -> bool:
+        try:
+            if resolve_food_amount_definitions(food):
+                return True
+        except NutritionResolutionError:
+            # A serving choice may be ambiguous or unsupported while the
+            # source still authoritatively supports direct gram logging.
+            # Check that independent mode before declaring the source unusable.
+            pass
+        try:
+            resolve_nutrition(food, Decimal("1"), "g")
+            return True
+        except NutritionResolutionError:
+            return False
+
+    @classmethod
+    def _food_reuse(cls, entry: DailyLog, food: FoodItem) -> dict[str, object]:
+        current_loggable = cls._food_is_loggable(food)
+        if not current_loggable:
+            return cls._unavailable_reuse(False)
+
+        if entry.amount_unit == "g":
+            try:
+                resolved = resolve_nutrition(food, entry.amount_quantity, "g")
+            except NutritionResolutionError:
+                return cls._unavailable_reuse(True)
+            return {
+                "current_source_loggable": True,
+                "current_amount_unit": "g",
+                "current_amount_definition_id": resolved.amount_definition_id,
+                "current_amount_label": resolved.display_label,
+                "reuse_status": "exact",
+                "historical_serving_label": None,
+            }
+
+        historical_serving = next(
+            (serving for serving in food.serving_definitions if serving.id == entry.serving_definition_id),
+            None,
+        )
+        if historical_serving is not None:
+            try:
+                resolved = resolve_nutrition(
+                    food,
+                    entry.amount_quantity,
+                    "serving",
+                    historical_serving.id,
+                )
+            except NutritionResolutionError:
+                return cls._unavailable_reuse(True)
+            return {
+                "current_source_loggable": True,
+                "current_amount_unit": "serving",
+                "current_amount_definition_id": resolved.amount_definition_id,
+                "current_amount_label": historical_serving.label,
+                "reuse_status": "exact",
+                "historical_serving_label": historical_serving.label,
+            }
+
+        # A deleted ServingDefinition leaves no authoritative quantity/unit
+        # semantics on DailyLog.  Gram weight alone is insufficient to prove
+        # equivalence, so preserve eligibility while requiring reselection.
+        return cls._unavailable_reuse(True)
+
+    def _recipe_reuse(
+        self,
+        user_id: UUID,
+        entry: DailyLog,
+        food: FoodItem,
+    ) -> tuple[dict[str, object], UUID | None]:
+        try:
+            recipe_id = UUID(food.source_id or "")
+            recipe = self.recipes.get_required(recipe_id, user_id)
+            revision_id = recipe.active_publication_revision_id
+            if revision_id is None or food.recipe_publication_revision_id != revision_id:
+                return self._unavailable_reuse(False), None
+            revision = self.publications.get_required(revision_id, user_id)
+        except (LookupError, ValueError):
+            return self._unavailable_reuse(False), None
+
+        current_amounts = list(revision.amount_definitions)
+        loggable_amounts = [
+            amount for amount in current_amounts if self._revision_amount_is_loggable(revision, amount)
+        ]
+        if not loggable_amounts:
+            return self._unavailable_reuse(False), revision.id
+
+        historical_revision = None
+        if entry.recipe_publication_revision_id is not None:
+            historical_revision = self.publications.get(
+                entry.recipe_publication_revision_id,
+                user_id,
+            )
+        historical_amount = next(
+            (
+                amount
+                for amount in historical_revision.amount_definitions
+                if amount.id == entry.recipe_publication_amount_definition_id
+            ),
+            None,
+        ) if historical_revision is not None and entry.recipe_publication_amount_definition_id else None
+
+        if historical_amount is None:
+            return {
+                **self._unavailable_reuse(True),
+                "historical_serving_label": None,
+            }, revision.id
+
+        exact = next((amount for amount in loggable_amounts if amount.id == historical_amount.id), None)
+        if exact is not None:
+            return {
+                "current_source_loggable": True,
+                "current_amount_unit": exact.semantic_mode,
+                "current_amount_definition_id": exact.id,
+                "current_amount_label": exact.display_label,
+                "reuse_status": "exact",
+                "historical_serving_label": historical_amount.display_label,
+            }, revision.id
+
+        candidates = [
+            amount for amount in loggable_amounts
+            if amount.semantic_mode == historical_amount.semantic_mode
+            and self._same_decimal(amount.display_quantity, historical_amount.display_quantity)
+            and amount.display_unit.strip().casefold() == historical_amount.display_unit.strip().casefold()
+            and self._same_decimal(amount.gram_equivalent, historical_amount.gram_equivalent)
+        ]
+        if len(candidates) != 1:
+            return {
+                "current_source_loggable": True,
+                "current_amount_unit": None,
+                "current_amount_definition_id": None,
+                "current_amount_label": None,
+                "reuse_status": "ambiguous" if len(candidates) > 1 else "unavailable",
+                "historical_serving_label": historical_amount.display_label,
+            }, revision.id
+        successor = candidates[0]
+        return {
+            "current_source_loggable": True,
+            "current_amount_unit": successor.semantic_mode,
+            "current_amount_definition_id": successor.id,
+            "current_amount_label": successor.display_label,
+            "reuse_status": "equivalent",
+            "historical_serving_label": historical_amount.display_label,
+        }, revision.id
+
+    @staticmethod
+    def _revision_amount_is_loggable(revision, amount) -> bool:
+        try:
+            resolve_revision_nutrition(
+                revision,
+                amount.id,
+                Decimal("1"),
+                semantic_amount_mode=amount.semantic_mode,
+            )
+            return True
+        except NutritionResolutionError:
+            return False
+
+    @staticmethod
+    def _unavailable_reuse(source_loggable: bool) -> dict[str, object]:
+        return {
+            "current_source_loggable": source_loggable,
+            "current_amount_unit": None,
+            "current_amount_definition_id": None,
+            "current_amount_label": None,
+            "reuse_status": "unavailable",
+            "historical_serving_label": None,
+        }
 
     def edit_context(self, user_id: UUID, log_id: UUID) -> DailyLogEditContextResponse:
         log = self.logs.get_required(log_id, user_id)

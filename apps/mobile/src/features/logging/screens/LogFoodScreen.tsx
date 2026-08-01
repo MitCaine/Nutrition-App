@@ -55,6 +55,12 @@ type Props = {
   onDraftChange?: (draft: LogFoodDraft) => void;
   /** Revision captured when this confirmation workflow first opened. */
   initialCalendarRevision?: number;
+  /** Read-only history context for a Repeat proposal. */
+  repeatReference?: {
+    note: string | null;
+    canCopyNotes: boolean;
+    reuseStatus: "exact" | "equivalent" | "ambiguous" | "unavailable";
+  };
 };
 
 /**
@@ -82,7 +88,7 @@ export type LogFoodSourceAuthority = {
   recipePublicationRevisionId: string | null;
 };
 
-export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision }: Props) {
+export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editContext = useLogEditContext(log?.id ?? null);
@@ -120,6 +126,10 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const [initializationWarning, setInitializationWarning] = useState<string | null>(
     initialDraft?.sourceReviewRequired
       ? "This Food changed. Review the current amount choices before saving."
+      : repeatReference?.reuseStatus === "ambiguous"
+        ? "The previous amount has multiple current matches. Choose a current amount before saving."
+        : repeatReference?.reuseStatus === "unavailable"
+          ? "The previous amount is no longer available. Choose a current amount before saving."
       : null,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -223,6 +233,22 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   }, [editContext.data, food.data, log?.serving_definition_id, selectedServingId, servings]);
 
   useEffect(() => {
+    if (!repeatReference || log || !food.data || !resolvedNutrition.data || resolvedNutrition.isFetching) {
+      return;
+    }
+    if (
+      unit === "serving" &&
+      selectedAmountMode === "serving" &&
+      selectedServingId !== null &&
+      !servings.some((serving) => serving.id === selectedServingId)
+    ) {
+      setSelectedServingId(null);
+      setSelectedAmountMode(null);
+      setInitializationWarning("That amount is no longer available. Choose a current amount before saving.");
+    }
+  }, [food.data, log, repeatReference, resolvedNutrition.data, resolvedNutrition.isFetching, selectedAmountMode, selectedServingId, servings, unit]);
+
+  useEffect(() => {
     if (!strictSourceReview || log || !food.data || !resolvedNutrition.data || resolvedNutrition.isFetching) {
       return;
     }
@@ -290,6 +316,15 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     }
     if (!mutationEnabled) {
       setError("This date is no longer eligible for logging. No entry was created.");
+      return;
+    }
+    if (
+      repeatReference &&
+      !log &&
+      unit === "serving" &&
+      (selectedAmountMode !== "serving" || selectedServingId === null)
+    ) {
+      setError("Choose a current serving before saving this repeated entry.");
       return;
     }
     if (strictSourceReview && sourceReviewRequired) {
@@ -579,6 +614,23 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             ) : null}
           </View>
         ) : null}
+        {repeatReference ? (
+          <View accessibilityLabel="Repeated note reference" style={styles.noteReference}>
+            <Text style={styles.label}>Original note (not copied)</Text>
+            {repeatReference.note ? <Text style={styles.noteReferenceText}>{repeatReference.note}</Text> : <Text style={styles.servingMeta}>No note</Text>}
+            {repeatReference.note && repeatReference.canCopyNotes ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Copy notes"
+                accessibilityState={{ disabled: isSubmitting }}
+                disabled={isSubmitting}
+                onPress={() => setNote(repeatReference.note ?? "")}
+              >
+                <Text style={styles.warningDismiss}>Copy notes</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         {mealAndNotesEnabled ? (
           <TextInput
             accessibilityLabel="Notes"
@@ -624,6 +676,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   mealOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   mealPicker: { gap: 8 },
   noteInput: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, minHeight: 72, padding: 12, textAlignVertical: "top" },
+  noteReference: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 6, padding: 10 },
+  noteReferenceText: { color: theme.colors.text },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   screen: { gap: 14, padding: 16, paddingBottom: 32 },

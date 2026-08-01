@@ -47,6 +47,33 @@ export type DailyLog = {
   updated_at?: string;
 };
 
+/** Historical logging intent returned by the independent Repeat discovery read. */
+export type RecentEntry = {
+  id: string;
+  food_item_id: string;
+  food_name_snapshot?: string | null;
+  logged_date: string;
+  meal_type?: string | null;
+  amount_quantity: string;
+  amount_unit: "serving" | "g";
+  serving_definition_id?: string | null;
+  recipe_publication_revision_id?: string | null;
+  recipe_publication_amount_definition_id?: string | null;
+  historical_serving_label?: string | null;
+  notes?: string | null;
+  note_present: boolean;
+  note_reference?: string | null;
+  note_copy_allowed: boolean;
+  created_at: string;
+  source_food_updated_at?: string | null;
+  source_recipe_publication_revision_id?: string | null;
+  current_source_loggable: boolean;
+  current_amount_unit: "serving" | "g" | null;
+  current_amount_definition_id: string | null;
+  current_amount_label: string | null;
+  reuse_status: "exact" | "equivalent" | "ambiguous" | "unavailable";
+};
+
 export type DailyLogMutationStatus = {
   operation: "create" | "update" | "delete";
   client_request_id: string;

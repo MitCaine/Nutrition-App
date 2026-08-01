@@ -14,6 +14,7 @@ import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { AddFoodScreen } from "../../features/logging/screens/AddFoodScreen";
 import { LogFoodScreen, type LogFoodDraft } from "../../features/logging/screens/LogFoodScreen";
+import type { RecentEntry } from "../../features/logging/api/types";
 import { createAddFoodFlow, updateAddFoodFlow, type AddFoodFlowState } from "../../features/logging/utils/addFoodFlow";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
@@ -44,12 +45,18 @@ import { TargetSettingsScreen } from "../../features/targets/TargetSettingsScree
 import { useCalendarState } from "../../features/calendar/hooks/useCalendar";
 import { deviceTimeZone } from "../../features/calendar/api/calendarApi";
 import { calendarMutationsEnabled, calendarToday } from "../../features/calendar/calendarModel";
+import { isSupportedMeal } from "../../features/logging/validation/logContracts";
 
 type AddLogFoodWorkflow = {
   foodId: string;
   flow: AddFoodFlowState;
   draft?: LogFoodDraft;
   initialCalendarRevision?: number;
+  repeatReference?: {
+    note: string | null;
+    canCopyNotes: boolean;
+    reuseStatus: RecentEntry["reuse_status"];
+  };
 };
 
 type Route =
@@ -116,6 +123,47 @@ export function AppNavigator() {
     const workflow = {
       foodId,
       flow,
+      initialCalendarRevision: calendar.data?.calendar_revision,
+    };
+    setAddLogFoodWorkflow(workflow);
+    setRoute({ name: "add-log-food", ...workflow });
+  }, [calendar.data?.calendar_revision]);
+
+  const openRepeatRecentEntry = useCallback((entry: RecentEntry, flow: AddFoodFlowState) => {
+    const historicalMeal = isSupportedMeal(entry.meal_type) ? entry.meal_type : null;
+    const amountIsReusable = entry.reuse_status === "exact" || entry.reuse_status === "equivalent";
+    const amountUnit = amountIsReusable ? (entry.current_amount_unit ?? entry.amount_unit) : "serving";
+    const draft: LogFoodDraft = {
+      // A historical serving without an identity cannot be mapped safely to a
+      // current amount. Leave the quantity unselected until the user chooses
+      // a current serving in shared confirmation.
+      amount: !amountIsReusable
+        ? ""
+        : amountUnit === "serving" && !entry.current_amount_definition_id
+        ? ""
+        : entry.amount_quantity,
+      unit: amountUnit,
+      selectedServingId: amountIsReusable ? entry.current_amount_definition_id : null,
+      selectedAmountMode: amountIsReusable ? entry.current_amount_unit : null,
+      mealType: flow.initialMeal ?? historicalMeal,
+      note: "",
+      sourceFingerprint: null,
+      sourceAuthority: {
+        foodUpdatedAt: entry.source_food_updated_at ?? null,
+        recipePublicationRevisionId: entry.source_recipe_publication_revision_id ?? null,
+      },
+      sourceReviewRequired: false,
+      requestIntent: null,
+    };
+    const workflow = {
+      foodId: entry.food_item_id,
+      flow,
+      draft,
+      repeatReference: {
+        note: entry.note_reference ?? null,
+        canCopyNotes: entry.note_copy_allowed,
+        reuseStatus: entry.reuse_status,
+      },
       initialCalendarRevision: calendar.data?.calendar_revision,
     };
     setAddLogFoodWorkflow(workflow);
@@ -247,6 +295,7 @@ export function AppNavigator() {
         }}
         onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
         onSelectFood={(foodId) => openAddLogFood(foodId, addFoodFlow)}
+        onRepeatRecentEntry={(entry) => openRepeatRecentEntry(entry, addFoodFlow)}
         onSelectUsdaFood={(fdcId) => setRoute({ name: "add-usda-preview", fdcId, flow: addFoodFlow })}
         onCreateCustomFood={() => setRoute({ name: "add-custom-food", flow: addFoodFlow })}
         onScanNutritionLabel={Platform.OS === "ios" ? () => setRoute({ name: "add-scan", flow: addFoodFlow }) : undefined}
@@ -298,6 +347,7 @@ export function AppNavigator() {
         }}
         showMealAndNotes
         strictSourceReview
+        repeatReference={route.repeatReference}
       />
     );
   } else if (route.name === "log-food") {

@@ -578,3 +578,101 @@ The shared confirmation owns only the Daily Log mutation and its transient draft
 
 ---
 
+# E1-12 — Recent Entries and Safe Repeat
+
+## Repeat copies historical intent, not historical authority
+
+A historical Daily Log may provide reusable intent such as:
+
+- source Food;
+- quantity;
+- meal;
+- note reference;
+- prior amount choice.
+
+The new entry must still resolve current authoritative Food or active Recipe
+publication state.
+
+Never recreate nutrition from historical snapshots.
+
+## Keep eligibility independent from amount reusability
+
+A historical entry may remain eligible for Repeat even when its prior serving
+or amount cannot be mapped safely.
+
+In that case:
+
+- preserve the source and other valid context;
+- leave the amount unselected;
+- require explicit current selection;
+- do not exclude the entry solely because the prior amount is stale.
+
+## Make safe reuse an authoritative backend decision
+
+The client should not infer whether a historical serving or amount remains
+valid.
+
+Return explicit metadata describing:
+
+- current source authority;
+- current loggability;
+- exact, equivalent, ambiguous, or unavailable reuse;
+- the current reusable amount identity when one exists.
+
+The mobile client should only prefill amounts the backend has declared safe.
+
+## Do not infer semantic equivalence from gram weight alone
+
+Equal gram weight does not prove serving equivalence.
+
+For mutable Food servings, safe equivalence requires complete authoritative
+semantics such as:
+
+- normalized quantity;
+- normalized unit;
+- gram weight.
+
+If deleted historical serving semantics are unavailable:
+
+- do not parse labels;
+- do not reconstruct from snapshots;
+- do not use gram weight heuristics;
+- require explicit reselection.
+
+## Preserve stronger immutable Recipe mapping
+
+Recipe publication amount definitions retain immutable semantic metadata.
+
+They may be mapped across revisions only when the complete semantic contract is
+unambiguous, including mode, quantity, unit, and gram equivalent.
+
+Do not weaken this mapping merely to align it with mutable Food fallback
+behavior.
+
+## Treat note reuse as an explicit user action
+
+Historical notes are reference context, not automatic defaults.
+
+Repeat should:
+
+- start with a blank note;
+- expose Copy notes only for compliant content;
+- preserve multiline and Unicode content exactly when copied;
+- never truncate overlength legacy notes;
+- treat whitespace-only notes as absent.
+
+## Create a genuinely new Log
+
+Repeat must use the ordinary create flow with new:
+
+- Daily Log identity;
+- timestamps;
+- client request identity;
+- mutation receipt;
+- source authority;
+- nutrition snapshots.
+
+Historical entries remain immutable discovery records.
+
+---
+

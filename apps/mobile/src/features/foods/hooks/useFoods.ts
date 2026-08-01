@@ -5,7 +5,11 @@ import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutritio
 import type { FoodCreateInput, FoodDeleteResult, FoodMutationInput } from "../api/types";
 
 export function invalidateFoodDiscoveryCaches(queryClient: QueryClient) {
-  return queryClient.invalidateQueries({ queryKey: ["foods"] });
+  const foodInvalidation = queryClient.invalidateQueries({ queryKey: ["foods"] });
+  // A source deletion or publication change can change Recent Entries
+  // eligibility without changing any historical DailyLog row.
+  void queryClient.invalidateQueries({ queryKey: ["logs", "recent-entries"] });
+  return foodInvalidation;
 }
 
 export function useNutrients() {

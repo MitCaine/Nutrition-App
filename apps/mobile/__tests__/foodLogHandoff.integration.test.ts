@@ -207,6 +207,64 @@ test("Manual serving flows through Food Detail and navigator into visible submis
   }));
 });
 
+test("Repeat keeps notes blank until explicit Copy notes and preserves the review context", async () => {
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    showMealAndNotes: true,
+    initialDraft: {
+      amount: "2",
+      unit: "serving",
+      selectedServingId: "selected-serving",
+      selectedAmountMode: "serving",
+      mealType: "breakfast",
+      note: "",
+      sourceFingerprint: null,
+      sourceAuthority: null,
+      sourceReviewRequired: false,
+      requestIntent: null,
+    },
+    repeatReference: { note: "with berries", canCopyNotes: true, reuseStatus: "exact" },
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  }));
+  expect(renderer.root.findByProps({ accessibilityLabel: "Notes" }).props.value).toBe("");
+  expect(hasText(renderer.root, "with berries")).toBe(true);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Copy notes" }).props.onPress());
+  expect(renderer.root.findByProps({ accessibilityLabel: "Notes" }).props.value).toBe("with berries");
+  await act(async () => renderer.unmount());
+});
+
+test("Repeat leaves a non-reusable backend amount unselected and requires review", async () => {
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    showMealAndNotes: true,
+    initialDraft: {
+      amount: "",
+      unit: "serving",
+      selectedServingId: null,
+      selectedAmountMode: null,
+      mealType: null,
+      note: "",
+      sourceFingerprint: null,
+      sourceAuthority: null,
+      sourceReviewRequired: false,
+      requestIntent: null,
+    },
+    repeatReference: { note: " ", canCopyNotes: false, reuseStatus: "unavailable" },
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  }));
+  expect(hasText(renderer.root, "The previous amount is no longer available. Choose a current amount before saving.")).toBe(true);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.value).toBe("");
+  expect(renderer.root.findAllByProps({ accessibilityLabel: "Copy notes" })).toHaveLength(0);
+  await act(async () => pressableWithText(renderer.root, "Save Log").props.onPress());
+  expect(mockCreateLog).not.toHaveBeenCalled();
+  expect(hasText(renderer.root, "Choose a current serving before saving this repeated entry.")).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
 test("Food Detail exposes source and guarded accessible favorite state", async () => {
   const renderer = await render(React.createElement(FoodDetailsScreen, {
     foodId: food.id, onBack: jest.fn(), onDeleted: jest.fn(), onEdit: jest.fn(), onLog: jest.fn(),

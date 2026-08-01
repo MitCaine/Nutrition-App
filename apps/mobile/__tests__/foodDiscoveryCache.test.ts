@@ -14,11 +14,13 @@ test("favorite, duplicate, and deletion convergence stays within the Food query 
   ];
   for (const key of foodKeys) queryClient.setQueryData(key, {});
   queryClient.setQueryData(["recipes"], {});
+  queryClient.setQueryData(["logs", "recent-entries"], []);
 
   await invalidateFoodDiscoveryCaches(queryClient);
 
   for (const key of foodKeys) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
   expect(queryClient.getQueryState(["recipes"])?.isInvalidated).toBe(false);
+  expect(queryClient.getQueryState(["logs", "recent-entries"])?.isInvalidated).toBe(true);
   queryClient.clear();
 });
 
@@ -29,10 +31,12 @@ test("logging use invalidates recents while metadata-only policy stays date-scop
   queryClient.setQueryData(["logs", "2026-07-14"], []);
   queryClient.setQueryData(["daily-summary", "2026-07-14"], {});
   queryClient.setQueryData(["target-comparison", "2026-07-14"], {});
+  queryClient.setQueryData(["logs", "recent-entries"], []);
 
   invalidateFoodRecents(queryClient);
   expect(queryClient.getQueryState(["foods", "recent", 10])?.isInvalidated).toBe(true);
   expect(queryClient.getQueryState(["foods", "favorites"])?.isInvalidated).toBe(false);
+  expect(queryClient.getQueryState(["logs", "recent-entries"])?.isInvalidated).toBe(false);
 
   const metadataClient = new QueryClient();
   metadataClient.setQueryData(["foods", "recent", 10], []);

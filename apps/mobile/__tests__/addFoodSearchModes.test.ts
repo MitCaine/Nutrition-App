@@ -25,6 +25,7 @@ jest.mock("../src/app/theme/AppTheme", () => {
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => ({ data: [], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),
+  useRecentEntries: () => ({ data: [], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),
 }));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFavoriteFoods: () => ({ data: [], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),

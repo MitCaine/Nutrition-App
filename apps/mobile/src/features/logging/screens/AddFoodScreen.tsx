@@ -10,7 +10,8 @@ import { foodAccessibilityLabel, formatRecentUse } from "../../foods/utils/foodD
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
 import { formatUsdaNutrientPreview, usdaResultMeta } from "../../usda/utils/usdaDisplay";
 import type { UsdaSearchResponse } from "../../usda/api/types";
-import { useDailyLogs, dailyLogReadState } from "../hooks/useLogs";
+import { useDailyLogs, useRecentEntries, dailyLogReadState } from "../hooks/useLogs";
+import type { RecentEntry } from "../api/types";
 import type { AddFoodFlowState } from "../utils/addFoodFlow";
 
 type Props = {
@@ -19,6 +20,7 @@ type Props = {
   onCancel: () => void;
   onOpenSettings: () => void;
   onSelectFood: (foodId: string) => void;
+  onRepeatRecentEntry?: (entry: RecentEntry) => void;
   onSelectUsdaFood?: (fdcId: number) => void;
   /** Opens the existing reusable custom-food creation flow. */
   onCreateCustomFood?: () => void;
@@ -89,12 +91,13 @@ export function usdaDiscoveryReadState(
   return { kind: "success", data: result.data, retry };
 }
 
-export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings, onSelectFood, onSelectUsdaFood, onCreateCustomFood, onScanNutritionLabel, onQueryChange, onScrollSessionChange }: Props) {
+export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings, onSelectFood, onRepeatRecentEntry, onSelectUsdaFood, onCreateCustomFood, onScanNutritionLabel, onQueryChange, onScrollSessionChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const resultsRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);
   const entries = dailyLogReadState(useDailyLogs(flow.originatingDate));
+  const recentEntries = discoveryReadState(useRecentEntries());
   const favorites = discoveryReadState(useFavoriteFoods());
   const recent = discoveryReadState(useRecentFoods());
   const searchQuery = useDebouncedSearchQuery(flow.query);
@@ -187,11 +190,13 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
           />
         ) : (
           <BrowseContent
+            recentEntries={recentEntries}
             favorites={favorites}
             recent={recent}
             saved={saved}
             mutationEnabled={mutationEnabled}
             onSelectFood={onSelectFood}
+            onRepeatRecentEntry={onRepeatRecentEntry}
             styles={styles}
           />
         )}
@@ -200,21 +205,60 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
   );
 }
 
-function BrowseContent({ favorites, recent, saved, mutationEnabled, onSelectFood, styles }: {
+function BrowseContent({ recentEntries, favorites, recent, saved, mutationEnabled, onSelectFood, onRepeatRecentEntry, styles }: {
+  recentEntries: DiscoveryReadState<RecentEntry>;
   favorites: DiscoveryReadState<Food>;
   recent: DiscoveryReadState<RecentFood>;
   saved: DiscoveryReadState<Food>;
   mutationEnabled: boolean;
   onSelectFood: (foodId: string) => void;
+  onRepeatRecentEntry?: (entry: RecentEntry) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <>
-      <View style={styles.section}><Text accessibilityRole="header" style={styles.sectionTitle}>Recent Entries</Text><Text style={styles.secondary}>Recent Entries are unavailable until recent-entry history is available.</Text></View>
+      <RecentEntriesSection state={recentEntries} mutationEnabled={mutationEnabled} onRepeat={onRepeatRecentEntry} styles={styles} />
       <FoodSection title="Favorites" state={favorites} mutationEnabled={mutationEnabled} onSelectFood={onSelectFood} emptyMessage="No favorite foods yet." retryLabel="Retry favorites" renderItem={(food) => <Text style={styles.foodMeta}>{food.source_label} · Favorite</Text>} />
       <FoodSection title="Recent Foods" state={recent} mutationEnabled={mutationEnabled} onSelectFood={onSelectFood} emptyMessage="No recently used foods." retryLabel="Retry recent foods" renderItem={(item) => <Text style={styles.foodMeta}>{item.food.source_label} · {formatRecentUse(item.last_used_at)}</Text>} getFood={(item) => item.food} />
       <FoodSection title="Saved Foods" state={saved} mutationEnabled={mutationEnabled} onSelectFood={onSelectFood} emptyMessage="No saved foods yet." retryLabel="Retry saved foods" renderItem={(food) => <Text style={styles.foodMeta}>{food.brand ? `${food.brand} · ${food.source_label}` : food.source_label}</Text>} />
     </>
+  );
+}
+
+function RecentEntriesSection({ state, mutationEnabled, onRepeat, styles }: {
+  state: DiscoveryReadState<RecentEntry>;
+  mutationEnabled: boolean;
+  onRepeat?: (entry: RecentEntry) => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>Recent Entries</Text>
+      {state.kind === "initial-loading" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Loading recent entries…</Text> : null}
+      {state.kind === "initial-failure" ? <ReadError message="Recent Entries are unavailable." retryLabel="Retry recent entries" onRetry={state.retry} styles={styles} /> : null}
+      {state.kind === "refreshing" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Refreshing recent entries…</Text> : null}
+      {state.kind === "refresh-failure" ? <ReadError message="Recent Entries could not be refreshed; showing the last confirmed entries." retryLabel="Retry recent entries" onRetry={state.retry} styles={styles} /> : null}
+      {state.kind === "empty" ? <Text style={styles.secondary}>No recent entries yet.</Text> : null}
+      {state.data?.map((entry) => (
+        <Pressable
+          key={entry.id}
+          accessibilityRole="button"
+          accessibilityLabel={`Repeat ${entry.food_name_snapshot ?? "Food"}`}
+          accessibilityState={{ disabled: !mutationEnabled || !onRepeat }}
+          disabled={!mutationEnabled || !onRepeat}
+          onPress={() => { if (mutationEnabled) onRepeat?.(entry); }}
+          style={[styles.foodRow, (!mutationEnabled || !onRepeat) && styles.disabled]}
+        >
+          <Text style={styles.foodName}>{entry.food_name_snapshot ?? "Food"}</Text>
+          <Text style={styles.foodMeta}>
+            {entry.logged_date} · {entry.amount_quantity} {entry.amount_unit}
+            {entry.meal_type ? ` · ${entry.meal_type}` : ""}
+            {entry.note_present ? " · Note" : ""}
+          </Text>
+          <Text style={styles.link}>Repeat</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 

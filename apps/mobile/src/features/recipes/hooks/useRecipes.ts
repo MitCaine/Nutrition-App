@@ -35,6 +35,7 @@ export function useRecipeNutrition(recipeId: string | null) {
 export function invalidateRecipeCaches(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ["recipes"] });
   queryClient.invalidateQueries({ queryKey: ["foods"] });
+  queryClient.invalidateQueries({ queryKey: ["logs", "recent-entries"] });
 }
 
 export function removeDeletedRecipeCaches(queryClient: QueryClient, recipeId: string) {
