@@ -3,13 +3,14 @@ import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../src/features/foods/api/types";
+import { ApiError } from "../src/shared/api/client";
 import type {
   DailyLog,
   DailyLogCreateInput,
   DailyLogEditContext,
   DailyLogUpdateInput,
 } from "../src/features/logging/api/types";
-import { LogFoodScreen } from "../src/features/logging/screens/LogFoodScreen";
+import { LogFoodScreen, type LogFoodDraft } from "../src/features/logging/screens/LogFoodScreen";
 
 type Deferred = {
   promise: Promise<unknown>;
@@ -53,6 +54,7 @@ const food: Food = {
   source_id: null,
   is_recipe: false,
   source_kind: "manual", source_label: "Manual", is_favorite: false, can_favorite: true,
+  updated_at: "2026-07-13T12:00:00+00:00",
   serving_definitions: [
     {
       id: "default-serving",
@@ -128,6 +130,7 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
     error: null,
+    refetch: jest.fn(),
   };
   mockResolvedQuery = {
     data: resolvedNutrition,
@@ -135,6 +138,7 @@ beforeEach(() => {
     isFetching: false,
     isError: false,
     error: null,
+    refetch: jest.fn(),
   };
   mockEditContextQuery = {
     data: undefined,
@@ -193,6 +197,137 @@ test("active logging retains entered values and submits the latest calendar cont
   await act(async () => { void pressableWithText(renderer.root, "Save Log").props.onPress(); });
   expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ calendar_revision: 5 }));
   await act(async () => renderer.unmount());
+});
+
+test("strict confirmation submits the reviewed mutable Food authority", async () => {
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+    strictSourceReview: true,
+  }));
+  await act(async () => { void renderer.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress(); });
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({
+    source_food_updated_at: food.updated_at,
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test("stale source response keeps confirmation open and clears the reviewed amount", async () => {
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+    strictSourceReview: true,
+  }));
+  await act(async () => { void renderer.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress(); });
+  await act(async () => {
+    mockCreateDeferred.reject(new ApiError({
+      status: 409,
+      body: { detail: { code: "stale_log_source", message: "Source changed" } },
+      message: "Source changed",
+    }));
+    try {
+      await mockCreateDeferred.promise;
+    } catch {
+      // The screen owns the retry state; this assertion exercises the rendered result.
+    }
+  });
+  expect(hasText(renderer.root, "Source changed")).toBe(true);
+  expect(renderer.root.findAllByType(Pressable).some(
+    (node) => node.props.accessibilityLabel === "Selected serving" && node.props.accessibilityState.checked,
+  )).toBe(false);
+  expect(mockFoodQuery.refetch).toHaveBeenCalled();
+  expect(mockResolvedQuery.refetch).toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("shared confirmation draft survives remount with all mutable fields", async () => {
+  let draft: LogFoodDraft | undefined;
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    initialMealType: "breakfast",
+    showMealAndNotes: true,
+    strictSourceReview: true,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+    onDraftChange: (next: LogFoodDraft) => { draft = next; },
+  }));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.onChangeText("6"));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Meal lunch" }).props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Notes" }).props.onChangeText("after workout"));
+  await act(async () => pressableStartingWithText(renderer.root, "Selected serving").props.onPress());
+  expect(draft).toEqual(expect.objectContaining({
+    amount: "6",
+    selectedServingId: "selected-serving",
+    mealType: "lunch",
+    note: "after workout",
+    sourceAuthority: {
+      foodUpdatedAt: food.updated_at,
+      recipePublicationRevisionId: null,
+    },
+  }));
+  await act(async () => renderer.unmount());
+
+  const restored = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    initialMealType: "breakfast",
+    showMealAndNotes: true,
+    strictSourceReview: true,
+    initialDraft: draft,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  }));
+  expect(restored.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.value).toBe("6");
+  expect(restored.root.findByProps({ accessibilityLabel: "Meal lunch" }).props.accessibilityState.checked).toBe(true);
+  expect(restored.root.findByProps({ accessibilityLabel: "Notes" }).props.value).toBe("after workout");
+  await act(async () => restored.unmount());
+});
+
+test("a remounted confirmation reuses its replay intent after navigation", async () => {
+  let draft: LogFoodDraft | undefined;
+  const first = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    initialAmount: {
+      amountDefinitionId: "selected-serving",
+      amountQuantity: "2.5",
+      amountUnit: "serving",
+    },
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+    onDraftChange: (next: LogFoodDraft) => { draft = next; },
+  }));
+  await act(async () => {
+    void first.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress();
+  });
+  expect(mockCreateLog).toHaveBeenCalledTimes(1);
+  const requestId = mockCreateLog.mock.calls[0][0].client_request_id;
+  expect(draft?.requestIntent?.requestId).toBe(requestId);
+  await act(async () => first.unmount());
+
+  mockCreateDeferred = deferred();
+  const restored = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: "2026-07-13",
+    initialDraft: draft,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  }));
+  await act(async () => {
+    void restored.root.findByProps({ accessibilityLabel: "Save log" }).props.onPress();
+  });
+  expect(mockCreateLog).toHaveBeenCalledTimes(2);
+  expect(mockCreateLog.mock.calls[1][0].client_request_id).toBe(requestId);
+  await act(async () => {
+    mockCreateDeferred.resolve();
+    await mockCreateDeferred.promise;
+  });
+  await act(async () => restored.unmount());
 });
 
 const revisionLog: DailyLog = {

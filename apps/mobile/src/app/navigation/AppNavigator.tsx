@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { PanResponder, Platform, StyleSheet, Text, View } from "react-native";
 
 import type { Food } from "../../features/foods/api/types";
@@ -13,7 +13,7 @@ import { useFood } from "../../features/foods/hooks/useFoods";
 import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { AddFoodScreen } from "../../features/logging/screens/AddFoodScreen";
-import { LogFoodScreen } from "../../features/logging/screens/LogFoodScreen";
+import { LogFoodScreen, type LogFoodDraft } from "../../features/logging/screens/LogFoodScreen";
 import { createAddFoodFlow, updateAddFoodFlow, type AddFoodFlowState } from "../../features/logging/utils/addFoodFlow";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
@@ -45,6 +45,13 @@ import { useCalendarState } from "../../features/calendar/hooks/useCalendar";
 import { deviceTimeZone } from "../../features/calendar/api/calendarApi";
 import { calendarMutationsEnabled, calendarToday } from "../../features/calendar/calendarModel";
 
+type AddLogFoodWorkflow = {
+  foodId: string;
+  flow: AddFoodFlowState;
+  draft?: LogFoodDraft;
+  initialCalendarRevision?: number;
+};
+
 type Route =
   | { name: "foods" }
   | { name: "new-food" }
@@ -55,7 +62,7 @@ type Route =
   | { name: "add-scan"; flow: AddFoodFlowState }
   | { name: "add-ocr-confirm"; draft: NutritionConfirmationDraft; flow: AddFoodFlowState }
   | { name: "add-usda-preview"; fdcId: number; flow: AddFoodFlowState }
-  | { name: "add-log-food"; foodId: string; flow: AddFoodFlowState }
+  | ({ name: "add-log-food" } & AddLogFoodWorkflow)
   | LogFoodRoute
   | { name: "edit-log"; logId: string }
   | { name: "usda-preview"; fdcId: number }
@@ -95,6 +102,7 @@ export function AppNavigator() {
   const [foodMessage, setFoodMessage] = useState<string | null>(null);
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
   const [addFoodFlow, setAddFoodFlow] = useState<AddFoodFlowState | null>(null);
+  const [addLogFoodWorkflow, setAddLogFoodWorkflow] = useState<AddLogFoodWorkflow | null>(null);
   const calendar = useCalendarState();
   const [date, setDate] = useState(() => todayInTimeZone(deviceTimeZone()));
   const calendarMutationsAvailable = calendarMutationsEnabled(calendar.data) && date <= calendarToday(calendar.data, deviceTimeZone());
@@ -104,6 +112,20 @@ export function AppNavigator() {
   const activeTab = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
   const swipeEnabled = isMainTabRoot(route.name);
 
+  const openAddLogFood = useCallback((foodId: string, flow: AddFoodFlowState) => {
+    const workflow = {
+      foodId,
+      flow,
+      initialCalendarRevision: calendar.data?.calendar_revision,
+    };
+    setAddLogFoodWorkflow(workflow);
+    setRoute({ name: "add-log-food", ...workflow });
+  }, [calendar.data?.calendar_revision]);
+
+  const captureAddLogFoodDraft = useCallback((draft: LogFoodDraft) => {
+    setAddLogFoodWorkflow((current) => current ? { ...current, draft } : current);
+  }, []);
+
   const selectMainTab = (tab: MainTab) => {
     const destination = tabSelectionDestination(activeTab, tab);
     if (!destination) {
@@ -111,7 +133,11 @@ export function AppNavigator() {
     }
     setFoodMessage(null);
     setRecipeMessage(null);
-    setRoute(routeForMainTab(destination));
+    if (destination === "daily-log" && addLogFoodWorkflow) {
+      setRoute({ name: "add-log-food", ...addLogFoodWorkflow });
+    } else {
+      setRoute(routeForMainTab(destination));
+    }
   };
 
   const mainSwipeResponder = useMemo(
@@ -125,11 +151,15 @@ export function AppNavigator() {
         if (destination !== activeTab) {
           setFoodMessage(null);
           setRecipeMessage(null);
-          setRoute(routeForMainTab(destination));
+          if (destination === "daily-log" && addLogFoodWorkflow) {
+            setRoute({ name: "add-log-food", ...addLogFoodWorkflow });
+          } else {
+            setRoute(routeForMainTab(destination));
+          }
         }
       },
     }),
-    [activeTab, route.name],
+    [activeTab, addLogFoodWorkflow, route.name],
   );
 
   let content;
@@ -154,7 +184,7 @@ export function AppNavigator() {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
         }}
-        onSaved={(foodId) => setRoute({ name: "add-log-food", foodId, flow: route.flow })}
+        onSaved={(foodId) => openAddLogFood(foodId, route.flow)}
       />
     );
   } else if (route.name === "add-scan") {
@@ -177,7 +207,7 @@ export function AppNavigator() {
         }}
         onCreated={(foodId) => {
           setAddFoodFlow(route.flow);
-          setRoute({ name: "add-log-food", foodId, flow: route.flow });
+          openAddLogFood(foodId, route.flow);
         }}
       />
     ) : null;
@@ -216,7 +246,7 @@ export function AppNavigator() {
           setRoute({ name: "daily-log" });
         }}
         onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
-        onSelectFood={(foodId) => setRoute({ name: "add-log-food", foodId, flow: addFoodFlow })}
+        onSelectFood={(foodId) => openAddLogFood(foodId, addFoodFlow)}
         onSelectUsdaFood={(fdcId) => setRoute({ name: "add-usda-preview", fdcId, flow: addFoodFlow })}
         onCreateCustomFood={() => setRoute({ name: "add-custom-food", flow: addFoodFlow })}
         onScanNutritionLabel={Platform.OS === "ios" ? () => setRoute({ name: "add-scan", flow: addFoodFlow }) : undefined}
@@ -234,7 +264,7 @@ export function AppNavigator() {
         }}
         onImported={(food) => {
           setAddFoodFlow(route.flow);
-          setRoute({ name: "add-log-food", foodId: food.id, flow: route.flow });
+          openAddLogFood(food.id, route.flow);
         }}
       />
     );
@@ -245,17 +275,23 @@ export function AppNavigator() {
         foodId={route.foodId}
         date={route.flow.originatingDate}
         calendarRevision={calendar.data?.calendar_revision}
+        initialCalendarRevision={route.initialCalendarRevision}
+        initialDraft={route.draft}
+        onDraftChange={captureAddLogFoodDraft}
         initialMealType={route.flow.initialMeal}
         mutationEnabled={flowMutationEnabled}
         onSourceUnavailable={() => {
+          setAddLogFoodWorkflow(null);
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
         }}
         onCancel={() => {
+          setAddLogFoodWorkflow(null);
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
         }}
         onSaved={() => {
+          setAddLogFoodWorkflow(null);
           setDate(route.flow.originatingDate);
           setAddFoodFlow(null);
           setRoute({ name: "daily-log" });

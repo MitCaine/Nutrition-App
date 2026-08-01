@@ -27,7 +27,7 @@ import {
   shouldApplyCreateLogInitialization,
   type LogFoodInitialAmount,
 } from "../utils/logFoodForm";
-import { logEditErrorMessage } from "../utils/logEditErrors";
+import { logEditErrorCode, logEditErrorMessage } from "../utils/logEditErrors";
 import { createClientRequestId } from "../utils/clientRequestId";
 import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { logInputSchema } from "../validation/logValidation";
@@ -49,9 +49,40 @@ type Props = {
   /** Add Food requires an explicit renewed review when authoritative source data drifts. */
   strictSourceReview?: boolean;
   onSourceUnavailable?: () => void;
+  /** Rehydrates the in-memory confirmation state after expected navigation. */
+  initialDraft?: LogFoodDraft;
+  /** Captures unsubmitted confirmation state without crossing the durability boundary. */
+  onDraftChange?: (draft: LogFoodDraft) => void;
+  /** Revision captured when this confirmation workflow first opened. */
+  initialCalendarRevision?: number;
 };
 
-export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable }: Props) {
+/**
+ * In-memory state for the shared Add Food confirmation.
+ *
+ * This is deliberately serializable and owned by the navigation coordinator;
+ * it is not persisted and may be discarded when the process terminates.
+ */
+export type LogFoodDraft = {
+  amount: string;
+  unit: "serving" | "g";
+  selectedServingId: string | null;
+  selectedAmountMode: "serving" | "g" | null;
+  mealType: MealType | null;
+  note: string;
+  sourceFingerprint: string | null;
+  sourceAuthority: LogFoodSourceAuthority | null;
+  sourceReviewRequired: boolean;
+  requestIntent: { fingerprint: string; requestId: string } | null;
+};
+
+/** Opaque server-backed authority values reviewed before confirmation. */
+export type LogFoodSourceAuthority = {
+  foodUpdatedAt: string | null;
+  recipePublicationRevisionId: string | null;
+};
+
+export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editContext = useLogEditContext(log?.id ?? null);
@@ -59,34 +90,55 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const food = useFood(!log || editContext.data?.is_revision_backed === false ? foodId : null);
   const resolvedNutrition = useFoodResolvedNutrition(log ? null : foodId);
   const mutations = useLogMutations(date);
-  const [amount, setAmount] = useState(formatInitialLogAmount(log?.amount_quantity));
-  const [unit, setUnit] = useState<"serving" | "g">(log?.amount_unit ?? "serving");
+  const [amount, setAmount] = useState(initialDraft?.amount ?? formatInitialLogAmount(log?.amount_quantity));
+  const [unit, setUnit] = useState<"serving" | "g">(initialDraft?.unit ?? log?.amount_unit ?? "serving");
   const [selectedServingId, setSelectedServingId] = useState<string | null>(
-    initialEditAmountId(food.data, log),
+    initialDraft?.selectedServingId !== undefined ? initialDraft.selectedServingId : initialEditAmountId(food.data, log),
   );
   const [selectedAmountMode, setSelectedAmountMode] = useState<"serving" | "g" | null>(
-    log?.amount_unit ?? null,
+    initialDraft?.selectedAmountMode !== undefined ? initialDraft.selectedAmountMode : log?.amount_unit ?? null,
   );
   const mealAndNotesEnabled = showMealAndNotes || initialMealType !== undefined;
   const [mealType, setMealType] = useState<MealType | null>(
-    log && isSupportedMeal(log.meal_type) ? log.meal_type : initialMealType ?? null,
+    initialDraft?.mealType !== undefined
+      ? initialDraft.mealType
+      : (log && isSupportedMeal(log.meal_type) ? log.meal_type : initialMealType ?? null),
   );
-  const [note, setNote] = useState(log?.notes ?? "");
+  const [note, setNote] = useState(initialDraft?.note ?? log?.notes ?? "");
   const initializedCreateFoodId = useRef<string | null>(null);
+  const restoredDraftRef = useRef(Boolean(initialDraft));
   const cancelClaimedRef = useRef(false);
-  // This intent exists only for this mounted create screen. Unchanged retries reuse it;
-  // changed form payloads replace it, and remounting starts a separate logging action.
-  const createIntentRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
+  // Unchanged retries reuse this intent; changed form payloads replace it. The
+  // navigation coordinator may carry it across ordinary in-process navigation.
+  const createIntentRef = useRef<{ fingerprint: string; requestId: string } | null>(initialDraft?.requestIntent ?? null);
+  const [requestIntent, setRequestIntent] = useState<{ fingerprint: string; requestId: string } | null>(initialDraft?.requestIntent ?? null);
   const mountedRef = useRef(true);
   const submissionClaimedRef = useRef(false);
-  const initialCalendarRevisionRef = useRef<number | null>(calendarRevision ?? null);
+  const initialCalendarRevisionRef = useRef<number | null>(initialCalendarRevision ?? calendarRevision ?? null);
   const [calendarContextChanged, setCalendarContextChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [initializationWarning, setInitializationWarning] = useState<string | null>(null);
+  const [initializationWarning, setInitializationWarning] = useState<string | null>(
+    initialDraft?.sourceReviewRequired
+      ? "This Food changed. Review the current amount choices before saving."
+      : null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const sourceFingerprintRef = useRef<string | null>(null);
-  const [sourceReviewRequired, setSourceReviewRequired] = useState(false);
+  const sourceFingerprintRef = useRef<string | null>(initialDraft?.sourceFingerprint ?? null);
+  const [sourceFingerprint, setSourceFingerprint] = useState<string | null>(initialDraft?.sourceFingerprint ?? null);
+  const [sourceAuthority, setSourceAuthority] = useState<LogFoodSourceAuthority | null>(
+    initialDraft?.sourceAuthority ?? null,
+  );
+  const [sourceReviewRequired, setSourceReviewRequired] = useState(initialDraft?.sourceReviewRequired ?? false);
   const [sourceUnavailable, setSourceUnavailable] = useState(false);
+  const currentSourceAuthority = useMemo<LogFoodSourceAuthority | null>(() => {
+    if (!food.data || !resolvedNutrition.data) {
+      return null;
+    }
+    return {
+      foodUpdatedAt: food.data.updated_at ?? null,
+      recipePublicationRevisionId: resolvedNutrition.data.recipe_publication_revision_id ?? null,
+    };
+  }, [food.data, resolvedNutrition.data]);
   const servings = useMemo(
     () =>
       log
@@ -94,6 +146,21 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         : createServingChoices(food.data, resolvedNutrition.data),
     [editContext.data, food.data, log, resolvedNutrition.data],
   );
+
+  useEffect(() => {
+    onDraftChange?.({
+      amount,
+      unit,
+      selectedServingId,
+      selectedAmountMode,
+      mealType,
+      note,
+      sourceFingerprint,
+      sourceAuthority,
+      sourceReviewRequired,
+      requestIntent,
+    });
+  }, [amount, mealType, note, onDraftChange, requestIntent, selectedAmountMode, selectedServingId, sourceAuthority, sourceFingerprint, sourceReviewRequired, unit]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -117,7 +184,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   }, [calendarRevision]);
 
   useEffect(() => {
-    if (!shouldApplyCreateLogInitialization({
+    if (initialDraft || !shouldApplyCreateLogInitialization({
       isEditMode: Boolean(log),
       initializedFoodId: initializedCreateFoodId.current,
       foodId,
@@ -142,12 +209,17 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
 
   useEffect(() => {
     if (!selectedServingId) {
+      if (restoredDraftRef.current) {
+        restoredDraftRef.current = false;
+        return;
+      }
       setSelectedServingId(
         initialEditAmountId(food.data, log, editContext.data) ??
           servings.find((serving) => serving.is_default)?.id ??
           initialServingId(food.data, log?.serving_definition_id),
       );
     }
+    restoredDraftRef.current = false;
   }, [editContext.data, food.data, log?.serving_definition_id, selectedServingId, servings]);
 
   useEffect(() => {
@@ -157,14 +229,42 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     const fingerprint = JSON.stringify({ food: food.data, nutrition: resolvedNutrition.data });
     if (sourceFingerprintRef.current === null) {
       sourceFingerprintRef.current = fingerprint;
+      setSourceFingerprint(fingerprint);
       return;
     }
     if (sourceFingerprintRef.current !== fingerprint) {
       sourceFingerprintRef.current = fingerprint;
+      setSourceFingerprint(fingerprint);
       setSourceReviewRequired(true);
+      setSelectedServingId(null);
+      setSelectedAmountMode(null);
       setInitializationWarning("This Food changed. Review the current amount choices before saving.");
     }
   }, [food.data, log, resolvedNutrition.data, resolvedNutrition.isFetching, strictSourceReview]);
+
+  useEffect(() => {
+    if (!strictSourceReview || log || !food.data || !resolvedNutrition.data || resolvedNutrition.isFetching) {
+      return;
+    }
+    const nextAuthority = currentSourceAuthority;
+    if (!nextAuthority) {
+      return;
+    }
+    if (sourceAuthority === null) {
+      setSourceAuthority(nextAuthority);
+      return;
+    }
+    if (
+      sourceAuthority.foodUpdatedAt !== nextAuthority.foodUpdatedAt ||
+      sourceAuthority.recipePublicationRevisionId !== nextAuthority.recipePublicationRevisionId
+    ) {
+      setSourceAuthority(nextAuthority);
+      setSourceReviewRequired(true);
+      setSelectedServingId(null);
+      setSelectedAmountMode(null);
+      setInitializationWarning("This Food changed. Review the current amount choices before saving.");
+    }
+  }, [currentSourceAuthority, food.data, log, resolvedNutrition.data, resolvedNutrition.isFetching, sourceAuthority, strictSourceReview]);
 
   function selectUnit(nextUnit: "serving" | "g") {
     setInitializationWarning(null);
@@ -234,9 +334,16 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     const input = mealAndNotesEnabled
       ? { ...baseInput, meal_type: mealType, notes: note }
       : baseInput;
+    const reviewedAuthority = sourceAuthority ?? currentSourceAuthority;
     const inputWithCalendar = {
       ...input,
       ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+      ...(reviewedAuthority?.foodUpdatedAt === null || reviewedAuthority?.foodUpdatedAt === undefined
+        ? {}
+        : { source_food_updated_at: reviewedAuthority.foodUpdatedAt }),
+      ...(reviewedAuthority?.recipePublicationRevisionId === null || reviewedAuthority?.recipePublicationRevisionId === undefined
+        ? {}
+        : { source_recipe_publication_revision_id: reviewedAuthority.recipePublicationRevisionId }),
     };
     const parsed = logInputSchema.safeParse(inputWithCalendar);
     if (!parsed.success) {
@@ -261,10 +368,12 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       } else {
         const fingerprint = JSON.stringify(parsed.data);
         if (createIntentRef.current?.fingerprint !== fingerprint) {
-          createIntentRef.current = {
+          const nextIntent = {
             fingerprint,
             requestId: createClientRequestId(),
           };
+          createIntentRef.current = nextIntent;
+          setRequestIntent(nextIntent);
         }
         await mutations.createLog.mutateAsync({
           ...parsed.data,
@@ -276,6 +385,33 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       submissionClaimedRef.current = false;
       if (mountedRef.current) {
         setIsSubmitting(false);
+        const sourceErrorCode = logEditErrorCode(saveError);
+        if (!log && strictSourceReview && sourceErrorCode) {
+          if (sourceErrorCode === "source_food_unavailable") {
+            setSourceUnavailable(true);
+          }
+          if (sourceErrorCode === "stale_log_source" || sourceErrorCode === "stale_log_amount") {
+            setSourceUnavailable(false);
+          }
+          if (
+            sourceErrorCode === "stale_log_source" ||
+            sourceErrorCode === "stale_log_amount" ||
+            sourceErrorCode === "source_food_unavailable"
+          ) {
+            setSourceReviewRequired(true);
+            setSelectedServingId(null);
+            setSelectedAmountMode(null);
+            setInitializationWarning(
+              sourceErrorCode === "stale_log_amount"
+                ? "That amount changed. Choose a current amount before saving."
+                : sourceErrorCode === "source_food_unavailable"
+                  ? null
+                  : "This Food changed. Review the current amount choices before saving.",
+            );
+            void food.refetch();
+            void resolvedNutrition.refetch();
+          }
+        }
         setError(logEditErrorMessage(
           saveError,
           log

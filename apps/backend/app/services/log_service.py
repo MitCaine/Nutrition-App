@@ -69,6 +69,16 @@ def _creation_fingerprint(payload: DailyLogCreateRequest) -> str:
             if payload.serving_definition_id is not None
             else None
         ),
+        "source_food_updated_at": (
+            payload.source_food_updated_at.isoformat()
+            if payload.source_food_updated_at is not None
+            else None
+        ),
+        "source_recipe_publication_revision_id": (
+            str(payload.source_recipe_publication_revision_id)
+            if payload.source_recipe_publication_revision_id is not None
+            else None
+        ),
     }
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
     return sha256(encoded).hexdigest()
@@ -103,6 +113,36 @@ class LogEditConflictError(ValueError):
 class LogIdempotencyConflictError(ValueError):
     code = "log_idempotency_payload_conflict"
     message = "This logging attempt was already submitted with different details. Start a new log and try again."
+
+
+class LogSourceChangedError(ValueError):
+    """Raised when the reviewed source generation is no longer current."""
+
+    code = "stale_log_source"
+    message = (
+        "The source nutrition changed after review. Refresh the Food and review "
+        "the current amount choices before saving."
+    )
+
+
+class LogSourceAmountChangedError(ValueError):
+    """Raised when a reviewed serving or immutable amount is no longer valid."""
+
+    code = "stale_log_amount"
+    message = (
+        "The selected serving or amount changed or is no longer available. "
+        "Choose a current amount before saving."
+    )
+
+
+class LogSourceUnavailableError(ValueError):
+    """Raised when the selected source can no longer produce a log."""
+
+    code = "source_food_unavailable"
+    message = (
+        "This Food is no longer available for logging. Return to Add Food and "
+        "choose another Food."
+    )
 
 
 class LogMutationPayloadConflictError(ValueError):
@@ -195,6 +235,13 @@ def _same_timestamp(left: datetime, right: datetime) -> bool:
     return aware(left) == aware(right)
 
 
+def _source_precondition_supplied(payload: DailyLogCreateRequest) -> bool:
+    return (
+        payload.source_food_updated_at is not None
+        or payload.source_recipe_publication_revision_id is not None
+    )
+
+
 def _parse_receipt_date(value: object) -> date | None:
     if not isinstance(value, str):
         return None
@@ -244,13 +291,23 @@ class LogService:
             if existing is not None:
                 return _matching_idempotent_log(existing, fingerprint)
         try:
-            food = self.foods.get_required(payload.food_item_id, user_id)
+            try:
+                food = self.foods.get_required(payload.food_item_id, user_id)
+            except LookupError as exc:
+                if _source_precondition_supplied(payload):
+                    raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
+                raise
             if food.is_recipe or food.source_type == "recipe":
                 log = self._create_recipe_log(user_id, food, payload)
             else:
                 # Mutable Food resolver inputs must be loaded after the Food row
                 # lock so servings and nutrients describe one committed generation.
-                food = self.foods.get_for_update(payload.food_item_id, user_id)
+                try:
+                    food = self.foods.get_for_update(payload.food_item_id, user_id)
+                except LookupError as exc:
+                    if _source_precondition_supplied(payload):
+                        raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
+                    raise
                 self._after_mutable_food_lock(food)
                 log = self._create_food_log(user_id, food, payload)
             log.client_request_id = payload.client_request_id
@@ -280,18 +337,46 @@ class LogService:
     def _after_mutable_food_lock(self, _food: FoodItem) -> None:
         """Test seam after mutable Food generation lock and child refresh."""
 
+    @staticmethod
+    def _validate_food_source_precondition(
+        food: FoodItem,
+        payload: DailyLogCreateRequest,
+    ) -> None:
+        """Validate a reviewed mutable Food generation after its row is locked."""
+
+        if payload.source_recipe_publication_revision_id is not None:
+            raise LogSourceChangedError(LogSourceChangedError.message)
+        if payload.amount_unit == "serving":
+            if payload.serving_definition_id is None or not any(
+                serving.id == payload.serving_definition_id
+                for serving in food.serving_definitions
+            ):
+                if _source_precondition_supplied(payload):
+                    raise LogSourceAmountChangedError(LogSourceAmountChangedError.message)
+        if (
+            payload.source_food_updated_at is not None
+            and not _same_timestamp(food.updated_at, payload.source_food_updated_at)
+        ):
+            raise LogSourceChangedError(LogSourceChangedError.message)
+
     def _create_food_log(
         self,
         user_id: UUID,
         food: FoodItem,
         payload: DailyLogCreateRequest,
     ) -> DailyLog:
-        resolved = resolve_nutrition(
-            food,
-            payload.amount_quantity,
-            payload.amount_unit,
-            payload.serving_definition_id,
-        )
+        self._validate_food_source_precondition(food, payload)
+        try:
+            resolved = resolve_nutrition(
+                food,
+                payload.amount_quantity,
+                payload.amount_unit,
+                payload.serving_definition_id,
+            )
+        except (AmbiguousNutrientBasisError, UnsupportedNutritionAmountError) as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceAmountChangedError(LogSourceAmountChangedError.message) from exc
+            raise
         log = DailyLog(
             id=uuid4(),
             user_id=user_id,
@@ -319,18 +404,38 @@ class LogService:
         selected_food: FoodItem,
         payload: DailyLogCreateRequest,
     ) -> DailyLog:
+        # Recipe publication uses the repository-wide Food-then-Recipe lock
+        # order.  Re-read the compatibility projection under its row lock
+        # before deriving the Recipe identity so a concurrent publication or
+        # mutable Food update cannot mix projection and revision generations.
+        try:
+            selected_food = self.foods.get_for_update(payload.food_item_id, user_id)
+        except LookupError as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
+            raise
         if not selected_food.is_recipe or selected_food.source_type != "recipe":
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
             raise ValueError("Selected food is not a valid Recipe compatibility projection")
         if selected_food.source_id is None:
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
             raise ValueError("Recipe compatibility projection has no source identity")
         try:
             recipe_id = UUID(selected_food.source_id)
         except ValueError as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
             raise ValueError("Recipe compatibility projection has invalid source identity") from exc
 
-        recipe = self.recipes.get_for_update(recipe_id, user_id)
-        self.db.expire(selected_food)
-        food = self.foods.get_required(payload.food_item_id, user_id)
+        try:
+            recipe = self.recipes.get_for_update(recipe_id, user_id)
+        except LookupError as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
+            raise
+        food = selected_food
         if (
             not food.is_recipe
             or food.source_type != "recipe"
@@ -340,23 +445,49 @@ class LogService:
             or recipe.active_publication_revision_id is None
             or food.recipe_publication_revision_id != recipe.active_publication_revision_id
         ):
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
             raise ValueError(
                 "Recipe compatibility projection is not linked to its active publication"
             )
 
-        revision = self.publications.get_required(
-            recipe.active_publication_revision_id,
-            user_id,
-        )
+        if (
+            payload.source_recipe_publication_revision_id is not None
+            and payload.source_recipe_publication_revision_id
+            != recipe.active_publication_revision_id
+        ):
+            raise LogSourceChangedError(LogSourceChangedError.message)
+        if (
+            payload.source_food_updated_at is not None
+            and not _same_timestamp(food.updated_at, payload.source_food_updated_at)
+        ):
+            raise LogSourceChangedError(LogSourceChangedError.message)
+
+        try:
+            revision = self.publications.get_required(
+                recipe.active_publication_revision_id,
+                user_id,
+            )
+        except LookupError as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
+            raise
         if revision.recipe_id != recipe.id:
+            if _source_precondition_supplied(payload):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
             raise ValueError("Active publication does not belong to the selected Recipe")
         self._after_recipe_revision_lookup(revision)
-        selection = map_projection_log_amount(
-            food,
-            revision,
-            payload.amount_unit,
-            payload.serving_definition_id,
-        )
+        try:
+            selection = map_projection_log_amount(
+                food,
+                revision,
+                payload.amount_unit,
+                payload.serving_definition_id,
+            )
+        except (AmbiguousNutrientBasisError, UnsupportedNutritionAmountError, ValueError) as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceAmountChangedError(LogSourceAmountChangedError.message) from exc
+            raise
         self._after_recipe_amount_definition_lookup(selection.revision_amount)
         resolved = resolve_revision_nutrition(
             revision,

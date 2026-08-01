@@ -39,6 +39,11 @@ class DailyLogCreateRequest(BaseModel):
     amount_quantity: DecimalInput
     amount_unit: str = Field(pattern="^(serving|g)$")
     serving_definition_id: UUID | None = None
+    # Commit-time source authority reviewed by the client.  These fields are
+    # optional for older callers; current confirmation flows send the
+    # applicable Food generation and/or active Recipe publication revision.
+    source_food_updated_at: datetime | None = None
+    source_recipe_publication_revision_id: UUID | None = None
     meal_type: MealType | None = None
     notes: str | None = None
 

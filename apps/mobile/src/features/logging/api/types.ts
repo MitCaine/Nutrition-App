@@ -10,6 +10,9 @@ export type DailyLogInput = {
   amount_quantity: string;
   amount_unit: "serving" | "g";
   serving_definition_id?: string | null;
+  /** Commit-time authority reviewed by the shared Log Food confirmation. */
+  source_food_updated_at?: string | null;
+  source_recipe_publication_revision_id?: string | null;
   meal_type?: MealType | null;
   notes?: string | null;
 };

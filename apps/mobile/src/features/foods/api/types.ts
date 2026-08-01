@@ -57,6 +57,8 @@ export type Food = {
   source_label: string;
   is_favorite: boolean;
   can_favorite: boolean;
+  /** Server authority generation for mutable Food sources. */
+  updated_at?: string | null;
   serving_definitions: ServingDefinition[];
   nutrients: FoodNutrient[];
 };

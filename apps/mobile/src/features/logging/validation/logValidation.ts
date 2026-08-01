@@ -22,6 +22,10 @@ export const logInputSchema = z.object({
   amount_quantity: z.string().min(1).refine((value) => Number(value) > 0, "Amount must be greater than zero"),
   amount_unit: z.enum(["serving", "g"]),
   serving_definition_id: z.string().optional().nullable(),
+  // The server owns timestamp parsing; the mobile client carries this
+  // authority value opaquely rather than reinterpreting its precision.
+  source_food_updated_at: z.string().min(1).optional().nullable(),
+  source_recipe_publication_revision_id: z.string().optional().nullable(),
   meal_type: mealSchema,
   notes: noteSchema,
 });

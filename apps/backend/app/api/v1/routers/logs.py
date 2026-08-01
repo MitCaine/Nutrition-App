@@ -32,6 +32,9 @@ from app.services.log_service import (
     LogMutationPayloadConflictError,
     LogMutationResultUnavailableError,
     LogMutationReplay,
+    LogSourceAmountChangedError,
+    LogSourceChangedError,
+    LogSourceUnavailableError,
     LogService,
     StaleLogMutationError,
 )
@@ -104,6 +107,11 @@ def create_log(
             detail=exc.detail(),
         ) from exc
     except LogIdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except (LogSourceChangedError, LogSourceAmountChangedError, LogSourceUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": str(exc)},

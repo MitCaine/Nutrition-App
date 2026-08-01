@@ -45,10 +45,11 @@ jest.mock("../src/app/navigation/BottomNavigation", () => {
   const mockReact = require("react");
   const { Pressable: MockPressable, Text: MockText } = require("react-native");
   return {
-    BottomNavigation: ({ onSelect }: { onSelect: (tab: "daily-log") => void }) => mockReact.createElement(
-      MockPressable,
-      { accessibilityLabel: "Daily Log tab", onPress: () => onSelect("daily-log") },
-      mockReact.createElement(MockText, null, "Daily Log tab"),
+    BottomNavigation: ({ onSelect }: { onSelect: (tab: "daily-log" | "foods") => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Foods tab", onPress: () => onSelect("foods") }, mockReact.createElement(MockText, null, "Foods tab")),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Daily Log tab", onPress: () => onSelect("daily-log") }, mockReact.createElement(MockText, null, "Daily Log tab")),
     ),
   };
 });
@@ -370,6 +371,40 @@ test("named and general Add Food flows use real navigator transitions and return
   await act(async () => labeled(renderer.root, "Save log").props.onPress());
   expect(screenText(renderer.root)).toContain("Oatmeal");
   expect(screenText(renderer.root)).toContain("Past date");
+  await act(async () => renderer.unmount());
+});
+
+test("normal tab navigation restores the shared confirmation draft", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Breakfast").props.onPress());
+  await selectSavedFood(renderer);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.onChangeText("6"));
+  await act(async () => labeled(renderer.root, "Meal lunch").props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Notes" }).props.onChangeText("after workout"));
+
+  await act(async () => labeled(renderer.root, "Foods tab").props.onPress());
+  await act(async () => labeled(renderer.root, "Daily Log tab").props.onPress());
+
+  expect(screenText(renderer.root)).toContain("Log Food");
+  expect(renderer.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.value).toBe("6");
+  expect(labeled(renderer.root, "Meal lunch").props.accessibilityState.checked).toBe(true);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Notes" }).props.value).toBe("after workout");
+  await act(async () => renderer.unmount());
+});
+
+test("restored confirmation revalidates a changed calendar revision without changing date", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Dinner").props.onPress());
+  await selectSavedFood(renderer);
+  await act(async () => labeled(renderer.root, "Foods tab").props.onPress());
+  mockCalendar.data = { ...mockCalendar.data!, calendar_revision: 5 };
+  await act(async () => labeled(renderer.root, "Daily Log tab").props.onPress());
+  expect(screenText(renderer.root)).toContain("The authoritative calendar changed.");
+  expect(labeled(renderer.root, "Log date 2026-07-13")).toBeDefined();
+  await act(async () => labeled(renderer.root, "Save log").props.onPress());
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ calendar_revision: 5, logged_date: "2026-07-13" }));
   await act(async () => renderer.unmount());
 });
 

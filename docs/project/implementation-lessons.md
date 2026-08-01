@@ -517,3 +517,64 @@ Before starting an issue:
 
 ---
 
+# E1-11 — Shared Confirmation and Commit-Time Source Authority
+
+## Client-side review is not an authority boundary
+
+A client fingerprint or final refresh can improve responsiveness, but it cannot prove that the reviewed source remained unchanged until commit.
+
+When a mutation depends on reviewed source state:
+
+- send a server-verifiable authority version or token;
+- validate it inside the authoritative transaction;
+- reject stale authority before creating domain state.
+
+## Bind confirmation to the exact source generation reviewed
+
+The reviewed authority must distinguish all nutrition-affecting dimensions needed for correctness, including:
+
+- mutable Food generation;
+- active Recipe publication revision;
+- selected serving or immutable amount identity;
+- source availability.
+
+Never silently substitute a newer source, serving, amount, or revision.
+
+## Preserve replay before revalidating changed source authority
+
+An identical retry of an already-confirmed request must return the original authoritative result even if the source changed later.
+
+Replay receipt resolution must occur according to the established lock and transaction discipline before stale source validation can invalidate the retry.
+
+## Qualify source mutation races on PostgreSQL
+
+Commit-time source authority depends on real row-lock behavior.
+
+Add PostgreSQL contention tests for both serial orders:
+
+- Log creation wins first;
+- source mutation or republication wins first.
+
+Require the tests to execute with zero skips before claiming qualification.
+
+## Preserve the established lock order across projections and owners
+
+Recipe-backed logging may involve both a compatibility Food projection and its owning Recipe.
+
+Stabilize them in the established order:
+
+1. lock the Food projection;
+2. lock the Recipe;
+3. resolve and validate the active publication revision;
+4. create snapshots atomically.
+
+Do not read one generation of the projection while validating another Recipe revision.
+
+## Separate reusable resource lifecycle from confirmation state
+
+USDA imports, Custom Foods, and OCR-created Foods remain reusable resources even when Log confirmation is cancelled.
+
+The shared confirmation owns only the Daily Log mutation and its transient draft state.
+
+---
+

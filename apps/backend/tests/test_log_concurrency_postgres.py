@@ -35,7 +35,13 @@ from app.schemas.log import DailyLogCreateRequest, DailyLogDeleteRequest, DailyL
 from app.schemas.food import FoodCreateRequest, FoodUpdateRequest, ServingDefinitionInput
 from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.schemas.target import TargetConfigurationUpdate
-from app.services.log_service import LogMutationReplay, LogService, StaleLogMutationError
+from app.services.log_service import (
+    LogMutationReplay,
+    LogService,
+    LogSourceAmountChangedError,
+    LogSourceChangedError,
+    StaleLogMutationError,
+)
 from app.repositories.log_repository import LogRepository
 from app.services.food_service import FoodService
 from app.services.recipe_service import (
@@ -89,7 +95,9 @@ def postgres_sessions():
         yield factory
 
 
-def _revision_log(factory) -> tuple:
+def _recipe_create_target(factory) -> tuple:
+    """Create a published Recipe target and return its reviewed authority."""
+
     with factory() as db:
         user = User(id=uuid4(), email=f"phase3n-{uuid4()}@example.test")
         recipe = Recipe(
@@ -165,19 +173,35 @@ def _revision_log(factory) -> tuple:
         db.flush()
         recipe.active_publication_revision_id = revision.id
         recipe.published_food_item_id = projection.id
+        establish_test_time_zone(db, user.id)
         db.commit()
         serving_id = next(row.id for row in projection.serving_definitions if row.is_default)
-        log = LogService(db).create_log(
+        return (
             user.id,
+            recipe.id,
+            projection.id,
+            revision.id,
+            serving_id,
+            projection.updated_at,
+        )
+
+
+def _revision_log(factory) -> tuple:
+    user_id, _recipe_id, projection_id, _revision_id, serving_id, _updated_at = (
+        _recipe_create_target(factory)
+    )
+    with factory() as db:
+        log = LogService(db).create_log(
+            user_id,
             DailyLogCreateRequest(
-                food_item_id=projection.id,
+                food_item_id=projection_id,
                 logged_date=date(2026, 7, 13),
                 amount_quantity=Decimal("1"),
                 amount_unit="serving",
                 serving_definition_id=serving_id,
             ),
         )
-        return user.id, log.id
+        return user_id, log.id
 
 
 def _manual_log(factory) -> tuple:
@@ -717,9 +741,14 @@ def test_mutable_food_log_snapshot_and_food_update_are_serialized(
 ) -> None:
     factory = postgres_sessions
     user_id, food_id, serving_id = _manual_create_target(factory)
-    locked, release = Event(), Event()
+    with factory() as db:
+        establish_test_time_zone(db, user_id)
+        reviewed_updated_at = db.get(FoodItem, food_id).updated_at
+        db.commit()
+    locked, update_waiting, release = Event(), Event(), Event()
     log_result: list[object] = []
     update_result: list[object] = []
+    request_id = uuid4()
 
     def create_log() -> None:
         with factory() as db:
@@ -736,10 +765,12 @@ def test_mutable_food_log_snapshot_and_food_update_are_serialized(
                         user_id,
                         DailyLogCreateRequest(
                             food_item_id=food_id,
+                            client_request_id=request_id,
                             logged_date=date(2026, 7, 14),
                             amount_quantity=Decimal("1"),
                             amount_unit="serving",
                             serving_definition_id=serving_id,
+                            source_food_updated_at=reviewed_updated_at,
                         ),
                     ).id
                 )
@@ -748,8 +779,16 @@ def test_mutable_food_log_snapshot_and_food_update_are_serialized(
 
     def update_food() -> None:
         with factory() as db:
+            service = FoodService(db)
+            original_get_for_update = service.foods.get_for_update
+
+            def signal_food_lock(*args, **kwargs):
+                update_waiting.set()
+                return original_get_for_update(*args, **kwargs)
+
+            service.foods.get_for_update = signal_food_lock
             try:
-                FoodService(db).update_food(
+                service.update_food(
                     user_id,
                     food_id,
                     FoodUpdateRequest.model_validate(
@@ -775,7 +814,7 @@ def test_mutable_food_log_snapshot_and_food_update_are_serialized(
     assert locked.wait(5)
     updater = Thread(target=update_food)
     updater.start()
-    Event().wait(0.2)
+    assert update_waiting.wait(5)
     assert not update_result
     release.set()
     logger.join(5)
@@ -786,8 +825,407 @@ def test_mutable_food_log_snapshot_and_food_update_are_serialized(
     with factory() as db:
         log = db.get(DailyLog, log_result[0])
         assert log.snapshots[0].amount == Decimal("100.000000")
+        assert log.client_request_id == request_id
         food = db.get(FoodItem, food_id)
         assert food.nutrients[0].amount == Decimal("200.000000")
+        replay = LogService(db).create_log(
+            user_id,
+            DailyLogCreateRequest(
+                food_item_id=food_id,
+                client_request_id=request_id,
+                logged_date=date(2026, 7, 14),
+                amount_quantity=Decimal("1"),
+                amount_unit="serving",
+                serving_definition_id=serving_id,
+                source_food_updated_at=reviewed_updated_at,
+            ),
+        )
+        assert replay.id == log.id
+
+
+def test_mutable_food_update_wins_and_reviewed_log_returns_stale_source(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    with factory() as db:
+        establish_test_time_zone(db, user_id)
+        reviewed_updated_at = db.get(FoodItem, food_id).updated_at
+        db.commit()
+
+    food_locked, create_waiting, release = Event(), Event(), Event()
+    update_result: list[object] = []
+    create_result: list[object] = []
+    request_id = uuid4()
+
+    def update_food() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def hold_after_lock(_food, _parents):
+                food_locked.set()
+                assert release.wait(5)
+
+            service._after_food_dependency_lock = hold_after_lock
+            try:
+                service.update_food(
+                    user_id,
+                    food_id,
+                    FoodUpdateRequest.model_validate(
+                        {
+                            "nutrients": [
+                                {
+                                    "nutrient_id": "calories",
+                                    "amount": "250",
+                                    "unit": "kcal",
+                                    "basis": "per_serving",
+                                    "data_status": "known",
+                                }
+                            ]
+                        }
+                    ),
+                )
+                update_result.append("committed")
+            except Exception as exc:
+                update_result.append(exc)
+
+    def create_log() -> None:
+        with factory() as db:
+            service = LogService(db)
+            original_get_for_update = service.foods.get_for_update
+
+            def signal_create_lock(*args, **kwargs):
+                create_waiting.set()
+                return original_get_for_update(*args, **kwargs)
+
+            service.foods.get_for_update = signal_create_lock
+            try:
+                service.create_log(
+                    user_id,
+                    DailyLogCreateRequest(
+                        food_item_id=food_id,
+                        client_request_id=request_id,
+                        logged_date=date(2026, 7, 14),
+                        amount_quantity=Decimal("1"),
+                        amount_unit="serving",
+                        serving_definition_id=serving_id,
+                        source_food_updated_at=reviewed_updated_at,
+                    ),
+                )
+                create_result.append("committed")
+            except Exception as exc:
+                create_result.append(exc)
+
+    updater = Thread(target=update_food)
+    updater.start()
+    assert food_locked.wait(5)
+    creator = Thread(target=create_log)
+    creator.start()
+    assert create_waiting.wait(5)
+    assert not create_result
+    release.set()
+    updater.join(10)
+    creator.join(10)
+
+    assert update_result == ["committed"]
+    assert len(create_result) == 1
+    assert isinstance(create_result[0], LogSourceChangedError)
+    with factory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(
+                DailyLog.client_request_id == request_id,
+            )
+        ) == 0
+        assert db.scalar(
+            select(func.count()).select_from(DailyLogNutrientSnapshot).where(
+                DailyLogNutrientSnapshot.source_food_item_id == food_id,
+            )
+        ) == 0
+
+
+def test_mutable_food_serving_replacement_wins_and_reviewed_log_returns_stale_amount(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _manual_create_target(factory)
+    with factory() as db:
+        establish_test_time_zone(db, user_id)
+        reviewed_updated_at = db.get(FoodItem, food_id).updated_at
+        db.commit()
+
+    food_locked, create_waiting, release = Event(), Event(), Event()
+    update_result: list[object] = []
+    create_result: list[object] = []
+    request_id = uuid4()
+
+    def replace_serving() -> None:
+        with factory() as db:
+            service = FoodService(db)
+
+            def hold_after_lock(_food, _parents):
+                food_locked.set()
+                assert release.wait(5)
+
+            service._after_food_dependency_lock = hold_after_lock
+            try:
+                service.update_food(
+                    user_id,
+                    food_id,
+                    FoodUpdateRequest.model_validate(
+                        {
+                            "serving_definitions": [
+                                {
+                                    "label": "2 portions",
+                                    "quantity": "2",
+                                    "unit": "portion",
+                                    "gram_weight": "200",
+                                    "is_default": True,
+                                }
+                            ]
+                        }
+                    ),
+                )
+                update_result.append("committed")
+            except Exception as exc:
+                update_result.append(exc)
+
+    def create_log() -> None:
+        with factory() as db:
+            service = LogService(db)
+            original_get_for_update = service.foods.get_for_update
+
+            def signal_create_lock(*args, **kwargs):
+                create_waiting.set()
+                return original_get_for_update(*args, **kwargs)
+
+            service.foods.get_for_update = signal_create_lock
+            try:
+                service.create_log(
+                    user_id,
+                    DailyLogCreateRequest(
+                        food_item_id=food_id,
+                        client_request_id=request_id,
+                        logged_date=date(2026, 7, 14),
+                        amount_quantity=Decimal("1"),
+                        amount_unit="serving",
+                        serving_definition_id=serving_id,
+                        source_food_updated_at=reviewed_updated_at,
+                    ),
+                )
+                create_result.append("committed")
+            except Exception as exc:
+                create_result.append(exc)
+
+    updater = Thread(target=replace_serving)
+    updater.start()
+    assert food_locked.wait(5)
+    creator = Thread(target=create_log)
+    creator.start()
+    assert create_waiting.wait(5)
+    assert not create_result
+    release.set()
+    updater.join(10)
+    creator.join(10)
+
+    assert update_result == ["committed"]
+    assert len(create_result) == 1
+    assert isinstance(create_result[0], LogSourceAmountChangedError)
+    with factory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(
+                DailyLog.client_request_id == request_id,
+            )
+        ) == 0
+        assert db.scalar(
+            select(func.count()).select_from(DailyLogNutrientSnapshot).where(
+                DailyLogNutrientSnapshot.source_food_item_id == food_id,
+            )
+        ) == 0
+
+
+def test_recipe_log_stabilizes_reviewed_revision_before_republication(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, recipe_id, food_id, revision_id, serving_id, reviewed_updated_at = (
+        _recipe_create_target(factory)
+    )
+    create_locked, republish_waiting, release = Event(), Event(), Event()
+    create_result: list[object] = []
+    republish_result: list[object] = []
+    create_request_id = uuid4()
+
+    def create_log() -> None:
+        with factory() as db:
+            service = LogService(db)
+
+            def hold_after_revision(_revision):
+                create_locked.set()
+                assert release.wait(5)
+
+            service._after_recipe_revision_lookup = hold_after_revision
+            try:
+                create_result.append(
+                    service.create_log(
+                        user_id,
+                        DailyLogCreateRequest(
+                            food_item_id=food_id,
+                            client_request_id=create_request_id,
+                            logged_date=date(2026, 7, 14),
+                            amount_quantity=Decimal("1"),
+                            amount_unit="serving",
+                            serving_definition_id=serving_id,
+                            source_food_updated_at=reviewed_updated_at,
+                            source_recipe_publication_revision_id=revision_id,
+                        ),
+                    ).id
+                )
+            except Exception as exc:
+                create_result.append(exc)
+
+    def republish() -> None:
+        with factory() as db:
+            service = RecipeService(db)
+            original_get_for_update = service.foods.get_for_update
+
+            def signal_publication_lock(*args, **kwargs):
+                republish_waiting.set()
+                return original_get_for_update(*args, **kwargs)
+
+            service.foods.get_for_update = signal_publication_lock
+            try:
+                service.publish(user_id, recipe_id, uuid4())
+                republish_result.append("committed")
+            except Exception as exc:
+                republish_result.append(exc)
+
+    creator = Thread(target=create_log)
+    creator.start()
+    assert create_locked.wait(5)
+    publisher = Thread(target=republish)
+    publisher.start()
+    assert republish_waiting.wait(5)
+    assert not republish_result
+    release.set()
+    creator.join(10)
+    publisher.join(10)
+
+    assert len(create_result) == 1
+    assert republish_result == ["committed"]
+    with factory() as db:
+        log = db.get(DailyLog, create_result[0])
+        assert log is not None
+        assert log.recipe_publication_revision_id == revision_id
+        assert log.snapshots
+        assert all(snapshot.source_food_item_id == food_id for snapshot in log.snapshots)
+        recipe = db.get(Recipe, recipe_id)
+        assert recipe is not None
+        assert recipe.active_publication_revision_id != revision_id
+        assert db.get(RecipePublicationRevision, revision_id) is not None
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(
+                DailyLog.client_request_id == create_request_id,
+            )
+        ) == 1
+        replay = LogService(db).create_log(
+            user_id,
+            DailyLogCreateRequest(
+                food_item_id=food_id,
+                client_request_id=create_request_id,
+                logged_date=date(2026, 7, 14),
+                amount_quantity=Decimal("1"),
+                amount_unit="serving",
+                serving_definition_id=serving_id,
+                source_food_updated_at=reviewed_updated_at,
+                source_recipe_publication_revision_id=revision_id,
+            ),
+        )
+        assert replay.id == log.id
+
+
+def test_recipe_republication_wins_and_reviewed_log_returns_stale_source(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, recipe_id, food_id, revision_id, serving_id, reviewed_updated_at = (
+        _recipe_create_target(factory)
+    )
+    republish_locked, create_waiting, release = Event(), Event(), Event()
+    republish_result: list[object] = []
+    create_result: list[object] = []
+    create_request_id = uuid4()
+
+    def republish() -> None:
+        with factory() as db:
+            service = RecipeService(db)
+
+            def hold_after_active_revision(_recipe):
+                republish_locked.set()
+                assert release.wait(5)
+
+            service._after_active_revision_assignment = hold_after_active_revision
+            try:
+                service.publish(user_id, recipe_id, uuid4())
+                republish_result.append("committed")
+            except Exception as exc:
+                republish_result.append(exc)
+
+    def create_log() -> None:
+        with factory() as db:
+            service = LogService(db)
+            original_get_for_update = service.foods.get_for_update
+
+            def signal_create_lock(*args, **kwargs):
+                create_waiting.set()
+                return original_get_for_update(*args, **kwargs)
+
+            service.foods.get_for_update = signal_create_lock
+            try:
+                service.create_log(
+                    user_id,
+                    DailyLogCreateRequest(
+                        food_item_id=food_id,
+                        client_request_id=create_request_id,
+                        logged_date=date(2026, 7, 14),
+                        amount_quantity=Decimal("1"),
+                        amount_unit="serving",
+                        serving_definition_id=serving_id,
+                        source_food_updated_at=reviewed_updated_at,
+                        source_recipe_publication_revision_id=revision_id,
+                    ),
+                )
+                create_result.append("committed")
+            except Exception as exc:
+                create_result.append(exc)
+
+    publisher = Thread(target=republish)
+    publisher.start()
+    assert republish_locked.wait(5)
+    creator = Thread(target=create_log)
+    creator.start()
+    assert create_waiting.wait(5)
+    assert not create_result
+    release.set()
+    publisher.join(10)
+    creator.join(10)
+
+    assert republish_result == ["committed"]
+    assert len(create_result) == 1
+    assert isinstance(create_result[0], LogSourceChangedError)
+    with factory() as db:
+        recipe = db.get(Recipe, recipe_id)
+        assert recipe is not None
+        assert recipe.active_publication_revision_id != revision_id
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(
+                DailyLog.client_request_id == create_request_id,
+            )
+        ) == 0
+        assert db.scalar(
+            select(func.count()).select_from(DailyLogNutrientSnapshot).where(
+                DailyLogNutrientSnapshot.source_food_item_id == food_id,
+            )
+        ) == 0
 
 
 def test_food_delete_prevents_concurrent_recipe_dependency_addition(
