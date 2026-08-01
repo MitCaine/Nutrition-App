@@ -1,5 +1,7 @@
 # Phase 5C performance evidence
 
+> **Document role: Evidence Record.**
+
 These files are captured qualification manifests, not runtime configuration or mutable benchmark
 output:
 
@@ -9,8 +11,8 @@ output:
 
 The historical `overall_result: performance_failed` value is correct under the original v1
 aggregate scan ceilings. It must be interpreted through the governing
-[Phase 5C3b](../../../../docs/production-hardening-phase5c3b.md) and
-[Phase 5C2.2](../../../../docs/production-hardening-phase5c2.2.md) records, which preserve the
+[Phase 5C3b](../../../../docs/historical/production-hardening/production-hardening-phase5c3b.md) and
+[Phase 5C2.2](../../../../docs/historical/production-hardening/production-hardening-phase5c2.2.md) records, which preserve the
 correctness results and the later budget-ratification decision.
 
 Contract and admission tests load these exact files as immutable evidence examples. Do not edit or

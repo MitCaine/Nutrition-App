@@ -38,7 +38,9 @@ def test_session_json_reports_current_migration_heads() -> None:
     assert payload["migration_heads"]["control"] == [
         "ops_0011_phase5c4_recovery_audit"
     ]
-    assert payload["latest_phase_document"].endswith("production-hardening-phase5c4.9.md")
+    assert payload["latest_phase_document"].endswith(
+        "docs/historical/releases/production-hardening-phase5c4.9.md"
+    )
 
 
 def test_inventory_is_deterministic() -> None:

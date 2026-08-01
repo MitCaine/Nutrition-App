@@ -18,7 +18,7 @@ flowchart TD
     Repo["Nutrition App repository"] --> Apps["apps"]
     Apps --> Backend["backend: FastAPI and PostgreSQL domain"]
     Apps --> Mobile["mobile: Expo, React Native, and iOS OCR"]
-    Repo --> Docs["docs: reader guides and design records"]
+    Repo --> Docs["docs: purpose-organized project knowledge"]
     Repo --> Packages["packages: shared contract references"]
     Repo --> Scripts["scripts: local and operator entry points"]
     Repo --> Compose["Docker Compose: local PostgreSQL and optional MinIO"]
@@ -28,12 +28,12 @@ flowchart TD
 | --- | --- |
 | `apps/backend` | Authoritative API behavior, nutrition rules, persistence, migrations, operators, and backend tests |
 | `apps/mobile` | User experience, mobile state, typed API boundaries, and native Apple Vision integration |
-| `docs` | Reader-oriented guides plus detailed stage, production-hardening, and release records |
+| `docs` | Current project, architecture, feature, operations, reference, and historical knowledge |
 | `packages` | Small shared contract references; not a generated client SDK |
 | `scripts` | Qualified runtime launch, review packaging, and explicit offline/operator commands |
 | Compose files | Local application PostgreSQL and disposable Phase 5C4 MinIO qualification |
 
-The [Repository Tour](docs/repository-tour.md) explains where to begin for each feature and which
+The [Repository Tour](docs/project/repository-tour.md) explains where to begin for each feature and which
 advanced directories can be ignored during ordinary application work.
 
 ## What the app does
@@ -90,8 +90,8 @@ flowchart LR
 ```
 
 For layer responsibilities, persistence boundaries, and the two migration streams, read the
-[Architecture Guide](docs/architecture.md). For a six-month-return orientation, start with the
-[Repository Tour](docs/repository-tour.md).
+[Architecture Overview](docs/architecture/overview.md). For a six-month-return orientation, start with the
+[Repository Tour](docs/project/repository-tour.md).
 
 ## Technology stack
 
@@ -148,7 +148,7 @@ build; it is not supplied by Expo Go. The rest of the application can be underst
 without configuring the production-hardening control plane.
 
 For configuration modes, private deployment constraints, migration safety, and canary behavior,
-read the [Development Guide](docs/development-guide.md#configuration-and-startup).
+read the [Development Guide](docs/project/development-guide.md#configuration-and-startup).
 
 ## Documentation
 
@@ -156,37 +156,32 @@ Start at the [Documentation Index](docs/README.md), or choose a path:
 
 | Goal | Read first |
 | --- | --- |
-| Understand the codebase quickly | [Repository Tour](docs/repository-tour.md) |
-| Understand layer boundaries | [Architecture Guide](docs/architecture.md) |
-| Change Foods, servings, USDA, Search, or Targets | [Foods and Nutrition Domain](docs/foods-and-nutrition.md) |
-| Change Recipes, publication, revisions, or Daily Logs | [Recipes and Nutrition History](docs/recipes-and-logging.md) |
-| Change OCR, mobile data flow, or offline behavior | [OCR, Search, and Offline Behavior](docs/ocr-search-and-offline.md) |
-| Understand architectural decisions | [Why This Exists](docs/why-this-exists.md) |
-| Recall a specific decision quickly | [Architecture Decision Index](docs/architecture-decisions.md) |
+| Understand enduring project scope and priorities | [Project Constitution](docs/project/constitution.md) |
+| Understand the current Version 1.1 starting point | [Current State](docs/project/current-state.md) |
+| Onboard an engineer or implementation agent | [Project Onboarding](docs/project/onboarding.md) |
+| Understand the codebase quickly | [Repository Tour](docs/project/repository-tour.md) |
+| Understand layer boundaries | [Architecture Overview](docs/architecture/overview.md) |
+| Change Foods, servings, USDA, Search, or Targets | [Foods and Nutrition Domain](docs/features/foods-and-nutrition.md) |
+| Change Recipes, publication, revisions, or Daily Logs | [Recipes and Nutrition History](docs/features/recipes-and-logging.md) |
+| Change OCR, mobile data flow, or offline behavior | [OCR, Search, and Offline Behavior](docs/features/ocr-search-and-offline.md) |
+| Understand architectural decisions | [Project Invariants](docs/project/invariants.md) |
+| Recall a specific decision quickly | [Architecture Decision Index](docs/architecture/decisions.md) |
 | Look up project terminology | [Glossary](docs/reference/glossary.md) |
-| Find the right code and tests for a change | [Development Guide](docs/development-guide.md) |
-| Run and extend qualification | [Testing Guide](docs/testing.md) |
-| Work on production promotion infrastructure | [Control Plane Guide](docs/control-plane.md) — optional |
+| Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
+| Run and extend qualification | [Testing Guide](docs/operations/testing.md) |
+| Work on production promotion infrastructure | [Control Plane Guide](docs/operations/control-plane.md) — optional |
+| Qualify the Version 1.0 backend/control release | [Version 1.0 PostgreSQL Release Qualification](docs/operations/version-1.0-release-qualification.md) |
 
-The `production-hardening-*` and stage files under `docs/` are detailed design and qualification
-records. They are valuable operational references but are not the recommended entry point for
-feature development.
+Active guides, operational references, and historical engineering knowledge have separate
+directories. Use the [Documentation Index](docs/README.md) to load only the context required by the
+task.
 
 ## Core invariants
 
-- Daily nutrition totals aggregate immutable log snapshots, never current mutable Food nutrients.
-- Missing nutrient data is different from an explicit zero.
-- Recipe publication creates an immutable revision; editing a Recipe does not rewrite that
-  revision.
-- Recipe-based logs bind to a published revision and its amount definition.
-- OCR confirmation stores bounded structured provenance, not label images or unbounded raw OCR
-  content.
-- Persisted resources are user-owned at API, service, and database relationship boundaries.
-- Retryable creates bind a client request ID to an exact payload and committed response.
-- Public production authentication is intentionally unavailable until a real identity provider is
-  installed; configuration fails closed rather than falling back to a development identity.
-
-The rationale is collected in [Why This Exists](docs/why-this-exists.md).
+[Project Invariants](docs/project/invariants.md) is the canonical list and rationale. It covers
+immutable nutrition history, publication revisions, unknown-versus-zero semantics, ownership,
+idempotency, OCR provenance, deployment configuration, write fencing, and qualification. Other
+documents link there rather than maintaining partial copies.
 
 ## Testing
 
@@ -201,28 +196,24 @@ npm run typecheck
 ```
 
 PostgreSQL concurrency, control-database, performance, and MinIO tests are opt-in because they need
-explicit disposable services. The [Testing Guide](docs/testing.md) maps each suite to the invariant
+explicit disposable services. The [Testing Guide](docs/operations/testing.md) maps each suite to the invariant
 it proves and gives the required commands.
 
 ## Roadmap and release status
 
-The original product roadmap—foundation, Foods and Daily Logs, USDA, Recipes, OCR, parser and
-confirmation, Targets, favorites, and discovery—is implementation-complete with automated contract
-coverage. Physical-device OCR, accessibility, populated lifecycle, theme, keyboard, and live
-failure-recovery QA remain release work; see [Roadmap Closeout](docs/stage7-roadmap-closeout.md) and
-[Release Candidate QA](docs/rc1-release-qa.md).
-
-Production hardening is intentionally separate. The repository contains historical conversion,
-qualification, role separation, write-fence prerequisites, and an independent promotion admission
-control plane. Runtime consumption of the independent control gate, provider switching, activation,
-and public multi-user authentication are not claimed complete. See the optional
-[Control Plane Guide](docs/control-plane.md) for the exact boundary.
+Version 1.0 is the completed baseline for Version 1.x maintenance and Version 1.1 development.
+[Current State](docs/project/current-state.md) is the canonical release, migration-head, product,
+deployment, and unsupported-boundary summary. The
+[Historical Knowledge Index](docs/historical/README.md) preserves the original roadmap, Stage 7,
+RC1, production-hardening chronology, and Version 1.0 release evidence without placing them in the
+default implementation path.
 
 ## Next reading
 
-- Start with the [Repository Tour](docs/repository-tour.md) when returning after a break.
-- Use the [Architecture Decision Index](docs/architecture-decisions.md) to refresh a remembered
+- Start with the [Repository Tour](docs/project/repository-tour.md) when returning after a break.
+- Use [Project Onboarding](docs/project/onboarding.md) to establish a bounded reading path.
+- Use the [Architecture Decision Index](docs/architecture/decisions.md) to refresh a remembered
   design choice quickly.
 - Choose a feature guide from the [Documentation Index](docs/README.md) before opening code.
-- Read the optional [Control Plane Guide](docs/control-plane.md) only when working on Phase 5 or
+- Read the optional [Control Plane Guide](docs/operations/control-plane.md) only when working on Phase 5 or
   production operations.

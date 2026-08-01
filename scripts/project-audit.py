@@ -152,7 +152,7 @@ def changed_paths(status: Sequence[str]) -> list[str]:
 
 
 def latest_phase_document() -> str | None:
-    docs = list(ROOT.glob("docs/production-hardening-phase*.md"))
+    docs = list(ROOT.glob("docs/**/production-hardening-phase*.md"))
     if not docs:
         return None
 

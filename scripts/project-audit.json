@@ -23,7 +23,7 @@
   "operator_document_contracts": {
     "README.md": {
       "required": [
-        "0021_target_activation_execution"
+        "docs/project/current-state.md"
       ],
       "forbidden": [
         "alembic upgrade head"
@@ -31,13 +31,15 @@
     },
     "docs/README.md": {
       "required": [
-        "production-hardening-phase5c4.9.md"
+        "project/current-state.md",
+        "operations/README.md",
+        "historical/README.md"
       ],
       "forbidden": [
         "in-progress purpose-specific preactivation cutback"
       ]
     },
-    "docs/architecture.md": {
+    "docs/architecture/overview.md": {
       "required": [
         "0021_target_activation_execution",
         "ops_0011_phase5c4_recovery_audit"
@@ -47,7 +49,7 @@
         "It currently runs through\n   `ops_0004_phase5c4_admission`"
       ]
     },
-    "docs/control-plane.md": {
+    "docs/operations/control-plane.md": {
       "required": [
         "0021_target_activation_execution",
         "ops_0011_phase5c4_recovery_audit",
@@ -57,13 +59,13 @@
         "no executable cutback SQL authority"
       ]
     },
-    "docs/development-guide.md": {
+    "docs/project/development-guide.md": {
       "required": [
         "0021_target_activation_execution"
       ],
       "forbidden": []
     },
-    "docs/production-hardening-phase5c4.9.md": {
+    "docs/historical/releases/production-hardening-phase5c4.9.md": {
       "required": [
         "0021_target_activation_execution",
         "ops_0011_phase5c4_recovery_audit",
@@ -71,7 +73,7 @@
       ],
       "forbidden": []
     },
-    "docs/production-hardening-phase5c4.8.md": {
+    "docs/operations/runbooks/recovery-and-cutback.md": {
       "required": [
         "frozen migration-0001 seed data",
         "exact clean release commit"
@@ -80,7 +82,7 @@
         "Phase 5C4.9 may then perform measured full rehearsals"
       ]
     },
-    "docs/repository-tour.md": {
+    "docs/project/repository-tour.md": {
       "required": [
         "0021_target_activation_execution",
         "ops_0011_phase5c4_recovery_audit",
@@ -88,11 +90,27 @@
       ],
       "forbidden": []
     },
-    "docs/testing.md": {
+    "docs/operations/testing.md": {
       "required": [
         "0021_target_activation_execution",
         "ops_0011_phase5c4_recovery_audit",
         "test_initial_migration_replay_postgres.py"
+      ],
+      "forbidden": []
+    },
+    "docs/project/current-state.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit",
+        "Public multi-user production deployment is intentionally unsupported"
+      ],
+      "forbidden": []
+    },
+    "docs/operations/version-1.0-release-qualification.md": {
+      "required": [
+        "0021_target_activation_execution",
+        "ops_0011_phase5c4_recovery_audit",
+        "REQUIRE_POSTGRES_TESTS=1"
       ],
       "forbidden": []
     }
