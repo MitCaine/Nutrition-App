@@ -1,6 +1,7 @@
 import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
 
 export type DailyLogInput = {
+  calendar_revision?: number;
   food_item_id: string;
   logged_date: string;
   amount_quantity: string;

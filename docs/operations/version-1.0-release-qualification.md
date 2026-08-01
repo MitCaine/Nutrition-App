@@ -5,6 +5,9 @@
 
 ## Release boundary
 
+The current active development head is `0023_calendar_revision`; the Version 1.0
+release boundary below remains pinned to its historical application head.
+
 The application migration head is `0021_target_activation_execution`; the control migration head
 is `ops_0011_phase5c4_recovery_audit`. Release qualification uses PostgreSQL 16 and a disposable
 bootstrap database. It covers current-head application and control migration replay, the frozen

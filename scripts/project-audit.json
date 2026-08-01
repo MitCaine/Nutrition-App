@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0022_authoritative_user_timezone"
+    "0023_calendar_revision"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"

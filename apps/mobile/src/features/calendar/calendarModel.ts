@@ -10,3 +10,14 @@ export function calendarStateLabel(state: CalendarState | undefined, proposedTim
   }
   return `Provisional device time zone: ${proposedTimeZone}`;
 }
+
+export function calendarRevision(state: CalendarState | undefined): number | null {
+  return typeof state?.calendar_revision === "number" ? state.calendar_revision : null;
+}
+
+export function calendarContextChanged(
+  initialRevision: number | null,
+  currentRevision: number | null,
+): boolean {
+  return initialRevision !== null && currentRevision !== null && initialRevision !== currentRevision;
+}

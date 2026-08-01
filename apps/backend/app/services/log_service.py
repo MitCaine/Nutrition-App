@@ -39,7 +39,10 @@ from app.schemas.log import (
     DailyLogEditContextResponse,
     DailyLogUpdateRequest,
 )
-from app.services.calendar_service import require_authoritative_time_zone
+from app.services.calendar_service import (
+    CalendarService,
+    require_authoritative_time_zone,
+)
 
 
 def _creation_fingerprint(payload: DailyLogCreateRequest) -> str:
@@ -100,7 +103,18 @@ class LogService:
         self.recipes = RecipeRepository(db)
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
-        require_authoritative_time_zone(self.db, user_id)
+        if payload.calendar_revision is None:
+            require_authoritative_time_zone(self.db, user_id)
+        else:
+            try:
+                CalendarService(self.db).validate_mutation_context(
+                    user_id,
+                    payload.calendar_revision,
+                    payload.logged_date,
+                )
+            except Exception:
+                self.db.rollback()
+                raise
         fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
         if payload.client_request_id is not None:
             existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
@@ -120,6 +134,12 @@ class LogService:
             log.client_request_fingerprint = fingerprint
             created = self.logs.add(log)
             self._after_snapshot_creation(created)
+            if payload.calendar_revision is not None:
+                CalendarService(self.db).validate_mutation_context(
+                    user_id,
+                    payload.calendar_revision,
+                    created.logged_date,
+                )
             self.db.commit()
             return created
         except IntegrityError as exc:
@@ -312,13 +332,26 @@ class LogService:
 
     def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
         """Own one DailyLog edit transaction; existing log rows lock before Food rows."""
-        require_authoritative_time_zone(self.db, user_id)
+        if payload.calendar_revision is None:
+            require_authoritative_time_zone(self.db, user_id)
         try:
             log = self.logs.get_for_update(log_id, user_id)
+            if payload.calendar_revision is not None:
+                CalendarService(self.db).validate_mutation_context(
+                    user_id,
+                    payload.calendar_revision,
+                    payload.logged_date if payload.logged_date is not None else log.logged_date,
+                )
             if log.recipe_publication_revision_id is not None:
                 self._update_revision_aware_log(user_id, log, payload)
             else:
                 self._update_compatibility_log(user_id, log, payload)
+            if payload.calendar_revision is not None:
+                CalendarService(self.db).validate_mutation_context(
+                    user_id,
+                    payload.calendar_revision,
+                    log.logged_date,
+                )
             self.db.commit()
             return self.logs.get_required(log.id, user_id)
         except Exception:

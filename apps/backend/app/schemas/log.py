@@ -13,6 +13,9 @@ from app.schemas.nutrition import AggregatedNutrientTotalSchema
 class DailyLogCreateRequest(BaseModel):
     # Optional only for legacy callers. Current mobile creation always supplies this UUID.
     client_request_id: UUID | None = None
+    # Active mobile flows send the calendar context they reviewed.  Legacy
+    # callers may omit it and retain their existing compatibility behavior.
+    calendar_revision: int | None = Field(default=None, ge=0)
     food_item_id: UUID
     logged_date: date
     amount_quantity: DecimalInput
@@ -29,6 +32,8 @@ class DailyLogCreateRequest(BaseModel):
 
 
 class DailyLogUpdateRequest(BaseModel):
+    # See DailyLogCreateRequest.calendar_revision.
+    calendar_revision: int | None = Field(default=None, ge=0)
     logged_date: date | None = None
     amount_quantity: DecimalInput = None
     amount_unit: str | None = Field(default=None, pattern="^(serving|g)$")

@@ -1,4 +1,8 @@
-import { calendarMutationsEnabled, calendarStateLabel } from "../src/features/calendar/calendarModel";
+import {
+  calendarContextChanged,
+  calendarMutationsEnabled,
+  calendarStateLabel,
+} from "../src/features/calendar/calendarModel";
 
 describe("authoritative calendar state", () => {
   it("keeps Daily Log mutations unavailable until explicit confirmation", () => {
@@ -14,5 +18,11 @@ describe("authoritative calendar state", () => {
     expect(calendarStateLabel({ is_established: true, authoritative_time_zone: "UTC" }, "Europe/Berlin")).toBe(
       "Authoritative time zone: UTC",
     );
+  });
+
+  it("detects a calendar revision change without altering retained flow state", () => {
+    expect(calendarContextChanged(4, 4)).toBe(false);
+    expect(calendarContextChanged(4, 5)).toBe(true);
+    expect(calendarContextChanged(null, 5)).toBe(false);
   });
 });

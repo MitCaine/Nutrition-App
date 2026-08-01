@@ -160,9 +160,9 @@ export function AppNavigator() {
   } else if (route.name === "edit-food") {
     content = <EditFoodRoute foodId={route.foodId} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "log-food") {
-    content = calendarEstablished ? <LogFoodScreen foodId={route.foodId} date={date} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
+    content = calendarEstablished ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "edit-log") {
-    content = calendarEstablished ? <EditLogRoute logId={route.logId} date={date} onCancel={() => setRoute({ name: "daily-log" })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
+    content = calendarEstablished ? <EditLogRoute logId={route.logId} date={date} calendarRevision={calendar.data?.calendar_revision} onCancel={() => setRoute({ name: "daily-log" })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "usda-preview") {
     content = (
       <UsdaPreviewScreen
@@ -386,11 +386,13 @@ function RecipeDetailRoute({
 function EditLogRoute({
   logId,
   date,
+  calendarRevision,
   onCancel,
   onSaved,
 }: {
   logId: string;
   date: string;
+  calendarRevision?: number;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -399,7 +401,7 @@ function EditLogRoute({
   if (!log) {
     return <LoadingState />;
   }
-  return <LogFoodScreen foodId={log.food_item_id} date={date} log={log} onCancel={onCancel} onSaved={onSaved} />;
+  return <LogFoodScreen foodId={log.food_item_id} date={date} calendarRevision={calendarRevision} log={log} onCancel={onCancel} onSaved={onSaved} />;
 }
 
 function EditFoodRoute({

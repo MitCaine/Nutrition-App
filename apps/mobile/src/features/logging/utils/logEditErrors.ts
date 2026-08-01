@@ -26,6 +26,8 @@ function isStructuredLogErrorBody(
     typeof detail.code === "string" &&
     (detail.code === "source_food_deleted" ||
       detail.code === "log_idempotency_payload_conflict" ||
+      detail.code === "calendar_context_changed" ||
+      detail.code === "future_dated_mutation_blocked" ||
       detail.code.startsWith("recipe_log_")) &&
     "message" in detail &&
     typeof detail.message === "string" &&

@@ -16,7 +16,10 @@ from app.schemas.log import (
     DailyLogUpdateRequest,
     DailySummaryResponse,
 )
-from app.services.calendar_service import AuthoritativeTimeZoneRequiredError
+from app.services.calendar_service import (
+    AuthoritativeTimeZoneRequiredError,
+    CalendarDomainError,
+)
 from app.services.log_service import (
     LogEditConflictError,
     LogIdempotencyConflictError,
@@ -39,6 +42,11 @@ def create_log(
     try:
         return DailyLogResponse.model_validate(_service(db).create_log(user.id, payload))
     except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+    except CalendarDomainError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.detail(),
@@ -94,6 +102,11 @@ def update_log(
     try:
         return DailyLogResponse.model_validate(_service(db).update_log(user.id, log_id, payload))
     except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+    except CalendarDomainError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.detail(),

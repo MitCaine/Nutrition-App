@@ -36,6 +36,8 @@ test.each([
   "recipe_log_nutrient_basis_ambiguous",
   "recipe_log_nutrition_invalid",
   "log_idempotency_payload_conflict",
+  "calendar_context_changed",
+  "future_dated_mutation_blocked",
 ])("structured %s validation returns the backend message", (code) => {
   const error = new ApiError({
     status: 400,

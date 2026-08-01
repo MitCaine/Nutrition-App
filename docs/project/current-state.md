@@ -26,10 +26,11 @@ qualification, activation, and recovery work. The
 
 | Authority | Current head |
 | --- | --- |
-| Application migration | `0021_target_activation_execution` |
+| Application migration | `0023_calendar_revision` |
 | Control migration | `ops_0011_phase5c4_recovery_audit` |
 
-Revision 0021 is an authorized target-activation migration, not an ordinary development upgrade.
+Revision `0021_target_activation_execution` is an authorized target-activation migration, not an
+ordinary development upgrade.
 Use the active runbooks rather than advancing to it through a convenience startup path.
 
 ## Active operational state

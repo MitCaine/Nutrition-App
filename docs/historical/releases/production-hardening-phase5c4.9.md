@@ -13,6 +13,9 @@ from the exact clean release commit**
 Phase 5C4.9 changes no application or control migration head. The authoritative
 heads remain:
 
+Subsequent active development now continues from application head
+`0023_calendar_revision`; this historical release boundary remains frozen as recorded below.
+
 - application: `0021_target_activation_execution`;
 - control: `ops_0011_phase5c4_recovery_audit`.
 

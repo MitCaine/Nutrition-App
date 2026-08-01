@@ -30,6 +30,10 @@ and emergency-close policies, signer, nonce, and validity interval. Canonical
 bytes and digests are reconstructed independently; caller-projected values do
 not replace authoritative control rows.
 
+The current active application migration head is `0023_calendar_revision`; the
+target-activation procedure remains pinned to its approved `0021_target_activation_execution`
+boundary.
+
 Control revision `ops_0010_phase5c4_activation` installs the immutable
 execution trust, authorization, migration, activation, emergency-close,
 conflict, observation, and final-evidence records. Control qualification v8

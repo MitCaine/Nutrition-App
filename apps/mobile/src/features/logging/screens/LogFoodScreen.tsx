@@ -35,13 +35,14 @@ import { useAppTheme } from "../../../app/theme/AppTheme";
 type Props = {
   foodId: string;
   date: string;
+  calendarRevision?: number;
   onCancel: () => void;
   onSaved: () => void;
   log?: DailyLog;
   initialAmount?: LogFoodInitialAmount;
 };
 
-export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmount }: Props) {
+export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editContext = useLogEditContext(log?.id ?? null);
@@ -64,6 +65,8 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
   const createIntentRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const mountedRef = useRef(true);
   const submissionClaimedRef = useRef(false);
+  const initialCalendarRevisionRef = useRef<number | null>(calendarRevision ?? null);
+  const [calendarContextChanged, setCalendarContextChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initializationWarning, setInitializationWarning] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,6 +84,20 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (calendarRevision === undefined) {
+      return;
+    }
+    if (initialCalendarRevisionRef.current === null) {
+      initialCalendarRevisionRef.current = calendarRevision;
+      return;
+    }
+    if (initialCalendarRevisionRef.current !== calendarRevision) {
+      setCalendarContextChanged(true);
+      initialCalendarRevisionRef.current = calendarRevision;
+    }
+  }, [calendarRevision]);
 
   useEffect(() => {
     if (!shouldApplyCreateLogInitialization({
@@ -158,14 +175,17 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
       return;
     }
     const resolvedServingId = selectedServingId ?? initialServingId(food.data, log?.serving_definition_id);
-    const input = buildLogInput({
-      foodId,
-      date,
-      amount,
-      unit,
-      selectedServingId: resolvedServingId,
-      selectedAmountMode,
-    });
+    const input = {
+      ...buildLogInput({
+        foodId,
+        date,
+        amount,
+        unit,
+        selectedServingId: resolvedServingId,
+        selectedAmountMode,
+      }),
+      ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+    };
     const parsed = logInputSchema.safeParse(input);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Invalid log");
@@ -179,7 +199,13 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
     setError(null);
     try {
       if (log) {
-        await mutations.updateLog.mutateAsync({ logId: log.id, input: buildLogUpdateInput(parsed.data) });
+        await mutations.updateLog.mutateAsync({
+          logId: log.id,
+          input: {
+            ...buildLogUpdateInput(parsed.data),
+            ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+          },
+        });
       } else {
         const fingerprint = JSON.stringify(parsed.data);
         if (createIntentRef.current?.fingerprint !== fingerprint) {
@@ -191,6 +217,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
         await mutations.createLog.mutateAsync({
           ...parsed.data,
           client_request_id: createIntentRef.current.requestId,
+          ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
         });
       }
     } catch (saveError) {
@@ -234,6 +261,11 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
           </Pressable>
         </View>
         <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
+        {calendarContextChanged ? (
+          <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
+            The authoritative calendar changed. Your selected date and entered values were kept; review the calendar context before saving.
+          </Text>
+        ) : null}
         {!log && food.data ? <Text accessibilityLabel={`Food source ${food.data.source_label}`} style={styles.meta}>{food.data.source_label}</Text> : null}
         <TextInput
           accessibilityHint="Enter a quantity greater than zero"
@@ -361,6 +393,7 @@ export function LogFoodScreen({ foodId, date, onCancel, onSaved, log, initialAmo
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
   active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  calendarNotice: { color: theme.colors.secondaryText, fontSize: 14, lineHeight: 20 },
   disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
   foodName: { color: theme.colors.text, fontSize: 18, fontWeight: "600" },

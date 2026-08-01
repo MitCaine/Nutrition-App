@@ -174,15 +174,26 @@ function createScreen(onSaved = jest.fn(), initialAmount = {
   amountDefinitionId: "selected-serving",
   amountQuantity: "2.5",
   amountUnit: "serving" as const,
-}, onCancel = jest.fn()) {
+}, onCancel = jest.fn(), calendarRevision?: number) {
   return React.createElement(LogFoodScreen, {
     foodId: food.id,
     date: "2026-07-13",
+    calendarRevision,
     initialAmount,
     onCancel,
     onSaved,
   });
 }
+
+test("active logging retains entered values and submits the latest calendar context", async () => {
+  const renderer = await render(createScreen(jest.fn(), undefined, jest.fn(), 4));
+  await act(async () => renderer.update(createScreen(jest.fn(), undefined, jest.fn(), 5)));
+  expect(hasText(renderer.root, "The authoritative calendar changed. Your selected date and entered values were kept; review the calendar context before saving.")).toBe(true);
+  expect(renderer.root.findByType(TextInput).props.value).toBe("2.5");
+  await act(async () => { void pressableWithText(renderer.root, "Save Log").props.onPress(); });
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ calendar_revision: 5 }));
+  await act(async () => renderer.unmount());
+});
 
 const revisionLog: DailyLog = {
   id: "log-1",

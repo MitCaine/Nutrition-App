@@ -39,6 +39,13 @@ class UserProfile(Base):
     # It is stored on the existing owner profile boundary so all clients share
     # one authoritative value without changing DailyLog rows.
     authoritative_time_zone: Mapped[Optional[str]] = mapped_column(Text)
+    # Monotonically increases whenever the authoritative calendar changes.
+    # Active clients use it to detect stale retained calendar context.
+    calendar_revision: Mapped[int] = mapped_column(
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
