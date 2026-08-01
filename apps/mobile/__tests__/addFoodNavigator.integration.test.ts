@@ -57,7 +57,19 @@ jest.mock("../src/app/navigation/BottomNavigation", () => {
 // test exercise the real navigator and logging routes without booting their
 // unrelated data dependencies.
 jest.mock("../src/features/foods/screens/FoodDetailsScreen", () => ({ FoodDetailsScreen: () => null }));
-jest.mock("../src/features/foods/screens/FoodFormScreen", () => ({ FoodFormScreen: () => null }));
+jest.mock("../src/features/foods/screens/FoodFormScreen", () => {
+  const mockReact = require("react");
+  const { Pressable: MockPressable, Text: MockText } = require("react-native");
+  return {
+    FoodFormScreen: ({ onCancel, onSaved }: { onCancel: () => void; onSaved: (foodId: string) => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockText, null, "Custom Food form"),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Save custom food", onPress: () => onSaved("food-custom") }, mockReact.createElement(MockText, null, "Save custom food")),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Cancel custom food", onPress: onCancel }, mockReact.createElement(MockText, null, "Cancel custom food")),
+    ),
+  };
+});
 jest.mock("../src/features/foods/screens/SavedFoodsScreen", () => ({ SavedFoodsScreen: () => null }));
 jest.mock("../src/features/recipes/screens/IngredientPickerScreen", () => ({ IngredientPickerScreen: () => null }));
 jest.mock("../src/features/recipes/screens/RecipeDetailScreen", () => ({ RecipeDetailScreen: () => null }));
@@ -65,8 +77,32 @@ jest.mock("../src/features/recipes/screens/RecipeFormScreen", () => ({ RecipeFor
 jest.mock("../src/features/recipes/screens/RecipeListScreen", () => ({ RecipeListScreen: () => null }));
 jest.mock("../src/features/usda/screens/UsdaSearchScreen", () => ({ UsdaSearchScreen: () => null }));
 jest.mock("../src/features/ocr/diagnostics/OcrDiagnosticsScreen", () => ({ OcrDiagnosticsScreen: () => null }));
-jest.mock("../src/features/ocr/screens/NutritionScanScreen", () => ({ NutritionScanScreen: () => null }));
-jest.mock("../src/features/ocr/screens/NutritionConfirmationScreen", () => ({ NutritionConfirmationScreen: () => null }));
+jest.mock("../src/features/ocr/screens/NutritionScanScreen", () => {
+  const mockReact = require("react");
+  const { Pressable: MockPressable, Text: MockText } = require("react-native");
+  return {
+    NutritionScanScreen: ({ onCancel, onReady }: { onCancel: () => void; onReady: (draft: unknown) => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockText, null, "Scan nutrition label"),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Finish label scan", onPress: () => onReady({}) }, mockReact.createElement(MockText, null, "Finish label scan")),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Cancel label scan", onPress: onCancel }, mockReact.createElement(MockText, null, "Cancel label scan")),
+    ),
+  };
+});
+jest.mock("../src/features/ocr/screens/NutritionConfirmationScreen", () => {
+  const mockReact = require("react");
+  const { Pressable: MockPressable, Text: MockText } = require("react-native");
+  return {
+    NutritionConfirmationScreen: ({ onCancel, onCreated }: { onCancel: () => void; onCreated: (foodId: string) => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockText, null, "Review extracted nutrition"),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Create scanned food", onPress: () => onCreated("food-scanned") }, mockReact.createElement(MockText, null, "Create scanned food")),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Cancel nutrition review", onPress: onCancel }, mockReact.createElement(MockText, null, "Cancel nutrition review")),
+    ),
+  };
+});
 jest.mock("../src/app/settings/SettingsScreen", () => ({ SettingsScreen: () => null }));
 jest.mock("../src/features/targets/TargetSettingsScreen", () => ({ TargetSettingsScreen: () => null }));
 jest.mock("@react-native-community/datetimepicker", () => ({ __esModule: true, default: () => null }));
@@ -354,6 +390,71 @@ test("USDA search imports through the existing handoff and opens shared confirma
   expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ food_item_id: importedFood.id, logged_date: "2026-07-13", meal_type: "breakfast" }));
   expect(screenText(renderer.root)).toContain("Imported Banana");
   expect(screenText(renderer.root)).toContain("Breakfast");
+  await act(async () => renderer.unmount());
+});
+
+test("Custom Food handoff preserves date and meal through shared confirmation", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Breakfast").props.onPress());
+  await act(async () => labeled(renderer.root, "Add custom food").props.onPress());
+  expect(screenText(renderer.root)).toContain("Custom Food form");
+  await act(async () => labeled(renderer.root, "Save custom food").props.onPress());
+  expect(screenText(renderer.root)).toContain("Log Food");
+  expect(labeled(renderer.root, "Meal breakfast").props.accessibilityState.checked).toBe(true);
+  await act(async () => labeled(renderer.root, "Save log").props.onPress());
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({
+    food_item_id: "food-custom",
+    logged_date: "2026-07-13",
+    meal_type: "breakfast",
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test("cancelling after Custom Food creation returns to discovery without creating a log", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Lunch").props.onPress());
+  await act(async () => labeled(renderer.root, "Add custom food").props.onPress());
+  await act(async () => labeled(renderer.root, "Save custom food").props.onPress());
+  await act(async () => labeled(renderer.root, "Cancel logging").props.onPress());
+  expect(optionalLabeled(renderer.root, "Cancel Add Food")).toBeDefined();
+  expect(screenText(renderer.root)).toContain("Initial meal: lunch");
+  expect(mockCreateLog).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("supported Scan Label handoff reaches shared confirmation with the originating flow", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Dinner").props.onPress());
+  await act(async () => labeled(renderer.root, "Scan nutrition label").props.onPress());
+  expect(screenText(renderer.root)).toContain("Scan nutrition label");
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+  expect(screenText(renderer.root)).toContain("Review extracted nutrition");
+  await act(async () => labeled(renderer.root, "Create scanned food").props.onPress());
+  expect(screenText(renderer.root)).toContain("Log Food");
+  expect(labeled(renderer.root, "Meal dinner").props.accessibilityState.checked).toBe(true);
+  await act(async () => labeled(renderer.root, "Save log").props.onPress());
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({
+    food_item_id: "food-scanned",
+    logged_date: "2026-07-13",
+    meal_type: "dinner",
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test("cancelling Scan Label review restores the scan acquisition path", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Snack").props.onPress());
+  await act(async () => labeled(renderer.root, "Scan nutrition label").props.onPress());
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+  await act(async () => labeled(renderer.root, "Cancel nutrition review").props.onPress());
+  expect(screenText(renderer.root)).toContain("Scan nutrition label");
+  expect(optionalLabeled(renderer.root, "Finish label scan")).toBeDefined();
+  await act(async () => labeled(renderer.root, "Cancel label scan").props.onPress());
+  expect(screenText(renderer.root)).toContain("Initial meal: snack");
   await act(async () => renderer.unmount());
 });
 

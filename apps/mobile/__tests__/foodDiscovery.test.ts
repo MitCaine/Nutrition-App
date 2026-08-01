@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text, TextInput } from "react-native";
+import { Platform, Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { Food } from "../src/features/foods/api/types";
@@ -16,6 +16,7 @@ let mockFavorites: Record<string, unknown>;
 let mockRecents: Record<string, unknown>;
 let mockSaved: Record<string, unknown>;
 let mockUseDark = false;
+const defaultPlatform = Platform.OS;
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
@@ -45,10 +46,15 @@ async function render(query = "") {
 }
 
 beforeEach(() => {
+  Object.defineProperty(Platform, "OS", { configurable: true, value: defaultPlatform });
   mockUseDark = false;
   mockFavorites = { data: [manual], isLoading: false, isError: false, refetch: jest.fn() };
   mockRecents = { data: [{ food: usda, last_used_at: "2026-07-13T12:00:00Z" }, { food: manual, last_used_at: "2026-07-12T12:00:00Z" }], isLoading: false, isError: false, refetch: jest.fn() };
   mockSaved = { data: [manual, usda], isLoading: false, isError: false };
+});
+
+afterEach(() => {
+  Object.defineProperty(Platform, "OS", { configurable: true, value: defaultPlatform });
 });
 
 test("Saved Foods renders compact favorites, recents, all foods, source labels, and accessibility", async () => {
@@ -108,5 +114,13 @@ test("discovery headings disclose the intentional five-row preview limit", async
   expect(screenText(renderer.root)).not.toContain("Favorite 5");
   expect(screenText(renderer.root)).toContain("Recent 4");
   expect(screenText(renderer.root)).not.toContain("Recent 5");
+  await act(async () => renderer.unmount());
+});
+
+test("Android omits the unsupported Scan Label action", async () => {
+  Object.defineProperty(Platform, "OS", { configurable: true, value: "android" });
+  const renderer = await render();
+  expect(renderer.root.findAllByProps({ accessibilityLabel: "Scan nutrition label" })).toHaveLength(0);
+  expect(screenText(renderer.root)).toContain("Custom Food");
   await act(async () => renderer.unmount());
 });

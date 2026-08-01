@@ -380,3 +380,140 @@ Once creation is confirmed:
 
 ---
 
+# E1-09 — Unified Search and USDA Import Handoff
+
+## Distinguish independent data sources from independent user modes
+
+Multiple search sources may retain separate:
+
+- queries at the data-access layer;
+- caches;
+- loading states;
+- failures;
+- refreshes;
+- retries.
+
+That does not imply separate user-facing modes.
+
+When the product defines one search query with grouped results, both sources
+must consume that same normalized query and appear together.
+
+## Derive browse versus search state from the query contract
+
+When empty query means browse and non-empty query means search:
+
+- do not add a separate mode selector;
+- replace browse sections when the query becomes non-empty;
+- restore browse sections when the query is cleared;
+- retain separate browse and search scroll contexts where required.
+
+## Keep source failures isolated
+
+An unavailable external catalog must not disable local discovery.
+
+Saved Foods and USDA should remain independently understandable and retryable
+even though they share one user query.
+
+## Preserve explicit acquisition boundaries
+
+USDA selection remains a sequence of distinct authoritative operations:
+
+1. Preview the external record.
+2. Explicitly import or reuse a reusable Food.
+3. Open shared Log Food confirmation.
+4. Create a Daily Log only after confirmation.
+
+Do not combine import and logging into one mutation.
+
+## Preserve reusable resources after confirmation cancellation
+
+Once a Food has been authoritatively imported, cancelling Log Food
+confirmation must not delete or roll back that reusable Food.
+
+The catalog mutation and Daily Log mutation have separate transaction and
+lifecycle boundaries.
+
+## Validate lower-precedence prompts against authoritative artifacts
+
+Implementation prompts can contain mistaken interaction terminology or
+sequencing.
+
+Before implementation:
+
+- compare the prompt with the PRD, architecture review, and assigned issue;
+- follow the declared precedence order;
+- report any discrepancy rather than silently implementing the prompt’s
+  conflicting design.
+
+---
+
+# E1-10 — Custom Food and Scan Label Acquisition Handoffs
+
+## Extend existing acquisition workflows rather than duplicating them
+
+When an established creation workflow already owns validation, persistence, and
+error behavior, a new product surface should add only the routing and return
+context required to reuse it.
+
+Do not create Daily Log-specific variants of:
+
+- Custom Food creation;
+- OCR capture;
+- OCR parsing;
+- nutrition confirmation;
+- Food persistence.
+
+## Keep resource creation separate from Log creation
+
+Custom Food and OCR confirmation create reusable Food resources.
+
+Daily Log creation remains a separate operation requiring the shared Log Food
+confirmation.
+
+Consequently:
+
+- successful acquisition must not create a Log automatically;
+- cancelling Log confirmation must leave the Food saved;
+- acquisition failure must never create a partial Log;
+- the two operations retain separate transaction and lifecycle boundaries.
+
+## Carry workflow context through reused screens
+
+Existing screens may be reused while receiving a Daily Log-aware return route.
+
+The navigation coordinator must preserve:
+
+- originating date;
+- meal context;
+- discovery query and mode;
+- scroll position;
+- authoritative calendar context.
+
+The reused acquisition screen should not become responsible for reconstructing
+that context.
+
+## Enforce unsupported platform routes at the navigation boundary
+
+Platform-specific actions must be hidden on unsupported clients, and the
+navigation coordinator must not expose a normal route into unsupported
+behavior.
+
+For Scan Label:
+
+- iOS exposes and qualifies the complete handoff;
+- Android omits the action and cannot enter the Daily Log OCR route;
+- shared non-OCR Add Food behavior remains equivalent across platforms.
+
+## Dependencies must be checked independently of issue numbering
+
+Issue numbers do not necessarily define executable order.
+
+Before starting an issue:
+
+- inspect its explicit Dependencies section;
+- verify every prerequisite is complete or determine whether the work can be
+  safely staged without anticipating the dependency;
+- do not infer sequence solely from E1-09, E1-10, E1-11 numbering.
+
+---
+

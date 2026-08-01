@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { PanResponder, StyleSheet, Text, View } from "react-native";
+import { PanResponder, Platform, StyleSheet, Text, View } from "react-native";
 
 import type { Food } from "../../features/foods/api/types";
 import { FoodDetailsScreen } from "../../features/foods/screens/FoodDetailsScreen";
@@ -51,6 +51,9 @@ type Route =
   | { name: "food-detail"; foodId: string }
   | { name: "edit-food"; foodId: string }
   | { name: "add-food" }
+  | { name: "add-custom-food"; flow: AddFoodFlowState }
+  | { name: "add-scan"; flow: AddFoodFlowState }
+  | { name: "add-ocr-confirm"; draft: NutritionConfirmationDraft; flow: AddFoodFlowState }
   | { name: "add-usda-preview"; fdcId: number; flow: AddFoodFlowState }
   | { name: "add-log-food"; foodId: string; flow: AddFoodFlowState }
   | LogFoodRoute
@@ -140,10 +143,44 @@ export function AppNavigator() {
     content = <TargetSettingsScreen onBack={() => setRoute(route.returnDirect ? routeForMainTab(route.origin) : { name: "settings", origin: route.origin })} />;
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
     content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
-  } else if (route.name === "nutrition-scan") {
+  } else if (route.name === "nutrition-scan" && Platform.OS === "ios") {
     content = <NutritionScanScreen onCancel={() => setRoute({ name: "foods" })} onReady={(draft) => setRoute({ name: "nutrition-confirm", draft })} />;
-  } else if (route.name === "nutrition-confirm") {
+  } else if (route.name === "nutrition-confirm" && Platform.OS === "ios") {
     content = <NutritionConfirmationScreen initialDraft={route.draft} onCancel={() => setRoute({ name: "foods" })} onCreated={(foodId) => setRoute({ name: "food-detail", foodId })} />;
+  } else if (route.name === "add-custom-food") {
+    content = (
+      <FoodFormScreen
+        onCancel={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-food" });
+        }}
+        onSaved={(foodId) => setRoute({ name: "add-log-food", foodId, flow: route.flow })}
+      />
+    );
+  } else if (route.name === "add-scan") {
+    content = Platform.OS === "ios" ? (
+      <NutritionScanScreen
+        onCancel={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-food" });
+        }}
+        onReady={(draft) => setRoute({ name: "add-ocr-confirm", draft, flow: route.flow })}
+      />
+    ) : null;
+  } else if (route.name === "add-ocr-confirm") {
+    content = Platform.OS === "ios" ? (
+      <NutritionConfirmationScreen
+        initialDraft={route.draft}
+        onCancel={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-scan", flow: route.flow });
+        }}
+        onCreated={(foodId) => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-log-food", foodId, flow: route.flow });
+        }}
+      />
+    ) : null;
   } else if (route.name === "new-food") {
     content = <FoodFormScreen onCancel={() => setRoute({ name: "foods" })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "food-detail") {
@@ -181,6 +218,8 @@ export function AppNavigator() {
         onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
         onSelectFood={(foodId) => setRoute({ name: "add-log-food", foodId, flow: addFoodFlow })}
         onSelectUsdaFood={(fdcId) => setRoute({ name: "add-usda-preview", fdcId, flow: addFoodFlow })}
+        onCreateCustomFood={() => setRoute({ name: "add-custom-food", flow: addFoodFlow })}
+        onScanNutritionLabel={Platform.OS === "ios" ? () => setRoute({ name: "add-scan", flow: addFoodFlow }) : undefined}
         onQueryChange={(query) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, { query }) : current)}
         onScrollSessionChange={(query, offset) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, current.query.trim() ? { searchScrollOffset: offset } : { browseScrollOffset: offset }) : current)}
       />
@@ -208,8 +247,14 @@ export function AppNavigator() {
         calendarRevision={calendar.data?.calendar_revision}
         initialMealType={route.flow.initialMeal}
         mutationEnabled={flowMutationEnabled}
-        onSourceUnavailable={() => setRoute({ name: "add-food" })}
-        onCancel={() => setRoute({ name: "add-food" })}
+        onSourceUnavailable={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-food" });
+        }}
+        onCancel={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-food" });
+        }}
         onSaved={() => {
           setDate(route.flow.originatingDate);
           setAddFoodFlow(null);
@@ -383,7 +428,11 @@ export function AppNavigator() {
         message={foodMessage}
         onMessageExpired={() => setFoodMessage(null)}
         onOpenSettings={() => setRoute({ name: "settings", origin: settingsOriginForRoute(route.name) })}
-        onScanNutritionLabel={() => setRoute({ name: "nutrition-scan" })}
+        onScanNutritionLabel={() => {
+          if (Platform.OS === "ios") {
+            setRoute({ name: "nutrition-scan" });
+          }
+        }}
       />
     );
   }

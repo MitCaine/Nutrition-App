@@ -13,6 +13,9 @@ test("main and nested routes select the correct bottom tab", () => {
   expect(mainTabForRoute("daily-log")).toBe("daily-log");
   expect(mainTabForRoute("edit-log")).toBe("daily-log");
   expect(mainTabForRoute("add-food")).toBe("daily-log");
+  expect(mainTabForRoute("add-custom-food")).toBe("daily-log");
+  expect(mainTabForRoute("add-scan")).toBe("daily-log");
+  expect(mainTabForRoute("add-ocr-confirm")).toBe("daily-log");
   expect(mainTabForRoute("add-usda-preview")).toBe("daily-log");
   expect(mainTabForRoute("add-log-food")).toBe("daily-log");
   expect(mainTabForRoute("recipes")).toBe("recipes");

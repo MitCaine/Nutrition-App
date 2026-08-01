@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text } from "react-native";
+import { Platform, Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { Food, RecentFood } from "../src/features/foods/api/types";
@@ -10,6 +10,7 @@ let mockFavorites: Record<string, unknown>;
 let mockRecent: Record<string, unknown>;
 let mockSaved: Record<string, unknown>;
 let mockEntries: Record<string, unknown>;
+const defaultPlatform = Platform.OS;
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: ({ title }: { title: string }) => require("react").createElement(require("react-native").Text, null, title) }));
 jest.mock("../src/app/theme/AppTheme", () => {
@@ -57,6 +58,8 @@ async function render(mutationEnabled = true) {
   let renderer!: TestRenderer.ReactTestRenderer;
   const onSelectFood = jest.fn();
   const onCancel = jest.fn();
+  const onCreateCustomFood = jest.fn();
+  const onScanNutritionLabel = jest.fn();
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(AddFoodScreen, {
       flow: createAddFoodFlow("2026-07-14", "lunch"),
@@ -64,10 +67,12 @@ async function render(mutationEnabled = true) {
       onCancel,
       onOpenSettings: jest.fn(),
       onSelectFood,
+      onCreateCustomFood,
+      onScanNutritionLabel,
       onScrollSessionChange: jest.fn(),
     }));
   });
-  return { renderer, onSelectFood, onCancel };
+  return { renderer, onSelectFood, onCancel, onCreateCustomFood, onScanNutritionLabel };
 }
 
 beforeEach(() => {
@@ -76,6 +81,10 @@ beforeEach(() => {
   const recentFood: RecentFood = { food: food("recent", "Recent Food"), last_used_at: "2026-07-14T08:00:00Z" };
   mockRecent = { data: [recentFood], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() };
   mockSaved = { data: [food("saved", "Saved Food")], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() };
+});
+
+afterEach(() => {
+  Object.defineProperty(Platform, "OS", { configurable: true, value: defaultPlatform });
 });
 
 test("renders the E1-08 browse sections in order and selects directly", async () => {
@@ -117,6 +126,38 @@ test("mutation-ineligible dates do not expose selectable Foods", async () => {
   expect(saved?.props.disabled).toBe(true);
   await act(async () => saved?.props.onPress());
   expect(rendered.onSelectFood).not.toHaveBeenCalled();
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("Add Food exposes reusable custom and supported scan acquisitions", async () => {
+  const rendered = await render();
+  const custom = rendered.renderer.root.findByProps({ accessibilityLabel: "Add custom food" });
+  await act(async () => custom.props.onPress());
+  expect(rendered.onCreateCustomFood).toHaveBeenCalledTimes(1);
+  const scan = rendered.renderer.root.findByProps({ accessibilityLabel: "Scan nutrition label" });
+  await act(async () => scan.props.onPress());
+  expect(rendered.onScanNutritionLabel).toHaveBeenCalledTimes(1);
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("mutation-ineligible dates disable acquisition handoffs", async () => {
+  const rendered = await render(false);
+  const custom = rendered.renderer.root.findByProps({ accessibilityLabel: "Add custom food" });
+  const scan = rendered.renderer.root.findByProps({ accessibilityLabel: "Scan nutrition label" });
+  expect(custom.props.disabled).toBe(true);
+  expect(scan.props.disabled).toBe(true);
+  await act(async () => custom.props.onPress());
+  await act(async () => scan.props.onPress());
+  expect(rendered.onCreateCustomFood).not.toHaveBeenCalled();
+  expect(rendered.onScanNutritionLabel).not.toHaveBeenCalled();
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("Android has no unsupported Scan Label handoff in Add Food", async () => {
+  Object.defineProperty(Platform, "OS", { configurable: true, value: "android" });
+  const rendered = await render();
+  expect(rendered.renderer.root.findAllByProps({ accessibilityLabel: "Scan nutrition label" })).toHaveLength(0);
+  expect(rendered.renderer.root.findByProps({ accessibilityLabel: "Add custom food" })).toBeDefined();
   await act(async () => rendered.renderer.unmount());
 });
 

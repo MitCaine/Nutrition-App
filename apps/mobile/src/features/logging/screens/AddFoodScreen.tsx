@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
@@ -20,6 +20,10 @@ type Props = {
   onOpenSettings: () => void;
   onSelectFood: (foodId: string) => void;
   onSelectUsdaFood?: (fdcId: number) => void;
+  /** Opens the existing reusable custom-food creation flow. */
+  onCreateCustomFood?: () => void;
+  /** Opens the existing supported label-scanning flow. */
+  onScanNutritionLabel?: () => void;
   onQueryChange?: (query: string) => void;
   onScrollSessionChange: (query: string, offset: number) => void;
 };
@@ -85,7 +89,7 @@ export function usdaDiscoveryReadState(
   return { kind: "success", data: result.data, retry };
 }
 
-export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings, onSelectFood, onSelectUsdaFood, onQueryChange, onScrollSessionChange }: Props) {
+export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings, onSelectFood, onSelectUsdaFood, onCreateCustomFood, onScanNutritionLabel, onQueryChange, onScrollSessionChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const resultsRef = useRef<ScrollView>(null);
@@ -127,6 +131,36 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
         style={styles.search}
         value={flow.query}
       />
+      {onCreateCustomFood || (Platform.OS === "ios" && onScanNutritionLabel) ? (
+        <View accessibilityRole="toolbar" style={styles.acquisitionActions}>
+          {onCreateCustomFood ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add custom food"
+              accessibilityHint="Opens the custom food form"
+              accessibilityState={{ disabled: !mutationEnabled }}
+              disabled={!mutationEnabled}
+              onPress={() => { if (mutationEnabled) onCreateCustomFood(); }}
+              style={[styles.actionButton, !mutationEnabled && styles.disabled]}
+            >
+              <Text style={styles.actionText}>Custom Food</Text>
+            </Pressable>
+          ) : null}
+          {Platform.OS === "ios" && onScanNutritionLabel ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Scan nutrition label"
+              accessibilityHint="Opens label scanning"
+              accessibilityState={{ disabled: !mutationEnabled }}
+              disabled={!mutationEnabled}
+              onPress={() => { if (mutationEnabled) onScanNutritionLabel(); }}
+              style={[styles.actionButton, !mutationEnabled && styles.disabled]}
+            >
+              <Text style={styles.actionText}>Scan label</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       <ScrollView
         key={searchMode ? "search" : "browse"}
         ref={resultsRef}
@@ -258,6 +292,9 @@ function ReadError({ message, retryLabel, onRetry, styles }: { message: string; 
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
+  actionButton: { alignItems: "center", backgroundColor: theme.colors.primaryActionBackground, borderRadius: 6, flex: 1, minHeight: 44, justifyContent: "center", padding: 10 },
+  actionText: { color: theme.colors.primaryActionForeground, fontWeight: "700" },
+  acquisitionActions: { flexDirection: "row", gap: 8 },
   disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
   errorRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },

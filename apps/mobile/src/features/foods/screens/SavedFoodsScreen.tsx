@@ -135,7 +135,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
         {sections.showNoFoodsFound ? <Text style={styles.foodMeta}>No foods found.</Text> : null}
       </ScrollView>
       <View style={styles.bottomControls}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Scan nutrition label" onPress={onScanNutritionLabel} style={styles.scanButton}><Text maxFontSizeMultiplier={1.5} style={styles.scanLabel}>Scan label</Text></Pressable>
+        {Platform.OS === "ios" ? <Pressable accessibilityRole="button" accessibilityLabel="Scan nutrition label" onPress={onScanNutritionLabel} style={styles.scanButton}><Text maxFontSizeMultiplier={1.5} style={styles.scanLabel}>Scan label</Text></Pressable> : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Add custom food"
