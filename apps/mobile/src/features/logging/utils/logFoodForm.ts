@@ -179,7 +179,7 @@ export function editServingChoices(
   context: DailyLogEditContext | undefined,
 ): LogServingChoice[] {
   if (context?.is_revision_backed) {
-    return context.amount_choices
+    return (context.current_amount_choices ?? context.amount_choices)
       .filter((choice) => choice.semantic_mode === "serving")
       .map((choice) => ({
         id: choice.amount_definition_id,
@@ -202,7 +202,17 @@ export function initialEditAmountId(
   context?: DailyLogEditContext,
 ): string | null {
   if (context?.is_revision_backed) {
+    if (context.current_amount_choices !== undefined) {
+      return context.current_selected_amount_definition_id ?? null;
+    }
     return context.selected_amount_definition_id;
+  }
+  if (
+    log?.serving_definition_id &&
+    food &&
+    !food.serving_definitions.some((serving) => serving.id === log.serving_definition_id)
+  ) {
+    return null;
   }
   return initialServingId(food, log?.serving_definition_id);
 }

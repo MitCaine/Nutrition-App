@@ -100,6 +100,11 @@ export type DailyLogEditContext = {
   recipe_publication_revision_id: string | null;
   selected_amount_definition_id: string | null;
   amount_choices: DailyLogEditAmount[];
+  current_source_food_updated_at?: string | null;
+  current_recipe_publication_revision_id?: string | null;
+  current_source_loggable?: boolean;
+  current_selected_amount_definition_id?: string | null;
+  current_amount_choices?: DailyLogEditAmount[];
 };
 
 export type DailySummary = {

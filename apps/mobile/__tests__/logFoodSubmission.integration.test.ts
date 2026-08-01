@@ -460,6 +460,72 @@ test("edit claims synchronously, preserves revision amount identity, and succeed
   expect(mockUpdateLog).toHaveBeenCalledTimes(1);
 });
 
+test("unavailable Recipe edit remains metadata-only", async () => {
+  mockEditContextQuery = {
+    ...mockEditContextQuery,
+    data: {
+      ...revisionContext,
+      current_source_food_updated_at: "2026-07-13T12:00:00+00:00",
+      current_recipe_publication_revision_id: null,
+      current_source_loggable: false,
+      current_amount_choices: [],
+    },
+  };
+  const renderer = await render(React.createElement(LogFoodScreen, {
+    foodId: food.id,
+    date: revisionLog.logged_date,
+    log: revisionLog,
+    showMealAndNotes: true,
+    onCancel: jest.fn(),
+    onSaved: jest.fn(),
+  }));
+
+  expect(renderer.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.editable).toBe(false);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Servings" }).props.disabled).toBe(true);
+  expect(hasText(renderer.root, "Nutrition editing is unavailable because the current Recipe source is no longer available. Meal, note, and date edits remain available.")).toBe(true);
+
+  const notes = renderer.root.findByProps({ accessibilityLabel: "Notes" });
+  await act(async () => notes.props.onChangeText("metadata correction"));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit log date" }).props.onPress());
+  const picker = renderer.root.findByProps({ mode: "date" });
+  await act(async () => picker.props.onChange({ type: "set" }, new Date(2026, 6, 12)));
+  await act(async () => pressableWithText(renderer.root, "Done").props.onPress());
+  act(() => { void pressableWithText(renderer.root, "Save Changes").props.onPress(); });
+
+  expect(mockUpdateLog).toHaveBeenCalledWith({
+    logId: revisionLog.id,
+    input: expect.objectContaining({
+      logged_date: "2026-07-12",
+      notes: "metadata correction",
+    }),
+  });
+  expect(mockUpdateLog.mock.calls[0][0].input).not.toHaveProperty("amount_quantity");
+  expect(mockUpdateLog.mock.calls[0][0].input).not.toHaveProperty("serving_definition_id");
+  await act(async () => {
+    mockUpdateDeferred.resolve(revisionLog);
+    await mockUpdateDeferred.promise;
+  });
+});
+
+test("edit date picker submits the selected destination date", async () => {
+  const renderer = await render(editScreen());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit log date" }).props.onPress());
+
+  const picker = renderer.root.findByProps({ mode: "date" });
+  await act(async () => picker.props.onChange({ type: "set" }, new Date(2026, 6, 12)));
+  await act(async () => pressableWithText(renderer.root, "Done").props.onPress());
+  act(() => { void pressableWithText(renderer.root, "Save Changes").props.onPress(); });
+
+  expect(mockUpdateLog).toHaveBeenCalledWith({
+    logId: revisionLog.id,
+    input: expect.objectContaining({ logged_date: "2026-07-12" }),
+  });
+  await act(async () => {
+    mockUpdateDeferred.resolve();
+    await mockUpdateDeferred.promise;
+  });
+});
+
 test("failed create preserves form and warning dismissal, then permits one retry", async () => {
   const onSaved = jest.fn();
   const renderer = await render(createScreen(onSaved, {

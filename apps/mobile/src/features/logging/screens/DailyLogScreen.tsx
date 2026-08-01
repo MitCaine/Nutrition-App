@@ -1,6 +1,5 @@
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   formatAggregatedTotal,
@@ -31,6 +30,7 @@ import { TargetProgressSection } from "../../targets/TargetProgressSection";
 import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../../calendar/calendarModel";
 import { deviceTimeZone } from "../../calendar/api/calendarApi";
 import { useCalendarState } from "../../calendar/hooks/useCalendar";
+import { DatePickerModal } from "./DatePickerModal";
 
 type Props = {
   date: string;
@@ -291,75 +291,6 @@ function DailyLogEntryCard({
         </View>
       ) : null}
     </View>
-  );
-}
-
-function DatePickerModal({
-  date,
-  visible,
-  onChange,
-  onCancel,
-  onConfirm,
-}: {
-  date: Date;
-  visible: boolean;
-  onChange: (date: Date) => void;
-  onCancel: () => void;
-  onConfirm: (date: Date) => void;
-}) {
-  const theme = useAppTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  function handleChange(event: DateTimePickerEvent, selectedDate?: Date) {
-    if (event.type === "dismissed") {
-      onCancel();
-      return;
-    }
-    if (!selectedDate) {
-      return;
-    }
-    if (Platform.OS === "android") {
-      onChange(selectedDate);
-      onConfirm(selectedDate);
-      return;
-    }
-    onChange(selectedDate);
-  }
-
-  if (Platform.OS === "android") {
-    return visible ? (
-      <DateTimePicker
-        value={date}
-        mode="date"
-        display="default"
-        onChange={handleChange}
-      />
-    ) : null;
-  }
-
-  return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onCancel}>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
-          <Text style={styles.sectionTitle}>Select Date</Text>
-          <Text style={styles.datePreview}>{formatReadableDate(localDateToApiDate(date))}</Text>
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display="spinner"
-            onChange={handleChange}
-            themeVariant={theme.mode}
-          />
-          <View style={styles.modalActions}>
-            <Pressable onPress={onCancel} style={styles.secondaryButton}>
-              <Text style={styles.text}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={() => onConfirm(date)} style={styles.primaryButton}>
-              <Text style={styles.primaryText}>Done</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
   );
 }
 

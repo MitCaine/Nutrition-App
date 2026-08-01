@@ -174,7 +174,10 @@ def test_deleted_recipe_history_and_deleted_projection_references_remain_protect
     assert retained_projection.reference_counts["snapshots"] > 0
 
     context = client.get(f"/api/v1/logs/{log_id}/edit-context")
-    edited = client.patch(f"/api/v1/logs/{log_id}", json={"amount_quantity": "2"})
+    edited = client.patch(
+        f"/api/v1/logs/{log_id}",
+        json={"notes": "metadata remains editable"},
+    )
     assert context.status_code == 200
     assert edited.status_code == 200, edited.text
 

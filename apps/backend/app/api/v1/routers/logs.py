@@ -170,14 +170,25 @@ def mutation_status(
     return _service(db).mutation_status(user.id, client_request_id, operation)
 
 
-@router.get("/{log_id}/edit-context", response_model=DailyLogEditContextResponse)
+@router.get("/{log_id}/edit-context", response_model=None)
 def log_edit_context(
     log_id: UUID,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> DailyLogEditContextResponse:
+) -> DailyLogEditContextResponse | JSONResponse:
     try:
-        return _service(db).edit_context(user.id, log_id)
+        context = _service(db).edit_context(user.id, log_id)
+        payload = context.model_dump(mode="json")
+        for field in (
+            "current_source_food_updated_at",
+            "current_recipe_publication_revision_id",
+            "current_source_loggable",
+            "current_selected_amount_definition_id",
+            "current_amount_choices",
+        ):
+            if payload.get(field) is None:
+                payload.pop(field, None)
+        return JSONResponse(content=payload)
     except RecipeNutritionValidationError as exc:
         raise HTTPException(status_code=400, detail=exc.detail()) from exc
     except LookupError as exc:
@@ -213,7 +224,14 @@ def update_log(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": str(exc)},
         ) from exc
-    except (LogMutationPayloadConflictError, StaleLogMutationError, LogMutationResultUnavailableError) as exc:
+    except (
+        LogMutationPayloadConflictError,
+        StaleLogMutationError,
+        LogMutationResultUnavailableError,
+        LogSourceChangedError,
+        LogSourceAmountChangedError,
+        LogSourceUnavailableError,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": str(exc)},

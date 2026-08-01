@@ -197,7 +197,6 @@ def _install_daily_log_trigger() -> None:
         "food_name_snapshot",
         "client_request_id",
         "client_request_fingerprint",
-        "recipe_publication_revision_id",
         "created_at",
     )
     replacement_columns = (
@@ -212,6 +211,10 @@ def _install_daily_log_trigger() -> None:
     permanently_frozen = "\n                AND ".join(
         f'OLD."{column}" IS NEW."{column}"'
         for column in permanently_frozen_columns
+    )
+    revision_unchanged = (
+        'OLD."recipe_publication_revision_id" IS '
+        'NEW."recipe_publication_revision_id"'
     )
     replacement_columns_unchanged = "\n                    AND ".join(
         f'OLD."{column}" IS NEW."{column}"' for column in replacement_columns
@@ -229,6 +232,8 @@ def _install_daily_log_trigger() -> None:
             {permanently_frozen}
             AND (
                 (
+                    {revision_unchanged}
+                    AND
                     {replacement_columns_unchanged}
                 )
                 OR {_SNAPSHOT_REPLACEMENT_UDF}(

@@ -410,7 +410,10 @@ def test_child_revision_logs_and_snapshots_survive_confirmed_deletion(
     context = client.get(f"/api/v1/logs/{log_id}/edit-context")
     assert context.status_code == 200, context.text
     assert context.json()["source_food_available"] is False
-    edited = client.patch(f"/api/v1/logs/{log_id}", json={"amount_quantity": "2"})
+    edited = client.patch(
+        f"/api/v1/logs/{log_id}",
+        json={"notes": "metadata remains editable"},
+    )
     assert edited.status_code == 200, edited.text
 
 

@@ -67,6 +67,9 @@ class DailyLogUpdateRequest(BaseModel):
     expected_updated_at: datetime | None = None
     # See DailyLogCreateRequest.calendar_revision.
     calendar_revision: int | None = Field(default=None, ge=0)
+    # Commit-time source authority reviewed by the edit confirmation.
+    source_food_updated_at: datetime | None = None
+    source_recipe_publication_revision_id: UUID | None = None
     logged_date: date | None = None
     amount_quantity: DecimalInput = None
     amount_unit: str | None = Field(default=None, pattern="^(serving|g)$")
@@ -165,6 +168,13 @@ class DailyLogEditContextResponse(BaseModel):
     recipe_publication_revision_id: UUID | None
     selected_amount_definition_id: UUID | None
     amount_choices: list[DailyLogEditAmountResponse]
+    # Current authority used by E1-13 edits. Historical fields above remain
+    # available for compatibility and audit presentation.
+    current_source_food_updated_at: datetime | None = None
+    current_recipe_publication_revision_id: UUID | None = None
+    current_source_loggable: bool | None = None
+    current_selected_amount_definition_id: UUID | None = None
+    current_amount_choices: list[DailyLogEditAmountResponse] | None = None
 
 
 class DailyLogListResponse(BaseModel):

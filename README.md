@@ -151,6 +151,8 @@ without configuring the production-hardening control plane.
 
 For configuration modes, private deployment constraints, migration safety, and canary behavior,
 read the [Development Guide](docs/project/development-guide.md#configuration-and-startup).
+Implementation lessons from completed Epic work are recorded in the
+[Implementation Lessons](docs/project/implementation-lessons.md) document.
 
 ## Engineering workflow
 

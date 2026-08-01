@@ -237,7 +237,9 @@ def _same_timestamp(left: datetime, right: datetime) -> bool:
     return aware(left) == aware(right)
 
 
-def _source_precondition_supplied(payload: DailyLogCreateRequest) -> bool:
+def _source_precondition_supplied(
+    payload: DailyLogCreateRequest | DailyLogUpdateRequest,
+) -> bool:
     return (
         payload.source_food_updated_at is not None
         or payload.source_recipe_publication_revision_id is not None
@@ -342,7 +344,7 @@ class LogService:
     @staticmethod
     def _validate_food_source_precondition(
         food: FoodItem,
-        payload: DailyLogCreateRequest,
+        payload: DailyLogCreateRequest | DailyLogUpdateRequest,
     ) -> None:
         """Validate a reviewed mutable Food generation after its row is locked."""
 
@@ -793,17 +795,48 @@ class LogService:
 
         revision = self.publications.get(revision_id, user_id)
         if revision is None:
-            raise RecipeNutritionValidationError(
-                "recipe_log_revision_missing",
-                "This entry's publication revision is no longer available.",
+            # A corrupt or retired historical publication must not make the
+            # metadata-only edit surface unusable. There is no honest
+            # historical amount list to present, so expose the saved identity
+            # as display-only and explicitly mark current nutrition authority
+            # unavailable.
+            return DailyLogEditContextResponse(
+                log_id=log.id,
+                source_food_available=log.source_food_available,
+                is_revision_backed=True,
+                recipe_publication_revision_id=revision_id,
+                selected_amount_definition_id=log.recipe_publication_amount_definition_id,
+                amount_choices=[],
+                current_source_food_updated_at=(
+                    log.food_item.updated_at
+                    if log.food_item is not None and log.food_item.user_id == user_id
+                    else None
+                ),
+                current_source_loggable=False,
+                current_amount_choices=[],
             )
         selected_id = log.recipe_publication_amount_definition_id
-        if not any(amount.id == selected_id for amount in revision.amount_definitions):
-            raise RecipeNutritionValidationError(
-                "recipe_log_amount_definition_missing",
-                "This entry's saved amount is no longer available in its publication revision.",
+        stored_amount = next(
+            (amount for amount in revision.amount_definitions if amount.id == selected_id),
+            None,
+        )
+        if stored_amount is None:
+            return DailyLogEditContextResponse(
+                log_id=log.id,
+                source_food_available=log.source_food_available,
+                is_revision_backed=True,
+                recipe_publication_revision_id=revision.id,
+                selected_amount_definition_id=selected_id,
+                amount_choices=[],
+                current_source_food_updated_at=(
+                    log.food_item.updated_at
+                    if log.food_item is not None and log.food_item.user_id == user_id
+                    else None
+                ),
+                current_source_loggable=False,
+                current_amount_choices=[],
             )
-        return DailyLogEditContextResponse(
+        context = DailyLogEditContextResponse(
             log_id=log.id,
             source_food_available=log.source_food_available,
             is_revision_backed=True,
@@ -823,6 +856,80 @@ class LogService:
                 for amount in revision.amount_definitions
             ],
         )
+        food = log.food_item
+        if food is None or food.source_id is None:
+            context.current_source_food_updated_at = (
+                food.updated_at if food is not None and food.user_id == user_id else None
+            )
+            context.current_source_loggable = False
+            context.current_amount_choices = []
+            return context
+        if food.user_id != user_id or food.deleted_at is not None:
+            context.current_source_food_updated_at = food.updated_at
+            context.current_source_loggable = False
+            context.current_amount_choices = []
+            return context
+
+        # E1-13 reviews the current active Recipe revision. Keep the stored
+        # revision choices above for historical presentation and compatibility,
+        # while exposing a separate current choice set for the edit surface.
+        try:
+            recipe_id = UUID(food.source_id)
+            recipe = self.recipes.get(recipe_id, user_id)
+        except (TypeError, ValueError):
+            recipe = None
+        current_revision = None
+        if (
+            recipe is not None
+            and recipe.deleted_at is None
+            and recipe.active_publication_revision_id is not None
+            and food.recipe_publication_revision_id == recipe.active_publication_revision_id
+        ):
+            current_revision = self.publications.get(
+                recipe.active_publication_revision_id,
+                user_id,
+            )
+
+        if current_revision is None:
+            context.current_source_food_updated_at = food.updated_at
+            context.current_source_loggable = False
+            context.current_amount_choices = []
+            return context
+
+        current_amounts = list(current_revision.amount_definitions)
+        current_loggable = [
+            amount
+            for amount in current_amounts
+            if self._revision_amount_is_loggable(current_revision, amount)
+        ]
+        exact = next((amount for amount in current_loggable if amount.id == stored_amount.id), None)
+        equivalent = [
+            amount
+            for amount in current_loggable
+            if amount.semantic_mode == stored_amount.semantic_mode
+            and self._same_decimal(amount.display_quantity, stored_amount.display_quantity)
+            and amount.display_unit.strip().casefold() == stored_amount.display_unit.strip().casefold()
+            and self._same_decimal(amount.gram_equivalent, stored_amount.gram_equivalent)
+        ]
+        selected_current = exact if exact is not None else equivalent[0] if len(equivalent) == 1 else None
+        context.current_source_food_updated_at = food.updated_at
+        context.current_recipe_publication_revision_id = current_revision.id
+        context.current_source_loggable = bool(current_loggable)
+        context.current_selected_amount_definition_id = selected_current.id if selected_current else None
+        context.current_amount_choices = [
+            DailyLogEditAmountResponse(
+                amount_definition_id=amount.id,
+                display_label=amount.display_label,
+                semantic_mode=amount.semantic_mode,
+                display_quantity=amount.display_quantity,
+                display_unit=amount.display_unit,
+                gram_equivalent=amount.gram_equivalent,
+                is_default=amount.is_default,
+                is_selected=amount.id == (selected_current.id if selected_current else None),
+            )
+            for amount in current_loggable
+        ]
+        return context
 
     def _find_mutation_receipt(
         self,
@@ -1067,13 +1174,32 @@ class LogService:
         log: DailyLog,
         payload: DailyLogUpdateRequest,
     ) -> None:
+        nutritional_edit = (
+            payload.amount_quantity is not None
+            or payload.amount_unit is not None
+            or "serving_definition_id" in payload.model_fields_set
+        )
         if not log.is_editable:
-            raise LogEditConflictError(LogEditConflictError.message)
+            if log.food_item is not None and log.food_item.user_id != user_id:
+                raise LogEditConflictError(LogEditConflictError.message)
+            if nutritional_edit:
+                raise LogEditConflictError(LogEditConflictError.message)
+            # A deleted mutable source still permits explicit metadata and
+            # date corrections; it cannot be used to regenerate nutrition.
+            self._apply_log_metadata(log, payload)
+            log.updated_at = datetime.now(timezone.utc)
+            return
         # No mutation path locks an existing DailyLog after holding its Food.
         # Keep explicit edits in DailyLog-then-Food order and refresh all Food
         # children under that lock so serving and nutrient inputs are coherent.
         food = self.foods.get_for_update(log.food_item_id, user_id)
         self._after_edit_mutable_food_lock(food)
+        if _source_precondition_supplied(payload):
+            self._validate_food_source_precondition(food, payload)
+        if not nutritional_edit:
+            self._apply_log_metadata(log, payload)
+            log.updated_at = datetime.now(timezone.utc)
+            return
         amount_quantity = (
             payload.amount_quantity if payload.amount_quantity is not None else log.amount_quantity
         )
@@ -1085,7 +1211,12 @@ class LogService:
         )
         # Manual Food and legacy Recipe logs intentionally retain their existing
         # mutable-source compatibility behavior.
-        resolved = resolve_nutrition(food, amount_quantity, amount_unit, serving_definition_id)
+        try:
+            resolved = resolve_nutrition(food, amount_quantity, amount_unit, serving_definition_id)
+        except (AmbiguousNutrientBasisError, UnsupportedNutritionAmountError) as exc:
+            if _source_precondition_supplied(payload):
+                raise LogSourceAmountChangedError(LogSourceAmountChangedError.message) from exc
+            raise
 
         with self.logs.snapshot_replacement_scope(user_id, log.id):
             self.logs.delete_snapshots(log.id, user_id)
@@ -1110,22 +1241,84 @@ class LogService:
         log: DailyLog,
         payload: DailyLogUpdateRequest,
     ) -> None:
-        if log.food_item.user_id != user_id:
+        nutritional_edit = (
+            payload.amount_quantity is not None
+            or payload.amount_unit is not None
+            or "serving_definition_id" in payload.model_fields_set
+        )
+
+        # Metadata and valid date corrections do not reconstruct nutrition. They
+        # therefore remain available for an owned historical entry even when
+        # its current compatibility projection or Recipe is gone. Ownership is
+        # still checked before taking this compatibility path.
+        if log.food_item is not None and log.food_item.user_id != user_id:
             raise RecipeNutritionValidationError(
                 "recipe_log_source_food_unavailable",
                 "This entry's source food is no longer available.",
             )
-        revision = self.publications.get(log.recipe_publication_revision_id, user_id)
-        if revision is None:
+
+        if not nutritional_edit:
+            self._apply_log_metadata(log, payload)
+            log.updated_at = datetime.now(timezone.utc)
+            return
+
+        # Nutrition edits always use the current authoritative Recipe source,
+        # even when a caller omits the optional review tokens. Resolve it under
+        # the established Food-before-Recipe lock order and validate supplied
+        # tokens while both source rows are locked.
+        try:
+            source_food = self.foods.get_for_update(log.food_item_id, user_id)
+            if (
+                source_food.deleted_at is not None
+                or not source_food.is_recipe
+                or source_food.source_type != "recipe"
+                or source_food.source_id is None
+            ):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
+            recipe = self.recipes.get_for_update(UUID(source_food.source_id), user_id)
+            if (
+                recipe.deleted_at is not None
+                or recipe.published_food_item_id != source_food.id
+                or source_food.recipe_publication_revision_id is None
+                or recipe.active_publication_revision_id is None
+                or source_food.recipe_publication_revision_id
+                != recipe.active_publication_revision_id
+            ):
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
+            if (
+                payload.source_recipe_publication_revision_id is not None
+                and payload.source_recipe_publication_revision_id
+                != recipe.active_publication_revision_id
+            ):
+                raise LogSourceChangedError(LogSourceChangedError.message)
+            if (
+                payload.source_food_updated_at is not None
+                and not _same_timestamp(source_food.updated_at, payload.source_food_updated_at)
+            ):
+                raise LogSourceChangedError(LogSourceChangedError.message)
+            revision = self.publications.get(
+                recipe.active_publication_revision_id,
+                user_id,
+            )
+            if revision is None or revision.recipe_id != recipe.id:
+                raise LogSourceUnavailableError(LogSourceUnavailableError.message)
+        except (LookupError, ValueError) as exc:
+            if isinstance(exc, (LogSourceChangedError, LogSourceUnavailableError)):
+                raise
+            raise LogSourceUnavailableError(LogSourceUnavailableError.message) from exc
+
+        stored_revision = self.publications.get(log.recipe_publication_revision_id, user_id)
+        if stored_revision is None:
             raise RecipeNutritionValidationError(
                 "recipe_log_revision_missing",
                 "This entry's publication revision is no longer available.",
             )
+
         self._after_edit_revision_lookup(revision)
         stored_amount = next(
             (
                 amount
-                for amount in revision.amount_definitions
+                for amount in stored_revision.amount_definitions
                 if amount.id == log.recipe_publication_amount_definition_id
             ),
             None,
@@ -1136,11 +1329,6 @@ class LogService:
                 "This entry's saved amount is no longer available in its publication revision.",
             )
 
-        nutritional_edit = (
-            payload.amount_quantity is not None
-            or payload.amount_unit is not None
-            or "serving_definition_id" in payload.model_fields_set
-        )
         if not nutritional_edit:
             self._apply_log_metadata(log, payload)
             log.updated_at = datetime.now(timezone.utc)
@@ -1150,13 +1338,23 @@ class LogService:
             payload.amount_quantity if payload.amount_quantity is not None else log.amount_quantity
         )
         amount_unit = payload.amount_unit if payload.amount_unit is not None else log.amount_unit
-        selected_amount = self._select_revision_edit_amount(
-            log,
-            revision,
-            stored_amount,
-            payload,
-            amount_unit,
-        )
+        if revision.id != stored_revision.id:
+            current_amounts = list(revision.amount_definitions)
+            selected_amount = self._select_current_revision_edit_amount(
+                log,
+                current_amounts,
+                stored_amount,
+                payload,
+                amount_unit,
+            )
+        else:
+            selected_amount = self._select_revision_edit_amount(
+                log,
+                revision,
+                stored_amount,
+                payload,
+                amount_unit,
+            )
         self._after_edit_amount_lookup(selected_amount)
         try:
             resolved = resolve_revision_nutrition(
@@ -1181,8 +1379,16 @@ class LogService:
                 "This entry's publication revision contains invalid nutrition data.",
             ) from exc
 
+        projection_selection = map_projection_log_amount(
+            source_food,
+            revision,
+            amount_unit,
+            selected_amount.id,
+        )
         compatibility_serving_id = (
-            log.serving_definition_id if selected_amount.id == stored_amount.id else None
+            projection_selection.compatibility_serving.id
+            if projection_selection.compatibility_serving is not None
+            else None
         )
         with self.logs.snapshot_replacement_scope(user_id, log.id):
             self.logs.delete_snapshots(log.id, user_id)
@@ -1190,17 +1396,70 @@ class LogService:
             log.amount_quantity = resolved.entered_quantity
             log.amount_unit = resolved.semantic_amount_mode
             log.serving_definition_id = compatibility_serving_id
+            # The replacement snapshots and their publication authority are
+            # one atomic generation. Never leave a current snapshot set paired
+            # with a historical revision or amount association.
+            log.recipe_publication_revision_id = revision.id
             log.recipe_publication_amount_definition_id = selected_amount.id
             log.gram_amount = resolved.resolved_grams
             log.package_fraction = None
             log.updated_at = datetime.now(timezone.utc)
             log.snapshots = build_revision_log_snapshots(
-                log.food_item,
+                source_food or log.food_item,
                 resolved,
                 compatibility_serving_id,
             )
             self.db.flush()
             self._after_edit_snapshot_regeneration(log)
+
+    def _select_current_revision_edit_amount(
+        self,
+        log: DailyLog,
+        current_amounts: list[RecipePublicationAmountDefinition],
+        stored_amount: RecipePublicationAmountDefinition,
+        payload: DailyLogUpdateRequest,
+        amount_unit: str,
+    ) -> RecipePublicationAmountDefinition:
+        """Select an explicitly reviewed amount from the active revision."""
+
+        amount_unit = amount_unit.strip().lower()
+        if "serving_definition_id" in payload.model_fields_set:
+            requested_id = payload.serving_definition_id
+            if requested_id is None and amount_unit == "g":
+                gram_candidates = [
+                    amount for amount in current_amounts if amount.semantic_mode == "g"
+                ]
+                if len(gram_candidates) == 1:
+                    return gram_candidates[0]
+            selected = next(
+                (
+                    amount
+                    for amount in current_amounts
+                    if amount.id == requested_id and amount.semantic_mode == amount_unit
+                ),
+                None,
+            )
+            if selected is None:
+                raise RecipeNutritionValidationError(
+                    "recipe_log_serving_not_in_revision",
+                    "The selected amount is not available in the active publication revision.",
+                )
+            return selected
+
+        candidates = [
+            amount for amount in current_amounts
+            if amount.semantic_mode == amount_unit
+            and amount.semantic_mode == stored_amount.semantic_mode
+            and self._same_decimal(amount.display_quantity, stored_amount.display_quantity)
+            and amount.display_unit.strip().casefold() == stored_amount.display_unit.strip().casefold()
+            and self._same_decimal(amount.gram_equivalent, stored_amount.gram_equivalent)
+        ]
+        if len(candidates) != 1:
+            raise RecipeNutritionValidationError(
+                "recipe_log_conversion_unsupported",
+                "Choose a current amount before saving this edit.",
+            )
+        return candidates[0]
 
     def _select_revision_edit_amount(
         self,

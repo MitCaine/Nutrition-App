@@ -40,9 +40,11 @@ from app.services.log_service import (
     LogService,
     LogSourceAmountChangedError,
     LogSourceChangedError,
+    LogSourceUnavailableError,
     StaleLogMutationError,
 )
 from app.repositories.log_repository import LogRepository
+from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.services.food_service import FoodService
 from app.services.recipe_service import (
     RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT,
@@ -204,6 +206,105 @@ def _revision_log(factory) -> tuple:
         return user_id, log.id
 
 
+def test_postgres_recipe_edit_after_republication_updates_current_provenance(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, recipe_id, food_id, first_revision_id, serving_id, _ = _recipe_create_target(factory)
+    with factory() as db:
+        created = LogService(db).create_log(
+            user_id,
+            DailyLogCreateRequest(
+                food_item_id=food_id,
+                logged_date=date(2026, 7, 13),
+                amount_quantity=Decimal("1"),
+                amount_unit="serving",
+                serving_definition_id=serving_id,
+            ),
+        )
+        old_snapshot_ids = {snapshot.id for snapshot in created.snapshots}
+
+    with factory() as db:
+        recipes = RecipeService(db)
+        recipes.update_recipe(
+            user_id,
+            recipe_id,
+            RecipeUpdateRequest(serving_count_yield=Decimal("2")),
+        )
+        recipes.publish(user_id, recipe_id, uuid4())
+
+    with factory() as db:
+        recipe = db.get(Recipe, recipe_id)
+        assert recipe is not None
+        projection = db.get(FoodItem, food_id)
+        assert projection is not None
+        current_revision = RecipePublicationRepository(db).get_required(
+            recipe.active_publication_revision_id,
+            user_id,
+        )
+        current_amount = next(
+            amount for amount in current_revision.amount_definitions if amount.is_default
+        )
+        LogService(db).update_log(
+            user_id,
+            created.id,
+            DailyLogUpdateRequest(
+                amount_quantity=Decimal("2"),
+                amount_unit="serving",
+                serving_definition_id=current_amount.id,
+                source_food_updated_at=projection.updated_at,
+                source_recipe_publication_revision_id=current_revision.id,
+            ),
+        )
+        db.expire_all()
+        stored = db.get(DailyLog, created.id)
+        assert stored is not None
+        assert stored.recipe_publication_revision_id == current_revision.id
+        assert stored.recipe_publication_revision_id != first_revision_id
+        assert stored.recipe_publication_amount_definition_id == current_amount.id
+        assert {snapshot.id for snapshot in stored.snapshots}.isdisjoint(old_snapshot_ids)
+
+
+def test_postgres_unavailable_recipe_metadata_edit_preserves_history(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, log_id = _revision_log(factory)
+    with factory() as db:
+        log = db.get(DailyLog, log_id)
+        assert log is not None
+        revision_id = log.recipe_publication_revision_id
+        amount_id = log.recipe_publication_amount_definition_id
+        snapshots = tuple(
+            (snapshot.id, snapshot.amount, snapshot.consumed_amount_quantity)
+            for snapshot in log.snapshots
+        )
+        assert log.food_item is not None
+        log.food_item.deleted_at = log.updated_at
+        db.commit()
+
+    with factory() as db:
+        updated = LogService(db).update_log(
+            user_id,
+            log_id,
+            DailyLogUpdateRequest(notes="metadata only", logged_date=date(2026, 7, 12)),
+        )
+        assert updated.notes == "metadata only"
+        assert updated.logged_date == date(2026, 7, 12)
+        assert updated.recipe_publication_revision_id == revision_id
+        assert updated.recipe_publication_amount_definition_id == amount_id
+        assert tuple(
+            (snapshot.id, snapshot.amount, snapshot.consumed_amount_quantity)
+            for snapshot in updated.snapshots
+        ) == snapshots
+        with pytest.raises(LogSourceUnavailableError):
+            LogService(db).update_log(
+                user_id,
+                log_id,
+                DailyLogUpdateRequest(amount_quantity=Decimal("2")),
+            )
+
+
 def _manual_log(factory) -> tuple:
     with factory() as db:
         user = User(id=uuid4(), email=f"manual-phase3n-{uuid4()}@example.test")
@@ -291,6 +392,7 @@ def _manual_create_target(factory) -> tuple:
             ],
         )
         db.add(food)
+        establish_test_time_zone(db, user.id)
         db.commit()
         return user.id, food.id, serving.id
 
@@ -2255,30 +2357,27 @@ def test_manual_food_updates_are_serialized(postgres_sessions) -> None:
     _assert_coherent(factory, user_id, log_id, Decimal("3"))
 
 
-def test_deleted_projection_revision_log_updates_are_serialized(postgres_sessions) -> None:
+def test_deleted_projection_revision_log_metadata_updates_remain_available(postgres_sessions) -> None:
     factory = postgres_sessions
     user_id, log_id = _revision_log(factory)
     with factory() as db:
         log = db.get(DailyLog, log_id)
+        assert log is not None
         log.food_item.deleted_at = log.updated_at
         db.commit()
-    locked, release = Event(), Event()
-    first = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("2")}),
-        kwargs={"locked": locked, "release": release},
-    )
-    first.start()
-    assert locked.wait(5)
-    second = Thread(
-        target=_run_update,
-        args=(factory, user_id, log_id, {"amount_quantity": Decimal("6")}),
-    )
-    second.start()
-    release.set()
-    first.join(5)
-    second.join(5)
-    _assert_coherent(factory, user_id, log_id, Decimal("6"))
+    with factory() as db:
+        updated = LogService(db).update_log(
+            user_id,
+            log_id,
+            DailyLogUpdateRequest(notes="metadata only", logged_date=date(2026, 7, 12)),
+        )
+        assert updated.notes == "metadata only"
+        with pytest.raises(LogSourceUnavailableError):
+            LogService(db).update_log(
+                user_id,
+                log_id,
+                DailyLogUpdateRequest(amount_quantity=Decimal("2")),
+            )
 
 
 def test_concurrent_identical_food_creates_replay_one_committed_resource(

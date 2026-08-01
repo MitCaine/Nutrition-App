@@ -74,25 +74,43 @@ def test_metadata_only_edit_preserves_revision_amount_and_snapshot_rows(
     assert _snapshot_state(updated) == snapshots
 
 
-def test_quantity_edit_reuses_stored_revision_amount_and_regenerates_snapshots(
+def test_quantity_edit_uses_current_revision_amount_and_regenerates_snapshots(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    _, _, log = _create_serving_log(client, db_session)
-    revision_id = log.recipe_publication_revision_id
-    amount_id = log.recipe_publication_amount_definition_id
+    recipe_id, _, log = _create_serving_log(client, db_session)
+    assert client.patch(
+        f"/api/v1/recipes/{recipe_id}",
+        json={"serving_count_yield": "4"},
+    ).status_code == 200
+    assert client.post(f"/api/v1/recipes/{recipe_id}/publish").status_code == 200
+    stored_revision_id = log.recipe_publication_revision_id
     old_snapshot_ids = {row.id for row in log.snapshots}
-    old_protein = _protein_amount(log)
+    current_amount = next(
+        value
+        for value in client.get(
+            f"/api/v1/foods/{log.food_item_id}/resolved-nutrition"
+        ).json()["amounts"]
+        if value["is_default"]
+    )
 
-    response = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+    response = client.patch(
+        f"/api/v1/logs/{log.id}",
+        json={
+            "amount_quantity": "2",
+            "amount_unit": current_amount["semantic_amount_mode"],
+            "serving_definition_id": current_amount["amount_definition_id"],
+        },
+    )
 
     assert response.status_code == 200, response.text
     updated = _stored_log(db_session, response)
-    assert updated.recipe_publication_revision_id == revision_id
-    assert updated.recipe_publication_amount_definition_id == amount_id
+    assert updated.recipe_publication_revision_id != stored_revision_id
+    assert updated.recipe_publication_amount_definition_id == UUID(
+        current_amount["amount_definition_id"]
+    )
     assert updated.amount_quantity == Decimal("2")
     assert {row.id for row in updated.snapshots}.isdisjoint(old_snapshot_ids)
-    assert _protein_amount(updated) == old_protein * 2
 
 
 def test_semantic_amount_change_selects_definition_inside_stored_revision(
@@ -187,7 +205,7 @@ def test_count_only_revision_allows_serving_edit_and_rejects_gram_edit(
     assert unchanged.amount_quantity == Decimal("2")
 
 
-def test_edit_after_republish_uses_original_revision_not_active_revision(
+def test_edit_after_republish_uses_current_revision_and_explicit_current_amount(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -203,13 +221,27 @@ def test_edit_after_republish_uses_original_revision_not_active_revision(
     db_session.expire_all()
     revision_two = db_session.get(Recipe, recipe_id).active_publication_revision_id
 
-    response = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+    current_amount = next(
+        value
+        for value in client.get(
+            f"/api/v1/foods/{log.food_item_id}/resolved-nutrition"
+        ).json()["amounts"]
+        if value["is_default"]
+    )
+    response = client.patch(
+        f"/api/v1/logs/{log.id}",
+        json={
+            "amount_quantity": "2",
+            "amount_unit": current_amount["semantic_amount_mode"],
+            "serving_definition_id": current_amount["amount_definition_id"],
+        },
+    )
 
     assert response.status_code == 200, response.text
     updated = _stored_log(db_session, response)
     assert revision_two != revision_one
-    assert updated.recipe_publication_revision_id == revision_one
-    assert _protein_amount(updated) == Decimal("5")
+    assert updated.recipe_publication_revision_id == revision_two
+    assert _protein_amount(updated) == Decimal("2.5")
 
 
 def test_edit_context_uses_only_stored_revision_amounts_after_multiple_republishes(
@@ -263,6 +295,7 @@ def test_historical_amount_choice_from_edit_context_can_be_selected_after_republ
     db_session: Session,
 ) -> None:
     recipe_id, _, log = _create_serving_log(client, db_session)
+    stored_revision_id = log.recipe_publication_revision_id
     assert client.patch(
         f"/api/v1/recipes/{recipe_id}",
         json={"serving_count_yield": "4"},
@@ -301,11 +334,30 @@ def test_historical_amount_choice_from_edit_context_can_be_selected_after_republ
         },
     )
 
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]["code"] == "recipe_log_serving_not_in_revision"
+
+    current_amount = next(
+        amount
+        for amount in client.get(
+            f"/api/v1/foods/{log.food_item_id}/resolved-nutrition"
+        ).json()["amounts"]
+        if amount["display_label"] == "100 g"
+    )
+    response = client.patch(
+        f"/api/v1/logs/{log.id}",
+        json={
+            "amount_quantity": "1.5",
+            "amount_unit": "serving",
+            "serving_definition_id": current_amount["amount_definition_id"],
+        },
+    )
+
     assert response.status_code == 200, response.text
     updated = _stored_log(db_session, response)
-    assert updated.recipe_publication_revision_id == log.recipe_publication_revision_id
+    assert updated.recipe_publication_revision_id != stored_revision_id
     assert updated.recipe_publication_amount_definition_id == UUID(
-        historical_100g["amount_definition_id"]
+        current_amount["amount_definition_id"]
     )
     assert updated.gram_amount == Decimal("150")
 
@@ -327,7 +379,7 @@ def test_log_edit_context_is_user_scoped(
         LogService(db_session).edit_context(other_user.id, log.id)
 
 
-def test_projection_serving_rename_and_republish_do_not_affect_historical_edit(
+def test_projection_serving_rename_and_republish_use_current_edit_authority(
     client: TestClient,
     db_session: Session,
 ) -> None:
@@ -346,25 +398,35 @@ def test_projection_serving_rename_and_republish_do_not_affect_historical_edit(
     assert response.status_code == 200, response.text
     updated = _stored_log(db_session, response)
     assert updated.food_item_id == UUID(food["id"])
-    assert updated.recipe_publication_revision_id == revision_id
+    assert updated.recipe_publication_revision_id != revision_id
     assert updated.amount_quantity == Decimal("1.5")
 
 
-def test_deleted_projection_does_not_block_revision_aware_edit(
+def test_deleted_projection_allows_metadata_but_blocks_revision_aware_nutrition_edit(
     client: TestClient,
     db_session: Session,
 ) -> None:
     recipe_id, _, log = _create_serving_log(client, db_session)
     assert client.delete(f"/api/v1/recipes/{recipe_id}").status_code == 204
 
-    response = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+    snapshots = _snapshot_state(log)
+    response = client.patch(
+        f"/api/v1/logs/{log.id}",
+        json={"notes": "edited after deletion", "logged_date": "2026-07-12"},
+    )
 
     assert response.status_code == 200, response.text
     assert response.json()["is_editable"] is True
     assert response.json()["edit_block_reason"] is None
     updated = _stored_log(db_session, response)
     assert updated.recipe_publication_revision_id == log.recipe_publication_revision_id
-    assert updated.amount_quantity == Decimal("2")
+    assert updated.notes == "edited after deletion"
+    assert updated.logged_date.isoformat() == "2026-07-12"
+    assert _snapshot_state(updated) == snapshots
+
+    nutrition = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+    assert nutrition.status_code == 409
+    assert nutrition.json()["detail"]["code"] == "source_food_unavailable"
 
 
 def test_deleted_projection_reports_source_availability_separately_from_editability(
@@ -384,6 +446,8 @@ def test_deleted_projection_reports_source_availability_separately_from_editabil
     assert context.status_code == 200
     assert context.json()["source_food_available"] is False
     assert context.json()["amount_choices"]
+    assert context.json()["current_source_loggable"] is False
+    assert context.json()["current_amount_choices"] == []
 
 
 def test_manual_log_edit_context_preserves_compatibility_contract(
@@ -437,21 +501,33 @@ def test_manual_log_edit_context_preserves_compatibility_contract(
     assert updated.amount_quantity == Decimal("2")
 
 
-def test_missing_stored_revision_returns_structured_validation(
+def test_missing_stored_revision_allows_metadata_but_rejects_nutrition(
     client: TestClient,
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, _, log = _create_serving_log(client, db_session)
+    recipe_id, _, log = _create_serving_log(client, db_session)
+    assert client.patch(
+        f"/api/v1/recipes/{recipe_id}",
+        json={"serving_count_yield": "4"},
+    ).status_code == 200
+    assert client.post(f"/api/v1/recipes/{recipe_id}/publish").status_code == 200
 
-    def missing(_self, _revision_id, _user_id):
-        return None
+    original_get = RecipePublicationRepository.get
+
+    def missing(_self, revision_id, user_id):
+        if revision_id == log.recipe_publication_revision_id:
+            return None
+        return original_get(_self, revision_id, user_id)
 
     monkeypatch.setattr(RecipePublicationRepository, "get", missing)
-    response = client.patch(f"/api/v1/logs/{log.id}", json={"notes": "blocked"})
+    response = client.patch(f"/api/v1/logs/{log.id}", json={"notes": "allowed"})
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
+    assert response.status_code == 200
+
+    nutrition = client.patch(f"/api/v1/logs/{log.id}", json={"amount_quantity": "2"})
+    assert nutrition.status_code == 400
+    assert nutrition.json()["detail"] == {
         "code": "recipe_log_revision_missing",
         "message": "This entry's publication revision is no longer available.",
     }
