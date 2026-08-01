@@ -48,6 +48,7 @@ class CalendarState:
     is_established: bool
     authoritative_time_zone: str | None
     calendar_revision: int
+    today: date | None
 
 
 @dataclass(frozen=True)
@@ -136,13 +137,20 @@ class CalendarService:
     def __init__(self, db: Session):
         self.db = db
 
-    def state(self, user_id: UUID) -> CalendarState:
+    def state(self, user_id: UUID, *, now: datetime | None = None) -> CalendarState:
+        """Return owner calendar authority and its current calendar date.
+
+        ``today`` is derived at read time from the confirmed IANA zone.  It is
+        deliberately not persisted, so a date rollover never changes any
+        historical Daily Log row or calendar revision.
+        """
         profile = self.db.get(UserProfile, user_id)
         zone = (profile.authoritative_time_zone or None) if profile is not None else None
         return CalendarState(
             is_established=bool(zone),
             authoritative_time_zone=zone,
             calendar_revision=(profile.calendar_revision or 0) if profile is not None else 0,
+            today=self.today_in_zone(zone, now) if zone else None,
         )
 
     @staticmethod

@@ -16,6 +16,7 @@ class CalendarStateResponse(BaseModel):
     is_established: bool
     authoritative_time_zone: str | None
     calendar_revision: int = 0
+    today: date | None = None
 
 
 class EstablishTimeZoneRequest(BaseModel):

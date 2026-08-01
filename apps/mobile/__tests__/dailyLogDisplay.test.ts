@@ -1,10 +1,13 @@
 import {
+  addCalendarDays,
   addLocalDays,
+  classifyCalendarDate,
   formatReadableDate,
   localDateToApiDate,
   parseLocalDateString,
   setLocalDatePart,
   todayLocalDateString,
+  todayInTimeZone,
   visibleDailyTotals,
   loggedFoodDisplayName,
   dailyLogEntryState,
@@ -105,4 +108,22 @@ test("date selector helpers update date parts and readable labels", () => {
   expect(setLocalDatePart("2026-07-11", "month", 1)).toBe("2026-08-11");
   expect(setLocalDatePart("2026-01-31", "month", 1)).toBe("2026-02-28");
   expect(formatReadableDate("2026-07-11")).toContain("2026");
+});
+
+test("authoritative date arithmetic handles leap days and year boundaries", () => {
+  expect(addCalendarDays("2028-02-28", 1)).toBe("2028-02-29");
+  expect(addCalendarDays("2028-02-29", 1)).toBe("2028-03-01");
+  expect(addCalendarDays("2026-12-31", 1)).toBe("2027-01-01");
+  expect(addCalendarDays("2027-01-01", -1)).toBe("2026-12-31");
+});
+
+test("authoritative today uses the selected IANA zone across offset transitions", () => {
+  expect(todayInTimeZone("America/New_York", new Date("2026-03-08T06:30:00.000Z"))).toBe("2026-03-08");
+  expect(todayInTimeZone("Pacific/Kiritimati", new Date("2026-01-01T10:00:00.000Z"))).toBe("2026-01-02");
+});
+
+test("future classification compares calendar dates rather than elapsed time", () => {
+  expect(classifyCalendarDate("2026-07-13", "2026-07-14")).toBe("past");
+  expect(classifyCalendarDate("2026-07-14", "2026-07-14")).toBe("today");
+  expect(classifyCalendarDate("2026-07-15", "2026-07-14")).toBe("future");
 });

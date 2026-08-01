@@ -1,4 +1,5 @@
 import {
+  calendarToday,
   calendarContextChanged,
   calendarMutationsEnabled,
   calendarStateLabel,
@@ -24,5 +25,24 @@ describe("authoritative calendar state", () => {
     expect(calendarContextChanged(4, 4)).toBe(false);
     expect(calendarContextChanged(4, 5)).toBe(true);
     expect(calendarContextChanged(null, 5)).toBe(false);
+  });
+
+  it("derives today from the authoritative zone and a provisional zone before confirmation", () => {
+    const now = new Date("2026-01-01T10:00:00.000Z");
+    expect(calendarToday(
+      { is_established: true, authoritative_time_zone: "Pacific/Kiritimati", today: "2026-01-02" },
+      "UTC",
+      now,
+    )).toBe("2026-01-02");
+    expect(calendarToday(
+      { is_established: true, authoritative_time_zone: "Pacific/Kiritimati" },
+      "UTC",
+      now,
+    )).toBe("2026-01-02");
+    expect(calendarToday(
+      { is_established: false, authoritative_time_zone: null },
+      "America/Los_Angeles",
+      now,
+    )).toBe("2026-01-01");
   });
 });

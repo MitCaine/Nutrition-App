@@ -13,6 +13,10 @@ export function useCalendarState() {
   return useQuery({
     queryKey: CALENDAR_QUERY_KEY,
     queryFn: getCalendarState,
+    // ``today`` is derived by the server at read time.  Refresh it so a
+    // midnight rollover reclassifies the retained selected date without
+    // navigating away from the user's active workflow.
+    refetchInterval: 60_000,
   });
 }
 

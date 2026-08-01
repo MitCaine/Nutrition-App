@@ -54,6 +54,18 @@ def test_calendar_state_is_owner_scoped_and_initial_confirmation_is_idempotent(
     assert error.value.code == "time_zone_change_requires_review"
 
 
+def test_calendar_state_derives_today_from_the_confirmed_zone(db_session: Session) -> None:
+    user = User(id=uuid4(), email="calendar-today@example.test")
+    db_session.add(user)
+    db_session.commit()
+    service = CalendarService(db_session)
+    service.establish(user.id, "Pacific/Kiritimati")
+
+    state = service.state(user.id, now=datetime(2026, 1, 1, 10, tzinfo=timezone.utc))
+
+    assert state.today == date(2026, 1, 2)
+
+
 def test_api_requires_explicit_confirmation_and_returns_stable_mutation_error(
     unconfirmed_client: TestClient,
 ) -> None:
@@ -63,6 +75,7 @@ def test_api_requires_explicit_confirmation_and_returns_stable_mutation_error(
         "is_established": False,
         "authoritative_time_zone": None,
         "calendar_revision": 0,
+        "today": None,
     }
 
     blocked = unconfirmed_client.post(
@@ -89,12 +102,12 @@ def test_api_requires_explicit_confirmation_and_returns_stable_mutation_error(
         json={"time_zone": "America/Los_Angeles"},
     )
     assert confirmed.status_code == 200
-    assert confirmed.json() == {
-        "is_established": True,
-        "authoritative_time_zone": "America/Los_Angeles",
-        "calendar_revision": 1,
-    }
-    assert unconfirmed_client.get("/api/v1/settings/calendar").json() == confirmed.json()
+    confirmed_body = confirmed.json()
+    assert confirmed_body["is_established"] is True
+    assert confirmed_body["authoritative_time_zone"] == "America/Los_Angeles"
+    assert confirmed_body["calendar_revision"] == 1
+    assert date.fromisoformat(confirmed_body["today"])
+    assert unconfirmed_client.get("/api/v1/settings/calendar").json()["today"] == confirmed_body["today"]
 
 
 def test_log_update_and_delete_guards_apply_to_unconfirmed_owner(db_session: Session) -> None:

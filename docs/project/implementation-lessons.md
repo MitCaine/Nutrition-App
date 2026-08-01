@@ -165,38 +165,44 @@ The burden of proof is on introducing new architecture—not on reusing existing
 
 # E1-04 — Replay-Safe and Concurrency-Aware Mutations
 
-## Qualify locking behavior on the database that implements the lock
+## Qualify database locking on the production database engine
 
-Concurrency behavior depending on row locks cannot be qualified through SQLite or ordinary sequential tests.
+Concurrency guarantees based on row locks cannot be validated through SQLite or sequential tests.
 
 When correctness depends on PostgreSQL locking:
 
 - add targeted PostgreSQL contention tests;
-- verify the tests execute rather than skip;
-- treat unavailable infrastructure as incomplete qualification, not a passing result.
+- require the tests to execute rather than skip;
+- treat unavailable infrastructure as incomplete qualification;
+- run exact test node IDs when validating a bounded correction.
+
+## Establish all foundational invariants in concurrency fixtures
+
+Contention tests must satisfy earlier Epic contracts before reaching the behavior under test.
+
+Shared setup helpers should establish required owner state, such as the authoritative time zone, rather than bypassing production guards.
 
 ## Check mutable preconditions under the serializing lock
 
-Any precondition protecting a mutable generation must be evaluated after acquiring the same lock that serializes the mutation.
+Any stale-generation or expected-state precondition must be evaluated after acquiring the same lock that serializes the mutation.
 
-This includes:
+This applies to:
 
-- stale-entry timestamps;
+- expected timestamps;
 - expected revisions;
-- replay receipts that may have completed while waiting.
+- delete eligibility;
+- replay receipts that may complete while a request waits.
 
-## Recheck replay state after lock waits
+## Recheck replay receipts after lock waits
 
-A concurrent identical request may complete while another request waits for the row lock.
+An identical request may finish while another request is blocked on the row lock.
 
 After acquiring the lock:
 
-- re-read the replay receipt;
-- return the prior authoritative outcome when it exists;
-- do not attempt the mutation again.
+- re-read the receipt;
+- return the confirmed prior outcome when present;
+- do not execute the mutation a second time.
 
-## Preserve stable domain conflicts under contention
+## Preserve stable conflicts under contention
 
-Contention must not degrade a known domain conflict into a generic not-found or infrastructure error.
-
-The losing operation must return the accepted stable conflict, such as `stale_log_entry`, when its precondition is no longer valid.
+A losing concurrent mutation must return the accepted domain conflict, such as `stale_log_entry`, rather than degrading into a generic not-found or infrastructure error.

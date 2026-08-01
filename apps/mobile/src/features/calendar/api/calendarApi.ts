@@ -4,6 +4,8 @@ export type CalendarState = {
   is_established: boolean;
   authoritative_time_zone: string | null;
   calendar_revision?: number;
+  /** Current calendar date in the authoritative zone, when established. */
+  today?: string | null;
 };
 
 export type CalendarImpactEntry = {

@@ -1,4 +1,5 @@
 import type { CalendarState } from "./api/calendarApi";
+import { classifyCalendarDate, todayInTimeZone } from "../logging/utils/dailyLogDisplay";
 
 export function calendarMutationsEnabled(state: CalendarState | undefined): boolean {
   return state?.is_established === true && Boolean(state.authoritative_time_zone);
@@ -21,3 +22,21 @@ export function calendarContextChanged(
 ): boolean {
   return initialRevision !== null && currentRevision !== null && initialRevision !== currentRevision;
 }
+
+/** Return the current date for the confirmed or provisional calendar. */
+export function calendarToday(
+  state: CalendarState | undefined,
+  provisionalTimeZone: string,
+  now = new Date(),
+): string {
+  if (state?.is_established && state.today) {
+    return state.today;
+  }
+  const timeZone = state?.is_established && state.authoritative_time_zone
+    ? state.authoritative_time_zone
+    : provisionalTimeZone;
+  return todayInTimeZone(timeZone, now);
+}
+
+/** Classify the active Daily Log date under the current calendar. */
+export { classifyCalendarDate };
