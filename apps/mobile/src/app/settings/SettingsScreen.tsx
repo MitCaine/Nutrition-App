@@ -5,10 +5,17 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "../theme/AppTheme";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnosticsModel";
+import { deviceTimeZone } from "../../features/calendar/api/calendarApi";
+import { calendarStateLabel } from "../../features/calendar/calendarModel";
+import { useCalendarState, useEstablishCalendarTimeZone } from "../../features/calendar/hooks/useCalendar";
 
 export function SettingsScreen({ onBack, onOpenNutritionTargets, onOpenOcrDiagnostics }: { onBack: () => void; onOpenNutritionTargets: () => void; onOpenOcrDiagnostics?: () => void }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const calendar = useCalendarState();
+  const establish = useEstablishCalendarTimeZone();
+  const proposedTimeZone = deviceTimeZone();
+  const isEstablished = calendar.data?.is_established === true;
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -35,6 +42,28 @@ export function SettingsScreen({ onBack, onOpenNutritionTargets, onOpenOcrDiagno
             </Pressable>
           );
         })}
+      </View>
+      <Text style={styles.sectionTitle}>Daily Log calendar</Text>
+      <View style={styles.calendarCard}>
+        <Text style={styles.calendarText}>{calendarStateLabel(calendar.data, proposedTimeZone)}</Text>
+        {!isEstablished ? (
+          <>
+            <Text style={styles.calendarHint}>
+              Daily Log changes stay unavailable until you confirm this proposed zone.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Confirm ${proposedTimeZone} as the Daily Log time zone`}
+              disabled={establish.isPending}
+              onPress={() => establish.mutate(proposedTimeZone)}
+              style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed, establish.isPending && styles.disabled]}
+            >
+              <Text style={styles.confirmButtonText}>{establish.isPending ? "Confirming…" : `Confirm ${proposedTimeZone}`}</Text>
+            </Pressable>
+            {establish.isError ? <Text style={styles.errorText}>{establish.error.message}</Text> : null}
+          </>
+        ) : null}
+        {calendar.isError ? <Text style={styles.errorText}>Unable to load calendar settings.</Text> : null}
       </View>
       <Text style={styles.sectionTitle}>Nutrition</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Open nutrition targets" onPress={onOpenNutritionTargets} style={({ pressed }) => [styles.option, pressed && styles.pressed]}>
@@ -66,6 +95,13 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     option: { alignItems: "center", backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 52, paddingHorizontal: 14 },
     optionText: { color: theme.colors.text, fontSize: 17 },
     options: { borderColor: theme.colors.border, borderRadius: 10, borderWidth: 1, overflow: "hidden" },
+    calendarCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 10, borderWidth: 1, gap: 10, padding: 14 },
+    calendarText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    calendarHint: { color: theme.colors.secondaryText, fontSize: 14, lineHeight: 20 },
+    confirmButton: { alignSelf: "flex-start", backgroundColor: theme.colors.accent, borderRadius: 6, paddingHorizontal: 12, paddingVertical: 10 },
+    confirmButtonText: { color: theme.colors.accentForeground, fontWeight: "700" },
+    errorText: { color: theme.colors.destructive, fontSize: 14 },
+    disabled: { opacity: 0.6 },
     pressed: { backgroundColor: theme.colors.pressedBackground },
     screen: { backgroundColor: theme.colors.background, flex: 1, gap: 14, padding: 16 },
     sectionTitle: { color: theme.colors.secondaryText, fontSize: 14, fontWeight: "700", marginTop: 8, textTransform: "uppercase" },

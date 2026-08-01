@@ -39,6 +39,7 @@ from app.schemas.log import (
     DailyLogEditContextResponse,
     DailyLogUpdateRequest,
 )
+from app.services.calendar_service import require_authoritative_time_zone
 
 
 def _creation_fingerprint(payload: DailyLogCreateRequest) -> str:
@@ -99,6 +100,7 @@ class LogService:
         self.recipes = RecipeRepository(db)
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
+        require_authoritative_time_zone(self.db, user_id)
         fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
         if payload.client_request_id is not None:
             existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
@@ -310,6 +312,7 @@ class LogService:
 
     def update_log(self, user_id: UUID, log_id: UUID, payload: DailyLogUpdateRequest) -> DailyLog:
         """Own one DailyLog edit transaction; existing log rows lock before Food rows."""
+        require_authoritative_time_zone(self.db, user_id)
         try:
             log = self.logs.get_for_update(log_id, user_id)
             if log.recipe_publication_revision_id is not None:
@@ -534,6 +537,7 @@ class LogService:
 
     def delete_log(self, user_id: UUID, log_id: UUID) -> None:
         """Own the complete DailyLog deletion transaction."""
+        require_authoritative_time_zone(self.db, user_id)
         try:
             log = self.logs.get_required(log_id, user_id)
             self.logs.delete(log, user_id)

@@ -7,12 +7,14 @@
 ## Release and roadmap status
 
 Version 1.0 is complete and is the maintained baseline for Version 1.x. Version 1.1 is the active
-development line.
+development line. The [Version 1.1 Product Roadmap](version-1.1/version-1.1-roadmap.md) is the authoritative
+parent document for its product scope. Epic 1 — Daily Logging Flow has been selected and its
+[Grill record](version-1.1/epic-1/grill.md) is complete. No Version 1.1 Feature
+PRD, architecture review, task breakdown, or implementation has begun.
 
-No Version 1.1 feature roadmap is currently committed in repository documentation. New product
-scope should be recorded deliberately rather than inferred from historical stage or release
-documents. The [Historical Knowledge Index](../historical/README.md) preserves the Version 1.0
-roadmap, release-candidate evidence, and release gate.
+New Version 1.1 scope should be recorded deliberately rather than inferred from historical stage
+or release documents. The [Historical Knowledge Index](../historical/README.md) preserves the
+Version 1.0 roadmap, release-candidate evidence, and release gate.
 
 ## Current architecture
 
@@ -45,6 +47,8 @@ as release evidence, not current planning guidance.
 | Need | Canonical document |
 | --- | --- |
 | Enduring purpose, scope, and priorities | [Project Constitution](constitution.md) |
+| Version 1.1 product direction and Epic order | [Version 1.1 Product Roadmap](version-1.1/version-1.1-roadmap.md) |
+| Resolved Epic 1 product decisions before PRD | [Daily Logging Flow Grill record](version-1.1/epic-1/grill.md) |
 | Technical truths that changes must preserve | [Project Invariants](invariants.md) |
 | Minimum implementation or review context | [Project Onboarding](onboarding.md) |
 | Current system boundaries | [Architecture Overview](../architecture/overview.md) |

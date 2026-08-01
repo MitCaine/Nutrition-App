@@ -23,6 +23,7 @@ from app.services.log_service import LogService
 from tests.test_recipe_revision_logging import _published
 from tests.test_recipe_revision_publication import _publish
 from tests.test_stage2_foods import create_food
+from tests.time_zone_test_support import establish_test_time_zone
 
 
 idempotency_migration = import_module(
@@ -181,6 +182,8 @@ def test_request_id_scope_is_per_user(db_session: Session) -> None:
     second_user = User(id=uuid4(), email=f"idempotency-{uuid4()}@example.test")
     db_session.add(second_user)
     db_session.flush()
+    establish_test_time_zone(db_session, first_user.id)
+    establish_test_time_zone(db_session, second_user.id)
     first_food = _manual_food(first_user.id, "First user food")
     second_food = _manual_food(second_user.id, "Second user food")
     db_session.add_all([first_food, second_food])

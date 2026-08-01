@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import DBAPIError
 
-from app.api.v1.routers import foods, health, logs, nutrients, ocr, recipes, targets, usda
+from app.api.v1.routers import calendar, foods, health, logs, nutrients, ocr, recipes, targets, usda
 from app.core.config import ProcessMode, Settings, settings
 from app.core.database import engine
 from app.core.database_errors import (
@@ -100,6 +100,12 @@ def create_app(
         targets.router,
         prefix="/api/v1/targets",
         tags=["targets"],
+        dependencies=authenticated,
+    )
+    include(
+        calendar.router,
+        prefix="/api/v1/settings/calendar",
+        tags=["calendar"],
         dependencies=authenticated,
     )
     include(

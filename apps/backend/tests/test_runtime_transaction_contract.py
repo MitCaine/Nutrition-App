@@ -25,6 +25,7 @@ from app.services.target_service import TargetService
 from app.services.usda_service import UsdaService
 from tests.test_stage3_usda_import import FakeUsdaClient
 from tests.test_stage3_usda_mapper import usda_banana_payload
+from tests.time_zone_test_support import establish_test_time_zone
 
 
 def _marker_commit(db: Session) -> None:
@@ -135,6 +136,7 @@ def test_target_reset_failure_restores_override_and_session_is_reusable(
 
 def test_log_delete_failure_restores_log_and_session_is_reusable(db_session: Session) -> None:
     user = ensure_dev_user(db_session)
+    establish_test_time_zone(db_session, user.id)
     serving = ServingDefinition(
         id=uuid4(),
         label="1 portion",
@@ -183,6 +185,7 @@ def test_mutable_log_edit_failure_preserves_historical_snapshot_and_session_is_r
     db_session: Session,
 ) -> None:
     user = ensure_dev_user(db_session)
+    establish_test_time_zone(db_session, user.id)
     serving = ServingDefinition(
         id=uuid4(),
         label="1 portion",

@@ -39,6 +39,15 @@ activation and other high-risk migration work must use the applicable operations
 | `./scripts/qualify-phase5c4-infrastructure.sh` | Runs destructive, disposable Phase 5C4 infrastructure qualification after an exact confirmation value is supplied. |
 | `./scripts/zip-project.sh` | Builds and verifies a secret-excluding review archive with a repository manifest. |
 
+## GitHub planning automation
+
+| Entry point | Responsibility |
+| --- | --- |
+| `python3 scripts/github/create_issues.py BACKLOG.md` | Reconciles labels, milestones, a GitHub Epic, child issues, generated progress metadata, and optional Project membership from a structured backlog. |
+
+See the [GitHub backlog issue creator guide](github/README.md) for the required Markdown format,
+authentication, dry-run behavior, state-file handling, and rerun guarantees.
+
 The infrastructure qualifier is intentionally specialized and fail-closed. Follow the
 [Testing Guide](../docs/operations/testing.md#phase-5c48-bounded-recovery-qualification) rather than
 discovering its environment contract by trial and error.

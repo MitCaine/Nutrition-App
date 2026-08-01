@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0021_target_activation_execution"
+    "0022_authoritative_user_timezone"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"
@@ -9,9 +9,7 @@
   "focused_audit_tests": [
     "apps/backend/tests/test_project_audit.py"
   ],
-  "forbidden_change_prefixes": [
-    "apps/mobile/"
-  ],
+  "forbidden_change_prefixes": [],
   "forbidden_placeholders": [
     "REPLACE_SIGNING_MESSAGE_DIGEST"
   ],

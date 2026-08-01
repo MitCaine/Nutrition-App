@@ -34,6 +34,11 @@ class UserProfile(Base):
     energy_estimation_context: Mapped[str] = mapped_column(
         Text, nullable=False, default="general_adult", server_default="general_adult"
     )
+    # A nullable value deliberately distinguishes legacy/unconfirmed owners from
+    # owners who have explicitly established the calendar used by Daily Log.
+    # It is stored on the existing owner profile boundary so all clients share
+    # one authoritative value without changing DailyLog rows.
+    authoritative_time_zone: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

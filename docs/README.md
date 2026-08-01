@@ -20,6 +20,10 @@ ordinary implementation task does not require loading the project's construction
    [Architecture Overview](architecture/overview.md) for a cross-cutting change.
 5. Select validation from the [Testing Guide](operations/testing.md).
 
+For a feature that has completed planning, follow the
+[GitHub Implementation Workflow](project/github-workflow.md) to translate the approved backlog
+into milestones, an Epic, child issues, and an optional Project.
+
 Historical records are not part of the default implementation context. Open them only when a
 current guide links to a specific record or the task concerns provenance, migration history, or a
 past decision.
@@ -56,11 +60,23 @@ both engineers and implementation agents, followed by optional deeper routes.
   standards, deployment model, and priorities.
 - [Current State](project/current-state.md): canonical Version 1.1 starting point, migration heads,
   deployment scope, and unsupported boundaries.
+- [Version 1.1 Product Roadmap](project/version-1.1/version-1.1-roadmap.md): authoritative Version 1.1 vision,
+  Epics, ordering, non-goals, risks, and deferrals.
+- [Epic 1 Daily Logging Flow Grill record](project/version-1.1/epic-1/grill.md):
+  resolved product workflows, boundaries, edge cases, and success criteria before the Feature PRD.
+- [Epic 1 Feature PRD](project/version-1.1/epic-1/feature-prd.md): stable product requirements for
+  the Daily Logging Flow.
+- [Epic 1 Architecture Review](project/version-1.1/epic-1/architecture-review.md): approved
+  architecture boundary and implementation gate.
+- [Epic 1 Implementation Backlog](project/version-1.1/epic-1/implementation-backlog.md):
+  milestone-grouped GitHub issue source.
 - [Onboarding](project/onboarding.md): minimum human and AI reading paths.
 - [Project Invariants](project/invariants.md): canonical invariants and their rationale.
 - [Repository Tour](project/repository-tour.md): directory map and change walkthroughs.
 - [Development Guide](project/development-guide.md): code ownership, configuration, and change
   checklist.
+- [GitHub Implementation Workflow](project/github-workflow.md): gated planning-to-delivery flow,
+  GitHub artifact responsibilities, and backlog automation.
 
 ## Architecture
 

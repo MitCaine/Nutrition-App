@@ -16,6 +16,7 @@ from app.schemas.log import (
     DailyLogUpdateRequest,
     DailySummaryResponse,
 )
+from app.services.calendar_service import AuthoritativeTimeZoneRequiredError
 from app.services.log_service import (
     LogEditConflictError,
     LogIdempotencyConflictError,
@@ -37,6 +38,11 @@ def create_log(
 ) -> DailyLogResponse:
     try:
         return DailyLogResponse.model_validate(_service(db).create_log(user.id, payload))
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
     except LogIdempotencyConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -87,6 +93,11 @@ def update_log(
 ) -> DailyLogResponse:
     try:
         return DailyLogResponse.model_validate(_service(db).update_log(user.id, log_id, payload))
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
     except LogEditConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -108,5 +119,10 @@ def delete_log(
 ) -> None:
     try:
         _service(db).delete_log(user.id, log_id)
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

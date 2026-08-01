@@ -160,6 +160,21 @@ review and merge expectations, release tagging, and how the mandatory session co
 focused implementation work. The [Script Index](scripts/README.md) maps stable automation entry
 points without requiring contributors to inspect each script.
 
+### Planning to implementation
+
+Feature delivery follows a gated artifact sequence: Roadmap, Grill, Feature PRD, Architecture
+Review, and Implementation Backlog. The backlog is then reconciled into a GitHub Epic and
+reviewable child issues by the reusable [GitHub backlog tooling](scripts/github/README.md).
+
+Backlog headings become GitHub Milestones, optional backlog labels become issue labels, and an
+optional GitHub Project provides the execution states Backlog, Ready, In Progress, Review, and
+Done. Contributors implement issues in their documented dependency order, use the Epic as the
+delivery index, and keep the repository planning documents authoritative for product and
+architecture behavior.
+
+Read the [GitHub Implementation Workflow](docs/project/github-workflow.md) before creating or
+changing delivery issues from an approved backlog.
+
 ## Documentation
 
 Start at the [Documentation Index](docs/README.md), or choose a path:
@@ -178,6 +193,7 @@ Start at the [Documentation Index](docs/README.md), or choose a path:
 | Recall a specific decision quickly | [Architecture Decision Index](docs/architecture/decisions.md) |
 | Look up project terminology | [Glossary](docs/reference/glossary.md) |
 | Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
+| Turn an approved backlog into GitHub delivery work | [GitHub Implementation Workflow](docs/project/github-workflow.md) |
 | Run and extend qualification | [Testing Guide](docs/operations/testing.md) |
 | Work on production promotion infrastructure | [Control Plane Guide](docs/operations/control-plane.md) — optional |
 | Qualify the Version 1.0 backend/control release | [Version 1.0 PostgreSQL Release Qualification](docs/operations/version-1.0-release-qualification.md) |
@@ -211,9 +227,10 @@ it proves and gives the required commands.
 
 ## Roadmap and release status
 
-Version 1.0 is the completed baseline for Version 1.x maintenance and Version 1.1 development.
-[Current State](docs/project/current-state.md) is the canonical release, migration-head, product,
-deployment, and unsupported-boundary summary. The
+Version 1.0 is the completed baseline for Version 1.x maintenance and Version 1.1 development. The
+[Version 1.1 Product Roadmap](docs/project/version-1.1/version-1.1-roadmap.md) is the authoritative parent for
+Version 1.1 product scope. [Current State](docs/project/current-state.md) is the canonical release,
+migration-head, deployment, and unsupported-boundary summary. The
 [Historical Knowledge Index](docs/historical/README.md) preserves the original roadmap, Stage 7,
 RC1, production-hardening chronology, and Version 1.0 release evidence without placing them in the
 default implementation path.

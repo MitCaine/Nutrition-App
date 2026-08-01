@@ -18,6 +18,7 @@ from tests.test_stage3_usda_mapper import (
     usda_branded_bar_payload,
     usda_branded_full_macro_payload,
 )
+from tests.time_zone_test_support import establish_test_time_zone
 
 
 class FakeUsdaClient:
@@ -113,6 +114,7 @@ def test_imported_usda_food_logs_by_serving_and_grams_with_snapshots(
     db_session: Session,
 ) -> None:
     user = ensure_dev_user(db_session)
+    establish_test_time_zone(db_session, user.id)
     db_session.commit()
     food, _duplicate = UsdaService(db_session, FakeUsdaClient(usda_banana_payload())).import_food(user.id, 1105314)
     log_service = LogService(db_session)
@@ -154,6 +156,7 @@ def test_imported_branded_usda_food_logs_by_selected_default_serving(
     db_session: Session,
 ) -> None:
     user = ensure_dev_user(db_session)
+    establish_test_time_zone(db_session, user.id)
     db_session.commit()
     food, _duplicate = UsdaService(db_session, FakeUsdaClient(usda_branded_bar_payload())).import_food(user.id, 555000)
     default_serving = next(serving for serving in food.serving_definitions if serving.is_default)
@@ -198,6 +201,7 @@ def test_imported_branded_serving_preserves_per_100g_nutrient_basis(
     db_session: Session,
 ) -> None:
     user = ensure_dev_user(db_session)
+    establish_test_time_zone(db_session, user.id)
     db_session.commit()
     food, _duplicate = UsdaService(db_session, FakeUsdaClient(usda_branded_full_macro_payload())).import_food(user.id, 555001)
     default_serving = next(serving for serving in food.serving_definitions if serving.is_default)
@@ -225,6 +229,7 @@ def test_generic_food_logging_uses_default_serving_grams_with_per_100g_nutrients
     db_session: Session,
 ) -> None:
     user = ensure_dev_user(db_session)
+    establish_test_time_zone(db_session, user.id)
     db_session.commit()
     food = FoodItem(
         id=uuid4(),

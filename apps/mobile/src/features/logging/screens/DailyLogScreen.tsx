@@ -20,6 +20,8 @@ import {
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
+import { calendarMutationsEnabled } from "../../calendar/calendarModel";
+import { useCalendarState } from "../../calendar/hooks/useCalendar";
 
 type Props = {
   date: string;
@@ -41,6 +43,8 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
   const summary = useDailySummary(date);
   const foods = useFoods("");
   const mutations = useLogMutations(date);
+  const calendar = useCalendarState();
+  const mutationsEnabled = calendarMutationsEnabled(calendar.data);
   const foodNames = new Map((foods.data ?? []).map((food) => [food.id, food.name]));
   const scrollRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);
@@ -90,6 +94,11 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
         </View>
       ))}
       <Text style={styles.sectionTitle}>Entries</Text>
+      {!mutationsEnabled ? (
+        <Text style={styles.calendarNotice}>
+          Confirm your authoritative time zone in Settings before adding, editing, or deleting Daily Log entries.
+        </Text>
+      ) : null}
       {logs.data?.map((log) => {
         const entryState = dailyLogEntryState(log);
         const details = (
@@ -108,10 +117,10 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
             ) : (
               <View>{details}</View>
             )}
-            <Pressable onPress={() => mutations.deleteLog.mutate(log.id)}>
+            {mutationsEnabled ? <Pressable onPress={() => mutations.deleteLog.mutate(log.id)}>
               <Text style={styles.deleteText}>Delete</Text>
-            </Pressable>
-            {entryState.canEdit ? (
+            </Pressable> : null}
+            {mutationsEnabled && entryState.canEdit ? (
               <Pressable onPress={() => onEditLog(log.id)}>
                 <Text style={styles.text}>Edit</Text>
               </Pressable>
@@ -200,6 +209,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   datePreview: { fontSize: 18, fontWeight: "700" },
   deleteText: { color: theme.colors.destructive },
   foodName: { color: theme.colors.text, fontWeight: "700" },
+  calendarNotice: { color: theme.colors.secondaryText, fontSize: 14, lineHeight: 20 },
   logRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingVertical: 12 },
   modalActions: { flexDirection: "row", gap: 8, justifyContent: "flex-end" },
   modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },

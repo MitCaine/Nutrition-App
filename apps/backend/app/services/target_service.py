@@ -90,6 +90,23 @@ class TargetService:
             as_of=as_of,
         )
 
+    @staticmethod
+    def _has_target_profile_values(profile: UserProfile | None) -> bool:
+        """Distinguish target configuration from a calendar-only profile row."""
+
+        if profile is None:
+            return False
+        return any(
+            value is not None
+            for value in (
+                profile.birth_date,
+                profile.biological_sex_for_reference_calculations,
+                profile.height_cm,
+                profile.weight_kg,
+                profile.activity_level,
+            )
+        )
+
     def _validate_update(self, payload: TargetConfigurationUpdate, as_of: date) -> None:
         profile = payload.profile
         height_cm = height_to_cm(profile.height_cm, profile.height_unit)
@@ -275,7 +292,7 @@ class TargetService:
         overrides = self._overrides(user_id)
         return {
             "profile": None
-            if profile is None
+            if not self._has_target_profile_values(profile)
             else {
                 "birth_date": profile.birth_date,
                 "sex_for_equation": profile.biological_sex_for_reference_calculations,

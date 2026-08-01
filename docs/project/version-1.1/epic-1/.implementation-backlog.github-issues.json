@@ -1,0 +1,132 @@
+{
+  "backlog_key": "version-1-1-epic-1-github-implementation-backlog-c7b5f419a1be",
+  "children": {
+    "E1-01": {
+      "number": 5,
+      "source_body_sha256": "f8483ca3e4611a1369a9b5a9fbcac28a1f3f352303d69d1a459f42235be2a950",
+      "title": "E1-01 \u2014 Establish the authoritative user time zone",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/5"
+    },
+    "E1-02": {
+      "number": 6,
+      "source_body_sha256": "e2b894d5fc382867e851ed7c93ea363351f8ea6dce7343cde868a6ece6731792",
+      "title": "E1-02 \u2014 Support confirmed time-zone changes and impact review",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/6"
+    },
+    "E1-03": {
+      "number": 7,
+      "source_body_sha256": "e1d9c335794996eb3962b8e5f922c32e525b47b89286decde28c1aaafbac8d7b",
+      "title": "E1-03 \u2014 Enforce shared meal and note contracts",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/7"
+    },
+    "E1-04": {
+      "number": 8,
+      "source_body_sha256": "a235f73b8eb1f3014ac5e9629083b23feb5d33dc4b31e73df9cb6ec87360aacc",
+      "title": "E1-04 \u2014 Make all Log mutations replay-safe and concurrency-aware",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/8"
+    },
+    "E1-05": {
+      "number": 9,
+      "source_body_sha256": "f190237daeb6b00e01be832efbc786447c66070a5d97017f3a418a9b267a0a53",
+      "title": "E1-05 \u2014 Implement authoritative date navigation and provisional browsing",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/9"
+    },
+    "E1-06": {
+      "number": 10,
+      "source_body_sha256": "23e12732f295a718e87af5cd1c7b696526446ad5a0ed05c50ec429a03d3ac6a5",
+      "title": "E1-06 \u2014 Present meal-grouped entries, notes, and compatibility notices",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/10"
+    },
+    "E1-07": {
+      "number": 11,
+      "source_body_sha256": "1192e90d001dad79cee15d9340119486b5d02dd8754e0f894f149bea0c5a4419",
+      "title": "E1-07 \u2014 Separate Daily Log read states and project confirmed mutations",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/11"
+    },
+    "E1-08": {
+      "number": 12,
+      "source_body_sha256": "b2ac62e046800936b7f4526a9ac76e8c18442c8fea4ee67654ec57e459022d4e",
+      "title": "E1-08 \u2014 Deliver the core Daily Log Add Food vertical slice",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/12"
+    },
+    "E1-09": {
+      "number": 13,
+      "source_body_sha256": "4fa4d6ea7f065743f833c08d5918273028056502f5efeea71921485b6dd93afe",
+      "title": "E1-09 \u2014 Add Saved Food and USDA search mode with import handoff",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/13"
+    },
+    "E1-10": {
+      "number": 14,
+      "source_body_sha256": "e57cf13272d8824268d1561f71cbb0ffea5e4974db46497730e2318a23f958b5",
+      "title": "E1-10 \u2014 Add Custom Food and supported Scan Label handoffs",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/14"
+    },
+    "E1-11": {
+      "number": 15,
+      "source_body_sha256": "8a10d20dfda7457d102bb784125af8901f86f2d9dbed52d154e73ed6a3653326",
+      "title": "E1-11 \u2014 Harden shared Log Food confirmation and transient workflow state",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/15"
+    },
+    "E1-12": {
+      "number": 16,
+      "source_body_sha256": "43d74d82e8c18ae1905183bbb9c65ed4187cf16c12cd4f869c611b439b4012a8",
+      "title": "E1-12 \u2014 Implement Recent Entries and single-entry Repeat",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/16"
+    },
+    "E1-13": {
+      "number": 17,
+      "source_body_sha256": "ebb7e5f9e8b77bbc708f070a1e04144f688c91dcff7b4304c6aa173a3b53cdd9",
+      "title": "E1-13 \u2014 Implement historically safe entry editing and date moves",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/17"
+    },
+    "E1-14": {
+      "number": 18,
+      "source_body_sha256": "ee8b208049449a37860db1a41f418ee9bddd16d914678b1928d1ad9ebb071943",
+      "title": "E1-14 \u2014 Add permanent deletion with explicit consequences",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/18"
+    },
+    "E1-15": {
+      "number": 19,
+      "source_body_sha256": "623364bea9d9979ad36f6a6d211a3094a5aaf775abeca02d8ead54f326f49542",
+      "title": "E1-15 \u2014 Deliver the legacy future-entry cleanup experience",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/19"
+    },
+    "E1-16": {
+      "number": 20,
+      "source_body_sha256": "a75bbf0f40dfe50b7a6f52f9e3bf63d0bcbb9481b2250e4b5d25eb44c1dd4ae6",
+      "title": "E1-16 \u2014 Implement durable client-local uncertain-mutation recovery",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/20"
+    },
+    "E1-17": {
+      "number": 21,
+      "source_body_sha256": "f0b93616b12687e4cb20917612310cebafe1fa5db1b4b92cc429909986ff0e6f",
+      "title": "E1-17 \u2014 Qualify and remediate Epic 1 accessibility",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/21"
+    },
+    "E1-18": {
+      "number": 22,
+      "source_body_sha256": "740a543b2f3d4e15ebc5b1d1dc390358b12f124482fb1960ba23d5f1732b2b6c",
+      "title": "E1-18 \u2014 Run Epic 1 end-to-end release qualification",
+      "url": "https://github.com/MitCaine/Nutrition-App/issues/22"
+    }
+  },
+  "epic": {
+    "number": 4,
+    "title": "Version 1.1 Epic 1 \u2014 GitHub Implementation Backlog",
+    "url": "https://github.com/MitCaine/Nutrition-App/issues/4"
+  },
+  "epic_checklist_sha256": "67482cb608e3fe7bdc2d6e16c1f06b7f432a90233ae16aa3a1f52490afe28fd3",
+  "project": {
+    "created_by_tool": true,
+    "id": "PVT_kwHOBesPAc4BfGBD",
+    "number": 1,
+    "owner": "MitCaine",
+    "title": "Nutrition App",
+    "url": "https://github.com/users/MitCaine/projects/1",
+    "workflow_initialized": true
+  },
+  "repository": "MitCaine/Nutrition-App",
+  "schema_version": 1,
+  "source_file": "/Users/mipoo/Nutrition App/docs/project/version-1.1/epic-1/implementation-backlog.md",
+  "source_sha256": "78c180598567a9dd6d57ea66155a242a36b50c5831ab2e9b27c1db23e336e6eb"
+}

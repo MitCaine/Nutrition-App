@@ -39,6 +39,7 @@ import { NutritionScanScreen } from "../../features/ocr/screens/NutritionScanScr
 import { NutritionConfirmationScreen } from "../../features/ocr/screens/NutritionConfirmationScreen";
 import type { NutritionConfirmationDraft } from "../../features/ocr/api/types";
 import { TargetSettingsScreen } from "../../features/targets/TargetSettingsScreen";
+import { useCalendarState } from "../../features/calendar/hooks/useCalendar";
 
 type Route =
   | { name: "foods" }
@@ -83,6 +84,8 @@ export function AppNavigator() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(emptyRecipeDraft());
   const [foodMessage, setFoodMessage] = useState<string | null>(null);
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
+  const calendar = useCalendarState();
+  const calendarEstablished = calendar.data?.is_established === true;
   const [date, setDate] = useState(todayLocalDateString());
   const foodSearchScroll = useRef({ query: "", offset: 0 });
   const recipeSearchScroll = useRef({ query: "", offset: 0 });
@@ -145,17 +148,21 @@ export function AppNavigator() {
           setRoute({ name: "foods" });
         }}
         onEdit={() => setRoute({ name: "edit-food", foodId: route.foodId })}
-        onLog={(initialAmount) =>
-          setRoute(logFoodRoute(route.foodId, initialAmount))
-        }
+        onLog={(initialAmount) => {
+          if (!calendarEstablished) {
+            setRoute({ name: "settings", origin: "foods" });
+            return;
+          }
+          setRoute(logFoodRoute(route.foodId, initialAmount));
+        }}
       />
     );
   } else if (route.name === "edit-food") {
     content = <EditFoodRoute foodId={route.foodId} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
   } else if (route.name === "log-food") {
-    content = <LogFoodScreen foodId={route.foodId} date={date} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} />;
+    content = calendarEstablished ? <LogFoodScreen foodId={route.foodId} date={date} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "edit-log") {
-    content = <EditLogRoute logId={route.logId} date={date} onCancel={() => setRoute({ name: "daily-log" })} onSaved={() => setRoute({ name: "daily-log" })} />;
+    content = calendarEstablished ? <EditLogRoute logId={route.logId} date={date} onCancel={() => setRoute({ name: "daily-log" })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "usda-preview") {
     content = (
       <UsdaPreviewScreen
@@ -211,7 +218,13 @@ export function AppNavigator() {
           setRoute({ name: "edit-recipe", recipeId: route.recipeId });
         }}
         onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
-        onLogFood={(foodId) => setRoute(logFoodRoute(foodId))}
+        onLogFood={(foodId) => {
+          if (!calendarEstablished) {
+            setRoute({ name: "settings", origin: "recipes" });
+            return;
+          }
+          setRoute(logFoodRoute(foodId));
+        }}
         onDeleted={() => {
           setRecipeMessage("Recipe deleted");
           setRoute({ name: "recipes" });
