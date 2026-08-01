@@ -9,8 +9,11 @@ import type { MealType } from "../validation/logContracts";
 export type AddFoodFlowState = {
   originatingDate: string;
   initialMeal: MealType | null;
+  /** One user-entered query drives both independent search sources. */
   query: string;
-  scrollOffset: number;
+  /** Browse and search scroll sessions remain separate transient contexts. */
+  browseScrollOffset: number;
+  searchScrollOffset: number;
 };
 
 export function createAddFoodFlow(
@@ -21,13 +24,14 @@ export function createAddFoodFlow(
     originatingDate,
     initialMeal,
     query: "",
-    scrollOffset: 0,
+    browseScrollOffset: 0,
+    searchScrollOffset: 0,
   };
 }
 
 export function updateAddFoodFlow(
   flow: AddFoodFlowState,
-  changes: Partial<Pick<AddFoodFlowState, "query" | "scrollOffset">>,
+  changes: Partial<Pick<AddFoodFlowState, "query" | "browseScrollOffset" | "searchScrollOffset">>,
 ): AddFoodFlowState {
   return { ...flow, ...changes };
 }

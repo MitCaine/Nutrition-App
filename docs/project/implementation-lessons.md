@@ -318,3 +318,65 @@ Cross-date navigation must retire all prior-date section data immediately.
 
 ---
 
+# E1-08 — Core Add Food Vertical Slice
+
+## Qualify workflow identity across real navigation boundaries
+
+Screen-level tests are insufficient when correctness depends on state surviving
+multiple route transitions.
+
+For multi-screen workflows, add an integration test using the real navigation
+coordinator and actual screens responsible for:
+
+- originating context;
+- discovery;
+- confirmation;
+- cancellation;
+- successful return;
+- confirmed mutation projection.
+
+## Preserve workflow identity explicitly
+
+The originating date, meal context, acquisition path, browse state, and scroll
+position must travel as typed workflow state.
+
+Do not reconstruct them from the currently visible screen or current Today.
+
+## Converge acquisition paths on one confirmation flow
+
+General Add Food, meal-scoped Add Food, and later discovery sources should all
+route into the same Log Food confirmation contract.
+
+Avoid source-specific logging forms.
+
+## Treat cancellation as workflow navigation, not workflow destruction
+
+Cancelling confirmation should return to the discovery state that launched it.
+
+Cancelling discovery should return to the originating Daily Log.
+
+Preserve in-process state where the accepted contract requires it.
+
+## Revalidate immutable origin context before commit
+
+The originating date remains fixed throughout the flow, but its eligibility
+must be checked against the latest authoritative calendar before mutation.
+
+If it becomes invalid:
+
+- block the mutation;
+- retain the original date;
+- never substitute Today or another date.
+
+## Keep confirmed mutation results authoritative across read failures
+
+Once creation is confirmed:
+
+- project the returned entry immediately;
+- refresh entries, totals, and targets independently;
+- retain the confirmed entry if any refresh fails;
+- represent surrounding data as stale rather than representing the save as
+  uncertain.
+
+---
+

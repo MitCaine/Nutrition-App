@@ -21,6 +21,9 @@ jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useRecentFoods: () => mockRecent,
   useSavedFoods: () => mockSaved,
 }));
+jest.mock("../src/features/usda/hooks/useUsda", () => ({
+  useUsdaSearch: () => ({ data: undefined, isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),
+}));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => mockEntries,
@@ -80,9 +83,9 @@ test("renders the E1-08 browse sections in order and selects directly", async ()
   const text = allText(rendered.renderer.root);
   expect(text.indexOf("Recent Entries")).toBeLessThan(text.indexOf("Favorites"));
   expect(text.indexOf("Favorites")).toBeLessThan(text.indexOf("Recent Foods"));
-  expect(text.indexOf("Recent Foods")).toBeLessThan(text.indexOf("Saved Foods"));
+  expect(text.indexOf("Recent Foods")).toBeLessThan(text.lastIndexOf("Saved Foods"));
   expect(text).not.toContain("Food Details");
-  const saved = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel?.startsWith("Saved Food"));
+  const saved = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Saved Food, Manual");
   await act(async () => saved?.props.onPress());
   expect(rendered.onSelectFood).toHaveBeenCalledWith("saved");
   await act(async () => rendered.renderer.unmount());
@@ -110,7 +113,7 @@ test("discovery sources retain independent failures and retries", async () => {
 
 test("mutation-ineligible dates do not expose selectable Foods", async () => {
   const rendered = await render(false);
-  const saved = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel?.startsWith("Saved Food"));
+  const saved = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Saved Food, Manual");
   expect(saved?.props.disabled).toBe(true);
   await act(async () => saved?.props.onPress());
   expect(rendered.onSelectFood).not.toHaveBeenCalled();

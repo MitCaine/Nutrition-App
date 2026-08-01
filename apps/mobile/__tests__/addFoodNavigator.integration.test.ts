@@ -1,10 +1,11 @@
 import React from "react";
-import { Pressable, ScrollView, Text } from "react-native";
+import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import type { Food, FoodResolvedNutrition } from "../src/features/foods/api/types";
 import type { DailyLog, DailySummary } from "../src/features/logging/api/types";
 import type { DailyTargetComparison } from "../src/features/targets/api/types";
+import type { UsdaFoodPreview, UsdaSearchResponse } from "../src/features/usda/api/types";
 import { AppNavigator } from "../src/app/navigation/AppNavigator";
 
 let mockLogs: QueryState<DailyLog[]>;
@@ -13,6 +14,9 @@ let mockTargets: QueryState<DailyTargetComparison>;
 let mockCalendar: QueryState<CalendarState>;
 let mockFoodQuery: QueryState<Food>;
 let mockResolvedNutrition: QueryState<FoodResolvedNutrition>;
+let mockUsdaSearch: QueryState<UsdaSearchResponse>;
+let mockUsdaPreview: QueryState<UsdaFoodPreview>;
+let mockUsdaImport: { isPending: boolean; isError: boolean; mutate: jest.Mock };
 
 type QueryState<T> = {
   data?: T;
@@ -59,7 +63,6 @@ jest.mock("../src/features/recipes/screens/IngredientPickerScreen", () => ({ Ing
 jest.mock("../src/features/recipes/screens/RecipeDetailScreen", () => ({ RecipeDetailScreen: () => null }));
 jest.mock("../src/features/recipes/screens/RecipeFormScreen", () => ({ RecipeFormScreen: () => null }));
 jest.mock("../src/features/recipes/screens/RecipeListScreen", () => ({ RecipeListScreen: () => null }));
-jest.mock("../src/features/usda/screens/UsdaPreviewScreen", () => ({ UsdaPreviewScreen: () => null }));
 jest.mock("../src/features/usda/screens/UsdaSearchScreen", () => ({ UsdaSearchScreen: () => null }));
 jest.mock("../src/features/ocr/diagnostics/OcrDiagnosticsScreen", () => ({ OcrDiagnosticsScreen: () => null }));
 jest.mock("../src/features/ocr/screens/NutritionScanScreen", () => ({ NutritionScanScreen: () => null }));
@@ -77,11 +80,17 @@ jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
   useDailyTargetComparison: () => mockTargets,
 }));
 
+jest.mock("../src/features/usda/hooks/useUsda", () => ({
+  useUsdaSearch: () => mockUsdaSearch,
+  useUsdaPreview: () => mockUsdaPreview,
+  useUsdaImport: () => mockUsdaImport,
+}));
+
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFoods: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
   useFavoriteFoods: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
   useRecentFoods: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
-  useSavedFoods: () => ({ data: [mockFoodQuery.data], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
+  useSavedFoods: (query: string) => ({ data: query ? [] : [mockFoodQuery.data], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
   useFood: () => mockFoodQuery,
   useFoodResolvedNutrition: () => mockResolvedNutrition,
 }));
@@ -145,6 +154,45 @@ const nutrition: FoodResolvedNutrition = {
   }],
 };
 
+const importedFood: Food = {
+  ...food,
+  id: "food-imported-banana",
+  name: "Imported Banana",
+  source_kind: "usda",
+  source_label: "USDA",
+};
+
+const usdaSearchResponse: UsdaSearchResponse = {
+  query: "banana",
+  page_number: 1,
+  page_size: 20,
+  total_hits: 1,
+  foods: [{
+    fdc_id: 1105314,
+    description: "Banana, raw",
+    data_type: "Foundation",
+    brand_owner: null,
+    food_category: "Fruits",
+    publication_date: null,
+    importable: true,
+    nutrient_preview: [],
+  }],
+};
+
+const usdaPreview: UsdaFoodPreview = {
+  source_type: "usda",
+  external_id: "1105314",
+  fdc_id: 1105314,
+  name: "Banana, raw",
+  brand: null,
+  data_type: "Foundation",
+  food_category: "Fruits",
+  publication_date: null,
+  nutrients: [],
+  serving_definitions: [],
+  diagnostics: [],
+};
+
 const total = {
   nutrientId: "calories",
   amountKnown: "250",
@@ -177,7 +225,7 @@ const mockCreateLog = jest.fn(async (input: Record<string, unknown>) => {
   const entry: DailyLog = {
     id: `log-${(mockLogs.data ?? []).length + 1}`,
     food_item_id: String(input.food_item_id),
-    food_name_snapshot: food.name,
+    food_name_snapshot: String(input.food_item_id) === importedFood.id ? importedFood.name : food.name,
     meal_type: (input.meal_type as string | null | undefined) ?? null,
     source_food_available: true,
     logged_date: String(input.logged_date),
@@ -193,6 +241,11 @@ const mockCreateLog = jest.fn(async (input: Record<string, unknown>) => {
   return entry;
 });
 
+const mockUsdaImportMutation = jest.fn((_fdcId: number, options: { onSuccess: (food: Food) => void }) => {
+  mockFoodQuery = emptyQuery(importedFood);
+  options.onSuccess(importedFood);
+});
+
 function emptyQuery<T>(data: T): QueryState<T> {
   return { data, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
 }
@@ -204,6 +257,10 @@ function resetState() {
   mockCalendar = emptyQuery({ is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" });
   mockFoodQuery = emptyQuery(food);
   mockResolvedNutrition = emptyQuery(nutrition);
+  mockUsdaSearch = emptyQuery(usdaSearchResponse);
+  mockUsdaPreview = emptyQuery(usdaPreview);
+  mockUsdaImportMutation.mockClear();
+  mockUsdaImport = { isPending: false, isError: false, mutate: mockUsdaImportMutation };
   mockCreateLog.mockClear();
 }
 
@@ -277,6 +334,62 @@ test("named and general Add Food flows use real navigator transitions and return
   await act(async () => labeled(renderer.root, "Save log").props.onPress());
   expect(screenText(renderer.root)).toContain("Oatmeal");
   expect(screenText(renderer.root)).toContain("Past date");
+  await act(async () => renderer.unmount());
+});
+
+test("USDA search imports through the existing handoff and opens shared confirmation", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Breakfast").props.onPress());
+  await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
+  await act(async () => jest.advanceTimersByTime(300));
+  await act(async () => labeled(renderer.root, "USDA Food 1105314").props.onPress());
+  expect(screenText(renderer.root)).toContain("Banana, raw");
+  await act(async () => buttonWithText(renderer.root, "Import Food").props.onPress());
+  expect(mockUsdaImportMutation).toHaveBeenCalledWith(1105314, expect.objectContaining({ onSuccess: expect.any(Function) }));
+  expect(screenText(renderer.root)).toContain("Imported Banana");
+  expect(screenText(renderer.root)).toContain("Logging for 2026-07-13");
+  expect(labeled(renderer.root, "Meal breakfast").props.accessibilityState.checked).toBe(true);
+  await act(async () => labeled(renderer.root, "Save log").props.onPress());
+  expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ food_item_id: importedFood.id, logged_date: "2026-07-13", meal_type: "breakfast" }));
+  expect(screenText(renderer.root)).toContain("Imported Banana");
+  expect(screenText(renderer.root)).toContain("Breakfast");
+  await act(async () => renderer.unmount());
+});
+
+test("USDA import failure keeps the preview and discovery workflow context retryable", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Lunch").props.onPress());
+  await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
+  await act(async () => jest.advanceTimersByTime(300));
+  await act(async () => labeled(renderer.root, "USDA Food 1105314").props.onPress());
+  mockUsdaImportMutation.mockImplementationOnce(() => {
+    mockUsdaImport.isError = true;
+  });
+  await act(async () => buttonWithText(renderer.root, "Import Food").props.onPress());
+  await act(async () => renderer.update(React.createElement(AppNavigator)));
+  expect(screenText(renderer.root)).toContain("Import failed. Try again later.");
+  expect(screenText(renderer.root)).toContain("Banana, raw");
+  await act(async () => buttonWithText(renderer.root, "Back").props.onPress());
+  expect(renderer.root.findByType(TextInput).props.value).toBe("banana");
+  expect(screenText(renderer.root)).toContain("USDA Results");
+  await act(async () => renderer.unmount());
+});
+
+test("cancelling USDA confirmation returns to the same mode and query", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Lunch").props.onPress());
+  await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
+  await act(async () => jest.advanceTimersByTime(300));
+  await act(async () => labeled(renderer.root, "USDA Food 1105314").props.onPress());
+  await act(async () => buttonWithText(renderer.root, "Import Food").props.onPress());
+  await act(async () => labeled(renderer.root, "Cancel logging").props.onPress());
+  expect(renderer.root.findByType(TextInput).props.value).toBe("banana");
+  expect(screenText(renderer.root)).toContain("USDA Results");
+  expect(screenText(renderer.root)).toContain("Logging for 2026-07-13");
+  expect(screenText(renderer.root)).toContain("Initial meal: lunch");
   await act(async () => renderer.unmount());
 });
 

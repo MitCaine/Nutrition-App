@@ -51,6 +51,7 @@ type Route =
   | { name: "food-detail"; foodId: string }
   | { name: "edit-food"; foodId: string }
   | { name: "add-food" }
+  | { name: "add-usda-preview"; fdcId: number; flow: AddFoodFlowState }
   | { name: "add-log-food"; foodId: string; flow: AddFoodFlowState }
   | LogFoodRoute
   | { name: "edit-log"; logId: string }
@@ -179,7 +180,23 @@ export function AppNavigator() {
         }}
         onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
         onSelectFood={(foodId) => setRoute({ name: "add-log-food", foodId, flow: addFoodFlow })}
-        onScrollSessionChange={(query, offset) => setAddFoodFlow(updateAddFoodFlow(addFoodFlow, { query, scrollOffset: offset }))}
+        onSelectUsdaFood={(fdcId) => setRoute({ name: "add-usda-preview", fdcId, flow: addFoodFlow })}
+        onQueryChange={(query) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, { query }) : current)}
+        onScrollSessionChange={(query, offset) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, current.query.trim() ? { searchScrollOffset: offset } : { browseScrollOffset: offset }) : current)}
+      />
+    );
+  } else if (route.name === "add-usda-preview") {
+    content = (
+      <UsdaPreviewScreen
+        fdcId={route.fdcId}
+        onBack={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-food" });
+        }}
+        onImported={(food) => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-log-food", foodId: food.id, flow: route.flow });
+        }}
       />
     );
   } else if (route.name === "add-log-food") {

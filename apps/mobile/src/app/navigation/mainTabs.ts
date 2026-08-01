@@ -9,7 +9,7 @@ export const MAIN_TAB_ACCESSIBILITY_LABELS: Record<MainTab, string> = {
 };
 
 const FOOD_ROUTES = new Set(["foods", "new-food", "food-detail", "edit-food", "log-food", "usda-preview"]);
-const DAILY_LOG_ROUTES = new Set(["daily-log", "edit-log", "add-food", "add-log-food"]);
+const DAILY_LOG_ROUTES = new Set(["daily-log", "edit-log", "add-food", "add-usda-preview", "add-log-food"]);
 const RECIPE_ROUTES = new Set([
   "recipes",
   "new-recipe",
