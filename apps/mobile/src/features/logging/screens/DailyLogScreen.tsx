@@ -9,7 +9,7 @@ import {
 } from "../../../shared/nutrition/display";
 import { useFoods } from "../../foods/hooks/useFoods";
 import type { DailyLog } from "../api/types";
-import { useDailyLogs, useDailySummary, useLogMutations } from "../hooks/useLogs";
+import { dailyLogReadState, dailySummaryReadState, useDailyLogs, useDailySummary, useLogMutations } from "../hooks/useLogs";
 import {
   addCalendarDays,
   classifyCalendarDate,
@@ -52,8 +52,11 @@ export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog
   const [draftDate, setDraftDate] = useState(parseLocalDateString(date) ?? new Date());
   const [clock, setClock] = useState(() => new Date());
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
-  const logs = useDailyLogs(date);
-  const summary = useDailySummary(date);
+  const logsQuery = useDailyLogs(date);
+  const logs = dailyLogReadState(logsQuery);
+  const summaryQuery = useDailySummary(date);
+  const entriesKnown = logs.kind === "empty" || logs.kind === "success" || logs.kind === "refreshing" || logs.kind === "refresh-failure";
+  const totals = dailySummaryReadState(summaryQuery, entriesKnown);
   const foods = useFoods("");
   const mutations = useLogMutations(date);
   const calendar = useCalendarState();
@@ -82,7 +85,7 @@ export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog
         scrollIndicatorInsets={{ right: 1 }}
         onScroll={(event) => onScrollOffsetChange(event.nativeEvent.contentOffset.y)}
         onContentSizeChange={() => {
-          if (!restoredRef.current && !logs.isLoading && !summary.isLoading) {
+          if (!restoredRef.current && logs.kind !== "initial-loading" && logs.kind !== "initial-failure" && totals.kind !== "initial-loading" && totals.kind !== "initial-failure") {
             scrollRef.current?.scrollTo({ y: initialScrollOffset, animated: false });
             restoredRef.current = true;
           }
@@ -133,22 +136,29 @@ export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog
           setPickerOpen(false);
         }}
       />
-      <TargetProgressSection date={date} onOpenTargets={onOpenNutritionTargets} />
+      <TargetProgressSection date={date} entriesKnown={entriesKnown} onOpenTargets={onOpenNutritionTargets} />
       <Text style={styles.sectionTitle}>Totals</Text>
-      {!summary.data && summary.isLoading ? <Text style={styles.loadingText}>Loading totals…</Text> : null}
-      {summary.data && summary.isFetching ? <Text style={styles.refreshingText}>Refreshing totals…</Text> : null}
-      {summary.isError ? (
+      {totals.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading totals…</Text> : null}
+      {totals.kind === "refreshing" ? <Text style={styles.refreshingText}>Refreshing totals…</Text> : null}
+      {totals.kind === "initial-failure" || totals.kind === "refresh-failure" ? (
         <View style={styles.errorRow}>
-          <Text style={styles.calendarNotice}>{summary.data ? "Totals could not be refreshed." : "Totals could not be loaded."}</Text>
-          <Pressable onPress={() => { void summary.refetch(); }}><Text style={styles.noteToggle}>Retry</Text></Pressable>
+          <Text style={styles.calendarNotice}>{totals.kind === "refresh-failure" ? "Totals could not be refreshed; showing the last confirmed totals." : "Totals could not be loaded."}</Text>
+          <Pressable onPress={totals.retry}><Text style={styles.noteToggle}>Retry</Text></Pressable>
         </View>
       ) : null}
-      {visibleDailyTotals(summary.data?.totals ?? []).map((total) => (
+      {totals.kind === "unavailable" ? (
+        <View style={styles.errorRow}>
+          <Text style={styles.calendarNotice}>Totals are unavailable until Daily Log entries are available.</Text>
+          <Pressable onPress={totals.retry}><Text style={styles.noteToggle}>Retry</Text></Pressable>
+        </View>
+      ) : null}
+      {totals.kind === "empty" ? <Text style={styles.emptyDay}>No nutrition totals for this date.</Text> : null}
+      {totals.data ? visibleDailyTotals(totals.data.totals).map((total) => (
         <View key={total.nutrientId} style={styles.totalRow}>
           <Text style={styles.text}>{formatNutrientLabel(total.nutrientId)}</Text>
           <Text style={styles.text}>{formatAggregatedTotal(total)}</Text>
         </View>
-      ))}
+      )) : null}
       <Text style={styles.sectionTitle}>Entries</Text>
       {isProvisional ? (
         <Text style={styles.calendarNotice}>
@@ -158,17 +168,17 @@ export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog
       {!isProvisional && dateClassification === "future" ? (
         <Text style={styles.calendarNotice}>Future dates are browse-only under the authoritative calendar.</Text>
       ) : null}
-      {!logs.data && logs.isLoading ? <Text style={styles.loadingText}>Loading entries…</Text> : null}
-      {logs.data && logs.isFetching ? <Text style={styles.refreshingText}>Refreshing entries…</Text> : null}
-      {logs.isError ? (
+      {logs.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading entries…</Text> : null}
+      {logs.kind === "refreshing" ? <Text style={styles.refreshingText}>Refreshing entries…</Text> : null}
+      {logs.kind === "initial-failure" || logs.kind === "refresh-failure" ? (
         <View style={styles.errorRow}>
           <Text style={styles.calendarNotice}>
-            {logs.data ? "Entries could not be refreshed; showing the last confirmed entries." : "Entries could not be loaded."}
+            {logs.kind === "refresh-failure" ? "Entries could not be refreshed; showing the last confirmed entries." : "Entries could not be loaded."}
           </Text>
-          <Pressable onPress={() => { void logs.refetch(); }}><Text style={styles.noteToggle}>Retry</Text></Pressable>
+          <Pressable onPress={logs.retry}><Text style={styles.noteToggle}>Retry</Text></Pressable>
         </View>
       ) : null}
-      {logs.data && !logs.isError && logs.data.length === 0 && dateClassification !== "future" ? (
+      {logs.kind === "empty" && dateClassification !== "future" ? (
         <Text style={styles.emptyDay}>No food logged for this date.</Text>
       ) : null}
       {logs.data ? groups.map((group) => {

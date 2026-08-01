@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "../../app/theme/AppTheme";
 import { formatNutrientLabel } from "../../shared/nutrition/display";
 import type { DailyTargetComparison, DailyTargetComparisonItem } from "./api/types";
-import { useDailyTargetComparison } from "./hooks/useDailyTargetComparison";
+import { targetProgressReadState, useDailyTargetComparison, type TargetProgressReadState } from "./hooks/useDailyTargetComparison";
 import {
   boundedProgressValue, formatTargetAmount, formatTargetPercentage,
   percentageAtOrAbove100, PRIMARY_PROGRESS_NUTRIENTS, progressAccessibilityLabel,
@@ -15,29 +15,45 @@ type ContentProps = {
   data?: DailyTargetComparison;
   isLoading: boolean;
   isError: boolean;
+  isFetching?: boolean;
+  isRefetchError?: boolean;
+  error?: unknown;
+  /** A pre-translated state is used by the screen; legacy flags remain supported for focused callers. */
+  readState?: TargetProgressReadState;
+  entriesKnown?: boolean;
   onRetry: () => void;
   onOpenTargets: () => void;
 };
 
-export function TargetProgressSection({ date, onOpenTargets }: { date: string; onOpenTargets: () => void }) {
+export function TargetProgressSection({ date, entriesKnown = true, onOpenTargets }: { date: string; entriesKnown?: boolean; onOpenTargets: () => void }) {
   const query = useDailyTargetComparison(date);
-  return <TargetProgressContent data={query.data} isLoading={query.isLoading} isError={query.isError} onRetry={() => { void query.refetch(); }} onOpenTargets={onOpenTargets} />;
+  const readState = targetProgressReadState(query, entriesKnown);
+  return <TargetProgressContent readState={readState} data={query.data} isLoading={query.isLoading} isError={query.isError} isFetching={query.isFetching} isRefetchError={query.isRefetchError} error={query.error} onRetry={readState.retry} onOpenTargets={onOpenTargets} />;
 }
 
-export function TargetProgressContent({ data, isLoading, isError, onRetry, onOpenTargets }: ContentProps) {
+export function TargetProgressContent({ data, isLoading, isError, isFetching = false, isRefetchError = false, error, readState, entriesKnown = true, onRetry, onOpenTargets }: ContentProps) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const byId = new Map((data?.comparisons ?? []).map((item) => [item.nutrientId, item]));
+  const state = readState ?? targetProgressReadState({ data, isLoading, isError, isFetching, isRefetchError, error, refetch: onRetry }, entriesKnown);
+  const byId = new Map((state.data?.comparisons ?? []).map((item) => [item.nutrientId, item]));
   const rows = PRIMARY_PROGRESS_NUTRIENTS.map((id) => byId.get(id)).filter((item): item is DailyTargetComparisonItem => Boolean(item));
   return <View style={styles.section}>
     <View style={styles.headingRow}>
       <Text accessibilityRole="header" style={styles.heading}>Daily progress</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Open Nutrition targets settings" onPress={onOpenTargets}><Text style={styles.link}>Nutrition targets</Text></Pressable>
     </View>
-    {isLoading && !data ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Loading target comparisons…</Text> : null}
-    {isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.secondary}>Target comparisons are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry target comparisons" onPress={onRetry}><Text style={styles.link}>Retry</Text></Pressable></View> : null}
-    {rows.map((item) => <ProgressRow key={item.nutrientId} item={item} />)}
+    {state.kind === "initial-loading" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Loading target comparisons…</Text> : null}
+    {state.kind === "initial-failure" ? <ReadFailure onRetry={state.retry} message="Target comparisons are unavailable." styles={styles} /> : null}
+    {state.kind === "unavailable" ? <ReadFailure onRetry={state.retry} message="Target progress is unavailable until Daily Log entries are available." styles={styles} /> : null}
+    {state.kind === "empty" ? <Text style={styles.secondary}>No target comparisons are available for this date.</Text> : null}
+    {state.kind === "refreshing" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Refreshing target comparisons…</Text> : null}
+    {state.kind === "refresh-failure" ? <ReadFailure onRetry={state.retry} message="Target comparisons could not be refreshed; showing the last confirmed progress." styles={styles} /> : null}
+    {state.data ? rows.map((item) => <ProgressRow key={item.nutrientId} item={item} />) : null}
   </View>;
+}
+
+function ReadFailure({ onRetry, message, styles }: { onRetry: () => void; message: string; styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.secondary}>{message}</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry target comparisons" onPress={onRetry}><Text style={styles.link}>Retry</Text></Pressable></View>;
 }
 
 function ProgressRow({ item }: { item: DailyTargetComparisonItem }) {

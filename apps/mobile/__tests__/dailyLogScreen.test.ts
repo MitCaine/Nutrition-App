@@ -13,6 +13,7 @@ jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
+  ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => mockLogs,
   useDailySummary: () => mockSummary,
   useLogMutations: () => ({ deleteLog: { mutate: jest.fn() } }),
@@ -108,4 +109,44 @@ test("provisional and future dates expose no Add Food actions", async () => {
   const future = await render("2026-07-15");
   expect(addFoodButtons(future.renderer.root)).toHaveLength(0);
   await act(async () => future.renderer.unmount());
+});
+
+test("totals failure does not hide confirmed entries", async () => {
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  mockSummary = { ...mockSummary, data: undefined, isLoading: false, isError: true, error: new Error("offline") };
+  const rendered = await render();
+  const text = screenText(rendered.renderer.root);
+  expect(text).toContain("Totals could not be loaded.");
+  expect(text).toContain("Food");
+  expect(text).not.toContain("No food logged for this date.");
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("unknown entries do not present cached totals as confirmed zero", async () => {
+  mockLogs = { ...mockLogs, data: undefined, isLoading: false, isError: true, error: new Error("offline") };
+  mockSummary = {
+    ...mockSummary,
+    data: { logged_date: "2026-07-14", totals: [{ nutrientId: "calories", amountKnown: "0", amountEstimated: "0", unit: "kcal", hasUnknownContributors: false, unknownContributorCount: 0 }] },
+  };
+  const rendered = await render();
+  const text = screenText(rendered.renderer.root);
+  expect(text).toContain("Totals are unavailable until Daily Log entries are available.");
+  expect(text).not.toContain("0 kcal");
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("same-date totals refresh failure retains totals with a stale marker", async () => {
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  mockSummary = {
+    ...mockSummary,
+    data: { logged_date: "2026-07-14", totals: [{ nutrientId: "calories", amountKnown: "120", amountEstimated: "0", unit: "kcal", hasUnknownContributors: false, unknownContributorCount: 0 }] },
+    isError: true,
+    isRefetchError: true,
+    error: new Error("offline"),
+  };
+  const rendered = await render();
+  const text = screenText(rendered.renderer.root);
+  expect(text).toContain("Totals could not be refreshed; showing the last confirmed totals.");
+  expect(text).toContain("120kcal");
+  await act(async () => rendered.renderer.unmount());
 });

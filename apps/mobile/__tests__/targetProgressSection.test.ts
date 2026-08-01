@@ -102,6 +102,26 @@ test("comparison loading and failure retain a settings link and recoverable retr
   await act(async () => failed.unmount());
 });
 
+test("same-date refresh states retain confirmed progress and mark stale data", async () => {
+  const refreshing = await render({ isFetching: true });
+  expect(allText(refreshing.root)).toContain("Refreshing target comparisons");
+  expect(allText(refreshing.root)).toContain("1,820 kcal / 2,300 kcal");
+  await act(async () => refreshing.unmount());
+
+  const failed = await render({ isError: true, isRefetchError: true });
+  expect(allText(failed.root)).toContain("showing the last confirmed progress");
+  expect(allText(failed.root)).toContain("1,820 kcal / 2,300 kcal");
+  await act(async () => failed.unmount());
+});
+
+test("unknown entry consumption suppresses cached zero target progress", async () => {
+  const renderer = await render({ entriesKnown: false, data: { ...data, comparisons: data.comparisons.map((value) => value.nutrientId === "calories" ? { ...value, consumedAmount: "0", percentage: "0" } : value) } });
+  const text = allText(renderer.root);
+  expect(text).toContain("Target progress is unavailable until Daily Log entries are available.");
+  expect(text).not.toContain("0 kcal / 2,300 kcal");
+  await act(async () => renderer.unmount());
+});
+
 test("no-profile state keeps FDA comparisons while calories has no target", async () => {
   const noProfile = { ...data, comparisons: data.comparisons.map((value) => value.nutrientId === "calories" ? { ...value, targetAmount: null, percentage: null, authority: "unavailable" as const, direction: "unavailable" as const, status: "target_unavailable" as const, reasonCode: "target_profile_incomplete" } : value) };
   const renderer = await render({ data: noProfile });
