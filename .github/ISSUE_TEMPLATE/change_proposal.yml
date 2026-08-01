@@ -1,0 +1,50 @@
+name: Change proposal
+description: Propose a bounded product, engineering, or operational improvement.
+title: "[Change]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete friction, risk, or unmet need should be addressed?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable success without prescribing unnecessary implementation detail.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Product behavior
+        - Backend or API
+        - Mobile or native OCR
+        - Data or migrations
+        - Control plane or operations
+        - Repository workflow or automation
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and invariants
+      description: Identify compatibility, history, ownership, privacy, authority, or qualification boundaries.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List the smallest verifiable conditions that would close the proposal.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include a no-change option when it is credible.
+

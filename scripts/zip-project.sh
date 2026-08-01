@@ -33,6 +33,7 @@ INCLUDE_PATHS=(
   .python-version
   .nvmrc
   .github
+  engineering
 
   docker-compose.yml
   docker-compose.phase5c4.yml

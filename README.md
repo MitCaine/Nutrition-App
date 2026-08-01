@@ -19,6 +19,7 @@ flowchart TD
     Apps --> Backend["backend: FastAPI and PostgreSQL domain"]
     Apps --> Mobile["mobile: Expo, React Native, and iOS OCR"]
     Repo --> Docs["docs: purpose-organized project knowledge"]
+    Repo --> Engineering["engineering: contributor workflow and conventions"]
     Repo --> Packages["packages: shared contract references"]
     Repo --> Scripts["scripts: local and operator entry points"]
     Repo --> Compose["Docker Compose: local PostgreSQL and optional MinIO"]
@@ -29,8 +30,9 @@ flowchart TD
 | `apps/backend` | Authoritative API behavior, nutrition rules, persistence, migrations, operators, and backend tests |
 | `apps/mobile` | User experience, mobile state, typed API boundaries, and native Apple Vision integration |
 | `docs` | Current project, architecture, feature, operations, reference, and historical knowledge |
+| `engineering` | Change lifecycle, Git conventions, review, merge, release, and automation ownership |
 | `packages` | Small shared contract references; not a generated client SDK |
-| `scripts` | Qualified runtime launch, review packaging, and explicit offline/operator commands |
+| `scripts` | Discoverable repository lifecycle, validation, runtime, qualification, and packaging entry points |
 | Compose files | Local application PostgreSQL and disposable Phase 5C4 MinIO qualification |
 
 The [Repository Tour](docs/project/repository-tour.md) explains where to begin for each feature and which
@@ -149,6 +151,14 @@ without configuring the production-hardening control plane.
 
 For configuration modes, private deployment constraints, migration safety, and canary behavior,
 read the [Development Guide](docs/project/development-guide.md#configuration-and-startup).
+
+## Engineering workflow
+
+Contributors should start with [Contributing](CONTRIBUTING.md) and the
+[Engineering Workflow](engineering/README.md). The workflow defines branch and commit conventions,
+review and merge expectations, release tagging, and how the mandatory session contract fits around
+focused implementation work. The [Script Index](scripts/README.md) maps stable automation entry
+points without requiring contributors to inspect each script.
 
 ## Documentation
 

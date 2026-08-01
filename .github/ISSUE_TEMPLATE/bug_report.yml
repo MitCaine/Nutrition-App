@@ -1,0 +1,67 @@
+name: Bug report
+description: Report reproducible behavior that differs from the intended contract.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, private nutrition data, database dumps, or sensitive screenshots.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and why is it a problem?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest reliable sequence of steps.
+      placeholder: |
+        1. Start from ...
+        2. Perform ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the intended result or contract.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include commit, deployment mode, platform, and relevant service versions.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Backend or API
+        - Mobile application
+        - Native OCR
+        - Database or migration
+        - Control plane or operations
+        - Repository tooling or documentation
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Add minimal logs or screenshots with secrets and personal data removed.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, tokens, private nutrition data, and sensitive infrastructure details.
+          required: true
+

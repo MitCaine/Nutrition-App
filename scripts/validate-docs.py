@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_FILES = [
     ROOT / "README.md",
     ROOT / "CONTRIBUTING.md",
+    *sorted((ROOT / ".github").rglob("*.md")),
+    *sorted((ROOT / "engineering").rglob("*.md")),
+    ROOT / "scripts" / "README.md",
     *sorted((ROOT / "docs").rglob("*.md")),
 ]
 FENCE_PATTERN = re.compile(r"^[ \t]*(`{3,}|~{3,})(.*)$")
