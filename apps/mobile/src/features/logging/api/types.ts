@@ -29,6 +29,8 @@ export type DailyLog = {
   id: string;
   food_item_id: string;
   food_name_snapshot?: string | null;
+  /** Supported meals are rendered by name; unknown legacy values remain readable. */
+  meal_type?: string | null;
   is_editable?: boolean;
   source_food_available: boolean;
   edit_block_reason?: "source_food_deleted" | null;

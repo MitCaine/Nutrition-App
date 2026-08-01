@@ -4,6 +4,85 @@ import {
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
 import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
 import type { DailyLog } from "../api/types";
+import { isSupportedMeal, type MealType } from "../validation/logContracts";
+
+export const DAILY_LOG_MEAL_GROUPS = [
+  { key: "breakfast", label: "Breakfast" },
+  { key: "lunch", label: "Lunch" },
+  { key: "dinner", label: "Dinner" },
+  { key: "snack", label: "Snack" },
+] as const;
+
+export type DailyLogMealGroup = {
+  key: MealType | "unassigned";
+  label: string;
+  entries: DailyLog[];
+};
+
+/** Return the meal context a named group should pass to the future discovery flow. */
+export function mealAddContext(groupKey: DailyLogMealGroup["key"]): MealType | null {
+  return groupKey === "unassigned" ? null : groupKey;
+}
+
+/**
+ * Group and order entries without changing their persisted representation.
+ * Unsupported legacy meals intentionally project into Unassigned.
+ */
+export function groupDailyLogs(logs: DailyLog[]): DailyLogMealGroup[] {
+  const grouped = new Map<string, DailyLog[]>(
+    DAILY_LOG_MEAL_GROUPS.map((group) => [group.key, []]),
+  );
+  grouped.set("unassigned", []);
+  for (const log of logs) {
+    const key = isSupportedMeal(log.meal_type) ? log.meal_type : "unassigned";
+    grouped.get(key)?.push(log);
+  }
+
+  const sortEntries = (entries: DailyLog[]) => entries.sort(compareDailyLogOrder);
+  return [
+    ...DAILY_LOG_MEAL_GROUPS.map((group) => ({
+      ...group,
+      entries: sortEntries(grouped.get(group.key) ?? []),
+    })),
+    ...(grouped.get("unassigned")?.length
+      ? [{ key: "unassigned" as const, label: "Unassigned", entries: sortEntries(grouped.get("unassigned") ?? []) }]
+      : []),
+  ];
+}
+
+function compareDailyLogOrder(left: DailyLog, right: DailyLog): number {
+  const leftCreated = left.created_at ?? "";
+  const rightCreated = right.created_at ?? "";
+  const leftInstant = leftCreated ? Date.parse(leftCreated) : Number.NEGATIVE_INFINITY;
+  const rightInstant = rightCreated ? Date.parse(rightCreated) : Number.NEGATIVE_INFINITY;
+  if (Number.isFinite(leftInstant) && Number.isFinite(rightInstant) && leftInstant !== rightInstant) {
+    return leftInstant < rightInstant ? -1 : 1;
+  }
+  if (leftCreated < rightCreated) return -1;
+  if (leftCreated > rightCreated) return 1;
+  if (left.id < right.id) return -1;
+  if (left.id > right.id) return 1;
+  return 0;
+}
+
+/** Return a bounded notice for an unsupported legacy meal value. */
+export function unsupportedMealNotice(log: Pick<DailyLog, "meal_type">): string | null {
+  if (!log.meal_type || isSupportedMeal(log.meal_type)) {
+    return null;
+  }
+  const safeValue = log.meal_type.replace(/\s+/g, " ");
+  const bounded = Array.from(safeValue).slice(0, 80).join("");
+  const suffix = bounded.length < Array.from(safeValue).length ? "…" : "";
+  return `Legacy meal “${bounded}${suffix}” is shown under Unassigned.`;
+}
+
+/** Legacy notes may exceed the current authoring limit but remain readable. */
+export function legacyNoteNotice(notes: string | null | undefined): string | null {
+  if (!notes || Array.from(notes).length <= 1000) {
+    return null;
+  }
+  return "Legacy note exceeds the current note limit; it remains readable.";
+}
 
 export function visibleDailyTotals(totals: AggregatedNutrientTotal[]): AggregatedNutrientTotal[] {
   return sortNutrientsByDisplayOrder(

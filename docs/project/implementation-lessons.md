@@ -206,3 +206,58 @@ After acquiring the lock:
 ## Preserve stable conflicts under contention
 
 A losing concurrent mutation must return the accepted domain conflict, such as `stale_log_entry`, rather than degrading into a generic not-found or infrastructure error.
+
+---
+
+# E1-05 — Authoritative Date Navigation
+
+## Keep calendar authority separate from device-local presentation
+
+Authoritative Today must come from the confirmed application calendar rather than being independently inferred by each client.
+
+Before confirmation, device-local calendar state may be used only as an explicitly provisional browsing context.
+
+## Treat calendar dates as date-only values
+
+Previous and Next navigation must use calendar-date arithmetic rather than adding or subtracting elapsed hours.
+
+This avoids skipped or duplicated dates across:
+
+- daylight-saving transitions;
+- leap days;
+- month and year boundaries;
+- historical regional offset changes.
+
+## Preserve the selected date when calendar context changes
+
+A time-zone change or midnight rollover may reclassify the active date, but must not silently navigate the user elsewhere.
+
+Recalculate:
+
+- Today;
+- past, present, or future classification;
+- navigation availability;
+- mutation eligibility.
+
+Do not replace the selected date.
+
+## Prevent cross-date stale-content leakage
+
+Date-dependent query and view state must be keyed by the selected date.
+
+When navigation changes the date:
+
+- retire the previous date’s rendered content immediately;
+- show the new date’s loading, failure, or success state;
+- never display one date’s entries, totals, or target progress beneath another date heading.
+
+Same-date refresh retention is a separate behavior and must not be generalized across date changes.
+
+## Prefer authoritative calendar data over duplicated client logic
+
+When the backend already owns a calendar fact such as authoritative Today, expose and consume that fact rather than independently reproducing the calculation on each client.
+
+Client-side date utilities should handle date-only navigation and provisional presentation, not redefine server authority.
+
+---
+

@@ -8,17 +8,23 @@ import {
   formatNutrientLabel,
 } from "../../../shared/nutrition/display";
 import { useFoods } from "../../foods/hooks/useFoods";
+import type { DailyLog } from "../api/types";
 import { useDailyLogs, useDailySummary, useLogMutations } from "../hooks/useLogs";
 import {
   addCalendarDays,
   classifyCalendarDate,
   dailyLogEntryState,
   formatReadableDate,
+  groupDailyLogs,
+  legacyNoteNotice,
   localDateToApiDate,
+  mealAddContext,
   parseLocalDateString,
   loggedFoodDisplayName,
+  unsupportedMealNotice,
   visibleDailyTotals,
 } from "../utils/dailyLogDisplay";
+import type { MealType } from "../validation/logContracts";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
@@ -29,6 +35,8 @@ import { useCalendarState } from "../../calendar/hooks/useCalendar";
 type Props = {
   date: string;
   setDate: (date: string) => void;
+  /** E1-08 consumes this intent; the discovery destination is intentionally not here. */
+  onAddFood?: (meal: MealType) => void;
   onOpenFood: (foodId: string) => void;
   onEditLog: (logId: string) => void;
   onOpenSettings: () => void;
@@ -37,12 +45,13 @@ type Props = {
   onScrollOffsetChange: (offset: number) => void;
 };
 
-export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
+export function DailyLogScreen({ date, setDate, onAddFood, onOpenFood, onEditLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draftDate, setDraftDate] = useState(parseLocalDateString(date) ?? new Date());
   const [clock, setClock] = useState(() => new Date());
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const logs = useDailyLogs(date);
   const summary = useDailySummary(date);
   const foods = useFoods("");
@@ -54,6 +63,7 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
   const mutationsEnabled = calendarMutationsEnabled(calendar.data) && dateClassification !== "future";
   const isProvisional = !calendar.data?.is_established;
   const foodNames = new Map((foods.data ?? []).map((food) => [food.id, food.name]));
+  const groups = groupDailyLogs(logs.data ?? []);
   const scrollRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);
   useEffect(() => {
@@ -126,6 +136,13 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
       <TargetProgressSection date={date} onOpenTargets={onOpenNutritionTargets} />
       <Text style={styles.sectionTitle}>Totals</Text>
       {!summary.data && summary.isLoading ? <Text style={styles.loadingText}>Loading totals…</Text> : null}
+      {summary.data && summary.isFetching ? <Text style={styles.refreshingText}>Refreshing totals…</Text> : null}
+      {summary.isError ? (
+        <View style={styles.errorRow}>
+          <Text style={styles.calendarNotice}>{summary.data ? "Totals could not be refreshed." : "Totals could not be loaded."}</Text>
+          <Pressable onPress={() => { void summary.refetch(); }}><Text style={styles.noteToggle}>Retry</Text></Pressable>
+        </View>
+      ) : null}
       {visibleDailyTotals(summary.data?.totals ?? []).map((total) => (
         <View key={total.nutrientId} style={styles.totalRow}>
           <Text style={styles.text}>{formatNutrientLabel(total.nutrientId)}</Text>
@@ -142,37 +159,118 @@ export function DailyLogScreen({ date, setDate, onOpenFood, onEditLog, onOpenSet
         <Text style={styles.calendarNotice}>Future dates are browse-only under the authoritative calendar.</Text>
       ) : null}
       {!logs.data && logs.isLoading ? <Text style={styles.loadingText}>Loading entries…</Text> : null}
-      {logs.isError ? <Text style={styles.calendarNotice}>Entries could not be loaded. Try again.</Text> : null}
-      {logs.data?.map((log) => {
-        const entryState = dailyLogEntryState(log);
-        const details = (
-          <>
-            <Text style={styles.foodName}>{loggedFoodDisplayName(log, foodNames)}</Text>
-            {entryState.sourceStatusLabel ? <Text style={styles.sourceStatus}>{entryState.sourceStatusLabel}</Text> : null}
-            <Text style={styles.text}>
-              {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}
-            </Text>
-          </>
-        );
+      {logs.data && logs.isFetching ? <Text style={styles.refreshingText}>Refreshing entries…</Text> : null}
+      {logs.isError ? (
+        <View style={styles.errorRow}>
+          <Text style={styles.calendarNotice}>
+            {logs.data ? "Entries could not be refreshed; showing the last confirmed entries." : "Entries could not be loaded."}
+          </Text>
+          <Pressable onPress={() => { void logs.refetch(); }}><Text style={styles.noteToggle}>Retry</Text></Pressable>
+        </View>
+      ) : null}
+      {logs.data && !logs.isError && logs.data.length === 0 && dateClassification !== "future" ? (
+        <Text style={styles.emptyDay}>No food logged for this date.</Text>
+      ) : null}
+      {logs.data ? groups.map((group) => {
+        const meal = mealAddContext(group.key);
         return (
-          <View key={log.id} style={styles.logRow}>
-            {entryState.canOpenFood ? (
-              <Pressable onPress={() => onOpenFood(log.food_item_id)}>{details}</Pressable>
-            ) : (
-              <View>{details}</View>
-            )}
-            {mutationsEnabled ? <Pressable onPress={() => mutations.deleteLog.mutate(log.id)}>
-              <Text style={styles.deleteText}>Delete</Text>
-            </Pressable> : null}
-            {mutationsEnabled && entryState.canEdit ? (
-              <Pressable onPress={() => onEditLog(log.id)}>
-                <Text style={styles.text}>Edit</Text>
-              </Pressable>
-            ) : null}
+          <View key={group.key} style={styles.mealGroup}>
+            <View style={styles.groupHeader}>
+              <Text style={styles.groupTitle}>{group.label}</Text>
+              {mutationsEnabled && meal ? (
+                <Pressable onPress={() => onAddFood?.(meal)} style={styles.addFoodButton}>
+                  <Text style={styles.addFoodText}>Add Food</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {group.entries.map((log) => (
+              <DailyLogEntryCard
+                key={log.id}
+                log={log}
+                foodNames={foodNames}
+                mutationsEnabled={mutationsEnabled}
+                expandedNote={expandedNotes[log.id] === true}
+                onToggleNote={() => setExpandedNotes((current) => ({ ...current, [log.id]: !current[log.id] }))}
+                onOpenFood={onOpenFood}
+                onEditLog={onEditLog}
+                onDelete={() => mutations.deleteLog.mutate(log.id)}
+              />
+            ))}
           </View>
         );
-      })}
+      }) : null}
       </ScrollView>
+    </View>
+  );
+}
+
+function DailyLogEntryCard({
+  log,
+  foodNames,
+  mutationsEnabled,
+  expandedNote,
+  onToggleNote,
+  onOpenFood,
+  onEditLog,
+  onDelete,
+}: {
+  log: DailyLog;
+  foodNames: Map<string, string>;
+  mutationsEnabled: boolean;
+  expandedNote: boolean;
+  onToggleNote: () => void;
+  onOpenFood: (foodId: string) => void;
+  onEditLog: (logId: string) => void;
+  onDelete: () => void;
+}) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const entryState = dailyLogEntryState(log);
+  const mealNotice = unsupportedMealNotice(log);
+  const noteNotice = legacyNoteNotice(log.notes);
+  const notes = log.notes ?? "";
+  const noteMayOverflow = notes.split(/\r?\n/).length > 2 || Array.from(notes).length > 160;
+  const showNoteToggle = Boolean(notes) && (noteMayOverflow || expandedNote);
+  const details = (
+    <>
+      <Text style={styles.foodName}>{loggedFoodDisplayName(log, foodNames)}</Text>
+      <Text style={styles.text}>
+        {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}
+      </Text>
+    </>
+  );
+  return (
+    <View style={styles.entryCard}>
+      {entryState.canOpenFood ? (
+        <Pressable onPress={() => onOpenFood(log.food_item_id)}>{details}</Pressable>
+      ) : (
+        <View>{details}</View>
+      )}
+      {entryState.sourceStatusLabel ? <Text style={styles.compatibilityNotice}>{entryState.sourceStatusLabel}</Text> : null}
+      {mealNotice ? <Text style={styles.compatibilityNotice}>{mealNotice}</Text> : null}
+      {noteNotice ? <Text style={styles.compatibilityNotice}>{noteNotice}</Text> : null}
+      {notes ? (
+        <>
+          <Text numberOfLines={expandedNote ? undefined : 2} style={styles.noteText}>{notes}</Text>
+          {showNoteToggle ? (
+            <Pressable onPress={onToggleNote}>
+              <Text style={styles.noteToggle}>{expandedNote ? "Show less" : "Show more"}</Text>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
+      {mutationsEnabled ? (
+        <View style={styles.entryActions}>
+          <Pressable onPress={onDelete}>
+            <Text style={styles.deleteText}>Delete</Text>
+          </Pressable>
+          {entryState.canEdit ? (
+            <Pressable onPress={() => onEditLog(log.id)}>
+              <Text style={styles.text}>Edit</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -257,8 +355,16 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   dateClassification: { color: theme.colors.secondaryText, fontSize: 14 },
   dateNavigation: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
   disabledButton: { opacity: 0.45 },
+  emptyDay: { color: theme.colors.secondaryText, fontSize: 15 },
+  entryActions: { flexDirection: "row", gap: 16, justifyContent: "flex-end", marginTop: 4 },
+  entryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 12 },
+  compatibilityNotice: { color: theme.colors.warningText, fontSize: 13, lineHeight: 18 },
+  errorRow: { alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" },
+  groupTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+  groupHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  addFoodButton: { paddingHorizontal: 8, paddingVertical: 4 },
+  addFoodText: { color: theme.colors.accent, fontWeight: "600" },
   loadingText: { color: theme.colors.secondaryText, fontSize: 14 },
-  logRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingVertical: 12 },
   modalActions: { flexDirection: "row", gap: 8, justifyContent: "flex-end" },
   modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },
   modalCard: { backgroundColor: theme.colors.surface, borderRadius: 8, gap: 14, padding: 16, width: "100%" },
@@ -266,9 +372,12 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   root: { backgroundColor: theme.colors.background, flex: 1, gap: 12, paddingHorizontal: 16, paddingTop: 16 },
   navigationButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
+  noteText: { color: theme.colors.text, lineHeight: 20 },
+  noteToggle: { color: theme.colors.accent, fontWeight: "600" },
+  mealGroup: { gap: 8 },
+  refreshingText: { color: theme.colors.secondaryText, fontSize: 13 },
   screen: { gap: 12, paddingBottom: 16, paddingRight: 12 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
-  sourceStatus: { color: theme.colors.secondaryText, fontSize: 13 },
   totalRow: { flexDirection: "row", justifyContent: "space-between" },
 }); }

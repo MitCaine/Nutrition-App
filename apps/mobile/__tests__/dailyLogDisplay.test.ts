@@ -11,7 +11,13 @@ import {
   visibleDailyTotals,
   loggedFoodDisplayName,
   dailyLogEntryState,
+  groupDailyLogs,
+  legacyNoteNotice,
+  mealAddContext,
+  DAILY_LOG_MEAL_GROUPS,
+  unsupportedMealNotice,
 } from "../src/features/logging/utils/dailyLogDisplay";
+import type { DailyLog } from "../src/features/logging/api/types";
 import type { AggregatedNutrientTotal } from "../src/shared/nutrition/types";
 
 function total(
@@ -126,4 +132,49 @@ test("future classification compares calendar dates rather than elapsed time", (
   expect(classifyCalendarDate("2026-07-13", "2026-07-14")).toBe("past");
   expect(classifyCalendarDate("2026-07-14", "2026-07-14")).toBe("today");
   expect(classifyCalendarDate("2026-07-15", "2026-07-14")).toBe("future");
+});
+
+function entry(id: string, meal_type: string | null, created_at: string, notes: string | null = null): DailyLog {
+  return {
+    id,
+    food_item_id: `food-${id}`,
+    food_name_snapshot: `Food ${id}`,
+    meal_type,
+    source_food_available: true,
+    logged_date: "2026-07-14",
+    amount_quantity: "1",
+    amount_unit: "serving",
+    notes,
+    created_at,
+  };
+}
+
+test("meal grouping keeps fixed named groups, projects legacy meals, and orders deterministically", () => {
+  const groups = groupDailyLogs([
+    entry("b", "breakfast", "2026-07-14T08:00:00Z"),
+    entry("a", "breakfast", "2026-07-14T08:00:00Z"),
+    entry("legacy", "brunch", "2026-07-14T07:00:00Z"),
+    entry("snack", "snack", "2026-07-14T09:00:00Z"),
+  ]);
+
+  expect(groups.map((group) => group.key)).toEqual([
+    "breakfast", "lunch", "dinner", "snack", "unassigned",
+  ]);
+  expect(groups[0].entries.map((item) => item.id)).toEqual(["a", "b"]);
+  expect(groups[4].entries.map((item) => item.id)).toEqual(["legacy"]);
+});
+
+test("compatibility notices preserve legacy values without rewriting them", () => {
+  const legacy = entry("legacy", "brunch", "2026-07-14T07:00:00Z", "x".repeat(1001));
+  expect(legacy.meal_type).toBe("brunch");
+  expect(unsupportedMealNotice(legacy)).toContain("brunch");
+  expect(legacyNoteNotice(legacy.notes)).toContain("remains readable");
+  expect(legacyNoteNotice("🙂".repeat(1000))).toBeNull();
+});
+
+test("named meal actions carry their group context and Unassigned has none", () => {
+  expect(DAILY_LOG_MEAL_GROUPS.map((group) => mealAddContext(group.key))).toEqual([
+    "breakfast", "lunch", "dinner", "snack",
+  ]);
+  expect(mealAddContext("unassigned")).toBeNull();
 });
