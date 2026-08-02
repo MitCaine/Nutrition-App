@@ -196,6 +196,7 @@ Start at the [Documentation Index](docs/README.md), or choose a path:
 | Look up project terminology | [Glossary](docs/reference/glossary.md) |
 | Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
 | Turn an approved backlog into GitHub delivery work | [GitHub Implementation Workflow](docs/project/github-workflow.md) |
+| Extend the current E1-17 accessibility foundations | [E1-17 Stage 1 Accessibility Foundations](docs/project/version-1.1/epic-1/accessibility-remediation-stage-1.md) |
 | Run and extend qualification | [Testing Guide](docs/operations/testing.md) |
 | Work on production promotion infrastructure | [Control Plane Guide](docs/operations/control-plane.md) — optional |
 | Qualify the Version 1.0 backend/control release | [Version 1.0 PostgreSQL Release Qualification](docs/operations/version-1.0-release-qualification.md) |

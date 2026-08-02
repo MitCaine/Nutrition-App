@@ -29,6 +29,7 @@ import {
 import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
+import { contextualActionLabel } from "../../../shared/accessibility/contextualActionLabels";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
 import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../../calendar/calendarModel";
 import { deviceTimeZone } from "../../calendar/api/calendarApi";
@@ -877,7 +878,15 @@ function DailyLogEntryCard({
               <Text style={styles.text}>Move</Text>
             </Pressable>
           ) : entryState.canEdit ? (
-            <Pressable onPress={() => onEditLog?.(log.id)}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={contextualActionLabel("edit", {
+                subject: displayName,
+                meal: showMealLabel ? (isSupportedMeal(log.meal_type) ? log.meal_type : "unassigned") : null,
+                amount: `${formatDisplayNumber(log.amount_quantity)} ${log.amount_unit}`,
+              })}
+              onPress={() => onEditLog?.(log.id)}
+            >
               <Text style={styles.text}>Edit</Text>
             </Pressable>
           ) : null}

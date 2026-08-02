@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../app/theme/AppTheme";
+import { useAccessibilityScreenFocus } from "../accessibility/focus";
 import { OPEN_SETTINGS_ACCESSIBILITY_LABEL, ROOT_SCREEN_TITLES } from "./rootScreenHeaderModel";
 
 type Props = {
@@ -13,9 +14,11 @@ type Props = {
 export function RootScreenHeader({ title, onOpenSettings }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const headingRef = useRef<Text>(null);
+  useAccessibilityScreenFocus({ active: true, routeKey: title, targetRef: headingRef });
   return (
     <View style={styles.header}>
-      <Text maxFontSizeMultiplier={1.5} style={styles.title}>{title}</Text>
+      <Text ref={headingRef} accessibilityRole="header" maxFontSizeMultiplier={1.5} style={styles.title}>{title}</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={OPEN_SETTINGS_ACCESSIBILITY_LABEL}

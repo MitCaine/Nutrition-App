@@ -1,8 +1,10 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useMemo } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { formatReadableDate, localDateToApiDate } from "../utils/dailyLogDisplay";
 
 type Props = {
@@ -37,17 +39,22 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
 
   if (Platform.OS === "android") {
     return visible ? (
-      <DateTimePicker value={date} mode="date" display="default" maximumDate={maximumDate} onChange={handleChange} />
+      <DateTimePicker accessibilityLabel="Select date" value={date} mode="date" display="default" maximumDate={maximumDate} onChange={handleChange} />
     ) : null;
   }
 
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onCancel}>
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
-          <Text style={styles.sectionTitle}>Select Date</Text>
+    <AccessibleModal
+      visible={visible}
+      title="Select Date"
+      onRequestClose={onCancel}
+      backdropStyle={styles.modalBackdrop}
+      contentStyle={styles.modalCard}
+      headingStyle={styles.sectionTitle}
+    >
           <Text style={styles.datePreview}>{formatReadableDate(localDateToApiDate(date))}</Text>
           <DateTimePicker
+            accessibilityLabel="Selected date"
             value={date}
             mode="date"
             display="spinner"
@@ -56,16 +63,14 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
             themeVariant={theme.mode}
           />
           <View style={styles.modalActions}>
-            <Pressable onPress={onCancel} style={styles.secondaryButton}>
+            <AccessiblePressable accessibilityLabel="Cancel date selection" onPress={onCancel} style={styles.secondaryButton}>
               <Text style={styles.text}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={() => onConfirm(date)} style={styles.primaryButton}>
+            </AccessiblePressable>
+            <AccessiblePressable accessibilityLabel="Confirm selected date" onPress={() => onConfirm(date)} style={styles.primaryButton}>
               <Text style={styles.primaryText}>Done</Text>
-            </Pressable>
+            </AccessiblePressable>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </AccessibleModal>
   );
 }
 

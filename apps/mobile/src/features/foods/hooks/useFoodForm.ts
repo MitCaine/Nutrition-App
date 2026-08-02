@@ -8,7 +8,8 @@ import type {
   ServingDefinitionInput,
 } from "../api/types";
 import { formatDisplayNumber } from "../../../shared/nutrition/display";
-import { foodMutationSchema, validationMessage } from "../validation/foodValidation";
+import { foodMutationSchema, foodValidationIssue, type FoodValidationTarget } from "../validation/foodValidation";
+import type { ValidationIssue } from "../../../shared/forms/validation";
 import {
   applyAmountPatch,
   amountHasKnownGramWeight,
@@ -23,6 +24,9 @@ import {
 } from "../utils/amountForm";
 
 export type ServingFormValue = AmountFormValue;
+export type FoodPayloadValidationResult =
+  | { input: FoodMutationInput; issue: null }
+  | { input: null; issue: ValidationIssue<FoodValidationTarget> };
 type InitialServing = ServingDefinitionInput & { id?: string };
 let nextClientServingId = 0;
 
@@ -74,6 +78,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
   const [brand, setBrand] = useState(food?.brand ?? "");
   const [notes, setNotes] = useState(food?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [currentValidationIssue, setCurrentValidationIssue] = useState<ValidationIssue<FoodValidationTarget> | null>(null);
   const [invalidServingKey, setInvalidServingKey] = useState<string | null>(null);
   const [defaultAmountError, setDefaultAmountError] = useState<{ key: string; message: string } | null>(null);
   const [servings, setServings] = useState<ServingFormValue[]>(() => {
@@ -174,7 +179,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     });
   }
 
-  function buildPayload(): FoodMutationInput | null {
+  function buildPayload(): FoodPayloadValidationResult {
     const input: FoodMutationInput = {
       name,
       brand: brand || null,
@@ -201,14 +206,20 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     };
     const parsed = foodMutationSchema.safeParse(input);
     if (!parsed.success) {
+      const issue = foodValidationIssue(parsed.error, {
+        servingKeys: servings.map((serving) => serving.key),
+        nutrientIds: mergedValues.map((nutrient) => nutrient.nutrient_id),
+      });
       const servingIndex = parsed.error.issues.map((issue) => issue.path).find((path) => path[0] === "serving_definitions" && typeof path[1] === "number")?.[1];
       setInvalidServingKey(typeof servingIndex === "number" ? servings[servingIndex]?.key ?? null : null);
-      setError(validationMessage(parsed.error));
-      return null;
+      setError(issue.message);
+      setCurrentValidationIssue(issue);
+      return { input: null, issue };
     }
     setError(null);
+    setCurrentValidationIssue(null);
     setInvalidServingKey(null);
-    return parsed.data;
+    return { input: parsed.data, issue: null };
   }
 
   return {
@@ -221,6 +232,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     nutrients: mergedValues,
     setNutrients: setValues,
     error,
+    validationIssue: currentValidationIssue,
     invalidServingKey,
     defaultAmountError,
     buildPayload,

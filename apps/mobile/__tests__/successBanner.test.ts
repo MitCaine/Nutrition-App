@@ -1,4 +1,7 @@
-import { scheduleBannerExpiration, SUCCESS_BANNER_DURATION_MS } from "../src/shared/components/TransientSuccessBanner";
+import React from "react";
+import TestRenderer, { act } from "react-test-renderer";
+
+import { scheduleBannerExpiration, SUCCESS_BANNER_DURATION_MS, TransientSuccessBanner } from "../src/shared/components/TransientSuccessBanner";
 
 afterEach(() => jest.useRealTimers());
 
@@ -19,4 +22,30 @@ test("replacing a banner can cancel the old expiration", () => {
   cancel();
   jest.advanceTimersByTime(SUCCESS_BANNER_DURATION_MS);
   expect(oldExpired).not.toHaveBeenCalled();
+});
+
+test("success banner announces changed outcomes and cleans up obsolete requests", async () => {
+  const firstCancel = jest.fn();
+  const secondCancel = jest.fn();
+  const announcer = jest.fn()
+    .mockReturnValueOnce(firstCancel)
+    .mockReturnValueOnce(secondCancel);
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(TransientSuccessBanner, {
+      message: "Food saved",
+      announcer,
+    }));
+  });
+  expect(announcer).toHaveBeenCalledWith("Food saved", expect.objectContaining({ kind: "success" }));
+  await act(async () => {
+    renderer.update(React.createElement(TransientSuccessBanner, {
+      message: "Entry moved",
+      announcer,
+    }));
+  });
+  expect(firstCancel).toHaveBeenCalledTimes(1);
+  expect(announcer).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.unmount());
+  expect(secondCancel).toHaveBeenCalledTimes(1);
 });

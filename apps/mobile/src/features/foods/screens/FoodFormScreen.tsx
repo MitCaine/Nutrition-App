@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
+import { KeyboardSafeScrollView, type KeyboardSafeScrollViewHandle } from "../../../shared/forms/KeyboardSafeScrollView";
+import { LabeledField } from "../../../shared/forms/LabeledField";
+import { applyValidationIssue } from "../../../shared/forms/validation";
+import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import type { Food } from "../api/types";
 import { NutrientEntryList } from "../components/NutrientEntryList";
 import { ServingDefinitionsEditor } from "../components/ServingDefinitionsEditor";
@@ -12,6 +15,7 @@ import { foodFocusKey } from "../../../shared/forms/focusTargets";
 import { apiErrorMessage } from "../utils/foodDelete";
 import { createClientRequestId } from "../../logging/utils/clientRequestId";
 import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
+import { foodValidationTargetFocusKey } from "../validation/foodValidation";
 
 type Props = {
   food?: Food;
@@ -25,6 +29,8 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   const mutations = useFoodMutations();
   const [saveError, setSaveError] = useState<string | null>(null);
   const createIntentRef = useRef<CreateIntent | null>(null);
+  const scrollRef = useRef<KeyboardSafeScrollViewHandle>(null);
+  const announceValidation = useAccessibilityAnnouncement();
   const nutrientDefinitions = useMemo(
     () => [...(nutrientQuery.data ?? [])].sort((a, b) => a.display_order - b.display_order),
     [nutrientQuery.data],
@@ -33,10 +39,15 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
 
   async function save() {
     setSaveError(null);
-    const input = form.buildPayload();
-    if (!input) {
+    const result = form.buildPayload();
+    if (!result.input) {
+      applyValidationIssue(result.issue, {
+        announce: announceValidation,
+        focusTarget: (target) => scrollRef.current?.focusTarget(foodValidationTargetFocusKey(target)) ?? false,
+      });
       return;
     }
+    const input = result.input;
     try {
       let saved: Food;
       if (food) {
@@ -61,7 +72,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <KeyboardSafeScrollView contentContainerStyle={styles.content}>
+      <KeyboardSafeScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         {(focusProps) => (
           <>
             <View style={styles.header}>
@@ -72,18 +83,12 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             </View>
 
             <Text style={styles.sectionTitle}>Food</Text>
-            <View>
-              <TextInput {...focusProps(foodFocusKey("name"))} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
-            </View>
-            <View>
-              <TextInput {...focusProps(foodFocusKey("brand"))} value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
-            </View>
-            <View>
-              <TextInput {...focusProps(foodFocusKey("notes"))} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
-            </View>
+            <LabeledField {...focusProps(foodFocusKey("name"))} label="Food name" validationTarget="food.name" required invalid={form.validationIssue?.target === "food.name"} error={form.validationIssue?.target === "food.name" ? form.error : null} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+            <LabeledField {...focusProps(foodFocusKey("brand"))} label="Brand" validationTarget="food.brand" value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+            <LabeledField {...focusProps(foodFocusKey("notes"))} label="Notes" validationTarget="food.notes" value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
 
-            {form.error ? <Text style={styles.error}>{form.error}</Text> : null}
-            {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
+            {form.error && form.validationIssue?.target !== "food.name" ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
+            {saveError ? <Text accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
 
             <Text style={styles.sectionTitle}>Amounts</Text>
             <ServingDefinitionsEditor

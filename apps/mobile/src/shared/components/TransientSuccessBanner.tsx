@@ -2,6 +2,11 @@ import { useEffect, useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../app/theme/AppTheme";
+import {
+  announceAccessibility,
+  useAccessibilityAnnouncement,
+  type AccessibilityAnnouncer,
+} from "../accessibility/announcements";
 
 export const SUCCESS_BANNER_DURATION_MS = 5000;
 
@@ -14,19 +19,26 @@ export function TransientSuccessBanner({
   message,
   onExpired,
   durationMs = SUCCESS_BANNER_DURATION_MS,
+  announcer = announceAccessibility,
 }: {
   message?: string | null;
   onExpired?: () => void;
   durationMs?: number;
+  announcer?: AccessibilityAnnouncer;
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const announce = useAccessibilityAnnouncement(announcer);
   useEffect(() => {
     if (!message || !onExpired) return;
     return scheduleBannerExpiration(onExpired, durationMs);
   }, [durationMs, message, onExpired]);
+  useEffect(() => {
+    if (!message) return;
+    return announce(message, { key: `success-banner:${message}`, kind: "success", priority: "polite" });
+  }, [announce, message]);
   if (!message) return null;
-  return <View style={styles.banner}><Text style={styles.text}>{message}</Text></View>;
+  return <View style={styles.banner}><Text accessibilityLiveRegion="polite" style={styles.text}>{message}</Text></View>;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {

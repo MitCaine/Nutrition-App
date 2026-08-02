@@ -1,6 +1,6 @@
 {
   "application_heads": [
-    "0021_target_activation_execution"
+    "0024_recipe_log_current_provenance"
   ],
   "authorization_contract_constants": [
     {
@@ -497,7 +497,7 @@
   "control_heads": [
     "ops_0011_phase5c4_recovery_audit"
   ],
-  "inventory_sha256": "f0bd53da1e2b22ee63650bf9a77beaf8a845bb9203692f42830a02fb1dfb4d66",
+  "inventory_sha256": "c7c3d9c367e58dfe0c84489f55a056cb707911a879e3fcc2f766d17968735a86",
   "roles": [
     "nutrition_canary",
     "nutrition_canary_read",

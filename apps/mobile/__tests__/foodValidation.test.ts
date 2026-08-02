@@ -1,4 +1,8 @@
-import { foodMutationSchema } from "../src/features/foods/validation/foodValidation";
+import {
+  foodMutationSchema,
+  foodValidationIssue,
+  foodValidationTargetFocusKey,
+} from "../src/features/foods/validation/foodValidation";
 
 const validFood = {
   name: "Manual Food",
@@ -86,4 +90,22 @@ test("manual food validation rejects an unknown-weight default amount with actio
       }),
     ]));
   }
+});
+
+test("food validation returns a stable logical target that maps to the registered field", () => {
+  const result = foodMutationSchema.safeParse({ ...validFood, name: "" });
+  expect(result.success).toBe(false);
+  if (result.success) return;
+  const issue = foodValidationIssue(result.error, {
+    servingKeys: ["base", "serving"],
+    nutrientIds: ["protein"],
+  });
+  expect(issue).toEqual(expect.objectContaining({
+    code: "food_name_required",
+    message: "Food name is required.",
+    target: "food.name",
+    moveFocus: true,
+    valuesRemainValid: true,
+  }));
+  expect(foodValidationTargetFocusKey(issue.target)).toBe("food:name");
 });

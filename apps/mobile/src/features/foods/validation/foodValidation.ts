@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+import { foodFocusKey, nutrientFocusKey, servingFocusKey, type ServingFocusField } from "../../../shared/forms/focusTargets";
+import { validationIssue, type ValidationIssue } from "../../../shared/forms/validation";
+
+export type FoodValidationTarget =
+  | "food.name"
+  | "food.brand"
+  | "food.notes"
+  | `serving.${string}.${ServingFocusField}`
+  | `nutrient.${string}.amount`;
+
 export const nutrientStatusSchema = z.enum(["known", "unknown", "estimated", "zero"]);
 
 export const servingSchema = z
@@ -70,4 +80,52 @@ export function validationMessage(error: unknown): string {
     return error.issues[0]?.message ?? "Invalid food";
   }
   return error instanceof Error ? error.message : "Invalid food";
+}
+
+export function foodValidationIssue(
+  error: z.ZodError,
+  context: { servingKeys: string[]; nutrientIds: string[] },
+): ValidationIssue<FoodValidationTarget> {
+  const first = error.issues[0];
+  const path = first?.path ?? [];
+  let target: FoodValidationTarget = "food.name";
+  if (path[0] === "brand") target = "food.brand";
+  if (path[0] === "notes") target = "food.notes";
+  if (path[0] === "serving_definitions" && typeof path[1] === "number") {
+    const key = context.servingKeys[path[1]] ?? context.servingKeys[0];
+    if (key) {
+      const field: ServingFocusField = path[2] === "label"
+        ? "label"
+        : path[2] === "unit"
+        ? "unit"
+        : path[2] === "gram_weight"
+        ? "gramWeight"
+        : "quantity";
+      target = `serving.${key}.${field}`;
+    }
+  }
+  if (path[0] === "nutrients" && typeof path[1] === "number") {
+    const nutrientId = context.nutrientIds[path[1]];
+    if (nutrientId) target = `nutrient.${nutrientId}.amount`;
+  }
+  return validationIssue({
+    code: target === "food.name" ? "food_name_required" : "food_validation_failed",
+    message: first?.message ?? "Review the highlighted food field.",
+    target,
+    announce: true,
+    moveFocus: true,
+    valuesRemainValid: true,
+  });
+}
+
+export function foodValidationTargetFocusKey(target: FoodValidationTarget): string {
+  if (target === "food.name") return foodFocusKey("name");
+  if (target === "food.brand") return foodFocusKey("brand");
+  if (target === "food.notes") return foodFocusKey("notes");
+  if (target.startsWith("serving.")) {
+    const [, key, field] = target.split(".");
+    return servingFocusKey(key, field as ServingFocusField);
+  }
+  const [, nutrientId] = target.split(".");
+  return nutrientFocusKey(nutrientId);
 }

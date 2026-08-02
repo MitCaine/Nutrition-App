@@ -1,5 +1,6 @@
-import { ReactNode, useCallback, useEffect, useRef } from "react";
+import { forwardRef, type ReactNode, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { Keyboard, ScrollView, TextInput, type KeyboardEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewProps } from "react-native";
+import { focusAccessibilityElement, type CancelAccessibilityFocus } from "../accessibility/focus";
 import { createFocusTargetRegistry } from "./focusTargets";
 
 export type FocusTargetRegistration = { ref: (input: TextInput | null) => void; onFocus: () => void };
@@ -8,9 +9,17 @@ type Props = Omit<ScrollViewProps, "children"> & {
   children: (registerFocusTarget: (key: string) => FocusTargetRegistration) => ReactNode;
 };
 
-export function KeyboardSafeScrollView({ children, onScroll, scrollEventThrottle, ...props }: Props) {
+export type KeyboardSafeScrollViewHandle = {
+  focusTarget: (key: string) => boolean;
+};
+
+export const KeyboardSafeScrollView = forwardRef<KeyboardSafeScrollViewHandle, Props>(function KeyboardSafeScrollView(
+  { children, onScroll, scrollEventThrottle, ...props },
+  ref,
+) {
   const scrollRef = useRef<ScrollView>(null);
   const targets = useRef(createFocusTargetRegistry<TextInput>());
+  const pendingAccessibilityFocus = useRef<CancelAccessibilityFocus | null>(null);
   const keyboardTop = useRef<number | null>(null);
   const scrollOffset = useRef(0);
   const focusedKey = useRef<string | null>(null);
@@ -47,6 +56,17 @@ export function KeyboardSafeScrollView({ children, onScroll, scrollEventThrottle
     };
   }, [revealIfObscured]);
 
+  useEffect(() => () => pendingAccessibilityFocus.current?.(), []);
+
+  useImperativeHandle(ref, () => ({
+    focusTarget(key: string) {
+      return targets.current.withTarget(key, (target) => {
+        pendingAccessibilityFocus.current?.();
+        pendingAccessibilityFocus.current = focusAccessibilityElement(target);
+      });
+    },
+  }), []);
+
   function registerFocusTarget(key: string) {
     return {
       ref: (input: TextInput | null) => {
@@ -73,4 +93,4 @@ export function KeyboardSafeScrollView({ children, onScroll, scrollEventThrottle
       {children(registerFocusTarget)}
     </ScrollView>
   );
-}
+});

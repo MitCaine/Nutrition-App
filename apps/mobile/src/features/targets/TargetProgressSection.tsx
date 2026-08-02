@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../app/theme/AppTheme";
+import { AccessiblePressable } from "../../shared/accessibility/AccessiblePressable";
+import { AccessibilityStatus } from "../../shared/accessibility/AccessibilityStatus";
+import { userFacingEpicOneError } from "../../shared/errors/userFacingError";
 import { formatNutrientLabel } from "../../shared/nutrition/display";
 import type { DailyTargetComparison, DailyTargetComparisonItem } from "./api/types";
 import { targetProgressReadState, useDailyTargetComparison, type TargetProgressReadState } from "./hooks/useDailyTargetComparison";
@@ -37,23 +40,22 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
   const state = readState ?? targetProgressReadState({ data, isLoading, isError, isFetching, isRefetchError, error, refetch: onRetry }, entriesKnown);
   const byId = new Map((state.data?.comparisons ?? []).map((item) => [item.nutrientId, item]));
   const rows = PRIMARY_PROGRESS_NUTRIENTS.map((id) => byId.get(id)).filter((item): item is DailyTargetComparisonItem => Boolean(item));
+  const initialFailure = state.kind === "initial-failure"
+    ? userFacingEpicOneError(state.error, { fallbackSummary: "Target comparisons are unavailable." })
+    : null;
   return <View style={styles.section}>
     <View style={styles.headingRow}>
       <Text accessibilityRole="header" style={styles.heading}>Daily progress</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Open Nutrition targets settings" onPress={onOpenTargets}><Text style={styles.link}>Nutrition targets</Text></Pressable>
+      <AccessiblePressable accessibilityLabel="Open Nutrition targets settings" onPress={onOpenTargets}><Text style={styles.link}>Nutrition targets</Text></AccessiblePressable>
     </View>
-    {state.kind === "initial-loading" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Loading target comparisons…</Text> : null}
-    {state.kind === "initial-failure" ? <ReadFailure onRetry={state.retry} message="Target comparisons are unavailable." styles={styles} /> : null}
-    {state.kind === "unavailable" ? <ReadFailure onRetry={state.retry} message="Target progress is unavailable until Daily Log entries are available." styles={styles} /> : null}
-    {state.kind === "empty" ? <Text style={styles.secondary}>No target comparisons are available for this date.</Text> : null}
-    {state.kind === "refreshing" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Refreshing target comparisons…</Text> : null}
-    {state.kind === "refresh-failure" ? <ReadFailure onRetry={state.retry} message="Target comparisons could not be refreshed; showing the last confirmed progress." styles={styles} /> : null}
+    {state.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading target comparisons…" messageStyle={styles.secondary} /> : null}
+    {state.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message={initialFailure!.summary} onRetry={state.retry} retryContext="target comparisons" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
+    {state.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Target progress is unavailable until Daily Log entries are available." onRetry={state.retry} retryContext="target comparisons" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
+    {state.kind === "empty" ? <AccessibilityStatus kind="empty" message="No target comparisons are available for this date." messageStyle={styles.secondary} /> : null}
+    {state.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing target comparisons…" messageStyle={styles.secondary} /> : null}
+    {state.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Target comparisons could not be refreshed; showing the last confirmed progress." onRetry={state.retry} retryContext="target comparisons" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
     {state.data ? rows.map((item) => <ProgressRow key={item.nutrientId} item={item} />) : null}
   </View>;
-}
-
-function ReadFailure({ onRetry, message, styles }: { onRetry: () => void; message: string; styles: ReturnType<typeof createStyles> }) {
-  return <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.secondary}>{message}</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry target comparisons" onPress={onRetry}><Text style={styles.link}>Retry</Text></Pressable></View>;
 }
 
 function ProgressRow({ item }: { item: DailyTargetComparisonItem }) {
@@ -74,13 +76,12 @@ function ProgressRow({ item }: { item: DailyTargetComparisonItem }) {
     <Text accessible={false} style={styles.secondary}>{interpretation}</Text>
     <Text accessible={false} style={styles.direction}>{targetDirectionLabel(item.direction)}{over && item.percentage !== null ? ` · ${percentage}` : ""}</Text>
     {item.percentage !== null ? <View accessible={false} style={styles.track}><View style={[styles.fill, limitAttention && styles.limitFill, { width: `${boundedProgressValue(item.percentage)}%` }]} />{over ? <Text accessible={false} style={styles.overflow}>›</Text> : null}</View> : null}
-    {item.noteCode === "protein_percent_dv_labeling_caveat" ? <><Pressable accessibilityRole="button" accessibilityLabel={noteOpen ? "Hide protein Daily Value information" : "Explain protein Daily Value"} onPress={() => setNoteOpen((value) => !value)}><Text style={styles.noteLink}>{noteOpen ? "Hide info" : "Why this reference?"}</Text></Pressable>{noteOpen ? <Text style={styles.secondary}>Protein % Daily Value is generally not required on adult labels unless specific labeling conditions apply.</Text> : null}</> : null}
+    {item.noteCode === "protein_percent_dv_labeling_caveat" ? <><AccessiblePressable accessibilityLabel={noteOpen ? "Hide protein Daily Value information" : "Explain protein Daily Value"} accessibilityState={{ expanded: noteOpen }} onPress={() => setNoteOpen((value) => !value)}><Text style={styles.noteLink}>{noteOpen ? "Hide info" : "Why this reference?"}</Text></AccessiblePressable>{noteOpen ? <Text style={styles.secondary}>Protein % Daily Value is generally not required on adult labels unless specific labeling conditions apply.</Text> : null}</> : null}
   </View>;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   direction: { color: theme.colors.mutedText, fontSize: 12 },
-  errorRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   fill: { backgroundColor: theme.colors.accent, borderRadius: 3, height: 6 },
   heading: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   headingRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
@@ -94,6 +95,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   row: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 3, padding: 10 },
   secondary: { color: theme.colors.secondaryText, fontSize: 13 },
   section: { gap: 8 },
+  statusAction: { alignSelf: "flex-start" },
   track: { backgroundColor: theme.colors.disabledBackground, borderRadius: 3, height: 6, marginRight: 5, marginTop: 3 },
   value: { color: theme.colors.text },
 }); }
