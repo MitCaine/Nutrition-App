@@ -80,6 +80,8 @@ export type DailyLogMutationStatus = {
   client_request_id: string;
   status: "confirmed_success" | "confirmed_non_commit" | "conflict" | "unresolved";
   log_id: string | null;
+  source_logged_date?: string | null;
+  destination_logged_date?: string | null;
   result: DailyLog | null;
 };
 

@@ -6,6 +6,21 @@ const runtimeConfig = validateMobileConfig({
   privateAuthToken: process.env.EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN,
 });
 
+/**
+ * Stable local scope for client-only recovery records.  The credential itself
+ * is never persisted; only a one-way, process-stable fingerprint is used so
+ * an account/configuration switch cannot reconcile another owner's intents.
+ */
+export function clientOwnerScope(): string {
+  const identity = `${runtimeConfig.deploymentMode}|${runtimeConfig.apiBaseUrl}|${runtimeConfig.privateAuthToken ?? "anonymous"}`;
+  let hash = 2166136261;
+  for (const character of identity) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${runtimeConfig.deploymentMode}:${runtimeConfig.apiBaseUrl}:${(hash >>> 0).toString(16)}`;
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;

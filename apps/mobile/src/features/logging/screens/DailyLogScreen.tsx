@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import type { QueryClient } from "@tanstack/react-query";
 
 import {
   formatAggregatedTotal,
@@ -36,12 +37,34 @@ import { DatePickerModal } from "./DatePickerModal";
 import { createClientRequestId } from "../utils/clientRequestId";
 import { deleteErrorMessage, isDeleteReconciliationRequired } from "../utils/logDeleteErrors";
 import { logEditErrorCode } from "../utils/logEditErrors";
+import {
+  createLogMutationRecoveryRecord,
+  markLogMutationRecoveryAttempt,
+  persistRecoveryBeforeTransmission,
+  removeLogMutationRecoveryRecord,
+  upsertLogMutationRecoveryRecord,
+  dismissLogMutationRecoveryRecord,
+  getRecoveryJournalState,
+  hasOverlappingRecovery,
+  isUncertainLogMutationError,
+  RecoveryStorageError,
+  useLogMutationRecoveryJournal,
+  reconcileLogMutationRecoveryRecord,
+  retryLogMutationRecoveryRecord,
+  type RecoveryJournalState,
+  type LogMutationRecoveryRecord,
+} from "../recovery/logMutationRecovery";
+
+function isLocalRecoveryStorageError(error: unknown): boolean {
+  return error instanceof RecoveryStorageError;
+}
 
 type DeletePhase = "confirming" | "submitting" | "uncertain" | "retryable";
 
 type PendingDelete = {
   log: DailyLog;
   input: DailyLogDeleteInput | null;
+  recoveryRecord?: LogMutationRecoveryRecord;
   phase: DeletePhase;
   message: string | null;
 };
@@ -58,13 +81,14 @@ type Props = {
   onOpenFood: (foodId: string) => void;
   onEditLog: (logId: string, log?: DailyLog) => void;
   onMoveLog?: (logId: string, log?: DailyLog) => void;
+  onReviewRecovery?: () => void;
   onOpenSettings: () => void;
   onOpenNutritionTargets: () => void;
   initialScrollOffset: number;
   onScrollOffsetChange: (offset: number) => void;
 };
 
-export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
+export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -72,8 +96,10 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const [clock, setClock] = useState(() => new Date());
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleteOverlapRecord, setDeleteOverlapRecord] = useState<LogMutationRecoveryRecord | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const deleteSubmittingRef = useRef(false);
+  const deleteSeparateActionAcknowledgmentRef = useRef<string | null>(null);
   const logsQuery = useDailyLogs(date, !legacyFuture);
   const logs = dailyLogReadState(logsQuery);
   const futureQuery = useFutureLogs(date, legacyFuture);
@@ -84,10 +110,14 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const foods = useFoods("");
   const mutations = useLogMutations(date);
   const calendar = useCalendarState();
+  const recovery = useLogMutationRecoveryJournal();
   const provisionalTimeZone = deviceTimeZone();
   const today = calendarToday(calendar.data, provisionalTimeZone, clock);
   const dateClassification = classifyCalendarDate(date, today);
-  const mutationsEnabled = calendarMutationsEnabled(calendar.data) && dateClassification !== "future";
+  const mutationsEnabled = calendarMutationsEnabled(calendar.data)
+    && dateClassification !== "future"
+    && recovery.ready;
+  const cleanupMutationsEnabled = calendarMutationsEnabled(calendar.data) && recovery.ready;
   const isProvisional = !calendar.data?.is_established;
   const foodNames = new Map((foods.data ?? []).map((food) => [food.id, food.name]));
   const groups = groupDailyLogs(logs.data ?? []);
@@ -101,7 +131,23 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 
   const beginDelete = (log: DailyLog) => {
     setDeleteNotice(null);
+    setDeleteOverlapRecord(null);
+    deleteSeparateActionAcknowledgmentRef.current = null;
     setPendingDelete({ log, input: null, phase: "confirming", message: null });
+  };
+
+  const reviewDeleteOverlap = () => {
+    setDeleteOverlapRecord(null);
+    setPendingDelete(null);
+    onReviewRecovery?.();
+  };
+
+  const startSeparateDelete = () => {
+    if (!deleteOverlapRecord) return;
+    deleteSeparateActionAcknowledgmentRef.current = deleteOverlapRecord.id;
+    setDeleteOverlapRecord(null);
+    setPendingDelete((current) => current ? { ...current, input: null, recoveryRecord: undefined, phase: "confirming", message: null } : current);
+    void submitDelete();
   };
 
   const refreshAfterDeleteConflict = (logDate: string) => {
@@ -110,17 +156,32 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 
   const reconcileDelete = async (pending: PendingDelete): Promise<void> => {
     if (!pending.input?.client_request_id) return;
+    let recoveryRecord = pending.recoveryRecord;
+    if (pending.recoveryRecord) {
+      try {
+        recoveryRecord = await markLogMutationRecoveryAttempt(pending.recoveryRecord);
+      } catch {
+        // A local persistence failure must not interrupt the authoritative
+        // status check or the normal Daily Log workflow.
+      }
+    }
     try {
       const status = await getLogMutationStatus(pending.input.client_request_id, "delete");
       if (status.status === "confirmed_success") {
         mutations.projectDelete?.(pending.log.id, pending.log.logged_date);
+        if (recoveryRecord) await removeLogMutationRecoveryRecord(recoveryRecord);
         setPendingDelete(null);
         setDeleteNotice(`Deleted ${loggedFoodDisplayName(pending.log, foodNames)} permanently.`);
         return;
       }
       if (status.status === "confirmed_non_commit") {
+        if (recoveryRecord) {
+          recoveryRecord = { ...recoveryRecord, state: "confirmed_non_commit" };
+          await upsertLogMutationRecoveryRecord(recoveryRecord);
+        }
         setPendingDelete({
           ...pending,
+          recoveryRecord,
           phase: "retryable",
           message: "The delete was not committed. You can retry the same reviewed delete.",
         });
@@ -128,20 +189,25 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       }
       if (status.status === "conflict") {
         refreshAfterDeleteConflict(pending.log.logged_date);
+        if (recoveryRecord) await removeLogMutationRecoveryRecord(recoveryRecord);
         setPendingDelete(null);
         setDeleteNotice("This entry changed or was removed elsewhere. Review the refreshed Daily Log before trying again.");
         return;
       }
       setPendingDelete({
         ...pending,
+        recoveryRecord,
         phase: "uncertain",
         message: "The delete outcome is still unresolved. Check its status before retrying.",
       });
-    } catch {
+    } catch (error) {
       setPendingDelete({
         ...pending,
+        recoveryRecord,
         phase: "uncertain",
-        message: "The delete outcome could not be checked. Check status again before retrying.",
+        message: isLocalRecoveryStorageError(error)
+          ? "Local recovery storage is unavailable. The saved delete intent remains protected; try again when storage is available."
+          : "The delete outcome could not be checked. Check status again before retrying.",
       });
     }
   };
@@ -164,16 +230,50 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         ? { calendar_revision: calendar.data.calendar_revision }
         : {}),
     };
-    const nextPending = { ...pendingDelete, input, phase: "submitting" as const, message: null };
+    const recoveryRecord = createLogMutationRecoveryRecord({
+      clientRequestId: input.client_request_id as string,
+      mutationType: "delete",
+      targetId: pendingDelete.log.id,
+      sourceDate: pendingDelete.log.logged_date,
+      destinationDate: null,
+      payload: { operation: "delete", log_id: pendingDelete.log.id, input },
+    });
+    const nextPending = { ...pendingDelete, input, recoveryRecord, phase: "submitting" as const, message: null };
     setPendingDelete(nextPending);
     deleteSubmittingRef.current = true;
     try {
-      await mutations.deleteLog.mutateAsync({ logId: pendingDelete.log.id, input });
+      const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
+        mutationType: "delete",
+        sourceDate: pendingDelete.log.logged_date,
+        targetId: pendingDelete.log.id,
+      });
+      if (overlap && overlap.id !== recoveryRecord.id && overlap.id !== deleteSeparateActionAcknowledgmentRef.current) {
+        deleteSubmittingRef.current = false;
+        setDeleteOverlapRecord(overlap);
+        setPendingDelete({ ...pendingDelete, input: null, recoveryRecord: undefined, phase: "confirming", message: null });
+        return;
+      }
+      deleteSeparateActionAcknowledgmentRef.current = null;
+      const submitted = await persistRecoveryBeforeTransmission(recoveryRecord);
+      await mutations.deleteLog.mutateAsync({ logId: pendingDelete.log.id, input: submitted.payload.operation === "delete" ? submitted.payload.input : input });
+      await removeLogMutationRecoveryRecord(submitted);
       setPendingDelete(null);
+      setDeleteOverlapRecord(null);
       setDeleteNotice(`Deleted ${loggedFoodDisplayName(pendingDelete.log, foodNames)} permanently.`);
     } catch (error) {
       const errorCode = logEditErrorCode(error);
-      if (isDeleteReconciliationRequired(error)) {
+      const localSubmissionBlocked = isLocalRecoveryStorageError(error)
+        || (error instanceof Error && error.message.startsWith("A prior operation for this entry"));
+      if (localSubmissionBlocked) {
+        void removeLogMutationRecoveryRecord(recoveryRecord).catch(() => undefined);
+        setPendingDelete({
+          ...nextPending,
+          phase: "retryable",
+          message: isLocalRecoveryStorageError(error)
+            ? "Local recovery storage is unavailable. Nothing was sent. Try again when storage is available."
+            : error instanceof Error ? error.message : "This operation is blocked until recovery is reviewed.",
+        });
+      } else if (isDeleteReconciliationRequired(error)) {
         const uncertain = { ...nextPending, phase: "uncertain" as const, message: "The delete outcome is being checked…" };
         setPendingDelete(uncertain);
         await reconcileDelete(uncertain);
@@ -183,11 +283,19 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         errorCode === "log_mutation_payload_conflict" ||
         (error instanceof ApiError && error.status === 404)
       ) {
+        void removeLogMutationRecoveryRecord(recoveryRecord).catch(() => undefined);
         refreshAfterDeleteConflict(pendingDelete.log.logged_date);
         setPendingDelete(null);
         setDeleteNotice(deleteErrorMessage(error));
       } else {
-        setPendingDelete({ ...nextPending, phase: "retryable", message: deleteErrorMessage(error) });
+        if (!isUncertainLogMutationError(error)) void removeLogMutationRecoveryRecord(recoveryRecord).catch(() => undefined);
+        setPendingDelete({
+          ...nextPending,
+          phase: "retryable",
+          message: isLocalRecoveryStorageError(error)
+            ? "Local recovery storage is unavailable. Nothing was sent. Try again when storage is available."
+            : deleteErrorMessage(error),
+        });
       }
     } finally {
       deleteSubmittingRef.current = false;
@@ -196,8 +304,20 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 
   const cancelDelete = () => {
     if (pendingDelete?.phase === "confirming" || pendingDelete?.phase === "retryable") {
+      if (pendingDelete.recoveryRecord) {
+        void dismissLogMutationRecoveryRecord(pendingDelete.recoveryRecord).catch(() => undefined);
+      }
+      setDeleteOverlapRecord(null);
       setPendingDelete(null);
     }
+  };
+
+  const dismissDelete = () => {
+    if (pendingDelete?.recoveryRecord) {
+      void dismissLogMutationRecoveryRecord(pendingDelete.recoveryRecord).catch(() => undefined);
+    }
+    setDeleteOverlapRecord(null);
+    setPendingDelete(null);
   };
 
   if (legacyFuture) {
@@ -205,6 +325,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     return (
       <View style={styles.root}>
         <RootScreenHeader title="Daily Log" onOpenSettings={onOpenSettings} />
+        <RecoveryPanel records={recovery.records} health={recovery} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.screen}
@@ -238,6 +359,10 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
               onCancel={cancelDelete}
               onConfirm={submitDelete}
               onCheckStatus={submitDelete}
+              onDismiss={dismissDelete}
+              overlapWarning={deleteOverlapRecord}
+              onReviewOverlap={reviewDeleteOverlap}
+              onStartSeparate={startSeparateDelete}
               styles={styles}
             />
           ) : null}
@@ -261,7 +386,8 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
               key={log.id}
               log={log}
               foodNames={foodNames}
-              mutationsEnabled
+              mutationsEnabled={cleanupMutationsEnabled}
+              recoveryBlocked={recovery.records.some((record) => record.target_id === log.id)}
               showLoggedDate
               showMealLabel
               expandedNote={expandedNotes[log.id] === true}
@@ -281,6 +407,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   return (
     <View style={styles.root}>
       <RootScreenHeader title="Daily Log" onOpenSettings={onOpenSettings} />
+      <RecoveryPanel records={recovery.records} health={recovery} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.screen}
@@ -344,10 +471,14 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         <DeleteConfirmationModal
           pending={pendingDelete}
           name={loggedFoodDisplayName(pendingDelete.log, foodNames)}
-          onCancel={cancelDelete}
-          onConfirm={submitDelete}
-          onCheckStatus={submitDelete}
-          styles={styles}
+        onCancel={cancelDelete}
+        onConfirm={submitDelete}
+        onCheckStatus={submitDelete}
+        onDismiss={dismissDelete}
+        overlapWarning={deleteOverlapRecord}
+        onReviewOverlap={reviewDeleteOverlap}
+        onStartSeparate={startSeparateDelete}
+        styles={styles}
         />
       ) : null}
       <TargetProgressSection date={date} entriesKnown={entriesKnown} onOpenTargets={onOpenNutritionTargets} />
@@ -420,6 +551,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
                 log={log}
                 foodNames={foodNames}
                 mutationsEnabled={mutationsEnabled}
+                recoveryBlocked={recovery.records.some((record) => record.target_id === log.id)}
                 showLoggedDate={false}
                 showMealLabel={false}
                 expandedNote={expandedNotes[log.id] === true}
@@ -438,19 +570,156 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   );
 }
 
+function RecoveryPanel({
+  records,
+  health,
+  queryClient,
+  onRefreshDate,
+  styles,
+}: {
+  records: LogMutationRecoveryRecord[];
+  health: RecoveryJournalState;
+  queryClient?: QueryClient;
+  onRefreshDate: (date: string) => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const visibleRecords = records.filter((record) => showDismissed || record.state !== "dismissed");
+  const dismissedRecords = records.filter((record) => record.state === "dismissed");
+  const typeLabel = (record: LogMutationRecoveryRecord) =>
+    record.mutation_type === "move" ? "move" : record.mutation_type;
+  const dateLabel = (record: LogMutationRecoveryRecord) => record.destination_date
+    ? `${record.source_date} → ${record.destination_date}`
+    : record.source_date;
+  const refresh = (record: LogMutationRecoveryRecord) => {
+    onRefreshDate(record.source_date);
+    if (record.destination_date) onRefreshDate(record.destination_date);
+  };
+
+  if (!health.ready) {
+    return (
+      <View style={styles.recoveryCard}>
+        <Text accessibilityRole="alert" style={styles.calendarNotice}>
+          Recovery state is unavailable or needs an app update. Daily Log mutations are temporarily locked until it can be read safely.
+        </Text>
+      </View>
+    );
+  }
+  if (records.length === 0) return null;
+  const runAction = async (record: LogMutationRecoveryRecord, action: () => Promise<unknown>, message: string) => {
+    if (busyId !== null) return;
+    setActionError(null);
+    setBusyId(record.id);
+    try {
+      await action();
+      refresh(record);
+    } catch {
+      setActionError(message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+  return (
+    <View style={styles.recoveryCard}>
+      <Text accessibilityRole="header" style={styles.recoveryTitle}>Daily Log recovery</Text>
+      {actionError ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{actionError}</Text> : null}
+      {dismissedRecords.length > 0 && !showDismissed ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Review dismissed recovery" onPress={() => setShowDismissed(true)}>
+          <Text style={styles.noteToggle}>Review dismissed recovery</Text>
+        </Pressable>
+      ) : null}
+      {visibleRecords.map((record) => {
+        const actionableState = record.state === "dismissed"
+          ? record.dismissed_from_state ?? "submitted"
+          : record.state;
+        const prepared = actionableState === "prepared";
+        const retryable = actionableState === "confirmed_non_commit" || prepared;
+        const unresolved = actionableState === "submitted" || actionableState === "reconciling";
+        return (
+          <View key={record.id} style={styles.recoveryItem}>
+            <Text style={styles.text}>{typeLabel(record)} · {dateLabel(record)}</Text>
+            <Text style={styles.calendarNotice}>
+              {prepared
+                ? "This exact operation was saved locally but was not sent."
+                : actionableState === "confirmed_non_commit"
+                  ? "The server confirmed it was not committed. The exact operation can be retried."
+                  : record.state === "dismissed"
+                    ? "Prompt dismissed; the record remains unresolved."
+                    : "The operation may have committed. Check authoritative status before trying another action."}
+            </Text>
+            {record.target_id ? <Text style={styles.calendarNotice}>Entry: {record.target_id}</Text> : null}
+            {retryable ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Retry exact ${typeLabel(record)}`}
+                disabled={busyId !== null}
+                onPress={() => void runAction(
+                  record,
+                  () => retryLogMutationRecoveryRecord(record, queryClient ?? null),
+                  "The exact recovery retry could not be sent. The saved intent remains available.",
+                )}
+              >
+                <Text style={styles.noteToggle}>Retry exact operation</Text>
+              </Pressable>
+            ) : null}
+            {unresolved ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Check ${typeLabel(record)} status`}
+                disabled={busyId !== null}
+                onPress={() => void runAction(
+                  record,
+                  () => reconcileLogMutationRecoveryRecord(record, queryClient ?? null),
+                  "Recovery status could not be checked. Try again when the connection is available.",
+                )}
+              >
+                <Text style={styles.noteToggle}>Check status</Text>
+              </Pressable>
+            ) : null}
+            {record.state !== "dismissed" ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Dismiss ${typeLabel(record)} recovery`}
+                disabled={busyId !== null}
+                onPress={() => void runAction(
+                  record,
+                  () => dismissLogMutationRecoveryRecord(record),
+                  "The recovery prompt could not be dismissed because local storage is unavailable.",
+                )}
+              >
+                <Text style={styles.noteToggle}>Dismiss</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function DeleteConfirmationModal({
   pending,
   name,
+  overlapWarning,
   onCancel,
   onConfirm,
   onCheckStatus,
+  onDismiss,
+  onReviewOverlap,
+  onStartSeparate,
   styles,
 }: {
   pending: PendingDelete;
   name: string;
+  overlapWarning: LogMutationRecoveryRecord | null;
   onCancel: () => void;
   onConfirm: () => void;
   onCheckStatus: () => void;
+  onDismiss: () => void;
+  onReviewOverlap: () => void;
+  onStartSeparate: () => void;
   styles: ReturnType<typeof createStyles>;
 }) {
   const dateLabel = formatReadableDate(pending.log.logged_date);
@@ -478,11 +747,27 @@ function DeleteConfirmationModal({
           <Text style={styles.calendarNotice}>Reusable Foods, Recipes, and catalog data will remain unchanged.</Text>
           <Text style={styles.calendarNotice}>This action cannot be undone. Totals and target progress for {dateLabel} will change.</Text>
           {pending.message ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{pending.message}</Text> : null}
+          {overlapWarning ? (
+            <View style={styles.warningCard}>
+              <Text accessibilityRole="alert" style={styles.compatibilityNotice}>
+                An unresolved delete for this entry may already have committed. Review the original operation or explicitly start a separate delete.
+              </Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Review original delete recovery" onPress={onReviewOverlap}>
+                <Text style={styles.noteToggle}>Review/check original operation</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Cancel separate delete" onPress={onCancel}>
+                <Text style={styles.noteToggle}>Cancel</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Start separate delete anyway" onPress={onStartSeparate}>
+                <Text style={styles.noteToggle}>Start separate delete anyway</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {busy ? (
             <View style={styles.errorRow}><ActivityIndicator /><Text style={styles.calendarNotice}>Deleting…</Text></View>
           ) : null}
           <View style={styles.modalActions}>
-            {!busy && !uncertain ? (
+            {!busy && !uncertain && !overlapWarning ? (
               <Pressable accessibilityRole="button" accessibilityLabel="Cancel delete" onPress={onCancel} style={styles.secondaryButton}>
                 <Text style={styles.text}>Cancel</Text>
               </Pressable>
@@ -492,7 +777,12 @@ function DeleteConfirmationModal({
                 <Text style={styles.text}>Check status</Text>
               </Pressable>
             ) : null}
-            {!busy && !uncertain ? (
+            {uncertain || retryable ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Dismiss delete recovery" onPress={onDismiss} style={styles.secondaryButton}>
+                <Text style={styles.text}>Dismiss</Text>
+              </Pressable>
+            ) : null}
+            {!busy && !uncertain && !overlapWarning ? (
               <Pressable accessibilityRole="button" accessibilityLabel={`Permanently delete ${name}`} onPress={onConfirm} style={styles.primaryButton}>
                 <Text style={styles.primaryText}>{retryable ? "Retry permanent delete" : "Delete permanently"}</Text>
               </Pressable>
@@ -514,6 +804,7 @@ function DailyLogEntryCard({
   onEditLog,
   onMoveLog,
   onDelete,
+  recoveryBlocked,
   moveOnly,
   showLoggedDate,
   showMealLabel,
@@ -527,6 +818,7 @@ function DailyLogEntryCard({
   onEditLog?: (logId: string, log?: DailyLog) => void;
   onMoveLog?: (logId: string, log?: DailyLog) => void;
   onDelete: () => void;
+  recoveryBlocked?: boolean;
   moveOnly?: boolean;
   showLoggedDate: boolean;
   showMealLabel: boolean;
@@ -562,6 +854,7 @@ function DailyLogEntryCard({
         <View>{details}</View>
       )}
       {entryState.sourceStatusLabel ? <Text style={styles.compatibilityNotice}>{entryState.sourceStatusLabel}</Text> : null}
+      {recoveryBlocked ? <Text accessibilityRole="alert" style={styles.compatibilityNotice}>A prior operation for this entry is unresolved. Review recovery or explicitly acknowledge a separate action before continuing.</Text> : null}
       {mealNotice ? <Text style={styles.compatibilityNotice}>{mealNotice}</Text> : null}
       {noteNotice ? <Text style={styles.compatibilityNotice}>{noteNotice}</Text> : null}
       {notes ? (
@@ -608,6 +901,10 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   emptyDay: { color: theme.colors.secondaryText, fontSize: 15 },
   entryActions: { flexDirection: "row", gap: 16, justifyContent: "flex-end", marginTop: 4 },
   entryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 12 },
+  recoveryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.warningText, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
+  recoveryItem: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 4, paddingTop: 8 },
+  recoveryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+  warningCard: { backgroundColor: theme.colors.warningBackground, borderRadius: 6, gap: 6, padding: 10 },
   compatibilityNotice: { color: theme.colors.warningText, fontSize: 13, lineHeight: 18 },
   errorRow: { alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" },
   entriesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },

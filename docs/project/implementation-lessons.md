@@ -912,3 +912,104 @@ After all affected entries are moved or deleted:
 
 ---
 
+# E1-16 — Durable Client-Local Uncertain-Mutation Recovery
+
+## Persist recovery intent before crossing the process boundary
+
+A recovery record must be durably written before the mutation request is sent.
+
+The safe ordering is:
+
+1. Construct the exact immutable request.
+2. Persist the recovery record.
+3. Mark the intent submitted.
+4. Transmit the request.
+
+If persistence fails, do not send the mutation.
+
+## Durable recovery is not an offline queue
+
+Prepared records surviving restart must not be submitted automatically.
+
+Submitted uncertain records are reconciled against server authority.
+
+Confirmed non-commit records may be retried only as the exact stored operation
+with the same request identity.
+
+## Store exact intent, not editable draft state
+
+Persist only what is needed to reconcile or retry the submitted operation:
+
+- request identity;
+- mutation type and target;
+- exact payload;
+- source and destination dates;
+- calendar and source authority;
+- owner scope;
+- recovery lifecycle metadata.
+
+Do not persist search state, navigation state, scroll position, or editable
+forms.
+
+## Dismissal affects prompting, not authority
+
+Dismissing an unresolved operation:
+
+- hides active prompting;
+- does not erase the record;
+- does not classify it as failed;
+- does not stop background reconciliation;
+- does not permit an implicit replacement retry.
+
+Presentation state and authoritative recovery state must remain distinct.
+
+## Allow separate work only through explicit acknowledgment
+
+An unresolved intent should block casual duplicate or conflicting work.
+
+A genuinely separate action may proceed only after the user acknowledges that
+the original operation may already have committed.
+
+The separate action must receive:
+
+- a new client request ID;
+- a new durable record;
+- its own immutable payload.
+
+The original unresolved intent remains unchanged.
+
+## Project confirmed recovery before removing the journal record
+
+A confirmed recovery outcome must be applied through the same projection and
+cache invalidation mechanisms used by foreground mutations.
+
+Only after projection or invalidation begins should the recovery record be
+removed.
+
+Subsequent read failure must not make the confirmed mutation uncertain again.
+
+## Scope recovery records to the authenticated owner
+
+Recovery records must never be reconciled or retried under another account.
+
+Owner mismatch should leave records dormant rather than deleting or processing
+them.
+
+Do not persist credentials; persist only a stable non-secret owner scope.
+
+## Treat unknown journal versions as a safety condition
+
+An unknown future-version journal must not be interpreted as empty.
+
+Preserve opaque data and block potentially conflicting mutations until the
+journal can be understood or safely migrated.
+
+Malformed records should not cause unrelated valid records to be discarded.
+
+## Clean up long-lived client infrastructure explicitly
+
+Recovery managers own timers, AppState listeners, journal subscriptions, and
+query-cache interactions.
+
+They must expose reliable cleanup and tests must dispose of QueryClients and
+timers so the suite terminates normally without force-exit behavior.

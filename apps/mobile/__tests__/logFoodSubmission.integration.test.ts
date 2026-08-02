@@ -11,6 +11,7 @@ import type {
   DailyLogUpdateInput,
 } from "../src/features/logging/api/types";
 import { LogFoodScreen, type LogFoodDraft } from "../src/features/logging/screens/LogFoodScreen";
+import { loadLogMutationRecoveryJournal, removeLogMutationRecoveryRecord } from "../src/features/logging/recovery/logMutationRecovery";
 
 type Deferred = {
   promise: Promise<unknown>;
@@ -154,6 +155,14 @@ async function render(element: React.ReactElement): Promise<ReactTestRenderer> {
     renderer = TestRenderer.create(element);
   });
   return renderer as ReactTestRenderer;
+}
+
+async function flushRecoveryBarrier() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 function textContent(node: ReactTestInstance): string {
@@ -397,6 +406,7 @@ test("create claims synchronously, disables submitted controls, and succeeds onc
     void save.props.onPress();
     void save.props.onPress();
   });
+  await flushRecoveryBarrier();
 
   expect(mockCreateLog).toHaveBeenCalledTimes(1);
   expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({
@@ -436,6 +446,7 @@ test("edit claims synchronously, preserves revision amount identity, and succeed
     void save.props.onPress();
     void save.props.onPress();
   });
+  await flushRecoveryBarrier();
 
   expect(mockUpdateLog).toHaveBeenCalledTimes(1);
   expect(mockUpdateLog).toHaveBeenCalledWith({
@@ -446,8 +457,8 @@ test("edit claims synchronously, preserves revision amount identity, and succeed
       serving_definition_id: "revision-amount-id",
     }),
   });
-  expect(mockUpdateLog.mock.calls[0][0].input).not.toHaveProperty("client_request_id");
-  expect(mockCreateClientRequestId).not.toHaveBeenCalled();
+  expect(mockUpdateLog.mock.calls[0][0].input.client_request_id).toEqual(expect.any(String));
+  expect(mockCreateClientRequestId).toHaveBeenCalled();
   const pendingSave = pressableWithText(renderer.root, "Updating...");
   expect(pendingSave.props.accessibilityState).toEqual({ disabled: true, busy: true });
   expect(renderer.root.findByType(TextInput).props.editable).toBe(false);
@@ -491,6 +502,7 @@ test("unavailable Recipe edit remains metadata-only", async () => {
   await act(async () => picker.props.onChange({ type: "set" }, new Date(2026, 6, 12)));
   await act(async () => pressableWithText(renderer.root, "Done").props.onPress());
   act(() => { void pressableWithText(renderer.root, "Save Changes").props.onPress(); });
+  await flushRecoveryBarrier();
 
   expect(mockUpdateLog).toHaveBeenCalledWith({
     logId: revisionLog.id,
@@ -515,6 +527,7 @@ test("edit date picker submits the selected destination date", async () => {
   await act(async () => picker.props.onChange({ type: "set" }, new Date(2026, 6, 12)));
   await act(async () => pressableWithText(renderer.root, "Done").props.onPress());
   act(() => { void pressableWithText(renderer.root, "Save Changes").props.onPress(); });
+  await flushRecoveryBarrier();
 
   expect(mockUpdateLog).toHaveBeenCalledWith({
     logId: revisionLog.id,
@@ -544,6 +557,7 @@ test("failed create preserves form and warning dismissal, then permits one retry
   act(() => {
     void pressableWithText(renderer.root, "Save Log").props.onPress();
   });
+  await flushRecoveryBarrier();
   await act(async () => {
     mockCreateDeferred.reject(new Error("network failed"));
     try {
@@ -572,6 +586,7 @@ test("failed create preserves form and warning dismissal, then permits one retry
     void retry.props.onPress();
     void retry.props.onPress();
   });
+  await flushRecoveryBarrier();
   expect(mockCreateLog).toHaveBeenCalledTimes(2);
   expect(mockCreateLog.mock.calls[0][0].client_request_id).toBe(
     mockCreateLog.mock.calls[1][0].client_request_id,
@@ -594,6 +609,7 @@ test("failed edit restores controls and permits one retry without changing revis
   act(() => {
     void pressableWithText(renderer.root, "Save Changes").props.onPress();
   });
+  await flushRecoveryBarrier();
   await act(async () => {
     mockUpdateDeferred.reject(new Error("network failed"));
     try {
@@ -612,6 +628,7 @@ test("failed edit restores controls and permits one retry without changing revis
     void retry.props.onPress();
     void retry.props.onPress();
   });
+  await flushRecoveryBarrier();
   expect(mockUpdateLog).toHaveBeenCalledTimes(2);
   expect(mockUpdateLog).toHaveBeenLastCalledWith({
     logId: revisionLog.id,
@@ -662,12 +679,13 @@ test("Cancel claims navigation before save, while pending Cancel is ignored", as
     void pendingSave.props.onPress();
     staleCancelHandler();
   });
+  await flushRecoveryBarrier();
   expect(mockCreateLog).toHaveBeenCalledTimes(1);
   expect(pendingCancel).not.toHaveBeenCalled();
   expect(pressableWithText(second.root, "Cancel").props.disabled).toBe(true);
 });
 
-test("a fresh screen after failure starts unlocked", async () => {
+test("a fresh screen requires acknowledgment before a separate create", async () => {
   const first = await render(createScreen());
   act(() => {
     void pressableWithText(first.root, "Save Log").props.onPress();
@@ -689,19 +707,32 @@ test("a fresh screen after failure starts unlocked", async () => {
   act(() => {
     void pressableWithText(reopened.root, "Save Log").props.onPress();
   });
+  await flushRecoveryBarrier();
+  expect(mockCreateLog).toHaveBeenCalledTimes(1);
+  expect(hasText(reopened.root, "An unresolved create for Food on 2026-07-13 may already have committed. Choose whether to review the original or start a separate action.")).toBe(true);
+  await act(async () => pressableWithText(reopened.root, "Start separate action anyway").props.onPress());
+  await flushRecoveryBarrier();
   expect(mockCreateLog).toHaveBeenCalledTimes(2);
   expect(mockCreateLog.mock.calls[0][0].client_request_id).not.toBe(
     mockCreateLog.mock.calls[1][0].client_request_id,
   );
+  await act(async () => {
+    mockCreateDeferred.resolve();
+    await mockCreateDeferred.promise;
+  });
+  for (const record of await loadLogMutationRecoveryJournal()) {
+    await removeLogMutationRecoveryRecord(record);
+  }
 });
 
 test.each(["amount", "serving", "unit"] as const)(
-  "changing %s after a failed create starts a new request intent",
+  "changing %s after a failed create remains restricted to exact recovery",
   async (change) => {
     const renderer = await render(createScreen());
     act(() => {
       void pressableWithText(renderer.root, "Save Log").props.onPress();
     });
+    await flushRecoveryBarrier();
     await act(async () => {
       mockCreateDeferred.reject(new Error("network failed"));
       try {
@@ -725,14 +756,9 @@ test.each(["amount", "serving", "unit"] as const)(
     act(() => {
       void pressableWithText(renderer.root, "Save Log").props.onPress();
     });
+    await flushRecoveryBarrier();
 
-    expect(mockCreateLog).toHaveBeenCalledTimes(2);
-    expect(mockCreateLog.mock.calls[0][0].client_request_id).toBe(
-      "00000000-0000-4000-8000-000000000001",
-    );
-    expect(mockCreateLog.mock.calls[1][0].client_request_id).toBe(
-      "00000000-0000-4000-8000-000000000002",
-    );
+    expect(mockCreateLog).toHaveBeenCalledTimes(1);
   },
 );
 
@@ -741,6 +767,7 @@ test("a successful log followed by a fresh screen uses a new request ID", async 
   act(() => {
     void pressableWithText(first.root, "Save Log").props.onPress();
   });
+  await flushRecoveryBarrier();
   await act(async () => {
     mockCreateDeferred.resolve();
     await mockCreateDeferred.promise;
@@ -752,6 +779,7 @@ test("a successful log followed by a fresh screen uses a new request ID", async 
   act(() => {
     void pressableWithText(second.root, "Save Log").props.onPress();
   });
+  await flushRecoveryBarrier();
   expect(mockCreateLog.mock.calls[0][0].client_request_id).not.toBe(
     mockCreateLog.mock.calls[1][0].client_request_id,
   );

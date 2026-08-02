@@ -334,6 +334,10 @@ export function AppNavigator() {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
         }}
+        onReviewRecovery={() => {
+          setAddLogFoodWorkflow(null);
+          setRoute({ name: "daily-log" });
+        }}
         onCancel={() => {
           setAddLogFoodWorkflow(null);
           setAddFoodFlow(route.flow);
@@ -351,7 +355,7 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "log-food") {
-    content = calendarMutationsAvailable ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
+    content = calendarMutationsAvailable ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onReviewRecovery={() => setRoute({ name: "daily-log" })} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "edit-log") {
     content = calendarMutationsEnabled(calendar.data) ? (
       <EditLogRoute
@@ -642,6 +646,7 @@ function EditLogRoute({
       moveOnly={moveOnly}
       moveToday={moveToday}
       onCancel={onCancel}
+      onReviewRecovery={onCancel}
       onSaved={onSaved}
     />
   );

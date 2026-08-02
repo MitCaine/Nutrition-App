@@ -202,6 +202,7 @@ export function useLogMutations(date: string) {
     void queryClient.refetchQueries({ queryKey: ["target-comparison", sourceDate] });
   };
   return {
+    queryClient,
     createLog: useMutation({
       mutationFn: createLog,
       onSuccess: (result) => { projectConfirmedLog(queryClient, date, result); invalidateUse(); },

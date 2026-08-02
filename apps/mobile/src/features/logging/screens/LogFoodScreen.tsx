@@ -34,6 +34,20 @@ import { logInputSchema } from "../validation/logValidation";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { DatePickerModal } from "./DatePickerModal";
 import {
+  createLogMutationRecoveryRecord,
+  isUncertainLogMutationError,
+  hasOverlappingRecovery,
+  getRecoveryJournalState,
+  persistRecoveryBeforeTransmission,
+  removeLogMutationRecoveryRecord,
+  RecoveryStorageError,
+  type LogMutationRecoveryRecord,
+} from "../recovery/logMutationRecovery";
+
+function isLocalRecoveryStorageError(error: unknown): boolean {
+  return error instanceof RecoveryStorageError;
+}
+import {
   formatReadableDate,
   localDateToApiDate,
   parseLocalDateString,
@@ -57,6 +71,8 @@ type Props = {
   onSourceUnavailable?: () => void;
   /** Rehydrates the in-memory confirmation state after expected navigation. */
   initialDraft?: LogFoodDraft;
+  /** Opens the client-local recovery surface for an overlapping original intent. */
+  onReviewRecovery?: () => void;
   /** Captures unsubmitted confirmation state without crossing the durability boundary. */
   onDraftChange?: (draft: LogFoodDraft) => void;
   /** Revision captured when this confirmation workflow first opened. */
@@ -98,7 +114,7 @@ export type LogFoodSourceAuthority = {
   recipePublicationRevisionId: string | null;
 };
 
-export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference, moveOnly = false, moveToday }: Props) {
+export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference, onReviewRecovery, moveOnly = false, moveToday }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editContext = useLogEditContext(log?.id ?? null, !moveOnly);
@@ -141,6 +157,8 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const initialCalendarRevisionRef = useRef<number | null>(initialCalendarRevision ?? calendarRevision ?? null);
   const [calendarContextChanged, setCalendarContextChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [overlapPrompt, setOverlapPrompt] = useState<LogMutationRecoveryRecord | null>(null);
+  const separateActionAcknowledgmentRef = useRef<string | null>(null);
   const [initializationWarning, setInitializationWarning] = useState<string | null>(
     initialDraft?.sourceReviewRequired
       ? "This Food changed. Review the current amount choices before saving."
@@ -158,6 +176,24 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   );
   const [sourceReviewRequired, setSourceReviewRequired] = useState(initialDraft?.sourceReviewRequired ?? false);
   const [sourceUnavailable, setSourceUnavailable] = useState(false);
+
+  const startSeparateAction = () => {
+    if (!overlapPrompt) return;
+    separateActionAcknowledgmentRef.current = overlapPrompt.id;
+    createIntentRef.current = null;
+    setRequestIntent(null);
+    setOverlapPrompt(null);
+    void save();
+  };
+
+  const reviewOverlapRecovery = () => {
+    setOverlapPrompt(null);
+    if (onReviewRecovery) {
+      onReviewRecovery();
+    } else {
+      setError("Open Daily Log recovery to check or retry the original operation before continuing.");
+    }
+  };
   const currentSourceAuthority = useMemo<LogFoodSourceAuthority | null>(() => {
     if (log && !editContext.data) {
       return null;
@@ -375,8 +411,9 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     if (!log || submissionClaimedRef.current) {
       return;
     }
-    const supportsReplayIdentity = Boolean(log.updated_at);
+    const supportsReplayIdentity = true;
     let finalInput = { ...updateInput };
+    let recoveryRecord: LogMutationRecoveryRecord | null = null;
     if (supportsReplayIdentity) {
       const fingerprint = JSON.stringify(finalInput);
       if (createIntentRef.current?.fingerprint !== fingerprint) {
@@ -387,17 +424,39 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       finalInput = {
         ...finalInput,
         client_request_id: createIntentRef.current?.requestId,
-        expected_updated_at: log.updated_at,
+        ...(log.updated_at ? { expected_updated_at: log.updated_at } : {}),
       };
+      recoveryRecord = createLogMutationRecoveryRecord({
+        clientRequestId: createIntentRef.current?.requestId as string,
+        mutationType: restrictedMove ? "move" : "edit",
+        targetId: log.id,
+        sourceDate: log.logged_date,
+        destinationDate: typeof updateInput.logged_date === "string" ? updateInput.logged_date : log.logged_date,
+        payload: { operation: "update", log_id: log.id, input: finalInput },
+      });
     }
+    const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
+      mutationType: restrictedMove ? "move" : "edit",
+      sourceDate: log.logged_date,
+      destinationDate: typeof updateInput.logged_date === "string" ? updateInput.logged_date : log.logged_date,
+      targetId: log.id,
+    });
+    if (overlap && overlap.id !== recoveryRecord?.id && overlap.id !== separateActionAcknowledgmentRef.current) {
+      setOverlapPrompt(overlap);
+      return;
+    }
+    separateActionAcknowledgmentRef.current = null;
     submissionClaimedRef.current = true;
     setIsSubmitting(true);
     setError(null);
     try {
+      if (!recoveryRecord) throw new Error("Recovery intent could not be prepared.");
+      recoveryRecord = await persistRecoveryBeforeTransmission(recoveryRecord);
       const updated = await mutations.updateLog.mutateAsync({
         logId: log.id,
-        input: finalInput,
+        input: recoveryRecord.payload.operation === "update" ? recoveryRecord.payload.input : finalInput,
       });
+      await removeLogMutationRecoveryRecord(recoveryRecord);
       if (mountedRef.current) onSaved(updated);
     } catch (saveError) {
       submissionClaimedRef.current = false;
@@ -410,9 +469,13 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             sourceErrorCode === "calendar_context_changed" ||
             sourceErrorCode === "log_mutation_payload_conflict")
         ) {
+          if (recoveryRecord) void removeLogMutationRecoveryRecord(recoveryRecord).catch(() => undefined);
           mutations.refreshDate?.(log.logged_date);
           onCancel();
           return;
+        }
+        if (recoveryRecord && !isUncertainLogMutationError(saveError)) {
+          void removeLogMutationRecoveryRecord(recoveryRecord).catch(() => undefined);
         }
         if (!restrictedMove && strictSourceReview && sourceErrorCode) {
           if (sourceErrorCode === "source_food_unavailable") {
@@ -441,7 +504,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             if (log) void editContext.refetch();
           }
         }
-        setError(logEditErrorMessage(saveError, "Could not update this log. Check your connection and try again."));
+        setError(
+          isLocalRecoveryStorageError(saveError)
+            ? "Local recovery storage is unavailable. Nothing was sent. Try again when storage is available."
+            : logEditErrorMessage(saveError, "Could not update this log. Check your connection and try again."),
+        );
       }
     }
   }
@@ -452,6 +519,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     }
     if (!mutationEnabled) {
       setError("This date is no longer eligible for logging. No entry was created.");
+      return;
+    }
+    const recoveryHealth = getRecoveryJournalState();
+    if (!recoveryHealth.ready) {
+      setError("Recovery state is unavailable. Daily Log mutations are temporarily locked until it can be read safely.");
       return;
     }
     if (moveOnly) {
@@ -590,11 +662,35 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         createIntentRef.current = nextIntent;
         setRequestIntent(nextIntent);
       }
-      const created = await mutations.createLog.mutateAsync({
+      const createInput = {
         ...parsed.data,
         client_request_id: createIntentRef.current.requestId,
         ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+      };
+      const recoveryRecord = createLogMutationRecoveryRecord({
+        clientRequestId: createIntentRef.current.requestId,
+        mutationType: "create",
+        targetId: null,
+        sourceDate: date,
+        destinationDate: date,
+        payload: { operation: "create", input: createInput },
       });
+      const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
+        mutationType: "create",
+        sourceDate: date,
+        destinationDate: date,
+        foodId: foodId,
+      });
+      if (overlap && overlap.id !== recoveryRecord.id && overlap.id !== separateActionAcknowledgmentRef.current) {
+        submissionClaimedRef.current = false;
+        setIsSubmitting(false);
+        setOverlapPrompt(overlap);
+        return;
+      }
+      separateActionAcknowledgmentRef.current = null;
+      const submitted = await persistRecoveryBeforeTransmission(recoveryRecord);
+      const created = await mutations.createLog.mutateAsync(submitted.payload.operation === "create" ? submitted.payload.input : createInput);
+      await removeLogMutationRecoveryRecord(submitted);
       if (mountedRef.current) onSaved(created);
       return;
     } catch (saveError) {
@@ -629,10 +725,22 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             if (log) void editContext.refetch();
           }
         }
-        setError(logEditErrorMessage(
-          saveError,
-          "Could not save this log. Check your connection and try again.",
-        ));
+        setError(
+          isLocalRecoveryStorageError(saveError)
+            ? "Local recovery storage is unavailable. Nothing was sent. Try again when storage is available."
+            : logEditErrorMessage(saveError, "Could not save this log. Check your connection and try again."),
+        );
+      }
+      if (!isUncertainLogMutationError(saveError)) {
+        // A stable validation or authority response proves no uncertain
+        // outcome remains; any pre-submit journal row is obsolete.
+        const requestId = createIntentRef.current?.requestId;
+        if (requestId) {
+          void removeLogMutationRecoveryRecord(`create:${requestId}`).catch(() => undefined);
+        }
+      }
+      if (isLocalRecoveryStorageError(saveError)) {
+        setError("Local recovery storage is unavailable. Nothing was sent. Try again when storage is available.");
       }
       return;
     }
@@ -702,6 +810,15 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
               The authoritative calendar changed. Your selected destination was kept; review it before saving.
             </Text>
+          ) : null}
+          {overlapPrompt ? (
+            <RecoveryOverlapPrompt
+              record={overlapPrompt}
+              onCancel={() => setOverlapPrompt(null)}
+              onReview={reviewOverlapRecovery}
+              onStartSeparate={startSeparateAction}
+              styles={styles}
+            />
           ) : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Pressable
@@ -773,6 +890,15 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
             The authoritative calendar changed. Your selected date and entered values were kept; review the calendar context before saving.
           </Text>
+        ) : null}
+        {overlapPrompt ? (
+          <RecoveryOverlapPrompt
+            record={overlapPrompt}
+            onCancel={() => setOverlapPrompt(null)}
+            onReview={reviewOverlapRecovery}
+            onStartSeparate={startSeparateAction}
+            styles={styles}
+          />
         ) : null}
         {!log && food.data ? <Text accessibilityLabel={`Food source ${food.data.source_label}`} style={styles.meta}>{food.data.source_label}</Text> : null}
         {mealAndNotesEnabled ? (
@@ -982,6 +1108,39 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   warningDismiss: { color: theme.colors.warningText, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },
 }); }
+
+function RecoveryOverlapPrompt({
+  record,
+  onCancel,
+  onReview,
+  onStartSeparate,
+  styles,
+}: {
+  record: LogMutationRecoveryRecord;
+  onCancel: () => void;
+  onReview: () => void;
+  onStartSeparate: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const mutation = record.mutation_type === "move" ? "move" : record.mutation_type;
+  const target = record.target_id ? `entry ${record.target_id}` : `Food on ${record.source_date}`;
+  return (
+    <View accessibilityLabel="Unresolved recovery overlap" style={styles.warning}>
+      <Text accessibilityRole="alert" style={styles.warningText}>
+        An unresolved {mutation} for {target} may already have committed. Choose whether to review the original or start a separate action.
+      </Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Review original recovery" onPress={onReview}>
+        <Text style={styles.warningDismiss}>Review/check original operation</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Cancel separate action" onPress={onCancel}>
+        <Text style={styles.warningDismiss}>Cancel</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Start separate action anyway" onPress={onStartSeparate}>
+        <Text style={styles.warningDismiss}>Start separate action anyway</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 function MealOption({ label, value, selected, disabled, onPress }: { label: string; value: MealType | null; selected: boolean; disabled: boolean; onPress: () => void }) {
   const theme = useAppTheme();
