@@ -838,3 +838,77 @@ recovering an authoritatively deleted record.
 
 ---
 
+# E1-15 — Legacy Future-Entry Cleanup
+
+## Historical cleanup must not weaken current invariants
+
+Cleanup exists to resolve data created before a newer invariant was established.
+
+It must not reopen the invalid behavior for normal use.
+
+For future-dated Daily Logs:
+
+- ordinary future views remain browse-only;
+- new future entries remain prohibited;
+- only existing legacy rows appear in the cleanup surface;
+- resolving the last legacy row removes the exceptional surface naturally.
+
+## Build cleanup as a restricted capability
+
+Reusing an existing mutation does not require exposing its entire general-purpose UI.
+
+When cleanup permits only a date move:
+
+- pass an explicit typed workflow mode;
+- structurally remove unrelated editing controls;
+- submit only the allowed field and required preconditions;
+- retain backend validation as defense in depth.
+
+Do not present invalid actions and rely on server rejection as the primary product experience.
+
+## Preserve domain state during date-only movement
+
+Moving an entry between calendar dates changes only ownership by day.
+
+A date-only move must preserve:
+
+- Daily Log identity;
+- created timestamp;
+- quantity and amount;
+- meal and note;
+- nutrition snapshots;
+- Food and Recipe provenance.
+
+No current nutrition authority is required when nutrition is not being recalculated.
+
+## Keep unavailable sources manageable
+
+A deleted or inactive source may prevent nutrition editing, but it must not prevent cleanup operations that do not require source resolution.
+
+Legacy entries with unavailable sources should still support:
+
+- read-only identification;
+- movement to a valid date;
+- permanent deletion.
+
+## Reuse qualified mutations rather than creating cleanup mutations
+
+Cleanup should compose existing authoritative operations:
+
+- E1-13 date-only replay-safe update;
+- E1-14 replay-safe permanent deletion.
+
+Do not add cleanup-specific persistence, transaction semantics, or duplicate mutation endpoints unless the existing contracts are genuinely insufficient.
+
+## Make exceptional UI disappear when the exception is resolved
+
+Cleanup state should be derived from remaining legacy data rather than maintained separately.
+
+After all affected entries are moved or deleted:
+
+- the cleanup list becomes empty;
+- ordinary future browsing remains;
+- no cleanup flag or retained workflow state is needed.
+
+---
+

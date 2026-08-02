@@ -540,6 +540,24 @@ class LogService:
         """Test seam after the log and snapshots are flushed, before commit."""
 
     def list_logs(self, user_id: UUID, logged_date: date) -> list[DailyLog]:
+        calendar = CalendarService(self.db).state(user_id)
+        if calendar.today is not None and logged_date > calendar.today:
+            return []
+        return self.logs.list_for_date(user_id, logged_date)
+
+    def list_future_entries(self, user_id: UUID, logged_date: date) -> list[DailyLog]:
+        """Return owner-scoped legacy rows on one future date.
+
+        Future dates are a cleanup-only read surface.  Once the authoritative
+        calendar is available, ordinary Daily Log reads intentionally return no
+        rows for those dates; this endpoint is the explicit discovery path for
+        rows written before that rule existed.
+        """
+        calendar = CalendarService(self.db).state(user_id)
+        if calendar.today is None:
+            raise AuthoritativeTimeZoneRequiredError()
+        if logged_date <= calendar.today:
+            return []
         return self.logs.list_for_date(user_id, logged_date)
 
     def list_recent_entries(self, user_id: UUID) -> list[dict[str, object]]:

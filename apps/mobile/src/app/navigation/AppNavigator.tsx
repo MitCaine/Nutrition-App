@@ -14,7 +14,7 @@ import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { AddFoodScreen } from "../../features/logging/screens/AddFoodScreen";
 import { LogFoodScreen, type LogFoodDraft } from "../../features/logging/screens/LogFoodScreen";
-import type { RecentEntry } from "../../features/logging/api/types";
+import type { DailyLog, RecentEntry } from "../../features/logging/api/types";
 import { createAddFoodFlow, updateAddFoodFlow, type AddFoodFlowState } from "../../features/logging/utils/addFoodFlow";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import { IngredientPickerScreen } from "../../features/recipes/screens/IngredientPickerScreen";
@@ -62,7 +62,7 @@ type AddLogFoodWorkflow = {
 type Route =
   | { name: "foods" }
   | { name: "new-food" }
-  | { name: "food-detail"; foodId: string }
+  | { name: "food-detail"; foodId: string; returnTo?: "daily-log" }
   | { name: "edit-food"; foodId: string }
   | { name: "add-food" }
   | { name: "add-custom-food"; flow: AddFoodFlowState }
@@ -71,7 +71,7 @@ type Route =
   | { name: "add-usda-preview"; fdcId: number; flow: AddFoodFlowState }
   | ({ name: "add-log-food" } & AddLogFoodWorkflow)
   | LogFoodRoute
-  | { name: "edit-log"; logId: string }
+  | { name: "edit-log"; logId: string; sourceLog?: DailyLog; mode?: "full" | "move" }
   | { name: "usda-preview"; fdcId: number }
   | { name: "recipes" }
   | { name: "new-recipe" }
@@ -265,7 +265,7 @@ export function AppNavigator() {
     content = (
       <FoodDetailsScreen
         foodId={route.foodId}
-        onBack={() => setRoute({ name: "foods" })}
+        onBack={() => setRoute(route.returnTo === "daily-log" ? { name: "daily-log" } : { name: "foods" })}
         onDeleted={(message) => {
           setFoodMessage(message);
           setRoute({ name: "foods" });
@@ -356,6 +356,9 @@ export function AppNavigator() {
     content = calendarMutationsEnabled(calendar.data) ? (
       <EditLogRoute
         logId={route.logId}
+        sourceLog={route.sourceLog}
+        moveOnly={route.mode === "move"}
+        moveToday={calendarToday(calendar.data, deviceTimeZone())}
         date={date}
         calendarRevision={calendar.data?.calendar_revision}
         onCancel={() => setRoute({ name: "daily-log" })}
@@ -478,16 +481,20 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "daily-log") {
+    const dailyLogIsFuture = calendar.data?.is_established === true
+      && date > calendarToday(calendar.data, deviceTimeZone());
     content = <DailyLogScreen
       date={date}
+      legacyFuture={dailyLogIsFuture}
       setDate={(nextDate) => {
         dailyLogScroll.current = { date: nextDate, offset: 0 };
         setDate(nextDate);
       }}
       initialScrollOffset={dailyLogScroll.current.date === date ? dailyLogScroll.current.offset : 0}
       onScrollOffsetChange={(offset) => { dailyLogScroll.current = { date, offset }; }}
-      onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
-      onEditLog={(logId) => setRoute({ name: "edit-log", logId })}
+      onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId, ...(dailyLogIsFuture ? { returnTo: "daily-log" as const } : {}) })}
+      onEditLog={(logId, sourceLog) => setRoute({ name: "edit-log", logId, sourceLog, mode: "full" })}
+      onMoveLog={(logId, sourceLog) => setRoute({ name: "edit-log", logId, sourceLog, mode: "move" })}
       onAddFood={(meal) => {
         const flow = createAddFoodFlow(date, meal);
         setAddFoodFlow(flow);
@@ -601,19 +608,25 @@ function RecipeDetailRoute({
 
 function EditLogRoute({
   logId,
+  sourceLog,
+  moveOnly,
+  moveToday,
   date,
   calendarRevision,
   onCancel,
   onSaved,
 }: {
   logId: string;
+  sourceLog?: DailyLog;
+  moveOnly?: boolean;
+  moveToday: string;
   date: string;
   calendarRevision?: number;
   onCancel: () => void;
   onSaved: (result?: import("../../features/logging/api/types").DailyLog) => void;
 }) {
   const logs = useDailyLogs(date);
-  const log = logs.data?.find((item) => item.id === logId);
+  const log = sourceLog ?? logs.data?.find((item) => item.id === logId);
   if (!log) {
     return <LoadingState />;
   }
@@ -626,6 +639,8 @@ function EditLogRoute({
       log={log}
       showMealAndNotes
       strictSourceReview
+      moveOnly={moveOnly}
+      moveToday={moveToday}
       onCancel={onCancel}
       onSaved={onSaved}
     />

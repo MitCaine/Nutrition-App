@@ -10,7 +10,7 @@ import { useFoods } from "../../foods/hooks/useFoods";
 import { getLogMutationStatus } from "../api/logApi";
 import type { DailyLog, DailyLogDeleteInput } from "../api/types";
 import { ApiError } from "../../../shared/api/client";
-import { dailyLogReadState, dailySummaryReadState, useDailyLogs, useDailySummary, useLogMutations } from "../hooks/useLogs";
+import { dailyLogReadState, dailySummaryReadState, useDailyLogs, useDailySummary, useFutureLogs, useLogMutations } from "../hooks/useLogs";
 import {
   addCalendarDays,
   classifyCalendarDate,
@@ -25,7 +25,7 @@ import {
   unsupportedMealNotice,
   visibleDailyTotals,
 } from "../utils/dailyLogDisplay";
-import type { MealType } from "../validation/logContracts";
+import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
@@ -49,19 +49,22 @@ type PendingDelete = {
 type Props = {
   date: string;
   setDate: (date: string) => void;
+  /** Show the explicit cleanup surface for legacy rows on an authoritative future date. */
+  legacyFuture?: boolean;
   /** E1-08 consumes this intent; the discovery destination is intentionally not here. */
   onAddFood?: (meal: MealType) => void;
   /** General Add Food entry point; it starts with no meal assignment. */
   onGeneralAddFood?: () => void;
   onOpenFood: (foodId: string) => void;
-  onEditLog: (logId: string) => void;
+  onEditLog: (logId: string, log?: DailyLog) => void;
+  onMoveLog?: (logId: string, log?: DailyLog) => void;
   onOpenSettings: () => void;
   onOpenNutritionTargets: () => void;
   initialScrollOffset: number;
   onScrollOffsetChange: (offset: number) => void;
 };
 
-export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
+export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -71,9 +74,11 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const deleteSubmittingRef = useRef(false);
-  const logsQuery = useDailyLogs(date);
+  const logsQuery = useDailyLogs(date, !legacyFuture);
   const logs = dailyLogReadState(logsQuery);
-  const summaryQuery = useDailySummary(date);
+  const futureQuery = useFutureLogs(date, legacyFuture);
+  const futureLogs = dailyLogReadState(futureQuery);
+  const summaryQuery = useDailySummary(date, !legacyFuture);
   const entriesKnown = logs.kind === "empty" || logs.kind === "success" || logs.kind === "refreshing" || logs.kind === "refresh-failure";
   const totals = dailySummaryReadState(summaryQuery, entriesKnown);
   const foods = useFoods("");
@@ -194,6 +199,84 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
       setPendingDelete(null);
     }
   };
+
+  if (legacyFuture) {
+    const cleanupRetryLabel = "Retry legacy future entries";
+    return (
+      <View style={styles.root}>
+        <RootScreenHeader title="Daily Log" onOpenSettings={onOpenSettings} />
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.screen}
+          scrollEventThrottle={100}
+          scrollIndicatorInsets={{ right: 1 }}
+          onScroll={(event) => onScrollOffsetChange(event.nativeEvent.contentOffset.y)}
+          onContentSizeChange={() => {
+            if (!restoredRef.current && futureLogs.kind !== "initial-loading" && futureLogs.kind !== "initial-failure") {
+              scrollRef.current?.scrollTo({ y: initialScrollOffset, animated: false });
+              restoredRef.current = true;
+            }
+          }}
+        >
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Legacy future entries</Text>
+          <Text style={styles.calendarNotice}>
+            These entries already existed before authoritative calendar enforcement. New future entries cannot be created. Cleanup is optional; you can move an entry to today or earlier, or delete it.
+          </Text>
+          <Text style={styles.dateButtonText}>{formatReadableDate(date)}</Text>
+          <Text style={styles.dateClassification}>Future date · browse-only</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Return to Today" onPress={() => setDate(today)} style={styles.navigationButton}>
+            <Text style={styles.text}>Return to Today</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Refresh legacy future entries" onPress={futureLogs.retry} style={styles.navigationButton}>
+            <Text style={styles.text}>Refresh</Text>
+          </Pressable>
+          {deleteNotice ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{deleteNotice}</Text> : null}
+          {pendingDelete ? (
+            <DeleteConfirmationModal
+              pending={pendingDelete}
+              name={loggedFoodDisplayName(pendingDelete.log, foodNames)}
+              onCancel={cancelDelete}
+              onConfirm={submitDelete}
+              onCheckStatus={submitDelete}
+              styles={styles}
+            />
+          ) : null}
+          {futureLogs.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading legacy future entries…</Text> : null}
+          {futureLogs.kind === "refreshing" ? <Text style={styles.refreshingText}>Refreshing legacy future entries…</Text> : null}
+          {futureLogs.kind === "initial-failure" || futureLogs.kind === "refresh-failure" ? (
+            <View style={styles.errorRow}>
+              <Text style={styles.calendarNotice}>
+                {futureLogs.kind === "refresh-failure"
+                  ? "Legacy future entries could not be refreshed; showing the last confirmed entries."
+                  : "Legacy future entries could not be loaded."}
+              </Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={cleanupRetryLabel} onPress={futureLogs.retry}>
+                <Text style={styles.noteToggle}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {futureLogs.kind === "empty" ? <Text style={styles.emptyDay}>No legacy entries on this future date</Text> : null}
+          {futureLogs.data?.map((log) => (
+            <DailyLogEntryCard
+              key={log.id}
+              log={log}
+              foodNames={foodNames}
+              mutationsEnabled
+              showLoggedDate
+              showMealLabel
+              expandedNote={expandedNotes[log.id] === true}
+              onToggleNote={() => setExpandedNotes((current) => ({ ...current, [log.id]: !current[log.id] }))}
+              onOpenFood={onOpenFood}
+              onEditLog={undefined}
+              onMoveLog={(logId) => (onMoveLog ?? onEditLog)(logId, log)}
+              onDelete={() => beginDelete(log)}
+              moveOnly
+            />
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -337,10 +420,13 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
                 log={log}
                 foodNames={foodNames}
                 mutationsEnabled={mutationsEnabled}
+                showLoggedDate={false}
+                showMealLabel={false}
                 expandedNote={expandedNotes[log.id] === true}
                 onToggleNote={() => setExpandedNotes((current) => ({ ...current, [log.id]: !current[log.id] }))}
                 onOpenFood={onOpenFood}
                 onEditLog={onEditLog}
+                onMoveLog={undefined}
                 onDelete={() => beginDelete(log)}
               />
             ))}
@@ -426,7 +512,11 @@ function DailyLogEntryCard({
   onToggleNote,
   onOpenFood,
   onEditLog,
+  onMoveLog,
   onDelete,
+  moveOnly,
+  showLoggedDate,
+  showMealLabel,
 }: {
   log: DailyLog;
   foodNames: Map<string, string>;
@@ -434,8 +524,12 @@ function DailyLogEntryCard({
   expandedNote: boolean;
   onToggleNote: () => void;
   onOpenFood: (foodId: string) => void;
-  onEditLog: (logId: string) => void;
+  onEditLog?: (logId: string, log?: DailyLog) => void;
+  onMoveLog?: (logId: string, log?: DailyLog) => void;
   onDelete: () => void;
+  moveOnly?: boolean;
+  showLoggedDate: boolean;
+  showMealLabel: boolean;
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -445,18 +539,25 @@ function DailyLogEntryCard({
   const notes = log.notes ?? "";
   const noteMayOverflow = notes.split(/\r?\n/).length > 2 || Array.from(notes).length > 160;
   const showNoteToggle = Boolean(notes) && (noteMayOverflow || expandedNote);
+  const displayName = loggedFoodDisplayName(log, foodNames);
   const details = (
     <>
       <Text style={styles.foodName}>{loggedFoodDisplayName(log, foodNames)}</Text>
       <Text style={styles.text}>
         {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}
       </Text>
+      {showLoggedDate ? <Text style={styles.text}>Date: {log.logged_date}</Text> : null}
+      {showMealLabel ? (
+        <Text style={styles.text}>
+          {isSupportedMeal(log.meal_type) ? log.meal_type.charAt(0).toUpperCase() + log.meal_type.slice(1) : "Unassigned"}
+        </Text>
+      ) : null}
     </>
   );
   return (
     <View style={styles.entryCard}>
       {entryState.canOpenFood ? (
-        <Pressable onPress={() => onOpenFood(log.food_item_id)}>{details}</Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`View ${displayName}`} onPress={() => onOpenFood(log.food_item_id)}>{details}</Pressable>
       ) : (
         <View>{details}</View>
       )}
@@ -478,8 +579,12 @@ function DailyLogEntryCard({
           <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${loggedFoodDisplayName(log, foodNames)} permanently`} onPress={onDelete}>
             <Text style={styles.deleteText}>Delete</Text>
           </Pressable>
-          {entryState.canEdit ? (
-            <Pressable onPress={() => onEditLog(log.id)}>
+          {moveOnly ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={`Move ${displayName}`} onPress={() => onMoveLog?.(log.id, log)}>
+              <Text style={styles.text}>Move</Text>
+            </Pressable>
+          ) : entryState.canEdit ? (
+            <Pressable onPress={() => onEditLog?.(log.id)}>
               <Text style={styles.text}>Edit</Text>
             </Pressable>
           ) : null}

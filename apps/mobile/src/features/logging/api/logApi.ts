@@ -16,6 +16,13 @@ export async function listLogs(date: string): Promise<DailyLog[]> {
   return response.logs;
 }
 
+export async function listFutureEntries(date: string): Promise<DailyLog[]> {
+  const response = await apiRequest<{ logs: DailyLog[] }>(
+    `/logs/future-entries?date=${encodeURIComponent(date)}`,
+  );
+  return response.logs;
+}
+
 export async function listRecentEntries(): Promise<RecentEntry[]> {
   const response = await apiRequest<{ entries: RecentEntry[] }>("/logs/recent-entries");
   return response.entries;

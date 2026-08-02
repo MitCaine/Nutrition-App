@@ -135,6 +135,7 @@ jest.mock("../src/features/foods/hooks/useFoods", () => ({
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => mockLogs,
+  useFutureLogs: () => ({ data: [], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),
   useRecentEntries: () => ({ data: [], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),
   useDailySummary: () => mockSummary,
   useLogEditContext: () => ({ data: undefined, isLoading: false, isError: false, refetch: jest.fn() }),

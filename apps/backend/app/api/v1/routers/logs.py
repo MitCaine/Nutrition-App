@@ -130,6 +130,21 @@ def list_logs(
     return DailyLogListResponse(logs=_service(db).list_logs(user.id, date))
 
 
+@router.get("/future-entries", response_model=DailyLogListResponse)
+def list_future_entries(
+    date: date = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DailyLogListResponse:
+    try:
+        return DailyLogListResponse(logs=_service(db).list_future_entries(user.id, date))
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+
+
 @router.get("/recent-entries", response_model=RecentEntryListResponse)
 def list_recent_entries(
     db: Session = Depends(get_db),

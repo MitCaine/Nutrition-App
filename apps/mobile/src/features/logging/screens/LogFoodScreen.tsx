@@ -67,6 +67,10 @@ type Props = {
     canCopyNotes: boolean;
     reuseStatus: "exact" | "equivalent" | "ambiguous" | "unavailable";
   };
+  /** Restrict an existing-log edit to changing only its calendar date. */
+  moveOnly?: boolean;
+  /** Authoritative Today used by the restricted move destination picker. */
+  moveToday?: string;
 };
 
 /**
@@ -94,16 +98,16 @@ export type LogFoodSourceAuthority = {
   recipePublicationRevisionId: string | null;
 };
 
-export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference }: Props) {
+export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference, moveOnly = false, moveToday }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const editContext = useLogEditContext(log?.id ?? null);
+  const editContext = useLogEditContext(log?.id ?? null, !moveOnly);
   const revisionBacked = editContext.data?.is_revision_backed === true;
   const nutritionEditUnavailable = Boolean(
     log && revisionBacked && editContext.data?.current_source_loggable === false,
   );
-  const food = useFood(!log || editContext.data?.is_revision_backed === false ? foodId : null);
-  const resolvedNutrition = useFoodResolvedNutrition(log ? null : foodId);
+  const food = useFood(!moveOnly && (!log || editContext.data?.is_revision_backed === false) ? foodId : null);
+  const resolvedNutrition = useFoodResolvedNutrition(moveOnly || log ? null : foodId);
   const mutations = useLogMutations(date);
   const [amount, setAmount] = useState(initialDraft?.amount ?? formatInitialLogAmount(log?.amount_quantity));
   const [unit, setUnit] = useState<"serving" | "g">(initialDraft?.unit ?? log?.amount_unit ?? "serving");
@@ -119,7 +123,9 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       ? initialDraft.mealType
       : (log && isSupportedMeal(log.meal_type) ? log.meal_type : initialMealType ?? null),
   );
+  const [mealTouched, setMealTouched] = useState(false);
   const [note, setNote] = useState(initialDraft?.note ?? log?.notes ?? "");
+  const [noteTouched, setNoteTouched] = useState(false);
   const [editDate, setEditDate] = useState(date);
   const [editPickerDate, setEditPickerDate] = useState(parseLocalDateString(date) ?? new Date());
   const [editPickerOpen, setEditPickerOpen] = useState(false);
@@ -365,12 +371,106 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     onCancel();
   }
 
+  async function submitUpdate(updateInput: Partial<DailyLogUpdateInput>, restrictedMove = false) {
+    if (!log || submissionClaimedRef.current) {
+      return;
+    }
+    const supportsReplayIdentity = Boolean(log.updated_at);
+    let finalInput = { ...updateInput };
+    if (supportsReplayIdentity) {
+      const fingerprint = JSON.stringify(finalInput);
+      if (createIntentRef.current?.fingerprint !== fingerprint) {
+        const nextIntent = { fingerprint, requestId: createClientRequestId() };
+        createIntentRef.current = nextIntent;
+        setRequestIntent(nextIntent);
+      }
+      finalInput = {
+        ...finalInput,
+        client_request_id: createIntentRef.current?.requestId,
+        expected_updated_at: log.updated_at,
+      };
+    }
+    submissionClaimedRef.current = true;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const updated = await mutations.updateLog.mutateAsync({
+        logId: log.id,
+        input: finalInput,
+      });
+      if (mountedRef.current) onSaved(updated);
+    } catch (saveError) {
+      submissionClaimedRef.current = false;
+      if (mountedRef.current) {
+        setIsSubmitting(false);
+        const sourceErrorCode = logEditErrorCode(saveError);
+        if (
+          restrictedMove &&
+          (sourceErrorCode === "stale_log_entry" ||
+            sourceErrorCode === "calendar_context_changed" ||
+            sourceErrorCode === "log_mutation_payload_conflict")
+        ) {
+          mutations.refreshDate?.(log.logged_date);
+          onCancel();
+          return;
+        }
+        if (!restrictedMove && strictSourceReview && sourceErrorCode) {
+          if (sourceErrorCode === "source_food_unavailable") {
+            setSourceUnavailable(true);
+          }
+          if (sourceErrorCode === "stale_log_source" || sourceErrorCode === "stale_log_amount") {
+            setSourceUnavailable(false);
+          }
+          if (
+            sourceErrorCode === "stale_log_source" ||
+            sourceErrorCode === "stale_log_amount" ||
+            sourceErrorCode === "source_food_unavailable"
+          ) {
+            setSourceReviewRequired(true);
+            setSelectedServingId(null);
+            setSelectedAmountMode(null);
+            setInitializationWarning(
+              sourceErrorCode === "stale_log_amount"
+                ? "That amount changed. Choose a current amount before saving."
+                : sourceErrorCode === "source_food_unavailable"
+                  ? null
+                  : "This Food changed. Review the current amount choices before saving.",
+            );
+            if (!log || !revisionBacked) void food.refetch();
+            if (!log) void resolvedNutrition.refetch();
+            if (log) void editContext.refetch();
+          }
+        }
+        setError(logEditErrorMessage(saveError, "Could not update this log. Check your connection and try again."));
+      }
+    }
+  }
+
   async function save() {
     if (submissionClaimedRef.current || cancelClaimedRef.current) {
       return;
     }
     if (!mutationEnabled) {
       setError("This date is no longer eligible for logging. No entry was created.");
+      return;
+    }
+    if (moveOnly) {
+      if (!log) {
+        setError("This move requires an existing Daily Log entry.");
+        return;
+      }
+      if (!moveToday) {
+        setError("The authoritative calendar is unavailable. Review the destination again.");
+        return;
+      }
+      if (editDate > moveToday) {
+        setError("Choose Today or an earlier date for this move.");
+        return;
+      }
+      await submitUpdate({
+        logged_date: editDate,
+        ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+      }, true);
       return;
     }
     const originalEditAmountId = log ? initialEditAmountId(food.data, log, editContext.data) : null;
@@ -433,8 +533,16 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         selectedServingId: resolvedServingId,
         selectedAmountMode,
       });
+    const preserveUnsupportedLegacyMeal = Boolean(
+      log && log.meal_type && !isSupportedMeal(log.meal_type) && !mealTouched,
+    );
+    const preserveUntouchedLegacyNote = Boolean(log && !noteTouched);
     const input = mealAndNotesEnabled
-      ? { ...baseInput, meal_type: mealType, notes: note }
+      ? {
+          ...baseInput,
+          ...(preserveUnsupportedLegacyMeal ? {} : { meal_type: mealType }),
+          ...(preserveUntouchedLegacyNote ? {} : { notes: note }),
+        }
       : baseInput;
     const reviewedAuthority = sourceAuthority ?? currentSourceAuthority;
     const inputWithCalendar = {
@@ -452,6 +560,20 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       setError(parsed.error.issues[0]?.message ?? "Invalid log");
       return;
     }
+    if (log) {
+      let updateInput: Partial<DailyLogUpdateInput> = {
+        ...buildLogUpdateInput(parsed.data),
+        ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+      };
+      const legacyRevisionContext =
+        revisionBacked && editContext.data?.current_amount_choices === undefined;
+      if (!editAmountChanged && !legacyRevisionContext) {
+        const { amount_quantity: _quantity, amount_unit: _unit, serving_definition_id: _serving, ...metadataInput } = updateInput;
+        updateInput = metadataInput;
+      }
+      await submitUpdate(updateInput);
+      return;
+    }
     if (submissionClaimedRef.current) {
       return;
     }
@@ -459,59 +581,22 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     setIsSubmitting(true);
     setError(null);
     try {
-      if (log) {
-        const supportsReplayIdentity = Boolean(log.updated_at);
-        let updateInput: Partial<DailyLogUpdateInput> = {
-          ...buildLogUpdateInput(parsed.data),
-          ...(supportsReplayIdentity
-            ? {
-                client_request_id: requestIntent?.requestId,
-                expected_updated_at: log.updated_at,
-              }
-            : {}),
-          ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+      const fingerprint = JSON.stringify(parsed.data);
+      if (createIntentRef.current?.fingerprint !== fingerprint) {
+        const nextIntent = {
+          fingerprint,
+          requestId: createClientRequestId(),
         };
-        const legacyRevisionContext =
-          revisionBacked && editContext.data?.current_amount_choices === undefined;
-        if (!editAmountChanged && !legacyRevisionContext) {
-          const { amount_quantity: _quantity, amount_unit: _unit, serving_definition_id: _serving, ...metadataInput } = updateInput;
-          updateInput = metadataInput;
-        }
-        if (supportsReplayIdentity) {
-          const fingerprint = JSON.stringify(updateInput);
-          if (createIntentRef.current?.fingerprint !== fingerprint) {
-            const nextIntent = { fingerprint, requestId: createClientRequestId() };
-            createIntentRef.current = nextIntent;
-            setRequestIntent(nextIntent);
-          }
-        }
-        const replayIdentity = supportsReplayIdentity && createIntentRef.current
-          ? { client_request_id: createIntentRef.current.requestId }
-          : {};
-        const updated = await mutations.updateLog.mutateAsync({
-          logId: log.id,
-          input: { ...updateInput, ...replayIdentity },
-        });
-        if (mountedRef.current) onSaved(updated);
-        return;
-      } else {
-        const fingerprint = JSON.stringify(parsed.data);
-        if (createIntentRef.current?.fingerprint !== fingerprint) {
-          const nextIntent = {
-            fingerprint,
-            requestId: createClientRequestId(),
-          };
-          createIntentRef.current = nextIntent;
-          setRequestIntent(nextIntent);
-        }
-        const created = await mutations.createLog.mutateAsync({
-          ...parsed.data,
-          client_request_id: createIntentRef.current.requestId,
-          ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
-        });
-        if (mountedRef.current) onSaved(created);
-        return;
+        createIntentRef.current = nextIntent;
+        setRequestIntent(nextIntent);
       }
+      const created = await mutations.createLog.mutateAsync({
+        ...parsed.data,
+        client_request_id: createIntentRef.current.requestId,
+        ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
+      });
+      if (mountedRef.current) onSaved(created);
+      return;
     } catch (saveError) {
       submissionClaimedRef.current = false;
       if (mountedRef.current) {
@@ -539,20 +624,100 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
                   ? null
                   : "This Food changed. Review the current amount choices before saving.",
             );
-          if (!log || !revisionBacked) void food.refetch();
-          if (!log) void resolvedNutrition.refetch();
-          if (log) void editContext.refetch();
+            if (!log || !revisionBacked) void food.refetch();
+            if (!log) void resolvedNutrition.refetch();
+            if (log) void editContext.refetch();
           }
         }
         setError(logEditErrorMessage(
           saveError,
-          log
-            ? "Could not update this log. Check your connection and try again."
-            : "Could not save this log. Check your connection and try again.",
+          "Could not save this log. Check your connection and try again.",
         ));
       }
       return;
     }
+  }
+
+  if (moveOnly && log) {
+    const destinationMaximum = parseLocalDateString(moveToday ?? date) ?? new Date();
+    const mealLabel = log.meal_type
+      ? log.meal_type.charAt(0).toUpperCase() + log.meal_type.slice(1)
+      : "Unassigned";
+    return (
+      <KeyboardAvoidingView
+        style={styles.keyboard}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={12}
+      >
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
+          <View style={styles.header}>
+            <Text accessibilityRole="header" style={styles.title}>Move Legacy Entry</Text>
+            <Pressable
+              accessibilityLabel="Cancel moving entry"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isSubmitting }}
+              disabled={isSubmitting}
+              onPress={cancel}
+            >
+              <Text style={styles.text}>Cancel</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.calendarNotice}>Move this entry to Today or an earlier date. The entry identity, nutrition, and metadata remain unchanged.</Text>
+          <Text style={styles.foodName}>{log.food_name_snapshot ?? "Deleted food"}</Text>
+          <Text style={styles.text}>Original date: {log.logged_date}</Text>
+          <Text style={styles.text}>Amount: {formatInitialLogAmount(log.amount_quantity)} {log.amount_unit}</Text>
+          <Text style={styles.text}>Meal: {mealLabel}</Text>
+          {log.notes ? <Text style={styles.text}>Note: {log.notes}</Text> : null}
+          {!log.source_food_available ? <Text style={styles.calendarNotice}>Source Food or Recipe is unavailable; this date-only move remains available.</Text> : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Choose move destination date"
+            disabled={isSubmitting}
+            onPress={() => {
+              setEditPickerDate(parseLocalDateString(editDate) ?? new Date());
+              setEditPickerOpen(true);
+            }}
+            style={styles.dateButton}
+          >
+            <Text style={styles.dateButtonText}>Destination: {formatReadableDate(editDate)}</Text>
+          </Pressable>
+          <DatePickerModal
+            date={editPickerDate}
+            visible={editPickerOpen}
+            maximumDate={destinationMaximum}
+            onChange={setEditPickerDate}
+            onCancel={() => setEditPickerOpen(false)}
+            onConfirm={(selectedDate) => {
+              const selected = localDateToApiDate(selectedDate);
+              if (!moveToday || selected > moveToday) {
+                setError("Choose Today or an earlier date for this move.");
+                return;
+              }
+              setEditDate(selected);
+              setError(null);
+              setEditPickerOpen(false);
+            }}
+          />
+          {calendarContextChanged ? (
+            <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
+              The authoritative calendar changed. Your selected destination was kept; review it before saving.
+            </Text>
+          ) : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          <Pressable
+            accessibilityHint="Moves this legacy entry without changing its nutrition or metadata"
+            accessibilityLabel={isSubmitting ? "Moving legacy entry" : "Move legacy entry"}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting, busy: isSubmitting }}
+            disabled={isSubmitting}
+            onPress={save}
+            style={[styles.primaryButton, isSubmitting && styles.disabled]}
+          >
+            <Text style={styles.primaryText}>{isSubmitting ? "Moving..." : "Move entry"}</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
   }
 
   return (
@@ -614,9 +779,9 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           <View accessibilityLabel="Meal assignment" accessibilityRole="radiogroup" style={styles.mealPicker}>
             <Text style={styles.label}>Meal</Text>
             <View style={styles.mealOptions}>
-              <MealOption label="No meal" value={null} selected={mealType === null} disabled={isSubmitting} onPress={() => setMealType(null)} />
+              <MealOption label="No meal" value={null} selected={mealType === null} disabled={isSubmitting} onPress={() => { setMealTouched(true); setMealType(null); }} />
               {(["breakfast", "lunch", "dinner", "snack"] as const).map((meal) => (
-                <MealOption key={meal} label={meal[0].toUpperCase() + meal.slice(1)} value={meal} selected={mealType === meal} disabled={isSubmitting} onPress={() => setMealType(meal)} />
+                <MealOption key={meal} label={meal[0].toUpperCase() + meal.slice(1)} value={meal} selected={mealType === meal} disabled={isSubmitting} onPress={() => { setMealTouched(true); setMealType(meal); }} />
               ))}
             </View>
           </View>
@@ -760,7 +925,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             accessibilityLabel="Notes"
             editable={!isSubmitting}
             multiline
-            onChangeText={setNote}
+            onChangeText={(value) => { setNoteTouched(true); setNote(value); }}
             placeholder="Optional note"
             placeholderTextColor={theme.colors.placeholder}
             style={[styles.noteInput, isSubmitting && styles.disabled]}

@@ -11,10 +11,11 @@ type Props = {
   onChange: (date: Date) => void;
   onCancel: () => void;
   onConfirm: (date: Date) => void;
+  maximumDate?: Date;
 };
 
 /** Shared date picker used by Daily Log browsing and existing-log editing. */
-export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm }: Props) {
+export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, maximumDate }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -36,7 +37,7 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm }
 
   if (Platform.OS === "android") {
     return visible ? (
-      <DateTimePicker value={date} mode="date" display="default" onChange={handleChange} />
+      <DateTimePicker value={date} mode="date" display="default" maximumDate={maximumDate} onChange={handleChange} />
     ) : null;
   }
 
@@ -50,6 +51,7 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm }
             value={date}
             mode="date"
             display="spinner"
+            maximumDate={maximumDate}
             onChange={handleChange}
             themeVariant={theme.mode}
           />

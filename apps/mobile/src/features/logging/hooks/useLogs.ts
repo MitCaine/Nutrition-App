@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { createLog, deleteLog, getDailySummary, getLogEditContext, listLogs, listRecentEntries, updateLog } from "../api/logApi";
+import { createLog, deleteLog, getDailySummary, getLogEditContext, listFutureEntries, listLogs, listRecentEntries, updateLog } from "../api/logApi";
 import type { DailyLog, DailyLogDeleteInput, DailyLogUpdateInput, DailySummary, RecentEntry } from "../api/types";
 
 export type DailyLogReadState =
@@ -127,6 +127,9 @@ export function projectConfirmedLog(
     queryClient.setQueryData<DailyLog[]>(["logs", previousDate], (logs) =>
       logs?.filter((log) => log.id !== result.id),
     );
+    queryClient.setQueryData<DailyLog[]>(["future-logs", previousDate], (logs) =>
+      logs?.filter((log) => log.id !== result.id),
+    );
   }
   queryClient.setQueryData<DailyLog[]>(["logs", result.logged_date], (logs) => {
     if (!logs) return [result];
@@ -145,10 +148,17 @@ export function projectConfirmedDelete(
   queryClient.setQueryData<DailyLog[]>(["logs", date], (logs) =>
     logs?.filter((log) => log.id !== logId),
   );
+  queryClient.setQueryData<DailyLog[]>(["future-logs", date], (logs) =>
+    logs?.filter((log) => log.id !== logId),
+  );
 }
 
-export function useDailyLogs(date: string) {
-  return useQuery({ queryKey: ["logs", date], queryFn: () => listLogs(date) });
+export function useDailyLogs(date: string, enabled = true) {
+  return useQuery({ queryKey: ["logs", date], queryFn: () => listLogs(date), enabled });
+}
+
+export function useFutureLogs(date: string, enabled = true) {
+  return useQuery({ queryKey: ["future-logs", date], queryFn: () => listFutureEntries(date), enabled });
 }
 
 export function useRecentEntries() {
@@ -158,15 +168,15 @@ export function useRecentEntries() {
   });
 }
 
-export function useDailySummary(date: string) {
-  return useQuery({ queryKey: ["daily-summary", date], queryFn: () => getDailySummary(date) });
+export function useDailySummary(date: string, enabled = true) {
+  return useQuery({ queryKey: ["daily-summary", date], queryFn: () => getDailySummary(date), enabled });
 }
 
-export function useLogEditContext(logId: string | null) {
+export function useLogEditContext(logId: string | null, enabled = true) {
   return useQuery({
     queryKey: ["logs", logId, "edit-context"],
     queryFn: () => getLogEditContext(logId as string),
-    enabled: Boolean(logId),
+    enabled: Boolean(logId) && enabled,
   });
 }
 
@@ -181,11 +191,13 @@ export function useLogMutations(date: string) {
   const projectDelete = (logId: string, sourceDate = date) => {
     projectConfirmedDelete(queryClient, sourceDate, logId);
     invalidateLogDateCaches(queryClient, sourceDate);
+    queryClient.invalidateQueries({ queryKey: ["future-logs", sourceDate] });
     invalidateFoodRecents(queryClient);
     invalidateRecentEntries(queryClient);
   };
   const refreshDate = (sourceDate: string) => {
     void queryClient.refetchQueries({ queryKey: ["logs", sourceDate] });
+    void queryClient.refetchQueries({ queryKey: ["future-logs", sourceDate] });
     void queryClient.refetchQueries({ queryKey: ["daily-summary", sourceDate] });
     void queryClient.refetchQueries({ queryKey: ["target-comparison", sourceDate] });
   };
@@ -202,6 +214,7 @@ export function useLogMutations(date: string) {
         invalidate();
         if (result.logged_date !== date) {
           invalidateLogDateCaches(queryClient, result.logged_date);
+          queryClient.invalidateQueries({ queryKey: ["future-logs", date] });
         }
       },
     }),

@@ -16,6 +16,7 @@ jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ da
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => mockLogs,
+  useFutureLogs: () => ({ data: [], isError: false, isFetching: false, isLoading: false, refetch: jest.fn() }),
   useDailySummary: () => mockSummary,
   useLogMutations: () => ({
     deleteLog: mockDeleteMutation,
