@@ -108,6 +108,13 @@ export function AppNavigator() {
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(emptyRecipeDraft());
   const [foodMessage, setFoodMessage] = useState<string | null>(null);
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
+  const [dailyLogMutationOutcome, setDailyLogMutationOutcome] = useState<{
+    key: string;
+    message: string;
+    focusDateHeading?: boolean;
+    focusEntryId?: string;
+  } | null>(null);
+  const [dailyLogReturnFocus, setDailyLogReturnFocus] = useState<string | null>(null);
   const [addFoodFlow, setAddFoodFlow] = useState<AddFoodFlowState | null>(null);
   const [addLogFoodWorkflow, setAddLogFoodWorkflow] = useState<AddLogFoodWorkflow | null>(null);
   const calendar = useCalendarState();
@@ -291,6 +298,7 @@ export function AppNavigator() {
         onCancel={() => {
           setDate(addFoodFlow.originatingDate);
           setAddFoodFlow(null);
+          setDailyLogReturnFocus(`add:${addFoodFlow.initialMeal ?? "general"}`);
           setRoute({ name: "daily-log" });
         }}
         onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
@@ -343,10 +351,17 @@ export function AppNavigator() {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
         }}
-        onSaved={() => {
+        onSaved={(result) => {
           setAddLogFoodWorkflow(null);
           setDate(route.flow.originatingDate);
           setAddFoodFlow(null);
+          if (result) {
+            setDailyLogMutationOutcome({
+              key: `create:${result.id}:${result.updated_at ?? result.logged_date}`,
+              message: `Logged ${result.food_name_snapshot ?? "Daily Log entry"} for ${result.logged_date}.`,
+              focusEntryId: result.id,
+            });
+          }
           setRoute({ name: "daily-log" });
         }}
         showMealAndNotes
@@ -355,7 +370,10 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "log-food") {
-    content = calendarMutationsAvailable ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onReviewRecovery={() => setRoute({ name: "daily-log" })} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={() => setRoute({ name: "daily-log" })} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
+    content = calendarMutationsAvailable ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onReviewRecovery={() => setRoute({ name: "daily-log" })} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(result) => {
+      if (result) setDailyLogMutationOutcome({ key: `create:${result.id}:${result.updated_at ?? result.logged_date}`, message: `Logged ${result.food_name_snapshot ?? "Daily Log entry"} for ${result.logged_date}.`, focusEntryId: result.id });
+      setRoute({ name: "daily-log" });
+    }} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
   } else if (route.name === "edit-log") {
     content = calendarMutationsEnabled(calendar.data) ? (
       <EditLogRoute
@@ -365,9 +383,23 @@ export function AppNavigator() {
         moveToday={calendarToday(calendar.data, deviceTimeZone())}
         date={date}
         calendarRevision={calendar.data?.calendar_revision}
-        onCancel={() => setRoute({ name: "daily-log" })}
+        onCancel={() => {
+          setDailyLogReturnFocus(`${route.mode === "move" ? "move" : "edit"}:${route.logId}`);
+          setRoute({ name: "daily-log" });
+        }}
         onSaved={(result) => {
-          if (result?.logged_date) setDate(result.logged_date);
+          if (result?.logged_date) {
+            const moved = result.logged_date !== (route.sourceLog?.logged_date ?? date);
+            setDate(result.logged_date);
+            setDailyLogMutationOutcome({
+              key: `${moved ? "move" : "edit"}:${result.id}:${result.updated_at ?? result.logged_date}`,
+              message: moved
+                ? `Moved ${result.food_name_snapshot ?? "Daily Log entry"} to ${result.logged_date}.`
+                : `Updated ${result.food_name_snapshot ?? "Daily Log entry"}.`,
+              focusDateHeading: moved,
+              focusEntryId: moved ? undefined : result.id,
+            });
+          }
           setRoute({ name: "daily-log" });
         }}
       />
@@ -511,6 +543,10 @@ export function AppNavigator() {
       }}
       onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
       onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })}
+      mutationOutcome={dailyLogMutationOutcome}
+      onMutationOutcomeHandled={() => setDailyLogMutationOutcome(null)}
+      returnFocusKey={dailyLogReturnFocus}
+      onReturnFocusHandled={() => setDailyLogReturnFocus(null)}
     />;
   } else {
     content = (

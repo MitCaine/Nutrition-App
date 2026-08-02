@@ -49,6 +49,13 @@ export type RecoveryPayload =
   | { operation: "update"; log_id: string; input: Partial<DailyLogUpdateInput> }
   | { operation: "delete"; log_id: string; input: DailyLogDeleteInput };
 
+/** Immutable, presentation-only identity captured when an intent is reviewed. */
+export type RecoveryDisplayContext = Readonly<{
+  item_name: string | null;
+  amount_label: string | null;
+  meal_label: string | null;
+}>;
+
 export type LogMutationRecoveryRecord = {
   version: typeof LOG_MUTATION_RECOVERY_VERSION;
   owner_scope: string;
@@ -56,6 +63,7 @@ export type LogMutationRecoveryRecord = {
   client_request_id: string;
   mutation_type: LogMutationRecoveryMutation;
   target_id: string | null;
+  display_context: RecoveryDisplayContext;
   source_date: string;
   destination_date: string | null;
   payload: RecoveryPayload;
@@ -146,9 +154,34 @@ function isPayload(value: unknown): value is RecoveryPayload {
   );
 }
 
-function isRecord(value: unknown): value is LogMutationRecoveryRecord {
+function boundedDisplayValue(value: unknown, maximumCodePoints: number): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  const points = Array.from(normalized);
+  return points.length > maximumCodePoints
+    ? `${points.slice(0, Math.max(0, maximumCodePoints - 1)).join("")}…`
+    : normalized;
+}
+
+function normalizedDisplayContext(value: unknown): RecoveryDisplayContext {
+  const candidate = typeof value === "object" && value !== null
+    ? value as Partial<RecoveryDisplayContext>
+    : {};
+  return {
+    item_name: boundedDisplayValue(candidate.item_name, 160),
+    amount_label: boundedDisplayValue(candidate.amount_label, 80),
+    meal_label: boundedDisplayValue(candidate.meal_label, 80),
+  };
+}
+
+type StoredAuthoritativeRecoveryRecord = Omit<LogMutationRecoveryRecord, "display_context"> & {
+  display_context?: unknown;
+};
+
+function isAuthoritativeRecord(value: unknown): value is StoredAuthoritativeRecoveryRecord {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<LogMutationRecoveryRecord>;
+  const candidate = value as Partial<StoredAuthoritativeRecoveryRecord>;
   return (
     candidate.version === LOG_MUTATION_RECOVERY_VERSION
     && typeof candidate.owner_scope === "string"
@@ -166,6 +199,13 @@ function isRecord(value: unknown): value is LogMutationRecoveryRecord {
     && (typeof candidate.dismissed_at === "string" || candidate.dismissed_at === null)
     && (candidate.dismissed_from_state === undefined || candidate.dismissed_from_state === null || ["prepared", "submitted", "reconciling", "confirmed_non_commit"].includes(candidate.dismissed_from_state as string))
   );
+}
+
+function normalizeStoredRecord(record: StoredAuthoritativeRecoveryRecord): LogMutationRecoveryRecord {
+  return {
+    ...record,
+    display_context: normalizedDisplayContext(record.display_context),
+  };
 }
 
 function stableRecords(records: LogMutationRecoveryRecord[]): LogMutationRecoveryRecord[] {
@@ -230,11 +270,13 @@ async function readStored(storage: RecoveryStorage): Promise<ReadResult> {
         health: { ready: false, unknownVersion: true, malformedRecordCount: 0, storageError: false },
       };
     }
-    const valid = envelope.records.filter(isRecord);
+    const valid = envelope.records.filter(isAuthoritativeRecord);
     return {
       envelope,
-      records: stableRecords(valid.filter((record) => record.owner_scope === clientOwnerScope())),
-      opaqueRecords: envelope.records.filter((record) => !isRecord(record)),
+      records: stableRecords(valid
+        .filter((record) => record.owner_scope === clientOwnerScope())
+        .map(normalizeStoredRecord)),
+      opaqueRecords: envelope.records.filter((record) => !isAuthoritativeRecord(record)),
       health: {
         ready: envelope.records.length === valid.length,
         unknownVersion: false,
@@ -261,7 +303,7 @@ async function writeStored(
     throw new RecoveryStorageError("Recovery journal is not writable in its current state.");
   }
   const otherOwnerRecords = (existing.envelope?.records ?? []).filter((record) =>
-    isRecord(record) && record.owner_scope !== clientOwnerScope());
+    isAuthoritativeRecord(record) && record.owner_scope !== clientOwnerScope());
   const payload = {
     version: LOG_MUTATION_RECOVERY_VERSION,
     records: [...existing.opaqueRecords, ...otherOwnerRecords, ...stableRecords(records)],
@@ -411,6 +453,7 @@ export function createLogMutationRecoveryRecord(input: {
   logId?: string | null;
   sourceDate: string;
   destinationDate?: string | null;
+  displayContext: RecoveryDisplayContext;
   payload?: RecoveryPayload;
   createdAt?: string;
 }): LogMutationRecoveryRecord {
@@ -437,6 +480,7 @@ export function createLogMutationRecoveryRecord(input: {
     client_request_id: input.clientRequestId,
     mutation_type: input.mutationType,
     target_id: targetId,
+    display_context: normalizedDisplayContext(input.displayContext),
     source_date: input.sourceDate,
     destination_date: input.destinationDate ?? null,
     payload,

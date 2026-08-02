@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -33,6 +33,11 @@ import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { logInputSchema } from "../validation/logValidation";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { DatePickerModal } from "./DatePickerModal";
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
+import { contextualActionLabel } from "../../../shared/accessibility/contextualActionLabels";
+import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
+import { useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
 import {
   createLogMutationRecoveryRecord,
   isUncertainLogMutationError,
@@ -117,6 +122,15 @@ export type LogFoodSourceAuthority = {
 export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference, onReviewRecovery, moveOnly = false, moveToday }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const moveHeadingRef = useRef<Text>(null);
+  const moveDateTriggerRef = useRef<View>(null);
+  const saveActionRef = useRef<View>(null);
+  const announce = useAccessibilityAnnouncement();
+  useAccessibilityScreenFocus({
+    active: moveOnly,
+    routeKey: log ? `move-legacy-entry:${log.id}` : "move-legacy-entry",
+    targetRef: moveHeadingRef,
+  });
   const editContext = useLogEditContext(log?.id ?? null, !moveOnly);
   const revisionBacked = editContext.data?.is_revision_backed === true;
   const nutritionEditUnavailable = Boolean(
@@ -176,6 +190,24 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   );
   const [sourceReviewRequired, setSourceReviewRequired] = useState(initialDraft?.sourceReviewRequired ?? false);
   const [sourceUnavailable, setSourceUnavailable] = useState(false);
+  const editContextErrorMessage = log && editContext.isError ? logEditErrorMessage(editContext.error) : null;
+
+  useEffect(() => {
+    if (!calendarContextChanged) return;
+    return announce(
+      "The authoritative calendar changed. Review the retained date before saving.",
+      { key: `calendar-review:${log?.id ?? foodId}:${calendarRevision ?? "unknown"}`, kind: "review-required" },
+    );
+  }, [announce, calendarContextChanged, calendarRevision, foodId, log?.id]);
+  useEffect(() => {
+    const message = error ?? initializationWarning ?? editContextErrorMessage;
+    if (!message) return;
+    return announce(message, {
+      key: `log-mutation-review:${log?.id ?? foodId}:${message}`,
+      kind: error || editContextErrorMessage ? "error" : "review-required",
+      priority: error || editContextErrorMessage ? "assertive" : "polite",
+    });
+  }, [announce, editContextErrorMessage, error, foodId, initializationWarning, log?.id]);
 
   const startSeparateAction = () => {
     if (!overlapPrompt) return;
@@ -432,6 +464,13 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         targetId: log.id,
         sourceDate: log.logged_date,
         destinationDate: typeof updateInput.logged_date === "string" ? updateInput.logged_date : log.logged_date,
+        displayContext: {
+          item_name: log.food_name_snapshot?.trim() || "Daily Log entry",
+          amount_label: `${amount} ${unit}`,
+          meal_label: mealType
+            ? `${mealType.charAt(0).toUpperCase()}${mealType.slice(1)}`
+            : "Unassigned",
+        },
         payload: { operation: "update", log_id: log.id, input: finalInput },
       });
     }
@@ -673,6 +712,13 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         targetId: null,
         sourceDate: date,
         destinationDate: date,
+        displayContext: {
+          item_name: food.data?.name?.trim() || "Daily Log entry",
+          amount_label: `${amount} ${unit}`,
+          meal_label: mealType
+            ? `${mealType.charAt(0).toUpperCase()}${mealType.slice(1)}`
+            : "Unassigned",
+        },
         payload: { operation: "create", input: createInput },
       });
       const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
@@ -759,8 +805,8 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       >
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
           <View style={styles.header}>
-            <Text accessibilityRole="header" style={styles.title}>Move Legacy Entry</Text>
-            <Pressable
+            <Text ref={moveHeadingRef} accessibilityRole="header" style={styles.title}>Move Legacy Entry</Text>
+            <AccessiblePressable
               accessibilityLabel="Cancel moving entry"
               accessibilityRole="button"
               accessibilityState={{ disabled: isSubmitting }}
@@ -768,16 +814,20 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               onPress={cancel}
             >
               <Text style={styles.text}>Cancel</Text>
-            </Pressable>
+            </AccessiblePressable>
           </View>
           <Text style={styles.calendarNotice}>Move this entry to Today or an earlier date. The entry identity, nutrition, and metadata remain unchanged.</Text>
-          <Text style={styles.foodName}>{log.food_name_snapshot ?? "Deleted food"}</Text>
-          <Text style={styles.text}>Original date: {log.logged_date}</Text>
-          <Text style={styles.text}>Amount: {formatInitialLogAmount(log.amount_quantity)} {log.amount_unit}</Text>
-          <Text style={styles.text}>Meal: {mealLabel}</Text>
-          {log.notes ? <Text style={styles.text}>Note: {log.notes}</Text> : null}
+          <Text
+            accessibilityLabel={`${log.food_name_snapshot ?? "Deleted food"}, original date ${formatReadableDate(log.logged_date)}, ${formatInitialLogAmount(log.amount_quantity)} ${log.amount_unit}, ${mealLabel.toLowerCase()}${log.notes ? ", note present" : ", no note"}${!log.source_food_available ? ", source unavailable" : ""}`}
+            style={styles.foodName}
+          >{log.food_name_snapshot ?? "Deleted food"}</Text>
+          <Text accessible={false} style={styles.text}>Original date: {log.logged_date}</Text>
+          <Text accessible={false} style={styles.text}>Amount: {formatInitialLogAmount(log.amount_quantity)} {log.amount_unit}</Text>
+          <Text accessible={false} style={styles.text}>Meal: {mealLabel}</Text>
+          {log.notes ? <Text accessible={false} style={styles.text}>Note: {log.notes}</Text> : null}
           {!log.source_food_available ? <Text style={styles.calendarNotice}>Source Food or Recipe is unavailable; this date-only move remains available.</Text> : null}
-          <Pressable
+          <AccessiblePressable
+            ref={moveDateTriggerRef}
             accessibilityRole="button"
             accessibilityLabel="Choose move destination date"
             disabled={isSubmitting}
@@ -788,7 +838,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={styles.dateButton}
           >
             <Text style={styles.dateButtonText}>Destination: {formatReadableDate(editDate)}</Text>
-          </Pressable>
+          </AccessiblePressable>
           <DatePickerModal
             date={editPickerDate}
             visible={editPickerOpen}
@@ -805,9 +855,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               setError(null);
               setEditPickerOpen(false);
             }}
+            returnFocusRef={moveDateTriggerRef}
+            fallbackFocusRef={moveHeadingRef}
           />
           {calendarContextChanged ? (
-            <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
+            <Text accessibilityLiveRegion="none" style={styles.calendarNotice}>
               The authoritative calendar changed. Your selected destination was kept; review it before saving.
             </Text>
           ) : null}
@@ -817,11 +869,13 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               onCancel={() => setOverlapPrompt(null)}
               onReview={reviewOverlapRecovery}
               onStartSeparate={startSeparateAction}
+              returnFocusRef={saveActionRef}
               styles={styles}
             />
           ) : null}
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <Pressable
+          {error ? <Text accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          <AccessiblePressable
+            ref={saveActionRef}
             accessibilityHint="Moves this legacy entry without changing its nutrition or metadata"
             accessibilityLabel={isSubmitting ? "Moving legacy entry" : "Move legacy entry"}
             accessibilityRole="button"
@@ -831,7 +885,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={[styles.primaryButton, isSubmitting && styles.disabled]}
           >
             <Text style={styles.primaryText}>{isSubmitting ? "Moving..." : "Move entry"}</Text>
-          </Pressable>
+          </AccessiblePressable>
         </ScrollView>
       </KeyboardAvoidingView>
     );
@@ -887,7 +941,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           </>
         ) : null}
         {calendarContextChanged ? (
-          <Text accessibilityLiveRegion="polite" style={styles.calendarNotice}>
+          <Text accessibilityLiveRegion="none" style={styles.calendarNotice}>
             The authoritative calendar changed. Your selected date and entered values were kept; review the calendar context before saving.
           </Text>
         ) : null}
@@ -897,6 +951,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             onCancel={() => setOverlapPrompt(null)}
             onReview={reviewOverlapRecovery}
             onStartSeparate={startSeparateAction}
+            returnFocusRef={saveActionRef}
             styles={styles}
           />
         ) : null}
@@ -998,13 +1053,13 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           <Text style={styles.servingMeta}>Loading log edit choices...</Text>
         ) : null}
         {log && editContext.isError ? (
-          <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>
-            {logEditErrorMessage(editContext.error)}
+          <Text accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>
+            {editContextErrorMessage}
           </Text>
         ) : null}
         {initializationWarning ? (
           <View
-            accessibilityLiveRegion="polite"
+            accessibilityLiveRegion="none"
             style={[styles.warning, isSubmitting && styles.disabled]}
           >
             <Text style={styles.warningText}>{initializationWarning}</Text>
@@ -1021,7 +1076,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         ) : null}
         {error ? (
           <View>
-            <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text>
+            <Text accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{error}</Text>
             {sourceUnavailable && onSourceUnavailable ? (
               <Pressable accessibilityRole="button" accessibilityLabel="Return to Add Food" onPress={onSourceUnavailable}>
                 <Text style={styles.warningDismiss}>Return to Add Food</Text>
@@ -1059,6 +1114,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           />
         ) : null}
         <Pressable
+          ref={saveActionRef}
           accessibilityHint={log ? "Updates this Daily Log entry" : "Adds this food to the Daily Log"}
           accessibilityLabel={isSubmitting ? (log ? "Updating log" : "Saving log") : (log ? "Save changes" : "Save log")}
           accessibilityRole="button"
@@ -1105,6 +1161,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   servingMeta: { color: theme.colors.secondaryText },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   warning: { backgroundColor: theme.colors.warningBackground, borderRadius: 6, gap: 6, padding: 10 },
+  overlapBackdrop: { backgroundColor: theme.colors.modalBackdrop, padding: 18 },
   warningDismiss: { color: theme.colors.warningText, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },
 }); }
@@ -1114,31 +1171,45 @@ function RecoveryOverlapPrompt({
   onCancel,
   onReview,
   onStartSeparate,
+  returnFocusRef,
   styles,
 }: {
   record: LogMutationRecoveryRecord;
   onCancel: () => void;
   onReview: () => void;
   onStartSeparate: () => void;
+  returnFocusRef: RefObject<View | null>;
   styles: ReturnType<typeof createStyles>;
 }) {
   const mutation = record.mutation_type === "move" ? "move" : record.mutation_type;
-  const target = record.target_id ? `entry ${record.target_id}` : `Food on ${record.source_date}`;
+  const subject = record.display_context.item_name ?? "Daily Log entry";
+  const meal = record.display_context.meal_label;
+  const amount = record.display_context.amount_label;
+  const details = [meal, amount].filter((value): value is string => Boolean(value));
+  const target = `${subject}${details.length > 0 ? `, ${details.join(", ")}` : ""} on ${formatReadableDate(record.source_date)}`;
   return (
-    <View accessibilityLabel="Unresolved recovery overlap" style={styles.warning}>
-      <Text accessibilityRole="alert" style={styles.warningText}>
+    <AccessibleModal
+      visible
+      title="Original operation may be unresolved"
+      onRequestClose={onCancel}
+      returnFocusRef={returnFocusRef}
+      backdropStyle={styles.overlapBackdrop}
+      contentStyle={styles.warning}
+      headingStyle={styles.warningText}
+    >
+      <Text style={styles.warningText}>
         An unresolved {mutation} for {target} may already have committed. Choose whether to review the original or start a separate action.
       </Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Review original recovery" onPress={onReview}>
+      <AccessiblePressable accessibilityLabel={contextualActionLabel("review-recovery", { subject, operation: mutation, meal, amount, date: formatReadableDate(record.source_date) })} onPress={onReview}>
         <Text style={styles.warningDismiss}>Review/check original operation</Text>
-      </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Cancel separate action" onPress={onCancel}>
+      </AccessiblePressable>
+      <AccessiblePressable accessibilityLabel={`Cancel separate ${mutation} for ${target}`} onPress={onCancel}>
         <Text style={styles.warningDismiss}>Cancel</Text>
-      </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Start separate action anyway" onPress={onStartSeparate}>
+      </AccessiblePressable>
+      <AccessiblePressable accessibilityLabel={contextualActionLabel("start-separate-action", { subject, operation: mutation, meal, amount, date: formatReadableDate(record.source_date) })} onPress={onStartSeparate}>
         <Text style={styles.warningDismiss}>Start separate action anyway</Text>
-      </Pressable>
-    </View>
+      </AccessiblePressable>
+    </AccessibleModal>
   );
 }
 

@@ -17,6 +17,7 @@ let mockResolvedNutrition: QueryState<FoodResolvedNutrition>;
 let mockUsdaSearch: QueryState<UsdaSearchResponse>;
 let mockUsdaPreview: QueryState<UsdaFoodPreview>;
 let mockUsdaImport: { isPending: boolean; isError: boolean; mutate: jest.Mock };
+const mockAccessibilityAnnounce = jest.fn(() => jest.fn());
 
 type QueryState<T> = {
   data?: T;
@@ -40,6 +41,11 @@ jest.mock("../src/shared/components/RootScreenHeader", () => {
   const { Text: MockText } = require("react-native");
   return { RootScreenHeader: ({ title }: { title: string }) => mockReact.createElement(MockText, null, title) };
 });
+
+jest.mock("../src/shared/accessibility/announcements", () => ({
+  ...jest.requireActual("../src/shared/accessibility/announcements"),
+  useAccessibilityAnnouncement: () => mockAccessibilityAnnounce,
+}));
 
 jest.mock("../src/app/navigation/BottomNavigation", () => {
   const mockReact = require("react");
@@ -301,6 +307,7 @@ function resetState() {
   mockUsdaImportMutation.mockClear();
   mockUsdaImport = { isPending: false, isError: false, mutate: mockUsdaImportMutation };
   mockCreateLog.mockClear();
+  mockAccessibilityAnnounce.mockClear();
 }
 
 async function renderNavigator(): Promise<ReactTestRenderer> {
@@ -364,6 +371,10 @@ test("named and general Add Food flows use real navigator transitions and return
   expect(screenText(renderer.root)).toContain("Oatmeal");
   expect(screenText(renderer.root)).toContain("Breakfast");
   expect(mockCreateLog).toHaveBeenCalledWith(expect.objectContaining({ logged_date: "2026-07-13", meal_type: "breakfast" }));
+  expect(mockAccessibilityAnnounce).toHaveBeenCalledWith(
+    "Logged Oatmeal for 2026-07-13.",
+    expect.objectContaining({ key: expect.stringMatching(/^create:log-1:/), kind: "mutation-outcome" }),
+  );
 
   // A second flow starts with no meal assignment and reaches the same route.
   await act(async () => labeled(renderer.root, "Add Food without meal").props.onPress());

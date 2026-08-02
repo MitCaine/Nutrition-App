@@ -1,10 +1,11 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import type { AccessibilityFocusTarget } from "../../../shared/accessibility/focus";
 import { formatReadableDate, localDateToApiDate } from "../utils/dailyLogDisplay";
 
 type Props = {
@@ -14,10 +15,12 @@ type Props = {
   onCancel: () => void;
   onConfirm: (date: Date) => void;
   maximumDate?: Date;
+  returnFocusRef?: RefObject<AccessibilityFocusTarget | null>;
+  fallbackFocusRef?: RefObject<AccessibilityFocusTarget | null>;
 };
 
 /** Shared date picker used by Daily Log browsing and existing-log editing. */
-export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, maximumDate }: Props) {
+export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, maximumDate, returnFocusRef, fallbackFocusRef }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -48,6 +51,8 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
       visible={visible}
       title="Select Date"
       onRequestClose={onCancel}
+      returnFocusRef={returnFocusRef}
+      fallbackFocusRef={fallbackFocusRef}
       backdropStyle={styles.modalBackdrop}
       contentStyle={styles.modalCard}
       headingStyle={styles.sectionTitle}

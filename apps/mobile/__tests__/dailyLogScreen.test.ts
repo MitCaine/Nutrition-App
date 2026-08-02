@@ -1,16 +1,23 @@
 import React from "react";
-import { Pressable, Text } from "react-native";
+import { Modal, Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyLog } from "../src/features/logging/api/types";
 import { DailyLogScreen } from "../src/features/logging/screens/DailyLogScreen";
+import { AccessibilityStatus } from "../src/shared/accessibility/AccessibilityStatus";
+import { AccessibleModal } from "../src/shared/accessibility/AccessibleModal";
 
 let mockLogs: Record<string, unknown>;
 let mockSummary: Record<string, unknown>;
 let mockCalendar: Record<string, unknown>;
 let mockDeleteMutation: { mutateAsync: jest.Mock; isPending: boolean; projectDelete: jest.Mock; refreshDate: jest.Mock };
+const mockAccessibilityFocus = jest.fn((_target?: unknown, _options?: unknown) => jest.fn());
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
+jest.mock("../src/shared/accessibility/focus", () => ({
+  ...jest.requireActual("../src/shared/accessibility/focus"),
+  focusAccessibilityElement: (target: unknown, options: unknown) => mockAccessibilityFocus(target, options),
+}));
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
@@ -55,7 +62,12 @@ function log(meal_type: string | null): DailyLog {
   };
 }
 
-async function render(date = "2026-07-14", onAddFood = jest.fn(), onGeneralAddFood = jest.fn()) {
+async function render(
+  date = "2026-07-14",
+  onAddFood = jest.fn(),
+  onGeneralAddFood = jest.fn(),
+  extraProps: Partial<React.ComponentProps<typeof DailyLogScreen>> = {},
+) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(DailyLogScreen, {
@@ -69,13 +81,29 @@ async function render(date = "2026-07-14", onAddFood = jest.fn(), onGeneralAddFo
       onOpenNutritionTargets: jest.fn(),
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
-    }));
+      ...extraProps,
+    }), {
+      createNodeMock: (element) => {
+        const props = element.props as { accessibilityLabel?: string; children?: unknown };
+        return {
+          label: props.accessibilityLabel ?? (typeof props.children === "string" ? props.children : null),
+        };
+      },
+    });
   });
   return { renderer, onAddFood, onGeneralAddFood };
 }
 
 function addFoodButtons(root: TestRenderer.ReactTestInstance): TestRenderer.ReactTestInstance[] {
   return root.findAllByType(Pressable).filter((node) => textContent(node) === "Add Food");
+}
+
+function focusLabel(target: unknown): string | null {
+  const candidate = target as { label?: unknown; props?: { accessibilityLabel?: unknown; children?: unknown } } | null;
+  if (!candidate) return null;
+  if (typeof candidate.label === "string") return candidate.label;
+  if (typeof candidate.props?.accessibilityLabel === "string") return candidate.props.accessibilityLabel;
+  return typeof candidate.props?.children === "string" ? candidate.props.children : null;
 }
 
 beforeEach(() => {
@@ -88,13 +116,14 @@ beforeEach(() => {
   mockLogs = { data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   mockSummary = { data: { totals: [] }, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
+  mockAccessibilityFocus.mockClear();
 });
 
 test("delete requires contextual destructive confirmation and submits the reviewed entry", async () => {
   mockLogs = { ...mockLogs, data: [{ ...log("breakfast"), food_name_snapshot: "Oatmeal", amount_quantity: "2", notes: "with berries" }] };
   const rendered = await render();
   const deleteButton = rendered.renderer.root.findAllByType(Pressable).find(
-    (node) => node.props.accessibilityLabel === "Delete Oatmeal permanently",
+    (node) => node.props.accessibilityLabel === "Delete Oatmeal, breakfast, 2 serving",
   );
   expect(deleteButton).toBeDefined();
   await act(async () => deleteButton?.props.onPress());
@@ -106,7 +135,7 @@ test("delete requires contextual destructive confirmation and submits the review
   expect(text).toContain("cannot be undone");
   expect(text).toContain("Breakfast");
   const confirm = rendered.renderer.root.findAllByType(Pressable).find(
-    (node) => node.props.accessibilityLabel === "Permanently delete Oatmeal",
+    (node) => node.props.accessibilityLabel === "Permanently delete Oatmeal, breakfast, 2 serving",
   );
   expect(confirm).toBeDefined();
   await act(async () => confirm?.props.onPress());
@@ -125,11 +154,11 @@ test("cancelling delete confirmation performs no mutation", async () => {
   mockLogs = { ...mockLogs, data: [log("breakfast")] };
   const rendered = await render();
   const deleteButton = rendered.renderer.root.findAllByType(Pressable).find(
-    (node) => node.props.accessibilityLabel === "Delete Food permanently",
+    (node) => node.props.accessibilityLabel === "Delete Food, breakfast, 1 serving",
   );
   await act(async () => deleteButton?.props.onPress());
   const cancel = rendered.renderer.root.findAllByType(Pressable).find(
-    (node) => node.props.accessibilityLabel === "Cancel delete",
+    (node) => node.props.accessibilityLabel === "Cancel deletion of Food",
   );
   await act(async () => cancel?.props.onPress());
   expect(mockDeleteMutation.mutateAsync).not.toHaveBeenCalled();
@@ -153,11 +182,11 @@ test("an uncertain delete reconciles before projecting confirmed removal", async
   });
   const rendered = await render();
   const deleteButton = rendered.renderer.root.findAllByType(Pressable).find(
-    (node) => node.props.accessibilityLabel === "Delete Food permanently",
+    (node) => node.props.accessibilityLabel === "Delete Food, breakfast, 1 serving",
   );
   await act(async () => deleteButton?.props.onPress());
   const confirm = rendered.renderer.root.findAllByType(Pressable).find(
-    (node) => node.props.accessibilityLabel === "Permanently delete Food",
+    (node) => node.props.accessibilityLabel === "Permanently delete Food, breakfast, 1 serving",
   );
   await act(async () => confirm?.props.onPress());
   expect(global.fetch).toHaveBeenCalledWith(
@@ -242,5 +271,133 @@ test("same-date totals refresh failure retains totals with a stale marker", asyn
   const text = screenText(rendered.renderer.root);
   expect(text).toContain("Totals could not be refreshed; showing the last confirmed totals.");
   expect(text).toContain("120kcal");
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("date navigation and section hierarchy expose names, roles, state, and headings", async () => {
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  const rendered = await render();
+  const controls = rendered.renderer.root.findAllByType(Pressable);
+  const previous = controls.find((node) => node.props.accessibilityLabel === "Previous Day");
+  const next = controls.find((node) => node.props.accessibilityLabel === "Next Day");
+  const picker = controls.find((node) => node.props.accessibilityLabel?.startsWith("Choose date,"));
+  expect(previous?.props.accessibilityRole).toBe("button");
+  expect(next?.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+  expect(picker?.props.accessibilityRole).toBe("button");
+  const headings = rendered.renderer.root.findAllByType(Text)
+    .filter((node) => node.props.accessibilityRole === "header")
+    .map(textContent);
+  expect(headings).toEqual(expect.arrayContaining([
+    expect.stringContaining("Jul 14, 2026"),
+    "Totals",
+    "Entries",
+    "Breakfast",
+    "Lunch",
+    "Dinner",
+    "Snack",
+  ]));
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("entry summaries and repeated actions distinguish otherwise similar foods", async () => {
+  mockLogs = { ...mockLogs, data: [
+    { ...log("breakfast"), id: "oat-breakfast", food_name_snapshot: "Oatmeal", amount_quantity: "1", amount_unit: "cup", notes: "berries" },
+    { ...log("snack"), id: "oat-snack", food_name_snapshot: "Oatmeal", amount_quantity: "2", amount_unit: "serving" },
+  ] };
+  const rendered = await render();
+  const summaries = rendered.renderer.root.findAllByType(Text)
+    .filter((node) => typeof node.props.accessibilityLabel === "string" && node.props.accessibilityLabel.startsWith("Oatmeal,"))
+    .map((node) => node.props.accessibilityLabel);
+  expect(summaries).toEqual(expect.arrayContaining([
+    expect.stringContaining("breakfast, 1 cup, note present"),
+    expect.stringContaining("snack, 2 serving"),
+  ]));
+  const labels = rendered.renderer.root.findAllByType(Pressable).map((node) => node.props.accessibilityLabel);
+  expect(labels).toContain("Delete Oatmeal, breakfast, 1 cup");
+  expect(labels).toContain("Delete Oatmeal, snack, 2 serving");
+  expect(labels).toContain("View source for Oatmeal");
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("note disclosure is enabled by measured layout and exposes expanded state", async () => {
+  mockLogs = { ...mockLogs, data: [{ ...log("breakfast"), notes: "A visually wrapped note" }] };
+  const rendered = await render();
+  expect(rendered.renderer.root.findAllByProps({ accessibilityLabel: "Show more notes for Food" })).toHaveLength(0);
+  const measure = rendered.renderer.root.findByProps({ testID: "note-measure-log-breakfast" });
+  await act(async () => measure.props.onTextLayout({ nativeEvent: { lines: [{}, {}, {}] } }));
+  const toggle = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Show more notes for Food")!;
+  expect(toggle.props.accessibilityRole).toBe("button");
+  expect(toggle.props.accessibilityState).toEqual(expect.objectContaining({ expanded: false }));
+  await act(async () => toggle.props.onPress());
+  expect(rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Show less notes for Food")!.props.accessibilityState)
+    .toEqual(expect.objectContaining({ expanded: true }));
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("entries and totals use independent semantic status components with contextual retry names", async () => {
+  mockLogs = { ...mockLogs, data: undefined, isLoading: false, isError: true, error: new Error("offline") };
+  mockSummary = { ...mockSummary, data: { logged_date: "2026-07-14", totals: [] }, isLoading: false, isError: false };
+  const rendered = await render();
+  const states = rendered.renderer.root.findAllByType(AccessibilityStatus);
+  expect(states.some((node) => node.props.kind === "initial-failure" && node.props.retryContext === "entries")).toBe(true);
+  expect(states.some((node) => node.props.kind === "unavailable" && node.props.retryContext === "totals")).toBe(true);
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("delete confirmation uses the shared modal and keeps busy state off its heading", async () => {
+  mockLogs = { ...mockLogs, data: [{ ...log("breakfast"), food_name_snapshot: "Oatmeal" }] };
+  const rendered = await render();
+  const trigger = rendered.renderer.root.findByProps({ accessibilityLabel: "Delete Oatmeal, breakfast, 1 serving" });
+  await act(async () => trigger.props.onPress());
+  const modal = rendered.renderer.root.findAllByType(AccessibleModal).find((node) => node.props.title === "Permanently delete Daily Log entry?")!;
+  expect(modal.props.title).toBe("Permanently delete Daily Log entry?");
+  expect(modal.props.returnFocusRef).toBeDefined();
+  const nativeModal = rendered.renderer.root.findAllByType(Modal).find((node) => node.props.visible === true)!;
+  await act(async () => nativeModal.props.onShow());
+  const heading = rendered.renderer.root.findAllByType(Text).find((node) => textContent(node) === "Permanently delete Daily Log entry?");
+  expect(heading?.props.accessibilityState).toBeUndefined();
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("confirmed deletion focuses the next entry, then the meal heading for a final entry", async () => {
+  const first = { ...log("breakfast"), id: "first", food_name_snapshot: "First" };
+  const second = { ...log("breakfast"), id: "second", food_name_snapshot: "Second", created_at: "2026-07-14T09:00:00Z" };
+  mockLogs = { ...mockLogs, data: [first, second] };
+  let rendered = await render();
+  await act(async () => rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Delete First, breakfast, 1 serving")?.props.onPress());
+  await act(async () => rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Permanently delete First, breakfast, 1 serving")?.props.onPress());
+  expect(focusLabel(mockAccessibilityFocus.mock.calls.at(-1)?.[0])).toContain("Second, breakfast");
+  await act(async () => rendered.renderer.unmount());
+
+  mockAccessibilityFocus.mockClear();
+  mockLogs = { ...mockLogs, data: [first] };
+  rendered = await render();
+  await act(async () => rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Delete First, breakfast, 1 serving")?.props.onPress());
+  await act(async () => rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Permanently delete First, breakfast, 1 serving")?.props.onPress());
+  expect(focusLabel(mockAccessibilityFocus.mock.calls.at(-1)?.[0])).toBe("Breakfast");
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("a remounted Daily Log restores cancellation focus to the logical invoking action", async () => {
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  const handled = jest.fn();
+  const rendered = await render("2026-07-14", jest.fn(), jest.fn(), {
+    returnFocusKey: "edit:log-breakfast",
+    onReturnFocusHandled: handled,
+  });
+  expect(focusLabel(mockAccessibilityFocus.mock.calls.at(-1)?.[0])).toContain("Edit Food, breakfast, 1 serving");
+  expect(handled).toHaveBeenCalledTimes(1);
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("confirmed create or edit return focuses the projected entry summary", async () => {
+  mockLogs = { ...mockLogs, data: [{ ...log("breakfast"), id: "confirmed-entry", food_name_snapshot: "Oatmeal" }] };
+  const handled = jest.fn();
+  const rendered = await render("2026-07-14", jest.fn(), jest.fn(), {
+    mutationOutcome: { key: "edit:confirmed-entry:generation", message: "Updated Oatmeal.", focusEntryId: "confirmed-entry" },
+    onMutationOutcomeHandled: handled,
+  });
+  expect(focusLabel(mockAccessibilityFocus.mock.calls.at(-1)?.[0])).toContain("Oatmeal, breakfast, 1 serving");
+  expect(handled).toHaveBeenCalledTimes(1);
   await act(async () => rendered.renderer.unmount());
 });

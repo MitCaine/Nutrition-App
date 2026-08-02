@@ -24,11 +24,18 @@ export type AccessibilityFocusRequester = (
 ) => CancelAccessibilityFocus;
 
 const nativeDriver: AccessibilityFocusDriver = {
-  resolveHandle: (target) => typeof target === "number"
-    ? target
-    : typeof findNodeHandle === "function"
-    ? findNodeHandle(target as never)
-    : null,
+  resolveHandle: (target) => {
+    if (typeof target === "number") return target;
+    if (typeof findNodeHandle !== "function") return null;
+    try {
+      return findNodeHandle(target as never);
+    } catch {
+      // A target can disappear during the same commit that cancels its modal
+      // or collection lifecycle. Treat it as unavailable instead of leaking
+      // an asynchronous focus error.
+      return null;
+    }
+  },
   focusNativeHandle: (handle) => AccessibilityInfo.setAccessibilityFocus(handle),
   schedule: (callback, delayMs) => setTimeout(callback, delayMs),
   cancelScheduled: (handle) => clearTimeout(handle),

@@ -44,7 +44,6 @@ export function AccessibleModal({
   title,
   onRequestClose,
   children,
-  busy = false,
   initialFocusRef,
   returnFocusRef,
   fallbackFocusRef,
@@ -156,7 +155,6 @@ export function AccessibleModal({
           <Text
             ref={headingRef}
             accessibilityRole="header"
-            accessibilityState={{ busy, disabled: busy }}
             style={headingStyle}
           >
             {title}

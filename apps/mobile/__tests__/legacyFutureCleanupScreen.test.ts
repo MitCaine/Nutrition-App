@@ -87,8 +87,8 @@ test("future cleanup presents a flat legacy list and only cleanup actions", asyn
   expect(text).not.toContain("Totals");
   expect(text).not.toContain("Breakfast");
   expect(text).not.toContain("Add Food");
-  expect(renderer.root.findAllByType(Pressable).some((node) => node.props.accessibilityLabel === "Delete Legacy Recipe permanently")).toBe(true);
-  expect(renderer.root.findAllByType(Pressable).some((node) => node.props.accessibilityLabel === "Move Legacy Recipe")).toBe(true);
+  expect(renderer.root.findAllByType(Pressable).some((node) => node.props.accessibilityLabel === "Delete Legacy Recipe, unassigned, 2 serving")).toBe(true);
+  expect(renderer.root.findAllByType(Pressable).some((node) => node.props.accessibilityLabel === "Move Legacy Recipe, unassigned, 2 serving")).toBe(true);
   expect(text).not.toMatch(/\bEdit\b/);
   await act(async () => renderer.unmount());
 });
@@ -107,4 +107,18 @@ test("future cleanup empty state and retry are explicit", async () => {
   await act(async () => retry?.props.onPress());
   expect(mockFutureLogs.refetch).toHaveBeenCalled();
   await act(async () => failed.unmount());
+});
+
+test("cleanup headings, summaries, actions, and completion control are semantic and contextual", async () => {
+  const renderer = await renderCleanup();
+  const headings = renderer.root.findAllByType(Text)
+    .filter((node) => node.props.accessibilityRole === "header")
+    .map(textContent);
+  expect(headings).toEqual(expect.arrayContaining(["Legacy future entries", expect.stringContaining("2030") ]));
+  expect(renderer.root.findAllByType(Text).some((node) => String(node.props.accessibilityLabel).includes("Legacy Recipe"))).toBe(true);
+  const actionLabels = renderer.root.findAllByType(Pressable).map((node) => node.props.accessibilityLabel);
+  expect(actionLabels).toContain("Move Legacy Recipe, unassigned, 2 serving");
+  expect(actionLabels).toContain("Delete Legacy Recipe, unassigned, 2 serving");
+  expect(actionLabels.some((label) => typeof label === "string" && label.startsWith("Edit "))).toBe(false);
+  await act(async () => renderer.unmount());
 });

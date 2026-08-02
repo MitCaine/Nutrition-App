@@ -60,7 +60,7 @@ test("modal entry focus starts at native onShow once per opening", async () => {
   const isolated = renderer.root.findAllByType(View).find((node) => node.props.accessibilityViewIsModal === true);
   expect(isolated?.props.importantForAccessibility).toBe("yes");
   const heading = renderer.root.findAllByType(Text).find((node) => node.props.accessibilityRole === "header");
-  expect(heading?.props.accessibilityState).toEqual({ busy: true, disabled: true });
+  expect(heading?.props.accessibilityState).toBeUndefined();
 
   await act(async () => {
     renderer.update(React.createElement(AccessibleModal, {

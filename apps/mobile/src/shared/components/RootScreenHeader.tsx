@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, type RefObject } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../app/theme/AppTheme";
@@ -9,16 +9,19 @@ import { OPEN_SETTINGS_ACCESSIBILITY_LABEL, ROOT_SCREEN_TITLES } from "./rootScr
 type Props = {
   title: (typeof ROOT_SCREEN_TITLES)[keyof typeof ROOT_SCREEN_TITLES];
   onOpenSettings: () => void;
+  headingRef?: RefObject<Text | null>;
+  autoFocus?: boolean;
 };
 
-export function RootScreenHeader({ title, onOpenSettings }: Props) {
+export function RootScreenHeader({ title, onOpenSettings, headingRef, autoFocus = true }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const headingRef = useRef<Text>(null);
-  useAccessibilityScreenFocus({ active: true, routeKey: title, targetRef: headingRef });
+  const internalHeadingRef = useRef<Text>(null);
+  const resolvedHeadingRef = headingRef ?? internalHeadingRef;
+  useAccessibilityScreenFocus({ active: autoFocus, routeKey: title, targetRef: resolvedHeadingRef });
   return (
     <View style={styles.header}>
-      <Text ref={headingRef} accessibilityRole="header" maxFontSizeMultiplier={1.5} style={styles.title}>{title}</Text>
+      <Text ref={resolvedHeadingRef} accessibilityRole="header" maxFontSizeMultiplier={1.5} style={styles.title}>{title}</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={OPEN_SETTINGS_ACCESSIBILITY_LABEL}

@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import type { DailyLog, DailyLogMutationStatus } from "../src/features/logging/api/types";
 import {
-  createLogMutationRecoveryRecord,
+  createLogMutationRecoveryRecord as createRecoveryRecordWithDisplayContext,
   loadLogMutationRecoveryJournal,
   reconcileLogMutationRecoveryRecord,
   persistRecoveryBeforeTransmission,
@@ -15,6 +15,21 @@ import {
   upsertLogMutationRecoveryRecord,
   type RecoveryStorage,
 } from "../src/features/logging/recovery/logMutationRecovery";
+
+type RecoveryRecordInput = Parameters<typeof createRecoveryRecordWithDisplayContext>[0];
+
+function createLogMutationRecoveryRecord(
+  input: Omit<RecoveryRecordInput, "displayContext"> & Pick<Partial<RecoveryRecordInput>, "displayContext">,
+) {
+  return createRecoveryRecordWithDisplayContext({
+    ...input,
+    displayContext: input.displayContext ?? {
+      item_name: "Test food",
+      amount_label: "1 serving",
+      meal_label: "Breakfast",
+    },
+  });
+}
 
 const queryClients = new Set<QueryClient>();
 
@@ -100,6 +115,178 @@ test("journal persists only versioned recovery intent and preserves ordering", a
 
   await removeLogMutationRecoveryRecord(earlier, storage);
   expect((await loadLogMutationRecoveryJournal(storage)).map((record) => record.client_request_id)).toEqual(["later"]);
+});
+
+test("new recovery records durably preserve immutable user-facing display context", async () => {
+  const storage = memoryStorage();
+  const displayContext = {
+    item_name: "Oatmeal",
+    amount_label: "1 serving",
+    meal_label: "Breakfast",
+  };
+  const record = createLogMutationRecoveryRecord({
+    clientRequestId: "display-context-request",
+    mutationType: "delete",
+    targetId: "0f887573-45e7-4ab0-9e0c-98b87e8e2ee5",
+    sourceDate: "2026-07-14",
+    displayContext,
+  });
+  displayContext.item_name = "Changed after review";
+
+  await upsertLogMutationRecoveryRecord(record, storage);
+  const stored = (await loadLogMutationRecoveryJournal(storage))[0];
+
+  expect(stored.display_context).toEqual({
+    item_name: "Oatmeal",
+    amount_label: "1 serving",
+    meal_label: "Breakfast",
+  });
+  expect(stored.payload).toEqual(record.payload);
+});
+
+test("older version-2 records load with an identifier-free display fallback", async () => {
+  const current = createLogMutationRecoveryRecord({
+    clientRequestId: "older-v2-request",
+    mutationType: "delete",
+    targetId: "opaque-log-id",
+    sourceDate: "2026-07-14",
+  });
+  const { display_context: _displayContext, ...olderV2Record } = current;
+  const storage = memoryStorage(JSON.stringify({ version: 2, records: [olderV2Record] }));
+
+  const stored = (await loadLogMutationRecoveryJournal(storage))[0];
+
+  expect(stored.display_context).toEqual({
+    item_name: null,
+    amount_label: null,
+    meal_label: null,
+  });
+  expect(getRecoveryJournalState().ready).toBe(true);
+});
+
+async function loadRecordWithRawDisplayContext(displayContext: unknown) {
+  const authoritativeRecord = createLogMutationRecoveryRecord({
+    clientRequestId: "raw-display-context-request",
+    mutationType: "delete",
+    targetId: "opaque-log-id",
+    sourceDate: "2026-07-14",
+    displayContext: {
+      item_name: "Original item",
+      amount_label: "1 serving",
+      meal_label: "Breakfast",
+    },
+    payload: {
+      operation: "delete",
+      log_id: "opaque-log-id",
+      input: {
+        client_request_id: "raw-display-context-request",
+        expected_updated_at: "2026-07-14T08:00:00Z",
+      },
+    },
+  });
+  const storage = memoryStorage(JSON.stringify({
+    version: 2,
+    records: [{ ...authoritativeRecord, display_context: displayContext }],
+  }));
+  const [record] = await loadLogMutationRecoveryJournal(storage);
+  return { authoritativeRecord, record, state: getRecoveryJournalState() };
+}
+
+test("partial display context preserves valid fields without invalidating recovery authority", async () => {
+  const { authoritativeRecord, record, state } = await loadRecordWithRawDisplayContext({
+    item_name: "Oatmeal",
+  });
+
+  expect(record.display_context).toEqual({
+    item_name: "Oatmeal",
+    amount_label: null,
+    meal_label: null,
+  });
+  expect(record.payload).toEqual(authoritativeRecord.payload);
+  expect(state).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
+});
+
+test("invalid display fields become null while valid fields remain", async () => {
+  const { record, state } = await loadRecordWithRawDisplayContext({
+    item_name: 42,
+    amount_label: "2 servings",
+    meal_label: false,
+  });
+
+  expect(record.display_context).toEqual({
+    item_name: null,
+    amount_label: "2 servings",
+    meal_label: null,
+  });
+  expect(state).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
+});
+
+test.each(["not-an-object", ["Oatmeal"], 17])(
+  "non-object display context %# normalizes to the generic fallback without a safety lock",
+  async (displayContext) => {
+    const { record, state } = await loadRecordWithRawDisplayContext(displayContext);
+
+    expect(record.display_context).toEqual({
+      item_name: null,
+      amount_label: null,
+      meal_label: null,
+    });
+    expect(record.target_id).toBe("opaque-log-id");
+    expect(state).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
+  },
+);
+
+test("persisted overlength display context is bounded without changing recovery authority", async () => {
+  const { authoritativeRecord, record, state } = await loadRecordWithRawDisplayContext({
+    item_name: "x".repeat(200),
+    amount_label: "y".repeat(120),
+    meal_label: "Snack",
+  });
+
+  expect(Array.from(record.display_context.item_name ?? "")).toHaveLength(160);
+  expect(Array.from(record.display_context.amount_label ?? "")).toHaveLength(80);
+  expect(record.display_context.meal_label).toBe("Snack");
+  expect(record.payload).toEqual(authoritativeRecord.payload);
+  expect(record.client_request_id).toBe(authoritativeRecord.client_request_id);
+  expect(state).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
+});
+
+test("malformed authoritative fields still activate the recovery safety lock", async () => {
+  const valid = createLogMutationRecoveryRecord({
+    clientRequestId: "malformed-authority-request",
+    mutationType: "delete",
+    targetId: "opaque-log-id",
+    sourceDate: "2026-07-14",
+  });
+  const storage = memoryStorage(JSON.stringify({
+    version: 2,
+    records: [{ ...valid, client_request_id: 42, display_context: { item_name: "Oatmeal" } }],
+  }));
+
+  expect(await loadLogMutationRecoveryJournal(storage)).toEqual([]);
+  expect(getRecoveryJournalState()).toEqual(expect.objectContaining({
+    ready: false,
+    malformedRecordCount: 1,
+  }));
+  expect(storage.value).toContain('"client_request_id":42');
+});
+
+test("recovery display context is normalized and length-bounded at construction", () => {
+  const record = createLogMutationRecoveryRecord({
+    clientRequestId: "bounded-display-request",
+    mutationType: "create",
+    sourceDate: "2026-07-14",
+    displayContext: {
+      item_name: "x".repeat(200),
+      amount_label: "  2\nservings  ",
+      meal_label: "   ",
+    },
+  });
+
+  expect(Array.from(record.display_context.item_name ?? "")).toHaveLength(160);
+  expect(record.display_context.item_name?.endsWith("…")).toBe(true);
+  expect(record.display_context.amount_label).toBe("2 servings");
+  expect(record.display_context.meal_label).toBeNull();
 });
 
 test("prepared intent crosses a durable write barrier before it can be transmitted", async () => {

@@ -70,6 +70,10 @@ both engineers and implementation agents, followed by optional deeper routes.
   architecture boundary and implementation gate.
 - [Epic 1 Implementation Backlog](project/version-1.1/epic-1/implementation-backlog.md):
   milestone-grouped GitHub issue source.
+- [E1-17 Accessibility Remediation Stage 1](project/version-1.1/epic-1/accessibility-remediation-stage-1.md):
+  approved shared accessibility foundations and representative integrations.
+- [E1-17 Accessibility Remediation Stage 2](project/version-1.1/epic-1/accessibility-remediation-stage-2.md):
+  Daily Log, destructive mutation, cleanup, and recovery accessibility implementation record.
 - [Onboarding](project/onboarding.md): minimum human and AI reading paths.
 - [Project Invariants](project/invariants.md): canonical invariants and their rationale.
 - [Repository Tour](project/repository-tour.md): directory map and change walkthroughs.

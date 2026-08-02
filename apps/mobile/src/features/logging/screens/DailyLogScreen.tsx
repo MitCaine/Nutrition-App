@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { ScrollView, StyleSheet, Text, View, type NativeSyntheticEvent, type TextLayoutEventData } from "react-native";
 import type { QueryClient } from "@tanstack/react-query";
 
 import {
@@ -30,6 +30,15 @@ import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { contextualActionLabel } from "../../../shared/accessibility/contextualActionLabels";
+import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
+import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
+import {
+  focusAccessibilityElement,
+  type AccessibilityFocusTarget,
+  type CancelAccessibilityFocus,
+} from "../../../shared/accessibility/focus";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
 import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../../calendar/calendarModel";
 import { deviceTimeZone } from "../../calendar/api/calendarApi";
@@ -87,9 +96,13 @@ type Props = {
   onOpenNutritionTargets: () => void;
   initialScrollOffset: number;
   onScrollOffsetChange: (offset: number) => void;
+  mutationOutcome?: { key: string; message: string; focusDateHeading?: boolean; focusEntryId?: string } | null;
+  onMutationOutcomeHandled?: () => void;
+  returnFocusKey?: string | null;
+  onReturnFocusHandled?: () => void;
 };
 
-export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange }: Props) {
+export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange, mutationOutcome = null, onMutationOutcomeHandled, returnFocusKey = null, onReturnFocusHandled }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -99,6 +112,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteOverlapRecord, setDeleteOverlapRecord] = useState<LogMutationRecoveryRecord | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const announce = useAccessibilityAnnouncement();
   const deleteSubmittingRef = useRef(false);
   const deleteSeparateActionAcknowledgmentRef = useRef<string | null>(null);
   const logsQuery = useDailyLogs(date, !legacyFuture);
@@ -123,12 +137,81 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const foodNames = new Map((foods.data ?? []).map((food) => [food.id, food.name]));
   const groups = groupDailyLogs(logs.data ?? []);
   const scrollRef = useRef<ScrollView>(null);
+  const screenHeadingRef = useRef<Text>(null);
+  const dateHeadingRef = useRef<Text>(null);
+  const datePickerTriggerRef = useRef<View>(null);
+  const emptyStateRef = useRef<Text>(null);
+  const entryRefs = useRef(new Map<string, AccessibilityFocusTarget>());
+  const deleteTriggerRefs = useRef(new Map<string, AccessibilityFocusTarget>());
+  const actionRefs = useRef(new Map<string, AccessibilityFocusTarget>());
+  const mealHeadingRefs = useRef(new Map<string, AccessibilityFocusTarget>());
+  const pendingFocus = useRef<CancelAccessibilityFocus | null>(null);
+  const pendingDateFocus = useRef<string | null>(null);
+  const pendingCleanupCompletionFocus = useRef(false);
   const restoredRef = useRef(false);
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
   useEffect(() => { restoredRef.current = false; }, [date, initialScrollOffset]);
+  useEffect(() => () => pendingFocus.current?.(), []);
+  useEffect(() => {
+    if (!mutationOutcome) return;
+    const cancel = announce(mutationOutcome.message, { key: mutationOutcome.key, kind: "mutation-outcome" });
+    if (mutationOutcome.focusDateHeading) focusTarget(dateHeadingRef.current);
+    else if (mutationOutcome.focusEntryId) focusTarget(entryRefs.current.get(mutationOutcome.focusEntryId) ?? dateHeadingRef.current ?? screenHeadingRef.current);
+    onMutationOutcomeHandled?.();
+    return cancel;
+  }, [announce, mutationOutcome, onMutationOutcomeHandled]);
+  useEffect(() => {
+    if (!returnFocusKey) return;
+    focusTarget(actionRefs.current.get(returnFocusKey) ?? dateHeadingRef.current ?? screenHeadingRef.current);
+    onReturnFocusHandled?.();
+  }, [onReturnFocusHandled, returnFocusKey]);
+  useEffect(() => {
+    if (pendingDateFocus.current !== date) return;
+    pendingDateFocus.current = null;
+    pendingFocus.current?.();
+    pendingFocus.current = focusAccessibilityElement(dateHeadingRef.current, { focusKeyboardTarget: false });
+  }, [date]);
+  useEffect(() => {
+    if (!pendingCleanupCompletionFocus.current || futureLogs.kind !== "empty") return;
+    pendingCleanupCompletionFocus.current = false;
+    focusTarget(emptyStateRef.current ?? screenHeadingRef.current);
+  }, [futureLogs.kind]);
+
+  const selectDate = (nextDate: string, focusDateHeading = true) => {
+    if (focusDateHeading) pendingDateFocus.current = nextDate;
+    setDate(nextDate);
+  };
+
+  const focusTarget = (target: AccessibilityFocusTarget | null | undefined) => {
+    pendingFocus.current?.();
+    pendingFocus.current = focusAccessibilityElement(target, { focusKeyboardTarget: false });
+  };
+
+  const deletionSuccessor = (deleted: DailyLog): AccessibilityFocusTarget | null => {
+    if (legacyFuture) {
+      const cleanupEntries = futureLogs.data ?? [];
+      const cleanupIndex = cleanupEntries.findIndex((entry) => entry.id === deleted.id);
+      if (cleanupEntries.length === 1) {
+        pendingCleanupCompletionFocus.current = true;
+        return null;
+      }
+      return entryRefs.current.get(cleanupEntries[cleanupIndex + 1]?.id)
+        ?? entryRefs.current.get(cleanupEntries[cleanupIndex - 1]?.id)
+        ?? emptyStateRef.current
+        ?? screenHeadingRef.current;
+    }
+    const group = groupDailyLogs(logs.data ?? []).find((candidate) => candidate.entries.some((entry) => entry.id === deleted.id));
+    if (!group) return emptyStateRef.current ?? screenHeadingRef.current;
+    const index = group.entries.findIndex((entry) => entry.id === deleted.id);
+    return entryRefs.current.get(group.entries[index + 1]?.id)
+      ?? entryRefs.current.get(group.entries[index - 1]?.id)
+      ?? mealHeadingRefs.current.get(group.key)
+      ?? emptyStateRef.current
+      ?? screenHeadingRef.current;
+  };
 
   const beginDelete = (log: DailyLog) => {
     setDeleteNotice(null);
@@ -169,10 +252,14 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     try {
       const status = await getLogMutationStatus(pending.input.client_request_id, "delete");
       if (status.status === "confirmed_success") {
+        const successor = deletionSuccessor(pending.log);
         mutations.projectDelete?.(pending.log.id, pending.log.logged_date);
         if (recoveryRecord) await removeLogMutationRecoveryRecord(recoveryRecord);
         setPendingDelete(null);
-        setDeleteNotice(`Deleted ${loggedFoodDisplayName(pending.log, foodNames)} permanently.`);
+        const message = `Deleted ${loggedFoodDisplayName(pending.log, foodNames)} permanently.`;
+        setDeleteNotice(message);
+        announce(message, { key: `delete:${pending.input.client_request_id}:confirmed`, kind: "mutation-outcome" });
+        if (successor) focusTarget(successor);
         return;
       }
       if (status.status === "confirmed_non_commit") {
@@ -237,6 +324,13 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       targetId: pendingDelete.log.id,
       sourceDate: pendingDelete.log.logged_date,
       destinationDate: null,
+      displayContext: {
+        item_name: loggedFoodDisplayName(pendingDelete.log, foodNames),
+        amount_label: `${formatDisplayNumber(pendingDelete.log.amount_quantity)} ${pendingDelete.log.amount_unit}`,
+        meal_label: isSupportedMeal(pendingDelete.log.meal_type)
+          ? `${pendingDelete.log.meal_type.charAt(0).toUpperCase()}${pendingDelete.log.meal_type.slice(1)}`
+          : "Unassigned",
+      },
       payload: { operation: "delete", log_id: pendingDelete.log.id, input },
     });
     const nextPending = { ...pendingDelete, input, recoveryRecord, phase: "submitting" as const, message: null };
@@ -256,11 +350,15 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       }
       deleteSeparateActionAcknowledgmentRef.current = null;
       const submitted = await persistRecoveryBeforeTransmission(recoveryRecord);
+      const successor = deletionSuccessor(pendingDelete.log);
       await mutations.deleteLog.mutateAsync({ logId: pendingDelete.log.id, input: submitted.payload.operation === "delete" ? submitted.payload.input : input });
       await removeLogMutationRecoveryRecord(submitted);
       setPendingDelete(null);
       setDeleteOverlapRecord(null);
-      setDeleteNotice(`Deleted ${loggedFoodDisplayName(pendingDelete.log, foodNames)} permanently.`);
+      const message = `Deleted ${loggedFoodDisplayName(pendingDelete.log, foodNames)} permanently.`;
+      setDeleteNotice(message);
+      announce(message, { key: `delete:${input.client_request_id}:confirmed`, kind: "mutation-outcome" });
+      if (successor) focusTarget(successor);
     } catch (error) {
       const errorCode = logEditErrorCode(error);
       const localSubmissionBlocked = isLocalRecoveryStorageError(error)
@@ -322,10 +420,9 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   };
 
   if (legacyFuture) {
-    const cleanupRetryLabel = "Retry legacy future entries";
     return (
       <View style={styles.root}>
-        <RootScreenHeader title="Daily Log" onOpenSettings={onOpenSettings} />
+        <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
         <RecoveryPanel records={recovery.records} health={recovery} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
         <ScrollView
           ref={scrollRef}
@@ -344,14 +441,14 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
           <Text style={styles.calendarNotice}>
             These entries already existed before authoritative calendar enforcement. New future entries cannot be created. Cleanup is optional; you can move an entry to today or earlier, or delete it.
           </Text>
-          <Text style={styles.dateButtonText}>{formatReadableDate(date)}</Text>
-          <Text style={styles.dateClassification}>Future date · browse-only</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Return to Today" onPress={() => setDate(today)} style={styles.navigationButton}>
+          <Text ref={dateHeadingRef} accessibilityLabel={`${formatReadableDate(date)}, legacy cleanup context, future browse-only date`} accessibilityRole="header" style={styles.dateButtonText}>{formatReadableDate(date)}</Text>
+          <Text style={styles.dateClassification}>Legacy cleanup context · Future date · browse-only</Text>
+          <AccessiblePressable accessibilityHint="Returns to the supported Daily Log range" accessibilityLabel="Return to Today" onPress={() => selectDate(today)} style={styles.navigationButton}>
             <Text style={styles.text}>Return to Today</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Refresh legacy future entries" onPress={futureLogs.retry} style={styles.navigationButton}>
+          </AccessiblePressable>
+          <AccessiblePressable accessibilityLabel="Refresh legacy future entries" onPress={futureLogs.retry} style={styles.navigationButton}>
             <Text style={styles.text}>Refresh</Text>
-          </Pressable>
+          </AccessiblePressable>
           {deleteNotice ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{deleteNotice}</Text> : null}
           {pendingDelete ? (
             <DeleteConfirmationModal
@@ -364,24 +461,16 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
               overlapWarning={deleteOverlapRecord}
               onReviewOverlap={reviewDeleteOverlap}
               onStartSeparate={startSeparateDelete}
+              returnFocusRef={pendingDelete ? { current: deleteTriggerRefs.current.get(pendingDelete.log.id) ?? null } : undefined}
+              fallbackFocusRef={screenHeadingRef}
               styles={styles}
             />
           ) : null}
-          {futureLogs.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading legacy future entries…</Text> : null}
-          {futureLogs.kind === "refreshing" ? <Text style={styles.refreshingText}>Refreshing legacy future entries…</Text> : null}
-          {futureLogs.kind === "initial-failure" || futureLogs.kind === "refresh-failure" ? (
-            <View style={styles.errorRow}>
-              <Text style={styles.calendarNotice}>
-                {futureLogs.kind === "refresh-failure"
-                  ? "Legacy future entries could not be refreshed; showing the last confirmed entries."
-                  : "Legacy future entries could not be loaded."}
-              </Text>
-              <Pressable accessibilityRole="button" accessibilityLabel={cleanupRetryLabel} onPress={futureLogs.retry}>
-                <Text style={styles.noteToggle}>Retry</Text>
-              </Pressable>
-            </View>
-          ) : null}
-          {futureLogs.kind === "empty" ? <Text style={styles.emptyDay}>No legacy entries on this future date</Text> : null}
+          {futureLogs.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading legacy future entries…" /> : null}
+          {futureLogs.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing legacy future entries…" /> : null}
+          {futureLogs.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message="Legacy future entries could not be loaded." onRetry={futureLogs.retry} retryContext="legacy future entries" /> : null}
+          {futureLogs.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Legacy future entries could not be refreshed; showing the last confirmed entries." onRetry={futureLogs.retry} retryContext="legacy future entries" /> : null}
+          {futureLogs.kind === "empty" ? <Text ref={emptyStateRef} accessibilityRole="header" style={styles.emptyDay}>No legacy entries on this future date</Text> : null}
           {futureLogs.data?.map((log) => (
             <DailyLogEntryCard
               key={log.id}
@@ -398,6 +487,18 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
               onMoveLog={(logId) => (onMoveLog ?? onEditLog)(logId, log)}
               onDelete={() => beginDelete(log)}
               moveOnly
+              summaryRef={(target) => {
+                if (target) entryRefs.current.set(log.id, target);
+                else entryRefs.current.delete(log.id);
+              }}
+              deleteTriggerRef={(target) => {
+                if (target) deleteTriggerRefs.current.set(log.id, target);
+                else deleteTriggerRefs.current.delete(log.id);
+              }}
+              moveTriggerRef={(target) => {
+                if (target) actionRefs.current.set(`move:${log.id}`, target);
+                else actionRefs.current.delete(`move:${log.id}`);
+              }}
             />
           ))}
         </ScrollView>
@@ -407,7 +508,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 
   return (
     <View style={styles.root}>
-      <RootScreenHeader title="Daily Log" onOpenSettings={onOpenSettings} />
+      <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
       <RecoveryPanel records={recovery.records} health={recovery} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
       <ScrollView
         ref={scrollRef}
@@ -423,37 +524,54 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         }}
       >
       <View style={styles.dateNavigation}>
-        <Pressable
-          onPress={() => setDate(addCalendarDays(date, -1))}
+        <AccessiblePressable
+          accessibilityHint="Shows the preceding calendar date"
+          accessibilityLabel="Previous Day"
+          onPress={() => selectDate(addCalendarDays(date, -1))}
           style={styles.navigationButton}
         >
           <Text style={styles.text}>Previous Day</Text>
-        </Pressable>
+        </AccessiblePressable>
         {date !== today ? (
-          <Pressable
-            onPress={() => setDate(today)}
+          <AccessiblePressable
+            accessibilityHint="Shows the authoritative current date"
+            accessibilityLabel="Today"
+            onPress={() => selectDate(today)}
             style={styles.navigationButton}
           >
             <Text style={styles.text}>Today</Text>
-          </Pressable>
+          </AccessiblePressable>
         ) : null}
-        <Pressable
+        <AccessiblePressable
+          accessibilityHint="Shows the next calendar date"
+          accessibilityLabel="Next Day"
           disabled={date >= today}
-          onPress={() => setDate(addCalendarDays(date, 1))}
+          onPress={() => selectDate(addCalendarDays(date, 1))}
           style={[styles.navigationButton, date >= today ? styles.disabledButton : null]}
         >
           <Text style={styles.text}>Next Day</Text>
-        </Pressable>
+        </AccessiblePressable>
       </View>
-      <Pressable
+      <Text
+        ref={dateHeadingRef}
+        accessibilityLabel={`${formatReadableDate(date)}, ${isProvisional ? "provisional calendar" : dateClassification === "today" ? "authoritative Today" : dateClassification === "future" ? "future browse-only date" : "past date"}`}
+        accessibilityRole="header"
+        style={styles.currentDateHeading}
+      >
+        {formatReadableDate(date)}
+      </Text>
+      <AccessiblePressable
+        ref={datePickerTriggerRef}
+        accessibilityHint="Opens direct date selection"
+        accessibilityLabel={`Choose date, currently ${formatReadableDate(date)}`}
         onPress={() => {
           setDraftDate(parseLocalDateString(date) ?? new Date());
           setPickerOpen(true);
         }}
         style={styles.dateButton}
       >
-        <Text style={styles.dateButtonText}>{formatReadableDate(date)}</Text>
-      </Pressable>
+        <Text style={styles.dateButtonText}>Choose another date</Text>
+      </AccessiblePressable>
       <Text style={styles.dateClassification}>
         {dateClassification === "today" ? "Today" : dateClassification === "future" ? "Future date" : "Past date"}
       </Text>
@@ -463,9 +581,11 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         onChange={setDraftDate}
         onCancel={() => setPickerOpen(false)}
         onConfirm={(selectedDate) => {
-          setDate(localDateToApiDate(selectedDate));
+          selectDate(localDateToApiDate(selectedDate));
           setPickerOpen(false);
         }}
+        returnFocusRef={datePickerTriggerRef}
+        fallbackFocusRef={dateHeadingRef}
       />
       {deleteNotice ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{deleteNotice}</Text> : null}
       {pendingDelete ? (
@@ -479,26 +599,19 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         overlapWarning={deleteOverlapRecord}
         onReviewOverlap={reviewDeleteOverlap}
         onStartSeparate={startSeparateDelete}
+        returnFocusRef={pendingDelete ? { current: deleteTriggerRefs.current.get(pendingDelete.log.id) ?? null } : undefined}
+        fallbackFocusRef={screenHeadingRef}
         styles={styles}
         />
       ) : null}
       <TargetProgressSection date={date} entriesKnown={entriesKnown} onOpenTargets={onOpenNutritionTargets} />
-      <Text style={styles.sectionTitle}>Totals</Text>
-      {totals.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading totals…</Text> : null}
-      {totals.kind === "refreshing" ? <Text style={styles.refreshingText}>Refreshing totals…</Text> : null}
-      {totals.kind === "initial-failure" || totals.kind === "refresh-failure" ? (
-        <View style={styles.errorRow}>
-          <Text style={styles.calendarNotice}>{totals.kind === "refresh-failure" ? "Totals could not be refreshed; showing the last confirmed totals." : "Totals could not be loaded."}</Text>
-          <Pressable onPress={totals.retry}><Text style={styles.noteToggle}>Retry</Text></Pressable>
-        </View>
-      ) : null}
-      {totals.kind === "unavailable" ? (
-        <View style={styles.errorRow}>
-          <Text style={styles.calendarNotice}>Totals are unavailable until Daily Log entries are available.</Text>
-          <Pressable onPress={totals.retry}><Text style={styles.noteToggle}>Retry</Text></Pressable>
-        </View>
-      ) : null}
-      {totals.kind === "empty" ? <Text style={styles.emptyDay}>No nutrition totals for this date.</Text> : null}
+      <Text accessibilityRole="header" style={styles.sectionTitle}>Totals</Text>
+      {totals.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading totals…" /> : null}
+      {totals.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing totals…" /> : null}
+      {totals.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message="Totals could not be loaded." onRetry={totals.retry} retryContext="totals" /> : null}
+      {totals.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Totals could not be refreshed; showing the last confirmed totals." onRetry={totals.retry} retryContext="totals" /> : null}
+      {totals.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Totals are unavailable until Daily Log entries are available." onRetry={totals.retry} retryContext="totals" /> : null}
+      {totals.kind === "empty" ? <AccessibilityStatus kind="empty" message="No nutrition totals for this date." /> : null}
       {totals.data ? visibleDailyTotals(totals.data.totals).map((total) => (
         <View key={total.nutrientId} style={styles.totalRow}>
           <Text style={styles.text}>{formatNutrientLabel(total.nutrientId)}</Text>
@@ -506,11 +619,14 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         </View>
       )) : null}
       <View style={styles.entriesHeader}>
-        <Text style={styles.sectionTitle}>Entries</Text>
+        <Text accessibilityRole="header" style={styles.sectionTitle}>Entries</Text>
         {mutationsEnabled ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Add Food without meal" onPress={onGeneralAddFood} style={styles.addFoodButton}>
+          <AccessiblePressable ref={(target) => {
+            if (target) actionRefs.current.set("add:general", target);
+            else actionRefs.current.delete("add:general");
+          }} accessibilityLabel="Add Food without meal" onPress={onGeneralAddFood} style={styles.addFoodButton}>
             <Text style={styles.addFoodText}>Add Food</Text>
-          </Pressable>
+          </AccessiblePressable>
         ) : null}
       </View>
       {isProvisional ? (
@@ -521,29 +637,33 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       {!isProvisional && dateClassification === "future" ? (
         <Text style={styles.calendarNotice}>Future dates are browse-only under the authoritative calendar.</Text>
       ) : null}
-      {logs.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading entries…</Text> : null}
-      {logs.kind === "refreshing" ? <Text style={styles.refreshingText}>Refreshing entries…</Text> : null}
-      {logs.kind === "initial-failure" || logs.kind === "refresh-failure" ? (
-        <View style={styles.errorRow}>
-          <Text style={styles.calendarNotice}>
-            {logs.kind === "refresh-failure" ? "Entries could not be refreshed; showing the last confirmed entries." : "Entries could not be loaded."}
-          </Text>
-          <Pressable onPress={logs.retry}><Text style={styles.noteToggle}>Retry</Text></Pressable>
-        </View>
-      ) : null}
+      {logs.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading entries…" /> : null}
+      {logs.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing entries…" /> : null}
+      {logs.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message="Entries could not be loaded." onRetry={logs.retry} retryContext="entries" /> : null}
+      {logs.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Entries could not be refreshed; showing the last confirmed entries." onRetry={logs.retry} retryContext="entries" /> : null}
       {logs.kind === "empty" && dateClassification !== "future" ? (
-        <Text style={styles.emptyDay}>No food logged for this date.</Text>
+        <Text ref={emptyStateRef} accessibilityRole="header" style={styles.emptyDay}>No food logged for this date.</Text>
       ) : null}
       {logs.data ? groups.map((group) => {
         const meal = mealAddContext(group.key);
         return (
           <View key={group.key} style={styles.mealGroup}>
             <View style={styles.groupHeader}>
-              <Text style={styles.groupTitle}>{group.label}</Text>
+              <Text
+                ref={(target) => {
+                  if (target) mealHeadingRefs.current.set(group.key, target);
+                  else mealHeadingRefs.current.delete(group.key);
+                }}
+                accessibilityRole="header"
+                style={styles.groupTitle}
+              >{group.label}</Text>
               {mutationsEnabled && meal ? (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Add Food to ${group.label}`} onPress={() => onAddFood?.(meal)} style={styles.addFoodButton}>
+                <AccessiblePressable ref={(target) => {
+                  if (target) actionRefs.current.set(`add:${meal}`, target);
+                  else actionRefs.current.delete(`add:${meal}`);
+                }} accessibilityLabel={contextualActionLabel("add-food", { subject: group.label }).replace(/^Add food/, "Add Food")} onPress={() => onAddFood?.(meal)} style={styles.addFoodButton}>
                   <Text style={styles.addFoodText}>Add Food</Text>
-                </Pressable>
+                </AccessiblePressable>
               ) : null}
             </View>
             {group.entries.map((log) => (
@@ -561,6 +681,18 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
                 onEditLog={onEditLog}
                 onMoveLog={undefined}
                 onDelete={() => beginDelete(log)}
+                summaryRef={(target) => {
+                  if (target) entryRefs.current.set(log.id, target);
+                  else entryRefs.current.delete(log.id);
+                }}
+                deleteTriggerRef={(target) => {
+                  if (target) deleteTriggerRefs.current.set(log.id, target);
+                  else deleteTriggerRefs.current.delete(log.id);
+                }}
+                editTriggerRef={(target) => {
+                  if (target) actionRefs.current.set(`edit:${log.id}`, target);
+                  else actionRefs.current.delete(`edit:${log.id}`);
+                }}
               />
             ))}
           </View>
@@ -587,6 +719,11 @@ function RecoveryPanel({
   const [showDismissed, setShowDismissed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const announce = useAccessibilityAnnouncement();
+  const panelHeadingRef = useRef<Text>(null);
+  const recordRefs = useRef(new Map<string, AccessibilityFocusTarget>());
+  const presenceAnnounced = useRef(false);
+  const pendingRecoveryFocus = useRef<CancelAccessibilityFocus | null>(null);
   const visibleRecords = records.filter((record) => showDismissed || record.state !== "dismissed");
   const dismissedRecords = records.filter((record) => record.state === "dismissed");
   const typeLabel = (record: LogMutationRecoveryRecord) =>
@@ -599,23 +736,75 @@ function RecoveryPanel({
     if (record.destination_date) onRefreshDate(record.destination_date);
   };
 
+  useEffect(() => {
+    if (records.length === 0 || !health.ready) {
+      presenceAnnounced.current = false;
+      return;
+    }
+    if (presenceAnnounced.current) return;
+    presenceAnnounced.current = true;
+    return announce(
+      `${records.length} Daily Log recovery ${records.length === 1 ? "operation needs" : "operations need"} attention.`,
+      { key: `recovery-panel:${records.map((record) => record.id).join("|")}`, kind: "warning" },
+    );
+  }, [announce, health.ready, records]);
+  useEffect(() => () => pendingRecoveryFocus.current?.(), []);
+
   if (!health.ready) {
     return (
       <View style={styles.recoveryCard}>
-        <Text accessibilityRole="alert" style={styles.calendarNotice}>
-          Recovery state is unavailable or needs an app update. Daily Log mutations are temporarily locked until it can be read safely.
-        </Text>
+        <Text accessibilityRole="header" style={styles.recoveryTitle}>Daily Log recovery safety lock</Text>
+        <AccessibilityStatus
+          kind="unavailable"
+          message={health.unknownVersion
+            ? "Recovery data was created by a newer app version. Daily Log mutations are locked until this version can read it safely."
+            : health.malformedRecordCount > 0
+              ? "A recovery record is malformed. Valid and unreadable records were preserved, and Daily Log mutations are locked for safety."
+              : "Recovery storage is unavailable. Daily Log mutations are locked because durability cannot be confirmed."}
+        />
       </View>
     );
   }
   if (records.length === 0) return null;
-  const runAction = async (record: LogMutationRecoveryRecord, action: () => Promise<unknown>, message: string) => {
+  const runAction = async (
+    record: LogMutationRecoveryRecord,
+    action: () => Promise<unknown>,
+    message: string,
+    actionKind: "check" | "retry" | "dismiss",
+  ) => {
     if (busyId !== null) return;
     setActionError(null);
     setBusyId(record.id);
     try {
-      await action();
+      const currentIndex = visibleRecords.findIndex((candidate) => candidate.id === record.id);
+      const nextTarget = recordRefs.current.get(visibleRecords[currentIndex + 1]?.id)
+        ?? recordRefs.current.get(visibleRecords[currentIndex - 1]?.id)
+        ?? panelHeadingRef.current;
+      const result = await action();
       refresh(record);
+      if (actionKind === "dismiss") {
+        announce(`Dismissed ${typeLabel(record)} recovery prompt. The operation remains protected.`, {
+          key: `recovery:${record.id}:dismissed`, kind: "mutation-outcome",
+        });
+        pendingRecoveryFocus.current?.();
+        pendingRecoveryFocus.current = focusAccessibilityElement(panelHeadingRef.current, { focusKeyboardTarget: false });
+      } else if (result === "confirmed") {
+        announce(`Recovered ${typeLabel(record)} confirmed.`, {
+          key: `recovery:${record.id}:confirmed`, kind: "mutation-outcome",
+        });
+        pendingRecoveryFocus.current?.();
+        pendingRecoveryFocus.current = focusAccessibilityElement(nextTarget, { focusKeyboardTarget: false });
+      } else if (result === "retryable") {
+        announce(`The ${typeLabel(record)} was not committed. The exact operation can now be retried.`, {
+          key: `recovery:${record.id}:retryable`, kind: "mutation-outcome",
+        });
+      } else if (result === "discarded") {
+        announce(`The ${typeLabel(record)} recovery is obsolete or conflicts with current server state. Review the refreshed Daily Log.`, {
+          key: `recovery:${record.id}:discarded`, kind: "review-required",
+        });
+        pendingRecoveryFocus.current?.();
+        pendingRecoveryFocus.current = focusAccessibilityElement(nextTarget, { focusKeyboardTarget: false });
+      }
     } catch {
       setActionError(message);
     } finally {
@@ -624,12 +813,12 @@ function RecoveryPanel({
   };
   return (
     <View style={styles.recoveryCard}>
-      <Text accessibilityRole="header" style={styles.recoveryTitle}>Daily Log recovery</Text>
+      <Text ref={panelHeadingRef} accessibilityRole="header" style={styles.recoveryTitle}>Daily Log recovery</Text>
       {actionError ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{actionError}</Text> : null}
       {dismissedRecords.length > 0 && !showDismissed ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Review dismissed recovery" onPress={() => setShowDismissed(true)}>
+        <AccessiblePressable accessibilityLabel="Review dismissed Daily Log recovery operations" onPress={() => setShowDismissed(true)}>
           <Text style={styles.noteToggle}>Review dismissed recovery</Text>
-        </Pressable>
+        </AccessiblePressable>
       ) : null}
       {visibleRecords.map((record) => {
         const actionableState = record.state === "dismissed"
@@ -638,9 +827,28 @@ function RecoveryPanel({
         const prepared = actionableState === "prepared";
         const retryable = actionableState === "confirmed_non_commit" || prepared;
         const unresolved = actionableState === "submitted" || actionableState === "reconciling";
+        const operation = typeLabel(record);
+        const subject = record.display_context.item_name ?? "Daily Log entry";
+        const amount = record.display_context.amount_label;
+        const meal = record.display_context.meal_label;
+        const identityDetails = [meal, amount].filter((value): value is string => Boolean(value));
+        const displayIdentity = `${subject}${identityDetails.length > 0 ? `, ${identityDetails.join(", ")}` : ""}`;
+        const readableSourceDate = formatReadableDate(record.source_date);
+        const lifecycle = record.state === "dismissed"
+          ? `dismissed, underlying state ${actionableState.replaceAll("_", " ")}`
+          : actionableState.replaceAll("_", " ");
+        const summary = `${operation} recovery for ${displayIdentity}, source date ${readableSourceDate}${record.destination_date ? `, destination date ${formatReadableDate(record.destination_date)}` : ""}, ${lifecycle}${retryable ? ", exact retry available" : ", unresolved"}`;
         return (
           <View key={record.id} style={styles.recoveryItem}>
-            <Text style={styles.text}>{typeLabel(record)} · {dateLabel(record)}</Text>
+            <Text
+              ref={(target) => {
+                if (target) recordRefs.current.set(record.id, target);
+                else recordRefs.current.delete(record.id);
+              }}
+              accessibilityLabel={summary}
+              accessibilityRole="header"
+              style={styles.text}
+            >{operation} · {displayIdentity} · {dateLabel(record)}</Text>
             <Text style={styles.calendarNotice}>
               {prepared
                 ? "This exact operation was saved locally but was not sent."
@@ -650,49 +858,52 @@ function RecoveryPanel({
                     ? "Prompt dismissed; the record remains unresolved."
                     : "The operation may have committed. Check authoritative status before trying another action."}
             </Text>
-            {record.target_id ? <Text style={styles.calendarNotice}>Entry: {record.target_id}</Text> : null}
             {retryable ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Retry exact ${typeLabel(record)}`}
-                disabled={busyId !== null}
+              <AccessiblePressable
+                accessibilityLabel={contextualActionLabel("retry-exact", { subject, operation, date: readableSourceDate, meal, amount })}
+                busy={busyId === record.id}
+                disabled={busyId !== null && busyId !== record.id}
                 onPress={() => void runAction(
                   record,
                   () => retryLogMutationRecoveryRecord(record, queryClient ?? null),
                   "The exact recovery retry could not be sent. The saved intent remains available.",
+                  "retry",
                 )}
               >
                 <Text style={styles.noteToggle}>Retry exact operation</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
             {unresolved ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Check ${typeLabel(record)} status`}
-                disabled={busyId !== null}
+              <AccessiblePressable
+                accessibilityLabel={contextualActionLabel("check-status", { subject, operation, date: readableSourceDate, meal, amount })}
+                busy={busyId === record.id}
+                disabled={busyId !== null && busyId !== record.id}
                 onPress={() => void runAction(
                   record,
                   () => reconcileLogMutationRecoveryRecord(record, queryClient ?? null),
                   "Recovery status could not be checked. Try again when the connection is available.",
+                  "check",
                 )}
               >
                 <Text style={styles.noteToggle}>Check status</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
             {record.state !== "dismissed" ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Dismiss ${typeLabel(record)} recovery`}
-                disabled={busyId !== null}
+              <AccessiblePressable
+                accessibilityLabel={contextualActionLabel("dismiss-recovery", { subject, operation, meal, amount })}
+                busy={busyId === record.id}
+                disabled={busyId !== null && busyId !== record.id}
                 onPress={() => void runAction(
                   record,
                   () => dismissLogMutationRecoveryRecord(record),
                   "The recovery prompt could not be dismissed because local storage is unavailable.",
+                  "dismiss",
                 )}
               >
                 <Text style={styles.noteToggle}>Dismiss</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
+            {busyId === record.id ? <AccessibilityStatus kind="busy" message={`Working on ${operation} recovery…`} /> : null}
           </View>
         );
       })}
@@ -710,6 +921,8 @@ function DeleteConfirmationModal({
   onDismiss,
   onReviewOverlap,
   onStartSeparate,
+  returnFocusRef,
+  fallbackFocusRef,
   styles,
 }: {
   pending: PendingDelete;
@@ -721,6 +934,8 @@ function DeleteConfirmationModal({
   onDismiss: () => void;
   onReviewOverlap: () => void;
   onStartSeparate: () => void;
+  returnFocusRef?: RefObject<AccessibilityFocusTarget | null>;
+  fallbackFocusRef?: RefObject<AccessibilityFocusTarget | null>;
   styles: ReturnType<typeof createStyles>;
 }) {
   const dateLabel = formatReadableDate(pending.log.logged_date);
@@ -730,16 +945,25 @@ function DeleteConfirmationModal({
   const busy = pending.phase === "submitting";
   const uncertain = pending.phase === "uncertain";
   const retryable = pending.phase === "retryable";
+  const actionContext = {
+    subject: name,
+    meal: mealLabel.toLowerCase(),
+    amount: `${formatDisplayNumber(pending.log.amount_quantity)} ${pending.log.amount_unit}`,
+    date: dateLabel,
+    operation: "delete",
+  };
   return (
-    <Modal
+    <AccessibleModal
       visible
-      transparent
-      animationType="fade"
+      title="Permanently delete Daily Log entry?"
       onRequestClose={onCancel}
+      returnFocusRef={returnFocusRef}
+      fallbackFocusRef={fallbackFocusRef}
+      busy={busy}
+      backdropStyle={styles.modalBackdrop}
+      contentStyle={styles.modalCard}
+      headingStyle={styles.sectionTitle}
     >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard} accessibilityViewIsModal>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>Permanently delete Daily Log entry?</Text>
           <Text style={styles.text}>{name}</Text>
           <Text style={styles.text}>{formatDisplayNumber(pending.log.amount_quantity)} {pending.log.amount_unit} · {mealLabel}</Text>
           <Text style={styles.text}>Date: {dateLabel}</Text>
@@ -747,51 +971,47 @@ function DeleteConfirmationModal({
           <Text style={styles.calendarNotice}>Only this Daily Log entry and its stored nutrition snapshots will be removed.</Text>
           <Text style={styles.calendarNotice}>Reusable Foods, Recipes, and catalog data will remain unchanged.</Text>
           <Text style={styles.calendarNotice}>This action cannot be undone. Totals and target progress for {dateLabel} will change.</Text>
-          {pending.message ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{pending.message}</Text> : null}
+          {pending.message ? <AccessibilityStatus kind={uncertain ? "unavailable" : "retryable-failure"} message={pending.message} /> : null}
           {overlapWarning ? (
             <View style={styles.warningCard}>
               <Text accessibilityRole="alert" style={styles.compatibilityNotice}>
                 An unresolved delete for this entry may already have committed. Review the original operation or explicitly start a separate delete.
               </Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Review original delete recovery" onPress={onReviewOverlap}>
+              <AccessiblePressable accessibilityLabel={contextualActionLabel("review-recovery", actionContext)} onPress={onReviewOverlap}>
                 <Text style={styles.noteToggle}>Review/check original operation</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Cancel separate delete" onPress={onCancel}>
+              </AccessiblePressable>
+              <AccessiblePressable accessibilityLabel={`Cancel separate delete for ${name}`} onPress={onCancel}>
                 <Text style={styles.noteToggle}>Cancel</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Start separate delete anyway" onPress={onStartSeparate}>
+              </AccessiblePressable>
+              <AccessiblePressable accessibilityLabel={contextualActionLabel("start-separate-action", actionContext)} onPress={onStartSeparate}>
                 <Text style={styles.noteToggle}>Start separate delete anyway</Text>
-              </Pressable>
+              </AccessiblePressable>
             </View>
           ) : null}
-          {busy ? (
-            <View style={styles.errorRow}><ActivityIndicator /><Text style={styles.calendarNotice}>Deleting…</Text></View>
-          ) : null}
+          {busy ? <AccessibilityStatus kind="busy" message={`Deleting ${name}…`} /> : null}
           <View style={styles.modalActions}>
             {!busy && !uncertain && !overlapWarning ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Cancel delete" onPress={onCancel} style={styles.secondaryButton}>
+              <AccessiblePressable accessibilityLabel={`Cancel deletion of ${name}`} onPress={onCancel} style={styles.secondaryButton}>
                 <Text style={styles.text}>Cancel</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
             {uncertain ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Check delete status" onPress={onCheckStatus} style={styles.secondaryButton}>
+              <AccessiblePressable accessibilityLabel={contextualActionLabel("check-status", actionContext)} onPress={onCheckStatus} style={styles.secondaryButton}>
                 <Text style={styles.text}>Check status</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
             {uncertain || retryable ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Dismiss delete recovery" onPress={onDismiss} style={styles.secondaryButton}>
+              <AccessiblePressable accessibilityLabel={contextualActionLabel("dismiss-recovery", actionContext)} onPress={onDismiss} style={styles.secondaryButton}>
                 <Text style={styles.text}>Dismiss</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
             {!busy && !uncertain && !overlapWarning ? (
-              <Pressable accessibilityRole="button" accessibilityLabel={`Permanently delete ${name}`} onPress={onConfirm} style={styles.primaryButton}>
+              <AccessiblePressable accessibilityHint={`Permanently removes only this Daily Log entry and its nutrition snapshots from ${dateLabel}`} accessibilityLabel={retryable ? contextualActionLabel("retry-exact", actionContext) : contextualActionLabel("delete", actionContext).replace(/^Delete /, "Permanently delete ")} onPress={onConfirm} style={styles.primaryButton}>
                 <Text style={styles.primaryText}>{retryable ? "Retry permanent delete" : "Delete permanently"}</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
           </View>
-        </View>
-      </View>
-    </Modal>
+    </AccessibleModal>
   );
 }
 
@@ -809,6 +1029,10 @@ function DailyLogEntryCard({
   moveOnly,
   showLoggedDate,
   showMealLabel,
+  summaryRef,
+  deleteTriggerRef,
+  editTriggerRef,
+  moveTriggerRef,
 }: {
   log: DailyLog;
   foodNames: Map<string, string>;
@@ -823,6 +1047,10 @@ function DailyLogEntryCard({
   moveOnly?: boolean;
   showLoggedDate: boolean;
   showMealLabel: boolean;
+  summaryRef?: (target: Text | null) => void;
+  deleteTriggerRef?: (target: View | null) => void;
+  editTriggerRef?: (target: View | null) => void;
+  moveTriggerRef?: (target: View | null) => void;
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -830,18 +1058,30 @@ function DailyLogEntryCard({
   const mealNotice = unsupportedMealNotice(log);
   const noteNotice = legacyNoteNotice(log.notes);
   const notes = log.notes ?? "";
-  const noteMayOverflow = notes.split(/\r?\n/).length > 2 || Array.from(notes).length > 160;
-  const showNoteToggle = Boolean(notes) && (noteMayOverflow || expandedNote);
+  const [noteTruncated, setNoteTruncated] = useState(false);
+  const showNoteToggle = Boolean(notes) && noteTruncated;
   const displayName = loggedFoodDisplayName(log, foodNames);
+  const mealContext = isSupportedMeal(log.meal_type) ? log.meal_type : "unassigned";
+  const amountContext = `${formatDisplayNumber(log.amount_quantity)} ${log.amount_unit}`;
+  const summaryParts = [
+    displayName,
+    mealContext,
+    amountContext,
+    showLoggedDate ? `date ${formatReadableDate(log.logged_date)}` : null,
+    notes ? (expandedNote ? "note expanded" : "note present") : "no note",
+    entryState.sourceStatusLabel,
+    mealNotice,
+    noteNotice,
+  ].filter((part): part is string => Boolean(part));
+  const summary = summaryParts.join(", ");
   const details = (
     <>
-      <Text style={styles.foodName}>{loggedFoodDisplayName(log, foodNames)}</Text>
-      <Text style={styles.text}>
+      <Text accessible={false} style={styles.text}>
         {formatDisplayNumber(log.amount_quantity)} {log.amount_unit}
       </Text>
-      {showLoggedDate ? <Text style={styles.text}>Date: {log.logged_date}</Text> : null}
+      {showLoggedDate ? <Text accessible={false} style={styles.text}>Date: {log.logged_date}</Text> : null}
       {showMealLabel ? (
-        <Text style={styles.text}>
+        <Text accessible={false} style={styles.text}>
           {isSupportedMeal(log.meal_type) ? log.meal_type.charAt(0).toUpperCase() + log.meal_type.slice(1) : "Unassigned"}
         </Text>
       ) : null}
@@ -849,46 +1089,60 @@ function DailyLogEntryCard({
   );
   return (
     <View style={styles.entryCard}>
+      <Text ref={summaryRef} accessibilityLabel={summary} style={styles.foodName}>{displayName}</Text>
+      <View>{details}</View>
       {entryState.canOpenFood ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`View ${displayName}`} onPress={() => onOpenFood(log.food_item_id)}>{details}</Pressable>
-      ) : (
-        <View>{details}</View>
-      )}
-      {entryState.sourceStatusLabel ? <Text style={styles.compatibilityNotice}>{entryState.sourceStatusLabel}</Text> : null}
+        <AccessiblePressable accessibilityLabel={contextualActionLabel("view-source", { subject: displayName })} onPress={() => onOpenFood(log.food_item_id)} style={styles.entryIdentityAction}>
+          <Text style={styles.noteToggle}>View source</Text>
+        </AccessiblePressable>
+      ) : null}
+      {entryState.sourceStatusLabel ? <Text accessible={false} style={styles.compatibilityNotice}>{entryState.sourceStatusLabel}</Text> : null}
       {recoveryBlocked ? <Text accessibilityRole="alert" style={styles.compatibilityNotice}>A prior operation for this entry is unresolved. Review recovery or explicitly acknowledge a separate action before continuing.</Text> : null}
-      {mealNotice ? <Text style={styles.compatibilityNotice}>{mealNotice}</Text> : null}
-      {noteNotice ? <Text style={styles.compatibilityNotice}>{noteNotice}</Text> : null}
+      {mealNotice ? <Text accessible={false} style={styles.compatibilityNotice}>{mealNotice}</Text> : null}
+      {noteNotice ? <Text accessible={false} style={styles.compatibilityNotice}>{noteNotice}</Text> : null}
       {notes ? (
         <>
+          <Text
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+            onTextLayout={(event: NativeSyntheticEvent<TextLayoutEventData>) => setNoteTruncated(event.nativeEvent.lines.length > 2)}
+            pointerEvents="none"
+            style={[styles.noteText, styles.noteMeasure]}
+            testID={`note-measure-${log.id}`}
+          >{notes}</Text>
           <Text numberOfLines={expandedNote ? undefined : 2} style={styles.noteText}>{notes}</Text>
           {showNoteToggle ? (
-            <Pressable onPress={onToggleNote}>
+            <AccessiblePressable
+              accessibilityLabel={contextualActionLabel(expandedNote ? "show-less-notes" : "show-more-notes", { subject: displayName })}
+              accessibilityState={{ expanded: expandedNote }}
+              onPress={onToggleNote}
+            >
               <Text style={styles.noteToggle}>{expandedNote ? "Show less" : "Show more"}</Text>
-            </Pressable>
+            </AccessiblePressable>
           ) : null}
         </>
       ) : null}
       {mutationsEnabled ? (
         <View style={styles.entryActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${loggedFoodDisplayName(log, foodNames)} permanently`} onPress={onDelete}>
+          <AccessiblePressable ref={deleteTriggerRef} accessibilityLabel={contextualActionLabel("delete", { subject: displayName, meal: mealContext, amount: amountContext })} onPress={onDelete}>
             <Text style={styles.deleteText}>Delete</Text>
-          </Pressable>
+          </AccessiblePressable>
           {moveOnly ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={`Move ${displayName}`} onPress={() => onMoveLog?.(log.id, log)}>
+            <AccessiblePressable ref={moveTriggerRef} accessibilityLabel={contextualActionLabel("move", { subject: displayName, meal: mealContext, amount: amountContext })} onPress={() => onMoveLog?.(log.id, log)}>
               <Text style={styles.text}>Move</Text>
-            </Pressable>
+            </AccessiblePressable>
           ) : entryState.canEdit ? (
-            <Pressable
-              accessibilityRole="button"
+            <AccessiblePressable
+              ref={editTriggerRef}
               accessibilityLabel={contextualActionLabel("edit", {
                 subject: displayName,
-                meal: showMealLabel ? (isSupportedMeal(log.meal_type) ? log.meal_type : "unassigned") : null,
-                amount: `${formatDisplayNumber(log.amount_quantity)} ${log.amount_unit}`,
+                meal: mealContext,
+                amount: amountContext,
               })}
               onPress={() => onEditLog?.(log.id)}
             >
               <Text style={styles.text}>Edit</Text>
-            </Pressable>
+            </AccessiblePressable>
           ) : null}
         </View>
       ) : null}
@@ -900,6 +1154,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   text: { color: theme.colors.text },
   dateButton: { borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 12 },
   dateButtonText: { color: theme.colors.accent, fontWeight: "700" },
+  currentDateHeading: { color: theme.colors.text, fontSize: 20, fontWeight: "700" },
   datePreview: { fontSize: 18, fontWeight: "700" },
   deleteText: { color: theme.colors.destructive },
   foodName: { color: theme.colors.text, fontWeight: "700" },
@@ -910,6 +1165,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   emptyDay: { color: theme.colors.secondaryText, fontSize: 15 },
   entryActions: { flexDirection: "row", gap: 16, justifyContent: "flex-end", marginTop: 4 },
   entryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 12 },
+  entryIdentityAction: { alignItems: "flex-start" },
   recoveryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.warningText, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
   recoveryItem: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 4, paddingTop: 8 },
   recoveryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
@@ -930,6 +1186,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   root: { backgroundColor: theme.colors.background, flex: 1, gap: 12, paddingHorizontal: 16, paddingTop: 16 },
   navigationButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
   noteText: { color: theme.colors.text, lineHeight: 20 },
+  noteMeasure: { left: 0, opacity: 0, position: "absolute", right: 0 },
   noteToggle: { color: theme.colors.accent, fontWeight: "600" },
   mealGroup: { gap: 8 },
   refreshingText: { color: theme.colors.secondaryText, fontSize: 13 },

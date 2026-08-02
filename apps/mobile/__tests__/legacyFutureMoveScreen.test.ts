@@ -96,6 +96,10 @@ test("cleanup move mode exposes only read-only identity, date, and move action",
   expect(labeled("Notes")).toHaveLength(0);
   expect(labeled("Servings")).toHaveLength(0);
   expect(labeled("Move legacy entry")).toHaveLength(1);
+  const summary = root.findAllByType(Text).find((node) => String(node.props.accessibilityLabel).includes("Legacy Recipe"))!;
+  expect(summary.props.accessibilityState?.disabled).not.toBe(true);
+  expect(root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Move legacy entry")!.props.accessibilityState)
+    .toEqual(expect.objectContaining({ disabled: false, busy: false }));
   await act(async () => renderer.unmount());
 });
 

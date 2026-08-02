@@ -45,15 +45,15 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
     : null;
   return <View style={styles.section}>
     <View style={styles.headingRow}>
-      <Text accessibilityRole="header" style={styles.heading}>Daily progress</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Target Progress</Text>
       <AccessiblePressable accessibilityLabel="Open Nutrition targets settings" onPress={onOpenTargets}><Text style={styles.link}>Nutrition targets</Text></AccessiblePressable>
     </View>
     {state.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading target comparisons…" messageStyle={styles.secondary} /> : null}
-    {state.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message={initialFailure!.summary} onRetry={state.retry} retryContext="target comparisons" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
-    {state.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Target progress is unavailable until Daily Log entries are available." onRetry={state.retry} retryContext="target comparisons" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
+    {state.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message={initialFailure!.summary} onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
+    {state.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Target progress is unavailable until Daily Log entries are available." onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
     {state.kind === "empty" ? <AccessibilityStatus kind="empty" message="No target comparisons are available for this date." messageStyle={styles.secondary} /> : null}
     {state.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing target comparisons…" messageStyle={styles.secondary} /> : null}
-    {state.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Target comparisons could not be refreshed; showing the last confirmed progress." onRetry={state.retry} retryContext="target comparisons" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
+    {state.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Target comparisons could not be refreshed; showing the last confirmed progress." onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
     {state.data ? rows.map((item) => <ProgressRow key={item.nutrientId} item={item} />) : null}
   </View>;
 }

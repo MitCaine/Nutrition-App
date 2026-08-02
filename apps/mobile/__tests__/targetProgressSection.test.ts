@@ -96,7 +96,7 @@ test("comparison loading and failure retain a settings link and recoverable retr
   await act(async () => loading.unmount());
   const failed = await render({ data: undefined, isError: true, onRetry: retry, onOpenTargets: open });
   const actions = failed.root.findAllByType(Pressable);
-  await act(async () => actions.find((node) => node.props.accessibilityLabel === "Retry target comparisons")?.props.onPress());
+  await act(async () => actions.find((node) => node.props.accessibilityLabel === "Retry target progress")?.props.onPress());
   await act(async () => actions.find((node) => node.props.accessibilityLabel === "Open Nutrition targets settings")?.props.onPress());
   expect(retry).toHaveBeenCalled(); expect(open).toHaveBeenCalled();
   await act(async () => failed.unmount());
@@ -134,7 +134,7 @@ test("no-profile state keeps FDA comparisons while calories has no target", asyn
 test("progress presentation renders in dark theme and decimal formatting avoids float loss", async () => {
   mockUseDark = true;
   const renderer = await render();
-  expect(allText(renderer.root)).toContain("Daily progress");
+  expect(allText(renderer.root)).toContain("Target Progress");
   expect(formatDecimalString("12345678901234567890.56", 1)).toBe("12,345,678,901,234,567,890.6");
   expect(percentageAtOrAbove100("100.0000")).toBe(true);
   expect(percentageAtOrAbove100("99.9999")).toBe(false);

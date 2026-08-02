@@ -577,8 +577,13 @@ test("failed create preserves form and warning dismissal, then permits one retry
   const error = renderer.root.findAllByProps({ accessibilityRole: "alert" }).find(
     (node) => textContent(node) === "Could not save this log. Check your connection and try again.",
   ) as ReactTestInstance;
-  expect(error.props.accessibilityLiveRegion).toBe("assertive");
+  expect(error.props.accessibilityLiveRegion).toBe("none");
   expect(pressableWithText(renderer.root, "Save Log").props.disabled).toBe(false);
+  expect((await loadLogMutationRecoveryJournal())[0].display_context).toEqual({
+    item_name: "Submission Food",
+    amount_label: "6 serving",
+    meal_label: "Unassigned",
+  });
 
   mockCreateDeferred = deferred();
   act(() => {
@@ -622,6 +627,11 @@ test("failed edit restores controls and permits one retry without changing revis
   expect(renderer.root.findByType(TextInput).props.value).toBe("8");
   expect(renderer.root.findByType(TextInput).props.editable).toBe(true);
   expect(pressableStartingWithText(renderer.root, "Published serving").props.disabled).toBe(false);
+  expect((await loadLogMutationRecoveryJournal())[0].display_context).toEqual({
+    item_name: "Published Recipe",
+    amount_label: "8 serving",
+    meal_label: "Unassigned",
+  });
   mockUpdateDeferred = deferred();
   act(() => {
     const retry = pressableWithText(renderer.root, "Save Changes");
@@ -709,7 +719,10 @@ test("a fresh screen requires acknowledgment before a separate create", async ()
   });
   await flushRecoveryBarrier();
   expect(mockCreateLog).toHaveBeenCalledTimes(1);
-  expect(hasText(reopened.root, "An unresolved create for Food on 2026-07-13 may already have committed. Choose whether to review the original or start a separate action.")).toBe(true);
+  expect(hasText(reopened.root, "An unresolved create for Submission Food, Unassigned, 2.5 serving on Mon, Jul 13, 2026 may already have committed. Choose whether to review the original or start a separate action.")).toBe(true);
+  expect(reopened.root.findAllByType(Pressable).map((node) => node.props.accessibilityLabel)).toContain(
+    "Review original create uncertainty for Submission Food, Unassigned, 2.5 serving",
+  );
   await act(async () => pressableWithText(reopened.root, "Start separate action anyway").props.onPress());
   await flushRecoveryBarrier();
   expect(mockCreateLog).toHaveBeenCalledTimes(2);

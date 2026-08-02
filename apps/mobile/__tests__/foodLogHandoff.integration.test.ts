@@ -346,10 +346,10 @@ test("invalid quantity preserves selection, warns once, and user changes dismiss
   });
   const warning = "The quantity was invalid and was reset to 1.";
   expect(hasText(renderer.root, warning)).toBe(true);
-  expect(renderer.root.findAllByProps({ accessibilityLiveRegion: "polite" }).length).toBeGreaterThan(0);
   const warningText = renderer.root.findAllByType(Text).find(
     (node) => textContent(node) === warning,
   ) as ReactTestInstance;
+  expect(warningText.parent?.props.accessibilityLiveRegion).toBe("none");
   expect(warningText.props.accessibilityRole).toBeUndefined();
   expect(renderer.root.findByProps({
     accessibilityLabel: "Dismiss amount notice",
