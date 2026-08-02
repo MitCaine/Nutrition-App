@@ -8,6 +8,7 @@ import { DailyLogScreen } from "../src/features/logging/screens/DailyLogScreen";
 let mockLogs: Record<string, unknown>;
 let mockSummary: Record<string, unknown>;
 let mockCalendar: Record<string, unknown>;
+let mockDeleteMutation: { mutateAsync: jest.Mock; isPending: boolean; projectDelete: jest.Mock; refreshDate: jest.Mock };
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
@@ -16,7 +17,11 @@ jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => mockLogs,
   useDailySummary: () => mockSummary,
-  useLogMutations: () => ({ deleteLog: { mutate: jest.fn() } }),
+  useLogMutations: () => ({
+    deleteLog: mockDeleteMutation,
+    projectDelete: mockDeleteMutation.projectDelete,
+    refreshDate: mockDeleteMutation.refreshDate,
+  }),
 }));
 jest.mock("../src/features/calendar/hooks/useCalendar", () => ({ useCalendarState: () => mockCalendar }));
 jest.mock("@react-native-community/datetimepicker", () => ({ __esModule: true, default: () => null }));
@@ -45,6 +50,7 @@ function log(meal_type: string | null): DailyLog {
     amount_unit: "serving",
     created_at: "2026-07-14T08:00:00Z",
     notes: null,
+    updated_at: "2026-07-14T08:05:00Z",
   };
 }
 
@@ -72,9 +78,93 @@ function addFoodButtons(root: TestRenderer.ReactTestInstance): TestRenderer.Reac
 }
 
 beforeEach(() => {
+  mockDeleteMutation = {
+    mutateAsync: jest.fn().mockResolvedValue(undefined),
+    isPending: false,
+    projectDelete: jest.fn(),
+    refreshDate: jest.fn(),
+  };
   mockLogs = { data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   mockSummary = { data: { totals: [] }, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
-  mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", today: "2026-07-14" } };
+  mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
+});
+
+test("delete requires contextual destructive confirmation and submits the reviewed entry", async () => {
+  mockLogs = { ...mockLogs, data: [{ ...log("breakfast"), food_name_snapshot: "Oatmeal", amount_quantity: "2", notes: "with berries" }] };
+  const rendered = await render();
+  const deleteButton = rendered.renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Delete Oatmeal permanently",
+  );
+  expect(deleteButton).toBeDefined();
+  await act(async () => deleteButton?.props.onPress());
+  let text = screenText(rendered.renderer.root);
+  expect(text).toContain("Oatmeal");
+  expect(text).toContain("Jul 14, 2026");
+  expect(text).toContain("permanently");
+  expect(text).toContain("nutrition snapshots");
+  expect(text).toContain("cannot be undone");
+  expect(text).toContain("Breakfast");
+  const confirm = rendered.renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Permanently delete Oatmeal",
+  );
+  expect(confirm).toBeDefined();
+  await act(async () => confirm?.props.onPress());
+  expect(mockDeleteMutation.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+    logId: "log-breakfast",
+    input: expect.objectContaining({
+      expected_updated_at: "2026-07-14T08:05:00Z",
+      calendar_revision: 4,
+      client_request_id: expect.any(String),
+    }),
+  }));
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("cancelling delete confirmation performs no mutation", async () => {
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  const rendered = await render();
+  const deleteButton = rendered.renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Delete Food permanently",
+  );
+  await act(async () => deleteButton?.props.onPress());
+  const cancel = rendered.renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Cancel delete",
+  );
+  await act(async () => cancel?.props.onPress());
+  expect(mockDeleteMutation.mutateAsync).not.toHaveBeenCalled();
+  expect(screenText(rendered.renderer.root)).not.toContain("nutrition snapshots");
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("an uncertain delete reconciles before projecting confirmed removal", async () => {
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  mockDeleteMutation.mutateAsync.mockRejectedValueOnce(new Error("connection lost"));
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      operation: "delete",
+      client_request_id: "reconciled-by-server",
+      status: "confirmed_success",
+      log_id: "log-breakfast",
+      result: null,
+    }),
+  });
+  const rendered = await render();
+  const deleteButton = rendered.renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Delete Food permanently",
+  );
+  await act(async () => deleteButton?.props.onPress());
+  const confirm = rendered.renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Permanently delete Food",
+  );
+  await act(async () => confirm?.props.onPress());
+  expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/logs/mutations/"),
+    expect.any(Object),
+  );
+  expect(mockDeleteMutation.projectDelete).toHaveBeenCalledWith("log-breakfast", "2026-07-14");
+  await act(async () => rendered.renderer.unmount());
 });
 
 test("empty supported days render all named meal Add Food actions with context", async () => {
@@ -108,7 +198,7 @@ test("provisional and future dates expose no Add Food actions", async () => {
   expect(addFoodButtons(provisional.renderer.root)).toHaveLength(0);
   await act(async () => provisional.renderer.unmount());
 
-  mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", today: "2026-07-14" } };
+  mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
   const future = await render("2026-07-15");
   expect(addFoodButtons(future.renderer.root)).toHaveLength(0);
   await act(async () => future.renderer.unmount());

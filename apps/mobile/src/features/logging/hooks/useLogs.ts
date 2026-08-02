@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { createLog, deleteLog, getDailySummary, getLogEditContext, listLogs, listRecentEntries, updateLog } from "../api/logApi";
-import type { DailyLog, DailyLogUpdateInput, DailySummary, RecentEntry } from "../api/types";
+import type { DailyLog, DailyLogDeleteInput, DailyLogUpdateInput, DailySummary, RecentEntry } from "../api/types";
 
 export type DailyLogReadState =
   | { kind: "initial-loading"; data: null; retry: () => void }
@@ -178,6 +178,17 @@ export function useLogMutations(date: string) {
     invalidateFoodRecents(queryClient);
     invalidateRecentEntries(queryClient);
   };
+  const projectDelete = (logId: string, sourceDate = date) => {
+    projectConfirmedDelete(queryClient, sourceDate, logId);
+    invalidateLogDateCaches(queryClient, sourceDate);
+    invalidateFoodRecents(queryClient);
+    invalidateRecentEntries(queryClient);
+  };
+  const refreshDate = (sourceDate: string) => {
+    void queryClient.refetchQueries({ queryKey: ["logs", sourceDate] });
+    void queryClient.refetchQueries({ queryKey: ["daily-summary", sourceDate] });
+    void queryClient.refetchQueries({ queryKey: ["target-comparison", sourceDate] });
+  };
   return {
     createLog: useMutation({
       mutationFn: createLog,
@@ -196,7 +207,7 @@ export function useLogMutations(date: string) {
     }),
     deleteLog: useMutation({
       mutationFn: (
-        variables: string | { logId: string; input?: Parameters<typeof deleteLog>[1] },
+        variables: string | { logId: string; input?: DailyLogDeleteInput },
       ) => {
         const { logId, input } = typeof variables === "string"
           ? { logId: variables, input: undefined }
@@ -204,13 +215,12 @@ export function useLogMutations(date: string) {
         return deleteLog(logId, input);
       },
       onSuccess: (_result, variables) => {
-        projectConfirmedDelete(
-          queryClient,
-          date,
+        projectDelete(
           typeof variables === "string" ? variables : variables.logId,
         );
-        invalidateUse();
       },
     }),
+    projectDelete,
+    refreshDate,
   };
 }

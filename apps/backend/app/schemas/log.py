@@ -131,6 +131,10 @@ class DailyLogDeleteRequest(BaseModel):
 
     client_request_id: UUID | None = None
     expected_updated_at: datetime | None = None
+    # The originating Daily Log read's calendar generation. Deletion remains
+    # valid for legacy future entries, so this checks calendar authority and
+    # revision without applying the normal create/update future-date fence.
+    calendar_revision: int | None = Field(default=None, ge=0)
 
 
 class DailyLogMutationStatusResponse(BaseModel):

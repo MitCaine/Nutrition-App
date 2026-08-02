@@ -273,6 +273,21 @@ class CalendarService:
                 "This entry date is now in the future under the authoritative time zone.",
             )
 
+    def validate_delete_context(self, user_id: UUID, expected_revision: int) -> None:
+        """Validate delete calendar authority without blocking legacy future cleanup."""
+
+        locked_user_id = self.db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if locked_user_id is None:
+            raise LookupError("User not found")
+        profile = self.db.get(UserProfile, user_id)
+        if profile is None or not profile.authoritative_time_zone:
+            raise AuthoritativeTimeZoneRequiredError()
+        if profile.calendar_revision != expected_revision:
+            raise CalendarDomainError(
+                "calendar_context_changed",
+                "The authoritative calendar changed. Review this entry again before deleting.",
+            )
+
     def _preview_from_values(
         self,
         user_id: UUID,

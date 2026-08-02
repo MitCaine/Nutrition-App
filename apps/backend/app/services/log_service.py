@@ -1539,8 +1539,9 @@ class LogService:
         payload: DailyLogDeleteRequest | None = None,
     ) -> None | LogMutationReplay:
         """Delete one DailyLog exactly once, subject to its read precondition."""
-        require_authoritative_time_zone(self.db, user_id)
         intent = payload or DailyLogDeleteRequest()
+        if intent.calendar_revision is None:
+            require_authoritative_time_zone(self.db, user_id)
         fingerprint = (
             _mutation_fingerprint("log.delete", log_id, intent)
             if intent.client_request_id is not None
@@ -1589,6 +1590,11 @@ class LogService:
                 and not _same_timestamp(log.updated_at, intent.expected_updated_at)
             ):
                 raise StaleLogMutationError(StaleLogMutationError.message)
+            if intent.calendar_revision is not None:
+                CalendarService(self.db).validate_delete_context(
+                    user_id,
+                    intent.calendar_revision,
+                )
             if intent.client_request_id is not None:
                 try:
                     receipt = self.mutation_receipts.reserve(

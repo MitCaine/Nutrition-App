@@ -676,3 +676,165 @@ Historical entries remain immutable discovery records.
 
 ---
 
+# E1-13 — Editing Current Authority While Preserving Historical Integrity
+
+## Editing replaces authority, not history
+
+A Daily Log edit does not replay historical nutrition.
+
+Instead:
+
+- preserve the Daily Log identity;
+- resolve the current authoritative source;
+- generate new nutrition snapshots;
+- replace the previous snapshot set atomically.
+
+Historical nutrition survives through immutable snapshot history, not by retaining obsolete authority on the edited Log.
+
+## Provenance must always match generated nutrition
+
+Whenever nutrition is regenerated, every authority reference stored on the Log must describe the authority that produced those snapshots.
+
+Never allow:
+
+- current snapshots;
+- historical Recipe revision IDs;
+- historical amount-definition IDs;
+
+to coexist on the same edited entry.
+
+Snapshot provenance and snapshot content are one atomic unit.
+
+## Metadata edits and nutrition edits have different authority requirements
+
+Metadata-only edits (meal, note, valid date) should not require an available nutrition source.
+
+Nutrition-affecting edits always require:
+
+- current source availability;
+- current authority validation;
+- current amount validation.
+
+Separating these paths improves resilience without weakening correctness.
+
+## Shared confirmation should unify Add, Repeat, and Edit
+
+Once a confirmation workflow exists, every mutation surface should reuse it.
+
+The confirmation should own:
+
+- authority validation;
+- replay safety;
+- calendar validation;
+- source review;
+- amount selection.
+
+Business workflows should differ only in how they initialize that confirmation state.
+
+## Update provenance and snapshots atomically
+
+Whenever replacing nutrition snapshots:
+
+- replace snapshots;
+- update provenance references;
+- update compatible serving references;
+- complete replay receipt;
+
+inside one transaction.
+
+Rollback must restore the previous state completely.
+
+## Preserve identity while replacing generations
+
+Editing creates a new authoritative nutrition generation without creating a new Daily Log.
+
+Stable identity and changing authority are compatible provided that:
+
+- snapshot generations are replaced atomically;
+- provenance stays synchronized;
+- immutable publication rows themselves are never modified.
+
+---
+
+# E1-14 — Permanent Deletion and Authoritative Reconciliation
+
+## Destructive confirmation should explain domain consequences
+
+A deletion prompt should identify what will be removed and what will remain.
+
+For Daily Log deletion, distinguish:
+
+- the selected Daily Log entry;
+- its stored nutrition snapshots;
+- reusable Foods;
+- Recipes and immutable publication revisions;
+- USDA imports and catalog data.
+
+Generic confirmation language is insufficient when users need to understand the
+scope of permanent removal.
+
+## Never infer an uncertain deletion from local presentation
+
+A transport failure does not prove whether deletion committed.
+
+During uncertainty:
+
+- retain the exact client request identity;
+- do not optimistically remove the entry;
+- reconcile against authoritative mutation status;
+- project removal only after confirmed success;
+- offer the same reviewed retry only after confirmed non-commit.
+
+## Confirmed deletion remains authoritative across read failures
+
+After the server confirms deletion:
+
+- remove the entry from the visible date immediately;
+- refresh entries, totals, and target progress independently;
+- retain the deletion if any refresh fails;
+- mark surrounding data stale rather than restoring the entry.
+
+A failed read does not reverse a confirmed mutation.
+
+## Preserve replay and stale preconditions under the row lock
+
+Deletion must serialize with edits and competing deletes.
+
+Under the owned Daily Log row lock:
+
+- recheck an identical replay receipt;
+- validate `expected_updated_at`;
+- reserve the receipt;
+- delete snapshots and the entry atomically;
+- complete the receipt in the same transaction.
+
+Competing stale operations must return the accepted stable conflict rather than
+a generic not-found result.
+
+## Keep Log deletion separate from source-resource lifecycle
+
+Deleting a historical Log must not delete or mutate:
+
+- its reusable Food;
+- its Recipe;
+- immutable Recipe publications;
+- OCR provenance;
+- unrelated entries.
+
+The Log and its entry-local snapshots are one lifecycle boundary. Source
+resources have their own independent lifecycle.
+
+## Do not introduce recovery semantics accidentally
+
+Permanent deletion in this Epic has:
+
+- no Undo;
+- no recycle bin;
+- no soft-delete interval;
+- no tombstone restoration.
+
+Durable recovery of an uncertain submitted intent is a separate concern from
+recovering an authoritatively deleted record.
+
+---
+

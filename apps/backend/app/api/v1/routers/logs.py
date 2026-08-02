@@ -259,6 +259,11 @@ def delete_log(
             status_code=status.HTTP_409_CONFLICT,
             detail=exc.detail(),
         ) from exc
+    except CalendarDomainError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
     except (LogMutationPayloadConflictError, StaleLogMutationError, LogMutationResultUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

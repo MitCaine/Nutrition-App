@@ -1,4 +1,4 @@
-import { getDailySummary, getLogEditContext, updateLog } from "../src/features/logging/api/logApi";
+import { deleteLog, getDailySummary, getLogEditContext, updateLog } from "../src/features/logging/api/logApi";
 
 test("daily summary API mapping converts snake case totals to mobile shape", async () => {
   global.fetch = jest.fn().mockResolvedValue({
@@ -61,6 +61,32 @@ test("log update API sends PATCH payload", async () => {
         logged_date: "2026-07-08",
         amount_quantity: "2",
         amount_unit: "g",
+      }),
+    }),
+  );
+});
+
+test("log delete API sends the replay and calendar context", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 204,
+    text: async () => "",
+  });
+
+  await deleteLog("log-1", {
+    client_request_id: "request-1",
+    expected_updated_at: "2026-07-08T09:00:00Z",
+    calendar_revision: 4,
+  });
+
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://localhost:8000/api/v1/logs/log-1",
+    expect.objectContaining({
+      method: "DELETE",
+      body: JSON.stringify({
+        client_request_id: "request-1",
+        expected_updated_at: "2026-07-08T09:00:00Z",
+        calendar_revision: 4,
       }),
     }),
   );

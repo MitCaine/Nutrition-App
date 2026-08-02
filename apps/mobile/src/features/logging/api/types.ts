@@ -26,6 +26,7 @@ export type DailyLogUpdateInput = Omit<DailyLogInput, "food_item_id">;
 export type DailyLogDeleteInput = {
   client_request_id?: string;
   expected_updated_at?: string;
+  calendar_revision?: number;
 };
 
 export type DailyLog = {

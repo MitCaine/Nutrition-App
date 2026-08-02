@@ -134,6 +134,38 @@ def test_delete_replay_is_a_noop_and_status_is_authoritative(
     assert db_session.scalar(select(func.count()).select_from(DailyLog)) == 0
 
 
+def test_delete_accepts_current_calendar_revision_and_rejects_stale_revision(
+    client: TestClient,
+) -> None:
+    _food, log = _create_log(client)
+    calendar = client.get("/api/v1/settings/calendar")
+    assert calendar.status_code == 200
+    revision = calendar.json()["calendar_revision"]
+
+    stale = client.request(
+        "DELETE",
+        f"/api/v1/logs/{log['id']}",
+        json={
+            "client_request_id": str(uuid4()),
+            "calendar_revision": revision + 1,
+            "expected_updated_at": log["updated_at"],
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "calendar_context_changed"
+
+    current = client.request(
+        "DELETE",
+        f"/api/v1/logs/{log['id']}",
+        json={
+            "client_request_id": str(uuid4()),
+            "calendar_revision": revision,
+            "expected_updated_at": log["updated_at"],
+        },
+    )
+    assert current.status_code == 204
+
+
 def test_create_status_reconciles_the_authoritative_log(client: TestClient) -> None:
     food = create_food(client, "Create reconciliation food")
     request_id = str(uuid4())

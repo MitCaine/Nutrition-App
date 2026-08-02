@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   formatAggregatedTotal,
@@ -7,7 +7,9 @@ import {
   formatNutrientLabel,
 } from "../../../shared/nutrition/display";
 import { useFoods } from "../../foods/hooks/useFoods";
-import type { DailyLog } from "../api/types";
+import { getLogMutationStatus } from "../api/logApi";
+import type { DailyLog, DailyLogDeleteInput } from "../api/types";
+import { ApiError } from "../../../shared/api/client";
 import { dailyLogReadState, dailySummaryReadState, useDailyLogs, useDailySummary, useLogMutations } from "../hooks/useLogs";
 import {
   addCalendarDays,
@@ -31,6 +33,18 @@ import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../
 import { deviceTimeZone } from "../../calendar/api/calendarApi";
 import { useCalendarState } from "../../calendar/hooks/useCalendar";
 import { DatePickerModal } from "./DatePickerModal";
+import { createClientRequestId } from "../utils/clientRequestId";
+import { deleteErrorMessage, isDeleteReconciliationRequired } from "../utils/logDeleteErrors";
+import { logEditErrorCode } from "../utils/logEditErrors";
+
+type DeletePhase = "confirming" | "submitting" | "uncertain" | "retryable";
+
+type PendingDelete = {
+  log: DailyLog;
+  input: DailyLogDeleteInput | null;
+  phase: DeletePhase;
+  message: string | null;
+};
 
 type Props = {
   date: string;
@@ -54,6 +68,9 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
   const [draftDate, setDraftDate] = useState(parseLocalDateString(date) ?? new Date());
   const [clock, setClock] = useState(() => new Date());
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const deleteSubmittingRef = useRef(false);
   const logsQuery = useDailyLogs(date);
   const logs = dailyLogReadState(logsQuery);
   const summaryQuery = useDailySummary(date);
@@ -76,6 +93,107 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
     return () => clearInterval(timer);
   }, []);
   useEffect(() => { restoredRef.current = false; }, [date, initialScrollOffset]);
+
+  const beginDelete = (log: DailyLog) => {
+    setDeleteNotice(null);
+    setPendingDelete({ log, input: null, phase: "confirming", message: null });
+  };
+
+  const refreshAfterDeleteConflict = (logDate: string) => {
+    mutations.refreshDate?.(logDate);
+  };
+
+  const reconcileDelete = async (pending: PendingDelete): Promise<void> => {
+    if (!pending.input?.client_request_id) return;
+    try {
+      const status = await getLogMutationStatus(pending.input.client_request_id, "delete");
+      if (status.status === "confirmed_success") {
+        mutations.projectDelete?.(pending.log.id, pending.log.logged_date);
+        setPendingDelete(null);
+        setDeleteNotice(`Deleted ${loggedFoodDisplayName(pending.log, foodNames)} permanently.`);
+        return;
+      }
+      if (status.status === "confirmed_non_commit") {
+        setPendingDelete({
+          ...pending,
+          phase: "retryable",
+          message: "The delete was not committed. You can retry the same reviewed delete.",
+        });
+        return;
+      }
+      if (status.status === "conflict") {
+        refreshAfterDeleteConflict(pending.log.logged_date);
+        setPendingDelete(null);
+        setDeleteNotice("This entry changed or was removed elsewhere. Review the refreshed Daily Log before trying again.");
+        return;
+      }
+      setPendingDelete({
+        ...pending,
+        phase: "uncertain",
+        message: "The delete outcome is still unresolved. Check its status before retrying.",
+      });
+    } catch {
+      setPendingDelete({
+        ...pending,
+        phase: "uncertain",
+        message: "The delete outcome could not be checked. Check status again before retrying.",
+      });
+    }
+  };
+
+  const submitDelete = async () => {
+    if (!pendingDelete || deleteSubmittingRef.current) return;
+    if (pendingDelete.phase === "uncertain") {
+      deleteSubmittingRef.current = true;
+      try {
+        await reconcileDelete(pendingDelete);
+      } finally {
+        deleteSubmittingRef.current = false;
+      }
+      return;
+    }
+    const input = pendingDelete.input ?? {
+      client_request_id: createClientRequestId(),
+      ...(pendingDelete.log.updated_at ? { expected_updated_at: pendingDelete.log.updated_at } : {}),
+      ...(calendar.data?.calendar_revision !== undefined
+        ? { calendar_revision: calendar.data.calendar_revision }
+        : {}),
+    };
+    const nextPending = { ...pendingDelete, input, phase: "submitting" as const, message: null };
+    setPendingDelete(nextPending);
+    deleteSubmittingRef.current = true;
+    try {
+      await mutations.deleteLog.mutateAsync({ logId: pendingDelete.log.id, input });
+      setPendingDelete(null);
+      setDeleteNotice(`Deleted ${loggedFoodDisplayName(pendingDelete.log, foodNames)} permanently.`);
+    } catch (error) {
+      const errorCode = logEditErrorCode(error);
+      if (isDeleteReconciliationRequired(error)) {
+        const uncertain = { ...nextPending, phase: "uncertain" as const, message: "The delete outcome is being checked…" };
+        setPendingDelete(uncertain);
+        await reconcileDelete(uncertain);
+      } else if (
+        errorCode === "stale_log_entry" ||
+        errorCode === "calendar_context_changed" ||
+        errorCode === "log_mutation_payload_conflict" ||
+        (error instanceof ApiError && error.status === 404)
+      ) {
+        refreshAfterDeleteConflict(pendingDelete.log.logged_date);
+        setPendingDelete(null);
+        setDeleteNotice(deleteErrorMessage(error));
+      } else {
+        setPendingDelete({ ...nextPending, phase: "retryable", message: deleteErrorMessage(error) });
+      }
+    } finally {
+      deleteSubmittingRef.current = false;
+    }
+  };
+
+  const cancelDelete = () => {
+    if (pendingDelete?.phase === "confirming" || pendingDelete?.phase === "retryable") {
+      setPendingDelete(null);
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -138,6 +256,17 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
           setPickerOpen(false);
         }}
       />
+      {deleteNotice ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{deleteNotice}</Text> : null}
+      {pendingDelete ? (
+        <DeleteConfirmationModal
+          pending={pendingDelete}
+          name={loggedFoodDisplayName(pendingDelete.log, foodNames)}
+          onCancel={cancelDelete}
+          onConfirm={submitDelete}
+          onCheckStatus={submitDelete}
+          styles={styles}
+        />
+      ) : null}
       <TargetProgressSection date={date} entriesKnown={entriesKnown} onOpenTargets={onOpenNutritionTargets} />
       <Text style={styles.sectionTitle}>Totals</Text>
       {totals.kind === "initial-loading" ? <Text style={styles.loadingText}>Loading totals…</Text> : null}
@@ -212,7 +341,7 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
                 onToggleNote={() => setExpandedNotes((current) => ({ ...current, [log.id]: !current[log.id] }))}
                 onOpenFood={onOpenFood}
                 onEditLog={onEditLog}
-                onDelete={() => mutations.deleteLog.mutate(log.id)}
+                onDelete={() => beginDelete(log)}
               />
             ))}
           </View>
@@ -220,6 +349,72 @@ export function DailyLogScreen({ date, setDate, onAddFood, onGeneralAddFood, onO
       }) : null}
       </ScrollView>
     </View>
+  );
+}
+
+function DeleteConfirmationModal({
+  pending,
+  name,
+  onCancel,
+  onConfirm,
+  onCheckStatus,
+  styles,
+}: {
+  pending: PendingDelete;
+  name: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onCheckStatus: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const dateLabel = formatReadableDate(pending.log.logged_date);
+  const mealLabel = pending.log.meal_type
+    ? pending.log.meal_type.charAt(0).toUpperCase() + pending.log.meal_type.slice(1)
+    : "Unassigned";
+  const busy = pending.phase === "submitting";
+  const uncertain = pending.phase === "uncertain";
+  const retryable = pending.phase === "retryable";
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard} accessibilityViewIsModal>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Permanently delete Daily Log entry?</Text>
+          <Text style={styles.text}>{name}</Text>
+          <Text style={styles.text}>{formatDisplayNumber(pending.log.amount_quantity)} {pending.log.amount_unit} · {mealLabel}</Text>
+          <Text style={styles.text}>Date: {dateLabel}</Text>
+          {pending.log.notes ? <Text style={styles.text}>Note: present</Text> : null}
+          <Text style={styles.calendarNotice}>Only this Daily Log entry and its stored nutrition snapshots will be removed.</Text>
+          <Text style={styles.calendarNotice}>Reusable Foods, Recipes, and catalog data will remain unchanged.</Text>
+          <Text style={styles.calendarNotice}>This action cannot be undone. Totals and target progress for {dateLabel} will change.</Text>
+          {pending.message ? <Text accessibilityRole="alert" style={styles.calendarNotice}>{pending.message}</Text> : null}
+          {busy ? (
+            <View style={styles.errorRow}><ActivityIndicator /><Text style={styles.calendarNotice}>Deleting…</Text></View>
+          ) : null}
+          <View style={styles.modalActions}>
+            {!busy && !uncertain ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Cancel delete" onPress={onCancel} style={styles.secondaryButton}>
+                <Text style={styles.text}>Cancel</Text>
+              </Pressable>
+            ) : null}
+            {uncertain ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="Check delete status" onPress={onCheckStatus} style={styles.secondaryButton}>
+                <Text style={styles.text}>Check status</Text>
+              </Pressable>
+            ) : null}
+            {!busy && !uncertain ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={`Permanently delete ${name}`} onPress={onConfirm} style={styles.primaryButton}>
+                <Text style={styles.primaryText}>{retryable ? "Retry permanent delete" : "Delete permanently"}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -280,7 +475,7 @@ function DailyLogEntryCard({
       ) : null}
       {mutationsEnabled ? (
         <View style={styles.entryActions}>
-          <Pressable onPress={onDelete}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${loggedFoodDisplayName(log, foodNames)} permanently`} onPress={onDelete}>
             <Text style={styles.deleteText}>Delete</Text>
           </Pressable>
           {entryState.canEdit ? (
