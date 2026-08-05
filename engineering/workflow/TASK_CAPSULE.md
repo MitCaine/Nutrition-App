@@ -67,6 +67,18 @@ Execution preflight requires a clean worktree, the expected branch, `READY`, no 
 an existing base commit, and exactly one committed path after the base: that capsule. This avoids
 the self-reference problem of requiring a capsule to contain the hash of its own commit.
 
+
+Render the qualified executor handoff:
+
+```bash
+python3 scripts/render-task-handoff.py \
+  engineering/capsules/active/TASK-ID.md
+```
+
+The renderer repeats strict execution validation, embeds the exact capsule and execution protocol,
+records repository/routing/scope metadata in JSON, and writes all output outside the repository so
+preflight cleanliness is preserved.
+
 ## Rules
 
 - Acceptance describes observable outcomes, not implementation steps. At `READY` or later, every

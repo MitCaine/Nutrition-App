@@ -51,3 +51,18 @@ required.
 
 **Required for `TRIAL`:** create and execute one real `READY` capsule through validation,
 implementation, review-bundle generation, independent review, and completion-state validation.
+
+## 2026-08-04 — Validated execution-handoff rendering
+
+**Status:** `EXPERIMENTAL`
+
+Added a fail-closed renderer that consumes one committed `READY` capsule, repeats strict execution
+preflight, and writes a durable Markdown/JSON handoff bundle outside the repository. The handoff
+records exact repository identity, capsule checksum and revision, controller/executor/reviewer,
+delegation, authority, scope, specialized qualification, execution protocol, and required return
+evidence. Focused tests cover valid generation, exact capsule inclusion, dirty-worktree rejection,
+in-repository output rejection, and stable content under a fixed handoff timestamp.
+
+**Required for `TRIAL`:** commit this tooling, create one real READY capsule as the sole overlay above
+its implementation baseline, generate its handoff, execute the task from that artifact, and compare
+the result against the capsule and final review bundle.

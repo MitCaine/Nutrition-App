@@ -20,6 +20,20 @@ Both commands support `--json` and `--output`. A repository with no task capsule
 reports zero validated capsules. Execution preflight requires one clean, committed `READY` capsule
 as the only overlay above its exact implementation baseline.
 
+
+## Execution handoff
+
+After strict preflight passes, render the durable executor bundle:
+
+```bash
+python3 scripts/render-task-handoff.py \
+  engineering/capsules/active/TASK-ID.md
+```
+
+The renderer writes `handoff.md`, `handoff.json`, the exact capsule, validation evidence, and
+checksums outside the repository. `handoff.md` is the executor prompt. Generation fails closed when
+the capsule, branch, base commit, worktree, or committed overlay is invalid.
+
 Use the stable task ID as the filename, for example
 `engineering/capsules/active/E1-17-stage-3.md`; front matter `id` must match the filename stem.
 Never reuse an ID.

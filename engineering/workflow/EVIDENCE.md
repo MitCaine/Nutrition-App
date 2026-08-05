@@ -15,6 +15,13 @@ Warnings are surfaced. Evidence from a different source tree is invalid.
 containing repository identity, capsule metadata, findings, execution overlay paths, and pass/fail
 status. Execution begins only after strict `--execution` preflight passes.
 
+## Execution handoff evidence
+
+`render-task-handoff.py` repeats strict READY preflight and creates a bundle outside the repository
+containing the exact capsule, a human executor prompt, a machine-readable routing/scope envelope,
+validation JSON, and checksums. The generated handoff records the implementation baseline and the
+current capsule-only overlay; it cannot replace higher repository authority.
+
 ## Implementation return
 
 Until result artifacts are automated, the executor returns a structured summary containing:

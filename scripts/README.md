@@ -15,6 +15,7 @@ and does not depend on the caller's shell configuration.
 | `./scripts/project-audit.sh` | Exposes the lower-level session, boundary, deterministic inventory, privilege-manifest, and pre-commit commands. |
 | `python3 scripts/validate-docs.py` | Validates repository Markdown links, anchors, navigation reachability, executable references, and required current-state contracts. |
 | `python3 scripts/validate-task-capsules.py --all` | Validates task-capsule schema, authority paths, state transitions, scope metadata, completion records, and execution prerequisites. |
+| `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Runs strict READY preflight and writes a deterministic executor handoff bundle outside the repository. |
 
 The [Repository Session Contract](../docs/operations/session-contract.md) defines the meaning and
 required use of these commands. Use the higher-level session scripts unless a guide explicitly

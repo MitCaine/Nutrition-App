@@ -8,7 +8,8 @@
   ],
   "focused_audit_tests": [
     "apps/backend/tests/test_project_audit.py",
-    "apps/backend/tests/test_task_capsule_validator.py"
+    "apps/backend/tests/test_task_capsule_validator.py",
+    "apps/backend/tests/test_task_handoff_renderer.py"
   ],
   "forbidden_change_prefixes": [],
   "forbidden_placeholders": [

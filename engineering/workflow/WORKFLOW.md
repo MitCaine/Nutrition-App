@@ -31,11 +31,11 @@ work may not bypass them.
    retains shared contracts, migrations, transaction semantics, locking, integration, and final
    validation.
 4. **Qualify:** copy the [template](../capsules/TEMPLATE.md), pass the `READY` checklist in
-   [States](STATES.md), commit only the qualified capsule overlay, and run
-   `python3 scripts/validate-task-capsules.py --execution <capsule>`.
-5. **Execute:** begin only after preflight verifies branch, exact base commit, clean worktree,
-   blocking state, authority, delegation, and scope. Stop at an escalation condition rather than
-   improvising.
+   [States](STATES.md), commit only the qualified capsule overlay, run strict execution preflight,
+   and generate the repository-owned handoff with `scripts/render-task-handoff.py`.
+5. **Execute:** consume the generated handoff only after it verifies branch, exact base commit, clean
+   worktree, blocking state, authority, delegation, and scope. Stop at an escalation condition rather
+   than improvising.
 6. **Verify:** run focused checks, the affected baseline, and every specialized suite selected by
    risk. An ordinary baseline never implies PostgreSQL, MinIO, Docker, performance, native, or
    manual accessibility qualification.
