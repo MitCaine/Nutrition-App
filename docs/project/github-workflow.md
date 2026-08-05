@@ -108,6 +108,19 @@ During implementation:
 
 Closing a child issue updates the Epic checklist and progress summary on the next tooling rerun.
 
+
+### Task capsules
+
+A repository [task capsule](../../engineering/capsules/README.md) may bind one approved child
+issue to an exact base commit, execution boundary, verification plan, return evidence, and
+escalation conditions. It is an execution contract, not a new product or architecture
+authority. It may narrow an issue into a reviewable stage but may not reinterpret acceptance,
+bypass dependencies, or expand scope without updating the owning artifact or issue first.
+
+During Workflow v3's experimental period, capsule use is explicit and evidence-backed rather
+than mandatory. The GitHub Issue remains the delivery record; the capsule records one bounded
+repository execution attempt.
+
 ### GitHub Milestones
 
 Backlog milestone headings become GitHub Milestones with identical titles. Every child issue is

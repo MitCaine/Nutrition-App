@@ -32,12 +32,27 @@ development setup is documented in the
 [Development Guide](../docs/project/development-guide.md#configuration-and-startup). Target
 activation and other high-risk migration work must use the applicable operations runbook.
 
-## Qualification and review packaging
+## Review workflow
+
+| Entry point | Responsibility |
+| --- | --- |
+| `Run Nutrition Review.command` | macOS Finder entry point. Runs the standard review workflow, creates the uploadable review bundle, reveals the finished ZIP in Finder, and leaves the Terminal window open until dismissed. |
+| `./scripts/run-review.sh` | Authoritative review orchestrator. Runs the standard verification profile, captures complete and failure-only logs, validates repository state, creates the project snapshot, and assembles the final review bundle. |
+| `./scripts/zip-project.sh` | Lower-level project packager used by `run-review.sh`. Creates a validated, secret-excluding repository snapshot and review manifest. Normally invoked indirectly through the review workflow rather than by hand. |
+
+The review workflow records repository state before and after verification, detects repository
+drift, packages only the verified source tree, and produces both human-readable and machine-readable
+evidence suitable for implementation review.
+
+## Qualification
 
 | Entry point | Responsibility |
 | --- | --- |
 | `./scripts/qualify-phase5c4-infrastructure.sh` | Runs destructive, disposable Phase 5C4 infrastructure qualification after an exact confirmation value is supplied. |
-| `./scripts/zip-project.sh` | Builds and verifies a secret-excluding review archive with a repository manifest. |
+
+The infrastructure qualifier is intentionally specialized and fail-closed. Follow the
+[Testing Guide](../docs/operations/testing.md#phase-5c48-bounded-recovery-qualification) rather than
+discovering its environment contract by trial and error.
 
 ## GitHub planning automation
 
@@ -47,10 +62,6 @@ activation and other high-risk migration work must use the applicable operations
 
 See the [GitHub backlog issue creator guide](github/README.md) for the required Markdown format,
 authentication, dry-run behavior, state-file handling, and rerun guarantees.
-
-The infrastructure qualifier is intentionally specialized and fail-closed. Follow the
-[Testing Guide](../docs/operations/testing.md#phase-5c48-bounded-recovery-qualification) rather than
-discovering its environment contract by trial and error.
 
 ## Placement rules
 

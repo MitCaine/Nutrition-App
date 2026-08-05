@@ -23,6 +23,21 @@
 7. **Merge and release deliberately.** Merge only reviewed, green work. Release from a clean,
    qualified `main` commit using the conventions below.
 
+
+## Repository-owned task workflow
+
+The experimental [Workflow Foundation](workflow/README.md) defines repository-owned
+[task states](workflow/STATES.md), the versioned
+[capsule contract](workflow/TASK_CAPSULE.md), [routing](workflow/ROUTING.md),
+[evidence](workflow/EVIDENCE.md), and the
+[failure taxonomy](workflow/FAILURE_TAXONOMY.md). Active and completed execution contracts live
+in the [Task Capsule Index](capsules/README.md).
+
+Capsules coordinate bounded execution but do not replace Roadmaps, Grills, PRDs, Architecture
+Reviews, Implementation Backlogs, GitHub Issues, current architecture, invariants, or operations
+guidance. Until the workflow advances beyond `EXPERIMENTAL`, use capsules on explicit trials
+and record results in the [Workflow Changelog](workflow/CHANGELOG.md).
+
 ## Git conventions
 
 Use short-lived, kebab-case branches with one of these prefixes:
@@ -87,4 +102,3 @@ documented workflow when necessary, and run affected validation.
 Use the [Script Index](../scripts/README.md) to choose an entry point. Stable operational scripts
 must not be renamed or repurposed casually; add a new narrowly named entry point when a genuinely
 different responsibility appears.
-

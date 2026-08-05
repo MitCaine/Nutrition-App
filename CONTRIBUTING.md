@@ -10,6 +10,12 @@ Every implementation session must follow the single
 [Repository Session Contract](docs/operations/session-contract.md#repository-session-contract). Run its
 start command before editing and its end command before claiming completion.
 
+
+The experimental
+[Repository-owned Task Workflow](engineering/workflow/README.md) provides versioned capsules
+for bounded execution. A capsule coordinates an approved task but never overrides product,
+architecture, invariant, operations, backlog, or GitHub Issue authority.
+
 Before changing behavior, identify the invariant that owns it in the
 [Architecture Decision Index](docs/architecture/decisions.md) or the relevant domain guide. Keep
 changes bounded, run focused tests first, and then run the affected baseline in the
