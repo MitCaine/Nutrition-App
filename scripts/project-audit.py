@@ -825,6 +825,32 @@ def git_diff_check() -> int:
     return 0
 
 
+def validate_task_capsules() -> int:
+    validator = ROOT / "scripts" / "validate-task-capsules.py"
+    if not validator.is_file():
+        print(
+            "ERROR TASK_CAPSULE_VALIDATOR_MISSING: "
+            "scripts/validate-task-capsules.py"
+        )
+        return 1
+    result = run(
+        [sys.executable, str(validator), "--all"],
+        cwd=ROOT,
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if result.returncode:
+        print(
+            "ERROR TASK_CAPSULE_VALIDATION: "
+            "repository task capsules are invalid"
+        )
+        return 1
+    print("PASS: repository task capsules are mechanically valid")
+    return 0
+
+
 def focused_audit_tests(config: dict[str, Any] | None = None) -> int:
     config = load_config() if config is None else config
     configured, findings = _configured_relative_paths(
@@ -905,6 +931,7 @@ def pre_commit() -> int:
                 lambda: verify_control_inventory(config),
             ),
             ("Git whitespace check", git_diff_check),
+            ("Task capsule validation", validate_task_capsules),
             ("Focused audit-tooling tests", lambda: focused_audit_tests(config)),
             ("Expensive suite status", lambda: report_opt_in_suites(config)),
         ]

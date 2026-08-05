@@ -19,8 +19,8 @@ flowchart TD
 
 The process is proportional. A mechanical documentation task may mark product grilling or
 architecture review `Not applicable — <reason>`. New user behavior, persistence, migrations,
-concurrency, public contracts, trust boundaries, security, destructive operations, or
-irreversible work may not bypass them.
+concurrency, public contracts, trust boundaries, security, destructive operations, or irreversible
+work may not bypass them.
 
 ## Gates
 
@@ -30,41 +30,43 @@ irreversible work may not bypass them.
 3. **Decompose:** keep one coherent, independently reviewable outcome per capsule. The controller
    retains shared contracts, migrations, transaction semantics, locking, integration, and final
    validation.
-4. **Qualify:** copy the [template](../capsules/TEMPLATE.md) and pass the `READY` checklist in
-   [States](STATES.md).
-5. **Execute:** verify identity, branch, base commit, dependencies, and owned surface before
-   editing. Stop at an escalation condition rather than improvising.
-6. **Verify:** run focused checks, the affected baseline, and every specialized suite selected
-   by risk. An ordinary baseline never implies PostgreSQL, MinIO, Docker, performance, native,
-   or manual accessibility qualification.
+4. **Qualify:** copy the [template](../capsules/TEMPLATE.md), pass the `READY` checklist in
+   [States](STATES.md), commit only the qualified capsule overlay, and run
+   `python3 scripts/validate-task-capsules.py --execution <capsule>`.
+5. **Execute:** begin only after preflight verifies branch, exact base commit, clean worktree,
+   blocking state, authority, delegation, and scope. Stop at an escalation condition rather than
+   improvising.
+6. **Verify:** run focused checks, the affected baseline, and every specialized suite selected by
+   risk. An ordinary baseline never implies PostgreSQL, MinIO, Docker, performance, native, or
+   manual accessibility qualification.
 7. **Review:** compare the capsule, authority, changed code, implementation return, and review
    bundle. Disposition is `approved`, `bounded correction`, or `stop and replan`.
-8. **Complete:** record the reviewed commit, evidence, warnings, deferred work, and disposition;
-   then move the capsule to `completed/` after commit or merge.
+8. **Complete:** record reviewed commit, evidence, warnings, deferred work, and disposition; then
+   move the capsule to `completed/` after commit or merge.
 
 ## Exception paths
 
 - **Blocked:** preserve the current state and use the blocking metadata in
   [States](STATES.md).
-- **Bounded correction:** return to `IN_PROGRESS` only when goal, authority, acceptance, risk,
-  owned surface, and qualification remain valid.
-- **Cancellation:** record reason, authority, and partial-work disposition, then use
-  `CANCELLED`.
-- **Emergency:** immediate harm may justify starting early, but authority, scope, and evidence
-  must be captured afterward; review is never waived.
+- **Capsule revision before execution:** return `READY` to `DECOMPOSED`, increment the revision,
+  append history, and requalify.
+- **Bounded correction:** return `REVIEWED` to `IN_PROGRESS` only when goal, authority, acceptance,
+  risk, owned surface, and qualification remain valid.
+- **Cancellation:** record reason, authority, and partial-work disposition, then use `CANCELLED`.
+- **Emergency:** immediate harm may justify starting early, but authority, scope, and evidence must
+  be captured afterward; review is never waived.
 
 ## Human decision boundary
 
 Escalate when work would introduce or change product policy, trust/privacy/security/ownership,
-data retention or destruction, migration/recovery authority, irreversible behavior, accepted
-risk, a material complexity/performance/compatibility tradeoff, conflicting authority, or scope
-large enough to invalidate the capsule. Routine choices within accepted policy may be
-controller-resolved.
+data retention or destruction, migration/recovery authority, irreversible behavior, accepted risk,
+a material complexity/performance/compatibility tradeoff, conflicting authority, or scope large
+enough to invalidate the capsule. Routine choices within accepted policy may be controller-resolved.
 
 ## Automation eligibility
 
-Automate only when inputs and outputs have stable schemas; success, failure, and stop conditions
-are mechanically detectable; reruns are idempotent or recoverable; the step has been manually
+Automate only when inputs and outputs have stable schemas; success, failure, and stop conditions are
+mechanically detectable; reruns are idempotent or recoverable; the step has been manually
 exercised; automation cannot silently decide policy or irreversible actions; evidence is
 inspectable; and maintenance cost is lower than repeated manual work. Every automation begins
 `EXPERIMENTAL`.

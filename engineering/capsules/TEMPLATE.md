@@ -1,5 +1,6 @@
 +++
 schema_version = 1
+capsule_revision = 1
 id = "TASK-ID"
 title = "Outcome-oriented task title"
 state = "DRAFT"
@@ -13,11 +14,16 @@ branch = ""
 controller = "accountable-controller"
 executor = "bounded-executor"
 reviewer = "independent-reviewer"
+delegation = "none"
+delegation_constraints = []
 blocked = false
 blocked_reason = ""
 blocked_since = ""
 dependencies = []
 planning_artifacts = []
+owned_paths = []
+allowed_paths = []
+forbidden_paths = []
 specialized_qualification = []
 +++
 
@@ -51,18 +57,21 @@ Provide only context a fresh executor needs; link rather than copy authority.
 ## Owned surface
 
 - Expected files, modules, contracts, tests, and documents.
+- Keep `owned_paths` consistent with this section.
 
 ## Allowed changes
 
 - Narrow adjacent changes permitted for safe acceptance.
+- Keep `allowed_paths` consistent with this section.
 
 ## Forbidden changes
 
 - Preserved invariants, unrelated systems, contracts, migrations, or cleanup.
+- Keep `forbidden_paths` consistent with this section.
 
 ## Acceptance criteria
 
-- [ ] Each criterion is observable and independently reviewable.
+- [ ] AC-1: Each criterion is observable and independently reviewable.
 
 ## Required verification
 
@@ -82,7 +91,7 @@ Provide only context a fresh executor needs; link rather than copy authority.
 ## Return evidence
 
 - Changed files/rationale; exact commands/outcomes; actual model/tool/delegation; contract and
-  risk impact; warnings/deviations/deferred work; final review bundle identifier.
+  risk impact; warnings/deviations/deferred work; final review-bundle identifier.
 
 ## Escalation conditions
 
@@ -90,8 +99,7 @@ Provide only context a fresh executor needs; link rather than copy authority.
 
 ## Decisions and assumptions
 
-- Accepted decisions and unresolved assumptions. A material unresolved assumption blocks
-  `READY`.
+- Accepted decisions and unresolved assumptions. A material unresolved assumption blocks `READY`.
 
 ## State history
 

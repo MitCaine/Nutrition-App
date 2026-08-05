@@ -292,6 +292,7 @@ def test_pre_commit_orchestrates_every_required_check(
     monkeypatch.setattr(AUDIT, "boundaries", record("boundaries", 1))
     monkeypatch.setattr(AUDIT, "verify_control_inventory", record("inventory"))
     monkeypatch.setattr(AUDIT, "git_diff_check", record("git"))
+    monkeypatch.setattr(AUDIT, "validate_task_capsules", record("capsules"))
     monkeypatch.setattr(AUDIT, "focused_audit_tests", record("tests"))
     monkeypatch.setattr(AUDIT, "report_opt_in_suites", record("opt-in"))
 
@@ -301,6 +302,7 @@ def test_pre_commit_orchestrates_every_required_check(
         "boundaries",
         "inventory",
         "git",
+        "capsules",
         "tests",
         "opt-in",
     ]

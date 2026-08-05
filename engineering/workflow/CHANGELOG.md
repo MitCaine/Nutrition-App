@@ -31,3 +31,23 @@ disproportionate overhead.
 
 **Not yet included:** capsule validator, task launcher, automatic implementation-result
 artifact, Codex launch integration, PR automation, or regression-case generation.
+
+## 2026-08-04 — Mechanical task-capsule validation
+
+**Status:** `EXPERIMENTAL`
+
+Added a standard-library validator with human and JSON output, strict schema and section checks,
+stable acceptance IDs, capsule revisions, machine-readable scope, delegation constraints,
+authority-path validation, state-transition validation, completion validation, exact Git commit and
+branch checks, and a clean-worktree execution preflight.
+
+The `READY` capsule is committed above its recorded implementation baseline only when the complete
+committed overlay is that capsule itself. Repository closeout now validates all active and completed
+capsules, and focused tests qualify valid, invalid, blocked, authority-missing, dirty-tree,
+unverified-acceptance, and unrelated-overlay cases.
+
+Schema version 1 was completed before any real task capsule existed, so no capsule migration was
+required.
+
+**Required for `TRIAL`:** create and execute one real `READY` capsule through validation,
+implementation, review-bundle generation, independent review, and completion-state validation.
