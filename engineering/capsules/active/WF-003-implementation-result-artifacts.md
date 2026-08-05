@@ -1,6 +1,6 @@
 +++
 schema_version = 1
-capsule_revision = 1
+capsule_revision = 2
 id = "WF-003-implementation-result-artifacts"
 title = "Generate durable implementation-result artifacts"
 state = "READY"
@@ -9,7 +9,7 @@ risk = "medium"
 created = "2026-08-04"
 updated = "2026-08-04"
 source_issue = "Not applicable — Workflow v3 experimental repository-automation trial"
-base_commit = "264ba13eb3d9d3025cf3bdd5aef027715d7d09e8"
+base_commit = "ae30e25a823b0046f50477a7c42a14c27bb0a386"
 branch = "main"
 controller = "ChatGPT Work — Sol-class accountable controller"
 executor = "Codex — Luna-class bounded executor"
