@@ -144,6 +144,32 @@ def _script_candidates(reference: str) -> list[Path]:
     return candidates
 
 
+def _executable_reference_text(path: Path) -> str:
+    # Capsule TOML front matter is a machine-owned scope contract and may
+    # legitimately name scripts the task will create. Capsule Markdown bodies
+    # remain in documentation-validation scope, including fenced commands.
+    text = path.read_text(encoding="utf-8")
+    try:
+        relative = path.resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return text
+
+    if relative.parts[:2] != ("engineering", "capsules"):
+        return text
+
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "+++":
+        return text
+
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "+++":
+            return "".join(lines[index + 1 :])
+
+    # Leave malformed, unterminated front matter visible rather than silently
+    # suppressing references. Capsule validation reports the structure separately.
+    return text
+
+
 def _expected_migration_heads() -> tuple[str, str]:
     config = json.loads((ROOT / "scripts" / "project-audit.json").read_text(encoding="utf-8"))
     application = config.get("expected_application_heads", [])
@@ -201,7 +227,7 @@ def main() -> int:
                     )
 
     for source in MARKDOWN_FILES:
-        text = source.read_text(encoding="utf-8")
+        text = _executable_reference_text(source)
         for match in EXECUTABLE_PATTERN.finditer(text):
             reference = match.group("path")
             if not any(candidate.is_file() for candidate in _script_candidates(reference)):

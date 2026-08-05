@@ -19,6 +19,16 @@ AUDIT = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = AUDIT
 SPEC.loader.exec_module(AUDIT)
 
+DOCS_SCRIPT = ROOT / "scripts" / "validate-docs.py"
+DOCS_SPEC = importlib.util.spec_from_file_location(
+    "nutrition_validate_docs",
+    DOCS_SCRIPT,
+)
+assert DOCS_SPEC is not None and DOCS_SPEC.loader is not None
+DOCS_VALIDATOR = importlib.util.module_from_spec(DOCS_SPEC)
+sys.modules[DOCS_SPEC.name] = DOCS_VALIDATOR
+DOCS_SPEC.loader.exec_module(DOCS_VALIDATOR)
+
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -312,3 +322,57 @@ def test_session_end_executes_pre_commit_for_exact_exit_propagation() -> None:
     source = SESSION_END.read_text(encoding="utf-8")
     assert 'exec "$ROOT/scripts/project-audit.sh" pre-commit "$@"' in source
     assert "status=" not in source
+
+
+def test_capsule_front_matter_is_not_executable_documentation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(DOCS_VALIDATOR, "ROOT", tmp_path)
+
+    capsule = (
+        tmp_path
+        / "engineering"
+        / "capsules"
+        / "active"
+        / "WF-test.md"
+    )
+    capsule.parent.mkdir(parents=True)
+    capsule.write_text(
+        "+++\n"
+        'owned_paths = ["scripts/future-renderer.py"]\n'
+        "+++\n"
+        "\n"
+        "# Task\n"
+        "\n"
+        "Run `scripts/existing-command.py` after implementation.\n",
+        encoding="utf-8",
+    )
+
+    assert DOCS_VALIDATOR._executable_reference_text(capsule) == (
+        "\n"
+        "# Task\n"
+        "\n"
+        "Run `scripts/existing-command.py` after implementation.\n"
+    )
+
+
+def test_non_capsule_front_matter_remains_in_executable_documentation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(DOCS_VALIDATOR, "ROOT", tmp_path)
+
+    document = tmp_path / "engineering" / "workflow" / "example.md"
+    document.parent.mkdir(parents=True)
+    document.write_text(
+        "+++\n"
+        'script = "scripts/required-now.py"\n'
+        "+++\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        "scripts/required-now.py"
+        in DOCS_VALIDATOR._executable_reference_text(document)
+    )

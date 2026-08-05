@@ -66,3 +66,13 @@ in-repository output rejection, and stable content under a fixed handoff timesta
 **Required for `TRIAL`:** commit this tooling, create one real READY capsule as the sole overlay above
 its implementation baseline, generate its handoff, execute the task from that artifact, and compare
 the result against the capsule and final review bundle.
+
+## 2026-08-04 — Capsule-aware documentation validation
+
+**Status:** `EXPERIMENTAL`
+
+Separated documentation executable-reference validation from task-capsule scope semantics. TOML front matter under `engineering/capsules/` may declare future `owned_paths` and `allowed_paths` without being treated as an assertion that those executables already exist. Capsule Markdown bodies remain subject to normal documentation checks, and malformed or unterminated front matter is not silently suppressed.
+
+`planning_artifacts`, scope syntax, and capsule structure remain fail-closed under `scripts/validate-task-capsules.py`. Focused regression tests preserve both sides of the boundary: capsule front matter is excluded, while ordinary Markdown remains fully scanned.
+
+**Required for `TRIAL`:** pass repository documentation validation and CI with a real READY capsule that owns a not-yet-created executable, then execute and review that capsule.
