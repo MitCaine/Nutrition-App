@@ -1,27 +1,28 @@
 +++
 schema_version = 1
-capsule_revision = 2
+capsule_revision = 3
 id = "WF-003-implementation-result-artifacts"
 title = "Generate durable implementation-result artifacts"
-state = "READY"
+state = "DECOMPOSED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-08-04"
-updated = "2026-08-04"
+updated = "2026-08-06"
 source_issue = "Not applicable — Workflow v3 experimental repository-automation trial"
-base_commit = "ae30e25a823b0046f50477a7c42a14c27bb0a386"
+base_commit = ""
 branch = "main"
 controller = "ChatGPT Work — Sol-class accountable controller"
 executor = "Codex — Luna-class bounded executor"
 reviewer = "Independent ChatGPT architecture review"
 delegation = "none"
 delegation_constraints = []
-blocked = false
-blocked_reason = ""
-blocked_since = ""
+blocked = true
+blocked_reason = "Deferred until Version 1.1 Epic 1 end-to-end release qualification is complete."
+blocked_since = "2026-08-06"
 dependencies = [
   "Mechanical task-capsule validation",
   "Validated task-handoff generation",
+  "Version 1.1 Epic 1 end-to-end release qualification (E1-18 / GitHub issue #22)",
 ]
 planning_artifacts = [
   "engineering/workflow/WORKFLOW.md",
@@ -108,7 +109,11 @@ normalize evidence but may not reinterpret the capsule.
 
 - Step 2 capsule validation is committed and passing.
 - Step 3A handoff rendering is committed and passing.
-- The executor begins from the exact `base_commit` and expected branch recorded above.
+- Execution is deferred until Version 1.1 Epic 1 end-to-end release qualification
+  (E1-18 / GitHub issue #22) is complete.
+- Before returning to `READY`, the controller must record a new exact `base_commit`, revalidate
+  the capsule, and generate a new handoff. The previously generated handoff is historical and
+  must not be executed.
 - Python standard-library-only operation is preferred for repository-wide tooling.
 - Generated artifacts must remain outside the repository unless a later qualified workflow defines
   a durable in-repository evidence location.
@@ -216,6 +221,7 @@ Stop and return to the controller when:
 | 2026-08-04 | GRILLED | SPECIFIED | ChatGPT Work controller | Input, output, validation, failure, scope, and evidence contracts made explicit. |
 | 2026-08-04 | SPECIFIED | DECOMPOSED | ChatGPT Work controller | One bounded tooling outcome with focused tests and documentation identified. |
 | 2026-08-04 | DECOMPOSED | READY | ChatGPT Work controller | Authority, exact base commit, branch, acceptance, verification, return evidence, and escalation completed. |
+| 2026-08-06 | READY | DECOMPOSED | ChatGPT Work controller | Execution deferred until Version 1.1 Epic 1 release qualification completes. The prior qualified handoff is historical; WF-003 must be re-anchored, revalidated, and rendered again before execution. |
 
 ## Completion record
 
