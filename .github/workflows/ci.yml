@@ -127,7 +127,7 @@ jobs:
         env:
           EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
           EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
-        run: npm exec expo -- install --check
+        run: npm exec -- expo install --check
       - run: npm run typecheck
       - name: Jest
         run: npm test -- --runInBand
