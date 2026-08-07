@@ -2,6 +2,7 @@ export const THEME_PREFERENCE_STORAGE_KEY = "appearance-preference";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ColorScheme = "light" | "dark";
+export type SystemColorScheme = ColorScheme | "unspecified";
 
 export type PreferenceStorage = {
   getItem: (key: string) => Promise<string | null>;
@@ -18,7 +19,7 @@ export function parseThemePreference(value: string | null): ThemePreference {
 
 export function resolveColorScheme(
   preference: ThemePreference,
-  systemScheme: ColorScheme | null | undefined,
+  systemScheme: SystemColorScheme | null | undefined,
 ): ColorScheme {
   if (preference !== "system") {
     return preference;

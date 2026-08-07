@@ -2,74 +2,11 @@ const { withDangerousMod, withPodfile } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
-const podfileBlock = `
-    # Temporary workaround for the Xcode 26.4 / React Native bundled fmt incompatibility.
-    # Remove this when React Native upgrades its fmt dependency or otherwise supports
-    # Xcode 26.4 without fmt consteval compilation failures.
-    installer.pods_project.targets.each do |target|
-      next unless target.name == 'fmt'
-
-      target.build_configurations.each do |config|
-        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
-      end
-    end
-
-    # React Native 0.79's generated ReactCodegen script invokes absolute script
-    # paths through with-environment.sh. That helper executes its first argument
-    # unquoted, so checkouts in paths with spaces (for example "Nutrition App")
-    # fail during Xcode builds. Keep this scoped to the ReactCodegen generated
-    # script phase and remove it when React Native quotes that invocation.
-    installer.pods_project.targets.each do |target|
-      next unless target.name == 'ReactCodegen'
-
-      target.shell_script_build_phases.each do |phase|
-        next unless phase.name == '[CP-User] Generate Specs'
-
-        broken_script = <<~'SCRIPT'
-          SCRIPT_PHASES_SCRIPT="$RCT_SCRIPT_RN_DIR/scripts/react_native_pods_utils/script_phases.sh"
-          WITH_ENVIRONMENT="$RCT_SCRIPT_RN_DIR/scripts/xcode/with-environment.sh"
-          /bin/sh -c "$WITH_ENVIRONMENT $SCRIPT_PHASES_SCRIPT"
-        SCRIPT
-
-        fixed_script = <<~'SCRIPT'
-          SCRIPT_PHASES_SCRIPT_DIR="$RCT_SCRIPT_RN_DIR/scripts/react_native_pods_utils"
-          WITH_ENVIRONMENT="$RCT_SCRIPT_RN_DIR/scripts/xcode/with-environment.sh"
-          (
-            cd "$SCRIPT_PHASES_SCRIPT_DIR"
-            /bin/sh "$WITH_ENVIRONMENT" ./script_phases.sh
-          )
-        SCRIPT
-
-        phase.shell_script = phase.shell_script.gsub(broken_script, fixed_script)
-      end
-    end
-
-    # React Native 0.79's Hermes configuration replacement builds a tar command
-    # by interpolating PODS_ROOT without shell escaping. Route only that script's
-    # artifact lookup through a no-space symlink so Release builds also work when
-    # the repository path contains spaces. Remove after React Native switches to
-    # argument-based process execution or quotes the tarball path.
-    installer.pods_project.targets.each do |target|
-      next unless target.name == 'hermes-engine'
-
-      target.shell_script_build_phases.each do |phase|
-        next unless phase.name.include?('Replace Hermes for the right configuration')
-
-        safe_root_setup = <<~'SCRIPT'
-          HERMES_SAFE_PODS_ROOT="/tmp/nutrition-app-hermes-pods-\${UID}"
-          ln -sfn "$PODS_ROOT" "$HERMES_SAFE_PODS_ROOT"
-        SCRIPT
-
-        phase.shell_script = safe_root_setup + phase.shell_script.gsub(
-          '-p "$PODS_ROOT"',
-          '-p "$HERMES_SAFE_PODS_ROOT"',
-        )
-      end
-    end
-
-    # Expo Constants generates a script phase using \`bash -c\` with an unquoted
-    # absolute path. In checkouts with spaces, that fails before the app builds.
-    # Keep this scoped to EXConstants and remove it when Expo quotes this phase.
+const expoConstantsPathWorkaround = `
+    # Expo Constants generates a CocoaPods script phase through \`bash -c\`.
+    # When the repository path contains spaces, the expanded script path is
+    # reparsed as command text and split at the space. Execute the script
+    # directly with bash instead.
     installer.pods_project.targets.each do |target|
       next unless target.name == 'EXConstants'
 
@@ -87,18 +24,27 @@ const podfileBlock = `
 const brokenBundleScriptPattern =
   /`\\"\$NODE_BINARY\\" --print \\"require\('path'\)\.dirname\(require\.resolve\('react-native\/package\.json'\)\) \+ '\/scripts\/react-native-xcode\.sh'\\"`\\n\\n/g;
 
-function withIosPodfileBuildWorkarounds(config) {
+function withIosPodfileBuildWorkaround(config) {
   return withPodfile(config, (podfileConfig) => {
-    if (podfileConfig.modResults.contents.includes("Xcode 26.4 / React Native bundled fmt incompatibility")) {
+    const anchor = "  post_install do |installer|\n";
+    const contents = podfileConfig.modResults.contents;
+    const occurrences = contents.split(anchor).length - 1;
+
+    if (occurrences !== 1) {
+      throw new Error(
+        `Expected exactly one Podfile post_install block, found ${occurrences}.`,
+      );
+    }
+
+    if (contents.includes("Expo Constants generates a CocoaPods script phase through")) {
       return podfileConfig;
     }
 
-    const anchor = "    # This is necessary for Xcode 14, because it signs resource bundles by default";
-    if (!podfileConfig.modResults.contents.includes(anchor)) {
-      throw new Error("Could not find Podfile post_install insertion point for iOS build workarounds.");
-    }
+    podfileConfig.modResults.contents = contents.replace(
+      anchor,
+      `${anchor}${expoConstantsPathWorkaround}\n`,
+    );
 
-    podfileConfig.modResults.contents = podfileConfig.modResults.contents.replace(anchor, `${podfileBlock}\n${anchor}`);
     return podfileConfig;
   });
 }
@@ -109,29 +55,45 @@ function withIosBundleScriptPathWorkaround(config) {
     (dangerousConfig) => {
       const iosRoot = dangerousConfig.modRequest.platformProjectRoot;
       const appName = dangerousConfig.modRequest.projectName;
-      const projectFile = path.join(iosRoot, `${appName}.xcodeproj`, "project.pbxproj");
+      const projectFile = path.join(
+        iosRoot,
+        `${appName}.xcodeproj`,
+        "project.pbxproj",
+      );
 
       if (!fs.existsSync(projectFile)) {
         return dangerousConfig;
       }
 
-      let contents = fs.readFileSync(projectFile, "utf8");
+      const contents = fs.readFileSync(projectFile, "utf8");
+
       if (contents.includes("REACT_NATIVE_XCODE_SCRIPT=")) {
         return dangerousConfig;
+      }
+
+      const matches = contents.match(brokenBundleScriptPattern) ?? [];
+
+      if (matches.length !== 1) {
+        throw new Error(
+          `Expected exactly one unsafe React Native bundle script, found ${matches.length}.`,
+        );
       }
 
       const fixed =
         'REACT_NATIVE_XCODE_SCRIPT=\\"$(\\"$NODE_BINARY\\" --print \\"require(\\\'path\\\').dirname(require.resolve(\\\'react-native/package.json\\\')) + \\\'/scripts/react-native-xcode.sh\\\'\\")\\"\\n/bin/sh \\"$REACT_NATIVE_XCODE_SCRIPT\\"\\n\\n';
 
-      contents = contents.replace(brokenBundleScriptPattern, fixed);
-      fs.writeFileSync(projectFile, contents);
+      fs.writeFileSync(
+        projectFile,
+        contents.replace(brokenBundleScriptPattern, fixed),
+      );
+
       return dangerousConfig;
     },
   ]);
 }
 
 module.exports = function withIosBuildWorkarounds(config) {
-  config = withIosPodfileBuildWorkarounds(config);
+  config = withIosPodfileBuildWorkaround(config);
   config = withIosBundleScriptPathWorkaround(config);
   return config;
 };

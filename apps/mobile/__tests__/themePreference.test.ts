@@ -23,6 +23,7 @@ test("theme preference defaults invalid and missing values to System", () => {
 test("System follows the current appearance while explicit choices override it", () => {
   expect(resolveColorScheme("system", "light")).toBe("light");
   expect(resolveColorScheme("system", "dark")).toBe("dark");
+  expect(resolveColorScheme("system", "unspecified")).toBe("light");
   expect(resolveColorScheme("light", "dark")).toBe("light");
   expect(resolveColorScheme("dark", "light")).toBe("dark");
   expect(resolveColorScheme("system", "dark")).toBe("dark");
