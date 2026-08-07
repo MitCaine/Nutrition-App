@@ -103,6 +103,9 @@ jobs:
   mobile:
     name: Mobile baseline
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+      EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
     defaults:
       run:
         working-directory: apps/mobile
@@ -119,6 +122,10 @@ jobs:
       - run: npm run typecheck
       - name: Jest
         run: npm test -- --runInBand
+      - name: Expo dependency compatibility
+        run: npx expo install --check
+      - name: Expo project health
+        run: npx expo-doctor
 
   repository:
     name: Repository validation
