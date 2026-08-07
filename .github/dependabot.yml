@@ -18,6 +18,7 @@ updates:
       day: monday
     groups:
       backend-minor-patch:
+        applies-to: version-updates
         patterns:
           - "*"
         update-types:
@@ -32,6 +33,7 @@ updates:
       day: monday
     groups:
       mobile-minor-patch:
+        applies-to: version-updates
         patterns:
           - "*"
         update-types:
