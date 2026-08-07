@@ -11,20 +11,17 @@ updates:
           - "*"
     open-pull-requests-limit: 3
 
+  # Backend installs are authoritative from the pip-compile generated
+  # requirements-dev.lock. Dependabot version PRs against pyproject.toml do
+  # not regenerate that lock, so they do not actually qualify the proposed
+  # package version. Keep security updates enabled, but handle routine backend
+  # version upgrades through lock regeneration and repository qualification.
   - package-ecosystem: pip
     directory: "/apps/backend"
     schedule:
       interval: weekly
       day: monday
-    groups:
-      backend-minor-patch:
-        applies-to: version-updates
-        patterns:
-          - "*"
-        update-types:
-          - minor
-          - patch
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
 
   - package-ecosystem: npm
     directory: "/apps/mobile"
