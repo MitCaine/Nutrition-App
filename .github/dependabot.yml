@@ -28,6 +28,15 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Routine automation is intentionally limited to in-major maintenance.
+    # Major dependency changes are migrations and are handled deliberately.
+    # GitHub documents that update-types affects version updates, not security
+    # updates, so Dependabot security updates remain enabled.
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     groups:
       mobile-minor-patch:
         applies-to: version-updates
@@ -36,40 +45,24 @@ updates:
         update-types:
           - minor
           - patch
-    # Expo SDK 57 owns compatibility for the React/React Native runtime and
-    # its Jest/TypeScript toolchain. Routine Dependabot version bumps for
-    # these packages can produce installable but unsupported combinations.
-    # These version-update ignores do not suppress Dependabot security
-    # updates; compatibility-sensitive upgrades are handled with Expo SDK
-    # migrations and qualified as a unit.
+    # Expo SDK 57 owns compatibility for these runtime/toolchain packages.
+    # Hold routine version updates until the next deliberate Expo migration;
+    # security updates are not suppressed by these version-update rules.
     ignore:
       - dependency-name: "react"
         update-types:
-          - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
       - dependency-name: "react-test-renderer"
         update-types:
-          - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
       - dependency-name: "react-native"
         update-types:
-          - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
       - dependency-name: "@react-native/jest-preset"
         update-types:
-          - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
-      - dependency-name: "jest"
-        update-types:
-          - "version-update:semver-major"
-      - dependency-name: "@types/jest"
-        update-types:
-          - "version-update:semver-major"
-      - dependency-name: "typescript"
-        update-types:
-          - "version-update:semver-major"
     open-pull-requests-limit: 3
