@@ -55,6 +55,28 @@ class RecipeRepository:
             raise LookupError("Recipe not found")
         return recipe
 
+    def get_for_share(self, recipe_id: UUID, user_id: UUID) -> Recipe:
+        """Hold stable Recipe authority while permitting concurrent readers."""
+
+        statement = (
+            select(Recipe)
+            .where(
+                Recipe.id == recipe_id,
+                Recipe.user_id == user_id,
+                Recipe.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(Recipe.ingredients),
+                selectinload(Recipe.published_food_item),
+            )
+            .execution_options(populate_existing=True)
+            .with_for_update(read=True)
+        )
+        recipe = self.db.scalars(statement).first()
+        if recipe is None:
+            raise LookupError("Recipe not found")
+        return recipe
+
     def get_many_for_update(
         self,
         recipe_ids: set[UUID],

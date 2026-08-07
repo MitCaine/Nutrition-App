@@ -62,7 +62,13 @@ from tests.postgres_test_support import isolated_postgres_session_factory
 from tests.time_zone_test_support import establish_test_time_zone
 
 
-pytestmark = pytest.mark.postgres_concurrency
+pytestmark = [
+    pytest.mark.postgres_concurrency,
+    pytest.mark.filterwarnings(
+        "error:DELETE statement on table "
+        "'daily_log_nutrient_snapshots'.*:sqlalchemy.exc.SAWarning"
+    ),
+]
 POSTGRES_URL = os.getenv(
     "NUTRITION_TEST_POSTGRES_URL",
     "postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app",

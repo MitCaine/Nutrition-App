@@ -64,6 +64,29 @@ class FoodRepository:
             raise LookupError("Food not found")
         return food
 
+    def get_for_share(self, food_id: UUID, user_id: UUID) -> FoodItem:
+        """Hold stable Food authority while permitting concurrent readers."""
+
+        statement = (
+            select(FoodItem)
+            .where(
+                FoodItem.id == food_id,
+                FoodItem.user_id == user_id,
+                FoodItem.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(FoodItem.nutrients),
+                selectinload(FoodItem.serving_definitions),
+                selectinload(FoodItem.sources),
+            )
+            .execution_options(populate_existing=True)
+            .with_for_update(read=True)
+        )
+        food = self.db.scalars(statement).first()
+        if food is None:
+            raise LookupError("Food not found")
+        return food
+
     def list(self, user_id: UUID, query: str | None = None) -> list[FoodItem]:
         statement = (
             select(FoodItem)

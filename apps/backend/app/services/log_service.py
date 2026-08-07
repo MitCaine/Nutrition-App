@@ -1238,6 +1238,10 @@ class LogService:
 
         with self.logs.snapshot_replacement_scope(user_id, log.id):
             self.logs.delete_snapshots(log.id, user_id)
+            # The approved PostgreSQL routine deletes the rows outside the
+            # ORM unit-of-work. Reload the relationship before installing the
+            # replacement generation so SQLAlchemy does not delete them twice.
+            self.db.expire(log, ["snapshots"])
             self._apply_log_metadata(log, payload)
             log.amount_quantity = amount_quantity
             log.amount_unit = amount_unit
@@ -1280,12 +1284,12 @@ class LogService:
             log.updated_at = datetime.now(timezone.utc)
             return
 
-        # Nutrition edits always use the current authoritative Recipe source,
-        # even when a caller omits the optional review tokens. Resolve it under
-        # the established Food-before-Recipe lock order and validate supplied
-        # tokens while both source rows are locked.
+        # Nutrition edits always use the current authoritative Recipe source.
+        # Hold shared Food-then-Recipe authority locks: edits to different
+        # DailyLogs may read the same publication generation concurrently,
+        # while publication and source mutation still require exclusive locks.
         try:
-            source_food = self.foods.get_for_update(log.food_item_id, user_id)
+            source_food = self.foods.get_for_share(log.food_item_id, user_id)
             if (
                 source_food.deleted_at is not None
                 or not source_food.is_recipe
@@ -1293,7 +1297,7 @@ class LogService:
                 or source_food.source_id is None
             ):
                 raise LogSourceUnavailableError(LogSourceUnavailableError.message)
-            recipe = self.recipes.get_for_update(UUID(source_food.source_id), user_id)
+            recipe = self.recipes.get_for_share(UUID(source_food.source_id), user_id)
             if (
                 recipe.deleted_at is not None
                 or recipe.published_food_item_id != source_food.id
@@ -1410,6 +1414,10 @@ class LogService:
         )
         with self.logs.snapshot_replacement_scope(user_id, log.id):
             self.logs.delete_snapshots(log.id, user_id)
+            # The approved PostgreSQL routine deletes the rows outside the
+            # ORM unit-of-work. Reload the relationship before installing the
+            # replacement generation so SQLAlchemy does not delete them twice.
+            self.db.expire(log, ["snapshots"])
             self._apply_log_metadata(log, payload)
             log.amount_quantity = resolved.entered_quantity
             log.amount_unit = resolved.semantic_amount_mode
