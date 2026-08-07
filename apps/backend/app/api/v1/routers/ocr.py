@@ -83,11 +83,14 @@ def confirm_ocr_nutrition_label(
 ) -> OcrNutritionConfirmationResponse:
     try:
         food, trace = OcrConfirmationService(db).confirm(user.id, payload)
-    except OcrConfirmationIdempotencyConflict as exc:
+    except OcrConfirmationIdempotencyConflict:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={
-                "detail": {"code": "ocr_confirmation_idempotency_conflict", "message": str(exc)}
+                "detail": {
+                    "code": "ocr_confirmation_idempotency_conflict",
+                    "message": "This confirmation ID was already used with different values.",
+                }
             },
         )
     return OcrNutritionConfirmationResponse(
