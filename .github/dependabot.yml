@@ -17,9 +17,12 @@ updates:
       interval: weekly
       day: monday
     groups:
-      backend-dependencies:
+      backend-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
     open-pull-requests-limit: 3
 
   - package-ecosystem: npm
@@ -28,8 +31,10 @@ updates:
       interval: weekly
       day: monday
     groups:
-      mobile-dependencies:
+      mobile-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
     open-pull-requests-limit: 3
-
