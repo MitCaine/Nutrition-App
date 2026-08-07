@@ -9,7 +9,8 @@
   "focused_audit_tests": [
     "apps/backend/tests/test_project_audit.py",
     "apps/backend/tests/test_task_capsule_validator.py",
-    "apps/backend/tests/test_task_handoff_renderer.py"
+    "apps/backend/tests/test_task_handoff_renderer.py",
+    "apps/backend/tests/test_toolchain_report.py"
   ],
   "forbidden_change_prefixes": [],
   "forbidden_placeholders": [
@@ -23,7 +24,8 @@
   "operator_document_contracts": {
     "README.md": {
       "required": [
-        "docs/project/current-state.md"
+        "docs/project/current-state.md",
+        "0024_recipe_log_current_provenance"
       ],
       "forbidden": [
         "alembic upgrade head"
@@ -42,6 +44,7 @@
     "docs/architecture/overview.md": {
       "required": [
         "0021_target_activation_execution",
+        "0024_recipe_log_current_provenance",
         "ops_0011_phase5c4_recovery_audit"
       ],
       "forbidden": [
@@ -61,7 +64,8 @@
     },
     "docs/project/development-guide.md": {
       "required": [
-        "0021_target_activation_execution"
+        "0021_target_activation_execution",
+        "0024_recipe_log_current_provenance"
       ],
       "forbidden": []
     },
