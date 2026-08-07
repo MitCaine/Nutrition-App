@@ -38,16 +38,33 @@ Run from any directory inside the checkout:
 ./scripts/session-start.sh
 ```
 
-The report includes the Git branch and dirty files when `.git` metadata is available, application
-and control migration heads, the latest Production Hardening phase document, whether mobile files
-changed, and explicitly gated pytest markers. Archive reviews degrade cleanly and report that Git
-metadata is unavailable.
+The human-readable preflight first reports the active Python and Node versions against the
+repository-owned `.python-version` and `.nvmrc` contracts. A mismatch is surfaced explicitly before
+implementation begins but is not itself a repository-wide blocker because some backend-only or
+documentation work does not require Node. Mobile qualification and CI must use the matching Node
+version.
 
-Machine-readable output is available with:
+The session report then includes the Git branch and dirty files when `.git` metadata is available,
+application and control migration heads, the latest Production Hardening phase document, whether
+mobile files changed, and explicitly gated pytest markers. Archive reviews degrade cleanly and
+report that Git metadata is unavailable.
+
+Machine-readable repository-state output remains available with:
 
 ```bash
 ./scripts/session-start.sh --json
 ```
+
+The standalone toolchain report is available with:
+
+```bash
+python3 scripts/toolchain-report.py
+python3 scripts/toolchain-report.py --json
+python3 scripts/toolchain-report.py --check node
+```
+
+Use a `--check` mode when the task requires an exact repository toolchain; it exits nonzero on a
+mismatch or unavailable command.
 
 ## Session end
 

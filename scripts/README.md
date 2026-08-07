@@ -10,9 +10,10 @@ and does not depend on the caller's shell configuration.
 
 | Entry point | Responsibility |
 | --- | --- |
-| `./scripts/session-start.sh` | Reports authoritative Git, migration-head, phase-document, mobile-change, and opt-in-suite state before work starts. |
+| `./scripts/session-start.sh` | Reports repository toolchain state plus authoritative Git, migration-head, phase-document, mobile-change, and opt-in-suite state before work starts. |
 | `./scripts/session-end.sh` | Runs the required repository closeout checks and reports opt-in suites that were not run. |
 | `./scripts/project-audit.sh` | Exposes the lower-level session, boundary, deterministic inventory, privilege-manifest, and pre-commit commands. |
+| `python3 scripts/toolchain-report.py` | Reports the active Python and Node versions against `.python-version` and `.nvmrc`; use `--check node`, `--check python`, or `--check all` when a matching toolchain is required. |
 | `python3 scripts/validate-docs.py` | Validates repository Markdown links, anchors, navigation reachability, executable references, and required current-state contracts. |
 | `python3 scripts/validate-task-capsules.py --all` | Validates task-capsule schema, authority paths, state transitions, scope metadata, completion records, and execution prerequisites. |
 | `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Runs strict READY preflight and writes a deterministic executor handoff bundle outside the repository. |
