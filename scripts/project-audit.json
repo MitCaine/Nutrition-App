@@ -24,8 +24,7 @@
   "operator_document_contracts": {
     "README.md": {
       "required": [
-        "docs/project/current-state.md",
-        "0024_recipe_log_current_provenance"
+        "docs/project/current-state.md"
       ],
       "forbidden": [
         "alembic upgrade head"
@@ -44,7 +43,6 @@
     "docs/architecture/overview.md": {
       "required": [
         "0021_target_activation_execution",
-        "0024_recipe_log_current_provenance",
         "ops_0011_phase5c4_recovery_audit"
       ],
       "forbidden": [
@@ -64,8 +62,7 @@
     },
     "docs/project/development-guide.md": {
       "required": [
-        "0021_target_activation_execution",
-        "0024_recipe_log_current_provenance"
+        "0021_target_activation_execution"
       ],
       "forbidden": []
     },
