@@ -115,7 +115,19 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
+      - name: Verify repository Node toolchain
+        run: python ../../scripts/toolchain-report.py --check node
       - run: npm ci
+      - name: Expo configuration contract
+        env:
+          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
+        run: npm run config:validate
+      - name: Expo dependency compatibility
+        env:
+          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
+        run: npm exec expo -- install --check
       - run: npm run typecheck
       - name: Jest
         run: npm test -- --runInBand
