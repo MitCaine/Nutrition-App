@@ -80,6 +80,68 @@ valuable development database URL. PostgreSQL suites prove:
 Run a focused file while developing, then the complete marker before claiming a concurrency or
 migration invariant.
 
+### Issue 17 isolated Phase 5C clone
+
+Use the Issue 17 workflow when accessibility qualification needs an application
+database that has traversed the historical Phase 5C conversion path through
+`0024_recipe_log_current_provenance`:
+
+```bash
+./scripts/run-issue17-phase5c-clone.sh
+```
+
+The wrapper starts the repository-pinned PostgreSQL 16 image without a volume,
+publishes PostgreSQL only on a temporary loopback port, and creates unique
+historical source and conversion-clone databases. It refuses a cluster with an
+existing `nutrition_app` database, Phase 5C managed roles, or any unexpected
+non-template database. The normal workflow removes the exact disposable
+container on success, failure, interrupt, and termination. The existing local
+`nutrition_app` database is intentionally excluded: it is an application-head
+database, not a frozen-0003 conversion source, and must not be downgraded or
+used as conversion evidence.
+
+The retained private JSON artifacts include source and clone identities,
+fixture seed metadata, inventory, planning and execution attestations, clone
+marker, bridge result, conversion plan and receipts, restart verification,
+0017/0018 qualifications, role qualification, promotion-target initialization,
+maintenance and write-fence transitions, exact-0020 immutable-provenance
+qualification, the post-head observation, and the final artifact/digest
+manifest. Artifacts are mode `0600`; database URLs, role passwords, and the
+container administrator credential are not written to them. Use `--output-dir`
+only with an empty, non-symlink directory when a known evidence location is
+needed.
+
+For physical-device E1-17 testing, retain and open the disposable target with:
+
+```bash
+./scripts/run-issue17-phase5c-clone.sh --manual-test
+```
+
+After the real `alembic upgrade head` reaches 0024, manual-test mode uses the
+installed schema-0021 test activation surface and explicit synthetic bindings
+to open only this disposable target. It prints a `nutrition_runtime` loopback
+database URL, an exact backend startup command that listens on `0.0.0.0:8000`,
+and an exact `docker rm -f ...` cleanup command. The container is retained only
+after complete success; any setup, conversion, migration, qualification, or
+activation failure still triggers automatic removal. Run the printed cleanup
+command after VoiceOver, Dynamic Type, and related device checks finish.
+
+The test-only schema-0021 bindings and local runtime opening are regression and
+manual-qualification authority only. They are not signed production
+authorization, do not exercise the durable control-database authorization
+chain, and must never be cited as production promotion or activation evidence.
+Production activation continues to require the existing control-plane
+authorization and target-action workflow.
+
+The opt-in integration coverage is:
+
+```bash
+cd apps/backend
+NUTRITION_RUN_ISSUE17_PHASE5C_CLONE=1 \
+  .venv/bin/python -m pytest -q --strict-markers \
+  tests/test_issue17_phase5c_clone_workflow_postgres.py
+```
+
 ## Phase 5C performance qualification
 
 The full T0 fixture is opt-in because it creates and measures a disposable PostgreSQL workload:
