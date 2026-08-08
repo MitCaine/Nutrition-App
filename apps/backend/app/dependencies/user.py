@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import DeploymentMode, Settings, get_settings
@@ -47,7 +48,14 @@ def _configured_user(
         )
     user = User(id=user_id, email=email, display_name=display_name)
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        user = db.get(User, user_id)
+        if user is None:
+            raise
+        return user
     db.refresh(user)
     return user
 

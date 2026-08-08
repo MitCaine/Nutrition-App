@@ -26,11 +26,90 @@ function parsed(): ParsedNutritionLabel {
 test("golden parser values become a separate review draft with zero and missing preserved", () => {
   const draft = draftFromParsedLabel(parsed(), "camera");
   expect(draft.name).toBe("");
-  expect(draft.calories.decision).toBe("unresolved");
+  expect(draft.calories.decision).toBe("accepted");
   expect(draft.nutrients.find((item) => item.nutrientId === "sodium")?.confirmedValue).toBe("0");
   expect(draft.nutrients.find((item) => item.nutrientId === "total_fat")?.decision).toBe("omitted");
   expect(draft.nutrients.find((item) => item.nutrientId === "protein")?.decision).toBe("unresolved");
   expect(draft.unknownNutrients[0]?.dismissed).toBe(false);
+});
+
+test("resolved dual-column calories are accepted without manual confirmation", () => {
+  const input = parsed();
+  input.calories = field("220", "parsed", {
+    source_text: "220",
+    source_observation_ids: ["calories-serving"],
+    confidence: 1,
+  });
+  input.unparsed_lines = [{
+    id: "calories-container",
+    text: "440",
+    source_observation_ids: ["calories-container"],
+    confidence: 0.96,
+    reason: "unparsed",
+  }];
+
+  const draft = draftFromParsedLabel(input, "camera");
+
+  expect(draft.calories).toMatchObject({
+    suggestedValue: "220",
+    confirmedValue: "220",
+    decision: "accepted",
+    parseStatus: "parsed",
+    sourceObservationIds: ["calories-serving"],
+  });
+});
+
+test.each([
+  ["ambiguous", field("220", "ambiguous", { confidence: 1, warning_codes: ["conflicting_calorie_values"] })],
+  ["low-confidence", field("220", "parsed", { confidence: 0.79 })],
+  ["less-than", field("220", "ambiguous", { comparison: "less_than", confidence: 1 })],
+])("%s calories remain unresolved", (_case, calories) => {
+  const input = parsed();
+  input.calories = calories;
+
+  expect(draftFromParsedLabel(input, "camera").calories.decision).toBe("unresolved");
+});
+
+test("conflicting total sugars candidates become one diagnostic review row", () => {
+  const input = parsed();
+  input.nutrients = [
+    { nutrient_id: "total_sugars", original_name: "Total Sugars", amount: field("12", "ambiguous", { source_text: "Total Sugars 12g", source_observation_ids: ["sugars-serving"], confidence: 0.48, warning_codes: ["conflicting_nutrient_values"] }), unit: field("g"), daily_value_percent: null, source_observation_ids: ["sugars-serving"], confidence: 0.48, status: "ambiguous", warning_codes: ["conflicting_nutrient_values"] },
+    { nutrient_id: "total_sugars", original_name: "Total Sugars", amount: field("24", "ambiguous", { source_text: "Total Sugars 24g", source_observation_ids: ["sugars-container"], confidence: 0.47, warning_codes: ["conflicting_nutrient_values"] }), unit: field("g"), daily_value_percent: null, source_observation_ids: ["sugars-container"], confidence: 0.47, status: "ambiguous", warning_codes: ["conflicting_nutrient_values"] },
+  ];
+  input.warnings = [{ code: "conflicting_nutrient_values", message: "Conflicting values", source_observation_ids: ["sugars-serving", "sugars-container"] }];
+
+  const draft = draftFromParsedLabel(input, "camera");
+  const sugars = draft.nutrients.filter((item) => item.nutrientId === "total_sugars");
+
+  expect(sugars).toHaveLength(1);
+  expect(new Set(draft.nutrients.map((item) => item.fieldKey)).size).toBe(draft.nutrients.length);
+  expect(sugars[0]).toMatchObject({
+    fieldKey: "nutrient.total_sugars",
+    confirmedValue: "",
+    suggestedValue: null,
+    decision: "unresolved",
+    parseStatus: "ambiguous",
+    sourceObservationIds: ["sugars-serving", "sugars-container"],
+    warningCodes: ["conflicting_nutrient_values"],
+  });
+  expect(sugars[0]?.sourceText).toContain("Total Sugars 12g");
+  expect(sugars[0]?.sourceText).toContain("Total Sugars 24g");
+
+  const reviewed = {
+    ...draft,
+    name: "Cereal",
+    calories: updateReview(draft.calories, "120", "accepted"),
+    nutrients: draft.nutrients.map((item) => updateReview(item, "12", "edited")),
+  };
+  const payload = confirmationPayload(reviewed, "00000000-0000-4000-8000-000000000001")!;
+  const trace = payload.field_decisions.find((item) => item.field_key === "nutrient.total_sugars");
+  expect(trace).toMatchObject({
+    decision: "edited",
+    source_observation_ids: ["sugars-serving", "sugars-container"],
+    warning_codes: ["conflicting_nutrient_values"],
+  });
+  expect(trace?.source_text).toContain("Total Sugars 12g");
+  expect(trace?.source_text).toContain("Total Sugars 24g");
 });
 
 test("confirmation blocks name, unresolved less-than, and unknown rows", () => {

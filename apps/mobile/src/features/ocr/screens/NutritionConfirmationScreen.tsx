@@ -17,6 +17,12 @@ import { confirmationErrorCode, confirmationErrorMessage } from "../confirmation
 
 const FINGERPRINT_PLACEHOLDER_REQUEST_ID = "00000000-0000-4000-8000-000000000000";
 
+function showsUseValueAction(field: ConfirmationField): boolean {
+  return field.decision === "unresolved"
+    || field.decision === "edited"
+    || (field.decision === "omitted" && field.suggestedValue !== null);
+}
+
 export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated }: {
   initialDraft: NutritionConfirmationDraft;
   onCancel: () => void;
@@ -112,7 +118,7 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
         {(field.decision === "unresolved" || field.parseStatus === "ambiguous" || field.confidence < 0.8 || field.comparison) ? <Text style={styles.warning}>{field.comparison ? "Less-than value needs an exact replacement or omission" : `Review required · ${Math.round(field.confidence * 100)}% confidence`}</Text> : null}
         <Text style={styles.meta}>Review state: {field.decision}</Text>
         <LabeledField {...focusProps(`ocr.field.${field.fieldKey}`)} label={`${field.label} amount`} validationTarget={`ocr.field.${field.fieldKey}`} disabled={submitting || field.decision === "omitted"} invalid={Boolean(error?.startsWith(field.label))} error={error?.startsWith(field.label) ? error : null} value={field.confirmedValue} onChangeText={(value) => replaceField(updateReview(field, value))} keyboardType="decimal-pad" inputStyle={styles.input}/>
-        <View style={styles.actions}><AccessiblePressable accessibilityLabel={`Use ${field.label} value`} disabled={submitting} onPress={() => { const value = field.decision === "omitted" ? field.suggestedValue ?? "" : field.confirmedValue; replaceField(updateReview(field, value, value === (field.suggestedValue ?? "") ? "accepted" : "edited")); }}><Text style={styles.link}>Use value</Text></AccessiblePressable><AccessiblePressable accessibilityLabel={`Omit ${field.label}`} disabled={submitting || field.nutrientId === "calories"} onPress={() => replaceField({ ...field, decision: "omitted", confirmedValue: "", resolution: field.parseStatus === "ambiguous" || field.comparison ? "omitted after review" : field.resolution })}><Text style={styles.link}>Omit</Text></AccessiblePressable></View>
+        <View style={styles.actions}>{showsUseValueAction(field) ? <AccessiblePressable accessibilityLabel={`Use ${field.label} value`} disabled={submitting} onPress={() => { const value = field.decision === "omitted" ? field.suggestedValue ?? "" : field.confirmedValue; replaceField(updateReview(field, value, value === (field.suggestedValue ?? "") ? "accepted" : "edited")); }}><Text style={styles.link}>Use value</Text></AccessiblePressable> : null}<AccessiblePressable accessibilityLabel={`Omit ${field.label}`} disabled={submitting || field.nutrientId === "calories"} onPress={() => replaceField({ ...field, decision: "omitted", confirmedValue: "", resolution: field.parseStatus === "ambiguous" || field.comparison ? "omitted after review" : field.resolution })}><Text style={styles.link}>Omit</Text></AccessiblePressable></View>
         <Text accessible={false} style={styles.source}>Source: {field.sourceText || "No source line"}</Text>
       </View>)}
       {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><Text accessible={false} style={styles.source}>{item.sourceText}</Text><AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} accessibilityState={{ selected: item.dismissed }} disabled={submitting || item.dismissed} onPress={() => setDraft({ ...draft, unknownNutrients: draft.unknownNutrients.map((entry, itemIndex) => itemIndex === index ? { ...entry, dismissed: true } : entry) })}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></AccessiblePressable></View>)}</> : null}

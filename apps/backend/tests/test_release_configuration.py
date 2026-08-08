@@ -5,14 +5,19 @@ from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.v1.routers import health as health_router
 from app.core.config import DeploymentMode, Settings, get_settings
 from app.core.database import engine
 from app.core.database_identity import database_identity, redacted_database_url
-from app.dependencies.user import DEV_USER_ID, TEST_USER_ID, get_current_user
+from app.dependencies.user import (
+    DEV_USER_ID,
+    TEST_USER_ID,
+    _configured_user,
+    get_current_user,
+)
 from app.main import app
 from app.models.user import User
 from app.operators.phase5c4_prerequisites import LocalReadiness, READINESS_REASONS
@@ -129,6 +134,31 @@ def test_private_user_bootstrap_is_explicit(client, db_session: Session) -> None
         == 200
     )
     assert db_session.get(User, PRIVATE_USER_ID) is not None
+
+
+def test_configured_user_bootstrap_preserves_unrelated_integrity_error(
+    db_session: Session,
+) -> None:
+    occupied_email = "occupied@example.test"
+    db_session.add(
+        User(
+            id=PRIVATE_USER_ID,
+            email=occupied_email,
+            display_name="Existing User",
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(IntegrityError):
+        _configured_user(
+            db_session,
+            user_id=TEST_USER_ID,
+            email=occupied_email,
+            display_name="Test User",
+            create_if_missing=True,
+        )
+
+    assert db_session.get(User, TEST_USER_ID) is None
 
 
 def test_production_mode_fails_without_installed_provider() -> None:

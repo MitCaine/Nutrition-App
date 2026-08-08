@@ -37,6 +37,8 @@ _ONLY_AMOUNT = re.compile(
     re.IGNORECASE,
 )
 _ONLY_DV = re.compile(r"^\d[\d.,]*\s*%$")
+_ONLY_CALORIE_AMOUNT = re.compile(r"^\d[\d.,]*$")
+_CALORIES_LABEL = re.compile(r"^calories\s*:?$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,12 @@ def _prepare_joined_lines(lines: list[SourceLine]) -> list[SourceLine]:
         current = lines[index]
         if index + 1 < len(lines):
             next_line = lines[index + 1]
+            if _CALORIES_LABEL.fullmatch(
+                current.text
+            ) and _ONLY_CALORIE_AMOUNT.fullmatch(next_line.text):
+                prepared.append(_merge_lines(current, next_line))
+                index += 2
+                continue
             if match_nutrient_name(current.text) and _ONLY_AMOUNT.fullmatch(next_line.text):
                 prepared.append(_merge_lines(current, next_line))
                 index += 2

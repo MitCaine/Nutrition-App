@@ -198,7 +198,7 @@ test("all confirmation controls expose specific accessibility labels and review 
   for (const label of ["Food name", "Brand", "Notes", "Serving label", "Serving quantity", "Serving unit", "Serving grams", "Calories amount", "Sodium amount"]) {
     expect(input(renderer.root, label)).toBeDefined();
   }
-  for (const label of ["Cancel confirmation", "Use Calories value", "Omit Sodium", "Dismiss unknown nutrient Molybdenum", "Create Food"]) {
+  for (const label of ["Cancel confirmation", "Omit Sodium", "Dismiss unknown nutrient Molybdenum", "Create Food"]) {
     expect(action(renderer.root, label)).toBeDefined();
   }
   expect(action(renderer.root, "Dismiss unknown nutrient Molybdenum").props.disabled).toBe(true);
@@ -210,7 +210,7 @@ test("all confirmation controls expose specific accessibility labels and review 
   expect(renderer.root.findAllByType(View).some((item) => item.props.accessibilityLabel?.startsWith("Unknown nutrient"))).toBe(false);
   expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Calories, review state accepted")?.props.accessible).toBe(true);
   expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, dismissed")?.props.accessible).toBe(true);
-  expect(action(renderer.root, "Use Calories value")).toBeDefined();
+  expect(action(renderer.root, "Use Calories value")).toBeUndefined();
   expect(action(renderer.root, "Omit Sodium")).toBeDefined();
   expect(renderer.root.findByProps({ accessibilityRole: "header", children: "Confirm nutrition" })).toBeDefined();
   expect(action(renderer.root, "Create Food").props.accessibilityHint).toContain("logging confirmation");
@@ -222,6 +222,7 @@ test("unresolved review state is exposed to assistive technology", async () => {
   initial.calories = { ...initial.calories, decision: "unresolved" };
   const { renderer } = await render(initial);
   expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Calories, review state unresolved").length).toBeGreaterThan(0);
+  expect(action(renderer.root, "Use Calories value")).toBeDefined();
   await act(async () => renderer.unmount());
 });
 

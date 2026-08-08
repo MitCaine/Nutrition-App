@@ -110,3 +110,67 @@ def test_split_observations_use_text_fallback_without_geometry() -> None:
     assert nutrient.amount.value == Decimal("8")
     assert nutrient.daily_value_percent.value == Decimal("10")
     assert nutrient.source_observation_ids == ["obs-4", "obs-5"]
+
+
+def test_dual_column_calories_selects_per_serving_value() -> None:
+    result = parse_nutrition_label(
+        NutritionLabelParseInput.model_validate(
+            {
+                "full_text": "Nutrition Facts\nCalories\n220\n440",
+                "observations": [
+                    {
+                        "id": "header",
+                        "text": "Nutrition Facts",
+                        "confidence": 0.99,
+                        "bounding_box": {
+                            "x": 0.05,
+                            "y": 0.05,
+                            "width": 0.5,
+                            "height": 0.05,
+                        },
+                    },
+                    {
+                        "id": "calories-label",
+                        "text": "Calories",
+                        "confidence": 0.99,
+                        "bounding_box": {
+                            "x": 0.05,
+                            "y": 0.3,
+                            "width": 0.3,
+                            "height": 0.08,
+                        },
+                    },
+                    {
+                        "id": "per-serving-calories",
+                        "text": "220",
+                        "confidence": 0.99,
+                        "bounding_box": {
+                            "x": 0.55,
+                            "y": 0.3,
+                            "width": 0.12,
+                            "height": 0.08,
+                        },
+                    },
+                    {
+                        "id": "per-container-calories",
+                        "text": "440",
+                        "confidence": 0.99,
+                        "bounding_box": {
+                            "x": 0.78,
+                            "y": 0.3,
+                            "width": 0.12,
+                            "height": 0.08,
+                        },
+                    },
+                ],
+            }
+        )
+    )
+
+    assert result.calories.value == Decimal("220")
+    assert result.calories.status == "parsed"
+    assert result.calories.source_observation_ids == [
+        "calories-label",
+        "per-serving-calories",
+    ]
+    assert "440" in [line.text for line in result.unparsed_lines]

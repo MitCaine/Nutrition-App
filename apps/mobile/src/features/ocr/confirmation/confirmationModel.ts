@@ -18,28 +18,60 @@ function stringValue(field: ParsedField | null | undefined): string {
   return typeof field?.value === "string" ? field.value : typeof field?.value === "number" ? String(field.value) : "";
 }
 
-function initialDecision(field: ParsedField, forceReview = false): ReviewDecision {
+function initialDecision(field: ParsedField): ReviewDecision {
   if (field.status === "missing" || field.status === "unsupported") return "omitted";
-  if (forceReview || field.status === "ambiguous" || field.comparison || field.confidence < 0.8) return "unresolved";
+  if (field.status === "ambiguous" || field.comparison || field.confidence < 0.8) return "unresolved";
   return "accepted";
 }
 
-function confirmationField(fieldKey: string, nutrientId: string | null, label: string, field: ParsedField, unit: string | null, forceReview = false): ConfirmationField {
+function confirmationField(fieldKey: string, nutrientId: string | null, label: string, field: ParsedField, unit: string | null): ConfirmationField {
   const value = stringValue(field);
   return {
     fieldKey, nutrientId, label, suggestedValue: value || null, confirmedValue: value,
-    unit, decision: initialDecision(field, forceReview), parseStatus: field.status,
+    unit, decision: initialDecision(field), parseStatus: field.status,
     comparison: field.comparison, confidence: field.confidence, sourceText: field.source_text,
     sourceObservationIds: field.source_observation_ids, warningCodes: field.warning_codes,
     resolution: null,
   };
 }
 
+function canonicalReviewFields(parsed: ParsedNutritionLabel): ConfirmationField[] {
+  const candidatesById = new Map<string, ParsedNutritionLabel["nutrients"]>();
+  for (const candidate of parsed.nutrients) {
+    if (!candidate.nutrient_id) continue;
+    const candidates = candidatesById.get(candidate.nutrient_id) ?? [];
+    candidates.push(candidate);
+    candidatesById.set(candidate.nutrient_id, candidates);
+  }
+  return [...candidatesById].map(([nutrientId, candidates]) => {
+    const first = candidates[0]!;
+    const label = NUTRIENT_LABELS[nutrientId] ?? first.original_name;
+    if (candidates.length === 1) {
+      return confirmationField(`nutrient.${nutrientId}`, nutrientId, label, first.amount, stringValue(first.unit) || null);
+    }
+    const units = [...new Set(candidates.map((candidate) => stringValue(candidate.unit)).filter(Boolean))];
+    return {
+      fieldKey: `nutrient.${nutrientId}`,
+      nutrientId,
+      label,
+      suggestedValue: null,
+      confirmedValue: "",
+      unit: units.length === 1 ? units[0]! : null,
+      decision: "unresolved",
+      parseStatus: "ambiguous",
+      comparison: null,
+      confidence: Math.min(...candidates.map((candidate) => Math.min(candidate.confidence, candidate.amount.confidence))),
+      sourceText: [...new Set(candidates.map((candidate) => candidate.amount.source_text).filter(Boolean))].join(" | "),
+      sourceObservationIds: [...new Set(candidates.flatMap((candidate) => [...candidate.source_observation_ids, ...candidate.amount.source_observation_ids]))],
+      warningCodes: [...new Set(["conflicting_nutrient_values", ...candidates.flatMap((candidate) => [...candidate.warning_codes, ...candidate.amount.warning_codes])])],
+      resolution: null,
+    };
+  });
+}
+
 export function draftFromParsedLabel(parsed: ParsedNutritionLabel, imageSourceType: "camera" | "photo_library"): NutritionConfirmationDraft {
-  const calories = confirmationField("nutrient.calories", "calories", "Calories", parsed.calories, "kcal", true);
-  const canonical = parsed.nutrients.filter((item) => item.nutrient_id).map((item) =>
-    confirmationField(`nutrient.${item.nutrient_id}`, item.nutrient_id, NUTRIENT_LABELS[item.nutrient_id as string] ?? item.original_name, item.amount, stringValue(item.unit) || null),
-  );
+  const calories = confirmationField("nutrient.calories", "calories", "Calories", parsed.calories, "kcal");
+  const canonical = canonicalReviewFields(parsed);
   return {
     parserVersion: parsed.parser_version, imageSourceType, name: "", brand: "", notes: "",
     servingDisplay: stringValue(parsed.serving?.serving_size_display),
