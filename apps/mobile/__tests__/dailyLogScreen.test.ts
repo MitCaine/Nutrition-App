@@ -6,6 +6,7 @@ import type { DailyLog } from "../src/features/logging/api/types";
 import { DailyLogScreen } from "../src/features/logging/screens/DailyLogScreen";
 import { AccessibilityStatus } from "../src/shared/accessibility/AccessibilityStatus";
 import { AccessibleModal } from "../src/shared/accessibility/AccessibleModal";
+import { withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 let mockLogs: Record<string, unknown>;
 let mockSummary: Record<string, unknown>;
@@ -70,7 +71,7 @@ async function render(
 ) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(DailyLogScreen, {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(DailyLogScreen, {
       date,
       setDate: jest.fn(),
       onAddFood,
@@ -82,7 +83,7 @@ async function render(
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
       ...extraProps,
-    }), {
+    })), {
       createNodeMock: (element) => {
         const props = element.props as { accessibilityLabel?: string; children?: unknown };
         return {
@@ -146,7 +147,7 @@ test("delete requires contextual destructive confirmation and submits the review
       calendar_revision: 4,
       client_request_id: expect.any(String),
     }),
-  }));
+    }));
   await act(async () => rendered.renderer.unmount());
 });
 

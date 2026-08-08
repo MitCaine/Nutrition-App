@@ -1,4 +1,4 @@
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import { isDeleteReconciliationRequired, isUncertainDeleteError } from "../src/features/logging/utils/logDeleteErrors";
 
 test("delete treats transport and server failures as uncertain until reconciled", () => {

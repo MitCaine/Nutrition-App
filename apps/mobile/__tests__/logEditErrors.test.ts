@@ -1,5 +1,5 @@
 import { logEditErrorMessage } from "../src/features/logging/utils/logEditErrors";
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 
 test("structured deleted-source conflict returns the backend message", () => {
   const error = new ApiError({

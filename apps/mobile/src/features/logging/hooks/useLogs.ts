@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { createLog, deleteLog, getDailySummary, getLogEditContext, listFutureEntries, listLogs, listRecentEntries, updateLog } from "../api/logApi";
 import type { DailyLog, DailyLogDeleteInput, DailyLogUpdateInput, DailySummary, RecentEntry } from "../api/types";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 export type DailyLogReadState =
   | { kind: "initial-loading"; data: null; retry: () => void }
@@ -154,33 +154,39 @@ export function projectConfirmedDelete(
 }
 
 export function useDailyLogs(date: string, enabled = true) {
-  return useQuery({ queryKey: ["logs", date], queryFn: () => listLogs(date), enabled });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["logs", date], queryFn: () => runtime.dailyLogs.list(date), enabled });
 }
 
 export function useFutureLogs(date: string, enabled = true) {
-  return useQuery({ queryKey: ["future-logs", date], queryFn: () => listFutureEntries(date), enabled });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["future-logs", date], queryFn: () => runtime.dailyLogs.listFuture(date), enabled });
 }
 
 export function useRecentEntries() {
+  const runtime = useNutritionRuntime();
   return useQuery<RecentEntry[]>({
     queryKey: ["logs", "recent-entries"],
-    queryFn: listRecentEntries,
+    queryFn: runtime.dailyLogs.listRecentEntries,
   });
 }
 
 export function useDailySummary(date: string, enabled = true) {
-  return useQuery({ queryKey: ["daily-summary", date], queryFn: () => getDailySummary(date), enabled });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["daily-summary", date], queryFn: () => runtime.dailyLogs.getDailySummary(date), enabled });
 }
 
 export function useLogEditContext(logId: string | null, enabled = true) {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: ["logs", logId, "edit-context"],
-    queryFn: () => getLogEditContext(logId as string),
+    queryFn: () => runtime.dailyLogs.getEditContext(logId as string),
     enabled: Boolean(logId) && enabled,
   });
 }
 
 export function useLogMutations(date: string) {
+  const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   const invalidate = () => invalidateLogDateCaches(queryClient, date);
   const invalidateUse = () => {
@@ -204,12 +210,12 @@ export function useLogMutations(date: string) {
   return {
     queryClient,
     createLog: useMutation({
-      mutationFn: createLog,
+      mutationFn: runtime.dailyLogs.create,
       onSuccess: (result) => { projectConfirmedLog(queryClient, date, result); invalidateUse(); },
     }),
     updateLog: useMutation({
       mutationFn: ({ logId, input }: { logId: string; input: Partial<DailyLogUpdateInput> }) =>
-        updateLog(logId, input),
+        runtime.dailyLogs.update(logId, input),
       onSuccess: (result) => {
         projectConfirmedLog(queryClient, date, result);
         invalidate();
@@ -226,7 +232,7 @@ export function useLogMutations(date: string) {
         const { logId, input } = typeof variables === "string"
           ? { logId: variables, input: undefined }
           : variables;
-        return deleteLog(logId, input);
+        return runtime.dailyLogs.delete(logId, input);
       },
       onSuccess: (_result, variables) => {
         projectDelete(

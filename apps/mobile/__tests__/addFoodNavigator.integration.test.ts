@@ -7,6 +7,8 @@ import type { DailyLog, DailySummary } from "../src/features/logging/api/types";
 import type { DailyTargetComparison } from "../src/features/targets/api/types";
 import type { UsdaFoodPreview, UsdaSearchResponse } from "../src/features/usda/api/types";
 import { AppNavigator } from "../src/app/navigation/AppNavigator";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 let mockLogs: QueryState<DailyLog[]>;
 let mockSummary: QueryState<DailySummary>;
@@ -292,6 +294,13 @@ const mockUsdaImportMutation = jest.fn((_fdcId: number, options: { onSuccess: (f
   options.onSuccess(importedFood);
 });
 
+const testRuntime = createNutritionTestRuntime({
+  dailyLogs: {
+    ...remoteNutritionRuntime.dailyLogs,
+    create: async (input) => await mockCreateLog(input) as DailyLog,
+  },
+});
+
 function emptyQuery<T>(data: T): QueryState<T> {
   return { data, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
 }
@@ -314,10 +323,14 @@ function resetState() {
 async function renderNavigator(): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(AppNavigator));
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(AppNavigator), testRuntime));
   });
   activeRenderers.add(renderer);
   return renderer;
+}
+
+function updateNavigator(renderer: ReactTestRenderer): void {
+  renderer.update(withNutritionRuntime(React.createElement(AppNavigator), testRuntime));
 }
 
 function rendererIsMounted(renderer: ReactTestRenderer): boolean {
@@ -534,7 +547,7 @@ test("USDA import failure keeps the preview and discovery workflow context retry
     mockUsdaImport.isError = true;
   });
   await act(async () => buttonWithText(renderer.root, "Import Food").props.onPress());
-  await act(async () => renderer.update(React.createElement(AppNavigator)));
+  await act(async () => updateNavigator(renderer));
   expect(screenText(renderer.root)).toContain("Import failed. Try again later.");
   expect(screenText(renderer.root)).toContain("Banana, raw");
   await act(async () => buttonWithText(renderer.root, "Back").props.onPress());
@@ -586,7 +599,7 @@ test("restricted origin dates are revalidated in confirmation without substituti
   await act(async () => labeled(renderer.root, "Add Food to Dinner").props.onPress());
   await selectSavedFood(renderer);
   mockCalendar.data = { ...mockCalendar.data!, today: "2026-07-12" };
-  await act(async () => renderer.update(React.createElement(AppNavigator)));
+  await act(async () => updateNavigator(renderer));
   expect(screenText(renderer.root)).toContain("Logging for 2026-07-13");
   await act(async () => labeled(renderer.root, "Save log").props.onPress());
   expect(screenText(renderer.root)).toContain("This date is no longer eligible for logging. No entry was created.");
@@ -603,7 +616,7 @@ test("confirmed projection remains visible when independent refreshes fail", asy
   mockLogs = { ...mockLogs, isError: true, isRefetchError: true, error: new Error("entries offline") };
   mockSummary = { ...mockSummary, isError: true, isRefetchError: true, error: new Error("totals offline") };
   mockTargets = { ...mockTargets, isError: true, isRefetchError: true, error: new Error("targets offline") };
-  await act(async () => renderer.update(React.createElement(AppNavigator)));
+  await act(async () => updateNavigator(renderer));
   const text = screenText(renderer.root);
   expect(text).toContain("Oatmeal");
   expect(text).toContain("Entries could not be refreshed; showing the last confirmed entries.");

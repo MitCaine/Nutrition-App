@@ -4,9 +4,17 @@ import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyLog } from "../src/features/logging/api/types";
 import { LogFoodScreen } from "../src/features/logging/screens/LogFoodScreen";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 const mockUpdateLog = jest.fn();
 const mockCreateClientRequestId = jest.fn(() => "00000000-0000-4000-8000-000000000099");
+const testRuntime = createNutritionTestRuntime({
+  dailyLogs: {
+    ...remoteNutritionRuntime.dailyLogs,
+    update: async (logId, input) => await mockUpdateLog({ logId, input }) as DailyLog,
+  },
+});
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFood: () => ({ data: undefined, isError: false, isLoading: false, refetch: jest.fn() }),
@@ -61,7 +69,7 @@ async function renderMove() {
   let renderer!: TestRenderer.ReactTestRenderer;
   const onSaved = jest.fn();
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(LogFoodScreen, {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(LogFoodScreen, {
       foodId: legacyLog.food_item_id,
       date: legacyLog.logged_date,
       moveOnly: true,
@@ -71,7 +79,7 @@ async function renderMove() {
       log: legacyLog,
       onCancel: jest.fn(),
       onSaved,
-    }));
+    }), testRuntime));
   });
   return { renderer, onSaved };
 }

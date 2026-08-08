@@ -16,7 +16,7 @@ import {
   type AccessibilityFocusRequester,
 } from "../../shared/accessibility/focus";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
-import { deviceTimeZone } from "../../features/calendar/api/calendarApi";
+import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import { calendarStateLabel } from "../../features/calendar/calendarModel";
 import {
   useCalendarState,

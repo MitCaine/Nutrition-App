@@ -20,6 +20,9 @@ jest.mock("../src/app/theme/AppTheme", () => {
 import type { NutritionConfirmationDraft } from "../src/features/ocr/api/types";
 import { NutritionConfirmationScreen } from "../src/features/ocr/screens/NutritionConfirmationScreen";
 import { ApiError } from "../src/shared/api/client";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
+
+const testRuntime = createNutritionTestRuntime();
 
 function draft(): NutritionConfirmationDraft {
   return {
@@ -46,11 +49,11 @@ async function render(initialDraft = draft(), onCreated = jest.fn()) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(
-      React.createElement(NutritionConfirmationScreen, {
+      withNutritionRuntime(React.createElement(NutritionConfirmationScreen, {
         initialDraft,
         onCancel: jest.fn(),
         onCreated,
-      }),
+      }), testRuntime),
     );
   });
   return { renderer, onCreated };

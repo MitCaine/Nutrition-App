@@ -1,4 +1,4 @@
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import { targetErrorMessage } from "../src/features/targets/targetErrors";
 
 test("structured target validation errors do not expose raw response JSON", () => {

@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { createFood, deleteFood, duplicateFood, getFood, getFoodResolvedNutrition, listFavoriteFoods, listFoods, listNutrients, listRecentFoods, setFoodFavorite, updateFood } from "../api/foodApi";
 import type { FoodCreateInput, FoodDeleteResult, FoodMutationInput } from "../api/types";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 export function invalidateFoodDiscoveryCaches(queryClient: QueryClient) {
   const foodInvalidation = queryClient.invalidateQueries({ queryKey: ["foods"] });
@@ -13,45 +13,53 @@ export function invalidateFoodDiscoveryCaches(queryClient: QueryClient) {
 }
 
 export function useNutrients() {
-  return useQuery({ queryKey: ["nutrients"], queryFn: listNutrients });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["nutrients"], queryFn: runtime.nutrients.list });
 }
 
 export function useFoods(query: string) {
-  return useQuery({ queryKey: ["foods", query], queryFn: () => listFoods(query) });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["foods", query], queryFn: () => runtime.foods.list(query) });
 }
 
 export function useSavedFoods(query: string) {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: ["foods", "saved", query],
-    queryFn: () => listFoods(query, "saved"),
+    queryFn: () => runtime.foods.list(query, "saved"),
   });
 }
 
 export function useFavoriteFoods() {
-  return useQuery({ queryKey: ["foods", "favorites"], queryFn: listFavoriteFoods });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["foods", "favorites"], queryFn: runtime.foods.listFavorites });
 }
 
 export function useRecentFoods(limit = 10) {
-  return useQuery({ queryKey: ["foods", "recent", limit], queryFn: () => listRecentFoods(limit) });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["foods", "recent", limit], queryFn: () => runtime.foods.listRecent(limit) });
 }
 
 export function useFood(foodId: string | null) {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: ["foods", foodId],
-    queryFn: () => getFood(foodId as string),
+    queryFn: () => runtime.foods.get(foodId as string),
     enabled: Boolean(foodId),
   });
 }
 
 export function useFoodResolvedNutrition(foodId: string | null) {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: ["foods", foodId, "resolved-nutrition"],
-    queryFn: () => getFoodResolvedNutrition(foodId as string),
+    queryFn: () => runtime.foods.getResolvedNutrition(foodId as string),
     enabled: Boolean(foodId),
   });
 }
 
 export function useFoodMutations() {
+  const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   const invalidate = () => invalidateFoodDiscoveryCaches(queryClient);
   const invalidateAfterDelete = (result: FoodDeleteResult) => {
@@ -66,18 +74,18 @@ export function useFoodMutations() {
 
   return {
     createFood: useMutation({
-      mutationFn: (input: FoodCreateInput) => createFood(input),
+      mutationFn: (input: FoodCreateInput) => runtime.foods.create(input),
       onSuccess: invalidate,
     }),
     updateFood: useMutation({
       mutationFn: ({ foodId, input }: { foodId: string; input: FoodMutationInput }) =>
-        updateFood(foodId, input),
+        runtime.foods.update(foodId, input),
       onSuccess: invalidate,
     }),
-    deleteFood: useMutation({ mutationFn: deleteFood, onSuccess: invalidateAfterDelete }),
-    duplicateFood: useMutation({ mutationFn: duplicateFood, onSuccess: invalidate }),
+    deleteFood: useMutation({ mutationFn: runtime.foods.delete, onSuccess: invalidateAfterDelete }),
+    duplicateFood: useMutation({ mutationFn: runtime.foods.duplicate, onSuccess: invalidate }),
     setFavorite: useMutation({
-      mutationFn: ({ foodId, favorite }: { foodId: string; favorite: boolean }) => setFoodFavorite(foodId, favorite),
+      mutationFn: ({ foodId, favorite }: { foodId: string; favorite: boolean }) => runtime.foods.setFavorite(foodId, favorite),
       onSuccess: invalidate,
     }),
   };

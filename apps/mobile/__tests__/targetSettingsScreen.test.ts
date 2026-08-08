@@ -1,11 +1,12 @@
 import React from "react";
 import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
+import type { TargetConfiguration } from "../src/features/targets/api/types";
 
 const mockUpdate = jest.fn();
 const mockReset = jest.fn();
 const mockInvalidate = jest.fn();
-const mockConfiguration = {
+const mockConfiguration: TargetConfiguration = {
   profile: null,
   estimatedMaintenanceCalories: { availability: "unavailable", amount: null, unit: "kcal", authority: "calculated_estimate", reasonCode: "target_profile_incomplete", equation: "mifflin_st_jeor_1990" },
   manualOverrides: [], effectiveTargets: [], dailyValueCatalogVersion: "fda_daily_values_2016_v1",
@@ -28,10 +29,21 @@ jest.mock("../src/app/theme/AppTheme", () => {
 });
 
 import { TargetSettingsScreen } from "../src/features/targets/TargetSettingsScreen";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
+
+const testRuntime = createNutritionTestRuntime({
+  targets: {
+    ...remoteNutritionRuntime.targets,
+    getConfiguration: async () => mockConfiguration,
+    updateConfiguration: async (input) => await mockUpdate(input),
+    resetOverride: async (nutrientId) => await mockReset(nutrientId),
+  },
+});
 
 async function render() {
   let renderer!: TestRenderer.ReactTestRenderer;
-  await act(async () => { renderer = TestRenderer.create(React.createElement(TargetSettingsScreen, { onBack: jest.fn() })); });
+  await act(async () => { renderer = TestRenderer.create(withNutritionRuntime(React.createElement(TargetSettingsScreen, { onBack: jest.fn() }), testRuntime)); });
   return renderer;
 }
 function action(root: TestRenderer.ReactTestInstance, label: string) { return root.findAllByType(Pressable).find((item) => item.props.accessibilityLabel === label)!; }

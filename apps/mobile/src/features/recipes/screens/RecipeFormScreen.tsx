@@ -5,8 +5,8 @@ import { useAppTheme } from "../../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
 import { recipeFocusKey } from "../../../shared/forms/focusTargets";
 import { useRecipeMutations } from "../hooks/useRecipes";
-import { createFoodServing } from "../../foods/api/foodApi";
 import type { ServingDefinition } from "../../foods/api/types";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import {
   buildRecipePayload,
   formatIngredientAmount,
@@ -38,6 +38,7 @@ type Props = {
 };
 
 export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngredient }: Props) {
+  const runtime = useNutritionRuntime();
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const mutations = useRecipeMutations();
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +110,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
     );
     servingIntentRefs.current[ingredient.localId] = intent;
     try {
-      const food = await createFoodServing(ingredient.food.id, {
+      const food = await runtime.foods.createServingDefinition(ingredient.food.id, {
         ...servingPayload,
         client_request_id: intent.requestId,
       });

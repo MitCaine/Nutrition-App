@@ -1,12 +1,10 @@
-import { ApiError } from "../../shared/api/client";
+import { RuntimeError } from "../../runtime/RuntimeError";
 
 export function targetErrorMessage(error: unknown): string {
-  if (!(error instanceof ApiError)) {
+  if (!(error instanceof RuntimeError)) {
     return error instanceof Error && error.message ? error.message : "Could not save nutrition targets.";
   }
-  const detail = error.body && typeof error.body === "object" && "detail" in error.body
-    ? (error.body as { detail?: unknown }).detail
-    : null;
+  const detail = error.details;
   if (detail && typeof detail === "object") {
     const value = detail as { code?: unknown; message?: unknown; field_errors?: unknown };
     if (value.code === "target_value_out_of_range" || value.code === "invalid_target_request") {

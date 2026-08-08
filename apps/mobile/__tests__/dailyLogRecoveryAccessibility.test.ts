@@ -12,6 +12,8 @@ import {
   type RecoveryStorage,
 } from "../src/features/logging/recovery/logMutationRecovery";
 import { DailyLogScreen } from "../src/features/logging/screens/DailyLogScreen";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 
 let mockRecovery: RecoveryJournalState;
 const mockAnnounce = jest.fn((_message?: string, _options?: unknown) => jest.fn());
@@ -19,6 +21,15 @@ const mockFocus = jest.fn((_target?: unknown, _options?: unknown) => jest.fn());
 const mockReconcile = jest.fn();
 const mockRetry = jest.fn();
 const mockDismiss = jest.fn();
+const testRuntime = createNutritionTestRuntime({
+  dailyLogs: {
+    ...remoteNutritionRuntime.dailyLogs,
+    getMutationStatus: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
+});
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
@@ -94,7 +105,7 @@ function record(
 async function renderRecovery() {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(DailyLogScreen, {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(DailyLogScreen, {
       date: "2026-07-14",
       setDate: jest.fn(),
       onOpenFood: jest.fn(),
@@ -103,7 +114,7 @@ async function renderRecovery() {
       onOpenNutritionTargets: jest.fn(),
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
-    }));
+    }), testRuntime));
   });
   return renderer;
 }
@@ -140,9 +151,9 @@ test("similar recovery records expose distinct summaries and contextual actions"
     "2 Daily Log recovery operations need attention.",
     expect.objectContaining({ kind: "warning" }),
   );
-  await act(async () => renderer.update(React.createElement(DailyLogScreen, {
+  await act(async () => renderer.update(withNutritionRuntime(React.createElement(DailyLogScreen, {
     date: "2026-07-14", setDate: jest.fn(), onOpenFood: jest.fn(), onEditLog: jest.fn(), onOpenSettings: jest.fn(), onOpenNutritionTargets: jest.fn(), initialScrollOffset: 0, onScrollOffsetChange: jest.fn(),
-  })));
+  }), testRuntime)));
   expect(mockAnnounce.mock.calls.filter(([message]) => String(message).includes("operations need attention"))).toHaveLength(1);
   await act(async () => renderer.unmount());
 });
@@ -163,6 +174,7 @@ test("confirmed user-initiated reconciliation announces and requests safe succes
 
 test("malformed optional display context renders a generic fallback without exposing opaque identifiers", async () => {
   const authoritativeRecord = createLogMutationRecoveryRecord({
+    authority: testRuntime.authority,
     clientRequestId: "malformed-display-request",
     mutationType: "delete",
     targetId: "opaque-log-identifier",
@@ -177,7 +189,7 @@ test("malformed optional display context renders a generic fallback without expo
     setItem: jest.fn(async () => undefined),
     removeItem: jest.fn(async () => undefined),
   };
-  mockRecovery.records = await loadLogMutationRecoveryJournal(storage);
+  mockRecovery.records = await loadLogMutationRecoveryJournal(testRuntime.authority, storage);
   expect(getRecoveryJournalState()).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
   const renderer = await renderRecovery();
   const spokenContent = JSON.stringify({

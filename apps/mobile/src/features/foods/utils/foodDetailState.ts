@@ -1,4 +1,4 @@
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 
 export type FoodDetailLoadState =
   | { kind: "loading" }
@@ -23,13 +23,13 @@ export function foodDetailLoadState({
   if (isLoading) {
     return { kind: "loading" };
   }
-  if (isError && error instanceof ApiError && error.status === 404) {
+  if (isError && error instanceof RuntimeError && error.kind === "not_found") {
     return { kind: "unavailable", message: "This food is unavailable or has been deleted." };
   }
   if (isError) {
     return {
       kind: "error",
-      message: error instanceof ApiError && error.message ? error.message : "Could not load food.",
+      message: error instanceof RuntimeError && error.message ? error.message : "Could not load food.",
     };
   }
   return { kind: "loading" };

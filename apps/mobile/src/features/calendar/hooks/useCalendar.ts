@@ -1,18 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-
-import {
-  confirmCalendarTimeZoneChange,
-  establishCalendarTimeZone,
-  getCalendarState,
-  previewCalendarTimeZoneChange,
-} from "../api/calendarApi";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 export const CALENDAR_QUERY_KEY = ["calendar", "state"] as const;
 
 export function useCalendarState() {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: CALENDAR_QUERY_KEY,
-    queryFn: getCalendarState,
+    queryFn: runtime.calendar.getState,
     // ``today`` is derived by the server at read time.  Refresh it so a
     // midnight rollover reclassifies the retained selected date without
     // navigating away from the user's active workflow.
@@ -21,9 +16,10 @@ export function useCalendarState() {
 }
 
 export function useEstablishCalendarTimeZone() {
+  const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: establishCalendarTimeZone,
+    mutationFn: runtime.calendar.establishTimeZone,
     onSuccess: (state) => {
       queryClient.setQueryData(CALENDAR_QUERY_KEY, state);
     },
@@ -31,13 +27,15 @@ export function useEstablishCalendarTimeZone() {
 }
 
 export function usePreviewCalendarTimeZoneChange() {
-  return useMutation({ mutationFn: previewCalendarTimeZoneChange });
+  const runtime = useNutritionRuntime();
+  return useMutation({ mutationFn: runtime.calendar.previewTimeZoneChange });
 }
 
 export function useConfirmCalendarTimeZoneChange() {
+  const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: confirmCalendarTimeZoneChange,
+    mutationFn: runtime.calendar.confirmTimeZoneChange,
     onSuccess: (state) => {
       queryClient.setQueryData(CALENDAR_QUERY_KEY, state);
     },

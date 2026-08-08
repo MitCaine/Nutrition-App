@@ -1,4 +1,4 @@
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import { userFacingEpicOneError } from "../src/shared/errors/userFacingError";
 
 test("known domain failures become bounded guidance with a validation target", () => {

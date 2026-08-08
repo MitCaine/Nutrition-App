@@ -1,12 +1,12 @@
 import type { AppTheme } from "../../../app/theme/AppTheme";
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 import type { RecipeNutritionResponse } from "../api/types";
 
 export function recipeNutritionErrorMessage(error: unknown, fallback: string): string {
-  if (!(error instanceof ApiError) || !isStructuredNutritionError(error.body)) {
+  if (!(error instanceof RuntimeError) || !isStructuredNutritionError(error.details)) {
     return fallback;
   }
-  return error.body.detail.message;
+  return error.details.message;
 }
 
 export function visibleRecipeNutrition(
@@ -21,12 +21,8 @@ export function recipeNutrientValueColor(theme: AppTheme): string {
 }
 
 function isStructuredNutritionError(
-  body: unknown,
-): body is { detail: { code: string; message: string } } {
-  if (typeof body !== "object" || body === null || !("detail" in body)) {
-    return false;
-  }
-  const detail = (body as { detail?: unknown }).detail;
+  detail: unknown,
+): detail is { code: string; message: string } {
   return (
     typeof detail === "object" &&
     detail !== null &&

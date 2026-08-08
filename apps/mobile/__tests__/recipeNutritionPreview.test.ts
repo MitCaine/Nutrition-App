@@ -4,7 +4,7 @@ import {
   recipeNutritionErrorMessage,
   visibleRecipeNutrition,
 } from "../src/features/recipes/utils/recipeNutritionPreview";
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import type { RecipeNutritionResponse } from "../src/features/recipes/api/types";
 
 const validationError = new ApiError({

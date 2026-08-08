@@ -8,7 +8,6 @@ import { SavedFoodsScreen } from "../../features/foods/screens/SavedFoodsScreen"
 import { restoredSearchOffset } from "../../features/foods/utils/unifiedFoodSearch";
 import { useQueries } from "@tanstack/react-query";
 
-import { getFood } from "../../features/foods/api/foodApi";
 import { useFood } from "../../features/foods/hooks/useFoods";
 import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
@@ -43,9 +42,10 @@ import { NutritionConfirmationScreen } from "../../features/ocr/screens/Nutritio
 import type { NutritionConfirmationDraft } from "../../features/ocr/api/types";
 import { TargetSettingsScreen } from "../../features/targets/TargetSettingsScreen";
 import { useCalendarState } from "../../features/calendar/hooks/useCalendar";
-import { deviceTimeZone } from "../../features/calendar/api/calendarApi";
+import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import { calendarMutationsEnabled, calendarToday } from "../../features/calendar/calendarModel";
 import { isSupportedMeal } from "../../features/logging/validation/logContracts";
+import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
 
 type AddLogFoodWorkflow = {
   foodId: string;
@@ -604,6 +604,7 @@ function RecipeDetailRoute({
   onLogFood: (foodId: string) => void;
   onDeleted: () => void;
 }) {
+  const runtime = useNutritionRuntime();
   const recipe = useRecipe(recipeId);
   const ingredientFoodIds = Array.from(
     new Set(recipe.data?.ingredients.map((ingredient) => ingredient.food_item_id) ?? []),
@@ -611,7 +612,7 @@ function RecipeDetailRoute({
   const ingredientFoods = useQueries({
     queries: ingredientFoodIds.map((foodId) => ({
       queryKey: ["foods", foodId],
-      queryFn: () => getFood(foodId),
+      queryFn: () => runtime.foods.get(foodId),
       enabled: Boolean(recipe.data),
     })),
   });

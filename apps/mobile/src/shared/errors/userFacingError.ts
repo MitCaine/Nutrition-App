@@ -1,4 +1,4 @@
-import { ApiError } from "../api/client";
+import { RuntimeError } from "../../runtime/RuntimeError";
 
 export type UserFacingErrorSeverity = "warning" | "error";
 
@@ -68,12 +68,7 @@ const KNOWN_PRESENTATIONS: Record<string, KnownPresentation> = {
 };
 
 function errorCode(error: unknown): string | null {
-  if (!(error instanceof ApiError) || typeof error.body !== "object" || error.body === null || !("detail" in error.body)) {
-    return null;
-  }
-  const detail = (error.body as { detail?: unknown }).detail;
-  if (typeof detail !== "object" || detail === null || !("code" in detail)) return null;
-  return typeof (detail as { code?: unknown }).code === "string" ? (detail as { code: string }).code : null;
+  return error instanceof RuntimeError ? error.code : null;
 }
 
 /** Bounded UI translation: raw transport and exception text are never the primary message. */

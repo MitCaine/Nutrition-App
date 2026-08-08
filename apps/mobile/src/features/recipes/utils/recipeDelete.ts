@@ -1,11 +1,11 @@
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 import type { RecipeDeleteDependency } from "../api/types";
 
 export function parseRecipeDeleteDependency(error: unknown): RecipeDeleteDependency | null {
-  if (!(error instanceof ApiError) || error.status !== 409) {
+  if (!(error instanceof RuntimeError) || error.kind !== "conflict") {
     return null;
   }
-  const detail = objectValue(error.body, "detail");
+  const detail = error.details;
   if (!isRecipeDeleteDependency(detail)) {
     return null;
   }
@@ -13,8 +13,8 @@ export function parseRecipeDeleteDependency(error: unknown): RecipeDeleteDepende
 }
 
 export function recipeDeleteErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    const detail = objectValue(error.body, "detail");
+  if (error instanceof RuntimeError) {
+    const detail = error.details;
     const message = objectValue(detail, "message");
     if (typeof message === "string" && message.trim()) {
       return message;

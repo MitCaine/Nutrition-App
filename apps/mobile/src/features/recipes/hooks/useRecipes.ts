@@ -1,33 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import {
-  createRecipe,
-  deleteRecipe,
-  getRecipe,
-  getRecipeNutrition,
-  listRecipes,
-  publishRecipe,
-  updateRecipe,
-} from "../api/recipeApi";
 import type { RecipeMutationInput } from "../api/types";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 export function useRecipes(query: string) {
-  return useQuery({ queryKey: ["recipes", query], queryFn: () => listRecipes(query) });
+  const runtime = useNutritionRuntime();
+  return useQuery({ queryKey: ["recipes", query], queryFn: () => runtime.recipes.list(query) });
 }
 
 export function useRecipe(recipeId: string | null) {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: ["recipes", recipeId],
-    queryFn: () => getRecipe(recipeId as string),
+    queryFn: () => runtime.recipes.get(recipeId as string),
     enabled: Boolean(recipeId),
   });
 }
 
 export function useRecipeNutrition(recipeId: string | null) {
+  const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: ["recipes", recipeId, "nutrition"],
-    queryFn: () => getRecipeNutrition(recipeId as string),
+    queryFn: () => runtime.recipes.getNutrition(recipeId as string),
     enabled: Boolean(recipeId),
   });
 }
@@ -45,20 +40,21 @@ export function removeDeletedRecipeCaches(queryClient: QueryClient, recipeId: st
 }
 
 export function useRecipeMutations() {
+  const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   const invalidate = () => invalidateRecipeCaches(queryClient);
 
   return {
-    createRecipe: useMutation({ mutationFn: createRecipe, onSuccess: invalidate }),
+    createRecipe: useMutation({ mutationFn: runtime.recipes.create, onSuccess: invalidate }),
     updateRecipe: useMutation({
       mutationFn: ({ recipeId, input }: { recipeId: string; input: RecipeMutationInput }) =>
-        updateRecipe(recipeId, input),
+        runtime.recipes.update(recipeId, input),
       onSuccess: invalidate,
     }),
     deleteRecipe: useMutation({
-      mutationFn: deleteRecipe,
+      mutationFn: runtime.recipes.delete,
       onSuccess: (_data, { recipeId }) => removeDeletedRecipeCaches(queryClient, recipeId),
     }),
-    publishRecipe: useMutation({ mutationFn: publishRecipe, onSuccess: invalidate }),
+    publishRecipe: useMutation({ mutationFn: runtime.recipes.publish, onSuccess: invalidate }),
   };
 }

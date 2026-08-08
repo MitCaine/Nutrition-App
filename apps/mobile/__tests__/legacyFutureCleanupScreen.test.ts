@@ -4,6 +4,7 @@ import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyLog } from "../src/features/logging/api/types";
 import { DailyLogScreen } from "../src/features/logging/screens/DailyLogScreen";
+import { withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 let mockLogs: Record<string, unknown>;
 let mockFutureLogs: Record<string, unknown>;
@@ -52,7 +53,7 @@ const legacyLog = (id = "legacy-1"): DailyLog => ({
 async function renderCleanup() {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(DailyLogScreen, {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(DailyLogScreen, {
       date: "2030-01-01",
       legacyFuture,
       setDate: jest.fn(),
@@ -62,7 +63,7 @@ async function renderCleanup() {
       onOpenNutritionTargets: jest.fn(),
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
-    }));
+    })));
   });
   return renderer;
 }

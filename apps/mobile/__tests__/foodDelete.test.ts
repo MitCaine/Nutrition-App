@@ -1,4 +1,5 @@
-import { ApiError, apiRequest } from "../src/shared/api/client";
+import { apiRequest } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import { deleteFood } from "../src/features/foods/api/foodApi";
 import {
   apiErrorMessage,

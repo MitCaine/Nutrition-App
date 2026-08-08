@@ -44,9 +44,11 @@ import {
   getRecoveryJournalState,
   persistRecoveryBeforeTransmission,
   removeLogMutationRecoveryRecord,
+  removeLogMutationRecoveryRecordById,
   RecoveryStorageError,
   type LogMutationRecoveryRecord,
 } from "../recovery/logMutationRecovery";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 function isLocalRecoveryStorageError(error: unknown): boolean {
   return error instanceof RecoveryStorageError;
@@ -119,6 +121,7 @@ export type LogFoodSourceAuthority = {
 };
 
 export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSaved, log, initialAmount, initialMealType, showMealAndNotes = false, mutationEnabled = true, strictSourceReview = false, onSourceUnavailable, initialDraft, onDraftChange, initialCalendarRevision, repeatReference, onReviewRecovery, moveOnly = false, moveToday }: Props) {
+  const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const moveHeadingRef = useRef<Text>(null);
@@ -482,6 +485,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         ...(log.updated_at ? { expected_updated_at: log.updated_at } : {}),
       };
       recoveryRecord = createLogMutationRecoveryRecord({
+        authority: runtime.authority,
         clientRequestId: createIntentRef.current?.requestId as string,
         mutationType: restrictedMove ? "move" : "edit",
         targetId: log.id,
@@ -730,6 +734,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         ...(calendarRevision === undefined ? {} : { calendar_revision: calendarRevision }),
       };
       const recoveryRecord = createLogMutationRecoveryRecord({
+        authority: runtime.authority,
         clientRequestId: createIntentRef.current.requestId,
         mutationType: "create",
         targetId: null,
@@ -805,7 +810,10 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         // outcome remains; any pre-submit journal row is obsolete.
         const requestId = createIntentRef.current?.requestId;
         if (requestId) {
-          void removeLogMutationRecoveryRecord(`create:${requestId}`).catch(() => undefined);
+          void removeLogMutationRecoveryRecordById(
+            `create:${requestId}`,
+            runtime.authority,
+          ).catch(() => undefined);
         }
       }
       if (isLocalRecoveryStorageError(saveError)) {

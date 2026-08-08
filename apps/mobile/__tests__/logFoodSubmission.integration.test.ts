@@ -3,7 +3,7 @@ import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../src/features/foods/api/types";
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import type {
   DailyLog,
   DailyLogCreateInput,
@@ -11,7 +11,9 @@ import type {
   DailyLogUpdateInput,
 } from "../src/features/logging/api/types";
 import { LogFoodScreen, type LogFoodDraft } from "../src/features/logging/screens/LogFoodScreen";
-import { loadLogMutationRecoveryJournal, removeLogMutationRecoveryRecord } from "../src/features/logging/recovery/logMutationRecovery";
+import { loadLogMutationRecoveryJournal as loadRecoveryJournalWithAuthority, removeLogMutationRecoveryRecord } from "../src/features/logging/recovery/logMutationRecovery";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 type Deferred = {
   promise: Promise<unknown>;
@@ -31,6 +33,17 @@ const mockUpdateLog = jest.fn((
   _params: { logId: string; input: Partial<DailyLogUpdateInput> },
 ) => mockUpdateDeferred.promise);
 const mockCreateClientRequestId = jest.fn(() => mockRequestIds.shift() as string);
+const testRuntime = createNutritionTestRuntime({
+  dailyLogs: {
+    ...remoteNutritionRuntime.dailyLogs,
+    create: async (input) => await mockCreateLog(input) as DailyLog,
+    update: async (logId, input) => await mockUpdateLog({ logId, input }) as DailyLog,
+  },
+});
+
+function loadLogMutationRecoveryJournal() {
+  return loadRecoveryJournalWithAuthority(testRuntime.authority);
+}
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFood: () => mockFoodQuery,
@@ -167,7 +180,7 @@ afterEach(async () => {
 async function render(element: React.ReactElement): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
-    renderer = TestRenderer.create(element);
+    renderer = TestRenderer.create(withNutritionRuntime(element, testRuntime));
   });
   const mountedRenderer = renderer as ReactTestRenderer;
   activeRenderers.add(mountedRenderer);
@@ -217,7 +230,7 @@ function createScreen(onSaved = jest.fn(), initialAmount = {
 
 test("active logging retains entered values and submits the latest calendar context", async () => {
   const renderer = await render(createScreen(jest.fn(), undefined, jest.fn(), 4));
-  await act(async () => renderer.update(createScreen(jest.fn(), undefined, jest.fn(), 5)));
+  await act(async () => renderer.update(withNutritionRuntime(createScreen(jest.fn(), undefined, jest.fn(), 5), testRuntime)));
   expect(hasText(renderer.root, "The authoritative calendar changed. Your selected date and entered values were kept; review the calendar context before saving.")).toBe(true);
   expect(renderer.root.findByType(TextInput).props.value).toBe("2.5");
   await act(async () => { void pressableWithText(renderer.root, "Save Log").props.onPress(); });

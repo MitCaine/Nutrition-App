@@ -1,5 +1,5 @@
 import { foodDetailLoadState } from "../src/features/foods/utils/foodDetailState";
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 
 test("food detail distinguishes loading, unavailable, error, and ready states", () => {
   expect(foodDetailLoadState({ hasData: false, isLoading: true, isError: false, error: null })).toEqual({ kind: "loading" });

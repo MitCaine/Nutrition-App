@@ -1,4 +1,4 @@
-import type { CalendarState } from "./api/calendarApi";
+import type { CalendarState } from "./types";
 import { classifyCalendarDate, todayInTimeZone } from "../logging/utils/dailyLogDisplay";
 
 export function calendarMutationsEnabled(state: CalendarState | undefined): boolean {

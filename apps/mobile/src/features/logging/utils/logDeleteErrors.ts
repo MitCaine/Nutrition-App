@@ -1,10 +1,10 @@
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 import { logEditErrorCode, logEditErrorMessage } from "./logEditErrors";
 
 /** A network/server failure where the commit may have happened is not a no-op. */
 export function isUncertainDeleteError(error: unknown): boolean {
-  if (error instanceof ApiError) {
-    return error.status >= 500 || error.status === 408;
+  if (error instanceof RuntimeError) {
+    return error.mutationOutcome === "unresolved";
   }
   return true;
 }

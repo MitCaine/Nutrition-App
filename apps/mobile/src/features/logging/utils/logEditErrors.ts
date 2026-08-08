@@ -1,4 +1,4 @@
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 
 const FALLBACK = "Could not save changes.";
 
@@ -19,29 +19,25 @@ export type StructuredLogErrorCode =
   | "note_too_long";
 
 export function logEditErrorMessage(error: unknown, fallback = FALLBACK): string {
-  if (!(error instanceof ApiError)) {
+  if (!(error instanceof RuntimeError)) {
     return fallback;
   }
-  if (isStructuredLogErrorBody(error.body)) {
-    return error.body.detail.message;
+  if (isStructuredLogErrorDetail(error.details)) {
+    return error.details.message;
   }
   return error.message || fallback;
 }
 
 export function logEditErrorCode(error: unknown): StructuredLogErrorCode | null {
-  if (!(error instanceof ApiError) || !isStructuredLogErrorBody(error.body)) {
+  if (!(error instanceof RuntimeError) || !isStructuredLogErrorDetail(error.details)) {
     return null;
   }
-  return error.body.detail.code as StructuredLogErrorCode;
+  return error.details.code as StructuredLogErrorCode;
 }
 
-function isStructuredLogErrorBody(
-  body: unknown,
-): body is { detail: { code: string; message: string } } {
-  if (typeof body !== "object" || body === null || !("detail" in body)) {
-    return false;
-  }
-  const detail = (body as { detail?: unknown }).detail;
+function isStructuredLogErrorDetail(
+  detail: unknown,
+): detail is { code: string; message: string } {
   return (
     typeof detail === "object" &&
     detail !== null &&

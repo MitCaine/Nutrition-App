@@ -1,16 +1,11 @@
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 
 export function confirmationErrorCode(error: unknown): string | null {
-  if (!(error instanceof ApiError)) return null;
-  if (!error.body || typeof error.body !== "object" || !("detail" in error.body)) return null;
-  const detail = (error.body as { detail?: unknown }).detail;
-  return detail && typeof detail === "object" && "code" in detail && typeof detail.code === "string"
-    ? detail.code
-    : null;
+  return error instanceof RuntimeError ? error.code : null;
 }
 
 export function confirmationErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
+  if (error instanceof RuntimeError) {
     const code = confirmationErrorCode(error);
     if (code === "ocr_confirmation_idempotency_conflict") {
       return "This form changed after an earlier submission. Submit again to start a new confirmation attempt.";
@@ -18,7 +13,7 @@ export function confirmationErrorMessage(error: unknown): string {
     if (code === "invalid_ocr_parse_request") {
       return "The scanned label data is no longer valid. Return to scanning and try the image again.";
     }
-    if (code === "invalid_ocr_confirmation_request" || error.status === 400 || error.status === 422) {
+    if (code === "invalid_ocr_confirmation_request" || error.kind === "validation") {
       return "Some confirmed values are invalid. Review the highlighted values and try again.";
     }
     return error.message || "Could not create the scanned Food. Check your connection and try again.";

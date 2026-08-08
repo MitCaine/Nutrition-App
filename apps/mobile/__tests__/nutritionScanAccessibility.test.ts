@@ -17,14 +17,15 @@ jest.mock("../src/app/theme/AppTheme", () => {
 });
 
 import { NutritionScanScreen } from "../src/features/ocr/screens/NutritionScanScreen";
+import { withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 test("iOS label acquisition exposes a focused heading and contextual camera actions", async () => {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(NutritionScanScreen, {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(NutritionScanScreen, {
       onCancel: jest.fn(),
       onReady: jest.fn(),
-    }));
+    })));
   });
   expect(renderer.root.findByProps({ accessibilityRole: "header", children: "Scan nutrition label" })).toBeDefined();
   const actions = renderer.root.findAllByType(Pressable);

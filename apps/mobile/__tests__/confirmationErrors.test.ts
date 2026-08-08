@@ -1,4 +1,4 @@
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 import { confirmationErrorCode, confirmationErrorMessage } from "../src/features/ocr/confirmation/confirmationErrors";
 
 test("structured idempotency conflict is actionable and never displays raw JSON", () => {

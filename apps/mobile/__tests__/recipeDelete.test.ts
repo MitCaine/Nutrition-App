@@ -4,7 +4,7 @@ import {
   publishedParentWarning,
   recipeDeleteErrorMessage,
 } from "../src/features/recipes/utils/recipeDelete";
-import { ApiError } from "../src/shared/api/client";
+import { ApiError } from "./runtimeErrorTestSupport";
 
 const dependency = {
   code: "recipe_delete_dependencies_exist" as const,

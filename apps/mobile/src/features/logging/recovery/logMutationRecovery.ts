@@ -3,13 +3,9 @@ import { AppState, type AppStateStatus } from "react-native";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { clientOwnerScope, ApiError } from "../../../shared/api/client";
-import {
-  createLog,
-  deleteLog,
-  getLogMutationStatus,
-  updateLog,
-} from "../api/logApi";
+import type { DailyLogsRuntime } from "../../../runtime/NutritionRuntime";
+import type { RuntimeAuthorityIdentity } from "../../../runtime/authorityIdentity";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 import type {
   DailyLog,
   DailyLogCreateInput,
@@ -24,7 +20,6 @@ import {
   projectConfirmedDelete,
   projectConfirmedLog,
 } from "../hooks/useLogs";
-import { logEditErrorCode } from "../utils/logEditErrors";
 
 export const LOG_MUTATION_RECOVERY_STORAGE_KEY = "nutrition.log-mutation-recovery.v2";
 // The exact-payload schema is a new durable shape. Older journals must remain
@@ -80,6 +75,14 @@ export type RecoveryStorage = Pick<
   typeof AsyncStorage,
   "getItem" | "setItem" | "removeItem"
 >;
+
+export type LogMutationRecoveryDependencies = Readonly<{
+  authority: RuntimeAuthorityIdentity;
+  dailyLogs: Pick<
+    DailyLogsRuntime,
+    "getMutationStatus" | "create" | "update" | "delete"
+  >;
+}>;
 
 type StoredEnvelope = {
   version: number;
@@ -231,7 +234,7 @@ type ReadResult = {
   health: RecoveryJournalHealth;
 };
 
-async function readStored(storage: RecoveryStorage): Promise<ReadResult> {
+async function readStored(storage: RecoveryStorage, recoveryScope: string): Promise<ReadResult> {
   try {
     const raw = await storage.getItem(LOG_MUTATION_RECOVERY_STORAGE_KEY);
     if (!raw) {
@@ -274,7 +277,7 @@ async function readStored(storage: RecoveryStorage): Promise<ReadResult> {
     return {
       envelope,
       records: stableRecords(valid
-        .filter((record) => record.owner_scope === clientOwnerScope())
+        .filter((record) => record.owner_scope === recoveryScope)
         .map(normalizeStoredRecord)),
       opaqueRecords: envelope.records.filter((record) => !isAuthoritativeRecord(record)),
       health: {
@@ -298,12 +301,13 @@ async function writeStored(
   storage: RecoveryStorage,
   existing: ReadResult,
   records: LogMutationRecoveryRecord[],
+  recoveryScope: string,
 ): Promise<void> {
   if (existing.health.unknownVersion || existing.health.storageError) {
     throw new RecoveryStorageError("Recovery journal is not writable in its current state.");
   }
   const otherOwnerRecords = (existing.envelope?.records ?? []).filter((record) =>
-    isAuthoritativeRecord(record) && record.owner_scope !== clientOwnerScope());
+    isAuthoritativeRecord(record) && record.owner_scope !== recoveryScope);
   const payload = {
     version: LOG_MUTATION_RECOVERY_VERSION,
     records: [...existing.opaqueRecords, ...otherOwnerRecords, ...stableRecords(records)],
@@ -320,7 +324,7 @@ export function getRecoveryJournalHealth(): RecoveryJournalHealth {
   return health;
 }
 
-export function beginLogMutationRecoveryBootstrap(): void {
+function beginLogMutationRecoveryBootstrap(): void {
   if (bootstrapStarted) return;
   bootstrapStarted = true;
   cachedState = {
@@ -335,16 +339,19 @@ export function subscribeToLogMutationRecovery(listener: () => void): () => void
 }
 
 export async function loadLogMutationRecoveryJournal(
+  authority: RuntimeAuthorityIdentity,
   storage: RecoveryStorage = defaultStorage,
 ): Promise<LogMutationRecoveryRecord[]> {
   return enqueueStorage(async () => {
-    const result = await readStored(storage);
+    const result = await readStored(storage, authority.recoveryScope);
     setCachedState({ ...result.health, records: result.records });
     return result.records;
   });
 }
 
-export function useLogMutationRecoveryJournal(): RecoveryJournalState {
+export function useLogMutationRecoveryJournal(
+  authority: RuntimeAuthorityIdentity,
+): RecoveryJournalState {
   const [state, setState] = useState<RecoveryJournalState>(getRecoveryJournalState);
   useEffect(() => {
     let active = true;
@@ -352,12 +359,12 @@ export function useLogMutationRecoveryJournal(): RecoveryJournalState {
       if (active) setState(getRecoveryJournalState());
     };
     const unsubscribe = subscribeToLogMutationRecovery(update);
-    void loadLogMutationRecoveryJournal().then(update);
+    void loadLogMutationRecoveryJournal(authority).then(update);
     return () => {
       active = false;
       unsubscribe();
     };
-  }, []);
+  }, [authority]);
   return state;
 }
 
@@ -366,25 +373,37 @@ export async function upsertLogMutationRecoveryRecord(
   storage: RecoveryStorage = defaultStorage,
 ): Promise<void> {
   await enqueueStorage(async () => {
-    const existing = await readStored(storage);
+    const existing = await readStored(storage, record.owner_scope);
     const records = stableRecords([
       ...existing.records.filter((candidate) => candidate.id !== record.id),
       record,
     ]);
-    await writeStored(storage, existing, records);
+    await writeStored(storage, existing, records, record.owner_scope);
     setCachedState({ ...existing.health, ready: existing.health.malformedRecordCount === 0, records });
   });
 }
 
 export async function removeLogMutationRecoveryRecord(
-  recordOrId: LogMutationRecoveryRecord | string,
+  record: LogMutationRecoveryRecord,
   storage: RecoveryStorage = defaultStorage,
 ): Promise<void> {
-  const id = typeof recordOrId === "string" ? recordOrId : recordOrId.id;
   await enqueueStorage(async () => {
-    const existing = await readStored(storage);
+    const existing = await readStored(storage, record.owner_scope);
+    const records = existing.records.filter((candidate) => candidate.id !== record.id);
+    await writeStored(storage, existing, records, record.owner_scope);
+    setCachedState({ ...existing.health, ready: existing.health.malformedRecordCount === 0, records });
+  });
+}
+
+export async function removeLogMutationRecoveryRecordById(
+  id: string,
+  authority: RuntimeAuthorityIdentity,
+  storage: RecoveryStorage = defaultStorage,
+): Promise<void> {
+  await enqueueStorage(async () => {
+    const existing = await readStored(storage, authority.recoveryScope);
     const records = existing.records.filter((candidate) => candidate.id !== id);
-    await writeStored(storage, existing, records);
+    await writeStored(storage, existing, records, authority.recoveryScope);
     setCachedState({ ...existing.health, ready: existing.health.malformedRecordCount === 0, records });
   });
 }
@@ -446,6 +465,7 @@ export async function persistRecoveryBeforeTransmission(
 }
 
 export function createLogMutationRecoveryRecord(input: {
+  authority: RuntimeAuthorityIdentity;
   clientRequestId: string;
   mutationType: LogMutationRecoveryMutation;
   targetId?: string | null;
@@ -475,7 +495,7 @@ export function createLogMutationRecoveryRecord(input: {
       : { operation: "update", log_id: targetId ?? "", input: { client_request_id: input.clientRequestId } });
   return {
     version: LOG_MUTATION_RECOVERY_VERSION,
-    owner_scope: clientOwnerScope(),
+    owner_scope: input.authority.recoveryScope,
     id: `${input.mutationType}:${input.clientRequestId}`,
     client_request_id: input.clientRequestId,
     mutation_type: input.mutationType,
@@ -495,10 +515,8 @@ export function createLogMutationRecoveryRecord(input: {
 
 export function isUncertainLogMutationError(error: unknown): boolean {
   if (error instanceof RecoveryStorageError) return false;
-  if (error instanceof ApiError) {
-    return error.status >= 500
-      || error.status === 408
-      || logEditErrorCode(error) === "log_mutation_unresolved";
+  if (error instanceof RuntimeError) {
+    return error.mutationOutcome === "unresolved";
   }
   return true;
 }
@@ -548,14 +566,16 @@ function projectConfirmedRecovery(
 export async function reconcileLogMutationRecoveryRecord(
   record: LogMutationRecoveryRecord,
   queryClient: QueryClient | null,
+  dependencies: LogMutationRecoveryDependencies,
   options: {
-    statusReader?: typeof getLogMutationStatus;
+    statusReader?: DailyLogsRuntime["getMutationStatus"];
     storage?: RecoveryStorage;
   } = {},
 ): Promise<RecoveryReconcileResult> {
+  if (record.owner_scope !== dependencies.authority.recoveryScope) return "pending";
   const storage = options.storage ?? defaultStorage;
   try {
-    const status = await (options.statusReader ?? getLogMutationStatus)(record.client_request_id, operationFor(record));
+    const status = await (options.statusReader ?? dependencies.dailyLogs.getMutationStatus)(record.client_request_id, operationFor(record));
     if (status.status === "confirmed_success") {
       projectConfirmedRecovery(queryClient, record, status);
       await removeLogMutationRecoveryRecord(record, storage);
@@ -583,18 +603,20 @@ export async function reconcileLogMutationRecoveryRecord(
 export async function retryLogMutationRecoveryRecord(
   record: LogMutationRecoveryRecord,
   queryClient: QueryClient | null,
+  dependencies: LogMutationRecoveryDependencies,
   storage: RecoveryStorage = defaultStorage,
 ): Promise<RecoveryReconcileResult> {
+  if (record.owner_scope !== dependencies.authority.recoveryScope) return "pending";
   const submitted = { ...record, state: "submitted" as const, dismissed_at: null, dismissed_from_state: null };
   await upsertLogMutationRecoveryRecord(submitted, storage);
   try {
     let result: DailyLog | undefined;
     if (submitted.payload.operation === "create") {
-      result = await createLog(submitted.payload.input);
+      result = await dependencies.dailyLogs.create(submitted.payload.input);
     } else if (submitted.payload.operation === "update") {
-      result = await updateLog(submitted.payload.log_id, submitted.payload.input);
+      result = await dependencies.dailyLogs.update(submitted.payload.log_id, submitted.payload.input);
     } else {
-      await deleteLog(submitted.payload.log_id, submitted.payload.input);
+      await dependencies.dailyLogs.delete(submitted.payload.log_id, submitted.payload.input);
     }
     const status: DailyLogMutationStatus = {
       operation: operationFor(submitted),
@@ -636,14 +658,16 @@ export function hasOverlappingRecovery(
 
 export type RecoveryManagerOptions = {
   storage?: RecoveryStorage;
-  statusReader?: typeof getLogMutationStatus;
+  statusReader?: DailyLogsRuntime["getMutationStatus"];
   retryDelayMs?: number;
 };
 
 export function startLogMutationRecovery(
   queryClient: QueryClient,
+  dependencies: LogMutationRecoveryDependencies,
   options: RecoveryManagerOptions = {},
 ): () => void {
+  beginLogMutationRecoveryBootstrap();
   const storage = options.storage ?? defaultStorage;
   const baseDelay = options.retryDelayMs ?? INITIAL_RETRY_DELAY_MS;
   let stopped = false;
@@ -671,7 +695,7 @@ export function startLogMutationRecovery(
     running = true;
     journalDirty = false;
     try {
-      const state = await loadLogMutationRecoveryJournal(storage).then(() => getRecoveryJournalState());
+      const state = await loadLogMutationRecoveryJournal(dependencies.authority, storage).then(() => getRecoveryJournalState());
       if (!state.ready) {
         return;
       }
@@ -681,7 +705,7 @@ export function startLogMutationRecovery(
         const actionableState = recoveryActionableState(record);
         if (actionableState === "prepared" || actionableState === "confirmed_non_commit") continue;
         const attempted = await markLogMutationRecoveryAttempt(record, storage);
-        const outcome = await reconcileLogMutationRecoveryRecord(attempted, queryClient, options);
+        const outcome = await reconcileLogMutationRecoveryRecord(attempted, queryClient, dependencies, options);
         if (outcome === "confirmed" || outcome === "discarded") {
           retryNumber = 0;
         } else if (outcome === "retryable") {

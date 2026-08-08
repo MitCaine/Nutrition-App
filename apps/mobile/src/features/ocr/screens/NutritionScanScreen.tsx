@@ -5,7 +5,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { recognizeTextFromImage } from "../../../native/ocr/NutritionOcr";
-import { parseNutritionLabel } from "../api/ocrApi";
 import type { NutritionConfirmationDraft } from "../api/types";
 import { draftFromParsedLabel } from "../confirmation/confirmationModel";
 import { acquireOcrImage, deleteCameraCapture, type OcrImageSelection, type OcrImageSource } from "../diagnostics/diagnosticsModel";
@@ -13,11 +12,13 @@ import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePre
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import { focusAccessibilityElement, useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 export function NutritionScanScreen({ onCancel, onReady }: {
   onCancel: () => void;
   onReady: (draft: NutritionConfirmationDraft) => void;
 }) {
+  const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [status, setStatus] = useState<"idle" | "acquiring" | "recognizing" | "parsing" | "failure">("idle");
@@ -78,7 +79,7 @@ export function NutritionScanScreen({ onCancel, onReady }: {
       const recognized = await recognizeTextFromImage(outcome.selection.uri);
       if (!mounted.current || current !== requestId.current) return;
       setStatus("parsing");
-      const parsed = await parseNutritionLabel(recognized);
+      const parsed = await runtime.ocr.parseNutritionLabel(recognized);
       if (!mounted.current || current !== requestId.current) return;
       onReady(draftFromParsedLabel(parsed, source));
     } catch {

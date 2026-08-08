@@ -8,9 +8,9 @@ import {
   formatNutrientLabel,
 } from "../../../shared/nutrition/display";
 import { useFoods } from "../../foods/hooks/useFoods";
-import { getLogMutationStatus } from "../api/logApi";
 import type { DailyLog, DailyLogDeleteInput } from "../api/types";
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import { dailyLogReadState, dailySummaryReadState, useDailyLogs, useDailySummary, useFutureLogs, useLogMutations } from "../hooks/useLogs";
 import {
   addCalendarDays,
@@ -41,7 +41,7 @@ import {
 } from "../../../shared/accessibility/focus";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
 import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../../calendar/calendarModel";
-import { deviceTimeZone } from "../../calendar/api/calendarApi";
+import { deviceTimeZone } from "../../calendar/deviceTimeZone";
 import { useCalendarState } from "../../calendar/hooks/useCalendar";
 import { DatePickerModal } from "./DatePickerModal";
 import { createClientRequestId } from "../utils/clientRequestId";
@@ -61,6 +61,7 @@ import {
   useLogMutationRecoveryJournal,
   reconcileLogMutationRecoveryRecord,
   retryLogMutationRecoveryRecord,
+  type LogMutationRecoveryDependencies,
   type RecoveryJournalState,
   type LogMutationRecoveryRecord,
 } from "../recovery/logMutationRecovery";
@@ -103,6 +104,7 @@ type Props = {
 };
 
 export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange, mutationOutcome = null, onMutationOutcomeHandled, returnFocusKey = null, onReturnFocusHandled }: Props) {
+  const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -125,7 +127,11 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const foods = useFoods("");
   const mutations = useLogMutations(date);
   const calendar = useCalendarState();
-  const recovery = useLogMutationRecoveryJournal();
+  const recoveryDependencies = useMemo(() => ({
+    authority: runtime.authority,
+    dailyLogs: runtime.dailyLogs,
+  }), [runtime.authority, runtime.dailyLogs]);
+  const recovery = useLogMutationRecoveryJournal(runtime.authority);
   const provisionalTimeZone = deviceTimeZone();
   const today = calendarToday(calendar.data, provisionalTimeZone, clock);
   const dateClassification = classifyCalendarDate(date, today);
@@ -250,7 +256,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       }
     }
     try {
-      const status = await getLogMutationStatus(pending.input.client_request_id, "delete");
+      const status = await runtime.dailyLogs.getMutationStatus(pending.input.client_request_id, "delete");
       if (status.status === "confirmed_success") {
         const successor = deletionSuccessor(pending.log);
         mutations.projectDelete?.(pending.log.id, pending.log.logged_date);
@@ -319,6 +325,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         : {}),
     };
     const recoveryRecord = createLogMutationRecoveryRecord({
+      authority: runtime.authority,
       clientRequestId: input.client_request_id as string,
       mutationType: "delete",
       targetId: pendingDelete.log.id,
@@ -380,7 +387,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         errorCode === "stale_log_entry" ||
         errorCode === "calendar_context_changed" ||
         errorCode === "log_mutation_payload_conflict" ||
-        (error instanceof ApiError && error.status === 404)
+        (error instanceof RuntimeError && error.kind === "not_found")
       ) {
         void removeLogMutationRecoveryRecord(recoveryRecord).catch(() => undefined);
         refreshAfterDeleteConflict(pendingDelete.log.logged_date);
@@ -423,7 +430,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     return (
       <View style={styles.root}>
         <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
-        <RecoveryPanel records={recovery.records} health={recovery} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+        <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.screen}
@@ -509,7 +516,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   return (
     <View style={styles.root}>
       <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
-      <RecoveryPanel records={recovery.records} health={recovery} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+      <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.screen}
@@ -706,12 +713,14 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 function RecoveryPanel({
   records,
   health,
+  recoveryDependencies,
   queryClient,
   onRefreshDate,
   styles,
 }: {
   records: LogMutationRecoveryRecord[];
   health: RecoveryJournalState;
+  recoveryDependencies: LogMutationRecoveryDependencies;
   queryClient?: QueryClient;
   onRefreshDate: (date: string) => void;
   styles: ReturnType<typeof createStyles>;
@@ -865,7 +874,7 @@ function RecoveryPanel({
                 disabled={busyId !== null && busyId !== record.id}
                 onPress={() => void runAction(
                   record,
-                  () => retryLogMutationRecoveryRecord(record, queryClient ?? null),
+                  () => retryLogMutationRecoveryRecord(record, queryClient ?? null, recoveryDependencies),
                   "The exact recovery retry could not be sent. The saved intent remains available.",
                   "retry",
                 )}
@@ -880,7 +889,7 @@ function RecoveryPanel({
                 disabled={busyId !== null && busyId !== record.id}
                 onPress={() => void runAction(
                   record,
-                  () => reconcileLogMutationRecoveryRecord(record, queryClient ?? null),
+                  () => reconcileLogMutationRecoveryRecord(record, queryClient ?? null, recoveryDependencies),
                   "Recovery status could not be checked. Try again when the connection is available.",
                   "check",
                 )}

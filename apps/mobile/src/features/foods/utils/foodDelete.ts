@@ -1,22 +1,19 @@
-import { ApiError } from "../../../shared/api/client";
+import { RuntimeError } from "../../../runtime/RuntimeError";
 import type { FoodDeleteDependency, FoodDeleteResult } from "../api/types";
 
 export function parseFoodDeleteDependency(error: unknown): FoodDeleteDependency | null {
-  if (!(error instanceof ApiError) || error.status !== 409) {
+  if (!(error instanceof RuntimeError) || error.kind !== "conflict") {
     return null;
   }
-  if (isFoodDeleteDependencyDetail(error.body)) {
-    return error.body.detail;
+  if (isFoodDeleteDependency(error.details)) {
+    return error.details;
   }
   return null;
 }
 
 export function apiErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    const detail =
-      typeof error.body === "object" && error.body !== null && "detail" in error.body
-        ? (error.body as { detail?: unknown }).detail
-        : null;
+  if (error instanceof RuntimeError) {
+    const detail = error.details;
     if (
       typeof detail === "object" &&
       detail !== null &&
@@ -33,23 +30,8 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
     return error.message || fallback;
   }
   const message = error instanceof Error ? error.message : String(error ?? "");
-  try {
-    const parsed = JSON.parse(message) as { detail?: unknown };
-    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
-      return parsed.detail;
-    }
-    if (Array.isArray(parsed.detail)) {
-      const firstMessage = parsed.detail
-        .map((item) => (typeof item === "object" && item !== null && "msg" in item ? String(item.msg) : ""))
-        .find(Boolean);
-      if (firstMessage) {
-        return firstMessage;
-      }
-    }
-  } catch {
-    if (message && !message.startsWith("{")) {
-      return message;
-    }
+  if (message && !message.startsWith("{")) {
+    return message;
   }
   return fallback;
 }
@@ -113,15 +95,6 @@ export function formatFoodDeleteSuccess(result: FoodDeleteResult): string {
   const staleNames = formatAffectedRecipeNames(staleRecipes);
   const verb = staleRecipes.length === 1 ? "needs" : "need";
   return `${removal} ${staleNames} ${verb} to be republished before published nutrition is current.`;
-}
-
-function isFoodDeleteDependencyDetail(value: unknown): value is { detail: FoodDeleteDependency } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "detail" in value &&
-    isFoodDeleteDependency((value as { detail?: unknown }).detail)
-  );
 }
 
 function isFoodDeleteDependency(value: unknown): value is FoodDeleteDependency {

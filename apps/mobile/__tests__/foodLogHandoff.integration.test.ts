@@ -7,14 +7,29 @@ import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../src/fea
 import { FoodDetailsScreen } from "../src/features/foods/screens/FoodDetailsScreen";
 import type { DailyLog, DailyLogEditContext } from "../src/features/logging/api/types";
 import { LogFoodScreen } from "../src/features/logging/screens/LogFoodScreen";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 let mockFoodQuery: Record<string, unknown>;
 let mockResolvedQuery: Record<string, unknown>;
 let mockEditContextQuery: Record<string, unknown>;
-const mockCreateLog = jest.fn(async () => undefined);
-const mockUpdateLog = jest.fn(async () => undefined);
+const mockCreateLog = jest.fn(async (_input?: unknown) => undefined);
+const mockUpdateLog = jest.fn(async (_input?: unknown) => undefined);
 const mockSetFavorite = jest.fn();
 const mountedRenderers = new Set<ReactTestRenderer>();
+const testRuntime = createNutritionTestRuntime({
+  dailyLogs: {
+    ...remoteNutritionRuntime.dailyLogs,
+    create: async (input) => {
+      await mockCreateLog(input);
+      return undefined as unknown as DailyLog;
+    },
+    update: async (logId, input) => {
+      await mockUpdateLog({ logId, input });
+      return undefined as unknown as DailyLog;
+    },
+  },
+});
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFood: () => mockFoodQuery,
@@ -149,10 +164,14 @@ afterEach(async () => {
 async function render(element: React.ReactElement): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
-    renderer = TestRenderer.create(element);
+    renderer = TestRenderer.create(withNutritionRuntime(element, testRuntime));
   });
   mountedRenderers.add(renderer as ReactTestRenderer);
   return renderer as ReactTestRenderer;
+}
+
+function updateWithRuntime(renderer: ReactTestRenderer, element: React.ReactElement): void {
+  renderer.update(withNutritionRuntime(element, testRuntime));
 }
 
 function textContent(node: ReactTestInstance): string {
@@ -386,7 +405,7 @@ test("fallback warning can be dismissed and does not reappear", async () => {
   }).props.onPress());
   expect(hasText(renderer.root, warning)).toBe(false);
 
-  await act(async () => renderer.update(React.createElement(LogFoodScreen, {
+  await act(async () => updateWithRuntime(renderer, React.createElement(LogFoodScreen, {
     foodId: food.id,
     initialAmount: initial,
     date: "2026-07-13",
@@ -408,7 +427,7 @@ test("resolved-nutrition refetch does not overwrite user changes", async () => {
     ...mockResolvedQuery,
     data: nutrition([amount("new-default", "serving", "1", true)]),
   };
-  await act(async () => renderer.update(React.createElement(LogFoodScreen, {
+  await act(async () => updateWithRuntime(renderer, React.createElement(LogFoodScreen, {
     foodId: food.id,
     initialAmount: initial,
     date: "2026-07-13",
@@ -523,7 +542,7 @@ test("strict Daily Log Add Food review blocks a changed source until current cho
     ...mockResolvedQuery,
     data: nutrition([amount("replacement-serving", "serving", "1", true)]),
   };
-  await act(async () => renderer.update(React.createElement(LogFoodScreen, {
+  await act(async () => updateWithRuntime(renderer, React.createElement(LogFoodScreen, {
     foodId: food.id,
     date: "2026-07-14",
     initialMealType: "breakfast",

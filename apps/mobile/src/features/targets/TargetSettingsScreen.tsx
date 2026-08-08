@@ -10,11 +10,6 @@ import {
 
 import { useAppTheme } from "../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../shared/forms/KeyboardSafeScrollView";
-import {
-  getTargets,
-  resetTargetOverride,
-  updateTargets,
-} from "./api/targetApi";
 import type { TargetConfiguration } from "./api/types";
 import { targetErrorMessage } from "./targetErrors";
 import {
@@ -24,6 +19,7 @@ import {
   targetInput,
   targetUnavailableMessage,
 } from "./targetModel";
+import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
 
 const ACTIVITY = [
   {
@@ -81,13 +77,14 @@ export function TargetSettingsScreen({
 }: {
   onBack: () => void;
 }) {
+  const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ["targets"],
-    queryFn: getTargets,
+    queryFn: runtime.targets.getConfiguration,
   });
 
   const [draft, setDraft] = useState(EMPTY_TARGET_DRAFT);
@@ -125,7 +122,7 @@ export function TargetSettingsScreen({
     setError(null);
 
     try {
-      const next = await updateTargets(targetInput(draft));
+      const next = await runtime.targets.updateConfiguration(targetInput(draft));
 
       setResult(next);
       setDraft(targetDraft(next));
@@ -152,7 +149,7 @@ export function TargetSettingsScreen({
     setError(null);
 
     try {
-      const next = await resetTargetOverride(nutrientId);
+      const next = await runtime.targets.resetOverride(nutrientId);
       const draftKey =
         nutrientId === "total_carbohydrate"
           ? "totalCarbohydrate"

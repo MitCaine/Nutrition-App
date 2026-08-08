@@ -9,11 +9,11 @@ import { LabeledField } from "../../../shared/forms/LabeledField";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import { focusAccessibilityElement, useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
-import { confirmNutritionLabel } from "../api/ocrApi";
 import type { ConfirmationField, NutritionConfirmationDraft } from "../api/types";
 import { confirmationPayload, confirmationValidationError, updateReview } from "../confirmation/confirmationModel";
 import { bindConfirmationIntent, type ConfirmationIntent } from "../confirmation/confirmationIntent";
 import { confirmationErrorCode, confirmationErrorMessage } from "../confirmation/confirmationErrors";
+import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 const FINGERPRINT_PLACEHOLDER_REQUEST_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -28,6 +28,7 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
   onCancel: () => void;
   onCreated: (foodId: string) => void;
 }) {
+  const runtime = useNutritionRuntime();
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState(initialDraft);
@@ -81,7 +82,7 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
     const payload = { ...candidate, client_request_id: intentRef.current.requestId };
     submittingRef.current = true; setSubmitting(true); setError(null);
     try {
-      const response = await confirmNutritionLabel(payload);
+      const response = await runtime.ocr.confirmNutritionLabel(payload);
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
       if (mountedRef.current && !successClaimedRef.current) {
         successClaimedRef.current = true;

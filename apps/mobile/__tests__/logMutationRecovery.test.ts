@@ -3,32 +3,59 @@ import { QueryClient } from "@tanstack/react-query";
 import type { DailyLog, DailyLogMutationStatus } from "../src/features/logging/api/types";
 import {
   createLogMutationRecoveryRecord as createRecoveryRecordWithDisplayContext,
-  loadLogMutationRecoveryJournal,
-  reconcileLogMutationRecoveryRecord,
+  loadLogMutationRecoveryJournal as loadRecoveryJournalWithAuthority,
+  reconcileLogMutationRecoveryRecord as reconcileRecoveryWithDependencies,
   persistRecoveryBeforeTransmission,
   dismissLogMutationRecoveryRecord,
   getRecoveryJournalState,
   hasOverlappingRecovery,
   removeLogMutationRecoveryRecord,
   recoveryActionableState,
-  startLogMutationRecovery,
+  startLogMutationRecovery as startRecoveryWithDependencies,
   upsertLogMutationRecoveryRecord,
   type RecoveryStorage,
 } from "../src/features/logging/recovery/logMutationRecovery";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+
+const TEST_AUTHORITY = remoteNutritionRuntime.authority;
+const TEST_RECOVERY_DEPENDENCIES = {
+  authority: TEST_AUTHORITY,
+  dailyLogs: remoteNutritionRuntime.dailyLogs,
+};
 
 type RecoveryRecordInput = Parameters<typeof createRecoveryRecordWithDisplayContext>[0];
 
 function createLogMutationRecoveryRecord(
-  input: Omit<RecoveryRecordInput, "displayContext"> & Pick<Partial<RecoveryRecordInput>, "displayContext">,
+  input: Omit<RecoveryRecordInput, "authority" | "displayContext"> & Pick<Partial<RecoveryRecordInput>, "displayContext">,
 ) {
   return createRecoveryRecordWithDisplayContext({
     ...input,
+    authority: TEST_AUTHORITY,
     displayContext: input.displayContext ?? {
       item_name: "Test food",
       amount_label: "1 serving",
       meal_label: "Breakfast",
     },
   });
+}
+
+function loadLogMutationRecoveryJournal(storage: RecoveryStorage) {
+  return loadRecoveryJournalWithAuthority(TEST_AUTHORITY, storage);
+}
+
+function reconcileLogMutationRecoveryRecord(
+  record: Parameters<typeof reconcileRecoveryWithDependencies>[0],
+  queryClient: Parameters<typeof reconcileRecoveryWithDependencies>[1],
+  options: Parameters<typeof reconcileRecoveryWithDependencies>[3] = {},
+) {
+  return reconcileRecoveryWithDependencies(record, queryClient, TEST_RECOVERY_DEPENDENCIES, options);
+}
+
+function startLogMutationRecovery(
+  queryClient: Parameters<typeof startRecoveryWithDependencies>[0],
+  options: Parameters<typeof startRecoveryWithDependencies>[2] = {},
+) {
+  return startRecoveryWithDependencies(queryClient, TEST_RECOVERY_DEPENDENCIES, options);
 }
 
 const queryClients = new Set<QueryClient>();
