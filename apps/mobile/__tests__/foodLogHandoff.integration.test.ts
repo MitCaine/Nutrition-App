@@ -14,6 +14,7 @@ let mockEditContextQuery: Record<string, unknown>;
 const mockCreateLog = jest.fn(async () => undefined);
 const mockUpdateLog = jest.fn(async () => undefined);
 const mockSetFavorite = jest.fn();
+const mountedRenderers = new Set<ReactTestRenderer>();
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useFood: () => mockFoodQuery,
@@ -138,11 +139,19 @@ beforeEach(() => {
   };
 });
 
+afterEach(async () => {
+  await act(async () => {
+    for (const renderer of mountedRenderers) renderer.unmount();
+  });
+  mountedRenderers.clear();
+});
+
 async function render(element: React.ReactElement): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
     renderer = TestRenderer.create(element);
   });
+  mountedRenderers.add(renderer as ReactTestRenderer);
   return renderer as ReactTestRenderer;
 }
 

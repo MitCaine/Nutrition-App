@@ -198,6 +198,7 @@ Start at the [Documentation Index](docs/README.md), or choose a path:
 | Turn an approved backlog into GitHub delivery work | [GitHub Implementation Workflow](docs/project/github-workflow.md) |
 | Extend the current E1-17 accessibility foundations | [E1-17 Stage 1 Accessibility Foundations](docs/project/version-1.1/epic-1/accessibility-remediation-stage-1.md) |
 | Review the E1-17 Daily Log and mutation accessibility pass | [E1-17 Stage 2 Daily Log, Mutations, Cleanup, and Recovery](docs/project/version-1.1/epic-1/accessibility-remediation-stage-2.md) |
+| Review the completed Epic 1 release evidence | [Epic 1 End-to-End Release Qualification](docs/project/version-1.1/epic-1/release-qualification.md) |
 | Run and extend qualification | [Testing Guide](docs/operations/testing.md) |
 | Work on production promotion infrastructure | [Control Plane Guide](docs/operations/control-plane.md) — optional |
 | Qualify the Version 1.0 backend/control release | [Version 1.0 PostgreSQL Release Qualification](docs/operations/version-1.0-release-qualification.md) |
