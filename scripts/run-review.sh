@@ -338,10 +338,15 @@ run_step() {
     local end_epoch
     local duration
     local rc
+    local severity_label
     local status
 
     case "$severity" in
-        critical|advisory)
+        critical)
+            severity_label="CRITICAL"
+            ;;
+        advisory)
+            severity_label="ADVISORY"
             ;;
         *)
             die "Invalid severity '$severity' for '$display_name'."
@@ -383,7 +388,7 @@ run_step() {
             ADVISORY_FAILED=$((ADVISORY_FAILED + 1))
         fi
 
-        error "${severity^^} failure: $display_name exited $rc (${duration}s)"
+        error "$severity_label failure: $display_name exited $rc (${duration}s)"
     fi
 
     {

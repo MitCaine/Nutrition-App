@@ -15,6 +15,7 @@ from app.core.database_identity import database_connect_args
 from app.operators.immutable_provenance_contracts import (
     APPEND_ONLY_TABLES,
     CURRENT_RUNTIME_SCHEMA_REVISION,
+    FUNCTION_DEFINITION_SHA256,
     IMMUTABLE_PROVENANCE_LOCAL_ADMISSION_VERSION,
     IMMUTABLE_PROVENANCE_MANIFEST_VERSION,
     IMMUTABLE_PROVENANCE_QUALIFICATION_VERSION,
@@ -320,8 +321,12 @@ def _qualify_routine_manifest(connection: Connection) -> list[dict[str, object]]
 
 def qualify_immutable_provenance_manifest(
     connection: Connection,
+    *,
+    function_definition_sha256: Mapping[str, str] = FUNCTION_DEFINITION_SHA256,
 ) -> dict[str, object]:
-    expected = expected_immutable_provenance_manifest()
+    expected = expected_immutable_provenance_manifest(
+        function_definition_sha256=function_definition_sha256,
+    )
     table_names = [
         str(item["table"])
         for item in expected["protected_tables"]  # type: ignore[index]
@@ -571,6 +576,8 @@ def _validate_prerequisites(raw: Any):
 
 def qualify_immutable_provenance_connection(
     connection: Connection,
+    *,
+    function_definition_sha256: Mapping[str, str] = FUNCTION_DEFINITION_SHA256,
 ) -> ImmutableProvenanceQualification:
     """Qualify an already protected qualifier-owned transaction."""
 
@@ -596,7 +603,10 @@ def qualify_immutable_provenance_connection(
         raise ImmutableProvenanceQualificationError(
             "immutable_provenance_resource_membership_invalid"
         )
-    immutable_manifest = qualify_immutable_provenance_manifest(connection)
+    immutable_manifest = qualify_immutable_provenance_manifest(
+        connection,
+        function_definition_sha256=function_definition_sha256,
+    )
     runtime_privileges = qualify_runtime_privileges(connection)
     constraint_payload = {
         "constraint_manifest_version": CONSTRAINT_MANIFEST_VERSION,

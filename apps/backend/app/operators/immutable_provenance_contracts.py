@@ -8,7 +8,11 @@ admission, SQLite behavioral guards, and tests all consume these names.  The
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
+from app.migrations.immutable_provenance_0020_contracts import (
+    EXACT_0024_FUNCTION_DEFINITION_SHA256,
+)
 from app.operators.resource_membership_contracts import (
     FROZEN_RUNTIME_EXECUTE_ROUTINES as FROZEN_0019_RUNTIME_EXECUTE_ROUTINES,
     FROZEN_RUNTIME_RELATION_PRIVILEGES as FROZEN_0019_RUNTIME_RELATION_PRIVILEGES,
@@ -307,19 +311,12 @@ ROUTINE_CONTRACTS = (
     ),
 )
 
-# Filled from PostgreSQL 16 pg_get_functiondef output after the frozen bodies
-# are finalized.  Any later body change requires a new evidence version.
-FUNCTION_DEFINITION_SHA256: dict[str, str] = {
-    REJECT_ROW_FUNCTION: "e32da2b471afd466a3bd212900cbf2de4d254f4ee76f19ba6e3d53c199e5c5e2",
-    REJECT_TRUNCATE_FUNCTION: "75d91f883cc6c01347df663c8f9c70fa06c174051940df5bde82df4b78b12adb",
-    SNAPSHOT_GUARD_FUNCTION: "252eb938b967377650170acbf1c05b7fa95022ac19fbaad3bf015963fe2b98b2",
-    DAILY_LOG_GUARD_FUNCTION: "a89f7f97a0e3d88dc78e42a4921c21b41a04a31b09ede963328c42238db2b8b0",
-    SNAPSHOT_COMPLETENESS_FUNCTION: "b2849d4b40de9c3b54adcb0cc6033b18c86b023eb20d85f256955552e10d3798",
-    SNAPSHOT_REPLACEMENT_FUNCTION: "af40c11898f5c51b24b0cd63f2b34e29d299324e01ee482fa0b58979d95d59ef",
-    RESOURCE_MEMBERSHIP_VALIDATOR_FUNCTION: "d5c96dc3f6f77e95a3f10018de516a50809bb9495b2af79295dd4aeb847e8587",
-    IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION: "7ee761158010399c0b99953e75fb7320a0c16a797aec30dcba538b511c37031b",
-    "phase5c_local_admission_v3": "3099ff5d7fb7582a0b316a73266050445dc816d3975592652a677d3abf4603c8",
-}
+# Current runtime evidence derives from the latest frozen evidence version.
+# Future migrations must add another revision-scoped mapping rather than mutate
+# either exact-0020 or exact-0024 replay semantics.
+FUNCTION_DEFINITION_SHA256: dict[str, str] = dict(
+    EXACT_0024_FUNCTION_DEFINITION_SHA256
+)
 
 # The immutable validator cannot include its own digest or the digest of the
 # local reader that calls it without a recursive definition. Independent
@@ -388,7 +385,10 @@ def expected_runtime_privilege_manifest() -> dict[str, object]:
     }
 
 
-def expected_immutable_provenance_manifest() -> dict[str, object]:
+def expected_immutable_provenance_manifest(
+    *,
+    function_definition_sha256: Mapping[str, str] = FUNCTION_DEFINITION_SHA256,
+) -> dict[str, object]:
     """Return the canonical OID-free 0020 protection-object contract."""
 
     return {
@@ -432,7 +432,7 @@ def expected_immutable_provenance_manifest() -> dict[str, object]:
                 "strict": False,
                 "returns_set": item.returns_set,
                 "config": ["search_path=pg_catalog, public"],
-                "definition_sha256": FUNCTION_DEFINITION_SHA256[item.name],
+                "definition_sha256": function_definition_sha256[item.name],
                 "execute_acl": [
                     {"role": role, "grantable": grantable}
                     for role, grantable in item.execute_acl

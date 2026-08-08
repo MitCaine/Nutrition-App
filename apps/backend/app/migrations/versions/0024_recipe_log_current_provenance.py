@@ -19,6 +19,10 @@ from importlib import import_module
 
 from alembic import op
 
+from app.migrations.immutable_provenance_0020_contracts import (
+    EXACT_0024_FUNCTION_DEFINITION_SHA256,
+)
+
 
 revision = "0024_recipe_log_current_provenance"
 down_revision = "0023_calendar_revision"
@@ -147,7 +151,9 @@ def upgrade() -> None:
     contracts = import_module(
         "app.migrations.versions.0020_immutable_provenance_enforcement"
     )
-    validator_sql = contracts._immutable_validator_sql().replace(  # noqa: SLF001
+    validator_sql = contracts._immutable_validator_sql(  # noqa: SLF001
+        function_definition_sha256=EXACT_0024_FUNCTION_DEFINITION_SHA256,
+    ).replace(
         "CREATE FUNCTION public.phase0020_immutable_provenance_integrity_valid()",
         "CREATE OR REPLACE FUNCTION public.phase0020_immutable_provenance_integrity_valid()",
         1,

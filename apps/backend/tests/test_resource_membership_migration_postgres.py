@@ -52,6 +52,42 @@ from tests import test_resource_membership_integrity as direct_write_contracts
 pytestmark = pytest.mark.postgres_concurrency
 
 
+_POST_0019_METADATA_COLUMNS = frozenset(
+    {
+        ("user_profiles", "authoritative_time_zone"),
+        ("user_profiles", "calendar_revision"),
+    }
+)
+_POST_0019_METADATA_TABLES = frozenset(
+    {
+        "phase5c_activation_runtime_commands",
+        "phase5c_activation_schema_evidence",
+    }
+)
+
+
+def _include_0019_schema_object(
+    object_: object,
+    name: str | None,
+    type_: str,
+    reflected: bool,
+    _compare_to: object | None,
+) -> bool:
+    """Project current metadata onto the exact historical 0019 boundary."""
+
+    if type_ == "table":
+        if reflected and name == "phase5c_conversion_clone_marker":
+            return False
+        if not reflected and name in _POST_0019_METADATA_TABLES:
+            return False
+    if type_ == "column" and not reflected:
+        table = getattr(object_, "table", None)
+        identity = (getattr(table, "name", None), name)
+        if identity in _POST_0019_METADATA_COLUMNS:
+            return False
+    return True
+
+
 def _upgrade_0019(database_url: str) -> None:
     migration = import_module(
         "app.migrations.versions.0019_resource_membership_integrity"
@@ -1414,26 +1450,7 @@ def test_0019_sqlalchemy_metadata_has_no_domain_drift(
                 connection,
                 opts={
                     "compare_type": True,
-                    "include_object": lambda object_, name, type_, reflected, compare_to: (
-                        not (
-                            type_ == "table"
-                            and (
-                                (
-                                    reflected
-                                    and name
-                                    == "phase5c_conversion_clone_marker"
-                                )
-                                or (
-                                    not reflected
-                                    and name
-                                    in {
-                                        "phase5c_activation_runtime_commands",
-                                        "phase5c_activation_schema_evidence",
-                                    }
-                                )
-                            )
-                        )
-                    ),
+                    "include_object": _include_0019_schema_object,
                 },
             )
             differences = compare_metadata(

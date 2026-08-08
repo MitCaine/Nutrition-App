@@ -34,6 +34,9 @@ from sqlalchemy.exc import ArgumentError, DBAPIError, SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
 from app.core.database_identity import database_connect_args
+from app.migrations.immutable_provenance_0020_contracts import (
+    EXACT_0020_FUNCTION_DEFINITION_SHA256,
+)
 from app.operators.immutable_provenance_contracts import (
     CURRENT_RUNTIME_SCHEMA_REVISION,
     MIGRATION_ADVISORY_LOCK_KEY,
@@ -943,7 +946,10 @@ def _collect_observation(connection: Connection) -> dict[str, Any]:
     database["observed_at"] = _timestamp(database["observed_at"])
     qualification_error = None
     try:
-        qualification = qualify_immutable_provenance_connection(connection).to_dict()
+        qualification = qualify_immutable_provenance_connection(
+            connection,
+            function_definition_sha256=EXACT_0020_FUNCTION_DEFINITION_SHA256,
+        ).to_dict()
     except ImmutableProvenanceQualificationError:
         qualification = {}
         qualification_error = "integrity_qualification_failed"

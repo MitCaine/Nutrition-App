@@ -12,8 +12,15 @@ privileges change.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from alembic import op
 import sqlalchemy as sa
+
+from app.migrations.immutable_provenance_0020_contracts import (
+    EXACT_0020_FUNCTION_DEFINITION_SHA256,
+    exact_0020_snapshot_replacement_function_sql,
+)
 
 from app.operators.immutable_provenance_contracts import (
     APPEND_ONLY_TABLES,
@@ -23,7 +30,6 @@ from app.operators.immutable_provenance_contracts import (
     FROZEN_RUNTIME_RELATION_PRIVILEGES,
     IMMUTABLE_PROVENANCE_LOCAL_ADMISSION_VERSION,
     IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION,
-    FUNCTION_DEFINITION_SHA256,
     LOCAL_ADMISSION_V3_EXECUTE_ACL,
     LOCAL_DEFINITION_HASHED_ROUTINES,
     MIGRATION_ADVISORY_LOCK_KEY,
@@ -42,9 +48,6 @@ from app.operators.immutable_provenance_contracts import (
     SNAPSHOT_GUARD_FUNCTION,
     SNAPSHOT_REPLACEMENT_EXECUTE_ACL,
     SNAPSHOT_REPLACEMENT_FUNCTION,
-)
-from app.operators.immutable_provenance_postgres import (
-    snapshot_replacement_function_sql,
 )
 from app.operators.resource_membership_contracts import (
     CHECK_CONSTRAINT_CONTRACTS,
@@ -425,7 +428,7 @@ def _install_guard_functions() -> None:
 
         """
     )
-    op.execute(snapshot_replacement_function_sql())
+    op.execute(exact_0020_snapshot_replacement_function_sql())
 
 
 def _install_protection_triggers() -> None:
@@ -753,7 +756,10 @@ def _resource_membership_validator_sql() -> str:
     """
 
 
-def _immutable_validator_sql() -> str:
+def _immutable_validator_sql(
+    *,
+    function_definition_sha256: Mapping[str, str],
+) -> str:
     event_bits = {"DELETE": 8, "INSERT": 4, "UPDATE": 16, "TRUNCATE": 32}
     trigger_values = ",\n".join(
         "(" + ",".join(
@@ -806,7 +812,7 @@ def _immutable_validator_sql() -> str:
     )
     protected_routines = _array(tuple(item.name for item in ROUTINE_CONTRACTS))
     hash_values = ",\n".join(
-        f"({_literal(name)},{_literal(FUNCTION_DEFINITION_SHA256[name])})"
+        f"({_literal(name)},{_literal(function_definition_sha256[name])})"
         for name in LOCAL_DEFINITION_HASHED_ROUTINES
     )
     return f"""
@@ -1028,7 +1034,11 @@ def _immutable_validator_sql() -> str:
 
 def _install_validators_and_local_admission() -> None:
     op.execute(_resource_membership_validator_sql())
-    op.execute(_immutable_validator_sql())
+    op.execute(
+        _immutable_validator_sql(
+            function_definition_sha256=EXACT_0020_FUNCTION_DEFINITION_SHA256,
+        )
+    )
     op.execute(
         f"""
         CREATE FUNCTION public.phase5c_local_admission_v3()
