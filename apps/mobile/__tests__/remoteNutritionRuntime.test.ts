@@ -38,6 +38,9 @@ const mockListLogs = logApi.listLogs as jest.Mock;
 const mockGetTargets = targetApi.getTargets as jest.Mock;
 const mockParseNutritionLabel = ocrApi.parseNutritionLabel as jest.Mock;
 const mockSearchUsdaFoods = usdaApi.searchUsdaFoods as jest.Mock;
+const parityFixture = require("../../../packages/shared-contracts/e2-02/parity-fixtures.json") as {
+  behavioral_fixtures: Array<{ kind: string; payload: unknown }>;
+};
 
 test("one composed runtime exposes every approved feature interface", () => {
   expect(Object.keys(remoteNutritionRuntime)).toEqual([
@@ -113,4 +116,17 @@ test("representative operations delegate once for all eight feature surfaces and
   expect(results[3]).toEqual([{ id: "recipe-b" }, { id: "recipe-a" }]);
   expect(results[4]).toEqual([{ id: "log-b" }, { id: "log-a" }]);
   expect(results[7]).toEqual({ foods: [{ fdc_id: 2 }, { fdc_id: 1 }] });
+});
+
+test("remote adapter passes shared parity payloads without numeric coercion", async () => {
+  const food = parityFixture.behavioral_fixtures.find(({ kind }) => kind === "food")?.payload;
+  const snapshot = parityFixture.behavioral_fixtures.find(({ kind }) => kind === "daily_log_snapshot")?.payload;
+  expect(food).toBeDefined();
+  expect(snapshot).toBeDefined();
+
+  mockListFoods.mockResolvedValueOnce([food]);
+  mockListLogs.mockResolvedValueOnce([snapshot]);
+
+  await expect(remoteNutritionRuntime.foods.list()).resolves.toEqual([food]);
+  await expect(remoteNutritionRuntime.dailyLogs.list("2026-02-28")).resolves.toEqual([snapshot]);
 });

@@ -119,6 +119,8 @@ Reason: establishes the cross-cutting interface every later local adapter depend
 
 Establish exact cross-runtime representations and reusable behavioral fixtures before SQLite feature persistence depends on them.
 
+The frozen contract is documented in the [E2-02 exact value and parity contract](e2-02-exact-value-contract.md).
+
 ### Background
 
 PostgreSQL `NUMERIC`, timezone-aware timestamps, UUIDs, JSONB, and constraint errors cannot be mapped casually to JavaScript and SQLite. A wrong representation could silently corrupt historical nutrition or cause local and remote behavior to diverge.

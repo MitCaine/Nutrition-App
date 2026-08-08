@@ -1,0 +1,283 @@
+{
+  "contract_version": "e2-02.v1",
+  "decimal_cases": [
+    {
+      "name": "numeric_14_6_zero",
+      "spec": "numeric_14_6",
+      "input": "0",
+      "canonical": "0.000000"
+    },
+    {
+      "name": "numeric_14_6_round_half_up",
+      "spec": "numeric_14_6",
+      "input": "1.2345675",
+      "canonical": "1.234568"
+    },
+    {
+      "name": "numeric_14_6_maximum",
+      "spec": "numeric_14_6",
+      "input": "99999999.999999",
+      "canonical": "99999999.999999"
+    },
+    {
+      "name": "numeric_8_3_round_down",
+      "spec": "numeric_8_3",
+      "input": "99999.9994",
+      "canonical": "99999.999"
+    },
+    {
+      "name": "numeric_8_3_maximum",
+      "spec": "numeric_8_3",
+      "input": "99999.999",
+      "canonical": "99999.999"
+    },
+    {
+      "name": "numeric_5_4_round_half_up",
+      "spec": "numeric_5_4",
+      "input": "0.12505",
+      "canonical": "0.1251"
+    },
+    {
+      "name": "numeric_5_4_maximum",
+      "spec": "numeric_5_4",
+      "input": "9.9999",
+      "canonical": "9.9999"
+    },
+    {
+      "name": "numeric_14_6_small_half_up",
+      "spec": "numeric_14_6",
+      "input": "0.0000005",
+      "canonical": "0.000001"
+    }
+  ],
+  "invalid_decimal_cases": [
+    {
+      "name": "negative",
+      "spec": "numeric_14_6",
+      "input": "-1",
+      "error": "negative_decimal"
+    },
+    {
+      "name": "overflow_after_rounding",
+      "spec": "numeric_14_6",
+      "input": "99999999.9999995",
+      "error": "decimal_overflow"
+    },
+    {
+      "name": "exponent_is_not_decimal_text",
+      "spec": "numeric_14_6",
+      "input": "1e3",
+      "error": "invalid_decimal"
+    }
+  ],
+  "arithmetic_cases": [
+    {
+      "name": "add",
+      "operation": "add",
+      "spec": "numeric_14_6",
+      "left": "1.500000",
+      "right": "2.250000",
+      "canonical": "3.750000"
+    },
+    {
+      "name": "subtract",
+      "operation": "subtract",
+      "spec": "numeric_14_6",
+      "left": "2.250000",
+      "right": "1.500000",
+      "canonical": "0.750000"
+    },
+    {
+      "name": "multiply_rounds_half_up",
+      "operation": "multiply",
+      "spec": "numeric_14_6",
+      "left": "0.000001",
+      "right": "0.500000",
+      "canonical": "0.000001"
+    },
+    {
+      "name": "divide_rounds_half_up",
+      "operation": "divide",
+      "spec": "numeric_14_6",
+      "left": "1.000000",
+      "right": "3.000000",
+      "canonical": "0.333333"
+    },
+    {
+      "name": "compare",
+      "operation": "compare",
+      "spec": "numeric_14_6",
+      "left": "2.000000",
+      "right": "1.999999",
+      "canonical": 1
+    }
+  ],
+  "response_decimal_cases": [
+    {
+      "name": "derived_multiplication_preserves_scale",
+      "operation": "multiply",
+      "left": "1.000000",
+      "right": "2.250000",
+      "canonical": "2.250000000000"
+    },
+    {
+      "name": "derived_per_100g_result",
+      "operation": "divide",
+      "left": "28.349523",
+      "right": "100",
+      "canonical": "0.28349523"
+    },
+    {
+      "name": "derived_non_terminating_result",
+      "operation": "divide",
+      "left": "1.000000",
+      "right": "3.000000",
+      "canonical": "0.3333333333333333333333333333"
+    },
+    {
+      "name": "derived_exact_integer_result",
+      "operation": "divide",
+      "left": "1000.000000",
+      "right": "100.000000",
+      "canonical": "10"
+    }
+  ],
+  "scalar_cases": {
+    "uuid": {
+      "input": "A0B1C2D3-E4F5-4678-9012-ABCDEF123456",
+      "canonical": "a0b1c2d3-e4f5-4678-9012-abcdef123456"
+    },
+    "date_only": {
+      "input": "2026-02-28",
+      "canonical": "2026-02-28"
+    },
+    "instant": {
+      "input": "2026-02-28T23:59:59.1Z",
+      "canonical": "2026-02-28T23:59:59.100000Z"
+    },
+    "iana_time_zone": {
+      "input": " America/Los_Angeles ",
+      "canonical": "America/Los_Angeles"
+    },
+    "boolean": {
+      "input": true,
+      "canonical": true
+    }
+  },
+  "json_cases": [
+    {
+      "name": "sorted_food_fragment",
+      "value": {
+        "food_id": "a0b1c2d3-e4f5-4678-9012-abcdef123456",
+        "is_recipe": false,
+        "nutrient_amount": "22.000000",
+        "nutrient_id": "protein",
+        "recorded_on": "2026-02-28"
+      },
+      "canonical": "{\"food_id\":\"a0b1c2d3-e4f5-4678-9012-abcdef123456\",\"is_recipe\":false,\"nutrient_amount\":\"22.000000\",\"nutrient_id\":\"protein\",\"recorded_on\":\"2026-02-28\"}"
+    },
+    {
+      "name": "nested_unknown_nutrient",
+      "value": {
+        "nutrient": {
+          "amount": null,
+          "data_status": "unknown",
+          "nutrient_id": "vitamin_d",
+          "unit": "mcg"
+        },
+        "unknown_contributor_count": 1
+      },
+      "canonical": "{\"nutrient\":{\"amount\":null,\"data_status\":\"unknown\",\"nutrient_id\":\"vitamin_d\",\"unit\":\"mcg\"},\"unknown_contributor_count\":1}"
+    }
+  ],
+  "behavioral_fixtures": [
+    {
+      "name": "food_known_nutrient",
+      "kind": "food",
+      "payload": {
+        "food_id": "a0b1c2d3-e4f5-4678-9012-abcdef123456",
+        "nutrient": {
+          "amount": "22.000000",
+          "data_status": "known",
+          "nutrient_id": "protein",
+          "unit": "g"
+        },
+        "serving_quantity": "1.000000"
+      }
+    },
+    {
+      "name": "recipe_publication",
+      "kind": "recipe_publication",
+      "payload": {
+        "ingredient_amount": "2.000000",
+        "publication_revision_id": "b1c2d3e4-f567-4789-9012-bcdef1234567",
+        "published": true,
+        "recipe_id": "c2d3e4f5-6789-4890-a123-cdef1234567890"
+      }
+    },
+    {
+      "name": "daily_log_snapshot",
+      "kind": "daily_log_snapshot",
+      "payload": {
+        "consumed_amount_quantity": "1.000000",
+        "logged_date": "2026-02-28",
+        "nutrient_amount": "22.000000",
+        "source_food_item_id": "a0b1c2d3-e4f5-4678-9012-abcdef123456",
+        "snapshot_is_immutable": true
+      }
+    },
+    {
+      "name": "unknown_nutrient",
+      "kind": "unknown_nutrient",
+      "payload": {
+        "amount": null,
+        "data_status": "unknown",
+        "nutrient_id": "vitamin_d",
+        "unit": "mcg"
+      }
+    },
+    {
+      "name": "idempotent_replay",
+      "kind": "idempotent_replay",
+      "payload": {
+        "client_request_id": "d3e4f567-8901-4abc-b123-def123456789",
+        "replay_status": "confirmed_success",
+        "response_snapshot": {
+          "amount_quantity": "1.000000",
+          "log_id": "e4f56789-0123-4bcd-c234-ef1234567890"
+        }
+      }
+    },
+    {
+      "name": "failure_outcomes",
+      "kind": "failure_outcomes",
+      "payload": {
+        "outcomes": [
+          {
+            "code": "ownership_denied",
+            "mutation_outcome": "confirmed_non_commit",
+            "retryable": false
+          },
+          {
+            "code": "mutation_unresolved",
+            "mutation_outcome": "unresolved",
+            "retryable": true
+          },
+          {
+            "code": "dependency_unavailable",
+            "mutation_outcome": "not_applicable",
+            "retryable": true
+          }
+        ]
+      }
+    }
+  ],
+  "runtime_error_codes": [
+    "ownership_denied",
+    "validation_failed",
+    "conflict",
+    "constraint_failed",
+    "dependency_unavailable",
+    "mutation_unresolved"
+  ]
+}
