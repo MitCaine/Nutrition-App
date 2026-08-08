@@ -25,6 +25,7 @@ let mockEditContextQuery: Record<string, unknown>;
 let mockCreateDeferred: Deferred;
 let mockUpdateDeferred: Deferred;
 let mockRequestIds: string[];
+const activeRenderers = new Set<ReactTestRenderer>();
 const mockCreateLog = jest.fn((_input: DailyLogCreateInput) => mockCreateDeferred.promise);
 const mockUpdateLog = jest.fn((
   _params: { logId: string; input: Partial<DailyLogUpdateInput> },
@@ -149,12 +150,28 @@ beforeEach(() => {
   };
 });
 
+afterEach(async () => {
+  await act(async () => {
+    activeRenderers.forEach((renderer) => {
+      try {
+        void renderer.root;
+        renderer.unmount();
+      } catch {
+        // The test already unmounted this renderer.
+      }
+    });
+  });
+  activeRenderers.clear();
+});
+
 async function render(element: React.ReactElement): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
     renderer = TestRenderer.create(element);
   });
-  return renderer as ReactTestRenderer;
+  const mountedRenderer = renderer as ReactTestRenderer;
+  activeRenderers.add(mountedRenderer);
+  return mountedRenderer;
 }
 
 async function flushRecoveryBarrier() {
@@ -391,12 +408,12 @@ test("create claims synchronously, disables submitted controls, and succeeds onc
   expect(save.props.accessibilityRole).toBe("button");
   expect(pressableWithText(renderer.root, "Cancel").props.accessibilityLabel).toBe("Cancel logging");
   expect(renderer.root.findByType(TextInput).props.accessibilityLabel).toBe("Amount quantity");
-  expect(pressableWithText(renderer.root, "Servings").props.accessibilityState).toEqual({
+  expect(pressableWithText(renderer.root, "Servings").props.accessibilityState).toMatchObject({
     checked: true,
     disabled: false,
     selected: true,
   });
-  expect(pressableStartingWithText(renderer.root, "Selected serving").props.accessibilityState).toEqual({
+  expect(pressableStartingWithText(renderer.root, "Selected serving").props.accessibilityState).toMatchObject({
     checked: true,
     disabled: false,
     selected: true,

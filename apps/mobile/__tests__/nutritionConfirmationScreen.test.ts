@@ -151,6 +151,8 @@ test("validation failure does not bind an intent or issue a request", async () =
   expect(mockConfirm).not.toHaveBeenCalled();
   expect(Crypto.randomUUID).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType(Text).some((item) => item.props.accessibilityRole === "alert")).toBe(true);
+  expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(true);
+  expect(input(renderer.root, "Food name").props["aria-describedby"]).toBeDefined();
   await act(async () => renderer.unmount());
 });
 
@@ -210,6 +212,8 @@ test("all confirmation controls expose specific accessibility labels and review 
   expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, dismissed")?.props.accessible).toBe(true);
   expect(action(renderer.root, "Use Calories value")).toBeDefined();
   expect(action(renderer.root, "Omit Sodium")).toBeDefined();
+  expect(renderer.root.findByProps({ accessibilityRole: "header", children: "Confirm nutrition" })).toBeDefined();
+  expect(action(renderer.root, "Create Food").props.accessibilityHint).toContain("logging confirmation");
   await act(async () => renderer.unmount());
 });
 

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,7 +36,7 @@ import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePre
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { contextualActionLabel } from "../../../shared/accessibility/contextualActionLabels";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
-import { useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
+import { focusAccessibilityElement, useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
 import {
   createLogMutationRecoveryRecord,
   isUncertainLogMutationError,
@@ -123,6 +122,10 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const moveHeadingRef = useRef<Text>(null);
+  const headingRef = useRef<Text>(null);
+  const errorRef = useRef<Text>(null);
+  const amountInputRef = useRef<TextInput>(null);
+  const noteInputRef = useRef<TextInput>(null);
   const moveDateTriggerRef = useRef<View>(null);
   const saveActionRef = useRef<View>(null);
   const announce = useAccessibilityAnnouncement();
@@ -130,6 +133,11 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     active: moveOnly,
     routeKey: log ? `move-legacy-entry:${log.id}` : "move-legacy-entry",
     targetRef: moveHeadingRef,
+  });
+  useAccessibilityScreenFocus({
+    active: !moveOnly,
+    routeKey: log ? `edit-log:${log.id}` : `log-food:${foodId}:${date}`,
+    targetRef: headingRef,
   });
   const editContext = useLogEditContext(log?.id ?? null, !moveOnly);
   const revisionBacked = editContext.data?.is_revision_backed === true;
@@ -208,6 +216,21 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       priority: error || editContextErrorMessage ? "assertive" : "polite",
     });
   }, [announce, editContextErrorMessage, error, foodId, initializationWarning, log?.id]);
+
+  useEffect(() => {
+    if (!error) return;
+    const target = /amount|serving|quantity|greater than|positive/i.test(error)
+      ? amountInputRef.current
+      : /note/i.test(error)
+      ? noteInputRef.current
+      : errorRef.current;
+    return focusAccessibilityElement(target, { focusKeyboardTarget: target === amountInputRef.current || target === noteInputRef.current });
+  }, [error]);
+
+  useEffect(() => {
+    if (!sourceReviewRequired || moveOnly) return;
+    return focusAccessibilityElement(amountInputRef.current);
+  }, [moveOnly, sourceReviewRequired]);
 
   const startSeparateAction = () => {
     if (!overlapPrompt) return;
@@ -899,10 +922,10 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
     >
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
         <View style={styles.header}>
-          <Text accessibilityRole="header" style={styles.title}>
+          <Text ref={headingRef} accessibilityRole="header" style={styles.title}>
             {log ? "Edit Log" : "Log Food"}
           </Text>
-          <Pressable
+          <AccessiblePressable
             accessibilityLabel={log ? "Cancel editing" : "Cancel logging"}
             accessibilityRole="button"
             accessibilityState={{ disabled: isSubmitting }}
@@ -911,13 +934,13 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={isSubmitting && styles.disabled}
           >
             <Text style={styles.text}>Cancel</Text>
-          </Pressable>
+          </AccessiblePressable>
         </View>
         <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
         <Text accessibilityLabel={`Log date ${date}`} style={styles.calendarNotice}>Logging for {date}</Text>
         {log ? (
           <>
-            <Pressable
+            <AccessiblePressable
               accessibilityRole="button"
               accessibilityLabel="Edit log date"
               onPress={() => {
@@ -927,7 +950,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               style={styles.dateButton}
             >
               <Text style={styles.dateButtonText}>Date: {formatReadableDate(editDate)}</Text>
-            </Pressable>
+            </AccessiblePressable>
             <DatePickerModal
               date={editPickerDate}
               visible={editPickerOpen}
@@ -972,7 +995,10 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               Nutrition editing is unavailable because the current Recipe source is no longer available. Meal, note, and date edits remain available.
             </Text>
           ) : null}
+        <Text nativeID="log-food-amount-label" style={styles.label}>Amount</Text>
         <TextInput
+          ref={amountInputRef}
+          aria-labelledby="log-food-amount-label"
           accessibilityHint="Enter a quantity greater than zero"
           accessibilityLabel="Amount quantity"
           placeholderTextColor={theme.colors.placeholder}
@@ -989,7 +1015,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={[styles.input, (isSubmitting || nutritionEditUnavailable) && styles.disabled]}
         />
         <View accessibilityLabel="Amount unit" accessibilityRole="radiogroup" style={styles.segment}>
-          <Pressable
+          <AccessiblePressable
             accessibilityLabel="Servings"
             accessibilityRole="radio"
             accessibilityState={{
@@ -1002,8 +1028,8 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={[styles.segmentButton, unit === "serving" && styles.active, (isSubmitting || nutritionEditUnavailable) && styles.disabled]}
           >
             <Text style={styles.text}>Servings</Text>
-          </Pressable>
-          <Pressable
+          </AccessiblePressable>
+          <AccessiblePressable
             accessibilityLabel="Grams"
             accessibilityRole="radio"
             accessibilityState={{
@@ -1016,12 +1042,12 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={[styles.segmentButton, unit === "g" && styles.active, (isSubmitting || nutritionEditUnavailable) && styles.disabled]}
           >
             <Text style={styles.text}>Grams</Text>
-          </Pressable>
+          </AccessiblePressable>
         </View>
         {unit === "serving" && servings.length > 0 ? (
           <View accessibilityLabel="Serving amount" accessibilityRole="radiogroup" style={styles.servingList}>
             {servings.map((serving) => (
-              <Pressable
+              <AccessiblePressable
                 key={serving.id}
                 accessibilityLabel={
                   serving.gram_weight
@@ -1045,7 +1071,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               >
                 <Text style={styles.text}>{serving.label}</Text>
                 {serving.gram_weight ? <Text style={styles.servingMeta}>{formatServingGramWeight(serving.gram_weight)}</Text> : null}
-              </Pressable>
+              </AccessiblePressable>
             ))}
           </View>
         ) : null}
@@ -1063,7 +1089,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={[styles.warning, isSubmitting && styles.disabled]}
           >
             <Text style={styles.warningText}>{initializationWarning}</Text>
-            <Pressable
+            <AccessiblePressable
               accessibilityLabel="Dismiss amount notice"
               accessibilityRole="button"
               accessibilityState={{ disabled: isSubmitting }}
@@ -1071,16 +1097,16 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
               onPress={() => setInitializationWarning(null)}
             >
               <Text style={styles.warningDismiss}>Dismiss</Text>
-            </Pressable>
+            </AccessiblePressable>
           </View>
         ) : null}
         {error ? (
           <View>
-            <Text accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{error}</Text>
+            <Text ref={errorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{error}</Text>
             {sourceUnavailable && onSourceUnavailable ? (
-              <Pressable accessibilityRole="button" accessibilityLabel="Return to Add Food" onPress={onSourceUnavailable}>
+              <AccessiblePressable accessibilityLabel="Return to Add Food" accessibilityHint="Choose another food source" onPress={onSourceUnavailable}>
                 <Text style={styles.warningDismiss}>Return to Add Food</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
           </View>
         ) : null}
@@ -1089,7 +1115,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             <Text style={styles.label}>Original note (not copied)</Text>
             {repeatReference.note ? <Text style={styles.noteReferenceText}>{repeatReference.note}</Text> : <Text style={styles.servingMeta}>No note</Text>}
             {repeatReference.note && repeatReference.canCopyNotes ? (
-              <Pressable
+              <AccessiblePressable
                 accessibilityRole="button"
                 accessibilityLabel="Copy notes"
                 accessibilityState={{ disabled: isSubmitting }}
@@ -1097,12 +1123,16 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
                 onPress={() => setNote(repeatReference.note ?? "")}
               >
                 <Text style={styles.warningDismiss}>Copy notes</Text>
-              </Pressable>
+              </AccessiblePressable>
             ) : null}
           </View>
         ) : null}
         {mealAndNotesEnabled ? (
+          <>
+          <Text nativeID="log-food-notes-label" style={styles.label}>Notes (optional)</Text>
           <TextInput
+            ref={noteInputRef}
+            aria-labelledby="log-food-notes-label"
             accessibilityLabel="Notes"
             editable={!isSubmitting}
             multiline
@@ -1112,8 +1142,9 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
             style={[styles.noteInput, isSubmitting && styles.disabled]}
             value={note}
           />
+          </>
         ) : null}
-        <Pressable
+        <AccessiblePressable
           ref={saveActionRef}
           accessibilityHint={log ? "Updates this Daily Log entry" : "Adds this food to the Daily Log"}
           accessibilityLabel={isSubmitting ? (log ? "Updating log" : "Saving log") : (log ? "Save changes" : "Save log")}
@@ -1126,7 +1157,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
           <Text style={styles.primaryText}>
             {isSubmitting ? (log ? "Updating..." : "Saving...") : (log ? "Save Changes" : "Save Log")}
           </Text>
-        </Pressable>
+        </AccessiblePressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -1141,7 +1172,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   foodName: { color: theme.colors.text, fontSize: 18, fontWeight: "600" },
   label: { color: theme.colors.text, fontWeight: "700" },
   meta: { color: theme.colors.secondaryText },
-  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
   keyboard: { backgroundColor: theme.colors.background, flex: 1 },
   mealOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -1217,7 +1248,7 @@ function MealOption({ label, value, selected, disabled, onPress }: { label: stri
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
-    <Pressable
+    <AccessiblePressable
       accessibilityLabel={`Meal ${value ?? "none"}`}
       accessibilityRole="radio"
       accessibilityState={{ checked: selected, disabled, selected }}
@@ -1226,6 +1257,6 @@ function MealOption({ label, value, selected, disabled, onPress }: { label: stri
       style={[styles.segmentButton, selected && styles.active, disabled && styles.disabled]}
     >
       <Text style={styles.text}>{label}</Text>
-    </Pressable>
+    </AccessiblePressable>
   );
 }

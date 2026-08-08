@@ -144,7 +144,10 @@ test("Recent Entries renders historical intent and emits a single-entry Repeat h
   const rendered = await render(true, onRepeat);
   expect(allText(rendered.renderer.root)).toContain("Oatmeal");
   expect(allText(rendered.renderer.root)).toContain("2026-07-13 · 2 serving · breakfast · Note");
-  const repeat = rendered.renderer.root.findByProps({ accessibilityLabel: "Repeat Oatmeal" });
+  const repeat = rendered.renderer.root.findByProps({
+    accessibilityLabel: "Repeat Oatmeal, 2 serving, breakfast, logged 2026-07-13, has note",
+  });
+  expect(repeat.props.accessibilityHint).toContain("without copying the original note");
   await act(async () => repeat.props.onPress());
   expect(onRepeat).toHaveBeenCalledWith(entry);
   await act(async () => rendered.renderer.unmount());
@@ -166,7 +169,7 @@ test("mutation-ineligible dates do not expose selectable Foods", async () => {
   const rendered = await render(false);
   const saved = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Saved Food, Manual");
   expect(saved?.props.disabled).toBe(true);
-  await act(async () => saved?.props.onPress());
+  expect(saved?.props.onPress).toBeUndefined();
   expect(rendered.onSelectFood).not.toHaveBeenCalled();
   await act(async () => rendered.renderer.unmount());
 });
@@ -184,12 +187,12 @@ test("Add Food exposes reusable custom and supported scan acquisitions", async (
 
 test("mutation-ineligible dates disable acquisition handoffs", async () => {
   const rendered = await render(false);
-  const custom = rendered.renderer.root.findByProps({ accessibilityLabel: "Add custom food" });
-  const scan = rendered.renderer.root.findByProps({ accessibilityLabel: "Scan nutrition label" });
-  expect(custom.props.disabled).toBe(true);
-  expect(scan.props.disabled).toBe(true);
-  await act(async () => custom.props.onPress());
-  await act(async () => scan.props.onPress());
+  const custom = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Add custom food");
+  const scan = rendered.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Scan nutrition label");
+  expect(custom?.props.disabled).toBe(true);
+  expect(scan?.props.disabled).toBe(true);
+  expect(custom?.props.onPress).toBeUndefined();
+  expect(scan?.props.onPress).toBeUndefined();
   expect(rendered.onCreateCustomFood).not.toHaveBeenCalled();
   expect(rendered.onScanNutritionLabel).not.toHaveBeenCalled();
   await act(async () => rendered.renderer.unmount());

@@ -4,6 +4,7 @@ import {
   formatUsdaNutrientLabel,
   formatUsdaNutrientPreview,
   usdaImportErrorMessage,
+  usdaFoodAccessibilityLabel,
   usdaPreviewMessage,
   usdaResultMeta,
   usdaSearchMessage,
@@ -70,6 +71,13 @@ test("USDA result formatting includes brand and useful nutrient preview", () => 
     "Calories: 300kcal - Cholesterol: 0mg",
   );
   expect(formatUsdaNutrient(searchResult.nutrient_preview[2])).toBe("unknown");
+});
+
+test("USDA accessibility identity is meaningful and excludes the opaque FDC id", () => {
+  const label = usdaFoodAccessibilityLabel(searchResult);
+  expect(label).toBe("Select Example Protein Bar, Example Foods, Bars, Branded - Example Foods");
+  expect(label).not.toContain("555000");
+  expect(usdaFoodAccessibilityLabel({ ...searchResult, importable: false })).toMatch(/^Unavailable /);
 });
 
 test("USDA nutrient formatting trims raw decimals and formats raw ids", () => {

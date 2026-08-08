@@ -18,6 +18,7 @@ let mockUsdaSearch: QueryState<UsdaSearchResponse>;
 let mockUsdaPreview: QueryState<UsdaFoodPreview>;
 let mockUsdaImport: { isPending: boolean; isError: boolean; mutate: jest.Mock };
 const mockAccessibilityAnnounce = jest.fn(() => jest.fn());
+const activeRenderers = new Set<ReactTestRenderer>();
 
 type QueryState<T> = {
   data?: T;
@@ -315,7 +316,17 @@ async function renderNavigator(): Promise<ReactTestRenderer> {
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(AppNavigator));
   });
+  activeRenderers.add(renderer);
   return renderer;
+}
+
+function rendererIsMounted(renderer: ReactTestRenderer): boolean {
+  try {
+    void renderer.root;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function textContent(node: ReactTestInstance): string {
@@ -352,7 +363,13 @@ beforeEach(() => {
   resetState();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => {
+    activeRenderers.forEach((renderer) => {
+      if (rendererIsMounted(renderer)) renderer.unmount();
+    });
+  });
+  activeRenderers.clear();
   jest.useRealTimers();
 });
 
@@ -427,7 +444,7 @@ test("USDA search imports through the existing handoff and opens shared confirma
   await act(async () => labeled(renderer.root, "Add Food to Breakfast").props.onPress());
   await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
   await act(async () => jest.advanceTimersByTime(300));
-  await act(async () => labeled(renderer.root, "USDA Food 1105314").props.onPress());
+  await act(async () => labeled(renderer.root, "Select Banana, raw, Fruits, Foundation").props.onPress());
   expect(screenText(renderer.root)).toContain("Banana, raw");
   await act(async () => buttonWithText(renderer.root, "Import Food").props.onPress());
   expect(mockUsdaImportMutation).toHaveBeenCalledWith(1105314, expect.objectContaining({ onSuccess: expect.any(Function) }));
@@ -512,7 +529,7 @@ test("USDA import failure keeps the preview and discovery workflow context retry
   await act(async () => labeled(renderer.root, "Add Food to Lunch").props.onPress());
   await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
   await act(async () => jest.advanceTimersByTime(300));
-  await act(async () => labeled(renderer.root, "USDA Food 1105314").props.onPress());
+  await act(async () => labeled(renderer.root, "Select Banana, raw, Fruits, Foundation").props.onPress());
   mockUsdaImportMutation.mockImplementationOnce(() => {
     mockUsdaImport.isError = true;
   });
@@ -532,7 +549,7 @@ test("cancelling USDA confirmation returns to the same mode and query", async ()
   await act(async () => labeled(renderer.root, "Add Food to Lunch").props.onPress());
   await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
   await act(async () => jest.advanceTimersByTime(300));
-  await act(async () => labeled(renderer.root, "USDA Food 1105314").props.onPress());
+  await act(async () => labeled(renderer.root, "Select Banana, raw, Fruits, Foundation").props.onPress());
   await act(async () => buttonWithText(renderer.root, "Import Food").props.onPress());
   await act(async () => labeled(renderer.root, "Cancel logging").props.onPress());
   expect(renderer.root.findByType(TextInput).props.value).toBe("banana");

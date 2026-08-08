@@ -191,7 +191,10 @@ test("Saved selection and USDA selection expose separate direct handoffs", async
   expect(mockSelectSaved).toHaveBeenCalledWith("saved-1");
   await act(async () => renderer.root.findByType(TextInput).props.onChangeText("banana"));
   await act(async () => jest.advanceTimersByTime(300));
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: "USDA Food 1105314" }).props.onPress());
+  const usdaResult = renderer.root.findByProps({ accessibilityLabel: "Select Banana, raw, Fruits, Foundation" });
+  expect(usdaResult.props.accessibilityLabel).not.toContain("1105314");
+  expect(usdaResult.props.accessibilityHint).toContain("before import");
+  await act(async () => usdaResult.props.onPress());
   expect(mockSelectUsda).toHaveBeenCalledWith(1105314);
   await act(async () => renderer.unmount());
 });

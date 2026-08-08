@@ -61,6 +61,14 @@ export function usdaResultMeta(food: UsdaSearchResult): string {
   return [food.data_type, food.brand_owner].filter(Boolean).join(" - ");
 }
 
+/** User-facing identity for a USDA result; never exposes its opaque FDC identifier. */
+export function usdaFoodAccessibilityLabel(food: UsdaSearchResult): string {
+  const context = [food.brand_owner, food.food_category, usdaResultMeta(food)]
+    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+    .join(", ");
+  return `${food.importable ? "Select" : "Unavailable"} ${food.description}${context ? `, ${context}` : ""}`;
+}
+
 export function canStartUsdaImport(isPending: boolean): boolean {
   return !isPending;
 }

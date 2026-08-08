@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import type { Food, RecentFood } from "../../foods/api/types";
 import { useFavoriteFoods, useRecentFoods, useSavedFoods } from "../../foods/hooks/useFoods";
 import { useDebouncedSearchQuery } from "../../foods/hooks/useDebouncedSearchQuery";
 import { foodAccessibilityLabel, formatRecentUse } from "../../foods/utils/foodDiscovery";
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
-import { formatUsdaNutrientPreview, usdaResultMeta } from "../../usda/utils/usdaDisplay";
+import { formatUsdaNutrientPreview, usdaFoodAccessibilityLabel, usdaResultMeta } from "../../usda/utils/usdaDisplay";
 import type { UsdaSearchResponse } from "../../usda/api/types";
 import { useDailyLogs, useRecentEntries, dailyLogReadState } from "../hooks/useLogs";
 import type { RecentEntry } from "../api/types";
@@ -119,13 +121,14 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
       <RootScreenHeader title="Add Food" onOpenSettings={onOpenSettings} />
       <View style={styles.headerRow}>
         <Text style={styles.origin}>Logging for {flow.originatingDate}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Cancel Add Food" onPress={onCancel}><Text style={styles.link}>Cancel</Text></Pressable>
+        <AccessiblePressable accessibilityLabel="Cancel Add Food" onPress={onCancel}><Text style={styles.link}>Cancel</Text></AccessiblePressable>
       </View>
       <Text style={styles.secondary}>{flow.initialMeal ? `Initial meal: ${flow.initialMeal}` : "No meal selected"}</Text>
       {!mutationEnabled ? <Text accessibilityRole="alert" style={styles.warning}>Add Food is unavailable because this date is not mutation-eligible.</Text> : null}
       {entriesUnavailable ? <Text accessibilityRole="alert" style={styles.warning}>Existing entries could not be reviewed. Duplicate logging is possible.</Text> : null}
+      <Text nativeID="add-food-search-label" style={styles.fieldLabel}>Search foods</Text>
       <TextInput
-        accessibilityLabel="Search foods"
+        aria-labelledby="add-food-search-label"
         autoCapitalize="none"
         onChangeText={(query) => onQueryChange?.(query)}
         placeholder="Search saved and USDA foods"
@@ -137,7 +140,7 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
       {onCreateCustomFood || (Platform.OS === "ios" && onScanNutritionLabel) ? (
         <View accessibilityRole="toolbar" style={styles.acquisitionActions}>
           {onCreateCustomFood ? (
-            <Pressable
+            <AccessiblePressable
               accessibilityRole="button"
               accessibilityLabel="Add custom food"
               accessibilityHint="Opens the custom food form"
@@ -147,10 +150,10 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
               style={[styles.actionButton, !mutationEnabled && styles.disabled]}
             >
               <Text style={styles.actionText}>Custom Food</Text>
-            </Pressable>
+            </AccessiblePressable>
           ) : null}
           {Platform.OS === "ios" && onScanNutritionLabel ? (
-            <Pressable
+            <AccessiblePressable
               accessibilityRole="button"
               accessibilityLabel="Scan nutrition label"
               accessibilityHint="Opens label scanning"
@@ -160,7 +163,7 @@ export function AddFoodScreen({ flow, mutationEnabled, onCancel, onOpenSettings,
               style={[styles.actionButton, !mutationEnabled && styles.disabled]}
             >
               <Text style={styles.actionText}>Scan label</Text>
-            </Pressable>
+            </AccessiblePressable>
           ) : null}
         </View>
       ) : null}
@@ -234,16 +237,17 @@ function RecentEntriesSection({ state, mutationEnabled, onRepeat, styles }: {
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>Recent Entries</Text>
-      {state.kind === "initial-loading" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Loading recent entries…</Text> : null}
+      {state.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading recent entries…" /> : null}
       {state.kind === "initial-failure" ? <ReadError message="Recent Entries are unavailable." retryLabel="Retry recent entries" onRetry={state.retry} styles={styles} /> : null}
-      {state.kind === "refreshing" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Refreshing recent entries…</Text> : null}
+      {state.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing recent entries…" /> : null}
       {state.kind === "refresh-failure" ? <ReadError message="Recent Entries could not be refreshed; showing the last confirmed entries." retryLabel="Retry recent entries" onRetry={state.retry} styles={styles} /> : null}
       {state.kind === "empty" ? <Text style={styles.secondary}>No recent entries yet.</Text> : null}
       {state.data?.map((entry) => (
-        <Pressable
+        <AccessiblePressable
           key={entry.id}
           accessibilityRole="button"
-          accessibilityLabel={`Repeat ${entry.food_name_snapshot ?? "Food"}`}
+          accessibilityLabel={recentEntryRepeatLabel(entry)}
+          accessibilityHint="Opens a confirmation screen without copying the original note"
           accessibilityState={{ disabled: !mutationEnabled || !onRepeat }}
           disabled={!mutationEnabled || !onRepeat}
           onPress={() => { if (mutationEnabled) onRepeat?.(entry); }}
@@ -256,7 +260,7 @@ function RecentEntriesSection({ state, mutationEnabled, onRepeat, styles }: {
             {entry.note_present ? " · Note" : ""}
           </Text>
           <Text style={styles.link}>Repeat</Text>
-        </Pressable>
+        </AccessiblePressable>
       ))}
     </View>
   );
@@ -272,7 +276,7 @@ function SearchContent({ query, searchQuery, saved, usda, mutationEnabled, onSel
   onSelectUsdaFood: (fdcId: number) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
-  if (query.trim() !== searchQuery) return <Text style={styles.secondary}>Searching foods…</Text>;
+  if (query.trim() !== searchQuery) return <AccessibilityStatus kind="loading" message="Searching foods…" />;
   return (
     <>
       <FoodSection title="Saved Foods" state={saved} mutationEnabled={mutationEnabled} onSelectFood={onSelectFood} emptyMessage="No saved foods found." retryLabel="Retry saved foods" renderItem={(food) => <Text style={styles.foodMeta}>{food.brand ? `${food.brand} · ${food.source_label}` : food.source_label}</Text>} />
@@ -286,18 +290,26 @@ function UsdaSearchSection({ state, mutationEnabled, onSelectFood, styles }: { s
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>USDA Results</Text>
       {state.kind === "prompt" ? <Text style={styles.secondary}>Search USDA foods by name, brand, or ingredient.</Text> : null}
-      {state.kind === "searching" ? <Text style={styles.secondary}>Searching USDA foods…</Text> : null}
+      {state.kind === "searching" ? <AccessibilityStatus kind="loading" message="Searching USDA foods…" /> : null}
       {state.kind === "initial-failure" ? <ReadError message="USDA search is unavailable right now." retryLabel="Retry USDA search" onRetry={state.retry} styles={styles} /> : null}
       {state.kind === "empty" ? <Text style={styles.secondary}>No USDA foods found. Try a different search.</Text> : null}
-      {state.kind === "refreshing" ? <Text style={styles.secondary}>Refreshing USDA foods…</Text> : null}
+      {state.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing USDA foods…" /> : null}
       {state.kind === "refresh-failure" ? <ReadError message="USDA search could not be refreshed; showing the last confirmed results." retryLabel="Retry USDA search" onRetry={state.retry} styles={styles} /> : null}
       {state.kind !== "prompt" && state.kind !== "searching" && state.kind !== "initial-failure" && state.kind !== "empty" ? state.data.foods.map((food) => (
-        <Pressable key={food.fdc_id} accessibilityRole="button" accessibilityLabel={`USDA Food ${food.fdc_id}`} disabled={!mutationEnabled || !food.importable} onPress={() => { if (mutationEnabled && food.importable) onSelectFood(food.fdc_id); }} style={[styles.foodRow, (!mutationEnabled || !food.importable) && styles.disabled]}>
+        <AccessiblePressable
+          key={food.fdc_id}
+          accessibilityLabel={usdaFoodAccessibilityLabel(food)}
+          accessibilityHint={food.importable ? "Opens USDA food details before import" : "This USDA result cannot be imported"}
+          accessibilityState={{ disabled: !mutationEnabled || !food.importable }}
+          disabled={!mutationEnabled || !food.importable}
+          onPress={() => { if (mutationEnabled && food.importable) onSelectFood(food.fdc_id); }}
+          style={[styles.foodRow, (!mutationEnabled || !food.importable) && styles.disabled]}
+        >
           <Text style={styles.foodName}>{food.description}</Text>
           <Text style={styles.foodMeta}>{usdaResultMeta(food)}</Text>
           {food.food_category ? <Text style={styles.foodMeta}>{food.food_category}</Text> : null}
           {formatUsdaNutrientPreview(food.nutrient_preview) ? <Text style={styles.foodMeta}>{formatUsdaNutrientPreview(food.nutrient_preview)}</Text> : null}
-        </Pressable>
+        </AccessiblePressable>
       )) : null}
     </View>
   );
@@ -318,34 +330,42 @@ function FoodSection<T extends Food | RecentFood>({ title, state, mutationEnable
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
-      {state.kind === "initial-loading" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Loading {title.toLowerCase()}…</Text> : null}
+      {state.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message={`Loading ${title.toLowerCase()}…`} /> : null}
       {state.kind === "initial-failure" ? <ReadError message={`${title} are unavailable.`} retryLabel={retryLabel} onRetry={state.retry} styles={styles} /> : null}
-      {state.kind === "refreshing" ? <Text accessibilityLiveRegion="polite" style={styles.secondary}>Refreshing {title.toLowerCase()}…</Text> : null}
+      {state.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message={`Refreshing ${title.toLowerCase()}…`} /> : null}
       {state.kind === "refresh-failure" ? <ReadError message={`${title} could not be refreshed; showing the last confirmed results.`} retryLabel={retryLabel} onRetry={state.retry} styles={styles} /> : null}
       {state.kind === "empty" ? <Text style={styles.secondary}>{emptyMessage}</Text> : null}
       {state.data?.map((item) => {
         const food = getFood(item);
-        return <Pressable key={food.id} accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} disabled={!mutationEnabled} onPress={() => { if (mutationEnabled) onSelectFood(food.id); }} style={[styles.foodRow, !mutationEnabled && styles.disabled]}><Text style={styles.foodName}>{food.name}</Text>{renderItem(item)}</Pressable>;
+        return <AccessiblePressable key={food.id} accessibilityLabel={foodAccessibilityLabel(food)} accessibilityHint="Opens logging confirmation" disabled={!mutationEnabled} onPress={() => { if (mutationEnabled) onSelectFood(food.id); }} style={[styles.foodRow, !mutationEnabled && styles.disabled]}><Text style={styles.foodName}>{food.name}</Text>{renderItem(item)}</AccessiblePressable>;
       })}
     </View>
   );
 }
 
 function ReadError({ message, retryLabel, onRetry, styles }: { message: string; retryLabel: string; onRetry: () => void; styles: ReturnType<typeof createStyles> }) {
-  return <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>{message}</Text><Pressable accessibilityRole="button" accessibilityLabel={retryLabel} onPress={onRetry}><Text style={styles.link}>Retry</Text></Pressable></View>;
+  return <AccessibilityStatus kind="retryable-failure" message={message} retryContext={retryLabel.replace(/^Retry /, "")} onRetry={onRetry} containerStyle={styles.errorRow} messageStyle={styles.error} />;
+}
+
+export function recentEntryRepeatLabel(entry: RecentEntry): string {
+  const name = entry.food_name_snapshot ?? "Food";
+  const meal = entry.meal_type ? `, ${entry.meal_type}` : ", no meal";
+  const note = entry.note_present ? ", has note" : ", no note";
+  return `Repeat ${name}, ${entry.amount_quantity} ${entry.amount_unit}${meal}, logged ${entry.logged_date}${note}`;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   actionButton: { alignItems: "center", backgroundColor: theme.colors.primaryActionBackground, borderRadius: 6, flex: 1, minHeight: 44, justifyContent: "center", padding: 10 },
   actionText: { color: theme.colors.primaryActionForeground, fontWeight: "700" },
-  acquisitionActions: { flexDirection: "row", gap: 8 },
+  acquisitionActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
   errorRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  fieldLabel: { color: theme.colors.text, fontWeight: "700" },
   foodMeta: { color: theme.colors.secondaryText },
   foodName: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
   foodRow: { borderBottomColor: theme.colors.listDivider, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
-  headerRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  headerRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   link: { color: theme.colors.accent, fontWeight: "700", padding: 8 },
   origin: { color: theme.colors.secondaryText },
   results: { gap: 18, paddingBottom: 32 },
