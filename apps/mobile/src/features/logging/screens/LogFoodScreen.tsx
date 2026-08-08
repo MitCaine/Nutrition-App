@@ -1185,7 +1185,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   screen: { gap: 14, padding: 16, paddingBottom: 32 },
-  segment: { flexDirection: "row", gap: 8 },
+  segment: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   segmentButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   servingButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 2, padding: 10 },
   servingList: { gap: 8 },
@@ -1224,6 +1224,7 @@ function RecoveryOverlapPrompt({
       title="Original operation may be unresolved"
       onRequestClose={onCancel}
       returnFocusRef={returnFocusRef}
+      scrollable
       backdropStyle={styles.overlapBackdrop}
       contentStyle={styles.warning}
       headingStyle={styles.warningText}

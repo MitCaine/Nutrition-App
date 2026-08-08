@@ -350,6 +350,7 @@ test("delete confirmation uses the shared modal and keeps busy state off its hea
   const trigger = rendered.renderer.root.findByProps({ accessibilityLabel: "Delete Oatmeal, breakfast, 1 serving" });
   await act(async () => trigger.props.onPress());
   const modal = rendered.renderer.root.findAllByType(AccessibleModal).find((node) => node.props.title === "Permanently delete Daily Log entry?")!;
+  expect(modal.props.scrollable).toBe(true);
   expect(modal.props.title).toBe("Permanently delete Daily Log entry?");
   expect(modal.props.returnFocusRef).toBeDefined();
   const nativeModal = rendered.renderer.root.findAllByType(Modal).find((node) => node.props.visible === true)!;

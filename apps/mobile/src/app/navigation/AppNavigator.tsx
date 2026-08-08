@@ -98,7 +98,7 @@ function routeForMainTab(tab: MainTab): Route {
 }
 
 export function AppNavigator() {
-  const ocrDiagnosticsEnabled = isOcrDiagnosticsEnabled(__DEV__);
+  const ocrDiagnosticsEnabled = isOcrDiagnosticsEnabled(__DEV__, Platform.OS);
   const theme = useAppTheme();
   const [route, setRoute] = useState<Route>({ name: "foods" });
   const [foodQuery, setFoodQuery] = useState("");

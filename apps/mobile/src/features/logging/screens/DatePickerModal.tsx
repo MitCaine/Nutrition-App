@@ -53,6 +53,7 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
       onRequestClose={onCancel}
       returnFocusRef={returnFocusRef}
       fallbackFocusRef={fallbackFocusRef}
+      scrollable
       backdropStyle={styles.modalBackdrop}
       contentStyle={styles.modalCard}
       headingStyle={styles.sectionTitle}
@@ -83,7 +84,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
     text: { color: theme.colors.text },
     datePreview: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
-    modalActions: { flexDirection: "row", gap: 8, justifyContent: "flex-end" },
+    modalActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" },
     modalBackdrop: {
       alignItems: "center",
       backgroundColor: theme.colors.modalBackdrop,

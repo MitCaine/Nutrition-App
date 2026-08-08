@@ -960,6 +960,7 @@ function DeleteConfirmationModal({
       returnFocusRef={returnFocusRef}
       fallbackFocusRef={fallbackFocusRef}
       busy={busy}
+      scrollable
       backdropStyle={styles.modalBackdrop}
       contentStyle={styles.modalCard}
       headingStyle={styles.sectionTitle}
@@ -1160,10 +1161,10 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   foodName: { color: theme.colors.text, fontWeight: "700" },
   calendarNotice: { color: theme.colors.secondaryText, fontSize: 14, lineHeight: 20 },
   dateClassification: { color: theme.colors.secondaryText, fontSize: 14 },
-  dateNavigation: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
+  dateNavigation: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" },
   disabledButton: { opacity: 0.45 },
   emptyDay: { color: theme.colors.secondaryText, fontSize: 15 },
-  entryActions: { flexDirection: "row", gap: 16, justifyContent: "flex-end", marginTop: 4 },
+  entryActions: { flexDirection: "row", flexWrap: "wrap", gap: 16, justifyContent: "flex-end", marginTop: 4 },
   entryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 12 },
   entryIdentityAction: { alignItems: "flex-start" },
   recoveryCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.warningText, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
@@ -1171,14 +1172,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   recoveryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   warningCard: { backgroundColor: theme.colors.warningBackground, borderRadius: 6, gap: 6, padding: 10 },
   compatibilityNotice: { color: theme.colors.warningText, fontSize: 13, lineHeight: 18 },
-  errorRow: { alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" },
-  entriesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  errorRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "space-between" },
+  entriesHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   groupTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
-  groupHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  groupHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   addFoodButton: { paddingHorizontal: 8, paddingVertical: 4 },
   addFoodText: { color: theme.colors.accent, fontWeight: "600" },
   loadingText: { color: theme.colors.secondaryText, fontSize: 14 },
-  modalActions: { flexDirection: "row", gap: 8, justifyContent: "flex-end" },
+  modalActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" },
   modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },
   modalCard: { backgroundColor: theme.colors.surface, borderRadius: 8, gap: 14, padding: 16, width: "100%" },
   primaryButton: { backgroundColor: theme.colors.accent, borderRadius: 6, paddingHorizontal: 14, paddingVertical: 10 },
@@ -1193,5 +1194,5 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   screen: { gap: 12, paddingBottom: 16, paddingRight: 12 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
-  totalRow: { flexDirection: "row", justifyContent: "space-between" },
+  totalRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, justifyContent: "space-between" },
 }); }

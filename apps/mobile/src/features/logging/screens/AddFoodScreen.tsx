@@ -360,7 +360,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   acquisitionActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   disabled: { opacity: 0.5 },
   error: { color: theme.colors.errorText },
-  errorRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  errorRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   fieldLabel: { color: theme.colors.text, fontWeight: "700" },
   foodMeta: { color: theme.colors.secondaryText },
   foodName: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },

@@ -1,5 +1,5 @@
 import React, { createRef } from "react";
-import { Modal, Text, View } from "react-native";
+import { Modal, ScrollView, Text, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { AccessibleModal } from "../src/shared/accessibility/AccessibleModal";
@@ -182,4 +182,21 @@ test("unmount while presented makes bounded return focus and releases its cancel
   expect(entryCancel).toHaveBeenCalledTimes(1);
   expect(requestFocus).toHaveBeenLastCalledWith(fallback.current, expect.objectContaining({ delayMs: 0 }));
   expect(unmountReturnCancel).toHaveBeenCalledTimes(1);
+});
+
+test("opt-in scrolling keeps long dialog content reachable at large text sizes", async () => {
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(AccessibleModal, {
+      visible: true,
+      title: "Permanently delete entry?",
+      onRequestClose: jest.fn(),
+      scrollable: true,
+    }, React.createElement(Text, null, "Long destructive confirmation")));
+  });
+
+  const body = renderer.root.findByType(ScrollView);
+  expect(body.props.keyboardShouldPersistTaps).toBe("handled");
+  expect(renderer.root.findByProps({ children: "Long destructive confirmation" })).toBeDefined();
+  await act(async () => renderer.unmount());
 });

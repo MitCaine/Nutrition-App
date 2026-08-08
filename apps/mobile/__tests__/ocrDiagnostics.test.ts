@@ -137,7 +137,8 @@ test("recognition invokes the bridge with the selected local URI", async () => {
   expect(recognize).toHaveBeenCalledWith(photoSelection.uri, { recognitionLevel: "accurate" });
 });
 
-test("the diagnostics route gate remains development-only", () => {
-  expect(isOcrDiagnosticsEnabled(true)).toBe(true);
-  expect(isOcrDiagnosticsEnabled(false)).toBe(false);
+test("the diagnostics route gate remains iOS development-only", () => {
+  expect(isOcrDiagnosticsEnabled(true, "ios")).toBe(true);
+  expect(isOcrDiagnosticsEnabled(false, "ios")).toBe(false);
+  expect(isOcrDiagnosticsEnabled(true, "android")).toBe(false);
 });

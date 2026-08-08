@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -34,6 +35,8 @@ type Props = {
   transparent?: boolean;
   backdropStyle?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  scrollContentStyle?: StyleProp<ViewStyle>;
+  scrollable?: boolean;
   headingStyle?: StyleProp<TextStyle>;
   testID?: string;
 };
@@ -54,6 +57,8 @@ export function AccessibleModal({
   transparent = true,
   backdropStyle,
   contentStyle,
+  scrollContentStyle,
+  scrollable = false,
   headingStyle,
   testID,
 }: Props) {
@@ -159,7 +164,15 @@ export function AccessibleModal({
           >
             {title}
           </Text>
-          {children}
+          {scrollable ? (
+            <ScrollView
+              contentContainerStyle={[styles.scrollContent, scrollContentStyle]}
+              keyboardShouldPersistTaps="handled"
+              style={styles.scrollBody}
+            >
+              {children}
+            </ScrollView>
+          ) : children}
         </View>
       </View>
     </Modal>
@@ -168,5 +181,7 @@ export function AccessibleModal({
 
 const styles = StyleSheet.create({
   backdrop: { alignItems: "center", flex: 1, justifyContent: "center" },
-  content: { width: "100%" },
+  content: { maxHeight: "100%", width: "100%" },
+  scrollBody: { flexShrink: 1 },
+  scrollContent: { gap: 14, paddingBottom: 1 },
 });

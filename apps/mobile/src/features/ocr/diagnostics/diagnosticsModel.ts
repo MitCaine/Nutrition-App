@@ -164,6 +164,6 @@ export async function deleteCameraCapture(
   }
 }
 
-export function isOcrDiagnosticsEnabled(developmentMode: boolean): boolean {
-  return developmentMode;
+export function isOcrDiagnosticsEnabled(developmentMode: boolean, platform: string): boolean {
+  return developmentMode && platform === "ios";
 }
