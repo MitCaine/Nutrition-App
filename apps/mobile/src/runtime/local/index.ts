@@ -23,9 +23,21 @@ export {
 export {
   LocalFoodsRuntime,
   createLocalFoodsRuntime,
+  type LocalFoodImportInput,
+  type LocalFoodNutrientSourceMetadata,
   type LocalFoodMutationStage,
   type LocalFoodsRuntimeOptions,
 } from "./localFoodsRuntime";
+export {
+  LocalUsdaRuntime,
+  createLocalUsdaRuntime,
+  mapLocalUsdaFoodPreview,
+  mapLocalUsdaSearchResponse,
+  USDA_FDC_DEFAULT_BASE_URL,
+  type LocalUsdaCredentialProvider,
+  type LocalUsdaFoodAuthority,
+  type LocalUsdaRuntimeOptions,
+} from "./localUsdaRuntime";
 export {
   bootstrapLocalRuntimeFoundation,
   openLocalRuntimeFoundation,

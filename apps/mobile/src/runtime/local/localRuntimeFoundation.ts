@@ -5,7 +5,7 @@ import {
   type NutritionDatabaseHandle,
   type OpenNutritionDatabaseOptions,
 } from "../../storage/sqlite/migrations";
-import type { FoodsRuntime, NutrientsRuntime } from "../NutritionRuntime";
+import type { NutrientsRuntime, UsdaRuntime } from "../NutritionRuntime";
 import {
   ensureLocalOwner,
   type LocalOwnerIdentity,
@@ -21,8 +21,13 @@ import {
 } from "./localNutrientsRuntime";
 import {
   createLocalFoodsRuntime,
+  type LocalFoodsRuntime,
   type LocalFoodsRuntimeOptions,
 } from "./localFoodsRuntime";
+import {
+  createLocalUsdaRuntime,
+  type LocalUsdaRuntimeOptions,
+} from "./localUsdaRuntime";
 
 export type LocalRuntimeFoundation = Readonly<{
   database: SQLiteDatabase;
@@ -30,12 +35,14 @@ export type LocalRuntimeFoundation = Readonly<{
   authority: LocalOwnerIdentity["authority"];
   calendar: LocalCalendarRuntime;
   nutrients: NutrientsRuntime;
-  foods: FoodsRuntime;
+  foods: LocalFoodsRuntime;
+  usda: UsdaRuntime;
 }>;
 
 export type OpenLocalRuntimeFoundationOptions = OpenNutritionDatabaseOptions & Readonly<{
   calendar?: LocalCalendarRuntimeOptions;
   foods?: LocalFoodsRuntimeOptions;
+  usda?: LocalUsdaRuntimeOptions;
 }>;
 
 /** Bootstrap identity and catalog on an already migrated E2-03 database. */
@@ -43,16 +50,19 @@ export async function bootstrapLocalRuntimeFoundation(
   database: SQLiteDatabase,
   calendarOptions: LocalCalendarRuntimeOptions = {},
   foodsOptions: LocalFoodsRuntimeOptions = {},
+  usdaOptions: LocalUsdaRuntimeOptions = {},
 ): Promise<LocalRuntimeFoundation> {
   const identity = await ensureLocalOwner(database);
   await ensureLocalNutrientCatalog(database);
+  const foods = createLocalFoodsRuntime(database, identity.ownerId, foodsOptions);
   return {
     database,
     identity,
     authority: identity.authority,
     calendar: createLocalCalendarRuntime(database, identity.ownerId, calendarOptions),
     nutrients: createLocalNutrientsRuntime(database),
-    foods: createLocalFoodsRuntime(database, identity.ownerId, foodsOptions),
+    foods,
+    usda: createLocalUsdaRuntime(foods, usdaOptions),
   };
 }
 
@@ -72,10 +82,20 @@ export type OpenLocalRuntimeHandle = LocalRuntimeFoundation & Readonly<{
 export async function openLocalRuntimeFoundation(
   options: OpenLocalRuntimeFoundationOptions = {},
 ): Promise<OpenLocalRuntimeHandle> {
-  const { calendar: calendarOptions, foods: foodsOptions, ...databaseOptions } = options;
+  const {
+    calendar: calendarOptions,
+    foods: foodsOptions,
+    usda: usdaOptions,
+    ...databaseOptions
+  } = options;
   const handle = await openNutritionDatabase(databaseOptions);
   try {
-    const foundation = await bootstrapLocalRuntimeFoundation(handle.database, calendarOptions, foodsOptions);
+    const foundation = await bootstrapLocalRuntimeFoundation(
+      handle.database,
+      calendarOptions,
+      foodsOptions,
+      usdaOptions,
+    );
     return {
       ...foundation,
       migration: handle.migration,

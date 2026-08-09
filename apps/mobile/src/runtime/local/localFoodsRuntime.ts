@@ -100,6 +100,12 @@ type NutrientRow = Readonly<{
   original_text: string | null;
 }>;
 
+export type LocalFoodNutrientSourceMetadata = Readonly<Pick<
+  NutrientRow,
+  "original_amount" | "original_unit" | "original_text"
+>>;
+type NutrientSourceMetadata = LocalFoodNutrientSourceMetadata;
+
 type RecipeLinkRow = Readonly<{
   id: string;
   user_id: string;
@@ -180,6 +186,18 @@ export type LocalFoodsRuntimeOptions = Readonly<{
   now?: () => Date;
 }>;
 
+/** Source metadata supplied by a bounded external import adapter. */
+export type LocalFoodImportInput = Readonly<{
+  food: FoodCreateInput;
+  source_type: "usda";
+  source_id: string;
+  source_record_type: "usda_fdc";
+  source_external_id: string;
+  source_raw_payload: string;
+  source_metadata: string;
+  nutrient_metadata: readonly NutrientSourceMetadata[];
+}>;
+
 function errorFor(
   kind: ConstructorParameters<typeof LocalRuntimeError>[0]["kind"],
   code: string,
@@ -196,11 +214,25 @@ function errorFor(
   });
 }
 
-function foodNotFound(): LocalRuntimeError {
-  return errorFor("not_found", "food_not_found", "The Food could not be found.");
+type FoodOperationContext = "read" | "mutation";
+
+function mutationOutcomeFor(context: FoodOperationContext): "not_applicable" | "confirmed_non_commit" {
+  return context === "mutation" ? "confirmed_non_commit" : "not_applicable";
 }
 
-function projectionError(operation: "read" | "update" | "delete" | "duplicate" | "add_serving"): LocalRuntimeError {
+function foodNotFound(context: FoodOperationContext = "read"): LocalRuntimeError {
+  return errorFor(
+    "not_found",
+    "food_not_found",
+    "The Food could not be found.",
+    mutationOutcomeFor(context),
+  );
+}
+
+function projectionError(
+  operation: "read" | "update" | "delete" | "duplicate" | "add_serving",
+  context: FoodOperationContext = operation === "read" ? "read" : "mutation",
+): LocalRuntimeError {
   if (operation === "delete") {
     return errorFor(
       "conflict",
@@ -214,6 +246,7 @@ function projectionError(operation: "read" | "update" | "delete" | "duplicate" |
       "conflict",
       "recipe_projection_integrity_invalid",
       "This generated Recipe Food has inconsistent ownership links and cannot be read safely.",
+      mutationOutcomeFor(context),
     );
   }
   return errorFor(
@@ -231,11 +264,12 @@ function invalidFood(
   return errorFor("validation", "food_validation_failed", message, mutationOutcome);
 }
 
-function invalidStoredFood(): LocalRuntimeError {
+function invalidStoredFood(context: FoodOperationContext = "read"): LocalRuntimeError {
   return errorFor(
     "invalid_response",
     "invalid_local_food_state",
     "The local Food data is invalid and cannot be used safely.",
+    mutationOutcomeFor(context),
   );
 }
 
@@ -285,35 +319,39 @@ function nutrientUnitCompatible(defaultUnit: string, unit: string): boolean {
   return defaultUnit === unit;
 }
 
-function parseStorageDecimal(value: unknown, nullable = false): ExactDecimal | null {
+function parseStorageDecimal(
+  value: unknown,
+  nullable = false,
+  context: FoodOperationContext = "read",
+): ExactDecimal | null {
   try {
     return nullable ? parseNullableDecimal(value, NUMERIC_14_6) : parseDecimal(value, NUMERIC_14_6);
   } catch {
-    throw invalidStoredFood();
+    throw invalidStoredFood(context);
   }
 }
 
-function parsePersistedUuid(value: unknown): string {
+function parsePersistedUuid(value: unknown, context: FoodOperationContext = "read"): string {
   try {
     const parsed = parseUuid(value);
-    if (parsed !== value) throw invalidStoredFood();
+    if (parsed !== value) throw invalidStoredFood(context);
     return parsed;
   } catch (error) {
     if (error instanceof LocalRuntimeError) throw error;
-    throw invalidStoredFood();
+    throw invalidStoredFood(context);
   }
 }
 
-function parsePersistedBoolean(value: unknown): boolean {
-  if (!isZeroOrOne(value)) throw invalidStoredFood();
+function parsePersistedBoolean(value: unknown, context: FoodOperationContext = "read"): boolean {
+  if (!isZeroOrOne(value)) throw invalidStoredFood(context);
   return isOne(value);
 }
 
-function readInstant(value: unknown): string {
+function readInstant(value: unknown, context: FoodOperationContext = "read"): string {
   try {
     return parseInstant(value);
   } catch {
-    throw invalidStoredFood();
+    throw invalidStoredFood(context);
   }
 }
 
@@ -611,11 +649,73 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     });
   }
 
+  /**
+   * Import one externally mapped Food into the normal local Food authority.
+   * The source identity check, source record, child rows, and response all
+   * share the same isolated transaction so a failed import cannot leave a
+   * partial Food generation behind.
+   */
+  async importExternal(input: LocalFoodImportInput): Promise<Food> {
+    const normalized = this.normalizeCreate(input.food);
+    const sourceId = typeof input.source_id === "string" ? input.source_id.trim() : "";
+    const sourceExternalId = typeof input.source_external_id === "string"
+      ? input.source_external_id.trim()
+      : "";
+    if (
+      !sourceId
+      || sourceExternalId !== sourceId
+      || input.source_type !== "usda"
+      || input.source_record_type !== "usda_fdc"
+      || typeof input.source_raw_payload !== "string"
+      || input.source_raw_payload.length === 0
+      || typeof input.source_metadata !== "string"
+      || input.source_metadata.length === 0
+    ) {
+      throw invalidFood("The external Food source identity is invalid.");
+    }
+    return this.mutate(async (transaction) => {
+      const existing = await transaction.getFirstAsync<FoodRow>(
+        `SELECT "id", "user_id", "name", "brand", "source_type", "source_id",
+                "recipe_publication_revision_id", "is_recipe", "notes", "updated_at", "deleted_at"
+         FROM "food_items"
+         WHERE "user_id" = ? AND "source_type" = ? AND "source_id" = ? AND "deleted_at" IS NULL
+         ORDER BY "id" LIMIT 1`,
+        [this.ownerId, input.source_type, sourceId],
+      );
+      if (existing) {
+        const record = await this.loadRecord(transaction, existing, "mutation");
+        if (record.projection !== "manual") throw foodNotFound("mutation");
+        return this.toFood(transaction, record, "mutation");
+      }
+
+      const foodId = generatedId();
+      await this.insertFood(transaction, foodId, normalized, input.source_type, sourceId);
+      await this.stage("after_food");
+      await this.insertServings(transaction, foodId, normalized.serving_definitions, "usda_fdc");
+      await this.stage("after_servings");
+      await this.insertNutrients(
+        transaction,
+        foodId,
+        normalized.nutrients,
+        input.nutrient_metadata,
+        "usda_fdc",
+      );
+      await this.stage("after_nutrients");
+      await transaction.runAsync(
+        `INSERT INTO "food_sources"
+          ("id", "food_item_id", "source_type", "external_id", "raw_payload", "metadata")
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [generatedId(), foodId, input.source_record_type, sourceExternalId, input.source_raw_payload, input.source_metadata],
+      );
+      return this.foodResponse(transaction, foodId);
+    });
+  }
+
   async update(foodId: string, input: FoodMutationInput): Promise<Food> {
     const id = this.requireUuid(foodId);
     const normalized = normalizeFoodInput(input);
     return this.mutate(async (transaction) => {
-      const record = await this.loadRecordById(transaction, id, false);
+      const record = await this.loadRecordById(transaction, id, false, "mutation");
       this.assertMutable(record, "update");
       const updatedAt = canonicalNow(this.now);
       await transaction.runAsync(
@@ -635,7 +735,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
   async delete(input: { foodId: string; removeFromRecipes?: boolean }): Promise<FoodDeleteResult> {
     const id = this.requireUuid(input.foodId);
     return this.mutate(async (transaction) => {
-      const record = await this.loadRecordById(transaction, id, false);
+      const record = await this.loadRecordById(transaction, id, false, "mutation");
       this.assertMutable(record, "delete");
       const dependency = await transaction.getFirstAsync<{ count: number }>(
         `SELECT COUNT(*) AS "count"
@@ -680,8 +780,8 @@ export class LocalFoodsRuntime implements FoodsRuntime {
         requestFingerprint,
       );
       if (replay) return replay;
-      const source = await this.loadRecordById(transaction, sourceId, false);
-      if (source.projection === "invalid") throw projectionError("read");
+      const source = await this.loadRecordById(transaction, sourceId, false, "mutation");
+      if (source.projection === "invalid") throw projectionError("read", "mutation");
       if (source.projection !== "manual" && source.projection !== "managed") {
         throw projectionError("duplicate");
       }
@@ -691,14 +791,14 @@ export class LocalFoodsRuntime implements FoodsRuntime {
         notes: source.row.notes,
         serving_definitions: source.servings.map((serving) => ({
           label: serving.label,
-          quantity: parseStorageDecimal(serving.quantity) as ExactDecimal,
+          quantity: parseStorageDecimal(serving.quantity, false, "mutation") as ExactDecimal,
           unit: serving.unit,
-          gram_weight: parseStorageDecimal(serving.gram_weight, true),
-          is_default: parsePersistedBoolean(serving.is_default),
+          gram_weight: parseStorageDecimal(serving.gram_weight, true, "mutation"),
+          is_default: parsePersistedBoolean(serving.is_default, "mutation"),
         })),
         nutrients: source.nutrients.map((nutrient) => normalizeNutrient({
           nutrient_id: nutrient.nutrient_id,
-          amount: parseStorageDecimal(nutrient.amount, true),
+          amount: parseStorageDecimal(nutrient.amount, true, "mutation"),
           unit: nutrient.unit,
           basis: nutrient.basis,
           data_status: nutrient.data_status,
@@ -747,7 +847,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
         );
         if (replay) return replay;
       }
-      const record = await this.loadRecordById(transaction, id, false);
+      const record = await this.loadRecordById(transaction, id, false, "mutation");
       this.assertMutable(record, "add_serving");
       const servingId = generatedId();
       if (clientRequestId && requestFingerprint) {
@@ -780,15 +880,90 @@ export class LocalFoodsRuntime implements FoodsRuntime {
   }
 
   async listFavorites(): Promise<Food[]> {
-    throw unsupportedLocalFeature("Food favorites are not available in the local Food foundation yet.");
+    try {
+      const rows = await this.database.getAllAsync<FoodRow>(
+        `SELECT "food_items"."id", "food_items"."user_id", "food_items"."name", "food_items"."brand",
+                "food_items"."source_type", "food_items"."source_id", "food_items"."recipe_publication_revision_id",
+                "food_items"."is_recipe", "food_items"."notes", "food_items"."updated_at", "food_items"."deleted_at"
+         FROM "food_favorites"
+         JOIN "food_items"
+           ON "food_items"."id" = "food_favorites"."food_item_id"
+          AND "food_items"."user_id" = "food_favorites"."user_id"
+         WHERE "food_favorites"."user_id" = ?
+           AND "food_items"."deleted_at" IS NULL
+           AND "food_items"."is_recipe" = 0
+           AND "food_items"."source_type" != 'recipe'
+           AND "food_items"."recipe_publication_revision_id" IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM "recipes" AS "saved_recipe"
+             WHERE "saved_recipe"."published_food_item_id" = "food_items"."id"
+               AND "saved_recipe"."user_id" = "food_items"."user_id"
+           )
+         ORDER BY "food_favorites"."created_at" DESC, "food_items"."id"`,
+        [this.ownerId],
+      );
+      const result: Food[] = [];
+      for (const row of rows) {
+        try {
+          const record = await this.loadRecord(this.database, row);
+          if (record.projection === "invalid") continue;
+          result.push(await this.toFood(this.database, record));
+        } catch (error) {
+          if (error instanceof LocalRuntimeError && error.code === "recipe_projection_integrity_invalid") continue;
+          throw error;
+        }
+      }
+      return result;
+    } catch (error) {
+      throw this.readError(error);
+    }
   }
 
   async listRecent(_limit = 10): Promise<RecentFood[]> {
     throw unsupportedLocalFeature("Recent Foods are not available in the local Food foundation yet.");
   }
 
-  async setFavorite(_foodId: string, _favorite: boolean): Promise<Food> {
-    throw unsupportedLocalFeature("Food favorites are not available in the local Food foundation yet.");
+  async setFavorite(foodId: string, favorite: boolean): Promise<Food> {
+    const id = this.requireUuid(foodId);
+    if (typeof favorite !== "boolean") {
+      throw invalidFood("Favorite state must be boolean.");
+    }
+    return this.mutate(async (transaction) => {
+      const record = await this.loadRecordById(transaction, id, false, "mutation");
+      if (record.projection !== "manual") throw foodNotFound("mutation");
+      if (favorite) {
+        await transaction.runAsync(
+          `INSERT OR IGNORE INTO "food_favorites" ("user_id", "food_item_id") VALUES (?, ?)`,
+          [this.ownerId, id],
+        );
+      } else {
+        await transaction.runAsync(
+          `DELETE FROM "food_favorites" WHERE "user_id" = ? AND "food_item_id" = ?`,
+          [this.ownerId, id],
+        );
+      }
+      return this.foodResponse(transaction, id);
+    });
+  }
+
+  /** Read an active source identity before an external request is attempted. */
+  async findActiveSource(sourceType: string, sourceId: string): Promise<Food | null> {
+    try {
+      const row = await this.database.getFirstAsync<FoodRow>(
+        `SELECT "id", "user_id", "name", "brand", "source_type", "source_id",
+                "recipe_publication_revision_id", "is_recipe", "notes", "updated_at", "deleted_at"
+         FROM "food_items"
+         WHERE "user_id" = ? AND "source_type" = ? AND "source_id" = ? AND "deleted_at" IS NULL
+         ORDER BY "id" LIMIT 1`,
+        [this.ownerId, sourceType, sourceId],
+      );
+      if (!row) return null;
+      const record = await this.loadRecord(this.database, row);
+      if (record.projection !== "manual") return null;
+      return this.toFood(this.database, record);
+    } catch (error) {
+      throw this.readError(error);
+    }
   }
 
   private normalizeCreate(input: FoodCreateInput): NormalizedFoodInput {
@@ -836,12 +1011,28 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     await this.onMutationStage?.(stage);
   }
 
-  private async insertFood(transaction: SQLiteDatabase, id: string, input: NormalizedFoodInput): Promise<void> {
+  private async insertFood(
+    transaction: SQLiteDatabase,
+    id: string,
+    input: NormalizedFoodInput,
+    sourceType: "manual" | "usda" = "manual",
+    sourceId: string | null = null,
+  ): Promise<void> {
+    if (sourceType === "manual") {
+      await transaction.runAsync(
+        `INSERT INTO "food_items"
+          ("id", "user_id", "name", "brand", "source_type", "source_id", "is_recipe", "notes")
+         VALUES (?, ?, ?, ?, 'manual', NULL, 0, ?)`,
+        [id, this.ownerId, input.name, input.brand, input.notes],
+      );
+      return;
+    }
+    if (!sourceId) throw invalidFood("The external Food source identity is invalid.");
     await transaction.runAsync(
       `INSERT INTO "food_items"
         ("id", "user_id", "name", "brand", "source_type", "source_id", "is_recipe", "notes")
-       VALUES (?, ?, ?, ?, 'manual', NULL, 0, ?)`,
-      [id, this.ownerId, input.name, input.brand, input.notes],
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+      [id, this.ownerId, input.name, input.brand, sourceType, sourceId, input.notes],
     );
   }
 
@@ -849,11 +1040,21 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     transaction: SQLiteDatabase,
     foodId: string,
     servings: readonly NormalizedServing[],
+    source: "manual" | "usda_fdc" = "manual",
   ): Promise<void> {
     for (const serving of servings) {
+      if (source === "usda_fdc") {
+        await transaction.runAsync(
+          `INSERT INTO "serving_definitions"
+            ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'usda_fdc', 0)`,
+          [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
+        );
+        continue;
+      }
       await transaction.runAsync(
         `INSERT INTO "serving_definitions"
-          ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+         ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
          VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
         [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
       );
@@ -864,11 +1065,32 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     transaction: SQLiteDatabase,
     foodId: string,
     nutrients: readonly NormalizedNutrient[],
-    sourceRows: readonly NutrientRow[] = [],
+    sourceRows: readonly NutrientSourceMetadata[] = [],
+    source: "manual" | "usda_fdc" = "manual",
   ): Promise<void> {
     for (let index = 0; index < nutrients.length; index += 1) {
       const nutrient = nutrients[index];
-      const source = sourceRows[index];
+      const sourceMetadata = sourceRows[index];
+      if (source === "usda_fdc") {
+        await transaction.runAsync(
+          `INSERT INTO "food_nutrients"
+            ("id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed", "original_amount", "original_unit", "original_text")
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'usda_fdc', 0, ?, ?, ?)`,
+          [
+            generatedId(),
+            foodId,
+            nutrient.nutrient_id,
+            nutrient.amount,
+            nutrient.unit,
+            nutrient.basis,
+            nutrient.data_status,
+            sourceMetadata?.original_amount ?? null,
+            sourceMetadata?.original_unit ?? null,
+            sourceMetadata?.original_text ?? null,
+          ],
+        );
+        continue;
+      }
       await transaction.runAsync(
         `INSERT INTO "food_nutrients"
           ("id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed", "original_amount", "original_unit", "original_text")
@@ -881,9 +1103,9 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           nutrient.unit,
           nutrient.basis,
           nutrient.data_status,
-          source?.original_amount ?? null,
-          source?.original_unit ?? null,
-          source?.original_text ?? null,
+          sourceMetadata?.original_amount ?? null,
+          sourceMetadata?.original_unit ?? null,
+          sourceMetadata?.original_text ?? null,
         ],
       );
     }
@@ -915,6 +1137,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     transaction: SQLiteDatabase,
     id: string,
     includeDeleted: boolean,
+    context: FoodOperationContext = "read",
   ): Promise<FoodRecord> {
     const row = await transaction.getFirstAsync<FoodRow>(
       `SELECT "id", "user_id", "name", "brand", "source_type", "source_id",
@@ -923,17 +1146,21 @@ export class LocalFoodsRuntime implements FoodsRuntime {
        WHERE "id" = ? AND "user_id" = ? ${includeDeleted ? "" : `AND "deleted_at" IS NULL`}`,
       [id, this.ownerId],
     );
-    if (!row) throw foodNotFound();
-    return this.loadRecord(transaction, row);
+    if (!row) throw foodNotFound(context);
+    return this.loadRecord(transaction, row, context);
   }
 
-  private async loadRecord(transaction: SQLiteDatabase, row: FoodRow): Promise<FoodRecord> {
-    if (row.user_id !== this.ownerId) throw foodNotFound();
-    parsePersistedUuid(row.id);
-    parsePersistedUuid(row.user_id);
-    if (!isZeroOrOne(row.is_recipe)) throw invalidStoredFood();
-    readInstant(row.updated_at);
-    if (row.deleted_at !== null) readInstant(row.deleted_at);
+  private async loadRecord(
+    transaction: SQLiteDatabase,
+    row: FoodRow,
+    context: FoodOperationContext = "read",
+  ): Promise<FoodRecord> {
+    if (row.user_id !== this.ownerId) throw foodNotFound(context);
+    parsePersistedUuid(row.id, context);
+    parsePersistedUuid(row.user_id, context);
+    if (!isZeroOrOne(row.is_recipe)) throw invalidStoredFood(context);
+    readInstant(row.updated_at, context);
+    if (row.deleted_at !== null) readInstant(row.deleted_at, context);
     const servings = await transaction.getAllAsync<ServingRow>(
       `SELECT "id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed"
        FROM "serving_definitions" WHERE "food_item_id" = ? ORDER BY "label", "id"`,
@@ -946,20 +1173,20 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       [row.id],
     );
     for (const serving of servings) {
-      parsePersistedUuid(serving.id);
-      parseStorageDecimal(serving.quantity);
-      parseStorageDecimal(serving.gram_weight, true);
-      parsePersistedBoolean(serving.is_default);
-      parsePersistedBoolean(serving.is_user_confirmed);
+      parsePersistedUuid(serving.id, context);
+      parseStorageDecimal(serving.quantity, false, context);
+      parseStorageDecimal(serving.gram_weight, true, context);
+      parsePersistedBoolean(serving.is_default, context);
+      parsePersistedBoolean(serving.is_user_confirmed, context);
     }
     if (servings.length === 0 || servings.filter((serving) => serving.is_default === 1).length !== 1) {
-      throw invalidStoredFood();
+      throw invalidStoredFood(context);
     }
     for (const nutrient of nutrients) {
-      parsePersistedUuid(nutrient.id);
-      parseStorageDecimal(nutrient.amount, true);
-      parseStorageDecimal(nutrient.original_amount, true);
-      parsePersistedBoolean(nutrient.is_user_confirmed);
+      parsePersistedUuid(nutrient.id, context);
+      parseStorageDecimal(nutrient.amount, true, context);
+      parseStorageDecimal(nutrient.original_amount, true, context);
+      parsePersistedBoolean(nutrient.is_user_confirmed, context);
       try {
         const seed = SQLITE_NUTRIENT_SEED_ROWS.find(([id]) => id === nutrient.nutrient_id);
         if (!seed || normalizeUnit(nutrient.unit) !== nutrient.unit || !NUTRIENT_UNITS.has(nutrient.unit)
@@ -968,7 +1195,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           || !NUTRIENT_STATUSES.has(nutrient.data_status as NutrientDataStatus)) {
           throw new Error("invalid nutrient row");
         }
-        const amount = parseStorageDecimal(nutrient.amount, true);
+        const amount = parseStorageDecimal(nutrient.amount, true, context);
         if (nutrient.data_status === "unknown" && amount !== null) throw new Error("invalid unknown amount");
         if (nutrient.data_status === "zero" && amount !== "0.000000") throw new Error("invalid zero amount");
         if ((nutrient.data_status === "known" || nutrient.data_status === "estimated") && amount === null) {
@@ -979,7 +1206,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           throw new Error("known zero nutrient");
         }
       } catch {
-        throw invalidStoredFood();
+        throw invalidStoredFood(context);
       }
     }
     const link = await transaction.getFirstAsync<RecipeLinkRow>(
@@ -1016,8 +1243,12 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     };
   }
 
-  private async toFood(transaction: SQLiteDatabase, record: FoodRecord): Promise<Food> {
-    if (record.projection === "invalid") throw projectionError("read");
+  private async toFood(
+    transaction: SQLiteDatabase,
+    record: FoodRecord,
+    context: FoodOperationContext = "read",
+  ): Promise<Food> {
+    if (record.projection === "invalid") throw projectionError("read", context);
     const managed = record.projection === "managed";
     const sourceKind: Food["source_kind"] = managed
       ? "recipe"
@@ -1032,7 +1263,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       [record.row.id, this.ownerId],
     ));
     return {
-      id: parsePersistedUuid(record.row.id),
+      id: parsePersistedUuid(record.row.id, context),
       name: record.row.name,
       brand: record.row.brand,
       notes: record.row.notes,
@@ -1043,36 +1274,36 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       source_label: mapSourceLabel(sourceKind),
       is_favorite: managed ? false : favorite,
       can_favorite: !managed,
-      updated_at: readInstant(record.row.updated_at),
-      serving_definitions: record.servings.map((serving) => this.mapServing(serving)),
-      nutrients: record.nutrients.map((nutrient) => this.mapNutrient(nutrient)),
+      updated_at: readInstant(record.row.updated_at, context),
+      serving_definitions: record.servings.map((serving) => this.mapServing(serving, context)),
+      nutrients: record.nutrients.map((nutrient) => this.mapNutrient(nutrient, context)),
     };
   }
 
-  private mapServing(row: ServingRow): ServingDefinition {
+  private mapServing(row: ServingRow, context: FoodOperationContext = "read"): ServingDefinition {
     return {
-      id: parsePersistedUuid(row.id),
+      id: parsePersistedUuid(row.id, context),
       label: row.label,
-      quantity: parseStorageDecimal(row.quantity) as string,
+      quantity: parseStorageDecimal(row.quantity, false, context) as string,
       unit: row.unit,
-      gram_weight: parseStorageDecimal(row.gram_weight, true) as string | null,
-      is_default: parsePersistedBoolean(row.is_default),
+      gram_weight: parseStorageDecimal(row.gram_weight, true, context) as string | null,
+      is_default: parsePersistedBoolean(row.is_default, context),
       source: row.source,
-      is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed),
+      is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed, context),
     };
   }
 
-  private mapNutrient(row: NutrientRow): FoodNutrient {
+  private mapNutrient(row: NutrientRow, context: FoodOperationContext = "read"): FoodNutrient {
     return {
-      id: parsePersistedUuid(row.id),
+      id: parsePersistedUuid(row.id, context),
       nutrient_id: row.nutrient_id,
-      amount: parseStorageDecimal(row.amount, true) as string | null,
+      amount: parseStorageDecimal(row.amount, true, context) as string | null,
       unit: row.unit as NutrientUnit,
       basis: row.basis as NutrientBasis,
       data_status: row.data_status as NutrientDataStatus,
       source: row.source,
-      is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed),
-      original_amount: parseStorageDecimal(row.original_amount, true) as string | null,
+      is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed, context),
+      original_amount: parseStorageDecimal(row.original_amount, true, context) as string | null,
       original_unit: row.original_unit,
       original_text: row.original_text,
     };
@@ -1152,9 +1383,9 @@ export class LocalFoodsRuntime implements FoodsRuntime {
   }
 
   private async foodResponse(transaction: SQLiteDatabase, foodId: string): Promise<Food> {
-    const record = await this.loadRecordById(transaction, foodId, false);
-    if (record.projection !== "manual") throw projectionError("read");
-    return this.toFood(transaction, record);
+    const record = await this.loadRecordById(transaction, foodId, false, "mutation");
+    if (record.projection !== "manual") throw projectionError("read", "mutation");
+    return this.toFood(transaction, record, "mutation");
   }
 
   private async readReceipt(
@@ -1268,7 +1499,7 @@ export function createLocalFoodsRuntime(
   database: SQLiteDatabase,
   ownerId: string,
   options: LocalFoodsRuntimeOptions = {},
-): FoodsRuntime {
+): LocalFoodsRuntime {
   return new LocalFoodsRuntime(database, ownerId, options);
 }
 

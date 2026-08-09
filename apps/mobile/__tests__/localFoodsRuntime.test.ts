@@ -3,6 +3,7 @@ import * as Crypto from "expo-crypto";
 
 import {
   createLocalFoodsRuntime,
+  type LocalFoodImportInput,
   type LocalFoodMutationStage,
 } from "../src/runtime/local";
 import type { FoodCreateInput } from "../src/features/foods/api/types";
@@ -71,6 +72,14 @@ type RecipeLinkRow = {
   active_publication_revision_id: string | null;
   deleted_at: string | null;
 };
+type SourceRow = {
+  id: string;
+  food_item_id: string;
+  source_type: string;
+  external_id: string | null;
+  raw_payload: string | null;
+  metadata: string | null;
+};
 
 type State = {
   foods: FoodRow[];
@@ -78,6 +87,8 @@ type State = {
   nutrients: NutrientRow[];
   receipts: ReceiptRow[];
   recipes: RecipeLinkRow[];
+  sources: SourceRow[];
+  favorites: Array<{ user_id: string; food_item_id: string; created_at: string }>;
 };
 
 const OWNER = "00000000-0000-4000-8000-000000000001";
@@ -91,22 +102,35 @@ function cloneState(state: State): State {
     nutrients: state.nutrients.map((row) => ({ ...row })),
     receipts: state.receipts.map((row) => ({ ...row })),
     recipes: state.recipes.map((row) => ({ ...row })),
+    sources: state.sources.map((row) => ({ ...row })),
+    favorites: state.favorites.map((row) => ({ ...row })),
   };
 }
 
 class FoodSQLiteFake {
-  state: State = { foods: [], servings: [], nutrients: [], receipts: [], recipes: [] };
+  state: State = { foods: [], servings: [], nutrients: [], receipts: [], recipes: [], sources: [], favorites: [] };
 
   async execAsync(_source: string): Promise<void> {}
 
   async getFirstAsync<T>(source: string, params: readonly unknown[] = []): Promise<T | null> {
     if (source === "PRAGMA foreign_keys") return { foreign_keys: 1 } as T;
+    if (source.includes('FROM "food_favorites"')) {
+      const [foodId, owner] = params.map(String);
+      return (this.state.favorites.some((row) => row.food_item_id === foodId && row.user_id === owner)
+        ? { present: 1 } : null) as T | null;
+    }
     if (source.includes('FROM "serving_definitions"') && source.includes('JOIN "food_items"')) {
       const [servingId, parentFoodId, owner] = params.map(String);
       const serving = this.state.servings.find((row) => row.id === servingId && row.food_item_id === parentFoodId);
       const parent = this.state.foods.find((row) => row.id === parentFoodId
         && row.user_id === owner && row.deleted_at === null);
       return (serving && parent ? { serving_id: serving.id } : null) as T | null;
+    }
+    if (source.includes('FROM "food_items"') && source.includes('"source_type" = ?')) {
+      const [owner, sourceType, sourceId] = params.map(String);
+      const row = this.state.foods.find((candidate) => candidate.user_id === owner
+        && candidate.source_type === sourceType && candidate.source_id === sourceId && candidate.deleted_at === null);
+      return (row ? { ...row } : null) as T | null;
     }
     if (source.includes('FROM "food_items"')) {
       const id = String(params[0]);
@@ -135,6 +159,14 @@ class FoodSQLiteFake {
   }
 
   async getAllAsync<T>(source: string, params: readonly unknown[] = []): Promise<T[]> {
+    if (source.includes('FROM "food_favorites"')) {
+      const owner = String(params[0]);
+      return this.state.favorites
+        .filter((favorite) => favorite.user_id === owner)
+        .map((favorite) => this.state.foods.find((food) => food.id === favorite.food_item_id))
+        .filter((food): food is FoodRow => food != null && food.user_id === owner && food.deleted_at === null)
+        .sort((left, right) => left.id.localeCompare(right.id)) as T[];
+    }
     if (source.includes('FROM "food_items"')) {
       const owner = String(params[0]);
       const query = params[1] == null ? "" : String(params[1]).trim().toLowerCase();
@@ -160,12 +192,28 @@ class FoodSQLiteFake {
   }
 
   async runAsync(source: string, params: readonly unknown[] = []): Promise<void> {
+    if (source.includes('INSERT OR IGNORE INTO "food_favorites"')) {
+      const [owner, foodId] = params.map(String);
+      if (!this.state.favorites.some((row) => row.user_id === owner && row.food_item_id === foodId)) {
+        this.state.favorites.push({ user_id: owner, food_item_id: foodId, created_at: INSTANT });
+      }
+      return;
+    }
+    if (source.includes('DELETE FROM "food_favorites"')) {
+      const [owner, foodId] = params.map(String);
+      this.state.favorites = this.state.favorites.filter((row) => row.user_id !== owner || row.food_item_id !== foodId);
+      return;
+    }
     if (source.includes('INSERT INTO "food_items"')) {
       const [id, owner, name, brand] = params;
-      const sourceId = source.includes("NULL, 0") ? null : String(params[4]);
-      const notes = source.includes("NULL, 0") ? params[4] : params[5];
+      const imported = source.includes("VALUES (?, ?, ?, ?, ?, ?, 0, ?)");
+      const sourceId = imported
+        ? (params[5] == null ? null : String(params[5]))
+        : source.includes("NULL, 0") ? null : String(params[4]);
+      const sourceType = imported ? String(params[4]) : "manual";
+      const notes = imported ? params[6] : source.includes("NULL, 0") ? params[4] : params[5];
       if (sourceId && this.state.foods.some((row) => row.user_id === String(owner)
-        && row.source_type === "manual" && row.source_id === sourceId && row.deleted_at === null)) {
+        && row.source_type === sourceType && row.source_id === sourceId && row.deleted_at === null)) {
         throw new Error("UNIQUE constraint failed: food_items.user_id, food_items.source_type, food_items.source_id");
       }
       this.state.foods.push({
@@ -173,7 +221,7 @@ class FoodSQLiteFake {
         user_id: String(owner),
         name: String(name),
         brand: brand == null ? null : String(brand),
-        source_type: "manual",
+        source_type: sourceType,
         source_id: sourceId,
         recipe_publication_revision_id: null,
         is_recipe: 0,
@@ -187,7 +235,9 @@ class FoodSQLiteFake {
       const [id, foodId, label, quantity, unit, gramWeight, isDefault] = params;
       this.state.servings.push({
         id: String(id), food_item_id: String(foodId), label: String(label), quantity: String(quantity), unit: String(unit),
-        gram_weight: gramWeight == null ? null : String(gramWeight), is_default: Number(isDefault), source: "manual", is_user_confirmed: 1,
+        gram_weight: gramWeight == null ? null : String(gramWeight), is_default: Number(isDefault),
+        source: source.includes("'usda_fdc', 0") ? "usda_fdc" : "manual",
+        is_user_confirmed: source.includes("'usda_fdc', 0") ? 0 : 1,
       });
       return;
     }
@@ -195,9 +245,23 @@ class FoodSQLiteFake {
       const [id, foodId, nutrientId, amount, unit, basis, status, originalAmount, originalUnit, originalText] = params;
       this.state.nutrients.push({
         id: String(id), food_item_id: String(foodId), nutrient_id: String(nutrientId), amount: amount == null ? null : String(amount),
-        unit: String(unit), basis: String(basis), data_status: String(status), source: "manual", is_user_confirmed: 1,
+        unit: String(unit), basis: String(basis), data_status: String(status),
+        source: source.includes("'usda_fdc', 0") ? "usda_fdc" : "manual",
+        is_user_confirmed: source.includes("'usda_fdc', 0") ? 0 : 1,
         original_amount: originalAmount == null ? null : String(originalAmount), original_unit: originalUnit == null ? null : String(originalUnit),
         original_text: originalText == null ? null : String(originalText),
+      });
+      return;
+    }
+    if (source.includes('INSERT INTO "food_sources"')) {
+      const [id, foodId, sourceType, externalId, rawPayload, metadata] = params;
+      this.state.sources.push({
+        id: String(id),
+        food_item_id: String(foodId),
+        source_type: String(sourceType),
+        external_id: externalId == null ? null : String(externalId),
+        raw_payload: rawPayload == null ? null : String(rawPayload),
+        metadata: metadata == null ? null : String(metadata),
       });
       return;
     }
@@ -278,6 +342,23 @@ function foodInput(overrides: Partial<FoodCreateInput> = {}): FoodCreateInput {
     ],
     ...overrides,
   } as FoodCreateInput;
+}
+
+function usdaImportInput(name = "Imported Oats"): LocalFoodImportInput {
+  return {
+    food: foodInput({ name, brand: "USDA" }),
+    source_type: "usda",
+    source_id: "1105314",
+    source_record_type: "usda_fdc",
+    source_external_id: "1105314",
+    source_raw_payload: '{"fdcId":1105314}',
+    source_metadata: '{"diagnostics":[]}',
+    nutrient_metadata: foodInput().nutrients.map(() => ({
+      original_amount: "1.000000",
+      original_unit: "G",
+      original_text: "1003",
+    })),
+  };
 }
 
 function appendSimpleFood(
@@ -456,6 +537,139 @@ describe("E2-05 local Foods runtime", () => {
     });
   });
 
+  test("distinguishes read and mutation certainty for foreign and deleted Foods", async () => {
+    const fake = new FoodSQLiteFake();
+    const ownerRuntime = createLocalFoodsRuntime(database(fake), OWNER);
+    const otherRuntime = createLocalFoodsRuntime(database(fake), OTHER_OWNER);
+    const created = await ownerRuntime.create(foodInput({ name: "Owner A Food" }));
+    await ownerRuntime.setFavorite(created.id, true);
+
+    const readNotFound = {
+      kind: "not_found",
+      code: "food_not_found",
+      mutationOutcome: "not_applicable",
+      retryable: false,
+    };
+    const mutationNotFound = {
+      kind: "not_found",
+      code: "food_not_found",
+      mutationOutcome: "confirmed_non_commit",
+      retryable: false,
+    };
+
+    await expect(otherRuntime.get(created.id)).rejects.toMatchObject(readNotFound);
+    await expect(otherRuntime.getResolvedNutrition(created.id)).rejects.toMatchObject(readNotFound);
+    await expect(otherRuntime.update(created.id, foodInput({ name: "Must not update" }))).rejects.toMatchObject(mutationNotFound);
+    await expect(otherRuntime.delete({ foodId: created.id })).rejects.toMatchObject(mutationNotFound);
+    await expect(otherRuntime.duplicate({
+      foodId: created.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000106",
+    })).rejects.toMatchObject(mutationNotFound);
+    await expect(otherRuntime.createServingDefinition(created.id, {
+      label: "1 extra",
+      quantity: "1",
+      unit: "serving",
+      gram_weight: "50",
+      is_default: false,
+    })).rejects.toMatchObject(mutationNotFound);
+    await expect(otherRuntime.setFavorite(created.id, true)).rejects.toMatchObject(mutationNotFound);
+    await expect(otherRuntime.setFavorite(created.id, false)).rejects.toMatchObject(mutationNotFound);
+
+    await expect(ownerRuntime.get(created.id)).resolves.toMatchObject({ name: "Owner A Food", is_favorite: true });
+    await expect(ownerRuntime.listFavorites()).resolves.toEqual([expect.objectContaining({ id: created.id, is_favorite: true })]);
+    await expect(otherRuntime.listFavorites()).resolves.toEqual([]);
+
+    const deleted = await ownerRuntime.create(foodInput({ name: "Deleted Food" }));
+    await ownerRuntime.setFavorite(deleted.id, true);
+    await ownerRuntime.delete({ foodId: deleted.id });
+    await expect(ownerRuntime.get(deleted.id)).rejects.toMatchObject(readNotFound);
+    await expect(ownerRuntime.getResolvedNutrition(deleted.id)).rejects.toMatchObject(readNotFound);
+    await expect(ownerRuntime.update(deleted.id, foodInput())).rejects.toMatchObject(mutationNotFound);
+    await expect(ownerRuntime.delete({ foodId: deleted.id })).rejects.toMatchObject(mutationNotFound);
+    await expect(ownerRuntime.duplicate({
+      foodId: deleted.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000107",
+    })).rejects.toMatchObject(mutationNotFound);
+    await expect(ownerRuntime.createServingDefinition(deleted.id, {
+      label: "1 extra",
+      quantity: "1",
+      unit: "serving",
+      gram_weight: "50",
+      is_default: false,
+    })).rejects.toMatchObject(mutationNotFound);
+    await expect(ownerRuntime.setFavorite(deleted.id, true)).rejects.toMatchObject(mutationNotFound);
+    await expect(ownerRuntime.setFavorite(deleted.id, false)).rejects.toMatchObject(mutationNotFound);
+    await expect(ownerRuntime.listFavorites()).resolves.toEqual([expect.objectContaining({ id: created.id, is_favorite: true })]);
+  });
+
+  test("keeps favorites idempotent, owner-scoped, and out of deleted/projection views", async () => {
+    const fake = new FoodSQLiteFake();
+    const ownerRuntime = createLocalFoodsRuntime(database(fake), OWNER);
+    const otherRuntime = createLocalFoodsRuntime(database(fake), OTHER_OWNER);
+    const created = await ownerRuntime.create(foodInput({ name: "Favorite Oats" }));
+
+    await expect(ownerRuntime.setFavorite(created.id, true)).resolves.toMatchObject({ is_favorite: true });
+    await expect(ownerRuntime.setFavorite(created.id, true)).resolves.toMatchObject({ is_favorite: true });
+    await expect(ownerRuntime.listFavorites()).resolves.toHaveLength(1);
+    await expect(otherRuntime.setFavorite(created.id, true)).rejects.toMatchObject({ code: "food_not_found" });
+
+    await expect(ownerRuntime.setFavorite(created.id, false)).resolves.toMatchObject({ is_favorite: false });
+    await expect(ownerRuntime.setFavorite(created.id, false)).resolves.toMatchObject({ is_favorite: false });
+    await ownerRuntime.setFavorite(created.id, true);
+    await ownerRuntime.delete({ foodId: created.id });
+    await expect(ownerRuntime.listFavorites()).resolves.toHaveLength(0);
+
+    const projectionId = "00000000-0000-4000-8000-000000000901";
+    appendSimpleFood(fake, { id: projectionId, sourceType: "recipe", isRecipe: 1 });
+    fake.state.favorites.push({ user_id: OWNER, food_item_id: projectionId, created_at: INSTANT });
+    await expect(ownerRuntime.listFavorites()).resolves.toHaveLength(0);
+  });
+
+  test("keeps an imported Food and its source identity across a runtime reopen", async () => {
+    const fake = new FoodSQLiteFake();
+    const firstRuntime = createLocalFoodsRuntime(database(fake), OWNER);
+    const imported = await firstRuntime.importExternal(usdaImportInput());
+    expect(fake.state.sources).toEqual([
+      expect.objectContaining({
+        food_item_id: imported.id,
+        source_type: "usda_fdc",
+        external_id: "1105314",
+      }),
+    ]);
+
+    const reopenedRuntime = createLocalFoodsRuntime(database(fake), OWNER);
+    await expect(reopenedRuntime.findActiveSource("usda", "1105314")).resolves.toEqual(imported);
+    await expect(reopenedRuntime.get(imported.id)).resolves.toMatchObject({
+      source_type: "usda",
+      source_id: "1105314",
+      source_kind: "usda",
+      nutrients: expect.arrayContaining([
+        expect.objectContaining({ source: "usda_fdc", is_user_confirmed: false }),
+      ]),
+      serving_definitions: expect.arrayContaining([
+        expect.objectContaining({ source: "usda_fdc", is_user_confirmed: false }),
+      ]),
+    });
+  });
+
+  test("rolls back every imported Food row when a child-stage failure occurs", async () => {
+    const fake = new FoodSQLiteFake();
+    const runtime = createLocalFoodsRuntime(database(fake), OWNER, {
+      onMutationStage: (stage) => {
+        if (stage === "after_nutrients") throw new Error("injected import failure");
+      },
+    });
+
+    await expect(runtime.importExternal(usdaImportInput("Rollback Import"))).rejects.toMatchObject({
+      code: "local_food_mutation_failed",
+      mutationOutcome: "confirmed_non_commit",
+    });
+    expect(fake.state.foods).toHaveLength(0);
+    expect(fake.state.servings).toHaveLength(0);
+    expect(fake.state.nutrients).toHaveLength(0);
+    expect(fake.state.sources).toHaveLength(0);
+  });
+
   test("does not present an untrusted Recipe projection as an editable saved Food", async () => {
     const fake = new FoodSQLiteFake();
     const projectionId = "00000000-0000-4000-8000-000000000201";
@@ -491,7 +705,10 @@ describe("E2-05 local Foods runtime", () => {
     await expect(runtime.duplicate({
       foodId: projectionId,
       clientRequestId: "00000000-0000-4000-8000-000000000205",
-    })).rejects.toMatchObject({ code: "recipe_projection_integrity_invalid" });
+    })).rejects.toMatchObject({
+      code: "recipe_projection_integrity_invalid",
+      mutationOutcome: "confirmed_non_commit",
+    });
   });
 
   test("duplicates a coherent managed Recipe projection but keeps direct mutations read-only", async () => {
