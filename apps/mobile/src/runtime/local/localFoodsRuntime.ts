@@ -27,6 +27,7 @@ import { serializeCalendarPreviewTokenPayload } from "./localCalendarRuntime";
 import {
   compareDecimals,
   divideResponseDecimals,
+  multiplyDecimals,
   multiplyResponseDecimals,
   NUMERIC_14_6,
   parseDecimal,
@@ -39,6 +40,10 @@ import type { FoodsRuntime } from "../NutritionRuntime";
 import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import { LocalRuntimeError } from "./localErrors";
+import {
+  LocalRecipeRepository,
+  type LocalDependentRecipe,
+} from "./localRecipeRepository";
 
 const SOURCE_LABELS = {
   manual: "Manual",
@@ -204,12 +209,14 @@ function errorFor(
   message: string,
   mutationOutcome: "not_applicable" | "confirmed_non_commit" = "not_applicable",
   field?: string,
+  details?: unknown,
 ): LocalRuntimeError {
   return new LocalRuntimeError({
     kind,
     code,
     message,
     field,
+    details,
     mutationOutcome,
   });
 }
@@ -717,6 +724,9 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     return this.mutate(async (transaction) => {
       const record = await this.loadRecordById(transaction, id, false, "mutation");
       this.assertMutable(record, "update");
+      const recipeRepository = new LocalRecipeRepository(transaction, this.ownerId);
+      const dependents = await recipeRepository.dependents(id);
+      const remaps = this.planServingRemaps(id, record.servings, normalized.serving_definitions, dependents);
       const updatedAt = canonicalNow(this.now);
       await transaction.runAsync(
         `UPDATE "food_items" SET "name" = ?, "brand" = ?, "notes" = ?, "updated_at" = ?
@@ -725,8 +735,11 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       );
       await this.stage("after_food");
       await this.replaceServings(transaction, id, normalized.serving_definitions);
+      const replacement = await this.loadRecordById(transaction, id, false, "mutation");
+      await this.applyServingRemaps(transaction, replacement.servings, remaps);
       await this.stage("after_servings");
       await this.replaceNutrients(transaction, id, normalized.nutrients);
+      await this.markPublishedDependentsStale(transaction, dependents, updatedAt);
       await this.stage("after_nutrients");
       return this.foodResponse(transaction, id);
     });
@@ -737,23 +750,40 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     return this.mutate(async (transaction) => {
       const record = await this.loadRecordById(transaction, id, false, "mutation");
       this.assertMutable(record, "delete");
-      const dependency = await transaction.getFirstAsync<{ count: number }>(
-        `SELECT COUNT(*) AS "count"
-         FROM "recipe_ingredients" AS "ingredient"
-         JOIN "recipes" AS "recipe" ON "recipe"."id" = "ingredient"."recipe_id"
-         WHERE "ingredient"."food_item_id" = ? AND "ingredient"."user_id" = ?
-           AND "recipe"."user_id" = ? AND "recipe"."deleted_at" IS NULL`,
-        [id, this.ownerId, this.ownerId],
-      );
-      if ((dependency?.count ?? 0) > 0) {
-        if (input.removeFromRecipes) {
-          throw unsupportedLocalFeature(
-            "Removing a Food from Recipes is not available in the local Food foundation yet.",
-          );
-        }
-        throw conflict("This Food is used by an active Recipe.", "food_dependencies_exist");
+      const recipeRepository = new LocalRecipeRepository(transaction, this.ownerId);
+      const dependents = await recipeRepository.dependents(id);
+      if (dependents.length > 0 && !input.removeFromRecipes) {
+        const affected = dependents.map((dependent) => ({
+          recipe_id: dependent.recipe.id,
+          recipe_name: dependent.recipe.name,
+          ingredient_occurrence_count: dependent.ingredients.filter((ingredient) => ingredient.food_item_id === id).length,
+          is_published: dependent.recipe.published_food_item_id !== null,
+          needs_republish: dependent.recipe.needs_republish === 1,
+        }));
+        throw errorFor(
+          "conflict",
+          "food_dependencies_exist",
+          "This Food is used by an active Recipe.",
+          "confirmed_non_commit",
+          undefined,
+          {
+            food_id: id,
+            active_recipe_count: affected.length,
+            affected_recipes: affected,
+            total_ingredient_rows_affected: affected.reduce((total, value) => total + value.ingredient_occurrence_count, 0),
+          },
+        );
       }
       const deletedAt = canonicalNow(this.now);
+      const affectedRecipes = dependents.map((dependent) => ({
+        recipe_id: dependent.recipe.id,
+        recipe_name: dependent.recipe.name,
+        removed_ingredient_count: dependent.ingredients.filter((ingredient) => ingredient.food_item_id === id).length,
+        needs_republish: dependent.recipe.published_food_item_id !== null || dependent.recipe.needs_republish === 1,
+      }));
+      const removedIngredientCount = input.removeFromRecipes
+        ? await recipeRepository.removeFoodFromDependents(id, dependents, deletedAt)
+        : 0;
       await transaction.runAsync(
         `UPDATE "food_items" SET "deleted_at" = ?, "updated_at" = ?
          WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
@@ -762,8 +792,8 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       return {
         food_id: id,
         deleted: true,
-        removed_ingredient_count: 0,
-        affected_recipes: [],
+        removed_ingredient_count: removedIngredientCount,
+        affected_recipes: input.removeFromRecipes ? affectedRecipes : [],
       };
     });
   }
@@ -849,6 +879,9 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       }
       const record = await this.loadRecordById(transaction, id, false, "mutation");
       this.assertMutable(record, "add_serving");
+      const dependents = serving.is_default
+        ? await new LocalRecipeRepository(transaction, this.ownerId).dependents(id)
+        : [];
       const servingId = generatedId();
       if (clientRequestId && requestFingerprint) {
         await this.reserveReceipt(transaction, "food.add_serving", clientRequestId, requestFingerprint, servingId);
@@ -871,6 +904,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
         [updatedAt, id, this.ownerId],
       );
       await this.stage("after_serving");
+      await this.markPublishedDependentsStale(transaction, dependents, updatedAt);
       const result = await this.foodResponse(transaction, id);
       if (clientRequestId && requestFingerprint) {
         await this.completeReceipt(transaction, "food.add_serving", clientRequestId, result);
@@ -1131,6 +1165,122 @@ export class LocalFoodsRuntime implements FoodsRuntime {
   ): Promise<void> {
     await transaction.runAsync(`DELETE FROM "food_nutrients" WHERE "food_item_id" = ?`, [foodId]);
     await this.insertNutrients(transaction, foodId, nutrients);
+  }
+
+  private servingSemanticKey(serving: Pick<ServingRow, "quantity" | "unit" | "gram_weight"> | NormalizedServing): string {
+    let quantity: ExactDecimal;
+    let gramWeight: ExactDecimal | null;
+    try {
+      quantity = parseDecimal(serving.quantity, NUMERIC_14_6);
+      gramWeight = parseNullableDecimal(serving.gram_weight, NUMERIC_14_6);
+    } catch {
+      throw invalidStoredFood("mutation");
+    }
+    return `${quantity}\u0000${serving.unit.trim().toLowerCase()}\u0000${gramWeight ?? ""}`;
+  }
+
+  private planServingRemaps(
+    foodId: string,
+    oldServings: readonly ServingRow[],
+    replacements: readonly NormalizedServing[],
+    dependents: readonly LocalDependentRecipe[],
+  ): Array<{ ingredientId: string; key: string }> {
+    const oldById = new Map(oldServings.map((serving) => [serving.id, serving]));
+    const replacementCounts = new Map<string, number>();
+    for (const serving of replacements) {
+      const key = this.servingSemanticKey(serving);
+      replacementCounts.set(key, (replacementCounts.get(key) ?? 0) + 1);
+    }
+    const remaps: Array<{ ingredientId: string; key: string }> = [];
+    const conflicts: Array<{
+      recipe_id: string;
+      recipe_name: string;
+      ingredients: Array<{ position: number; old_serving_label: string }>;
+    }> = [];
+    for (const dependent of dependents) {
+      const recipeConflicts: Array<{ position: number; old_serving_label: string }> = [];
+      for (const ingredient of dependent.ingredients) {
+        if (ingredient.food_item_id !== foodId || ingredient.serving_definition_id === null) continue;
+        const old = oldById.get(ingredient.serving_definition_id);
+        const key = old ? this.servingSemanticKey(old) : null;
+        if (key !== null && replacementCounts.get(key) === 1) {
+          remaps.push({ ingredientId: ingredient.id, key });
+        } else {
+          recipeConflicts.push({
+            position: ingredient.position,
+            old_serving_label: old?.label ?? "Unavailable serving",
+          });
+        }
+      }
+      if (recipeConflicts.length > 0) {
+        conflicts.push({
+          recipe_id: dependent.recipe.id,
+          recipe_name: dependent.recipe.name,
+          ingredients: recipeConflicts,
+        });
+      }
+    }
+    if (conflicts.length > 0) {
+      conflicts.sort((left, right) => left.recipe_id.localeCompare(right.recipe_id));
+      throw errorFor(
+        "conflict",
+        "food_update_recipe_serving_conflict",
+        "This serving change would alter active Recipe ingredients. Update those Recipe ingredients before changing the Food serving.",
+        "confirmed_non_commit",
+        undefined,
+        { food_id: foodId, affected_recipes: conflicts },
+      );
+    }
+    return remaps;
+  }
+
+  private async applyServingRemaps(
+    transaction: SQLiteDatabase,
+    replacements: readonly ServingRow[],
+    remaps: readonly { ingredientId: string; key: string }[],
+  ): Promise<void> {
+    const byKey = new Map(replacements.map((serving) => [this.servingSemanticKey(serving), serving]));
+    for (const remap of remaps) {
+      const successor = byKey.get(remap.key);
+      if (!successor) throw invalidStoredFood("mutation");
+      const ingredient = await transaction.getFirstAsync<{ amount_quantity: string }>(
+        `SELECT "amount_quantity" FROM "recipe_ingredients" WHERE "id" = ? AND "user_id" = ?`,
+        [remap.ingredientId, this.ownerId],
+      );
+      if (!ingredient) throw invalidStoredFood("mutation");
+      let resolved: ExactDecimal | null = null;
+      if (successor.gram_weight !== null) {
+        try {
+          resolved = multiplyDecimals(
+            parseDecimal(ingredient.amount_quantity, NUMERIC_14_6),
+            parseDecimal(successor.gram_weight, NUMERIC_14_6),
+            NUMERIC_14_6,
+          );
+        } catch {
+          throw invalidStoredFood("mutation");
+        }
+      }
+      await transaction.runAsync(
+        `UPDATE "recipe_ingredients" SET "serving_definition_id" = ?, "resolved_gram_amount" = ?
+         WHERE "id" = ? AND "user_id" = ?`,
+        [successor.id, resolved, remap.ingredientId, this.ownerId],
+      );
+    }
+  }
+
+  private async markPublishedDependentsStale(
+    transaction: SQLiteDatabase,
+    dependents: readonly LocalDependentRecipe[],
+    now: string,
+  ): Promise<void> {
+    for (const dependent of dependents) {
+      if (dependent.recipe.published_food_item_id === null) continue;
+      await transaction.runAsync(
+        `UPDATE "recipes" SET "needs_republish" = 1, "updated_at" = ?
+         WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [now, dependent.recipe.id, this.ownerId],
+      );
+    }
   }
 
   private async loadRecordById(

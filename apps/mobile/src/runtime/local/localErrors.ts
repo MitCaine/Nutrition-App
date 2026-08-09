@@ -17,6 +17,7 @@ export class LocalRuntimeError extends RuntimeError {
     field?: string;
     retryable?: boolean;
     mutationOutcome?: RuntimeMutationOutcome;
+    details?: unknown;
   }) {
     super({
       kind: input.kind,
@@ -27,8 +28,8 @@ export class LocalRuntimeError extends RuntimeError {
         : [],
       retryable: input.retryable ?? false,
       mutationOutcome: input.mutationOutcome ?? "not_applicable",
+      details: input.details,
     });
     this.name = "LocalRuntimeError";
   }
 }
-

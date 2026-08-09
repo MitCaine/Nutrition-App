@@ -39,6 +39,12 @@ export {
   type LocalUsdaRuntimeOptions,
 } from "./localUsdaRuntime";
 export {
+  LocalRecipesRuntime,
+  createLocalRecipesRuntime,
+  type LocalRecipeMutationStage,
+  type LocalRecipesRuntimeOptions,
+} from "./localRecipesRuntime";
+export {
   bootstrapLocalRuntimeFoundation,
   openLocalRuntimeFoundation,
   type LocalRuntimeFoundation,

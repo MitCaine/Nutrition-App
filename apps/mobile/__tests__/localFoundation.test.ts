@@ -165,6 +165,7 @@ describe("E2-04 local identity, calendar, and nutrient foundations", () => {
       kind: "local",
       recoveryScope: `local:${first.identity.ownerId}`,
     });
+    expect(first.recipes).toBeDefined();
   });
 
   test("seeds the canonical nutrient catalog idempotently and rejects drift", async () => {

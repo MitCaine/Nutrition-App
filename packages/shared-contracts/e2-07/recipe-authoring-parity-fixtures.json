@@ -1,0 +1,53 @@
+{
+  "authoring": {
+    "input": {
+      "name": "  Breakfast bowl  ",
+      "notes": "  layered  ",
+      "serving_count_yield": "2",
+      "final_cooked_weight_grams": "100",
+      "ingredients": [
+        {
+          "position": 1,
+          "amount_quantity": "1.5",
+          "amount_unit": "serving"
+        },
+        {
+          "position": 0,
+          "amount_quantity": "25.25",
+          "amount_unit": "g"
+        }
+      ]
+    },
+    "expected": {
+      "name": "Breakfast bowl",
+      "notes": "  layered  ",
+      "serving_count_yield": "2.000000",
+      "final_cooked_weight_grams": "100.000000",
+      "needs_republish": false,
+      "ingredients": [
+        {
+          "position": 0,
+          "amount_quantity": "25.250000",
+          "amount_unit": "g",
+          "resolved_gram_amount": "25.250000"
+        },
+        {
+          "position": 1,
+          "amount_quantity": "1.500000",
+          "amount_unit": "serving",
+          "resolved_gram_amount": "48.750000"
+        }
+      ]
+    }
+  },
+  "errors": {
+    "cycle": {
+      "code": "recipe_graph_cycle_conflict",
+      "message": "This ingredient change would create a circular Recipe dependency. Remove the circular Recipe ingredient and try again."
+    },
+    "deletion_dependency": {
+      "code": "recipe_delete_dependencies_exist",
+      "message": "This Recipe is used by other Recipes. Confirm deletion to remove it from those Recipes."
+    }
+  }
+}
