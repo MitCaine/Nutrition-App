@@ -46,6 +46,12 @@ export {
   type LocalRecipesRuntimeOptions,
 } from "./localRecipesRuntime";
 export {
+  LocalDailyLogsRuntime,
+  createLocalDailyLogsRuntime,
+  type LocalDailyLogCreateStage,
+  type LocalDailyLogsRuntimeOptions,
+} from "./localDailyLogsRuntime";
+export {
   bootstrapLocalRuntimeFoundation,
   openLocalRuntimeFoundation,
   type LocalRuntimeFoundation,

@@ -1,10 +1,13 @@
 import {
+  addResponseDecimals,
   addDecimals,
   compareDecimals,
+  divideResponseDecimalByPowerOfTen,
   divideDecimals,
   ExactDecimalError,
   multiplyDecimals,
   multiplyResponseDecimals,
+  multiplyResponseDecimalsInContext,
   NUMERIC_14_6,
   NUMERIC_5_4,
   NUMERIC_8_3,
@@ -123,6 +126,23 @@ describe("E2-02 decimal contracts", () => {
     expect(result).toBe(value.canonical);
     expect(parseResponseDecimal(result)).toBe(value.canonical);
   });
+});
+
+test("response decimal addition retains derived scale without a persisted-column cap", () => {
+  expect(addResponseDecimals("0", "0.001234567")).toBe("0.001234567");
+  expect(addResponseDecimals("99999999.999999", "99999999.999999")).toBe("199999999.999998");
+});
+
+test("bounded response multiplication matches Python Decimal's 28-digit context", () => {
+  expect(multiplyResponseDecimalsInContext(
+    "99999999.999999",
+    "0.09999943299958608969784547943",
+  )).toBe("9999943.299958508970351548357");
+});
+
+test("bounded power-of-ten division preserves Python Decimal result exponents", () => {
+  expect(divideResponseDecimalByPowerOfTen("0.001000000", "1")).toBe("0.001000000");
+  expect(divideResponseDecimalByPowerOfTen("1.000000", "0.001")).toBe("1000.000");
 });
 
 describe("E2-02 scalar and document contracts", () => {

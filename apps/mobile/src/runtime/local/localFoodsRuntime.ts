@@ -953,8 +953,78 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     }
   }
 
-  async listRecent(_limit = 10): Promise<RecentFood[]> {
-    throw unsupportedLocalFeature("Recent Foods are not available in the local Food foundation yet.");
+  async listRecent(limit = 10): Promise<RecentFood[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) {
+      throw errorFor(
+        "validation",
+        "recent_food_limit_invalid",
+        "Recent Food limits must be whole numbers from 1 through 20.",
+        "not_applicable",
+        "limit",
+      );
+    }
+    try {
+      const rows = await this.database.getAllAsync<FoodRow & { last_used_at: string }>(
+        `SELECT "food_items"."id", "food_items"."user_id", "food_items"."name", "food_items"."brand",
+                "food_items"."source_type", "food_items"."source_id", "food_items"."recipe_publication_revision_id",
+                "food_items"."is_recipe", "food_items"."notes", "food_items"."updated_at", "food_items"."deleted_at",
+                (
+                  SELECT "recent_log"."created_at"
+                  FROM "daily_logs" AS "recent_log"
+                  WHERE "recent_log"."food_item_id" = "food_items"."id"
+                    AND "recent_log"."user_id" = "food_items"."user_id"
+                  ORDER BY CASE
+                             WHEN instr("recent_log"."created_at", '.') = 0
+                             THEN substr("recent_log"."created_at", 1, length("recent_log"."created_at") - 1) || '.000000Z'
+                             ELSE "recent_log"."created_at"
+                           END DESC,
+                           "recent_log"."id" DESC
+                  LIMIT 1
+                ) AS "last_used_at",
+                MAX(
+                  CASE
+                    WHEN instr("daily_logs"."created_at", '.') = 0
+                    THEN substr("daily_logs"."created_at", 1, length("daily_logs"."created_at") - 1) || '.000000Z'
+                    ELSE "daily_logs"."created_at"
+                  END
+                ) AS "last_used_sort_key"
+         FROM "food_items"
+         JOIN "daily_logs"
+           ON "daily_logs"."food_item_id" = "food_items"."id"
+          AND "daily_logs"."user_id" = "food_items"."user_id"
+         WHERE "food_items"."user_id" = ?
+           AND "food_items"."deleted_at" IS NULL
+           AND "food_items"."is_recipe" = 0
+           AND "food_items"."source_type" != 'recipe'
+           AND "food_items"."recipe_publication_revision_id" IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM "recipes" AS "saved_recipe"
+             WHERE "saved_recipe"."published_food_item_id" = "food_items"."id"
+               AND "saved_recipe"."user_id" = "food_items"."user_id"
+           )
+         GROUP BY "food_items"."id"
+         ORDER BY "last_used_sort_key" DESC, "food_items"."id"
+         LIMIT ?`,
+        [this.ownerId, limit],
+      );
+      const result: RecentFood[] = [];
+      for (const row of rows) {
+        try {
+          const record = await this.loadRecord(this.database, row);
+          if (record.projection === "invalid") continue;
+          result.push({
+            food: await this.toFood(this.database, record),
+            last_used_at: readInstant(row.last_used_at),
+          });
+        } catch (error) {
+          if (error instanceof LocalRuntimeError && error.code === "recipe_projection_integrity_invalid") continue;
+          throw error;
+        }
+      }
+      return result;
+    } catch (error) {
+      throw this.readError(error);
+    }
   }
 
   async setFavorite(foodId: string, favorite: boolean): Promise<Food> {

@@ -5,7 +5,7 @@ import {
   type NutritionDatabaseHandle,
   type OpenNutritionDatabaseOptions,
 } from "../../storage/sqlite/migrations";
-import type { NutrientsRuntime, RecipesRuntime, UsdaRuntime } from "../NutritionRuntime";
+import type { DailyLogsRuntime, NutrientsRuntime, RecipesRuntime, UsdaRuntime } from "../NutritionRuntime";
 import {
   ensureLocalOwner,
   type LocalOwnerIdentity,
@@ -32,6 +32,10 @@ import {
   createLocalRecipesRuntime,
   type LocalRecipesRuntimeOptions,
 } from "./localRecipesRuntime";
+import {
+  createLocalDailyLogsRuntime,
+  type LocalDailyLogsRuntimeOptions,
+} from "./localDailyLogsRuntime";
 
 export type LocalRuntimeFoundation = Readonly<{
   database: SQLiteDatabase;
@@ -41,6 +45,7 @@ export type LocalRuntimeFoundation = Readonly<{
   nutrients: NutrientsRuntime;
   foods: LocalFoodsRuntime;
   recipes: RecipesRuntime;
+  dailyLogs: DailyLogsRuntime;
   usda: UsdaRuntime;
 }>;
 
@@ -48,6 +53,7 @@ export type OpenLocalRuntimeFoundationOptions = OpenNutritionDatabaseOptions & R
   calendar?: LocalCalendarRuntimeOptions;
   foods?: LocalFoodsRuntimeOptions;
   recipes?: LocalRecipesRuntimeOptions;
+  dailyLogs?: LocalDailyLogsRuntimeOptions;
   usda?: LocalUsdaRuntimeOptions;
 }>;
 
@@ -58,6 +64,7 @@ export async function bootstrapLocalRuntimeFoundation(
   foodsOptions: LocalFoodsRuntimeOptions = {},
   usdaOptions: LocalUsdaRuntimeOptions = {},
   recipesOptions: LocalRecipesRuntimeOptions = {},
+  dailyLogsOptions: LocalDailyLogsRuntimeOptions = {},
 ): Promise<LocalRuntimeFoundation> {
   const identity = await ensureLocalOwner(database);
   await ensureLocalNutrientCatalog(database);
@@ -70,6 +77,7 @@ export async function bootstrapLocalRuntimeFoundation(
     nutrients: createLocalNutrientsRuntime(database),
     foods,
     recipes: createLocalRecipesRuntime(database, identity.ownerId, recipesOptions),
+    dailyLogs: createLocalDailyLogsRuntime(database, identity.ownerId, dailyLogsOptions),
     usda: createLocalUsdaRuntime(foods, usdaOptions),
   };
 }
@@ -94,6 +102,7 @@ export async function openLocalRuntimeFoundation(
     calendar: calendarOptions,
     foods: foodsOptions,
     recipes: recipesOptions,
+    dailyLogs: dailyLogsOptions,
     usda: usdaOptions,
     ...databaseOptions
   } = options;
@@ -105,6 +114,7 @@ export async function openLocalRuntimeFoundation(
       foodsOptions,
       usdaOptions,
       recipesOptions,
+      dailyLogsOptions,
     );
     return {
       ...foundation,

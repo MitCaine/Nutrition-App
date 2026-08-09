@@ -685,6 +685,8 @@ Deliver the central local nutrition-history workflow.
 
 Daily Logs must capture current source authority as immutable historical snapshots and aggregate only those snapshots. Creation is the point at which mutable Food or Recipe authority becomes durable history.
 
+Implementation detail: [E2-09 local Daily Logs, snapshots, summaries, and Repeat](e2-09-local-daily-logs.md).
+
 ### Acceptance criteria
 
 - Local mode supports date-scoped listing, creation, detail/edit context, daily summary, Recent Entries, Recent Foods, and Repeat.

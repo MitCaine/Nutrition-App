@@ -1,0 +1,112 @@
+{
+  "food_serving_per_100g": {
+    "amount_quantity": "12.345678",
+    "gram_equivalent": "99.999999",
+    "nutrient_amount": "1.234567",
+    "nutrient_basis": "per_100g",
+    "raw_gram_amount": "1234.567787654322",
+    "persisted_gram_amount": "1234.567788",
+    "raw_serving_multiplier": "12.345678",
+    "persisted_snapshot_amount": "15.241566",
+    "calculation_metadata": {
+      "nutrient_basis": "per_100g",
+      "serving_multiplier": "12.345678"
+    }
+  },
+  "food_gram_per_serving": {
+    "amount_quantity": "0.123456",
+    "gram_equivalent": "1.234567",
+    "nutrient_amount": "0.123456",
+    "nutrient_basis": "per_serving",
+    "raw_gram_amount": "0.123456",
+    "persisted_gram_amount": "0.123456",
+    "raw_serving_multiplier": "0.09999943299958608969784547943",
+    "persisted_snapshot_amount": "0.012346",
+    "calculation_metadata": {
+      "nutrient_basis": "per_serving",
+      "serving_multiplier": "0.09999943299958608969784547943"
+    }
+  },
+  "recipe_serving_metadata": {
+    "amount_quantity": "1",
+    "calculation_metadata": {
+      "nutrient_basis": "per_serving",
+      "serving_multiplier": "1"
+    }
+  },
+  "idempotency_decimal": {
+    "distinct_after_persistence_rounding": ["1.0000001", "1.0000002"],
+    "equivalent_spellings": ["1.0", "1.000"]
+  },
+  "food_gram_repeat": {
+    "amount_quantity": "50.000000",
+    "replacement_serving_label": "Current 75 g serving",
+    "direct_gram_label": "50.000000 g"
+  },
+  "recipe_gram_metadata": {
+    "amount_quantity": "50",
+    "default_serving_gram_equivalent": "75.000000",
+    "persisted_gram_amount": "50.000000",
+    "calculation_metadata": {
+      "nutrient_basis": "per_100g",
+      "serving_multiplier": "0.6666666666666666666666666667"
+    },
+    "null_conversion_metadata": {
+      "nutrient_basis": "per_100g",
+      "serving_multiplier": null
+    }
+  },
+  "projection_serving_mapping": {
+    "label": "1 serving",
+    "unit": "serving",
+    "quantity": "1.000000",
+    "gram_equivalent": "75.000000",
+    "is_default": true
+  },
+  "summary": {
+    "fine_scale_conversion": {
+      "amount": "1.234567",
+      "source_unit": "mg",
+      "target_unit": "g",
+      "amount_known": "0.001234567",
+      "amount_estimated": "0"
+    },
+    "representation_cases": [
+      {
+        "nutrient_id": "protein",
+        "amount": "1.000000",
+        "source_unit": "mg",
+        "target_unit": "g",
+        "amount_known": "0.001000000"
+      },
+      {
+        "nutrient_id": "sodium",
+        "amount": "1.000000",
+        "source_unit": "g",
+        "target_unit": "mg",
+        "amount_known": "1000.000"
+      }
+    ],
+    "aggregate_above_numeric_14_6": {
+      "inputs": ["99999999.999999", "99999999.999999"],
+      "amount_known": "199999999.999998"
+    },
+    "status_totals": {
+      "known": {"amount_known": "1.250000", "amount_estimated": "0", "unknown_contributor_count": 0},
+      "estimated": {"amount_known": "0", "amount_estimated": "2.500000", "unknown_contributor_count": 0},
+      "zero": {"amount_known": "0", "amount_estimated": "0", "unknown_contributor_count": 0},
+      "unknown": {"amount_known": "0", "amount_estimated": "0", "unknown_contributor_count": 1}
+    }
+  },
+  "reviewed_stale_amount": {
+    "error_code": "stale_log_amount"
+  },
+  "reviewed_precondition_precedence": {
+    "serving_error_code": "stale_log_amount",
+    "gram_error_code": "stale_log_source"
+  },
+  "canonical_instant_ordering": {
+    "older": "2026-08-09T12:00:00Z",
+    "newer": "2026-08-09T12:00:00.500000Z"
+  }
+}

@@ -307,6 +307,25 @@ export function parseResponseDecimal(value: unknown): ResponseDecimal {
 
 export const serializeResponseDecimal = parseResponseDecimal;
 
+/**
+ * Add response decimals using Python Decimal's 28-digit, ROUND_HALF_EVEN
+ * context while retaining the exponent selected by the operands.
+ */
+export function addResponseDecimals(
+  left: string | ResponseDecimal,
+  right: string | ResponseDecimal,
+): ResponseDecimal {
+  const leftParts = parseResponseParts(parseResponseDecimal(left));
+  const rightParts = parseResponseParts(parseResponseDecimal(right));
+  const scale = Math.max(leftParts.scale, rightParts.scale);
+  const coefficient = (
+    leftParts.coefficient * (10n ** BigInt(scale - leftParts.scale))
+  ) + (
+    rightParts.coefficient * (10n ** BigInt(scale - rightParts.scale))
+  );
+  return formatContextResult({ coefficient, scale });
+}
+
 /** Multiply response decimals exactly, retaining the mathematical scale. */
 export function multiplyResponseDecimals(
   left: string | ResponseDecimal,
@@ -344,6 +363,78 @@ function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
     return quotient + 1n;
   }
   return quotient;
+}
+
+function formatContextResult(parts: DecimalParts): ResponseDecimal {
+  if (parts.coefficient === 0n) {
+    return formatResponseParts(parts, false) as ResponseDecimal;
+  }
+  const discardedDigits = Math.max(
+    0,
+    parts.coefficient.toString().length - DECIMAL_CONTEXT_PRECISION,
+  );
+  if (discardedDigits === 0) {
+    return formatResponseParts(parts, false) as ResponseDecimal;
+  }
+
+  let coefficient = roundHalfEven(
+    parts.coefficient,
+    10n ** BigInt(discardedDigits),
+  );
+  let scale = parts.scale - discardedDigits;
+  if (coefficient.toString().length > DECIMAL_CONTEXT_PRECISION) {
+    coefficient /= 10n;
+    scale -= 1;
+  }
+  if (scale >= 0) {
+    return formatResponseParts({ coefficient, scale }, false) as ResponseDecimal;
+  }
+  return `${coefficient}${"0".repeat(-scale)}` as ResponseDecimal;
+}
+
+/** Multiply using Python Decimal's current 28-digit response context. */
+export function multiplyResponseDecimalsInContext(
+  left: string | ResponseDecimal,
+  right: string | ResponseDecimal,
+): ResponseDecimal {
+  const leftParts = parseResponseParts(parseResponseDecimal(left));
+  const rightParts = parseResponseParts(parseResponseDecimal(right));
+  return formatContextResult({
+    coefficient: leftParts.coefficient * rightParts.coefficient,
+    scale: leftParts.scale + rightParts.scale,
+  });
+}
+
+/**
+ * Divide by a base-10 power while preserving Python Decimal's result exponent.
+ * This is intentionally narrower than general response division: exact unit
+ * conversion must retain trailing zeros selected by the operation sequence.
+ */
+export function divideResponseDecimalByPowerOfTen(
+  value: string | ResponseDecimal,
+  divisor: string | ResponseDecimal,
+): ResponseDecimal {
+  const valueParts = parseResponseParts(parseResponseDecimal(value));
+  const divisorParts = parseResponseParts(parseResponseDecimal(divisor));
+  if (divisorParts.coefficient === 0n) {
+    throw new ExactDecimalError("division_by_zero", "Decimal division by zero is not permitted.");
+  }
+  const divisorDigits = divisorParts.coefficient.toString();
+  if (!/^10*$/.test(divisorDigits)) {
+    throw new ExactDecimalError(
+      "invalid_decimal",
+      "Exponent-preserving response division requires a base-10 power divisor.",
+    );
+  }
+  const divisorExponent = divisorDigits.length - 1 - divisorParts.scale;
+  const resultScale = valueParts.scale + divisorExponent;
+  if (resultScale >= 0) {
+    return formatResponseParts({
+      coefficient: valueParts.coefficient,
+      scale: resultScale,
+    }, false) as ResponseDecimal;
+  }
+  return `${valueParts.coefficient}${"0".repeat(-resultScale)}` as ResponseDecimal;
 }
 
 /**
