@@ -261,6 +261,61 @@ Client-side date utilities should handle date-only navigation and provisional pr
 
 ---
 
+# E1-06 — Meal-Grouped Daily Log Presentation and Compatibility Boundaries
+
+## Project legacy state instead of rewriting it
+
+Compatibility presentation exists to keep historical data understandable without changing persisted meaning.
+
+For legacy Daily Log values:
+
+- preserve the stored value;
+- project unsupported meals into a bounded compatibility presentation;
+- keep overlength historical notes readable;
+- escape unsupported text safely;
+- do not normalize historical rows merely to simplify the UI.
+
+Presentation compatibility must not become a hidden data migration.
+
+## Make ordering deterministic from stable domain facts
+
+When a product contract requires stable ordering, define the complete ordering rule explicitly.
+
+For Daily Log entries:
+
+- group supported meals in the fixed product order;
+- place compatibility-only Unassigned content last;
+- order entries by immutable creation time;
+- use a stable identifier as the tie-breaker.
+
+Editing mutable fields must not accidentally change historical display order.
+
+## Hide invalid capabilities instead of presenting guaranteed failures
+
+Mutation affordances should reflect the authoritative capability state.
+
+When a date is provisional or future browse-only:
+
+- omit Add actions;
+- preserve read access;
+- do not expose controls that are guaranteed to fail later.
+
+Backend validation remains required, but server rejection should not be the primary user interface for known-invalid actions.
+
+## Keep bounded previews separate from persisted content
+
+Readability constraints belong to presentation.
+
+Note previews may:
+
+- limit visible lines;
+- expose Show more and Show less;
+- maintain independent expansion state per entry.
+
+They must not truncate, rewrite, or otherwise mutate the stored note.
+
+---
+
 # E1-07 — Independent Read States and Confirmed Mutation Projection
 
 ## Model presentation states explicitly
@@ -1013,3 +1068,298 @@ query-cache interactions.
 
 They must expose reliable cleanup and tests must dispose of QueryClients and
 timers so the suite terminates normally without force-exit behavior.
+
+---
+
+# E1-17 — Accessibility as a Cross-Cutting Release Contract
+
+## Build shared accessibility primitives before patching individual screens
+
+Accessibility behavior that recurs across workflows belongs in reusable infrastructure.
+
+Shared primitives should own:
+
+- route and element focus;
+- modal entry and return focus;
+- announcements;
+- semantic loading, stale, unavailable, failure, and busy states;
+- validation targets and persistent field labels;
+- minimum touch targets;
+- contextual labels for repeated actions.
+
+Do not build a separate accessibility mechanism for each screen.
+
+## Accessibility side effects require lifecycle ownership
+
+Focus requests and announcements are asynchronous work.
+
+They must be:
+
+- cancellable;
+- owned by the effect or component that created them;
+- released on unmount;
+- prevented from firing after the destination disappears.
+
+A successful assertion suite is not sufficient if delayed accessibility work survives test or screen teardown.
+
+## Move focus only for meaningful navigation and user outcomes
+
+Native source order should own ordinary traversal.
+
+Programmatic focus should be reserved for meaningful transitions such as:
+
+- route activation;
+- modal presentation;
+- returning from a workflow;
+- confirmed deletion or movement when the invoking control disappears;
+- targeted validation failures.
+
+Background refresh, cache updates, and ordinary rerenders must not move focus.
+
+When the preferred return target no longer exists, use a deterministic safe successor rather than abandoning focus or creating a competing focus system.
+
+## Accessible modals need complete entry and exit semantics
+
+A modal contract includes more than a visible heading.
+
+It should provide:
+
+- modal isolation;
+- an explicit heading;
+- one bounded entry-focus request;
+- named actions;
+- busy and disabled state on controls rather than headings;
+- preferred return focus;
+- deterministic fallback return focus;
+- cancellation when presentation changes.
+
+Destructive and safety-sensitive dialogs should explain consequences in accessible text rather than relying on generic confirmation wording.
+
+## Accessibility qualification must include real presentation constraints
+
+Semantic unit tests do not replace platform qualification.
+
+Release evidence should include the supported combinations of:
+
+- VoiceOver or TalkBack;
+- large text and Dynamic Type;
+- supported hardware-keyboard workflows;
+- touch-target sizing;
+- focus order and modal isolation;
+- useful announcements and error semantics;
+- platform-specific capability gating.
+
+Unsupported platform routes should be absent rather than merely inaccessible after entry.
+
+## Accessibility remediation must preserve domain authority
+
+Accessibility work may change presentation, focus, announcements, and interaction affordances.
+
+It must not weaken:
+
+- calendar authority;
+- replay and concurrency contracts;
+- mutation intent;
+- recovery durability;
+- historical nutrition;
+- source provenance.
+
+Accessibility is a release requirement, not an excuse to create parallel domain behavior.
+
+---
+
+# E1-18 — Integrated Release Qualification and Epic Closure
+
+## Integrated qualification is distinct from issue-level testing
+
+Passing each implementation issue independently does not prove the complete Epic works as one system.
+
+A release pass must exercise the interactions between:
+
+- dates and time zones;
+- navigation and retained workflow context;
+- source changes and source unavailability;
+- confirmed and uncertain mutations;
+- concurrency conflicts;
+- compatibility state;
+- accessibility behavior;
+- repository and migration contracts.
+
+Cross-cutting defects may appear only after individually correct features are combined.
+
+## Test infrastructure must obey production lifecycle contracts
+
+The qualification harness is part of the evidence.
+
+Tests that mount long-lived components must clean up:
+
+- renderers;
+- timers;
+- listeners;
+- QueryClients;
+- accessibility focus work;
+- other asynchronous ownership.
+
+A suite that completes every assertion but leaks post-teardown work is not fully qualified.
+
+Fix the lifecycle defect rather than suppressing timers, weakening behavior, or forcing the test process to exit.
+
+## Trace release decisions to requirements, not only test counts
+
+Release qualification should map each accepted success criterion to concrete evidence.
+
+It should also audit explicit non-goals so the release does not accidentally introduce:
+
+- future planning or scheduling;
+- unsupported platform capabilities;
+- offline mutation queues;
+- automatic historical recalculation;
+- new recovery semantics;
+- public or collaborative behavior;
+- architectural rewrites outside the approved boundary.
+
+Green tests are evidence, not the definition of scope correctness.
+
+## Classify skips and warnings explicitly
+
+Skipped tests and warnings must remain visible in release evidence.
+
+For each skip or warning:
+
+- identify why it exists;
+- determine whether it is intentionally opt-in or infrastructure-bound;
+- do not count it as a pass;
+- determine whether it blocks the release.
+
+Qualification should distinguish accepted residual warnings from unexecuted required coverage.
+
+## Preserve the architecture gate during release work
+
+Release qualification is not a new implementation phase.
+
+Corrections should remain bounded to already approved contracts.
+
+If qualification discovers that success requires:
+
+- a persistence redesign;
+- a fundamental data-model change;
+- new API architecture;
+- major product-scope expansion;
+
+stop release work and return to architecture or roadmap review.
+
+## Close an Epic with reproducible evidence
+
+The final release record should state:
+
+- the authority documents used;
+- prerequisite evidence accepted;
+- the exact integrated qualification path;
+- defects found and bounded corrections made;
+- automated results;
+- requirement traceability;
+- architecture and scope audit;
+- residual warnings and manual evidence.
+
+This makes Epic closure reviewable later without reconstructing intent from commit history.
+
+---
+
+# Repository Maintenance Lessons
+
+## Treat the resolved dependency graph as the authority for what CI tested
+
+A dependency declaration change does not prove that CI exercised the newly declared version.
+
+When a repository installs from a lockfile:
+
+- inspect the lockfile or resolved graph;
+- confirm the proposed version is actually installed;
+- regenerate or update the authoritative lock state when required;
+- do not interpret a green CI run as qualification of a version that was never resolved.
+
+Dependency automation must follow the repository's dependency authority model.
+
+## Separate framework compatibility from general SemVer compatibility
+
+A minor or patch release can still be unsupported by a framework-managed toolchain.
+
+For ecosystems such as Expo and React Native:
+
+- preserve framework-selected compatibility versions;
+- run framework-specific dependency checks;
+- run ecosystem health checks;
+- then run typecheck and tests.
+
+General SemVer compatibility does not replace framework qualification.
+
+## Keep routine dependency automation bounded
+
+Routine automated updates should remain reviewable maintenance, not implicit migrations.
+
+Prefer:
+
+- grouped compatible minor and patch updates;
+- deliberate major-version migrations;
+- framework-managed packages held to supported versions;
+- full CI qualification before merge.
+
+Do not let broad dependency groups turn routine maintenance into an unplanned platform migration.
+
+## Distinguish actionable vulnerabilities from upstream-blocked vulnerabilities
+
+A vulnerability report does not automatically imply a safe repository-side fix exists.
+
+Before changing dependencies:
+
+- identify the vulnerable package;
+- trace the owning transitive path;
+- determine whether a patched release exists;
+- determine whether the owning upstream package can consume it;
+- verify whether the repository can adopt that upstream version safely.
+
+A real vulnerability may still be upstream-blocked.
+
+## Do not weaken compatibility merely to clear a scanner
+
+When no supported patched dependency path exists:
+
+- do not force unsupported overrides;
+- do not hand-edit lockfiles;
+- do not install unreleased commits merely to remove an alert;
+- do not suppress the alert solely for a clean dashboard.
+
+Record the exposure and upstream owner, retain the alert, and re-evaluate when a supported remediation exists.
+
+## Use different tools for different dependency questions
+
+Dependency maintenance has several separate authorities:
+
+- Dependabot identifies repository security advisories and update opportunities;
+- the package audit reports the installed dependency graph;
+- dependency-tree inspection identifies ownership and transitive paths;
+- package metadata shows what upstream versions actually exist;
+- framework-specific checks establish ecosystem compatibility;
+- CI establishes repository-level correctness.
+
+No single tool answers all of those questions.
+
+---
+
+# Closing Engineering Principles
+
+The implementation process reinforced several recurring principles:
+
+- Establish invariants before optimizing workflows.
+- Preserve authoritative ownership of mutable state.
+- Treat concurrency, replay, and failure handling as core behavior rather than edge cases.
+- Prefer bounded corrections over architectural expansion.
+- Reuse existing qualified contracts instead of creating parallel systems.
+- Preserve legacy data through compatibility projection rather than silent rewriting.
+- Treat accessibility and lifecycle cleanup as correctness concerns.
+- Qualify integrated behavior separately from isolated feature correctness.
+- Let automation expose problems early rather than hiding them.
+- Distinguish a real problem from an immediately actionable repository fix.
+- Accept when the correct engineering action is waiting for upstream rather than forcing a local workaround.
+
+The purpose of these lessons is not to prevent iteration. Iteration is expected in complex systems. The purpose is to ensure each iteration strengthens the existing architecture instead of introducing temporary solutions that later become permanent complexity.

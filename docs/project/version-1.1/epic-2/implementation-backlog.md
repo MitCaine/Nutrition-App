@@ -271,6 +271,8 @@ XL
 
 Reason: establishes the durable schema and upgrade mechanism whose failure could make personal data inaccessible or invalid.
 
+Implementation detail: [E2-03 native SQLite schema and migration stream](e2-03-sqlite-schema.md).
+
 ---
 
 # Milestone 2 — Local Core Nutrition

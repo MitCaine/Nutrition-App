@@ -16,6 +16,7 @@
     "plugins": [
       "./plugins/with-ios-build-workarounds",
       "@react-native-community/datetimepicker",
+      "expo-sqlite",
       [
         "expo-image-picker",
         {
