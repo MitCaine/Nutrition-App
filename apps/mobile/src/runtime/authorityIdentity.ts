@@ -1,3 +1,5 @@
+import { parseUuid } from "../shared/exact/canonicalValues";
+
 export const LOCAL_AUTHORITY_SCOPE_PREFIX = "local:";
 
 export type RuntimeAuthorityIdentity = Readonly<{
@@ -11,6 +13,15 @@ export function remoteAuthorityIdentity(recoveryScope: string): RuntimeAuthority
     throw new Error("Remote runtime authority scope collides with the reserved local namespace.");
   }
   return Object.freeze({ kind: "remote", recoveryScope });
+}
+
+/** Build the durable authority scope for the single local owner. */
+export function localAuthorityIdentity(ownerId: string): RuntimeAuthorityIdentity {
+  const canonicalOwnerId = parseUuid(ownerId);
+  return Object.freeze({
+    kind: "local",
+    recoveryScope: `${LOCAL_AUTHORITY_SCOPE_PREFIX}${canonicalOwnerId}`,
+  });
 }
 
 export function isReservedLocalAuthorityScope(scope: string): boolean {

@@ -342,6 +342,8 @@ Local 1.0 is single-user, but owner identity, authoritative calendar state, and 
 - Exercise the focused Calendar and Nutrient parity fixtures.
 - Run affected mobile calendar tests and TypeScript checking.
 
+Implementation detail: [E2-04 local identity, calendar, and nutrient foundations](e2-04-local-foundations.md).
+
 ### Estimated implementation size
 
 L

@@ -225,6 +225,25 @@ async function configureExclusiveTransaction(
   }
 }
 
+/**
+ * Run one invariant-sensitive operation on Expo SQLite's isolated native
+ * connection and explicit EXCLUSIVE transaction.  Callers must use the
+ * supplied transaction for every read and write in the operation; using the
+ * outer database handle here would reintroduce the async-query absorption
+ * hazard of `withTransactionAsync`.
+ */
+export async function withExclusiveSQLiteTransaction<T>(
+  database: SQLiteDatabase,
+  operation: (transaction: SQLiteDatabase) => Promise<T> | T,
+): Promise<T> {
+  let result!: T;
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    await configureExclusiveTransaction(transaction);
+    result = await operation(transaction);
+  });
+  return result;
+}
+
 /** Enable the required settings on one newly opened native connection. */
 export async function configureSQLiteConnection(database: SQLiteDatabase): Promise<void> {
   for (const statement of SQLITE_CONNECTION_SETUP_STATEMENTS) {

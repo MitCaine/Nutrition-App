@@ -19,6 +19,7 @@ export {
   configureSQLiteConnection,
   migrateNutritionDatabase,
   openNutritionDatabase,
+  withExclusiveSQLiteTransaction,
   withDailyLogSnapshotReplacement,
   type NutritionDatabaseHandle,
   type OpenNutritionDatabaseOptions,
