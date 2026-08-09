@@ -42,6 +42,7 @@ export {
   LocalRecipesRuntime,
   createLocalRecipesRuntime,
   type LocalRecipeMutationStage,
+  type LocalRecipePublicationStage,
   type LocalRecipesRuntimeOptions,
 } from "./localRecipesRuntime";
 export {

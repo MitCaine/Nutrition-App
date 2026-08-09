@@ -10,6 +10,8 @@ import type {
   RecipeNutritionResponse,
   RecipePublishResponse,
 } from "../../features/recipes/api/types";
+import type { NutrientBasis } from "../../features/foods/api/types";
+import type { AggregatedNutrientTotal, NutrientDataStatus, NutrientUnit } from "../../shared/nutrition/types";
 import { massToGrams, type MassUnit } from "../../features/recipes/utils/massUnits";
 import {
   canonicalJsonStringify,
@@ -20,13 +22,16 @@ import {
 } from "../../shared/exact/canonicalValues";
 import {
   compareDecimals,
+  divideResponseDecimals,
   multiplyDecimals,
+  multiplyResponseDecimals,
   NUMERIC_14_6,
   parseDecimal,
   parseNullableDecimal,
   type ExactDecimal,
 } from "../../shared/exact/decimal";
 import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { RecipesRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
 import {
@@ -35,11 +40,13 @@ import {
   type LocalRecipeIngredientRow,
   type LocalRecipeRow,
 } from "./localRecipeRepository";
+import { createLocalFoodsRuntime } from "./localFoodsRuntime";
 
 const CYCLE_CODE = "recipe_graph_cycle_conflict";
 const CYCLE_MESSAGE = "This ingredient change would create a circular Recipe dependency. Remove the circular Recipe ingredient and try again.";
 const DELETE_DEPENDENCY_MESSAGE = "This Recipe is used by other Recipes. Confirm deletion to remove it from those Recipes.";
 const PROJECTION_INTEGRITY_MESSAGE = "This generated Recipe Food has inconsistent ownership links and cannot be changed safely.";
+const PARENT_AMOUNT_CONFLICT_MESSAGE = "This Recipe cannot be republished because one or more parent Recipe ingredient amounts no longer have an equivalent serving. Update those parent Recipe ingredients before republishing.";
 
 type OperationContext = "read" | "mutation";
 
@@ -88,14 +95,140 @@ export type LocalRecipeMutationStage =
   | "after_recipe_delete"
   | "after_projection_delete";
 
+export type LocalRecipePublicationStage =
+  | "after_publication_revision"
+  | "after_publication_amount_definitions"
+  | "after_publication_nutrients"
+  | "after_projection_food"
+  | "after_projection_nutrients"
+  | "after_projection_servings"
+  | "after_recipe_active_link"
+  | "before_publication_receipt";
+
 export type LocalRecipesRuntimeOptions = Readonly<{
   now?: () => Date;
   /** Focused failure seam; every callback executes inside the exclusive transaction. */
   onMutationStage?: (stage: LocalRecipeMutationStage) => Promise<void> | void;
+  /** Focused publication rollback seam; every callback runs inside the exclusive transaction. */
+  onPublicationStage?: (stage: LocalRecipePublicationStage) => Promise<void> | void;
 }>;
+
+type PublicationFoodRow = Readonly<{
+  id: string;
+  name: string;
+  source_type: string;
+  source_id: string | null;
+  recipe_publication_revision_id: string | null;
+  is_recipe: number;
+  deleted_at: string | null;
+}>;
+
+type PublicationServingRow = Readonly<{
+  id: string;
+  label: string;
+  quantity: string;
+  unit: string;
+  gram_weight: string | null;
+  is_default: number;
+}>;
+
+type PublicationNutrientRow = Readonly<{
+  id: string;
+  nutrient_id: string;
+  amount: string | null;
+  unit: NutrientUnit;
+  basis: NutrientBasis;
+  data_status: NutrientDataStatus;
+}>;
+
+type PublicationTotal = AggregatedNutrientTotal & Readonly<{
+  amountKnown: ExactDecimal;
+  amountEstimated: ExactDecimal;
+}>;
+
+type PublicationAmount = Readonly<{
+  id: string;
+  displayOrder: number;
+  displayLabel: string;
+  semanticMode: "serving" | "g";
+  displayQuantity: ExactDecimal | null;
+  displayUnit: string;
+  /** Python Decimal-derived value used only by backend-compatible content hashing. */
+  digestGramEquivalent: string | null;
+  /** E2-02 NUMERIC(14,6) ROUND_HALF_UP authority bound to SQLite. */
+  gramEquivalent: ExactDecimal | null;
+  isDefault: boolean;
+}>;
+
+type PublicationNutrient = Readonly<{
+  id: string;
+  nutrientId: string;
+  amount: ExactDecimal | null;
+  unit: NutrientUnit;
+  basis: "per_serving" | "per_100g";
+  status: NutrientDataStatus;
+}>;
+
+type ParentServingRemapPlan = Readonly<{
+  remaps: readonly Readonly<{ ingredientId: string; amountQuantity: ExactDecimal; targetOrder: number }>[];
+  parentIds: readonly string[];
+}>;
+
+const DEFAULT_NUTRIENT_UNITS = new Map(
+  SQLITE_NUTRIENT_SEED_ROWS.map(([id, , , unit]) => [id, unit as NutrientUnit]),
+);
+
+function decimalParts(value: string): { coefficient: bigint; scale: number } {
+  if (!/^\d+(?:\.\d+)?$/.test(value)) throw new Error("invalid decimal");
+  const [whole, fraction = ""] = value.split(".");
+  return { coefficient: BigInt(`${whole}${fraction}`), scale: fraction.length };
+}
+
+function responseAdd(left: string, right: string): string {
+  const a = decimalParts(left);
+  const b = decimalParts(right);
+  const scale = Math.max(a.scale, b.scale);
+  const coefficient = a.coefficient * 10n ** BigInt(scale - a.scale)
+    + b.coefficient * 10n ** BigInt(scale - b.scale);
+  const digits = coefficient.toString().padStart(scale + 1, "0");
+  return scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+}
+
+/** Match Python Decimal.quantize(Decimal("0.000001")) with ROUND_HALF_EVEN. */
+function quantizePublicationDecimal(value: string): ExactDecimal {
+  const parts = decimalParts(value);
+  if (parts.scale <= NUMERIC_14_6.scale) return parseDecimal(value, NUMERIC_14_6);
+  const divisor = 10n ** BigInt(parts.scale - NUMERIC_14_6.scale);
+  let quotient = parts.coefficient / divisor;
+  const remainder = parts.coefficient % divisor;
+  if (remainder * 2n > divisor || (remainder * 2n === divisor && quotient % 2n === 1n)) quotient += 1n;
+  const digits = quotient.toString().padStart(NUMERIC_14_6.scale + 1, "0");
+  return parseDecimal(`${digits.slice(0, -NUMERIC_14_6.scale)}.${digits.slice(-NUMERIC_14_6.scale)}`, NUMERIC_14_6);
+}
+
+function normalizedDecimalText(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+  return /^0(?:\.0*)?$/.test(normalized) ? "0" : normalized;
+}
 
 function localError(input: ConstructorParameters<typeof LocalRuntimeError>[0]): LocalRuntimeError {
   return new LocalRuntimeError(input);
+}
+
+function recipeNutritionError(
+  code: string,
+  message: string,
+  context: OperationContext,
+  details: Readonly<Record<string, string>> = {},
+): LocalRuntimeError {
+  return localError({
+    kind: "validation",
+    code,
+    message,
+    mutationOutcome: mutationOutcome(context),
+    details: { code, message, ...details },
+  });
 }
 
 function mutationOutcome(context: OperationContext): "not_applicable" | "confirmed_non_commit" {
@@ -374,6 +507,7 @@ async function fingerprint(value: unknown): Promise<string> {
 export class LocalRecipesRuntime implements RecipesRuntime {
   private readonly now: () => Date;
   private readonly onMutationStage?: LocalRecipesRuntimeOptions["onMutationStage"];
+  private readonly onPublicationStage?: LocalRecipesRuntimeOptions["onPublicationStage"];
 
   constructor(
     private readonly database: SQLiteDatabase,
@@ -383,6 +517,7 @@ export class LocalRecipesRuntime implements RecipesRuntime {
     this.ownerId = canonicalId(ownerId, "mutation");
     this.now = options.now ?? (() => new Date());
     this.onMutationStage = options.onMutationStage;
+    this.onPublicationStage = options.onPublicationStage;
   }
 
   async list(query?: string): Promise<Recipe[]> {
@@ -559,22 +694,671 @@ export class LocalRecipesRuntime implements RecipesRuntime {
     });
   }
 
-  async getNutrition(_recipeId: string): Promise<RecipeNutritionResponse> {
-    throw localError({
-      kind: "unavailable",
-      code: "feature_not_available",
-      message: "Local Recipe nutrition and publication are not available until the bounded publication slice.",
-      mutationOutcome: "not_applicable",
+  async getNutrition(recipeId: string): Promise<RecipeNutritionResponse> {
+    const id = canonicalId(recipeId, "read");
+    try {
+      const repository = new LocalRecipeRepository(this.database, this.ownerId);
+      const recipe = await repository.get(id);
+      if (!recipe) throw recipeNotFound("read");
+      return this.calculateNutrition(this.database, repository, recipe, "read");
+    } catch (error) {
+      throw this.readFailure(error);
+    }
+  }
+
+  async publish(input: { recipeId: string; clientRequestId: string }): Promise<RecipePublishResponse> {
+    const recipeId = canonicalId(input.recipeId, "mutation");
+    const clientRequestId = canonicalId(input.clientRequestId, "mutation");
+    const requestFingerprint = await fingerprint({ context: { recipe_id: recipeId }, payload: {} });
+    return this.mutate(async (transaction) => {
+      const repository = new LocalRecipeRepository(transaction, this.ownerId);
+      const replay = await this.replayPublicationReceipt(
+        transaction,
+        recipeId,
+        clientRequestId,
+        requestFingerprint,
+      );
+      if (replay) return replay;
+
+      const recipe = await repository.get(recipeId);
+      if (!recipe) throw recipeNotFound("mutation");
+      if (recipe.serving_count_yield === null && recipe.final_cooked_weight_grams === null) {
+        throw invalidRecipe("Publishing requires serving_count_yield or final_cooked_weight_grams.");
+      }
+      const nutrition = await this.calculateNutrition(transaction, repository, recipe, "mutation");
+      const revisionNumberRow = await transaction.getFirstAsync<{ value: number }>(
+        `SELECT COALESCE(MAX("revision_number"), 0) + 1 AS "value"
+         FROM "recipe_publication_revisions" WHERE "recipe_id" = ? AND "user_id" = ?`,
+        [recipeId, this.ownerId],
+      );
+      const revisionNumber = revisionNumberRow?.value ?? 0;
+      if (!Number.isSafeInteger(revisionNumber) || revisionNumber <= 0) throw invalidStoredRecipe("mutation");
+      const revisionId = generatedId();
+      const now = canonicalNow(this.now);
+      const amounts = this.publicationAmounts(recipe);
+      const nutrients = this.publicationNutrients(nutrition);
+      const contentDigest = await fingerprint({
+        published_name: recipe.name,
+        published_notes: recipe.notes,
+        amount_definitions: amounts.map((amount) => ({
+          display_order: amount.displayOrder,
+          display_label: amount.displayLabel,
+          semantic_mode: amount.semanticMode,
+          display_quantity: normalizedDecimalText(amount.displayQuantity),
+          display_unit: amount.displayUnit,
+          gram_equivalent: normalizedDecimalText(amount.digestGramEquivalent),
+          is_default: amount.isDefault,
+          conversion_metadata: null,
+        })),
+        nutrients: nutrients.map((nutrient) => ({
+          nutrient_id: nutrient.nutrientId,
+          amount: normalizedDecimalText(nutrient.amount),
+          unit: nutrient.unit,
+          basis: nutrient.basis,
+          data_status: nutrient.status,
+          diagnostic_provenance: null,
+        })),
+      });
+
+      await transaction.runAsync(
+        `INSERT INTO "create_operation_idempotency"
+          ("id", "user_id", "operation", "client_request_id", "request_fingerprint", "resource_id")
+         VALUES (?, ?, 'recipe.publish', ?, ?, ?)`,
+        [generatedId(), this.ownerId, clientRequestId, requestFingerprint, revisionId],
+      );
+      await transaction.runAsync(
+        `INSERT INTO "recipe_publication_revisions"
+          ("id", "recipe_id", "user_id", "revision_number", "published_at", "creation_origin",
+           "provenance_confidence", "published_name", "published_notes", "content_digest")
+         VALUES (?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?)`,
+        [revisionId, recipeId, this.ownerId, revisionNumber, now,
+          revisionNumber === 1 && recipe.published_food_item_id === null ? "normal_publication" : "explicit_republish",
+          recipe.name, recipe.notes, contentDigest],
+      );
+      await this.publicationStage("after_publication_revision");
+      for (const amount of amounts) {
+        await transaction.runAsync(
+          `INSERT INTO "recipe_publication_amount_definitions"
+            ("id", "revision_id", "display_order", "display_label", "semantic_mode", "display_quantity",
+             "display_unit", "gram_equivalent", "is_default", "conversion_metadata")
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          [amount.id, revisionId, amount.displayOrder, amount.displayLabel, amount.semanticMode,
+            amount.displayQuantity, amount.displayUnit, amount.gramEquivalent, amount.isDefault ? 1 : 0],
+        );
+      }
+      await this.publicationStage("after_publication_amount_definitions");
+      for (const nutrient of nutrients) {
+        await transaction.runAsync(
+          `INSERT INTO "recipe_publication_nutrients"
+            ("id", "revision_id", "nutrient_id", "amount", "unit", "basis", "data_status", "diagnostic_provenance")
+           VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+          [nutrient.id, revisionId, nutrient.nutrientId, nutrient.amount, nutrient.unit, nutrient.basis, nutrient.status],
+        );
+      }
+      await this.publicationStage("after_publication_nutrients");
+
+      const activeProjections = await transaction.getAllAsync<PublicationFoodRow>(
+        `SELECT "id", "name", "source_type", "source_id", "recipe_publication_revision_id", "is_recipe", "deleted_at"
+         FROM "food_items" WHERE "user_id" = ? AND "source_type" = 'recipe' AND "source_id" = ? AND "deleted_at" IS NULL`,
+        [this.ownerId, recipeId],
+      );
+      if (activeProjections.length > 1) throw invalidStoredRecipe("mutation");
+      const projectionId = activeProjections[0]?.id ?? generatedId();
+      const oldServings = activeProjections.length === 0 ? [] : await transaction.getAllAsync<PublicationServingRow>(
+        `SELECT "id", "label", "quantity", "unit", "gram_weight", "is_default"
+         FROM "serving_definitions" WHERE "food_item_id" = ? ORDER BY "label", "id"`,
+        [projectionId],
+      );
+      const remaps = await this.planParentServingRemaps(
+        transaction,
+        recipeId,
+        projectionId,
+        oldServings,
+        amounts,
+      );
+      if (activeProjections.length === 0) {
+        await transaction.runAsync(
+          `INSERT INTO "food_items"
+            ("id", "user_id", "name", "brand", "source_type", "source_id", "recipe_publication_revision_id",
+             "is_recipe", "notes", "created_at", "updated_at")
+           VALUES (?, ?, ?, NULL, 'recipe', ?, ?, 1, ?, ?, ?)`,
+          [projectionId, this.ownerId, recipe.name, recipeId, revisionId, recipe.notes, now, now],
+        );
+      } else {
+        await transaction.runAsync(
+          `UPDATE "food_items" SET "name" = ?, "brand" = NULL, "notes" = ?, "source_type" = 'recipe',
+            "source_id" = ?, "recipe_publication_revision_id" = ?, "is_recipe" = 1, "updated_at" = ?
+           WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+          [recipe.name, recipe.notes, recipeId, revisionId, now, projectionId, this.ownerId],
+        );
+      }
+      await this.publicationStage("after_projection_food");
+      await transaction.runAsync(`DELETE FROM "food_nutrients" WHERE "food_item_id" = ?`, [projectionId]);
+      for (const nutrient of nutrients) {
+        await transaction.runAsync(
+          `INSERT INTO "food_nutrients"
+            ("id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed", "created_at", "updated_at")
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'recipe', 1, ?, ?)`,
+          [generatedId(), projectionId, nutrient.nutrientId, nutrient.amount, nutrient.unit, nutrient.basis, nutrient.status, now, now],
+        );
+      }
+      await this.publicationStage("after_projection_nutrients");
+      await transaction.runAsync(`DELETE FROM "serving_definitions" WHERE "food_item_id" = ?`, [projectionId]);
+      const successorIds = new Map<number, string>();
+      for (const amount of amounts.filter((value) => value.semanticMode === "serving")) {
+        const servingId = generatedId();
+        successorIds.set(amount.displayOrder, servingId);
+        await transaction.runAsync(
+          `INSERT INTO "serving_definitions"
+            ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'recipe', 1)`,
+          [servingId, projectionId, amount.displayLabel, amount.displayQuantity, amount.displayUnit,
+            amount.gramEquivalent, amount.isDefault ? 1 : 0],
+        );
+      }
+      await this.applyParentServingRemaps(transaction, remaps, successorIds, amounts, now);
+      await this.publicationStage("after_projection_servings");
+      await transaction.runAsync(
+        `UPDATE "recipes" SET "published_food_item_id" = ?, "active_publication_revision_id" = ?,
+          "needs_republish" = 0, "updated_at" = ?
+         WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [projectionId, revisionId, now, recipeId, this.ownerId],
+      );
+      await this.publicationStage("after_recipe_active_link");
+      const current = await repository.get(recipeId);
+      if (!current) throw recipeNotFound("mutation");
+      let foodResponse;
+      try {
+        foodResponse = await createLocalFoodsRuntime(transaction, this.ownerId).get(projectionId);
+      } catch (error) {
+        if (error instanceof LocalRuntimeError) {
+          throw localError({
+            kind: error.kind,
+            code: error.code ?? "invalid_local_recipe_state",
+            message: error.message,
+            retryable: error.retryable,
+            mutationOutcome: "confirmed_non_commit",
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+      const response: RecipePublishResponse = {
+        recipe: await this.response(repository, current, "mutation"),
+        food: foodResponse,
+      };
+      await this.publicationStage("before_publication_receipt");
+      await transaction.runAsync(
+        `UPDATE "create_operation_idempotency" SET "response_snapshot" = ?, "completed_at" = ?
+         WHERE "user_id" = ? AND "operation" = 'recipe.publish' AND "client_request_id" = ?`,
+        [canonicalJsonStringify(response), now, this.ownerId, clientRequestId],
+      );
+      return response;
     });
   }
 
-  async publish(_input: { recipeId: string; clientRequestId: string }): Promise<RecipePublishResponse> {
-    throw localError({
-      kind: "unavailable",
-      code: "feature_not_available",
-      message: "Local Recipe publication is not available until the bounded publication slice.",
+  private async calculateNutrition(
+    transaction: SQLiteDatabase,
+    repository: LocalRecipeRepository,
+    recipe: LocalRecipeRow,
+    context: OperationContext,
+  ): Promise<RecipeNutritionResponse> {
+    const totals = new Map<string, {
+      known: string;
+      estimated: string;
+      unknownCount: number;
+      unit: NutrientUnit;
+    }>();
+    for (const ingredient of await repository.ingredients(recipe.id)) {
+      const food = await repository.food(ingredient.food_item_id);
+      if (!food) {
+        throw recipeNutritionError(
+          "ingredient_food_unavailable",
+          "Cannot calculate nutrition because an ingredient food is unavailable.",
+          context,
+        );
+      }
+      const servings = await transaction.getAllAsync<PublicationServingRow>(
+        `SELECT "id", "label", "quantity", "unit", "gram_weight", "is_default"
+         FROM "serving_definitions" WHERE "food_item_id" = ? ORDER BY "label", "id"`,
+        [food.id],
+      );
+      let nutrients: PublicationNutrientRow[];
+      if (food.source_type === "recipe") {
+        if (food.source_id === null || food.recipe_publication_revision_id === null || food.is_recipe !== 1) {
+          throw invalidStoredRecipe(context);
+        }
+        const nestedAuthority = await transaction.getFirstAsync<{ present: number }>(
+          `SELECT 1 AS "present" FROM "recipes"
+           WHERE "id" = ? AND "user_id" = ? AND "published_food_item_id" = ?
+             AND "active_publication_revision_id" = ? AND "deleted_at" IS NULL`,
+          [food.source_id, this.ownerId, food.id, food.recipe_publication_revision_id],
+        );
+        if (!nestedAuthority) throw invalidStoredRecipe(context);
+        // Nested Recipe nutrition is read from the immutable active revision,
+        // never from the mutable compatibility projection rows.
+        nutrients = await transaction.getAllAsync<PublicationNutrientRow>(
+          `SELECT "id", "nutrient_id", "amount", "unit", "basis", "data_status"
+           FROM "recipe_publication_nutrients" WHERE "revision_id" = ? ORDER BY "nutrient_id", "id"`,
+          [food.recipe_publication_revision_id],
+        );
+      } else {
+        nutrients = await transaction.getAllAsync<PublicationNutrientRow>(
+          `SELECT "id", "nutrient_id", "amount", "unit", "basis", "data_status"
+           FROM "food_nutrients" WHERE "food_item_id" = ? ORDER BY "nutrient_id", "id"`,
+          [food.id],
+        );
+      }
+      const selectedServing = ingredient.serving_definition_id === null
+        ? null
+        : servings.find((value) => value.id === ingredient.serving_definition_id) ?? null;
+      if (ingredient.amount_unit !== "serving" && ingredient.amount_unit !== "g") {
+        throw this.conversionUnsupported(food.name, context);
+      }
+      if (ingredient.amount_unit === "serving" && selectedServing === null) {
+        throw recipeNutritionError(
+          "ingredient_serving_definition_missing",
+          `Cannot calculate nutrition for ${food.name} because its serving is no longer available.`,
+          context,
+          { food_name: food.name },
+        );
+      }
+      const directGramBasis = nutrients.some((value) => value.basis === "per_gram" || value.basis === "per_100g");
+      const conversionServing = ingredient.amount_unit === "serving"
+        ? selectedServing
+        : servings.find((value) => value.is_default === 1) ?? null;
+      const gramAmount = ingredient.amount_unit === "g"
+        ? ingredient.amount_quantity
+        : selectedServing?.gram_weight === null || selectedServing?.gram_weight === undefined
+          ? null
+          : multiplyResponseDecimals(ingredient.amount_quantity, selectedServing.gram_weight);
+      const servingMultiplier = ingredient.amount_unit === "serving"
+        ? ingredient.amount_quantity
+        : conversionServing?.gram_weight
+          ? divideResponseDecimals(ingredient.amount_quantity, conversionServing.gram_weight)
+          : null;
+      if (ingredient.amount_unit === "g" && !directGramBasis) {
+        if (conversionServing === null) throw this.conversionUnsupported(food.name, context);
+        if (conversionServing.gram_weight === null) {
+          throw this.missingGramWeight(food.name, conversionServing.label, context);
+        }
+      }
+
+      const grouped = new Map<string, PublicationNutrientRow[]>();
+      for (const nutrient of nutrients) {
+        const rows = grouped.get(nutrient.nutrient_id) ?? [];
+        rows.push(nutrient);
+        grouped.set(nutrient.nutrient_id, rows);
+      }
+      for (const [nutrientId, rows] of [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        const preferred = ingredient.amount_unit === "serving"
+          ? rows.filter((value) => value.basis === "per_serving")
+          : rows.filter((value) => value.basis === "per_100g" || value.basis === "per_gram");
+        const candidates = preferred.length > 0 ? preferred : rows;
+        if (candidates.length !== 1) {
+          throw recipeNutritionError(
+            "ingredient_nutrient_basis_ambiguous",
+            `Cannot calculate nutrition for ${food.name} because its nutrient data has conflicting bases.`,
+            context,
+            { food_name: food.name },
+          );
+        }
+        const nutrient = candidates[0]!;
+        if (!this.validNutritionRow(nutrient)) throw this.invalidIngredientNutrition(food.name, context);
+        const unit = DEFAULT_NUTRIENT_UNITS.get(nutrientId) ?? nutrient.unit;
+        const current = totals.get(nutrientId) ?? { known: "0", estimated: "0", unknownCount: 0, unit };
+        if (nutrient.data_status === "unknown") {
+          current.unknownCount += 1;
+          totals.set(nutrientId, current);
+          continue;
+        }
+        let amount = nutrient.data_status === "zero" ? "0" : nutrient.amount;
+        if (amount === null) throw this.invalidIngredientNutrition(food.name, context);
+        if (nutrient.basis === "per_serving") {
+          if (servingMultiplier === null) throw this.missingGramWeight(food.name, conversionServing?.label ?? null, context);
+          amount = multiplyResponseDecimals(amount, servingMultiplier);
+        } else if (nutrient.basis === "per_gram") {
+          if (gramAmount === null) throw this.missingGramWeight(food.name, selectedServing?.label ?? null, context);
+          amount = multiplyResponseDecimals(amount, gramAmount);
+        } else {
+          if (gramAmount === null) throw this.missingGramWeight(food.name, selectedServing?.label ?? null, context);
+          amount = divideResponseDecimals(multiplyResponseDecimals(amount, gramAmount), "100");
+        }
+        amount = this.convertNutrientUnit(amount, nutrient.unit, unit, context);
+        if (nutrient.data_status === "estimated") current.estimated = responseAdd(current.estimated, amount);
+        else current.known = responseAdd(current.known, amount);
+        totals.set(nutrientId, current);
+      }
+    }
+    const mapped: PublicationTotal[] = [...totals.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([nutrientId, value]) => ({
+      nutrientId,
+      amountKnown: quantizePublicationDecimal(value.known),
+      amountEstimated: quantizePublicationDecimal(value.estimated),
+      unit: value.unit,
+      hasUnknownContributors: value.unknownCount > 0,
+      unknownContributorCount: value.unknownCount,
+    }));
+    return {
+      totals: mapped,
+      perServing: this.divideTotals(mapped, recipe.serving_count_yield, context),
+      per100g: recipe.final_cooked_weight_grams === null
+        ? null
+        : this.divideTotals(
+          mapped,
+          divideResponseDecimals(recipe.final_cooked_weight_grams, "100"),
+          context,
+        ),
+    };
+  }
+
+  private divideTotals(
+    totals: readonly PublicationTotal[],
+    divisor: string | null,
+    context: OperationContext,
+  ): PublicationTotal[] | null {
+    if (divisor === null) return null;
+    try {
+      return totals.map((total) => ({
+        ...total,
+        amountKnown: quantizePublicationDecimal(divideResponseDecimals(total.amountKnown, divisor)),
+        amountEstimated: quantizePublicationDecimal(divideResponseDecimals(total.amountEstimated, divisor)),
+      }));
+    } catch {
+      throw invalidStoredRecipe(context);
+    }
+  }
+
+  private convertNutrientUnit(
+    amount: string,
+    source: NutrientUnit,
+    target: NutrientUnit,
+    context: OperationContext,
+  ): string {
+    if (source === target) return amount;
+    const factor = new Map<NutrientUnit, string>([["g", "1000000"], ["mg", "1000"], ["mcg", "1"]]);
+    const sourceFactor = factor.get(source);
+    const targetFactor = factor.get(target);
+    if (!sourceFactor || !targetFactor) throw invalidStoredRecipe(context);
+    return divideResponseDecimals(multiplyResponseDecimals(amount, sourceFactor), targetFactor);
+  }
+
+  private missingGramWeight(foodName: string, servingLabel: string | null, context: OperationContext): LocalRuntimeError {
+    if (servingLabel === null) return this.conversionUnsupported(foodName, context);
+    return recipeNutritionError(
+      "ingredient_serving_missing_gram_weight",
+      `Cannot calculate nutrition for ${foodName} because the serving '${servingLabel}' has no gram weight.`,
+      context,
+      { food_name: foodName, serving_label: servingLabel },
+    );
+  }
+
+  private conversionUnsupported(foodName: string, context: OperationContext): LocalRuntimeError {
+    return recipeNutritionError(
+      "ingredient_conversion_unsupported",
+      `Cannot calculate nutrition for ${foodName} using the selected amount.`,
+      context,
+      { food_name: foodName },
+    );
+  }
+
+  private invalidIngredientNutrition(foodName: string, context: OperationContext): LocalRuntimeError {
+    return recipeNutritionError(
+      "ingredient_nutrition_invalid",
+      `Cannot calculate nutrition for ${foodName} because its nutrient data is invalid.`,
+      context,
+      { food_name: foodName },
+    );
+  }
+
+  private validNutritionRow(row: PublicationNutrientRow): boolean {
+    if (row.basis !== "per_serving" && row.basis !== "per_gram" && row.basis !== "per_100g") return false;
+    if (row.data_status !== "known" && row.data_status !== "estimated"
+      && row.data_status !== "unknown" && row.data_status !== "zero") return false;
+    if (row.data_status === "unknown") return row.amount === null;
+    if (row.amount === null) return false;
+    try {
+      const amount = parseDecimal(row.amount, NUMERIC_14_6);
+      if (row.data_status === "zero") return compareDecimals(amount, "0", NUMERIC_14_6) === 0;
+      return compareDecimals(amount, "0", NUMERIC_14_6) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private publicationAmounts(recipe: LocalRecipeRow): PublicationAmount[] {
+    const amounts: PublicationAmount[] = [];
+    if (recipe.serving_count_yield !== null) {
+      const derivedGramEquivalent = recipe.final_cooked_weight_grams === null
+        ? null
+        : divideResponseDecimals(recipe.final_cooked_weight_grams, recipe.serving_count_yield);
+      amounts.push({
+        id: generatedId(),
+        displayOrder: amounts.length,
+        displayLabel: "1 serving",
+        semanticMode: "serving",
+        displayQuantity: parseDecimal("1", NUMERIC_14_6),
+        displayUnit: "serving",
+        digestGramEquivalent: derivedGramEquivalent,
+        // Persisted NUMERIC(14,6) uses E2-02 ROUND_HALF_UP, independently
+        // from Python Decimal's derived-value/digest representation.
+        gramEquivalent: derivedGramEquivalent === null
+          ? null
+          : parseDecimal(derivedGramEquivalent, NUMERIC_14_6),
+        isDefault: true,
+      });
+    }
+    if (recipe.final_cooked_weight_grams !== null) {
+      amounts.push({
+        id: generatedId(),
+        displayOrder: amounts.length,
+        displayLabel: "100 g",
+        semanticMode: "serving",
+        displayQuantity: parseDecimal("100", NUMERIC_14_6),
+        displayUnit: "g",
+        digestGramEquivalent: "100",
+        gramEquivalent: parseDecimal("100", NUMERIC_14_6),
+        isDefault: recipe.serving_count_yield === null,
+      });
+      amounts.push({
+        id: generatedId(),
+        displayOrder: amounts.length,
+        displayLabel: "g",
+        semanticMode: "g",
+        displayQuantity: null,
+        displayUnit: "g",
+        digestGramEquivalent: null,
+        gramEquivalent: null,
+        isDefault: false,
+      });
+    }
+    return amounts;
+  }
+
+  private publicationNutrients(nutrition: RecipeNutritionResponse): PublicationNutrient[] {
+    const rows: PublicationNutrient[] = [];
+    for (const [basis, values] of [["per_serving", nutrition.perServing], ["per_100g", nutrition.per100g]] as const) {
+      for (const total of values ?? []) {
+        const unknown = total.hasUnknownContributors;
+        const amount = unknown ? null : quantizePublicationDecimal(responseAdd(total.amountKnown, total.amountEstimated));
+        rows.push({
+          id: generatedId(),
+          nutrientId: total.nutrientId,
+          amount,
+          unit: total.unit,
+          basis,
+          status: unknown ? "unknown" : compareDecimals(amount!, "0", NUMERIC_14_6) === 0 ? "zero" : "known",
+        });
+      }
+    }
+    return rows.sort((a, b) => a.nutrientId.localeCompare(b.nutrientId)
+      || a.basis.localeCompare(b.basis) || a.unit.localeCompare(b.unit) || a.status.localeCompare(b.status));
+  }
+
+  private async replayPublicationReceipt(
+    transaction: SQLiteDatabase,
+    recipeId: string,
+    clientRequestId: string,
+    requestFingerprint: string,
+  ): Promise<RecipePublishResponse | null> {
+    const receipt = await transaction.getFirstAsync<ReceiptRow>(
+      `SELECT "request_fingerprint", "resource_id", "response_snapshot"
+       FROM "create_operation_idempotency"
+       WHERE "user_id" = ? AND "operation" = 'recipe.publish' AND "client_request_id" = ?`,
+      [this.ownerId, clientRequestId],
+    );
+    if (!receipt) return null;
+    if (receipt.request_fingerprint !== requestFingerprint) {
+      throw localError({
+        kind: "conflict",
+        code: "create_idempotency_payload_conflict",
+        message: "This create request was already submitted with different details. Start a new create operation and try again.",
+        mutationOutcome: "confirmed_non_commit",
+      });
+    }
+    const revision = await transaction.getFirstAsync<{ present: number }>(
+      `SELECT 1 AS "present" FROM "recipe_publication_revisions"
+       WHERE "id" = ? AND "recipe_id" = ? AND "user_id" = ?`,
+      [receipt.resource_id, recipeId, this.ownerId],
+    );
+    if (!receipt.response_snapshot || !revision) throw this.publicationResultUnavailable();
+    try {
+      parseCanonicalJson(receipt.response_snapshot);
+      const response = JSON.parse(receipt.response_snapshot) as RecipePublishResponse;
+      if (response.recipe.id !== recipeId) throw new Error("recipe mismatch");
+      const recipe = await transaction.getFirstAsync<{ present: number }>(
+        `SELECT 1 AS "present" FROM "recipes" WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [recipeId, this.ownerId],
+      );
+      const food = await transaction.getFirstAsync<{ present: number }>(
+        `SELECT 1 AS "present" FROM "food_items" WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [response.food.id, this.ownerId],
+      );
+      if (!recipe || !food) throw new Error("result unavailable");
+      return response;
+    } catch (error) {
+      if (error instanceof LocalRuntimeError) throw error;
+      throw this.publicationResultUnavailable();
+    }
+  }
+
+  private publicationResultUnavailable(): LocalRuntimeError {
+    return localError({
+      kind: "conflict",
+      code: "create_idempotency_result_unavailable",
+      message: "The result of this create request is no longer available. Start a new create operation if another resource is required.",
       mutationOutcome: "confirmed_non_commit",
     });
+  }
+
+  private async planParentServingRemaps(
+    transaction: SQLiteDatabase,
+    recipeId: string,
+    projectionId: string,
+    oldServings: readonly PublicationServingRow[],
+    amounts: readonly PublicationAmount[],
+  ): Promise<ParentServingRemapPlan> {
+    const ingredients = await transaction.getAllAsync<{
+      id: string;
+      recipe_id: string;
+      recipe_name: string;
+      recipe_published_food_item_id: string | null;
+      position: number;
+      amount_quantity: string;
+      amount_unit: string;
+      serving_definition_id: string | null;
+    }>(
+      `SELECT "ingredient"."id", "ingredient"."recipe_id", "recipe"."name" AS "recipe_name",
+              "recipe"."published_food_item_id" AS "recipe_published_food_item_id", "ingredient"."position",
+              "ingredient"."amount_quantity", "ingredient"."amount_unit", "ingredient"."serving_definition_id"
+       FROM "recipe_ingredients" AS "ingredient"
+       JOIN "recipes" AS "recipe" ON "recipe"."id" = "ingredient"."recipe_id"
+       WHERE "ingredient"."food_item_id" = ? AND "ingredient"."user_id" = ?
+         AND "recipe"."user_id" = ? AND "recipe"."deleted_at" IS NULL
+       ORDER BY "recipe"."id", "ingredient"."position"`,
+      [projectionId, this.ownerId, this.ownerId],
+    );
+    const servingAmounts = amounts.filter((value) => value.semanticMode === "serving");
+    const oldById = new Map(oldServings.map((value) => [value.id, value]));
+    const remaps: Array<{ ingredientId: string; amountQuantity: ExactDecimal; targetOrder: number }> = [];
+    const conflicts = new Map<string, { name: string; positions: number[] }>();
+    for (const ingredient of ingredients) {
+      if (ingredient.amount_unit !== "serving") continue;
+      const old = ingredient.serving_definition_id === null ? null : oldById.get(ingredient.serving_definition_id) ?? null;
+      const candidates = old === null ? [] : servingAmounts.filter((value) =>
+        value.displayQuantity !== null
+        && compareDecimals(old.quantity, value.displayQuantity, NUMERIC_14_6) === 0
+        && old.unit.trim().toLowerCase() === value.displayUnit.trim().toLowerCase()
+        && ((old.gram_weight === null && value.gramEquivalent === null)
+          || (old.gram_weight !== null && value.gramEquivalent !== null
+            && compareDecimals(old.gram_weight, value.gramEquivalent, NUMERIC_14_6) === 0)),
+      );
+      if (candidates.length !== 1) {
+        const conflict = conflicts.get(ingredient.recipe_id) ?? { name: ingredient.recipe_name, positions: [] };
+        conflict.positions.push(ingredient.position);
+        conflicts.set(ingredient.recipe_id, conflict);
+      } else {
+        remaps.push({
+          ingredientId: ingredient.id,
+          amountQuantity: parseDecimal(ingredient.amount_quantity, NUMERIC_14_6),
+          targetOrder: candidates[0]!.displayOrder,
+        });
+      }
+    }
+    if (conflicts.size > 0) {
+      throw localError({
+        kind: "conflict",
+        code: "recipe_publication_parent_amount_conflict",
+        message: PARENT_AMOUNT_CONFLICT_MESSAGE,
+        mutationOutcome: "confirmed_non_commit",
+        details: {
+          code: "recipe_publication_parent_amount_conflict",
+          message: PARENT_AMOUNT_CONFLICT_MESSAGE,
+          recipe_id: recipeId,
+          projection_food_item_id: projectionId,
+          affected_recipes: [...conflicts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, value]) => ({
+            recipe_id: id,
+            recipe_name: value.name,
+            ingredient_positions: value.positions.sort((a, b) => a - b),
+          })),
+        },
+      });
+    }
+    return { remaps, parentIds: [...new Set(ingredients.map((value) => value.recipe_id))] };
+  }
+
+  private async applyParentServingRemaps(
+    transaction: SQLiteDatabase,
+    plan: ParentServingRemapPlan,
+    successorIds: ReadonlyMap<number, string>,
+    amounts: readonly PublicationAmount[],
+    now: string,
+  ): Promise<void> {
+    const amountByOrder = new Map(amounts.map((value) => [value.displayOrder, value]));
+    for (const remap of plan.remaps) {
+      const successorId = successorIds.get(remap.targetOrder);
+      const amount = amountByOrder.get(remap.targetOrder);
+      if (!successorId || !amount) throw invalidStoredRecipe("mutation");
+      const resolved = amount.gramEquivalent === null
+        ? null
+        : multiplyDecimals(remap.amountQuantity, amount.gramEquivalent, NUMERIC_14_6);
+      await transaction.runAsync(
+        `UPDATE "recipe_ingredients" SET "serving_definition_id" = ?, "resolved_gram_amount" = ?
+         WHERE "id" = ? AND "user_id" = ?`,
+        [successorId, resolved, remap.ingredientId, this.ownerId],
+      );
+    }
+    for (const parentId of plan.parentIds) {
+      await transaction.runAsync(
+        `UPDATE "recipes" SET "needs_republish" = CASE WHEN "published_food_item_id" IS NULL THEN "needs_republish" ELSE 1 END,
+          "updated_at" = CASE WHEN "published_food_item_id" IS NULL THEN "updated_at" ELSE ? END
+         WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [now, parentId, this.ownerId],
+      );
+    }
+  }
+
+  private async publicationStage(stage: LocalRecipePublicationStage): Promise<void> {
+    await this.onPublicationStage?.(stage);
   }
 
   private applyCookedWeightPatch(

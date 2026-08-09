@@ -1,0 +1,47 @@
+{
+  "exact_publication": {
+    "ingredient": {
+      "amount_quantity": "75.000000",
+      "amount_unit": "g",
+      "protein_per_100g": "20.000000"
+    },
+    "recipe": {
+      "serving_count_yield": "2.000000",
+      "final_cooked_weight_grams": "150.000000"
+    },
+    "expected": {
+      "total_protein": "15.000000",
+      "per_serving_protein": "7.500000",
+      "per_100g_protein": "10.000000",
+      "amount_labels": ["1 serving", "100 g"],
+      "serving_gram_equivalents": ["75.000000", "100.000000"],
+      "backend_content_digest": "8a83ba829845ced62707e66130a761cfe7d76b2d46226e5d403882fe349e58f2"
+    }
+  },
+  "amount_division_cases": [
+    {
+      "name": "exact division",
+      "final_cooked_weight_grams": "150.000000",
+      "serving_count_yield": "2.000000",
+      "raw_digest_gram_equivalent": "75",
+      "persisted_gram_equivalent": "75.000000",
+      "backend_content_digest": "e4737237d127eaccef066cb44703f632f87a1e644548315e73bb635d186dc623"
+    },
+    {
+      "name": "nonterminating division",
+      "final_cooked_weight_grams": "100.000000",
+      "serving_count_yield": "3.000000",
+      "raw_digest_gram_equivalent": "33.33333333333333333333333333",
+      "persisted_gram_equivalent": "33.333333",
+      "backend_content_digest": "9b916b12c5e1e4ed70186f7350b46397b7843e3505e55119dc71e222ca4c6663"
+    },
+    {
+      "name": "persisted half-up boundary",
+      "final_cooked_weight_grams": "1.000000",
+      "serving_count_yield": "128.000000",
+      "raw_digest_gram_equivalent": "0.0078125",
+      "persisted_gram_equivalent": "0.007813",
+      "backend_content_digest": "959c7aa63fac822071f987f2f08a0f9d11cd3d66d56594961c8b00562107b37f"
+    }
+  ]
+}
