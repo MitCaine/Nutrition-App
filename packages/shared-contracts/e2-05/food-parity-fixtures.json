@@ -1,0 +1,37 @@
+{
+  "manual_serving_resolution": {
+    "semantic_amount_mode": "serving",
+    "entered_quantity": "1",
+    "resolved_grams": "50.000000",
+    "nutrients": [
+      {
+        "nutrient_id": "calcium",
+        "amount": "0",
+        "unit": "mg",
+        "data_status": "zero",
+        "source_basis": "per_serving"
+      },
+      {
+        "nutrient_id": "calories",
+        "amount": "200.000000",
+        "unit": "kcal",
+        "data_status": "known",
+        "source_basis": "per_serving"
+      },
+      {
+        "nutrient_id": "protein",
+        "amount": "10",
+        "unit": "g",
+        "data_status": "known",
+        "source_basis": "per_100g"
+      },
+      {
+        "nutrient_id": "vitamin_d",
+        "amount": null,
+        "unit": "mcg",
+        "data_status": "unknown",
+        "source_basis": "per_serving"
+      }
+    ]
+  }
+}

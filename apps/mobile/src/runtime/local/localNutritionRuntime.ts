@@ -1,7 +1,6 @@
 /**
- * Public local-foundation entry point.  A complete NutritionRuntime remains
- * out of scope until the later local feature slices compose these bounded
- * Calendar and Nutrient capabilities.
+ * Public local-foundation entry point. A complete NutritionRuntime remains
+ * out of scope until later local feature slices compose the bounded Calendar,
+ * Nutrient, and Food capabilities implemented so far.
  */
 export * from "./index";
-

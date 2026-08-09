@@ -436,6 +436,8 @@ XL
 
 Reason: exact nutrition resolution and atomic replacement span domain, persistence, and interface behavior with historical-integrity implications.
 
+Implementation detail: [E2-05 local Foods, servings, and nutrition resolution](e2-05-local-foods.md).
+
 ---
 
 ## E2-06 — Implement local favorites and explicit USDA offline behavior

@@ -1,0 +1,1424 @@
+import * as Crypto from "expo-crypto";
+import type { SQLiteDatabase } from "expo-sqlite";
+
+import type {
+  Food,
+  FoodCreateInput,
+  FoodDeleteResult,
+  FoodMutationInput,
+  FoodNutrient,
+  FoodResolvedNutrition,
+  NutrientBasis,
+  RecentFood,
+  ResolvedFoodAmount,
+  ResolvedFoodNutrient,
+  ServingDefinition,
+  ServingDefinitionCreateInput,
+} from "../../features/foods/api/types";
+import type { NutrientDataStatus, NutrientUnit } from "../../shared/nutrition/types";
+import {
+  canonicalJsonStringify,
+  parseCanonicalJson,
+  parseInstant,
+  parseUuid,
+  serializeInstant,
+} from "../../shared/exact/canonicalValues";
+import { serializeCalendarPreviewTokenPayload } from "./localCalendarRuntime";
+import {
+  compareDecimals,
+  divideResponseDecimals,
+  multiplyResponseDecimals,
+  NUMERIC_14_6,
+  parseDecimal,
+  parseNullableDecimal,
+  parseResponseDecimal,
+  type ExactDecimal,
+  type ResponseDecimal,
+} from "../../shared/exact/decimal";
+import type { FoodsRuntime } from "../NutritionRuntime";
+import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
+import { LocalRuntimeError } from "./localErrors";
+
+const SOURCE_LABELS = {
+  manual: "Manual",
+  ocr_confirmed: "Scanned label",
+  usda: "USDA",
+  recipe: "Recipe",
+  duplicate: "Duplicated Food",
+  legacy: "Other source",
+} as const;
+
+const MASS_UNITS = new Set(["g", "mg", "mcg"]);
+const NUTRIENT_UNITS = new Set(["kcal", "g", "mg", "mcg"]);
+const NUTRIENT_BASES = new Set<NutrientBasis>(["per_serving", "per_100g", "per_gram"]);
+const NUTRIENT_STATUSES = new Set<NutrientDataStatus>([
+  "known",
+  "unknown",
+  "estimated",
+  "zero",
+]);
+
+type FoodRow = Readonly<{
+  id: string;
+  user_id: string;
+  name: string;
+  brand: string | null;
+  source_type: string;
+  source_id: string | null;
+  recipe_publication_revision_id: string | null;
+  is_recipe: number;
+  notes: string | null;
+  updated_at: string;
+  deleted_at: string | null;
+}>;
+
+type ServingRow = Readonly<{
+  id: string;
+  food_item_id: string;
+  label: string;
+  quantity: string;
+  unit: string;
+  gram_weight: string | null;
+  is_default: number;
+  source: string;
+  is_user_confirmed: number;
+}>;
+
+type NutrientRow = Readonly<{
+  id: string;
+  food_item_id: string;
+  nutrient_id: string;
+  amount: string | null;
+  unit: string;
+  basis: string;
+  data_status: string;
+  source: string;
+  is_user_confirmed: number;
+  original_amount: string | null;
+  original_unit: string | null;
+  original_text: string | null;
+}>;
+
+type RecipeLinkRow = Readonly<{
+  id: string;
+  user_id: string;
+  published_food_item_id: string | null;
+  active_publication_revision_id: string | null;
+  deleted_at: string | null;
+}>;
+
+type FoodRecord = Readonly<{
+  row: FoodRow;
+  servings: readonly ServingRow[];
+  nutrients: readonly NutrientRow[];
+  projection: "manual" | "managed" | "invalid";
+  recipeId: string | null;
+}>;
+
+type ReceiptRow = Readonly<{
+  id: string;
+  request_fingerprint: string;
+  resource_id: string;
+  response_snapshot: string | null;
+}>;
+
+type RevisionAmountRow = Readonly<{
+  id: string;
+  semantic_mode: string;
+  display_label: string;
+  display_quantity: string | null;
+  display_unit: string;
+  gram_equivalent: string | null;
+  is_default: number;
+}>;
+
+type RevisionNutrientRow = Readonly<{
+  id: string;
+  nutrient_id: string;
+  amount: string | null;
+  unit: string;
+  basis: string;
+  data_status: string;
+}>;
+
+type NormalizedServing = Readonly<{
+  label: string;
+  quantity: ExactDecimal;
+  unit: string;
+  gram_weight: ExactDecimal | null;
+  is_default: boolean;
+}>;
+
+type NormalizedNutrient = Readonly<{
+  nutrient_id: string;
+  amount: ExactDecimal | null;
+  unit: NutrientUnit;
+  basis: NutrientBasis;
+  data_status: NutrientDataStatus;
+}>;
+
+type NormalizedFoodInput = Readonly<{
+  name: string;
+  brand: string | null;
+  notes: string | null;
+  serving_definitions: readonly NormalizedServing[];
+  nutrients: readonly NormalizedNutrient[];
+  client_request_id: string | null;
+}>;
+
+export type LocalFoodMutationStage =
+  | "after_food"
+  | "after_servings"
+  | "after_nutrients"
+  | "after_serving";
+
+export type LocalFoodsRuntimeOptions = Readonly<{
+  /** Injectable failure seam used by focused replacement rollback tests. */
+  onMutationStage?: (stage: LocalFoodMutationStage) => Promise<void> | void;
+  /** Injectable clock keeps updated_at assertions deterministic. */
+  now?: () => Date;
+}>;
+
+function errorFor(
+  kind: ConstructorParameters<typeof LocalRuntimeError>[0]["kind"],
+  code: string,
+  message: string,
+  mutationOutcome: "not_applicable" | "confirmed_non_commit" = "not_applicable",
+  field?: string,
+): LocalRuntimeError {
+  return new LocalRuntimeError({
+    kind,
+    code,
+    message,
+    field,
+    mutationOutcome,
+  });
+}
+
+function foodNotFound(): LocalRuntimeError {
+  return errorFor("not_found", "food_not_found", "The Food could not be found.");
+}
+
+function projectionError(operation: "read" | "update" | "delete" | "duplicate" | "add_serving"): LocalRuntimeError {
+  if (operation === "delete") {
+    return errorFor(
+      "conflict",
+      "recipe_projection_delete_forbidden",
+      "This generated Recipe Food cannot be deleted directly. Update the Recipe instead.",
+      "confirmed_non_commit",
+    );
+  }
+  if (operation === "read") {
+    return errorFor(
+      "conflict",
+      "recipe_projection_integrity_invalid",
+      "This generated Recipe Food has inconsistent ownership links and cannot be read safely.",
+    );
+  }
+  return errorFor(
+    "conflict",
+    "recipe_projection_read_only",
+    "This Food is generated from a Recipe and cannot be changed directly.",
+    "confirmed_non_commit",
+  );
+}
+
+function invalidFood(
+  message = "The Food data is invalid and cannot be stored safely.",
+  mutationOutcome: "not_applicable" | "confirmed_non_commit" = "confirmed_non_commit",
+): LocalRuntimeError {
+  return errorFor("validation", "food_validation_failed", message, mutationOutcome);
+}
+
+function invalidStoredFood(): LocalRuntimeError {
+  return errorFor(
+    "invalid_response",
+    "invalid_local_food_state",
+    "The local Food data is invalid and cannot be used safely.",
+  );
+}
+
+function unsupportedLocalFeature(message: string): LocalRuntimeError {
+  return errorFor("unavailable", "feature_not_available", message);
+}
+
+function conflict(message: string, code = "constraint_failed"): LocalRuntimeError {
+  return errorFor("conflict", code, message, "confirmed_non_commit");
+}
+
+function idempotencyPayloadConflict(): LocalRuntimeError {
+  return conflict(
+    "This create request was already submitted with different details. Start a new create operation and try again.",
+    "create_idempotency_payload_conflict",
+  );
+}
+
+function idempotencyResultUnavailable(): LocalRuntimeError {
+  return conflict(
+    "The result of this create request is no longer available. Start a new create operation if another resource is required.",
+    "create_idempotency_result_unavailable",
+  );
+}
+
+function isOne(value: unknown): boolean {
+  return value === 1;
+}
+
+function isZeroOrOne(value: unknown): value is 0 | 1 {
+  return value === 0 || value === 1;
+}
+
+function normalizeUnit(value: unknown): string {
+  if (typeof value !== "string") throw invalidFood("Nutrient units must be text.");
+  const normalized = value.trim().toLowerCase();
+  if (["microgram", "micrograms", "ug", "µg"].includes(normalized)) return "mcg";
+  if (["gram", "grams"].includes(normalized)) return "g";
+  if (["milligram", "milligrams"].includes(normalized)) return "mg";
+  if (["calorie", "calories"].includes(normalized)) return "kcal";
+  return normalized;
+}
+
+function nutrientUnitCompatible(defaultUnit: string, unit: string): boolean {
+  if (defaultUnit === "kcal") return unit === "kcal";
+  if (MASS_UNITS.has(defaultUnit)) return MASS_UNITS.has(unit);
+  return defaultUnit === unit;
+}
+
+function parseStorageDecimal(value: unknown, nullable = false): ExactDecimal | null {
+  try {
+    return nullable ? parseNullableDecimal(value, NUMERIC_14_6) : parseDecimal(value, NUMERIC_14_6);
+  } catch {
+    throw invalidStoredFood();
+  }
+}
+
+function parsePersistedUuid(value: unknown): string {
+  try {
+    const parsed = parseUuid(value);
+    if (parsed !== value) throw invalidStoredFood();
+    return parsed;
+  } catch (error) {
+    if (error instanceof LocalRuntimeError) throw error;
+    throw invalidStoredFood();
+  }
+}
+
+function parsePersistedBoolean(value: unknown): boolean {
+  if (!isZeroOrOne(value)) throw invalidStoredFood();
+  return isOne(value);
+}
+
+function readInstant(value: unknown): string {
+  try {
+    return parseInstant(value);
+  } catch {
+    throw invalidStoredFood();
+  }
+}
+
+function generatedId(): string {
+  try {
+    return parseUuid(Crypto.randomUUID());
+  } catch {
+    throw conflict("The local runtime could not create a canonical identifier.");
+  }
+}
+
+function canonicalNow(now: () => Date): string {
+  const value = now();
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+    throw errorFor("unknown", "invalid_clock", "The local Food clock is unavailable.");
+  }
+  try {
+    return serializeInstant(value.toISOString());
+  } catch {
+    throw errorFor("unknown", "invalid_clock", "The local Food clock is unavailable.");
+  }
+}
+
+function normalizeServing(value: unknown): NormalizedServing {
+  if (!value || typeof value !== "object") throw invalidFood("Serving definitions are invalid.");
+  const input = value as Record<string, unknown>;
+  const label = typeof input.label === "string" ? input.label.trim() : "";
+  const unit = typeof input.unit === "string" ? input.unit.trim().toLowerCase() : "";
+  if (!label || !unit) throw invalidFood("Serving definitions require a label and unit.");
+  let quantity: ExactDecimal;
+  let gramWeight: ExactDecimal | null;
+  try {
+    quantity = parseDecimal(input.quantity, NUMERIC_14_6);
+    gramWeight = parseNullableDecimal(input.gram_weight ?? null, NUMERIC_14_6);
+  } catch {
+    throw invalidFood("Serving quantities and gram weights must be non-negative decimals.");
+  }
+  if (compareDecimals(quantity, "0.000000", NUMERIC_14_6) <= 0) {
+    throw invalidFood("Serving quantity must be greater than zero.");
+  }
+  if (gramWeight !== null && compareDecimals(gramWeight, "0.000000", NUMERIC_14_6) <= 0) {
+    throw invalidFood("Gram weight must be greater than zero when provided.");
+  }
+  if (typeof input.is_default !== "boolean") {
+    throw invalidFood("Serving default state must be boolean.");
+  }
+  return { label, quantity, unit, gram_weight: gramWeight, is_default: input.is_default };
+}
+
+function normalizeNutrient(value: unknown): NormalizedNutrient {
+  if (!value || typeof value !== "object") throw invalidFood("Nutrient values are invalid.");
+  const input = value as Record<string, unknown>;
+  if (typeof input.nutrient_id !== "string") throw invalidFood("Nutrient ID is required.");
+  const seed = SQLITE_NUTRIENT_SEED_ROWS.find(([id]) => id === input.nutrient_id);
+  if (!seed) throw invalidFood("The nutrient is not in the canonical local catalog.");
+  const unit = normalizeUnit(input.unit);
+  if (!NUTRIENT_UNITS.has(unit) || !nutrientUnitCompatible(seed[3], unit)) {
+    throw invalidFood("The nutrient unit is incompatible with the canonical nutrient.");
+  }
+  const basis = input.basis;
+  const status = input.data_status;
+  if (!NUTRIENT_BASES.has(basis as NutrientBasis) || !NUTRIENT_STATUSES.has(status as NutrientDataStatus)) {
+    throw invalidFood("Nutrient basis or status is invalid.");
+  }
+  let amount: ExactDecimal | null;
+  try {
+    amount = parseNullableDecimal(input.amount ?? null, NUMERIC_14_6);
+  } catch {
+    throw invalidFood("Nutrient amounts must be non-negative decimals.");
+  }
+  if (status === "unknown") {
+    if (amount !== null) throw invalidFood("Unknown nutrients must not include an amount.");
+  } else if (status === "zero") {
+    amount = parseDecimal("0", NUMERIC_14_6);
+  } else if (amount === null) {
+    throw invalidFood(`${status} nutrients require an amount.`);
+  } else if (status === "known" && compareDecimals(amount, "0.000000", NUMERIC_14_6) === 0) {
+    throw invalidFood("Use data_status zero for explicit zero nutrient values.");
+  }
+  return {
+    nutrient_id: input.nutrient_id,
+    amount,
+    unit: unit as NutrientUnit,
+    basis: basis as NutrientBasis,
+    data_status: status as NutrientDataStatus,
+  };
+}
+
+function normalizeFoodInput(value: unknown, requireClientRequestId = false): NormalizedFoodInput {
+  if (!value || typeof value !== "object") throw invalidFood();
+  const input = value as Record<string, unknown>;
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (!name) throw invalidFood("Food name is required.");
+  if (!Array.isArray(input.serving_definitions) || input.serving_definitions.length === 0) {
+    throw invalidFood("Foods require at least one serving definition.");
+  }
+  const servingDefinitions = input.serving_definitions.map(normalizeServing);
+  if (servingDefinitions.filter((serving) => serving.is_default).length !== 1) {
+    throw invalidFood("Foods must have exactly one default serving.");
+  }
+  if (!Array.isArray(input.nutrients)) throw invalidFood("Food nutrients must be an array.");
+  let clientRequestId: string | null = null;
+  if (input.client_request_id != null) {
+    try {
+      clientRequestId = parseUuid(input.client_request_id);
+    } catch {
+      throw invalidFood("Client request IDs must be canonical UUIDs.");
+    }
+  }
+  if (requireClientRequestId && clientRequestId == null) {
+    throw invalidFood("Duplicate Food operations require a client request ID.");
+  }
+  if (input.brand != null && typeof input.brand !== "string") {
+    throw invalidFood("Food brand must be text when provided.");
+  }
+  if (input.notes != null && typeof input.notes !== "string") {
+    throw invalidFood("Food notes must be text when provided.");
+  }
+  return {
+    name,
+    brand: input.brand == null ? null : typeof input.brand === "string" ? input.brand.trim() : null,
+    notes: input.notes == null ? null : typeof input.notes === "string" ? input.notes : null,
+    serving_definitions: servingDefinitions,
+    nutrients: input.nutrients.map(normalizeNutrient),
+    client_request_id: clientRequestId,
+  };
+}
+
+async function fingerprint(value: unknown): Promise<string> {
+  try {
+    const serialized = serializeCalendarPreviewTokenPayload(value as never);
+    return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, serialized);
+  } catch {
+    throw invalidFood("The Food request could not be represented canonically.");
+  }
+}
+
+function responseDecimal(value: string): ResponseDecimal {
+  try {
+    return parseResponseDecimal(value);
+  } catch {
+    throw invalidStoredFood();
+  }
+}
+
+function responseInteger(value: string): ResponseDecimal {
+  const parsed = responseDecimal(value);
+  const [integer, fraction = ""] = parsed.split(".");
+  return (fraction.replace(/0+$/, "") ? parsed : integer) as ResponseDecimal;
+}
+
+function mapSourceLabel(kind: Food["source_kind"]): string {
+  return SOURCE_LABELS[kind];
+}
+
+function isProjectionMarker(row: FoodRow, link: RecipeLinkRow | null): boolean {
+  return isOne(row.is_recipe)
+    || row.source_type === "recipe"
+    || row.recipe_publication_revision_id !== null
+    || link !== null;
+}
+
+export class LocalFoodsRuntime implements FoodsRuntime {
+  private readonly now: () => Date;
+  private readonly onMutationStage?: LocalFoodsRuntimeOptions["onMutationStage"];
+
+  constructor(
+    private readonly database: SQLiteDatabase,
+    private readonly ownerId: string,
+    options: LocalFoodsRuntimeOptions = {},
+  ) {
+    this.ownerId = parsePersistedUuid(ownerId);
+    this.now = options.now ?? (() => new Date());
+    this.onMutationStage = options.onMutationStage;
+  }
+
+  async list(query?: string, view?: "saved"): Promise<Food[]> {
+    try {
+      const rows = await this.database.getAllAsync<FoodRow>(
+        `SELECT "id", "user_id", "name", "brand", "source_type", "source_id",
+                "recipe_publication_revision_id", "is_recipe", "notes", "updated_at", "deleted_at"
+         FROM "food_items"
+         WHERE "user_id" = ? AND "deleted_at" IS NULL
+           AND (? IS NULL OR LOWER("name") LIKE LOWER(?) OR LOWER(COALESCE("brand", '')) LIKE LOWER(?))
+           ${view === "saved" ? `AND "is_recipe" = 0 AND "source_type" != 'recipe'
+           AND "recipe_publication_revision_id" IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM "recipes" AS "saved_recipe"
+             WHERE "saved_recipe"."published_food_item_id" = "food_items"."id"
+               AND "saved_recipe"."user_id" = "food_items"."user_id"
+           )` : ""}
+         ORDER BY LOWER("name"), "id"`,
+        [this.ownerId, query?.trim() || null, query?.trim() ? `%${query.trim()}%` : null, query?.trim() ? `%${query.trim()}%` : null],
+      );
+      const result: Food[] = [];
+      for (const row of rows) {
+        try {
+          const record = await this.loadRecord(this.database, row);
+          if (record.projection === "invalid") continue;
+          result.push(await this.toFood(this.database, record));
+        } catch (error) {
+          if (error instanceof LocalRuntimeError && error.code === "recipe_projection_integrity_invalid") {
+            continue;
+          }
+          throw error;
+        }
+      }
+      return result;
+    } catch (error) {
+      throw this.readError(error);
+    }
+  }
+
+  async get(foodId: string): Promise<Food> {
+    const id = this.requireUuid(foodId, "not_applicable");
+    try {
+      const record = await this.loadRecordById(this.database, id, false);
+      if (record.projection === "invalid") throw projectionError("read");
+      return await this.toFood(this.database, record);
+    } catch (error) {
+      throw this.readError(error);
+    }
+  }
+
+  async getResolvedNutrition(foodId: string): Promise<FoodResolvedNutrition> {
+    const id = this.requireUuid(foodId, "not_applicable");
+    try {
+      const record = await this.loadRecordById(this.database, id, false);
+      if (record.projection === "invalid") throw projectionError("read");
+      if (record.projection === "managed") {
+        const revision = await this.loadProjectionRevision(this.database, record);
+        return {
+          nutrition_authority: "recipe_publication_revision",
+          recipe_id: record.recipeId,
+          recipe_publication_revision_id: record.row.recipe_publication_revision_id,
+          amounts: resolveRevisionAmounts(revision.amounts, revision.nutrients),
+        };
+      }
+      return {
+        nutrition_authority: "food_item",
+        recipe_id: null,
+        recipe_publication_revision_id: null,
+        amounts: resolveFoodAmounts(record),
+      };
+    } catch (error) {
+      throw this.readError(error);
+    }
+  }
+
+  async create(input: FoodCreateInput): Promise<Food> {
+    const normalized = this.normalizeCreate(input);
+    const requestFingerprint = normalized.client_request_id
+      ? await fingerprint({
+        context: {},
+        payload: {
+          name: normalized.name,
+          brand: normalized.brand,
+          notes: normalized.notes,
+          serving_definitions: normalized.serving_definitions,
+          nutrients: normalized.nutrients,
+        },
+      })
+      : null;
+    return this.mutate(async (transaction) => {
+      if (normalized.client_request_id && requestFingerprint) {
+        const replay = await this.checkFoodReceipt(
+          transaction,
+          "food.create_manual",
+          normalized.client_request_id,
+          requestFingerprint,
+        );
+        if (replay) return replay;
+      }
+      const foodId = generatedId();
+      if (normalized.client_request_id && requestFingerprint) {
+        await this.reserveReceipt(
+          transaction,
+          "food.create_manual",
+          normalized.client_request_id,
+          requestFingerprint,
+          foodId,
+        );
+      }
+      await this.insertFood(transaction, foodId, normalized);
+      await this.stage("after_food");
+      await this.insertServings(transaction, foodId, normalized.serving_definitions);
+      await this.stage("after_servings");
+      await this.insertNutrients(transaction, foodId, normalized.nutrients);
+      await this.stage("after_nutrients");
+      const result = await this.foodResponse(transaction, foodId);
+      if (normalized.client_request_id && requestFingerprint) {
+        await this.completeReceipt(transaction, "food.create_manual", normalized.client_request_id, result);
+      }
+      return result;
+    });
+  }
+
+  async update(foodId: string, input: FoodMutationInput): Promise<Food> {
+    const id = this.requireUuid(foodId);
+    const normalized = normalizeFoodInput(input);
+    return this.mutate(async (transaction) => {
+      const record = await this.loadRecordById(transaction, id, false);
+      this.assertMutable(record, "update");
+      const updatedAt = canonicalNow(this.now);
+      await transaction.runAsync(
+        `UPDATE "food_items" SET "name" = ?, "brand" = ?, "notes" = ?, "updated_at" = ?
+         WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [normalized.name, normalized.brand, normalized.notes, updatedAt, id, this.ownerId],
+      );
+      await this.stage("after_food");
+      await this.replaceServings(transaction, id, normalized.serving_definitions);
+      await this.stage("after_servings");
+      await this.replaceNutrients(transaction, id, normalized.nutrients);
+      await this.stage("after_nutrients");
+      return this.foodResponse(transaction, id);
+    });
+  }
+
+  async delete(input: { foodId: string; removeFromRecipes?: boolean }): Promise<FoodDeleteResult> {
+    const id = this.requireUuid(input.foodId);
+    return this.mutate(async (transaction) => {
+      const record = await this.loadRecordById(transaction, id, false);
+      this.assertMutable(record, "delete");
+      const dependency = await transaction.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+         FROM "recipe_ingredients" AS "ingredient"
+         JOIN "recipes" AS "recipe" ON "recipe"."id" = "ingredient"."recipe_id"
+         WHERE "ingredient"."food_item_id" = ? AND "ingredient"."user_id" = ?
+           AND "recipe"."user_id" = ? AND "recipe"."deleted_at" IS NULL`,
+        [id, this.ownerId, this.ownerId],
+      );
+      if ((dependency?.count ?? 0) > 0) {
+        if (input.removeFromRecipes) {
+          throw unsupportedLocalFeature(
+            "Removing a Food from Recipes is not available in the local Food foundation yet.",
+          );
+        }
+        throw conflict("This Food is used by an active Recipe.", "food_dependencies_exist");
+      }
+      const deletedAt = canonicalNow(this.now);
+      await transaction.runAsync(
+        `UPDATE "food_items" SET "deleted_at" = ?, "updated_at" = ?
+         WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+        [deletedAt, deletedAt, id, this.ownerId],
+      );
+      return {
+        food_id: id,
+        deleted: true,
+        removed_ingredient_count: 0,
+        affected_recipes: [],
+      };
+    });
+  }
+
+  async duplicate(input: { foodId: string; clientRequestId: string }): Promise<Food> {
+    const sourceId = this.requireUuid(input.foodId);
+    const clientRequestId = this.requireUuid(input.clientRequestId);
+    const requestFingerprint = await fingerprint({ context: { food_id: sourceId }, payload: {} });
+    return this.mutate(async (transaction) => {
+      const replay = await this.checkFoodReceipt(
+        transaction,
+        "food.duplicate",
+        clientRequestId,
+        requestFingerprint,
+      );
+      if (replay) return replay;
+      const source = await this.loadRecordById(transaction, sourceId, false);
+      if (source.projection === "invalid") throw projectionError("read");
+      if (source.projection !== "manual" && source.projection !== "managed") {
+        throw projectionError("duplicate");
+      }
+      const normalized: NormalizedFoodInput = {
+        name: `${source.row.name} Copy`,
+        brand: source.row.brand,
+        notes: source.row.notes,
+        serving_definitions: source.servings.map((serving) => ({
+          label: serving.label,
+          quantity: parseStorageDecimal(serving.quantity) as ExactDecimal,
+          unit: serving.unit,
+          gram_weight: parseStorageDecimal(serving.gram_weight, true),
+          is_default: parsePersistedBoolean(serving.is_default),
+        })),
+        nutrients: source.nutrients.map((nutrient) => normalizeNutrient({
+          nutrient_id: nutrient.nutrient_id,
+          amount: parseStorageDecimal(nutrient.amount, true),
+          unit: nutrient.unit,
+          basis: nutrient.basis,
+          data_status: nutrient.data_status,
+        })),
+        client_request_id: clientRequestId,
+      };
+      const duplicateId = generatedId();
+      await this.reserveReceipt(
+        transaction,
+        "food.duplicate",
+        clientRequestId,
+        requestFingerprint,
+        duplicateId,
+      );
+      await transaction.runAsync(
+        `INSERT INTO "food_items"
+          ("id", "user_id", "name", "brand", "source_type", "source_id", "is_recipe", "notes")
+         VALUES (?, ?, ?, ?, 'manual', ?, 0, ?)`,
+        [duplicateId, this.ownerId, normalized.name, normalized.brand, sourceId, normalized.notes],
+      );
+      await this.stage("after_food");
+      await this.insertServings(transaction, duplicateId, normalized.serving_definitions);
+      await this.stage("after_servings");
+      await this.insertNutrients(transaction, duplicateId, normalized.nutrients, source.nutrients);
+      await this.stage("after_nutrients");
+      const result = await this.foodResponse(transaction, duplicateId);
+      await this.completeReceipt(transaction, "food.duplicate", clientRequestId, result);
+      return result;
+    });
+  }
+
+  async createServingDefinition(foodId: string, input: ServingDefinitionCreateInput): Promise<Food> {
+    const id = this.requireUuid(foodId);
+    const serving = normalizeServing(input);
+    const clientRequestId = input.client_request_id == null ? null : this.requireUuid(input.client_request_id);
+    const requestFingerprint = clientRequestId
+      ? await fingerprint({ context: { food_id: id }, payload: serving })
+      : null;
+    return this.mutate(async (transaction) => {
+      if (clientRequestId && requestFingerprint) {
+        const replay = await this.checkServingReceipt(
+          transaction,
+          clientRequestId,
+          requestFingerprint,
+          id,
+        );
+        if (replay) return replay;
+      }
+      const record = await this.loadRecordById(transaction, id, false);
+      this.assertMutable(record, "add_serving");
+      const servingId = generatedId();
+      if (clientRequestId && requestFingerprint) {
+        await this.reserveReceipt(transaction, "food.add_serving", clientRequestId, requestFingerprint, servingId);
+      }
+      if (serving.is_default) {
+        await transaction.runAsync(
+          `UPDATE "serving_definitions" SET "is_default" = 0 WHERE "food_item_id" = ?`,
+          [id],
+        );
+      }
+      await transaction.runAsync(
+        `INSERT INTO "serving_definitions"
+          ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
+        [servingId, id, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
+      );
+      const updatedAt = canonicalNow(this.now);
+      await transaction.runAsync(
+        `UPDATE "food_items" SET "updated_at" = ? WHERE "id" = ? AND "user_id" = ?`,
+        [updatedAt, id, this.ownerId],
+      );
+      await this.stage("after_serving");
+      const result = await this.foodResponse(transaction, id);
+      if (clientRequestId && requestFingerprint) {
+        await this.completeReceipt(transaction, "food.add_serving", clientRequestId, result);
+      }
+      return result;
+    });
+  }
+
+  async listFavorites(): Promise<Food[]> {
+    throw unsupportedLocalFeature("Food favorites are not available in the local Food foundation yet.");
+  }
+
+  async listRecent(_limit = 10): Promise<RecentFood[]> {
+    throw unsupportedLocalFeature("Recent Foods are not available in the local Food foundation yet.");
+  }
+
+  async setFavorite(_foodId: string, _favorite: boolean): Promise<Food> {
+    throw unsupportedLocalFeature("Food favorites are not available in the local Food foundation yet.");
+  }
+
+  private normalizeCreate(input: FoodCreateInput): NormalizedFoodInput {
+    return normalizeFoodInput(input);
+  }
+
+  private requireUuid(
+    value: unknown,
+    mutationOutcome: "not_applicable" | "confirmed_non_commit" = "confirmed_non_commit",
+  ): string {
+    try {
+      return parseUuid(value);
+    } catch {
+      throw invalidFood("Food identifiers must be canonical UUIDs.", mutationOutcome);
+    }
+  }
+
+  private async mutate<T>(operation: (transaction: SQLiteDatabase) => Promise<T>): Promise<T> {
+    try {
+      return await withExclusiveSQLiteTransaction(this.database, operation);
+    } catch (error) {
+      if (error instanceof LocalRuntimeError) throw error;
+      const message = String(error).toLowerCase();
+      if (message.includes("unique") && message.includes("food_items")) {
+        throw conflict("An active Food with this source identity already exists.", "food_source_conflict");
+      }
+      if (message.includes("foreign key") || message.includes("constraint")) {
+        throw conflict("The Food change conflicts with existing local data.");
+      }
+      throw errorFor(
+        "unknown",
+        "local_food_mutation_failed",
+        "The local Food change could not be completed.",
+        "confirmed_non_commit",
+      );
+    }
+  }
+
+  private readError(error: unknown): never {
+    if (error instanceof LocalRuntimeError) throw error;
+    throw errorFor("unknown", "local_food_read_failed", "The local Food data could not be read safely.");
+  }
+
+  private async stage(stage: LocalFoodMutationStage): Promise<void> {
+    await this.onMutationStage?.(stage);
+  }
+
+  private async insertFood(transaction: SQLiteDatabase, id: string, input: NormalizedFoodInput): Promise<void> {
+    await transaction.runAsync(
+      `INSERT INTO "food_items"
+        ("id", "user_id", "name", "brand", "source_type", "source_id", "is_recipe", "notes")
+       VALUES (?, ?, ?, ?, 'manual', NULL, 0, ?)`,
+      [id, this.ownerId, input.name, input.brand, input.notes],
+    );
+  }
+
+  private async insertServings(
+    transaction: SQLiteDatabase,
+    foodId: string,
+    servings: readonly NormalizedServing[],
+  ): Promise<void> {
+    for (const serving of servings) {
+      await transaction.runAsync(
+        `INSERT INTO "serving_definitions"
+          ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
+        [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
+      );
+    }
+  }
+
+  private async insertNutrients(
+    transaction: SQLiteDatabase,
+    foodId: string,
+    nutrients: readonly NormalizedNutrient[],
+    sourceRows: readonly NutrientRow[] = [],
+  ): Promise<void> {
+    for (let index = 0; index < nutrients.length; index += 1) {
+      const nutrient = nutrients[index];
+      const source = sourceRows[index];
+      await transaction.runAsync(
+        `INSERT INTO "food_nutrients"
+          ("id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed", "original_amount", "original_unit", "original_text")
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1, ?, ?, ?)`,
+        [
+          generatedId(),
+          foodId,
+          nutrient.nutrient_id,
+          nutrient.amount,
+          nutrient.unit,
+          nutrient.basis,
+          nutrient.data_status,
+          source?.original_amount ?? null,
+          source?.original_unit ?? null,
+          source?.original_text ?? null,
+        ],
+      );
+    }
+  }
+
+  private async replaceServings(
+    transaction: SQLiteDatabase,
+    foodId: string,
+    servings: readonly NormalizedServing[],
+  ): Promise<void> {
+    await transaction.runAsync(
+      `UPDATE "serving_definitions" SET "is_default" = 0 WHERE "food_item_id" = ?`,
+      [foodId],
+    );
+    await transaction.runAsync(`DELETE FROM "serving_definitions" WHERE "food_item_id" = ?`, [foodId]);
+    await this.insertServings(transaction, foodId, servings);
+  }
+
+  private async replaceNutrients(
+    transaction: SQLiteDatabase,
+    foodId: string,
+    nutrients: readonly NormalizedNutrient[],
+  ): Promise<void> {
+    await transaction.runAsync(`DELETE FROM "food_nutrients" WHERE "food_item_id" = ?`, [foodId]);
+    await this.insertNutrients(transaction, foodId, nutrients);
+  }
+
+  private async loadRecordById(
+    transaction: SQLiteDatabase,
+    id: string,
+    includeDeleted: boolean,
+  ): Promise<FoodRecord> {
+    const row = await transaction.getFirstAsync<FoodRow>(
+      `SELECT "id", "user_id", "name", "brand", "source_type", "source_id",
+              "recipe_publication_revision_id", "is_recipe", "notes", "updated_at", "deleted_at"
+       FROM "food_items"
+       WHERE "id" = ? AND "user_id" = ? ${includeDeleted ? "" : `AND "deleted_at" IS NULL`}`,
+      [id, this.ownerId],
+    );
+    if (!row) throw foodNotFound();
+    return this.loadRecord(transaction, row);
+  }
+
+  private async loadRecord(transaction: SQLiteDatabase, row: FoodRow): Promise<FoodRecord> {
+    if (row.user_id !== this.ownerId) throw foodNotFound();
+    parsePersistedUuid(row.id);
+    parsePersistedUuid(row.user_id);
+    if (!isZeroOrOne(row.is_recipe)) throw invalidStoredFood();
+    readInstant(row.updated_at);
+    if (row.deleted_at !== null) readInstant(row.deleted_at);
+    const servings = await transaction.getAllAsync<ServingRow>(
+      `SELECT "id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed"
+       FROM "serving_definitions" WHERE "food_item_id" = ? ORDER BY "label", "id"`,
+      [row.id],
+    );
+    const nutrients = await transaction.getAllAsync<NutrientRow>(
+      `SELECT "id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed",
+              "original_amount", "original_unit", "original_text"
+       FROM "food_nutrients" WHERE "food_item_id" = ? ORDER BY "nutrient_id", "id"`,
+      [row.id],
+    );
+    for (const serving of servings) {
+      parsePersistedUuid(serving.id);
+      parseStorageDecimal(serving.quantity);
+      parseStorageDecimal(serving.gram_weight, true);
+      parsePersistedBoolean(serving.is_default);
+      parsePersistedBoolean(serving.is_user_confirmed);
+    }
+    if (servings.length === 0 || servings.filter((serving) => serving.is_default === 1).length !== 1) {
+      throw invalidStoredFood();
+    }
+    for (const nutrient of nutrients) {
+      parsePersistedUuid(nutrient.id);
+      parseStorageDecimal(nutrient.amount, true);
+      parseStorageDecimal(nutrient.original_amount, true);
+      parsePersistedBoolean(nutrient.is_user_confirmed);
+      try {
+        const seed = SQLITE_NUTRIENT_SEED_ROWS.find(([id]) => id === nutrient.nutrient_id);
+        if (!seed || normalizeUnit(nutrient.unit) !== nutrient.unit || !NUTRIENT_UNITS.has(nutrient.unit)
+          || !nutrientUnitCompatible(seed[3], nutrient.unit)
+          || !NUTRIENT_BASES.has(nutrient.basis as NutrientBasis)
+          || !NUTRIENT_STATUSES.has(nutrient.data_status as NutrientDataStatus)) {
+          throw new Error("invalid nutrient row");
+        }
+        const amount = parseStorageDecimal(nutrient.amount, true);
+        if (nutrient.data_status === "unknown" && amount !== null) throw new Error("invalid unknown amount");
+        if (nutrient.data_status === "zero" && amount !== "0.000000") throw new Error("invalid zero amount");
+        if ((nutrient.data_status === "known" || nutrient.data_status === "estimated") && amount === null) {
+          throw new Error("missing nutrient amount");
+        }
+        if (nutrient.data_status === "known" && amount !== null
+          && compareDecimals(amount, "0.000000", NUMERIC_14_6) === 0) {
+          throw new Error("known zero nutrient");
+        }
+      } catch {
+        throw invalidStoredFood();
+      }
+    }
+    const link = await transaction.getFirstAsync<RecipeLinkRow>(
+      `SELECT "id", "user_id", "published_food_item_id", "active_publication_revision_id", "deleted_at"
+       FROM "recipes" WHERE "published_food_item_id" = ? AND "user_id" = ?
+       ORDER BY "id" LIMIT 1`,
+      [row.id, this.ownerId],
+    );
+    const marker = isProjectionMarker(row, link);
+    if (!marker) {
+      return { row, servings, nutrients, projection: "manual", recipeId: null };
+    }
+    const sourceRecipeId = row.source_type === "recipe" && row.source_id
+      ? (() => {
+        try { return parseUuid(row.source_id); } catch { return null; }
+      })()
+      : null;
+    const coherent = isOne(row.is_recipe)
+      && row.source_type === "recipe"
+      && sourceRecipeId !== null
+      && link !== null
+      && link.id === sourceRecipeId
+      && link.user_id === this.ownerId
+      && link.deleted_at === null
+      && link.published_food_item_id === row.id
+      && row.recipe_publication_revision_id !== null
+      && link.active_publication_revision_id === row.recipe_publication_revision_id;
+    return {
+      row,
+      servings,
+      nutrients,
+      projection: coherent ? "managed" : "invalid",
+      recipeId: coherent ? link?.id ?? null : null,
+    };
+  }
+
+  private async toFood(transaction: SQLiteDatabase, record: FoodRecord): Promise<Food> {
+    if (record.projection === "invalid") throw projectionError("read");
+    const managed = record.projection === "managed";
+    const sourceKind: Food["source_kind"] = managed
+      ? "recipe"
+      : await this.sourceKind(transaction, record);
+    const presentedSourceId = record.row.source_type === "manual"
+      && record.row.source_id !== null
+      && sourceKind === "legacy"
+      ? null
+      : record.row.source_id;
+    const favorite = !managed && Boolean(await transaction.getFirstAsync<{ present: number }>(
+      `SELECT 1 AS "present" FROM "food_favorites" WHERE "food_item_id" = ? AND "user_id" = ?`,
+      [record.row.id, this.ownerId],
+    ));
+    return {
+      id: parsePersistedUuid(record.row.id),
+      name: record.row.name,
+      brand: record.row.brand,
+      notes: record.row.notes,
+      source_type: record.row.source_type,
+      source_id: presentedSourceId,
+      is_recipe: isOne(record.row.is_recipe),
+      source_kind: sourceKind,
+      source_label: mapSourceLabel(sourceKind),
+      is_favorite: managed ? false : favorite,
+      can_favorite: !managed,
+      updated_at: readInstant(record.row.updated_at),
+      serving_definitions: record.servings.map((serving) => this.mapServing(serving)),
+      nutrients: record.nutrients.map((nutrient) => this.mapNutrient(nutrient)),
+    };
+  }
+
+  private mapServing(row: ServingRow): ServingDefinition {
+    return {
+      id: parsePersistedUuid(row.id),
+      label: row.label,
+      quantity: parseStorageDecimal(row.quantity) as string,
+      unit: row.unit,
+      gram_weight: parseStorageDecimal(row.gram_weight, true) as string | null,
+      is_default: parsePersistedBoolean(row.is_default),
+      source: row.source,
+      is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed),
+    };
+  }
+
+  private mapNutrient(row: NutrientRow): FoodNutrient {
+    return {
+      id: parsePersistedUuid(row.id),
+      nutrient_id: row.nutrient_id,
+      amount: parseStorageDecimal(row.amount, true) as string | null,
+      unit: row.unit as NutrientUnit,
+      basis: row.basis as NutrientBasis,
+      data_status: row.data_status as NutrientDataStatus,
+      source: row.source,
+      is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed),
+      original_amount: parseStorageDecimal(row.original_amount, true) as string | null,
+      original_unit: row.original_unit,
+      original_text: row.original_text,
+    };
+  }
+
+  private async sourceKind(transaction: SQLiteDatabase, record: FoodRecord): Promise<Food["source_kind"]> {
+    const trace = await transaction.getFirstAsync<{ present: number }>(
+      `SELECT 1 AS "present" FROM "ocr_nutrition_confirmation_traces"
+       WHERE "food_item_id" = ? AND "user_id" = ? LIMIT 1`,
+      [record.row.id, this.ownerId],
+    );
+    if (trace) return "ocr_confirmed";
+    if (record.row.source_type === "usda") return "usda";
+    if (record.row.source_type === "manual" && record.row.source_id) {
+      try {
+        const sourceId = parseUuid(record.row.source_id);
+        if (sourceId !== record.row.source_id || sourceId === record.row.id) return "legacy";
+        if (sourceId !== record.row.id) {
+          const source = await transaction.getFirstAsync<{ id: string }>(
+            `SELECT "id" FROM "food_items" WHERE "id" = ? AND "user_id" = ?`,
+            [sourceId, this.ownerId],
+          );
+          if (source) return "duplicate";
+        }
+      } catch {
+        // A malformed legacy source ID is deliberately presented as neutral legacy data.
+      }
+      return "legacy";
+    }
+    return record.row.source_type === "manual" ? "manual" : "legacy";
+  }
+
+  private async loadProjectionRevision(
+    transaction: SQLiteDatabase,
+    record: FoodRecord,
+  ): Promise<{ amounts: readonly RevisionAmountRow[]; nutrients: readonly RevisionNutrientRow[] }> {
+    if (!record.recipeId || !record.row.recipe_publication_revision_id) {
+      throw projectionError("read");
+    }
+    const amounts = await transaction.getAllAsync<RevisionAmountRow>(
+      `SELECT "id", "semantic_mode", "display_label", "display_quantity", "display_unit",
+              "gram_equivalent", "is_default"
+       FROM "recipe_publication_amount_definitions"
+       WHERE "revision_id" = ? ORDER BY "display_order", "id"`,
+      [record.row.recipe_publication_revision_id],
+    );
+    const nutrients = await transaction.getAllAsync<RevisionNutrientRow>(
+      `SELECT "id", "nutrient_id", "amount", "unit", "basis", "data_status"
+       FROM "recipe_publication_nutrients"
+       WHERE "revision_id" = ? ORDER BY "nutrient_id", "id"`,
+      [record.row.recipe_publication_revision_id],
+    );
+    if (amounts.length === 0) throw invalidStoredFood();
+    for (const amount of amounts) {
+      parsePersistedUuid(amount.id);
+      if (amount.semantic_mode !== "serving" || amount.display_quantity === null) {
+        if (amount.semantic_mode !== "g") throw invalidStoredFood();
+      }
+      parseStorageDecimal(amount.display_quantity, true);
+      parseStorageDecimal(amount.gram_equivalent, true);
+      parsePersistedBoolean(amount.is_default);
+    }
+    for (const nutrient of nutrients) {
+      parsePersistedUuid(nutrient.id);
+      parseStorageDecimal(nutrient.amount, true);
+      if (!NUTRIENT_BASES.has(nutrient.basis as NutrientBasis)
+        || !NUTRIENT_STATUSES.has(nutrient.data_status as NutrientDataStatus)
+        || !NUTRIENT_UNITS.has(nutrient.unit)) {
+        throw invalidStoredFood();
+      }
+    }
+    return { amounts, nutrients };
+  }
+
+  private assertMutable(record: FoodRecord, operation: "update" | "delete" | "duplicate" | "add_serving"): void {
+    if (record.projection !== "manual") throw projectionError(operation);
+  }
+
+  private async foodResponse(transaction: SQLiteDatabase, foodId: string): Promise<Food> {
+    const record = await this.loadRecordById(transaction, foodId, false);
+    if (record.projection !== "manual") throw projectionError("read");
+    return this.toFood(transaction, record);
+  }
+
+  private async readReceipt(
+    transaction: SQLiteDatabase,
+    operation: string,
+    clientRequestId: string,
+    requestFingerprint: string,
+  ): Promise<ReceiptRow | null> {
+    const receipt = await transaction.getFirstAsync<ReceiptRow>(
+      `SELECT "id", "request_fingerprint", "resource_id", "response_snapshot"
+       FROM "create_operation_idempotency"
+       WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
+      [this.ownerId, operation, clientRequestId],
+    );
+    if (!receipt) return null;
+    if (receipt.request_fingerprint !== requestFingerprint) {
+      throw idempotencyPayloadConflict();
+    }
+    return receipt;
+  }
+
+  private receiptSnapshot(receipt: ReceiptRow): Food {
+    if (!receipt.response_snapshot) {
+      throw idempotencyResultUnavailable();
+    }
+    try {
+      parseCanonicalJson(receipt.response_snapshot);
+      return JSON.parse(receipt.response_snapshot) as Food;
+    } catch {
+      throw idempotencyResultUnavailable();
+    }
+  }
+
+  private async checkFoodReceipt(
+    transaction: SQLiteDatabase,
+    operation: "food.create_manual" | "food.duplicate",
+    clientRequestId: string,
+    requestFingerprint: string,
+  ): Promise<Food | null> {
+    const receipt = await this.readReceipt(transaction, operation, clientRequestId, requestFingerprint);
+    if (!receipt) return null;
+    const response = this.receiptSnapshot(receipt);
+    const resource = await transaction.getFirstAsync<{ id: string }>(
+      `SELECT "id" FROM "food_items"
+       WHERE "id" = ? AND "user_id" = ? AND "deleted_at" IS NULL`,
+      [receipt.resource_id, this.ownerId],
+    );
+    if (!resource) throw idempotencyResultUnavailable();
+    return response;
+  }
+
+  private async checkServingReceipt(
+    transaction: SQLiteDatabase,
+    clientRequestId: string,
+    requestFingerprint: string,
+    parentFoodId: string,
+  ): Promise<Food | null> {
+    const receipt = await this.readReceipt(
+      transaction,
+      "food.add_serving",
+      clientRequestId,
+      requestFingerprint,
+    );
+    if (!receipt) return null;
+    const response = this.receiptSnapshot(receipt);
+    const serving = await transaction.getFirstAsync<{ serving_id: string }>(
+      `SELECT "serving_definitions"."id" AS "serving_id"
+       FROM "serving_definitions"
+       JOIN "food_items" ON "food_items"."id" = "serving_definitions"."food_item_id"
+       WHERE "serving_definitions"."id" = ?
+         AND "serving_definitions"."food_item_id" = ?
+         AND "food_items"."user_id" = ?
+         AND "food_items"."deleted_at" IS NULL`,
+      [receipt.resource_id, parentFoodId, this.ownerId],
+    );
+    if (!serving) throw idempotencyResultUnavailable();
+    return response;
+  }
+
+  private async reserveReceipt(
+    transaction: SQLiteDatabase,
+    operation: string,
+    clientRequestId: string,
+    requestFingerprint: string,
+    resourceId: string,
+  ): Promise<void> {
+    await transaction.runAsync(
+      `INSERT INTO "create_operation_idempotency"
+        ("id", "user_id", "operation", "client_request_id", "request_fingerprint", "resource_id")
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [generatedId(), this.ownerId, operation, clientRequestId, requestFingerprint, resourceId],
+    );
+  }
+
+  private async completeReceipt(
+    transaction: SQLiteDatabase,
+    operation: string,
+    clientRequestId: string,
+    response: Food,
+  ): Promise<void> {
+    await transaction.runAsync(
+      `UPDATE "create_operation_idempotency"
+       SET "response_snapshot" = ?, "completed_at" = ?
+       WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
+      [canonicalJsonStringify(response), canonicalNow(this.now), this.ownerId, operation, clientRequestId],
+    );
+  }
+}
+
+export function createLocalFoodsRuntime(
+  database: SQLiteDatabase,
+  ownerId: string,
+  options: LocalFoodsRuntimeOptions = {},
+): FoodsRuntime {
+  return new LocalFoodsRuntime(database, ownerId, options);
+}
+
+type ResolutionServing = Readonly<{
+  id: string;
+  label: string;
+  gramWeight: ExactDecimal | null;
+  isDefault: boolean;
+  unit: string;
+}>;
+
+type ResolutionNutrient = Readonly<{
+  id: string;
+  nutrientId: string;
+  amount: ExactDecimal | null;
+  unit: NutrientUnit;
+  basis: NutrientBasis;
+  status: NutrientDataStatus;
+}>;
+
+function resolveFoodAmounts(record: FoodRecord): ResolvedFoodAmount[] {
+  return resolveAmountValues(
+    record.servings.map((row) => ({
+      id: parsePersistedUuid(row.id),
+      label: row.label,
+      gramWeight: parseStorageDecimal(row.gram_weight, true),
+      isDefault: parsePersistedBoolean(row.is_default),
+      unit: row.unit.trim().toLowerCase(),
+    })),
+    record.nutrients.map((row) => ({
+      id: parsePersistedUuid(row.id),
+      nutrientId: row.nutrient_id,
+      amount: parseStorageDecimal(row.amount, true),
+      unit: row.unit as NutrientUnit,
+      basis: row.basis as NutrientBasis,
+      status: row.data_status as NutrientDataStatus,
+    })),
+  );
+}
+
+function resolveRevisionAmounts(
+  amountRows: readonly RevisionAmountRow[],
+  nutrientRows: readonly RevisionNutrientRow[],
+): ResolvedFoodAmount[] {
+  return resolveAmountValues(
+    amountRows
+      .filter((row) => row.semantic_mode === "serving")
+      .map((row) => ({
+        id: parsePersistedUuid(row.id),
+        label: row.display_label,
+        gramWeight: parseStorageDecimal(row.gram_equivalent, true),
+        isDefault: parsePersistedBoolean(row.is_default),
+        unit: row.display_unit.trim().toLowerCase(),
+      })),
+    nutrientRows.map((row) => ({
+      id: parsePersistedUuid(row.id),
+      nutrientId: row.nutrient_id,
+      amount: parseStorageDecimal(row.amount, true),
+      unit: row.unit as NutrientUnit,
+      basis: row.basis as NutrientBasis,
+      status: row.data_status as NutrientDataStatus,
+    })),
+  );
+}
+
+function resolveAmountValues(
+  servings: readonly ResolutionServing[],
+  nutrients: readonly ResolutionNutrient[],
+): ResolvedFoodAmount[] {
+  return servings.flatMap((serving) => {
+    try {
+      const gramMode = serving.unit === "g" && serving.gramWeight !== null;
+      const enteredQuantity = gramMode
+        ? responseDecimal(serving.gramWeight as string)
+        : responseInteger("1.000000");
+      const gramAmount = serving.gramWeight === null
+        ? null
+        : multiplyResponseDecimals(responseDecimal(serving.gramWeight), "1");
+      const servingMultiplier = gramMode
+        ? divideResponseDecimals(enteredQuantity, responseDecimal(serving.gramWeight as string))
+        : responseInteger("1.000000");
+      const amountUnit: "serving" | "g" = gramMode ? "g" : "serving";
+      const groups = new Map<string, ResolutionNutrient[]>();
+      for (const nutrient of nutrients) {
+        const group = groups.get(nutrient.nutrientId) ?? [];
+        group.push(nutrient);
+        groups.set(nutrient.nutrientId, group);
+      }
+      const resolvedNutrients: ResolvedFoodNutrient[] = [];
+      for (const [nutrientId, rows] of [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+        const preferred = amountUnit === "serving"
+          ? rows.filter((row) => row.basis === "per_serving")
+          : rows.filter((row) => row.basis === "per_100g" || row.basis === "per_gram");
+        const candidates = preferred.length > 0 ? preferred : rows;
+        if (candidates.length !== 1) {
+          throw errorFor(
+            "invalid_response",
+            "ambiguous_nutrient_basis",
+            "The local Food contains ambiguous nutrient bases and cannot be resolved.",
+          );
+        }
+        const nutrient = candidates[0];
+        let amount: ResponseDecimal | null = null;
+        if (nutrient.status === "zero") {
+          amount = responseInteger("0.000000");
+        } else if (nutrient.status !== "unknown") {
+          if (nutrient.amount === null) throw invalidStoredFood();
+          const authored = responseDecimal(nutrient.amount);
+          if (nutrient.basis === "per_serving") {
+            amount = multiplyResponseDecimals(authored, servingMultiplier);
+          } else if (nutrient.basis === "per_gram") {
+            if (gramAmount === null) throw unsupportedResolution();
+            amount = multiplyResponseDecimals(authored, gramAmount);
+          } else if (gramAmount !== null) {
+            amount = divideResponseDecimals(multiplyResponseDecimals(authored, gramAmount), "100");
+          } else {
+            throw unsupportedResolution();
+          }
+        }
+        resolvedNutrients.push({
+          nutrient_id: nutrientId,
+          amount,
+          unit: nutrient.unit,
+          data_status: nutrient.status,
+          source_basis: nutrient.basis,
+        });
+      }
+      return [{
+        amount_definition_id: serving.id,
+        display_label: serving.label,
+        is_default: serving.isDefault,
+        entered_quantity: enteredQuantity,
+        semantic_amount_mode: amountUnit,
+        resolved_grams: gramAmount,
+        valid_for_logging: true,
+        nutrients: resolvedNutrients,
+      }];
+    } catch (error) {
+      if (error instanceof LocalRuntimeError && error.code === "nutrition_resolution_unsupported") {
+        return [];
+      }
+      throw error;
+    }
+  });
+}
+
+function unsupportedResolution(): LocalRuntimeError {
+  return errorFor(
+    "conflict",
+    "nutrition_resolution_unsupported",
+    "Gram nutrition requires a serving gram weight or direct gram data.",
+  );
+}

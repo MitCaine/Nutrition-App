@@ -21,6 +21,12 @@ export {
   type LocalCalendarRuntimeOptions,
 } from "./localCalendarRuntime";
 export {
+  LocalFoodsRuntime,
+  createLocalFoodsRuntime,
+  type LocalFoodMutationStage,
+  type LocalFoodsRuntimeOptions,
+} from "./localFoodsRuntime";
+export {
   bootstrapLocalRuntimeFoundation,
   openLocalRuntimeFoundation,
   type LocalRuntimeFoundation,
