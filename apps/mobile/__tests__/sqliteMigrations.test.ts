@@ -79,7 +79,7 @@ class RecordingSQLiteDatabase {
     }
   }
 
-  async getFirstAsync<T>(source: string, _params?: readonly unknown[]): Promise<T | null> {
+  async getFirstAsync<T>(source: string, params: readonly unknown[] = []): Promise<T | null> {
     if (source === "PRAGMA foreign_keys") {
       return { foreign_keys: this.foreignKeys } as T;
     }
@@ -99,7 +99,9 @@ class RecordingSQLiteDatabase {
           } as T);
     }
     if (source.includes('SELECT 1 AS "present" FROM "daily_logs"')) {
-      return this.logPresent ? ({ present: 1 } as T) : null;
+      return this.logPresent && params[0] === "log-id" && params[1] === "owner-id"
+        ? ({ present: 1 } as T)
+        : null;
     }
     return null;
   }
@@ -412,15 +414,44 @@ describe("E2-03 SQLite baseline schema", () => {
     ["wrong log", "owner-id", "other-log"],
   ])("rejects a scope for the %s", async (_label, userId, dailyLogId) => {
     const database = new RecordingSQLiteDatabase();
+    const operation = jest.fn(async () => undefined);
 
     await expect(
       withDailyLogSnapshotReplacement(
         asSQLiteDatabase(database),
         userId,
         dailyLogId,
-        async () => undefined,
+        operation,
       ),
-    ).rejects.toThrow("sqlite_snapshot_scope_owner_mismatch");
+    ).rejects.toMatchObject({
+      name: "SQLiteSnapshotReplacementTargetError",
+      code: "sqlite_snapshot_replacement_target_unavailable",
+    });
+    expect(operation).not.toHaveBeenCalled();
+    expect(database.scope).toBeNull();
+    expect(database.snapshotCount).toBe(1);
+  });
+
+  test("runs an optional transaction-local check before probing the replacement target", async () => {
+    const database = new RecordingSQLiteDatabase();
+    const operation = jest.fn(async () => undefined);
+    const authorityError = new Error("calendar authority required");
+    const beforeTarget = jest.fn(async () => {
+      expect(database.transactions).toBe(1);
+      throw authorityError;
+    });
+
+    await expect(
+      withDailyLogSnapshotReplacement(
+        asSQLiteDatabase(database),
+        "other-owner",
+        "log-id",
+        operation,
+        { beforeTarget },
+      ),
+    ).rejects.toBe(authorityError);
+    expect(beforeTarget).toHaveBeenCalledTimes(1);
+    expect(operation).not.toHaveBeenCalled();
     expect(database.scope).toBeNull();
     expect(database.snapshotCount).toBe(1);
   });

@@ -43,7 +43,11 @@ import {
   type ExactDecimal,
   type ResponseDecimal,
 } from "../../shared/exact/decimal";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import {
+  SQLiteSnapshotReplacementTargetError,
+  withDailyLogSnapshotReplacement,
+  withExclusiveSQLiteTransaction,
+} from "../../storage/sqlite/migrations";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { DailyLogsRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
@@ -177,6 +181,30 @@ type NormalizedCreate = Readonly<{
   notes: string | null;
 }>;
 
+type NormalizedUpdate = Readonly<{
+  calendarRevision: number | null;
+  expectedUpdatedAt: string | null;
+  sourceFoodUpdatedAt: string | null;
+  sourceRecipePublicationRevisionId: string | null;
+  loggedDate: string | null;
+  amountQuantity: ExactDecimal | null;
+  amountQuantityRaw: ResponseDecimal | null;
+  amountUnit: "serving" | "g" | null;
+  amountUnitProvided: boolean;
+  servingDefinitionId: string | null;
+  servingDefinitionProvided: boolean;
+  mealType: MealType | null;
+  mealTypeProvided: boolean;
+  notes: string | null;
+  notesProvided: boolean;
+  nutritionAffecting: boolean;
+}>;
+
+type NormalizedDelete = Readonly<{
+  calendarRevision: number | null;
+  expectedUpdatedAt: string | null;
+}>;
+
 type SourceNutrient = Readonly<{
   id: string | null;
   nutrientId: string;
@@ -230,12 +258,34 @@ export type LocalDailyLogCreateStage =
   | "after_snapshots"
   | "before_idempotency_completion";
 
+export type LocalDailyLogNutritionEditStage =
+  | "after_replacement_scope_open"
+  | "after_old_snapshots_removed"
+  | "after_log_provenance_mutation"
+  | "after_replacement_snapshots_inserted"
+  | "before_replacement_scope_completion";
+
+export type LocalDailyLogDeleteStage =
+  | "after_delete_scope_open"
+  | "after_delete_snapshots_removed"
+  | "before_log_delete"
+  | "before_delete_scope_completion";
+
+export type LocalDailyLogMutationStage =
+  | LocalDailyLogCreateStage
+  | LocalDailyLogNutritionEditStage
+  | LocalDailyLogDeleteStage;
+
 export type LocalDailyLogsRuntimeOptions = Readonly<{
   now?: () => Date;
   /** Every callback runs inside the exclusive create transaction. */
   onCreateStage?: (stage: LocalDailyLogCreateStage) => Promise<void> | void;
-  /** Alias matching the other local mutation adapters. */
-  onMutationStage?: (stage: LocalDailyLogCreateStage) => Promise<void> | void;
+  /** Runs inside the owner/Log-scoped replacement transaction. */
+  onNutritionEditStage?: (stage: LocalDailyLogNutritionEditStage) => Promise<void> | void;
+  /** Runs inside the owner/Log-scoped deletion transaction. */
+  onDeleteStage?: (stage: LocalDailyLogDeleteStage) => Promise<void> | void;
+  /** Aggregate deterministic failure-injection seam for local qualification. */
+  onMutationStage?: (stage: LocalDailyLogMutationStage) => Promise<void> | void;
 }>;
 
 function errorFor(
@@ -257,6 +307,10 @@ function invalidCreate(message: string, code = "log_validation_failed", field?: 
   return errorFor("validation", code, message, "confirmed_non_commit", field);
 }
 
+function invalidUpdate(message: string, code = "invalid_daily_log_request", field?: string): LocalRuntimeError {
+  return errorFor("validation", code, message, "confirmed_non_commit", field);
+}
+
 function notFound(context: OperationContext): LocalRuntimeError {
   return errorFor(
     "not_found",
@@ -271,6 +325,15 @@ function sourceUnavailable(): LocalRuntimeError {
     "conflict",
     "source_food_unavailable",
     "This Food is no longer available for logging. Return to Add Food and choose another Food.",
+    "confirmed_non_commit",
+  );
+}
+
+function sourceDeleted(): LocalRuntimeError {
+  return errorFor(
+    "conflict",
+    "source_food_deleted",
+    "This historical entry cannot be edited because its source food was deleted.",
     "confirmed_non_commit",
   );
 }
@@ -291,6 +354,19 @@ function staleAmount(): LocalRuntimeError {
     "The selected serving or amount changed or is no longer available. Choose a current amount before saving.",
     "confirmed_non_commit",
   );
+}
+
+function staleEntry(): LocalRuntimeError {
+  return errorFor(
+    "conflict",
+    "stale_log_entry",
+    "This Daily Log entry changed or was deleted elsewhere. Refresh it and review the latest state before trying again.",
+    "confirmed_non_commit",
+  );
+}
+
+function recipeEditValidation(code: string, message: string): LocalRuntimeError {
+  return errorFor("validation", code, message, "confirmed_non_commit");
 }
 
 function unsupportedAmount(): LocalRuntimeError {
@@ -541,6 +617,120 @@ function parseCreateInput(input: DailyLogCreateInput): NormalizedCreate {
   };
 }
 
+function definedField(input: object, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(input, field)
+    && (input as Record<string, unknown>)[field] !== undefined;
+}
+
+function parseUpdateInput(input: Partial<DailyLogUpdateInput>): NormalizedUpdate {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw invalidUpdate("The Daily Log request is invalid.");
+  }
+  if (definedField(input, "food_item_id")) {
+    throw invalidUpdate(
+      "A Daily Log source cannot be changed. Delete the entry and create a new one instead.",
+      "invalid_daily_log_request",
+      "food_item_id",
+    );
+  }
+
+  let calendarRevision: number | null = null;
+  if (input.calendar_revision != null) {
+    if (!Number.isSafeInteger(input.calendar_revision) || input.calendar_revision < 0) {
+      throw invalidUpdate("Calendar revision must be a non-negative integer.", "calendar_revision_invalid", "calendar_revision");
+    }
+    calendarRevision = input.calendar_revision;
+  }
+
+  let expectedUpdatedAt: string | null = null;
+  let sourceFoodUpdatedAt: string | null = null;
+  let sourceRecipePublicationRevisionId: string | null = null;
+  let servingDefinitionId: string | null = null;
+  const servingDefinitionProvided = definedField(input, "serving_definition_id");
+  try {
+    if (input.client_request_id != null) parseUuid(input.client_request_id);
+    if (input.expected_updated_at != null) expectedUpdatedAt = parseInstant(input.expected_updated_at);
+    if (input.source_food_updated_at != null) sourceFoodUpdatedAt = parseInstant(input.source_food_updated_at);
+    if (input.source_recipe_publication_revision_id != null) {
+      sourceRecipePublicationRevisionId = parseUuid(input.source_recipe_publication_revision_id);
+    }
+    if (servingDefinitionProvided && input.serving_definition_id != null) {
+      servingDefinitionId = parseUuid(input.serving_definition_id);
+    }
+  } catch {
+    throw invalidUpdate("The Daily Log request contains an invalid identifier or timestamp.");
+  }
+
+  const loggedDate = input.logged_date == null ? null : readDate(input.logged_date, "mutation");
+  let amountQuantity: ExactDecimal | null = null;
+  let amountQuantityRaw: ResponseDecimal | null = null;
+  if (input.amount_quantity != null) {
+    const amount = parsePositive(input.amount_quantity, "Amount quantity must be greater than zero.");
+    amountQuantity = amount.persisted;
+    amountQuantityRaw = amount.raw;
+  }
+  let amountUnit: "serving" | "g" | null = null;
+  const amountUnitProvided = definedField(input, "amount_unit");
+  if (input.amount_unit != null) {
+    if (input.amount_unit !== "serving" && input.amount_unit !== "g") {
+      throw invalidUpdate("Amount unit must be serving or g.", "log_amount_invalid", "amount_unit");
+    }
+    amountUnit = input.amount_unit;
+  }
+
+  const mealTypeProvided = definedField(input, "meal_type");
+  const notesProvided = definedField(input, "notes");
+  let mealType: MealType | null = null;
+  let notes: string | null = null;
+  try {
+    if (mealTypeProvided) mealType = normalizeLogMeal(input.meal_type) ?? null;
+    if (notesProvided) notes = normalizeLogNote(input.notes) ?? null;
+  } catch (error) {
+    const contract = error as { code?: string; message?: string; field?: string };
+    throw invalidUpdate(contract.message ?? "The Daily Log text is invalid.", contract.code, contract.field);
+  }
+
+  return {
+    calendarRevision,
+    expectedUpdatedAt,
+    sourceFoodUpdatedAt,
+    sourceRecipePublicationRevisionId,
+    loggedDate,
+    amountQuantity,
+    amountQuantityRaw,
+    amountUnit,
+    amountUnitProvided,
+    servingDefinitionId,
+    servingDefinitionProvided,
+    mealType,
+    mealTypeProvided,
+    notes,
+    notesProvided,
+    nutritionAffecting: amountQuantity !== null || amountUnit !== null || servingDefinitionProvided,
+  };
+}
+
+function parseDeleteInput(input: DailyLogDeleteInput): NormalizedDelete {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw invalidUpdate("The Daily Log delete request is invalid.");
+  }
+  let calendarRevision: number | null = null;
+  if (input.calendar_revision != null) {
+    if (!Number.isSafeInteger(input.calendar_revision) || input.calendar_revision < 0) {
+      throw invalidUpdate("Calendar revision must be a non-negative integer.", "calendar_revision_invalid", "calendar_revision");
+    }
+    calendarRevision = input.calendar_revision;
+  }
+  let expectedUpdatedAt: string | null = null;
+  try {
+    if (input.client_request_id != null) parseUuid(input.client_request_id);
+    if (input.expected_updated_at != null) expectedUpdatedAt = parseInstant(input.expected_updated_at);
+  } catch {
+    throw invalidUpdate("The Daily Log delete request contains an invalid identifier or timestamp.");
+  }
+  return { calendarRevision, expectedUpdatedAt };
+}
+
 async function creationFingerprint(input: NormalizedCreate): Promise<string> {
   const payload = canonicalJsonStringify({
     amount_quantity: canonicalDecimalForFingerprint(input.amountQuantityRaw),
@@ -560,8 +750,62 @@ async function creationFingerprint(input: NormalizedCreate): Promise<string> {
   }
 }
 
+function updateResolverInput(row: LogRow, input: NormalizedUpdate): NormalizedCreate {
+  const amountQuantity = input.amountQuantity
+    ?? (parsePersistedDecimal(row.amount_quantity, false, "mutation") as ExactDecimal);
+  return {
+    clientRequestId: "00000000-0000-4000-8000-000000000000",
+    calendarRevision: input.calendarRevision,
+    foodId: parsePersistedUuid(row.food_item_id, "mutation"),
+    loggedDate: input.loggedDate ?? storedDate(row.logged_date),
+    amountQuantity,
+    amountQuantityRaw: input.amountQuantityRaw ?? parseResponseDecimal(amountQuantity),
+    amountUnit: input.amountUnit ?? parseStoredAmountUnit(row.amount_unit),
+    servingDefinitionId: input.servingDefinitionProvided
+      ? input.servingDefinitionId
+      : row.serving_definition_id,
+    sourceFoodUpdatedAt: input.sourceFoodUpdatedAt,
+    sourceRecipePublicationRevisionId: input.sourceRecipePublicationRevisionId,
+    mealType: input.mealTypeProvided ? input.mealType : null,
+    notes: input.notesProvided ? input.notes : null,
+  };
+}
+
 function sourcePreconditionSupplied(input: NormalizedCreate): boolean {
   return input.sourceFoodUpdatedAt !== null || input.sourceRecipePublicationRevisionId !== null;
+}
+
+async function insertReplacementSnapshots(
+  transaction: SQLiteDatabase,
+  logId: string,
+  foodId: string,
+  input: NormalizedCreate,
+  resolved: ResolvedSource,
+): Promise<void> {
+  for (const snapshot of resolved.snapshots) {
+    await transaction.runAsync(
+      `INSERT INTO "daily_log_nutrient_snapshots"
+        ("id", "daily_log_id", "source_food_item_id", "source_food_nutrient_id", "serving_definition_id",
+         "nutrient_id", "amount", "unit", "data_status", "consumed_amount_quantity", "consumed_amount_unit",
+         "consumed_gram_amount", "consumed_package_fraction", "calculation_metadata")
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      [
+        parseUuid(Crypto.randomUUID()),
+        logId,
+        foodId,
+        snapshot.sourceNutrientId,
+        snapshot.servingDefinitionId,
+        snapshot.nutrientId,
+        snapshot.amount,
+        snapshot.unit,
+        snapshot.status,
+        input.amountQuantity,
+        input.amountUnit,
+        resolved.gramAmount,
+        snapshot.metadata,
+      ],
+    );
+  }
 }
 
 function validateCalendarProfile(profile: ProfileRow | null, mutation = true): { zone: string; revision: number } {
@@ -595,6 +839,21 @@ function validateCalendarProfile(profile: ProfileRow | null, mutation = true): {
   return { zone, revision: profile.calendar_revision };
 }
 
+async function requireAuthoritativeTimeZone(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+): Promise<void> {
+  const profile = await readProfile(transaction, ownerId);
+  if (!profile || !profile.authoritative_time_zone) {
+    throw errorFor(
+      "validation",
+      "authoritative_time_zone_required",
+      "Confirm an authoritative time zone before changing the Daily Log.",
+      "confirmed_non_commit",
+    );
+  }
+}
+
 async function validateCreateCalendar(
   transaction: SQLiteDatabase,
   ownerId: string,
@@ -615,6 +874,48 @@ async function validateCreateCalendar(
       "conflict",
       "future_dated_mutation_blocked",
       "This entry date is now in the future under the authoritative time zone.",
+      "confirmed_non_commit",
+    );
+  }
+}
+
+async function validateUpdateCalendar(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  calendarRevision: number | null,
+  destinationDate: string,
+  now: Date,
+): Promise<void> {
+  const calendar = validateCalendarProfile(await readProfile(transaction, ownerId));
+  if (calendarRevision !== null && calendarRevision !== calendar.revision) {
+    throw errorFor(
+      "conflict",
+      "calendar_context_changed",
+      "The authoritative calendar changed. Review this entry again before saving.",
+      "confirmed_non_commit",
+    );
+  }
+  if (destinationDate > todayInTimeZone(calendar.zone, now)) {
+    throw errorFor(
+      "conflict",
+      "future_dated_mutation_blocked",
+      "This entry date is now in the future under the authoritative time zone.",
+      "confirmed_non_commit",
+    );
+  }
+}
+
+async function validateDeleteCalendar(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  calendarRevision: number | null,
+): Promise<void> {
+  const calendar = validateCalendarProfile(await readProfile(transaction, ownerId));
+  if (calendarRevision !== null && calendarRevision !== calendar.revision) {
+    throw errorFor(
+      "conflict",
+      "calendar_context_changed",
+      "The authoritative calendar changed. Review this entry again before deleting.",
       "confirmed_non_commit",
     );
   }
@@ -880,6 +1181,7 @@ function resolveFoodSource(
   servings: readonly ServingRow[],
   nutrientRows: readonly FoodNutrientRow[],
   input: NormalizedCreate,
+  requireExplicitReviewedServing = true,
 ): ResolvedSource {
   const nutrients: SourceNutrient[] = nutrientRows.map((row) => {
     const parsed = validateNutrientRow(row, "mutation");
@@ -894,7 +1196,12 @@ function resolveFoodSource(
   });
   const definitions = servings.map((row) => amountFromServing(row, null, "mutation"));
   const reviewed = sourcePreconditionSupplied(input);
-  if (reviewed && input.amountUnit === "serving" && input.servingDefinitionId === null) {
+  if (
+    reviewed
+    && requireExplicitReviewedServing
+    && input.amountUnit === "serving"
+    && input.servingDefinitionId === null
+  ) {
     throw staleAmount();
   }
   const selected = input.servingDefinitionId === null
@@ -1072,6 +1379,96 @@ function resolveRecipeSource(
   };
 }
 
+function selectRecipeEditAmount(
+  row: LogRow,
+  input: NormalizedUpdate,
+  effectiveAmountUnit: "serving" | "g",
+  currentRevisionId: string,
+  currentRows: readonly RevisionAmountRow[],
+  storedAmount: RevisionAmountRow,
+): RevisionAmountRow {
+  const sameRevision = currentRevisionId === row.recipe_publication_revision_id;
+  if (!sameRevision) {
+    if (input.servingDefinitionProvided) {
+      if (input.servingDefinitionId === null && effectiveAmountUnit === "g") {
+        const grams = currentRows.filter((amount) => amount.semantic_mode === "g");
+        if (grams.length === 1) return grams[0]!;
+      }
+      const selected = currentRows.find(
+        (amount) => amount.id === input.servingDefinitionId
+          && amount.semantic_mode === effectiveAmountUnit,
+      );
+      if (!selected) {
+        throw recipeEditValidation(
+          "recipe_log_serving_not_in_revision",
+          "The selected amount is not available in the active publication revision.",
+        );
+      }
+      return selected;
+    }
+    const stored = amountFromRevision(storedAmount, null, "mutation");
+    const candidates = currentRows.filter((candidate) => {
+      const amount = amountFromRevision(candidate, null, "mutation");
+      return amount.mode === effectiveAmountUnit
+        && amount.mode === stored.mode
+        && equivalentAmount(amount, stored);
+    });
+    if (candidates.length !== 1) {
+      throw recipeEditValidation(
+        "recipe_log_conversion_unsupported",
+        "Choose a current amount before saving this edit.",
+      );
+    }
+    return candidates[0]!;
+  }
+
+  let selected: RevisionAmountRow | undefined;
+  if (input.servingDefinitionProvided && input.servingDefinitionId !== null) {
+    selected = input.servingDefinitionId === row.serving_definition_id
+      ? storedAmount
+      : currentRows.find((amount) => amount.id === input.servingDefinitionId);
+    if (!selected) {
+      throw recipeEditValidation(
+        "recipe_log_serving_not_in_revision",
+        "The selected amount is not available in this entry's publication revision.",
+      );
+    }
+  } else if (!input.servingDefinitionProvided && effectiveAmountUnit === row.amount_unit) {
+    selected = storedAmount;
+  } else {
+    const candidates = currentRows.filter(
+      (amount) => amount.semantic_mode === effectiveAmountUnit
+        && (effectiveAmountUnit === "g" || amount.is_default === 1),
+    );
+    if (candidates.length === 1) selected = candidates[0];
+  }
+  if (!selected || selected.semantic_mode !== effectiveAmountUnit) {
+    throw recipeEditValidation(
+      "recipe_log_conversion_unsupported",
+      "This amount cannot be resolved from the entry's publication revision.",
+    );
+  }
+  return selected;
+}
+
+function mapRecipeResolutionError(error: unknown): never {
+  if (error instanceof LocalRuntimeError) {
+    if (error.code === "ambiguous_nutrient_basis") {
+      throw recipeEditValidation(
+        "recipe_log_nutrient_basis_ambiguous",
+        "This entry's publication revision contains conflicting nutrient bases.",
+      );
+    }
+    if (error.code === "nutrition_resolution_unsupported") {
+      throw recipeEditValidation(
+        "recipe_log_conversion_unsupported",
+        "This amount cannot be resolved from the entry's publication revision.",
+      );
+    }
+  }
+  throw error;
+}
+
 function rowToLog(row: LogRow, source: SourceState): DailyLog {
   const foodAvailable = source.available;
   const revisionBacked = row.recipe_publication_revision_id !== null;
@@ -1192,6 +1589,8 @@ function normalizeOperation(operation: DailyLogMutationStatus["operation"] | und
 export class LocalDailyLogsRuntime implements DailyLogsRuntime {
   private readonly now: () => Date;
   private readonly onCreateStage?: LocalDailyLogsRuntimeOptions["onCreateStage"];
+  private readonly onNutritionEditStage?: LocalDailyLogsRuntimeOptions["onNutritionEditStage"];
+  private readonly onDeleteStage?: LocalDailyLogsRuntimeOptions["onDeleteStage"];
   private readonly onMutationStage?: LocalDailyLogsRuntimeOptions["onMutationStage"];
 
   constructor(
@@ -1202,6 +1601,8 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     this.ownerId = parsePersistedUuid(ownerId);
     this.now = options.now ?? (() => new Date());
     this.onCreateStage = options.onCreateStage;
+    this.onNutritionEditStage = options.onNutritionEditStage;
+    this.onDeleteStage = options.onDeleteStage;
     this.onMutationStage = options.onMutationStage;
   }
 
@@ -1368,8 +1769,8 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             resolved.servingDefinitionId, resolved.recipeRevisionId, resolved.recipeAmountDefinitionId,
             resolved.gramAmount, normalized.notes, now, now],
         );
-        await this.stage("after_log_insert");
-        await this.stage("after_provenance_capture");
+        await this.createStage("after_log_insert");
+        await this.createStage("after_provenance_capture");
         for (const snapshot of resolved.snapshots) {
           await transaction.runAsync(
             `INSERT INTO "daily_log_nutrient_snapshots"
@@ -1382,11 +1783,11 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
               normalized.amountUnit, resolved.gramAmount, snapshot.metadata],
           );
         }
-        await this.stage("after_snapshots");
+        await this.createStage("after_snapshots");
         const row = await loadLog(transaction, this.ownerId, logId);
         if (!row) throw invalidStored("mutation");
         const response = await logResponse(transaction, this.ownerId, row);
-        await this.stage("before_idempotency_completion");
+        await this.createStage("before_idempotency_completion");
         await transaction.runAsync(
           `UPDATE "create_operation_idempotency"
            SET "response_snapshot" = ?, "completed_at" = ?
@@ -1757,26 +2158,304 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     }
   }
 
-  async update(_logId: string, _input: Partial<DailyLogUpdateInput>): Promise<DailyLog> {
-    throw errorFor(
-      "unavailable",
-      "feature_not_available",
-      "Local Daily Log nutrition edits are not available until the bounded E2-10 mutation slice.",
-      "confirmed_non_commit",
-    );
+  async update(logId: string, input: Partial<DailyLogUpdateInput>): Promise<DailyLog> {
+    let id: string;
+    try {
+      id = parseUuid(logId);
+    } catch {
+      throw invalidUpdate("The Daily Log identifier is invalid.", "log_id_invalid", "log_id");
+    }
+    const normalized = parseUpdateInput(input);
+    if (normalized.nutritionAffecting) {
+      return this.updateNutrition(id, normalized);
+    }
+    try {
+      return await withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+        if (normalized.calendarRevision === null) {
+          await requireAuthoritativeTimeZone(transaction, this.ownerId);
+        }
+        const row = await loadLog(transaction, this.ownerId, id);
+        if (!row) {
+          if (normalized.expectedUpdatedAt !== null) throw staleEntry();
+          throw notFound("mutation");
+        }
+        if (
+          normalized.expectedUpdatedAt !== null
+          && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
+        ) throw staleEntry();
+        const destinationDate = normalized.loggedDate ?? storedDate(row.logged_date);
+        await validateUpdateCalendar(
+          transaction,
+          this.ownerId,
+          normalized.calendarRevision,
+          destinationDate,
+          this.now(),
+        );
+        if (row.recipe_publication_revision_id === null) {
+          const food = await loadFood(transaction, row.food_item_id, this.ownerId);
+          if (food && food.deleted_at === null) {
+            if (normalized.sourceRecipePublicationRevisionId !== null) throw staleSource();
+            if (
+              normalized.sourceFoodUpdatedAt !== null
+              && parsePersistedInstant(food.updated_at, "mutation") !== normalized.sourceFoodUpdatedAt
+            ) throw staleSource();
+          }
+        }
+        await transaction.runAsync(
+          `UPDATE "daily_logs"
+           SET "logged_date" = ?, "meal_type" = ?, "notes" = ?, "updated_at" = ?
+           WHERE "id" = ? AND "user_id" = ?`,
+          [
+            destinationDate,
+            normalized.mealTypeProvided ? normalized.mealType : row.meal_type,
+            normalized.notesProvided ? normalized.notes : row.notes,
+            canonicalNow(this.now),
+            id,
+            this.ownerId,
+          ],
+        );
+        const updated = await loadLog(transaction, this.ownerId, id);
+        if (!updated) throw invalidStored("mutation");
+        return logResponse(transaction, this.ownerId, updated);
+      });
+    } catch (error) {
+      if (error instanceof LocalRuntimeError) throw error;
+      throw mutationFailure();
+    }
   }
 
-  async delete(_logId: string, _input: DailyLogDeleteInput = {}): Promise<void> {
-    throw errorFor(
-      "unavailable",
-      "feature_not_available",
-      "Local Daily Log deletion is not available until the bounded E2-10 mutation slice.",
-      "confirmed_non_commit",
-    );
+  private async updateNutrition(id: string, normalized: NormalizedUpdate): Promise<DailyLog> {
+    try {
+      return await withDailyLogSnapshotReplacement(
+        this.database,
+        this.ownerId,
+        id,
+        async (transaction) => {
+          await this.nutritionEditStage("after_replacement_scope_open");
+          const row = await loadLog(transaction, this.ownerId, id);
+          if (!row) {
+            if (normalized.expectedUpdatedAt !== null) throw staleEntry();
+            throw notFound("mutation");
+          }
+          if (
+            normalized.expectedUpdatedAt !== null
+            && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
+          ) throw staleEntry();
+
+          const resolverInput = updateResolverInput(row, normalized);
+          await validateUpdateCalendar(
+            transaction,
+            this.ownerId,
+            normalized.calendarRevision,
+            resolverInput.loggedDate,
+            this.now(),
+          );
+
+          const food = await loadFood(transaction, row.food_item_id, this.ownerId);
+          let resolved: ResolvedSource;
+          let replacementInput = resolverInput;
+          if (row.recipe_publication_revision_id !== null) {
+            const state = await loadSourceState(transaction, this.ownerId, row.food_item_id);
+            if (!food || !state.available || !state.recipe || !state.activeRevision) {
+              throw sourceUnavailable();
+            }
+            if (
+              resolverInput.sourceRecipePublicationRevisionId !== null
+              && resolverInput.sourceRecipePublicationRevisionId !== state.activeRevision.id
+            ) throw staleSource();
+            if (
+              resolverInput.sourceFoodUpdatedAt !== null
+              && parsePersistedInstant(food.updated_at, "mutation") !== resolverInput.sourceFoodUpdatedAt
+            ) throw staleSource();
+
+            const storedRevision = await loadRevision(
+              transaction,
+              row.recipe_publication_revision_id,
+              this.ownerId,
+            );
+            if (!storedRevision) {
+              throw recipeEditValidation(
+                "recipe_log_revision_missing",
+                "This entry's publication revision is no longer available.",
+              );
+            }
+            const storedAmounts = await loadRevisionAmounts(transaction, storedRevision.id);
+            const storedAmount = storedAmounts.find(
+              (amount) => amount.id === row.recipe_publication_amount_definition_id,
+            );
+            if (!storedAmount) {
+              throw recipeEditValidation(
+                "recipe_log_amount_definition_missing",
+                "This entry's saved amount is no longer available in its publication revision.",
+              );
+            }
+            const currentAmounts = await loadRevisionAmounts(transaction, state.activeRevision.id);
+            const selected = selectRecipeEditAmount(
+              row,
+              normalized,
+              resolverInput.amountUnit,
+              state.activeRevision.id,
+              currentAmounts,
+              storedAmount,
+            );
+            replacementInput = { ...resolverInput, servingDefinitionId: selected.id };
+            try {
+              resolved = resolveRecipeSource(
+                food,
+                state.recipe,
+                state.activeRevision,
+                currentAmounts,
+                await loadRevisionNutrients(transaction, state.activeRevision.id),
+                await loadServings(transaction, food.id),
+                replacementInput,
+              );
+            } catch (error) {
+              mapRecipeResolutionError(error);
+            }
+          } else {
+            if (!food || food.deleted_at !== null) throw sourceDeleted();
+            const servings = await loadServings(transaction, food.id);
+            if (resolverInput.sourceRecipePublicationRevisionId !== null) throw staleSource();
+            if (
+              normalized.amountUnitProvided
+              && normalized.amountUnit === "serving"
+              && (
+                normalized.servingDefinitionId === null
+                || !servings.some((serving) => serving.id === normalized.servingDefinitionId)
+              )
+              && sourcePreconditionSupplied(resolverInput)
+            ) throw staleAmount();
+            if (
+              resolverInput.sourceFoodUpdatedAt !== null
+              && parsePersistedInstant(food.updated_at, "mutation") !== resolverInput.sourceFoodUpdatedAt
+            ) throw staleSource();
+            resolved = resolveFoodSource(
+              food,
+              servings,
+              await loadFoodNutrients(transaction, food.id),
+              resolverInput,
+              normalized.amountUnitProvided,
+            );
+          }
+
+          await transaction.runAsync(
+            `DELETE FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+            [id],
+          );
+          await this.nutritionEditStage("after_old_snapshots_removed");
+          await transaction.runAsync(
+            `UPDATE "daily_logs"
+             SET "logged_date" = ?, "meal_type" = ?, "amount_quantity" = ?, "amount_unit" = ?,
+                 "serving_definition_id" = ?, "recipe_publication_revision_id" = ?,
+                 "recipe_publication_amount_definition_id" = ?, "gram_amount" = ?,
+                 "package_fraction" = NULL, "notes" = ?, "updated_at" = ?
+             WHERE "id" = ? AND "user_id" = ?`,
+            [
+              resolverInput.loggedDate,
+              normalized.mealTypeProvided ? normalized.mealType : row.meal_type,
+              resolverInput.amountQuantity,
+              resolverInput.amountUnit,
+              resolved.servingDefinitionId,
+              resolved.recipeRevisionId,
+              resolved.recipeAmountDefinitionId,
+              resolved.gramAmount,
+              normalized.notesProvided ? normalized.notes : row.notes,
+              canonicalNow(this.now),
+              id,
+              this.ownerId,
+            ],
+          );
+          await this.nutritionEditStage("after_log_provenance_mutation");
+          await insertReplacementSnapshots(transaction, id, food!.id, replacementInput, resolved);
+          await this.nutritionEditStage("after_replacement_snapshots_inserted");
+          const updated = await loadLog(transaction, this.ownerId, id);
+          if (!updated) throw invalidStored("mutation");
+          const response = await logResponse(transaction, this.ownerId, updated);
+          await this.nutritionEditStage("before_replacement_scope_completion");
+          return response;
+        },
+        normalized.calendarRevision === null
+          ? {
+              beforeTarget: (transaction) => requireAuthoritativeTimeZone(transaction, this.ownerId),
+            }
+          : undefined,
+      );
+    } catch (error) {
+      if (error instanceof SQLiteSnapshotReplacementTargetError) {
+        if (normalized.expectedUpdatedAt !== null) throw staleEntry();
+        throw notFound("mutation");
+      }
+      if (error instanceof LocalRuntimeError) throw error;
+      throw mutationFailure();
+    }
   }
 
-  private async stage(stage: LocalDailyLogCreateStage): Promise<void> {
+  async delete(logId: string, input: DailyLogDeleteInput = {}): Promise<void> {
+    let id: string;
+    try {
+      id = parseUuid(logId);
+    } catch {
+      throw invalidUpdate("The Daily Log identifier is invalid.", "log_id_invalid", "log_id");
+    }
+    const normalized = parseDeleteInput(input);
+    try {
+      await withDailyLogSnapshotReplacement(
+        this.database,
+        this.ownerId,
+        id,
+        async (transaction) => {
+          await this.deleteStage("after_delete_scope_open");
+          const row = await loadLog(transaction, this.ownerId, id);
+          if (!row) {
+            if (normalized.expectedUpdatedAt !== null) throw staleEntry();
+            throw notFound("mutation");
+          }
+          if (
+            normalized.expectedUpdatedAt !== null
+            && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
+          ) throw staleEntry();
+          await validateDeleteCalendar(transaction, this.ownerId, normalized.calendarRevision);
+          await transaction.runAsync(
+            `DELETE FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+            [id],
+          );
+          await this.deleteStage("after_delete_snapshots_removed");
+          await this.deleteStage("before_log_delete");
+          await transaction.runAsync(
+            `DELETE FROM "daily_logs" WHERE "id" = ? AND "user_id" = ?`,
+            [id, this.ownerId],
+          );
+          if (await loadLog(transaction, this.ownerId, id)) throw invalidStored("mutation");
+          await this.deleteStage("before_delete_scope_completion");
+        },
+        normalized.calendarRevision === null
+          ? {
+              beforeTarget: (transaction) => requireAuthoritativeTimeZone(transaction, this.ownerId),
+            }
+          : undefined,
+      );
+    } catch (error) {
+      if (error instanceof SQLiteSnapshotReplacementTargetError) {
+        if (normalized.expectedUpdatedAt !== null) throw staleEntry();
+        throw notFound("mutation");
+      }
+      if (error instanceof LocalRuntimeError) throw error;
+      throw mutationFailure();
+    }
+  }
+
+  private async createStage(stage: LocalDailyLogCreateStage): Promise<void> {
     await this.onCreateStage?.(stage);
+    await this.onMutationStage?.(stage);
+  }
+
+  private async nutritionEditStage(stage: LocalDailyLogNutritionEditStage): Promise<void> {
+    await this.onNutritionEditStage?.(stage);
+    await this.onMutationStage?.(stage);
+  }
+
+  private async deleteStage(stage: LocalDailyLogDeleteStage): Promise<void> {
+    await this.onDeleteStage?.(stage);
     await this.onMutationStage?.(stage);
   }
 }

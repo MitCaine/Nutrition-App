@@ -49,6 +49,9 @@ export {
   LocalDailyLogsRuntime,
   createLocalDailyLogsRuntime,
   type LocalDailyLogCreateStage,
+  type LocalDailyLogDeleteStage,
+  type LocalDailyLogMutationStage,
+  type LocalDailyLogNutritionEditStage,
   type LocalDailyLogsRuntimeOptions,
 } from "./localDailyLogsRuntime";
 export {

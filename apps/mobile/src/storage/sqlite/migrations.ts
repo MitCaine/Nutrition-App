@@ -81,6 +81,15 @@ export class SQLiteSnapshotReplacementError extends SQLiteMigrationError {
   }
 }
 
+export class SQLiteSnapshotReplacementTargetError extends SQLiteMigrationError {
+  readonly code = "sqlite_snapshot_replacement_target_unavailable";
+
+  constructor() {
+    super("SQLite Daily Log snapshot replacement target is unavailable.");
+    this.name = "SQLiteSnapshotReplacementTargetError";
+  }
+}
+
 type SchemaVersionRow = { user_version: number };
 type MigrationLedgerRow = { version: number; migration_id: string };
 
@@ -372,10 +381,21 @@ export async function withDailyLogSnapshotReplacement<T>(
   userId: string,
   dailyLogId: string,
   operation: (transaction: SQLiteDatabase) => Promise<T> | T,
+  options: Readonly<{
+    beforeTarget?: (transaction: SQLiteDatabase) => Promise<void> | void;
+  }> = {},
 ): Promise<T> {
   let result!: T;
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await configureExclusiveTransaction(transaction);
+    await options.beforeTarget?.(transaction);
+    const target = await transaction.getFirstAsync<{ present: number }>(
+      `SELECT 1 AS "present" FROM "daily_logs" WHERE "id" = ? AND "user_id" = ?`,
+      [dailyLogId, userId],
+    );
+    if (target == null) {
+      throw new SQLiteSnapshotReplacementTargetError();
+    }
     const originalSnapshotCount = await transaction.getFirstAsync<{
       snapshot_count: number;
     }>(

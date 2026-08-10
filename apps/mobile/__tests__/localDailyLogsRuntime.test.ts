@@ -1,10 +1,21 @@
-import { createLocalDailyLogsRuntime, type LocalDailyLogCreateStage } from "../src/runtime/local/localDailyLogsRuntime";
+import * as Crypto from "expo-crypto";
+
+import {
+  createLocalDailyLogsRuntime,
+  type LocalDailyLogCreateStage,
+  type LocalDailyLogDeleteStage,
+  type LocalDailyLogNutritionEditStage,
+} from "../src/runtime/local/localDailyLogsRuntime";
 import { createLocalFoodsRuntime } from "../src/runtime/local/localFoodsRuntime";
 import { ensureLocalNutrientCatalog } from "../src/runtime/local/localNutrientsRuntime";
 import { LocalSQLiteTestDatabase, seedLocalFood, seedLocalOwner, seedPublishedRecipeProjection } from "./localSQLiteTestSupport";
 
 const OWNER = "00000000-0000-4000-8000-000000000001";
 const OTHER_OWNER = "00000000-0000-4000-8000-000000000002";
+const OTHER_FOOD = "00000000-0000-4000-8000-000000000040";
+const OTHER_SERVING = "00000000-0000-4000-8000-000000000041";
+const OTHER_NUTRIENT_ROW = "00000000-0000-4000-8000-000000000042";
+const REPLACEMENT_SERVING = "00000000-0000-4000-8000-000000000043";
 const FOOD = "00000000-0000-4000-8000-000000000010";
 const SERVING = "00000000-0000-4000-8000-000000000011";
 const NUTRIENT_ROW = "00000000-0000-4000-8000-000000000012";
@@ -14,6 +25,9 @@ const REVISION = "00000000-0000-4000-8000-000000000022";
 const REVISION_AMOUNT = "00000000-0000-4000-8000-000000000023";
 const REVISION_NUTRIENT = "00000000-0000-4000-8000-000000000024";
 const PROJECTION_SERVING = "00000000-0000-4000-8000-00000000002f";
+const REVISION_2 = "00000000-0000-4000-8000-000000000025";
+const REVISION_2_AMOUNT = "00000000-0000-4000-8000-000000000026";
+const REVISION_2_NUTRIENT = "00000000-0000-4000-8000-000000000027";
 
 const NOW = () => new Date("2026-08-09T12:00:00.000Z");
 
@@ -107,6 +121,84 @@ async function seedProteinFood(database: LocalSQLiteTestDatabase): Promise<void>
   );
 }
 
+async function createOtherOwnerLog(database: LocalSQLiteTestDatabase) {
+  await seedLocalOwner(database, OTHER_OWNER);
+  await database.runAsync(
+    `INSERT INTO "user_profiles" ("user_id", "authoritative_time_zone", "calendar_revision")
+     VALUES (?, 'UTC', 0)`,
+    [OTHER_OWNER],
+  );
+  await seedLocalFood(database, {
+    id: OTHER_FOOD,
+    ownerId: OTHER_OWNER,
+    name: "Other Owner Food",
+    servingId: OTHER_SERVING,
+    gramWeight: "100.000000",
+  });
+  await database.runAsync(
+    `INSERT INTO "food_nutrients"
+      ("id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed")
+     VALUES (?, ?, 'protein', '10.000000', 'g', 'per_serving', 'known', 'manual', 1)`,
+    [OTHER_NUTRIENT_ROW, OTHER_FOOD],
+  );
+  return createLocalDailyLogsRuntime(database.asExpoDatabase(), OTHER_OWNER, { now: NOW }).create(
+    createInput("00000000-0000-4000-8000-000000000324", {
+      food_item_id: OTHER_FOOD,
+      serving_definition_id: OTHER_SERVING,
+    }),
+  );
+}
+
+async function seedRecipeRevision(
+  database: LocalSQLiteTestDatabase,
+  input: {
+    revisionId: string;
+    amountId: string;
+    nutrientRowId: string;
+    revisionNumber: number;
+    nutrientAmount: string;
+    gramEquivalent?: string;
+    activate?: boolean;
+  },
+): Promise<void> {
+  await database.runAsync(
+    `INSERT INTO "recipe_publication_revisions"
+      ("id", "recipe_id", "user_id", "revision_number", "published_at", "creation_origin",
+       "provenance_confidence", "published_name", "content_digest")
+     VALUES (?, ?, ?, ?, '2026-08-09T13:00:00.000000Z', 'normal_publication', 'complete', 'Published Bowl', ?)`,
+    [input.revisionId, RECIPE, OWNER, input.revisionNumber, input.revisionId],
+  );
+  await database.runAsync(
+    `INSERT INTO "recipe_publication_amount_definitions"
+      ("id", "revision_id", "display_order", "display_label", "semantic_mode", "display_quantity", "display_unit", "gram_equivalent", "is_default")
+     VALUES (?, ?, 0, '1 serving', 'serving', '1.000000', 'serving', ?, 1)`,
+    [input.amountId, input.revisionId, input.gramEquivalent ?? "100.000000"],
+  );
+  await database.runAsync(
+    `INSERT INTO "recipe_publication_nutrients"
+      ("id", "revision_id", "nutrient_id", "amount", "unit", "basis", "data_status")
+     VALUES (?, ?, 'protein', ?, 'g', 'per_serving', 'known')`,
+    [input.nutrientRowId, input.revisionId, input.nutrientAmount],
+  );
+  if (input.activate) {
+    await database.execAsync("BEGIN");
+    try {
+      await database.runAsync(
+        `UPDATE "recipes" SET "active_publication_revision_id" = ?, "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+        [input.revisionId, RECIPE],
+      );
+      await database.runAsync(
+        `UPDATE "food_items" SET "recipe_publication_revision_id" = ?, "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+        [input.revisionId, PROJECTION],
+      );
+      await database.execAsync("COMMIT");
+    } catch (error) {
+      await database.execAsync("ROLLBACK");
+      throw error;
+    }
+  }
+}
+
 function createInput(clientRequestId: string, overrides: Record<string, unknown> = {}) {
   return {
     client_request_id: clientRequestId,
@@ -147,6 +239,7 @@ describe("E2-09 local Daily Logs", () => {
   let database: LocalSQLiteTestDatabase;
 
   beforeEach(async () => {
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000000");
     database = await prepareDatabase();
     await seedProteinFood(database);
   });
@@ -886,5 +979,909 @@ describe("E2-09 local Daily Logs", () => {
     const other = createLocalDailyLogsRuntime(database.asExpoDatabase(), OTHER_OWNER, { now: NOW });
     await expect(other.list("2026-08-09")).resolves.toEqual([]);
     await expect(other.getDailySummary("2026-08-09")).resolves.toEqual({ logged_date: "2026-08-09", totals: [] });
+  });
+});
+
+describe("E2-10 local Daily Log mutations", () => {
+  let database: LocalSQLiteTestDatabase;
+
+  beforeEach(async () => {
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000000");
+    database = await prepareDatabase();
+    await seedProteinFood(database);
+  });
+
+  afterEach(() => database.close());
+
+  test("metadata-only edits preserve creation and the exact physical snapshot rows without replacement scope", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000301"));
+    const before = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    const transactionsBeforeEdit = database.exclusiveTransactionCount;
+
+    const notes = await runtime.update(created.id, {
+      calendar_revision: 0,
+      expected_updated_at: created.updated_at,
+      notes: "after metadata edit",
+    });
+    const meal = await runtime.update(created.id, {
+      calendar_revision: 0,
+      expected_updated_at: notes.updated_at,
+      meal_type: "dinner",
+    });
+
+    expect(meal).toMatchObject({
+      id: created.id,
+      food_item_id: created.food_item_id,
+      created_at: created.created_at,
+      amount_quantity: created.amount_quantity,
+      amount_unit: created.amount_unit,
+      serving_definition_id: created.serving_definition_id,
+      notes: "after metadata edit",
+      meal_type: "dinner",
+    });
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(before);
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+    )).toEqual({ count: 0 });
+    expect(database.exclusiveTransactionCount - transactionsBeforeEdit).toBe(2);
+  });
+
+  test("metadata-only Food edits reject a stale reviewed source generation without changing history", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000321"));
+    const reviewed = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    expect(reviewed).not.toBeNull();
+    const beforeLog = await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    );
+    const beforeSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    await database.runAsync(
+      `UPDATE "food_items" SET "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+
+    await expect(runtime.update(created.id, {
+      notes: "must not apply",
+      source_food_updated_at: reviewed!.updated_at,
+    })).rejects.toMatchObject({
+      kind: "conflict",
+      code: "stale_log_source",
+      mutationOutcome: "confirmed_non_commit",
+    });
+    expect(await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    )).toEqual(beforeLog);
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(beforeSnapshots);
+  });
+
+  test("available Food metadata and date-only edits validate every retained source precondition", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000322"));
+    const reviewed = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    expect(reviewed).not.toBeNull();
+
+    await expect(runtime.update(created.id, {
+      notes: "must not apply",
+      source_recipe_publication_revision_id: REVISION,
+    })).rejects.toMatchObject({ code: "stale_log_source" });
+    await database.runAsync(
+      `UPDATE "food_items" SET "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+    await expect(runtime.update(created.id, {
+      logged_date: "2026-08-08",
+      source_food_updated_at: reviewed!.updated_at,
+    })).rejects.toMatchObject({ code: "stale_log_source" });
+    await expect(runtime.list("2026-08-09")).resolves.toMatchObject([{
+      id: created.id,
+      logged_date: "2026-08-09",
+      notes: "before run",
+    }]);
+  });
+
+  test("source-unavailable Food metadata correction ignores a retained stale source timestamp", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000323"));
+    const reviewed = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    const snapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    await database.runAsync(
+      `UPDATE "food_items"
+       SET "updated_at" = '2026-08-09T13:00:00.000000Z', "deleted_at" = '2026-08-09T14:00:00.000000Z'
+       WHERE "id" = ?`,
+      [FOOD],
+    );
+
+    await expect(runtime.update(created.id, {
+      logged_date: "2026-08-08",
+      notes: "corrected after deletion",
+      source_food_updated_at: reviewed!.updated_at,
+    })).resolves.toMatchObject({
+      id: created.id,
+      logged_date: "2026-08-08",
+      notes: "corrected after deletion",
+      source_food_available: false,
+    });
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(snapshots);
+  });
+
+  test("date moves preserve snapshot identity, reject future destinations, and allow only cleanup out of legacy future dates", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000302"));
+    const snapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+
+    const moved = await runtime.update(created.id, { calendar_revision: 0, logged_date: "2026-08-08" });
+    expect(moved.logged_date).toBe("2026-08-08");
+    await expect(runtime.update(created.id, { calendar_revision: 0, logged_date: "2026-08-10" }))
+      .rejects.toMatchObject({ code: "future_dated_mutation_blocked" });
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(snapshots);
+
+    await database.runAsync(`UPDATE "daily_logs" SET "logged_date" = '2026-08-10' WHERE "id" = ?`, [created.id]);
+    await expect(runtime.update(created.id, { calendar_revision: 0, notes: "not cleanup" }))
+      .rejects.toMatchObject({ code: "future_dated_mutation_blocked" });
+    await expect(runtime.update(created.id, { calendar_revision: 0, logged_date: "2026-08-09" }))
+      .resolves.toMatchObject({ id: created.id, logged_date: "2026-08-09" });
+  });
+
+  test("rejects source replacement instead of interpreting it as an edit", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000303"));
+
+    await expect(runtime.update(created.id, {
+      food_item_id: "00000000-0000-4000-8000-000000000099",
+      notes: "must not apply",
+    } as Partial<Parameters<typeof runtime.update>[1]>)).rejects.toMatchObject({
+      code: "invalid_daily_log_request",
+      fieldErrors: [expect.objectContaining({ field: "food_item_id" })],
+    });
+    await expect(runtime.list("2026-08-09")).resolves.toMatchObject([{
+      id: created.id,
+      food_item_id: FOOD,
+      notes: "before run",
+    }]);
+  });
+
+  test("Food nutrition edits replace the complete snapshot generation using current exact authority", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000304"));
+    const oldSnapshots = await database.getAllAsync<{ id: string }>(
+      `SELECT "id" FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+      [created.id],
+    );
+    await database.runAsync(
+      `UPDATE "food_items" SET "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+    await database.runAsync(`UPDATE "food_nutrients" SET "amount" = '12.000000' WHERE "id" = ?`, [NUTRIENT_ROW]);
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000306");
+
+    const serving = await runtime.update(created.id, {
+      calendar_revision: 0,
+      amount_quantity: "3.0000004",
+      amount_unit: "serving",
+      serving_definition_id: SERVING,
+      source_food_updated_at: "2026-08-09T13:00:00Z",
+    });
+    expect(serving).toMatchObject({ amount_quantity: "3.000000", amount_unit: "serving", gram_amount: "300.000040" });
+    const servingSnapshot = await database.getFirstAsync<{ id: string; amount: string; calculation_metadata: string }>(
+      `SELECT "id", "amount", "calculation_metadata" FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+      [created.id],
+    );
+    expect(servingSnapshot).toMatchObject({
+      amount: "36.000005",
+      calculation_metadata: JSON.stringify({ nutrient_basis: "per_serving", serving_multiplier: "3.0000004" }),
+    });
+    expect(oldSnapshots.map(({ id }) => id)).not.toContain(servingSnapshot?.id);
+
+    const grams = await runtime.update(created.id, {
+      calendar_revision: 0,
+      amount_quantity: "50",
+      amount_unit: "g",
+      serving_definition_id: SERVING,
+      source_food_updated_at: "2026-08-09T13:00:00Z",
+    });
+    expect(grams).toMatchObject({ amount_quantity: "50.000000", amount_unit: "g", gram_amount: "50.000000" });
+    expect(await database.getFirstAsync<{ amount: string }>(
+      `SELECT "amount" FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+      [created.id],
+    )).toEqual({ amount: "6.000000" });
+
+    await expect(runtime.update(created.id, {
+      calendar_revision: 0,
+      amount_quantity: "2",
+      amount_unit: "serving",
+      serving_definition_id: SERVING,
+      source_food_updated_at: "2026-08-09T13:00:00Z",
+    })).resolves.toMatchObject({ amount_quantity: "2.000000", amount_unit: "serving", gram_amount: "200.000000" });
+  });
+
+  test("Food nutrition edits reject stale amount, stale source, and unavailable source authority", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000305"));
+    await database.runAsync(
+      `UPDATE "food_items" SET "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+
+    await expect(runtime.update(created.id, {
+      amount_quantity: "2",
+      amount_unit: "serving",
+      serving_definition_id: SERVING,
+      source_food_updated_at: "2026-08-09T12:00:00Z",
+    })).rejects.toMatchObject({ code: "stale_log_source" });
+    await expect(runtime.update(created.id, {
+      amount_quantity: "2",
+      amount_unit: "serving",
+      serving_definition_id: "00000000-0000-4000-8000-000000000099",
+      source_food_updated_at: "2026-08-09T13:00:00Z",
+    })).rejects.toMatchObject({ code: "stale_log_amount" });
+
+    await database.runAsync(
+      `UPDATE "food_items" SET "deleted_at" = '2026-08-09T14:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+    await expect(runtime.update(created.id, { amount_quantity: "2" }))
+      .rejects.toMatchObject({ code: "source_food_deleted" });
+    await expect(runtime.update(created.id, { notes: "metadata survives" }))
+      .resolves.toMatchObject({ notes: "metadata survives", source_food_available: false });
+  });
+
+  test("reviewed Food edit with omitted amount unit resolves an explicit null serving through the current default", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000326"));
+    const source = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    expect(source).not.toBeNull();
+
+    await expect(runtime.update(created.id, {
+      source_food_updated_at: source!.updated_at,
+      serving_definition_id: null,
+    })).resolves.toMatchObject({
+      id: created.id,
+      amount_unit: "serving",
+      serving_definition_id: SERVING,
+    });
+  });
+
+  test("reviewed Food edit with omitted amount unit reports stale source before serving selection", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000327"));
+    const source = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    expect(source).not.toBeNull();
+    await database.runAsync(
+      `UPDATE "food_items" SET "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+
+    await expect(runtime.update(created.id, {
+      source_food_updated_at: source!.updated_at,
+      serving_definition_id: null,
+    })).rejects.toMatchObject({
+      kind: "conflict",
+      code: "stale_log_source",
+      mutationOutcome: "confirmed_non_commit",
+    });
+  });
+
+  test("reviewed Food edit with explicit serving mode still requires a current serving selection", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000328"));
+    const source = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    expect(source).not.toBeNull();
+
+    await expect(runtime.update(created.id, {
+      amount_unit: "serving",
+      serving_definition_id: null,
+      source_food_updated_at: source!.updated_at,
+    })).rejects.toMatchObject({
+      kind: "conflict",
+      code: "stale_log_amount",
+      mutationOutcome: "confirmed_non_commit",
+    });
+  });
+
+  test("reviewed Food edit resolves a cleanup-null historical serving through the current default", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000329"));
+    await database.runAsync(`DELETE FROM "serving_definitions" WHERE "id" = ?`, [SERVING]);
+    expect(await database.getFirstAsync<{ serving_definition_id: string | null }>(
+      `SELECT "serving_definition_id" FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    )).toEqual({ serving_definition_id: null });
+    await database.runAsync(
+      `INSERT INTO "serving_definitions"
+        ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+       VALUES (?, ?, 'Current default', '1.000000', 'serving', '75.000000', 1, 'manual', 1)`,
+      [REPLACEMENT_SERVING, FOOD],
+    );
+    const source = await database.getFirstAsync<{ updated_at: string }>(
+      `SELECT "updated_at" FROM "food_items" WHERE "id" = ?`,
+      [FOOD],
+    );
+    expect(source).not.toBeNull();
+
+    await expect(runtime.update(created.id, {
+      amount_quantity: "3",
+      source_food_updated_at: source!.updated_at,
+    })).resolves.toMatchObject({
+      id: created.id,
+      amount_quantity: "3.000000",
+      amount_unit: "serving",
+      serving_definition_id: REPLACEMENT_SERVING,
+      gram_amount: "225.000000",
+    });
+  });
+
+  test("Recipe nutrition edits atomically advance to the current immutable revision and ignore mutable projection nutrition", async () => {
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: RECIPE,
+      projectionId: PROJECTION,
+      revisionId: REVISION,
+      name: "Published Bowl",
+    });
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_amount_definitions"
+        ("id", "revision_id", "display_order", "display_label", "semantic_mode", "display_quantity", "display_unit", "gram_equivalent", "is_default")
+       VALUES (?, ?, 0, '1 serving', 'serving', '1.000000', 'serving', '100.000000', 1)`,
+      [REVISION_AMOUNT, REVISION],
+    );
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_nutrients"
+        ("id", "revision_id", "nutrient_id", "amount", "unit", "basis", "data_status")
+       VALUES (?, ?, 'protein', '30.000000', 'g', 'per_serving', 'known')`,
+      [REVISION_NUTRIENT, REVISION],
+    );
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000307", {
+      food_item_id: PROJECTION,
+      amount_quantity: "1",
+      serving_definition_id: PROJECTION_SERVING,
+      source_food_updated_at: "2026-01-01T00:00:00Z",
+      source_recipe_publication_revision_id: REVISION,
+    }));
+    const oldSnapshot = await database.getFirstAsync<{ id: string }>(
+      `SELECT "id" FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+      [created.id],
+    );
+    await database.runAsync(
+      `INSERT INTO "food_nutrients"
+        ("id", "food_item_id", "nutrient_id", "amount", "unit", "basis", "data_status", "source", "is_user_confirmed")
+       VALUES ('00000000-0000-4000-8000-000000000028', ?, 'protein', '999.000000', 'g', 'per_serving', 'known', 'recipe', 0)`,
+      [PROJECTION],
+    );
+    await seedRecipeRevision(database, {
+      revisionId: REVISION_2,
+      amountId: REVISION_2_AMOUNT,
+      nutrientRowId: REVISION_2_NUTRIENT,
+      revisionNumber: 2,
+      nutrientAmount: "40.000000",
+      activate: true,
+    });
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000308");
+    const beforeFailedRecipeEdit = await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    );
+    const beforeFailedRecipeSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    const failingRuntime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onNutritionEditStage: (stage) => {
+        if (stage === "after_log_provenance_mutation") throw new Error("injected Recipe edit failure");
+      },
+    });
+    await expect(failingRuntime.update(created.id, {
+      amount_quantity: "2",
+      source_food_updated_at: "2026-08-09T13:00:00Z",
+      source_recipe_publication_revision_id: REVISION_2,
+    })).rejects.toMatchObject({ code: "local_daily_log_mutation_failed" });
+    expect(await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]))
+      .toEqual(beforeFailedRecipeEdit);
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(beforeFailedRecipeSnapshots);
+
+    const updated = await runtime.update(created.id, {
+      calendar_revision: 0,
+      amount_quantity: "2",
+      source_food_updated_at: "2026-08-09T13:00:00Z",
+      source_recipe_publication_revision_id: REVISION_2,
+    });
+
+    expect(updated).toMatchObject({
+      id: created.id,
+      food_item_id: PROJECTION,
+      food_name_snapshot: "Published Bowl",
+      amount_quantity: "2.000000",
+      serving_definition_id: PROJECTION_SERVING,
+      created_at: created.created_at,
+    });
+    expect(await database.getFirstAsync<{
+      recipe_publication_revision_id: string;
+      recipe_publication_amount_definition_id: string;
+    }>(
+      `SELECT "recipe_publication_revision_id", "recipe_publication_amount_definition_id"
+       FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    )).toEqual({
+      recipe_publication_revision_id: REVISION_2,
+      recipe_publication_amount_definition_id: REVISION_2_AMOUNT,
+    });
+    expect(await database.getFirstAsync<{ id: string; amount: string; source_food_nutrient_id: string | null }>(
+      `SELECT "id", "amount", "source_food_nutrient_id"
+       FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+      [created.id],
+    )).toEqual({ id: "00000000-0000-4000-8000-000000000308", amount: "80.000000", source_food_nutrient_id: null });
+    expect(oldSnapshot?.id).not.toBe("00000000-0000-4000-8000-000000000308");
+  });
+
+  test("Recipe nutrition edits reject incompatible current amounts and unavailable publication authority", async () => {
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: RECIPE,
+      projectionId: PROJECTION,
+      revisionId: REVISION,
+      name: "Published Bowl",
+    });
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_amount_definitions"
+        ("id", "revision_id", "display_order", "display_label", "semantic_mode", "display_quantity", "display_unit", "gram_equivalent", "is_default")
+       VALUES (?, ?, 0, '1 serving', 'serving', '1.000000', 'serving', '100.000000', 1)`,
+      [REVISION_AMOUNT, REVISION],
+    );
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_nutrients"
+        ("id", "revision_id", "nutrient_id", "amount", "unit", "basis", "data_status")
+       VALUES (?, ?, 'protein', '30.000000', 'g', 'per_serving', 'known')`,
+      [REVISION_NUTRIENT, REVISION],
+    );
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000309", {
+      food_item_id: PROJECTION,
+      amount_quantity: "1",
+      serving_definition_id: PROJECTION_SERVING,
+    }));
+    await seedRecipeRevision(database, {
+      revisionId: REVISION_2,
+      amountId: REVISION_2_AMOUNT,
+      nutrientRowId: REVISION_2_NUTRIENT,
+      revisionNumber: 2,
+      nutrientAmount: "40.000000",
+      gramEquivalent: "75.000000",
+      activate: true,
+    });
+
+    await expect(runtime.update(created.id, { amount_quantity: "2" }))
+      .rejects.toMatchObject({ code: "recipe_log_conversion_unsupported" });
+    const historicalSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    await database.runAsync(
+      `UPDATE "recipes" SET "deleted_at" = '2026-08-09T14:00:00.000000Z' WHERE "id" = ?`,
+      [RECIPE],
+    );
+    await expect(runtime.update(created.id, { amount_quantity: "2", serving_definition_id: REVISION_2_AMOUNT }))
+      .rejects.toMatchObject({ code: "source_food_unavailable" });
+    await expect(runtime.update(created.id, {
+      notes: "metadata remains possible",
+      source_food_updated_at: "2026-01-01T00:00:00Z",
+      source_recipe_publication_revision_id: REVISION,
+    }))
+      .resolves.toMatchObject({ notes: "metadata remains possible", source_food_available: false });
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(historicalSnapshots);
+  });
+
+  test("permanent deletion removes one owned Food-backed entry and its complete snapshots even when the source is unavailable", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const kept = await runtime.create(createInput("00000000-0000-4000-8000-000000000310", { logged_date: "2026-08-08" }));
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000317");
+    const removed = await runtime.create(createInput("00000000-0000-4000-8000-000000000311"));
+    await database.runAsync(
+      `UPDATE "food_items" SET "deleted_at" = '2026-08-09T14:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+
+    await runtime.delete(removed.id, {
+      calendar_revision: 0,
+      expected_updated_at: removed.updated_at,
+    });
+
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_logs" WHERE "id" = ?`,
+      [removed.id],
+    )).toEqual({ count: 0 });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
+      [removed.id],
+    )).toEqual({ count: 0 });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_logs" WHERE "id" = ?`,
+      [kept.id],
+    )).toEqual({ count: 1 });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+    )).toEqual({ count: 0 });
+  });
+
+  test("permanent deletion removes a Recipe-backed entry without consulting current Recipe availability", async () => {
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: RECIPE,
+      projectionId: PROJECTION,
+      revisionId: REVISION,
+      name: "Delete Recipe Log",
+    });
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_amount_definitions"
+        ("id", "revision_id", "display_order", "display_label", "semantic_mode", "display_quantity", "display_unit", "gram_equivalent", "is_default")
+       VALUES (?, ?, 0, '1 serving', 'serving', '1.000000', 'serving', '100.000000', 1)`,
+      [REVISION_AMOUNT, REVISION],
+    );
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_nutrients"
+        ("id", "revision_id", "nutrient_id", "amount", "unit", "basis", "data_status")
+       VALUES (?, ?, 'protein', '30.000000', 'g', 'per_serving', 'known')`,
+      [REVISION_NUTRIENT, REVISION],
+    );
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000319", {
+      food_item_id: PROJECTION,
+      amount_quantity: "1",
+      serving_definition_id: PROJECTION_SERVING,
+    }));
+    await database.runAsync(
+      `UPDATE "recipes" SET "deleted_at" = '2026-08-09T14:00:00.000000Z' WHERE "id" = ?`,
+      [RECIPE],
+    );
+
+    await runtime.delete(created.id, { calendar_revision: 0 });
+
+    expect(await database.getFirstAsync<{ logs: number; snapshots: number }>(
+      `SELECT
+         (SELECT COUNT(*) FROM "daily_logs" WHERE "id" = ?) AS "logs",
+         (SELECT COUNT(*) FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?) AS "snapshots"`,
+      [created.id, created.id],
+    )).toEqual({ logs: 0, snapshots: 0 });
+  });
+
+  test("optimistic entry and calendar preconditions fail without changing history", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000320"));
+    const before = await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]);
+    await database.runAsync(
+      `UPDATE "daily_logs" SET "updated_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [created.id],
+    );
+
+    await expect(runtime.update(created.id, { expected_updated_at: created.updated_at, notes: "stale" }))
+      .rejects.toMatchObject({ code: "stale_log_entry" });
+    await expect(runtime.delete(created.id, { expected_updated_at: created.updated_at }))
+      .rejects.toMatchObject({ code: "stale_log_entry" });
+    await expect(runtime.update(created.id, { calendar_revision: 1, notes: "wrong calendar" }))
+      .rejects.toMatchObject({ code: "calendar_context_changed" });
+    await expect(runtime.delete(created.id, { calendar_revision: 1 }))
+      .rejects.toMatchObject({ code: "calendar_context_changed" });
+    expect(await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]))
+      .toEqual({ ...before, updated_at: "2026-08-09T13:00:00.000000Z" });
+  });
+
+  test("legacy future cleanup is bounded to the selected owned row and cannot expose future edits", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const current = await runtime.create(createInput("00000000-0000-4000-8000-000000000312"));
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000318");
+    const legacy = await runtime.create(createInput("00000000-0000-4000-8000-000000000313", { logged_date: "2026-08-08" }));
+    await database.runAsync(`UPDATE "daily_logs" SET "logged_date" = '2026-08-10' WHERE "id" = ?`, [legacy.id]);
+
+    await expect(runtime.listFuture("2026-08-10")).resolves.toMatchObject([{ id: legacy.id }]);
+    await expect(runtime.update(legacy.id, { calendar_revision: 0, notes: "not cleanup" }))
+      .rejects.toMatchObject({ code: "future_dated_mutation_blocked" });
+    await runtime.delete(legacy.id, { calendar_revision: 0 });
+    await expect(runtime.listFuture("2026-08-10")).resolves.toEqual([]);
+    await expect(runtime.list("2026-08-09")).resolves.toMatchObject([{ id: current.id }]);
+  });
+
+  test("deletion remains owner-scoped", async () => {
+    const ownerRuntime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await ownerRuntime.create(createInput("00000000-0000-4000-8000-000000000314"));
+    await seedLocalOwner(database, OTHER_OWNER);
+    await database.runAsync(
+      `INSERT INTO "user_profiles" ("user_id", "authoritative_time_zone", "calendar_revision") VALUES (?, 'UTC', 0)`,
+      [OTHER_OWNER],
+    );
+    const otherRuntime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OTHER_OWNER, { now: NOW });
+
+    await expect(otherRuntime.delete(created.id, { calendar_revision: 0 })).rejects.toMatchObject({
+      mutationOutcome: "confirmed_non_commit",
+    });
+    await expect(ownerRuntime.list("2026-08-09")).resolves.toMatchObject([{ id: created.id }]);
+  });
+
+  test.each([
+    ["update", "missing", false, "daily_log_not_found", "not_found"],
+    ["update", "missing", true, "stale_log_entry", "conflict"],
+    ["update", "other-owner", false, "daily_log_not_found", "not_found"],
+    ["update", "other-owner", true, "stale_log_entry", "conflict"],
+    ["delete", "missing", false, "daily_log_not_found", "not_found"],
+    ["delete", "missing", true, "stale_log_entry", "conflict"],
+    ["delete", "other-owner", false, "daily_log_not_found", "not_found"],
+    ["delete", "other-owner", true, "stale_log_entry", "conflict"],
+  ] as const)(
+    "%s maps an inaccessible %s target with expected timestamp %s to %s",
+    async (operation, targetKind, withExpectedTimestamp, expectedCode, expectedKind) => {
+      const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+      const otherLog = targetKind === "other-owner" ? await createOtherOwnerLog(database) : null;
+      const targetId = otherLog?.id ?? "00000000-0000-4000-8000-000000000099";
+      const beforeOtherLog = otherLog
+        ? await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [otherLog.id])
+        : null;
+      const beforeOtherSnapshots = otherLog
+        ? await database.getAllAsync<Record<string, unknown>>(
+          `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+          [otherLog.id],
+        )
+        : [];
+      const expected = withExpectedTimestamp
+        ? { expected_updated_at: "2026-08-09T12:00:00Z" }
+        : {};
+      const mutation = operation === "update"
+        ? runtime.update(targetId, { amount_quantity: "3", ...expected })
+        : runtime.delete(targetId, expected);
+
+      await expect(mutation).rejects.toMatchObject({
+        kind: expectedKind,
+        code: expectedCode,
+        mutationOutcome: "confirmed_non_commit",
+      });
+      expect(await database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+      )).toEqual({ count: 0 });
+      if (otherLog) {
+        expect(await database.getFirstAsync<Record<string, unknown>>(
+          `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+          [otherLog.id],
+        )).toEqual(beforeOtherLog);
+        expect(await database.getAllAsync<Record<string, unknown>>(
+          `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+          [otherLog.id],
+        )).toEqual(beforeOtherSnapshots);
+      }
+    },
+  );
+
+  test.each([
+    ["metadata update", "existing-stale"],
+    ["metadata update", "missing"],
+    ["metadata update", "other-owner"],
+    ["nutrition update", "existing-stale"],
+    ["nutrition update", "missing"],
+    ["nutrition update", "other-owner"],
+    ["delete", "existing-stale"],
+    ["delete", "missing"],
+    ["delete", "other-owner"],
+  ] as const)(
+    "%s requires calendar authority before classifying an omitted-revision %s target",
+    async (operation, targetKind) => {
+      const ownerRuntime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+      const ownedLog = targetKind === "existing-stale"
+        ? await ownerRuntime.create(createInput("00000000-0000-4000-8000-000000000330"))
+        : null;
+      const otherLog = targetKind === "other-owner" ? await createOtherOwnerLog(database) : null;
+      const targetId = ownedLog?.id ?? otherLog?.id ?? "00000000-0000-4000-8000-000000000099";
+      await database.runAsync(
+        `UPDATE "user_profiles" SET "authoritative_time_zone" = NULL WHERE "user_id" = ?`,
+        [OWNER],
+      );
+      const expected = targetKind === "existing-stale"
+        ? { expected_updated_at: "2026-08-09T11:00:00Z" }
+        : {};
+      const mutation = operation === "metadata update"
+        ? ownerRuntime.update(targetId, { notes: "must not apply", ...expected })
+        : operation === "nutrition update"
+          ? ownerRuntime.update(targetId, { amount_quantity: "3", ...expected })
+          : ownerRuntime.delete(targetId, expected);
+
+      await expect(mutation).rejects.toMatchObject({
+        kind: "validation",
+        code: "authoritative_time_zone_required",
+        mutationOutcome: "confirmed_non_commit",
+      });
+      expect(await database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+      )).toEqual({ count: 0 });
+    },
+  );
+
+  test.each([
+    ["metadata update", "existing-stale", "stale_log_entry", "conflict"],
+    ["metadata update", "missing", "daily_log_not_found", "not_found"],
+    ["nutrition update", "existing-stale", "stale_log_entry", "conflict"],
+    ["nutrition update", "missing", "daily_log_not_found", "not_found"],
+    ["delete", "existing-stale", "stale_log_entry", "conflict"],
+    ["delete", "missing", "daily_log_not_found", "not_found"],
+  ] as const)(
+    "%s classifies a %s target before a supplied stale calendar revision",
+    async (operation, targetKind, expectedCode, expectedKind) => {
+      const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+      const ownedLog = targetKind === "existing-stale"
+        ? await runtime.create(createInput("00000000-0000-4000-8000-000000000331"))
+        : null;
+      const targetId = ownedLog?.id ?? "00000000-0000-4000-8000-000000000099";
+      const expected = targetKind === "existing-stale"
+        ? { expected_updated_at: "2026-08-09T11:00:00Z" }
+        : {};
+      const mutation = operation === "metadata update"
+        ? runtime.update(targetId, { calendar_revision: 1, notes: "must not apply", ...expected })
+        : operation === "nutrition update"
+          ? runtime.update(targetId, { calendar_revision: 1, amount_quantity: "3", ...expected })
+          : runtime.delete(targetId, { calendar_revision: 1, ...expected });
+
+      await expect(mutation).rejects.toMatchObject({
+        kind: expectedKind,
+        code: expectedCode,
+        mutationOutcome: "confirmed_non_commit",
+      });
+      expect(await database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+      )).toEqual({ count: 0 });
+    },
+  );
+
+  test("does not classify replacement-scope integrity failures as inaccessible targets", async () => {
+    const initial = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await initial.create(createInput("00000000-0000-4000-8000-000000000325"));
+    const beforeLog = await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    );
+    const beforeSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    const failing = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onNutritionEditStage: async (stage) => {
+        if (stage === "after_replacement_snapshots_inserted") {
+          await database.runAsync(
+            `DELETE FROM "nutrition_daily_log_snapshot_replacement_scopes"
+             WHERE "user_id" = ? AND "daily_log_id" = ?`,
+            [OWNER, created.id],
+          );
+        }
+      },
+    });
+
+    await expect(failing.update(created.id, {
+      amount_quantity: "3",
+      expected_updated_at: created.updated_at,
+    })).rejects.toMatchObject({
+      kind: "unknown",
+      code: "local_daily_log_mutation_failed",
+      mutationOutcome: "confirmed_non_commit",
+    });
+    expect(await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    )).toEqual(beforeLog);
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(beforeSnapshots);
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+    )).toEqual({ count: 0 });
+  });
+
+  test.each([
+    "after_replacement_scope_open",
+    "after_old_snapshots_removed",
+    "after_log_provenance_mutation",
+    "after_replacement_snapshots_inserted",
+    "before_replacement_scope_completion",
+  ] as LocalDailyLogNutritionEditStage[])("nutrition edit failure at %s restores the complete physical entry", async (stage) => {
+    const initial = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await initial.create(createInput("00000000-0000-4000-8000-000000000315"));
+    const beforeLog = await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]);
+    const beforeSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    const failing = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onNutritionEditStage: (current) => { if (current === stage) throw new Error("injected"); },
+    });
+
+    await expect(failing.update(created.id, { amount_quantity: "3" }))
+      .rejects.toMatchObject({ code: "local_daily_log_mutation_failed", mutationOutcome: "confirmed_non_commit" });
+    expect(await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]))
+      .toEqual(beforeLog);
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(beforeSnapshots);
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+    )).toEqual({ count: 0 });
+  });
+
+  test.each([
+    "after_delete_scope_open",
+    "after_delete_snapshots_removed",
+    "before_log_delete",
+    "before_delete_scope_completion",
+  ] as LocalDailyLogDeleteStage[])("deletion failure at %s restores the complete physical entry", async (stage) => {
+    const initial = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await initial.create(createInput("00000000-0000-4000-8000-000000000316"));
+    const beforeLog = await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]);
+    const beforeSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    const failing = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onDeleteStage: (current) => { if (current === stage) throw new Error("injected"); },
+    });
+
+    await expect(failing.delete(created.id, { calendar_revision: 0 }))
+      .rejects.toMatchObject({ code: "local_daily_log_mutation_failed", mutationOutcome: "confirmed_non_commit" });
+    expect(await database.getFirstAsync<Record<string, unknown>>(`SELECT * FROM "daily_logs" WHERE "id" = ?`, [created.id]))
+      .toEqual(beforeLog);
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(beforeSnapshots);
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
+    )).toEqual({ count: 0 });
   });
 });
