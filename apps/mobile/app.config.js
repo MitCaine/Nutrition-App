@@ -8,9 +8,12 @@ module.exports = ({ config }) => {
     extra: {
       ...(config.extra || {}),
       nutrition: {
+        dataAuthority: runtime.dataAuthority,
         deploymentMode: runtime.deploymentMode,
-        apiBaseUrl: runtime.apiBaseUrl,
-        privateCredentialConfigured: Boolean(runtime.privateAuthToken),
+        ...(runtime.dataAuthority === "remote" ? {
+          apiBaseUrl: runtime.apiBaseUrl,
+          privateCredentialConfigured: Boolean(runtime.privateAuthToken),
+        } : {}),
       },
     },
   };

@@ -32,6 +32,7 @@ dependencies.
 cd apps/mobile
 npm test
 npm run typecheck
+EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm run config:validate

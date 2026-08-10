@@ -125,15 +125,23 @@ export function recoveryActionableState(
 
 const defaultStorage: RecoveryStorage = AsyncStorage;
 let storageQueue: Promise<void> = Promise.resolve();
-const journalListeners = new Set<() => void>();
-let cachedState: RecoveryJournalState = {
-  ready: true,
-  unknownVersion: false,
-  malformedRecordCount: 0,
-  storageError: false,
-  records: [],
-};
-let bootstrapStarted = false;
+const journalListenersByScope = new Map<string, Set<() => void>>();
+const cachedStateByScope = new Map<string, RecoveryJournalState>();
+const bootstrapStartedScopes = new Set<string>();
+
+function unloadedRecoveryState(): RecoveryJournalState {
+  return {
+    ready: false,
+    unknownVersion: false,
+    malformedRecordCount: 0,
+    storageError: false,
+    records: [],
+  };
+}
+
+function cachedStateForScope(recoveryScope: string): RecoveryJournalState {
+  return cachedStateByScope.get(recoveryScope) ?? unloadedRecoveryState();
+}
 
 function enqueueStorage<T>(work: () => Promise<T>): Promise<T> {
   const next = storageQueue.then(work, work);
@@ -141,8 +149,8 @@ function enqueueStorage<T>(work: () => Promise<T>): Promise<T> {
   return next;
 }
 
-function notifyJournalChanged(): void {
-  for (const listener of journalListeners) listener();
+function notifyJournalChanged(recoveryScope: string): void {
+  for (const listener of journalListenersByScope.get(recoveryScope) ?? []) listener();
 }
 
 function isPayload(value: unknown): value is RecoveryPayload {
@@ -222,9 +230,9 @@ function stableRecords(records: LogMutationRecoveryRecord[]): LogMutationRecover
   });
 }
 
-function setCachedState(next: RecoveryJournalState): void {
-  cachedState = next;
-  notifyJournalChanged();
+function setCachedState(recoveryScope: string, next: RecoveryJournalState): void {
+  cachedStateByScope.set(recoveryScope, next);
+  notifyJournalChanged(recoveryScope);
 }
 
 type ReadResult = {
@@ -315,27 +323,42 @@ async function writeStored(
   await storage.setItem(LOG_MUTATION_RECOVERY_STORAGE_KEY, JSON.stringify(payload));
 }
 
-export function getRecoveryJournalState(): RecoveryJournalState {
-  return { ...cachedState, records: [...cachedState.records] };
+export function getRecoveryJournalState(
+  authority: RuntimeAuthorityIdentity,
+): RecoveryJournalState {
+  const state = cachedStateForScope(authority.recoveryScope);
+  return { ...state, records: [...state.records] };
 }
 
-export function getRecoveryJournalHealth(): RecoveryJournalHealth {
-  const { records: _records, ...health } = cachedState;
+export function getRecoveryJournalHealth(
+  authority: RuntimeAuthorityIdentity,
+): RecoveryJournalHealth {
+  const { records: _records, ...health } = cachedStateForScope(authority.recoveryScope);
   return health;
 }
 
-function beginLogMutationRecoveryBootstrap(): void {
-  if (bootstrapStarted) return;
-  bootstrapStarted = true;
-  cachedState = {
-    ...cachedState,
+function beginLogMutationRecoveryBootstrap(authority: RuntimeAuthorityIdentity): void {
+  const recoveryScope = authority.recoveryScope;
+  if (bootstrapStartedScopes.has(recoveryScope)) return;
+  bootstrapStartedScopes.add(recoveryScope);
+  setCachedState(recoveryScope, {
+    ...cachedStateForScope(recoveryScope),
     ready: false,
-  };
+  });
 }
 
-export function subscribeToLogMutationRecovery(listener: () => void): () => void {
-  journalListeners.add(listener);
-  return () => journalListeners.delete(listener);
+export function subscribeToLogMutationRecovery(
+  authority: RuntimeAuthorityIdentity,
+  listener: () => void,
+): () => void {
+  const recoveryScope = authority.recoveryScope;
+  const listeners = journalListenersByScope.get(recoveryScope) ?? new Set<() => void>();
+  listeners.add(listener);
+  journalListenersByScope.set(recoveryScope, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) journalListenersByScope.delete(recoveryScope);
+  };
 }
 
 export async function loadLogMutationRecoveryJournal(
@@ -344,7 +367,7 @@ export async function loadLogMutationRecoveryJournal(
 ): Promise<LogMutationRecoveryRecord[]> {
   return enqueueStorage(async () => {
     const result = await readStored(storage, authority.recoveryScope);
-    setCachedState({ ...result.health, records: result.records });
+    setCachedState(authority.recoveryScope, { ...result.health, records: result.records });
     return result.records;
   });
 }
@@ -352,20 +375,30 @@ export async function loadLogMutationRecoveryJournal(
 export function useLogMutationRecoveryJournal(
   authority: RuntimeAuthorityIdentity,
 ): RecoveryJournalState {
-  const [state, setState] = useState<RecoveryJournalState>(getRecoveryJournalState);
+  const recoveryScope = authority.recoveryScope;
+  const [snapshot, setSnapshot] = useState<{
+    recoveryScope: string;
+    state: RecoveryJournalState;
+  }>(() => ({ recoveryScope, state: getRecoveryJournalState(authority) }));
   useEffect(() => {
     let active = true;
+    beginLogMutationRecoveryBootstrap(authority);
     const update = () => {
-      if (active) setState(getRecoveryJournalState());
+      if (active) {
+        setSnapshot({ recoveryScope, state: getRecoveryJournalState(authority) });
+      }
     };
-    const unsubscribe = subscribeToLogMutationRecovery(update);
+    const unsubscribe = subscribeToLogMutationRecovery(authority, update);
+    update();
     void loadLogMutationRecoveryJournal(authority).then(update);
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [authority]);
-  return state;
+  }, [authority, recoveryScope]);
+  return snapshot.recoveryScope === recoveryScope
+    ? snapshot.state
+    : getRecoveryJournalState(authority);
 }
 
 export async function upsertLogMutationRecoveryRecord(
@@ -379,7 +412,11 @@ export async function upsertLogMutationRecoveryRecord(
       record,
     ]);
     await writeStored(storage, existing, records, record.owner_scope);
-    setCachedState({ ...existing.health, ready: existing.health.malformedRecordCount === 0, records });
+    setCachedState(record.owner_scope, {
+      ...existing.health,
+      ready: existing.health.malformedRecordCount === 0,
+      records,
+    });
   });
 }
 
@@ -391,7 +428,11 @@ export async function removeLogMutationRecoveryRecord(
     const existing = await readStored(storage, record.owner_scope);
     const records = existing.records.filter((candidate) => candidate.id !== record.id);
     await writeStored(storage, existing, records, record.owner_scope);
-    setCachedState({ ...existing.health, ready: existing.health.malformedRecordCount === 0, records });
+    setCachedState(record.owner_scope, {
+      ...existing.health,
+      ready: existing.health.malformedRecordCount === 0,
+      records,
+    });
   });
 }
 
@@ -404,7 +445,11 @@ export async function removeLogMutationRecoveryRecordById(
     const existing = await readStored(storage, authority.recoveryScope);
     const records = existing.records.filter((candidate) => candidate.id !== id);
     await writeStored(storage, existing, records, authority.recoveryScope);
-    setCachedState({ ...existing.health, ready: existing.health.malformedRecordCount === 0, records });
+    setCachedState(authority.recoveryScope, {
+      ...existing.health,
+      ready: existing.health.malformedRecordCount === 0,
+      records,
+    });
   });
 }
 
@@ -672,7 +717,7 @@ export function startLogMutationRecovery(
   dependencies: LogMutationRecoveryDependencies,
   options: RecoveryManagerOptions = {},
 ): () => void {
-  beginLogMutationRecoveryBootstrap();
+  beginLogMutationRecoveryBootstrap(dependencies.authority);
   const storage = options.storage ?? defaultStorage;
   const baseDelay = options.retryDelayMs ?? INITIAL_RETRY_DELAY_MS;
   let stopped = false;
@@ -700,7 +745,8 @@ export function startLogMutationRecovery(
     running = true;
     journalDirty = false;
     try {
-      const state = await loadLogMutationRecoveryJournal(dependencies.authority, storage).then(() => getRecoveryJournalState());
+      const state = await loadLogMutationRecoveryJournal(dependencies.authority, storage)
+        .then(() => getRecoveryJournalState(dependencies.authority));
       if (!state.ready) {
         return;
       }
@@ -734,7 +780,7 @@ export function startLogMutationRecovery(
     }
   };
 
-  const unsubscribeJournal = subscribeToLogMutationRecovery(() => {
+  const unsubscribeJournal = subscribeToLogMutationRecovery(dependencies.authority, () => {
     if (running) journalDirty = true;
     else schedule(250);
   });

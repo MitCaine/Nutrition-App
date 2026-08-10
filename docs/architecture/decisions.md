@@ -29,6 +29,7 @@ deployment-profile record remains decision provenance; the current boundary is m
 - [Saved Foods and USDA Foods remain distinct](#saved-foods-and-usda-foods-remain-distinct)
 - [Search is composed, not centralized](#search-is-composed-not-centralized)
 - [Online-first mobile architecture](#online-first-mobile-architecture)
+- [Explicit mobile application-data authority](#explicit-mobile-application-data-authority)
 
 ### Application structure and authority
 
@@ -151,6 +152,10 @@ separate makes imports explicit and lets each failure or loading state remain vi
 
 ### Online-first mobile architecture
 
+**Status:** Superseded for mobile application-data authority by
+[Explicit mobile application-data authority](#explicit-mobile-application-data-authority). It remains
+the historical remote-mode and no-synchronization decision.
+
 **Decision:** TanStack Query provides in-process server-state caching, but there is no durable
 nutrition cache, offline mutation queue, or synchronization engine.
 
@@ -160,6 +165,19 @@ committed offline.
 
 **Read more:** [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md#offline-and-caching-behavior)
 and [Project Invariants](../project/invariants.md#why-an-online-first-design)
+
+### Explicit mobile application-data authority
+
+**Decision:** Mobile startup explicitly selects exactly one `local` or `remote` application-data
+authority before runtime construction, Query cache creation, recovery, SQLite initialization, or
+remote transport initialization. Deployment/security mode is a separate setting.
+
+**Consequence:** Local mode uses the composed SQLite adapters without FastAPI or PostgreSQL; remote
+mode preserves the existing API and authentication boundary. Selection never implies fallback,
+dual writes, synchronization, cache sharing, recovery sharing, or data migration. Local USDA is a
+separate direct external integration and is not an application-data authority.
+
+**Read more:** [Epic 2 implementation backlog](../project/version-1.1/epic-2/implementation-backlog.md#e2-14-enable-explicit-local-runtime-selection-and-serverless-operation)
 
 ## Application structure and authority decisions
 

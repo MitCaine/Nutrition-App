@@ -1,9 +1,15 @@
 import React from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyLog } from "../src/features/logging/api/types";
 import { LogFoodScreen } from "../src/features/logging/screens/LogFoodScreen";
+import {
+  getRecoveryJournalState,
+  loadLogMutationRecoveryJournal,
+  LOG_MUTATION_RECOVERY_STORAGE_KEY,
+} from "../src/features/logging/recovery/logMutationRecovery";
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
@@ -84,7 +90,13 @@ async function renderMove() {
   return { renderer, onSaved };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.removeItem(LOG_MUTATION_RECOVERY_STORAGE_KEY);
+  await loadLogMutationRecoveryJournal(testRuntime.authority);
+  expect(getRecoveryJournalState(testRuntime.authority)).toEqual(expect.objectContaining({
+    ready: true,
+    records: [],
+  }));
   mockUpdateLog.mockReset();
   mockUpdateLog.mockResolvedValue({ ...legacyLog, logged_date: "2026-07-13" });
   mockCreateClientRequestId.mockClear();

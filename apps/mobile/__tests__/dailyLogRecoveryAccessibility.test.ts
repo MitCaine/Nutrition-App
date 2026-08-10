@@ -190,7 +190,7 @@ test("malformed optional display context renders a generic fallback without expo
     removeItem: jest.fn(async () => undefined),
   };
   mockRecovery.records = await loadLogMutationRecoveryJournal(testRuntime.authority, storage);
-  expect(getRecoveryJournalState()).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
+  expect(getRecoveryJournalState(testRuntime.authority)).toEqual(expect.objectContaining({ ready: true, malformedRecordCount: 0 }));
   const renderer = await renderRecovery();
   const spokenContent = JSON.stringify({
     headings: renderer.root.findAllByType(Text).map((node) => node.props.accessibilityLabel),

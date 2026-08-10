@@ -455,6 +455,7 @@ mobile_typecheck() {
 mobile_config_validate() {
     cd "$REPO_ROOT/apps/mobile"
 
+    EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
     EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
     EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
         npm run config:validate

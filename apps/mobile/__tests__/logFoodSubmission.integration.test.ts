@@ -1,4 +1,5 @@
 import React from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
@@ -128,7 +129,9 @@ function deferred(): Deferred {
   return { promise, resolve, reject };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear();
+  await loadLogMutationRecoveryJournal();
   mockCreateDeferred = deferred();
   mockUpdateDeferred = deferred();
   mockCreateLog.mockClear();

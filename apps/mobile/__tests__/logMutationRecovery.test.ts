@@ -189,7 +189,7 @@ test("older version-2 records load with an identifier-free display fallback", as
     amount_label: null,
     meal_label: null,
   });
-  expect(getRecoveryJournalState().ready).toBe(true);
+  expect(getRecoveryJournalState(TEST_AUTHORITY).ready).toBe(true);
 });
 
 async function loadRecordWithRawDisplayContext(displayContext: unknown) {
@@ -217,7 +217,7 @@ async function loadRecordWithRawDisplayContext(displayContext: unknown) {
     records: [{ ...authoritativeRecord, display_context: displayContext }],
   }));
   const [record] = await loadLogMutationRecoveryJournal(storage);
-  return { authoritativeRecord, record, state: getRecoveryJournalState() };
+  return { authoritativeRecord, record, state: getRecoveryJournalState(TEST_AUTHORITY) };
 }
 
 test("partial display context preserves valid fields without invalidating recovery authority", async () => {
@@ -292,7 +292,7 @@ test("malformed authoritative fields still activate the recovery safety lock", a
   }));
 
   expect(await loadLogMutationRecoveryJournal(storage)).toEqual([]);
-  expect(getRecoveryJournalState()).toEqual(expect.objectContaining({
+  expect(getRecoveryJournalState(TEST_AUTHORITY)).toEqual(expect.objectContaining({
     ready: false,
     malformedRecordCount: 1,
   }));
@@ -487,7 +487,7 @@ test("malformed current records block mutation recovery without deleting valid o
     records: [{ malformed: true }],
   }));
   expect(await loadLogMutationRecoveryJournal(storage)).toEqual([]);
-  expect(getRecoveryJournalState().ready).toBe(false);
+  expect(getRecoveryJournalState(TEST_AUTHORITY).ready).toBe(false);
   expect(storage.value).toContain('"malformed":true');
 });
 

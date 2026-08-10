@@ -31,6 +31,8 @@ import {
 } from "../src/storage/sqlite/migrations";
 import { withLocalWriteTransaction } from "../src/runtime/local/localWriteCoordinator";
 import { AppProviders } from "../src/app/providers/AppProviders";
+import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { bootstrapApplicationRuntime } from "../src/runtime/applicationRuntimeBootstrap";
 
 class RecordingSQLiteDatabase {
   userVersion = 0;
@@ -565,15 +567,22 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(failingDatabase.closed).toBe(true);
   });
 
-  test("remote provider startup does not open or migrate SQLite", () => {
+  test("remote application bootstrap and provider do not open or migrate SQLite", async () => {
     (openDatabaseAsync as jest.Mock).mockClear();
+    const handle = await bootstrapApplicationRuntime({
+      dataAuthority: "remote",
+      deploymentMode: "test",
+      apiBaseUrl: "http://localhost:8000/api/v1",
+    });
+    expect(handle.runtime).toBe(remoteNutritionRuntime);
     let renderer: TestRenderer.ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(
-        React.createElement(AppProviders, null, null),
+        React.createElement(AppProviders, { runtime: remoteNutritionRuntime }, null),
       );
     });
     act(() => renderer.unmount());
+    await handle.close();
     expect(openDatabaseAsync).not.toHaveBeenCalled();
   });
 });

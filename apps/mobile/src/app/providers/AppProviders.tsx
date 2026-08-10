@@ -1,12 +1,9 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect, type PropsWithChildren } from "react";
+import { useEffect, useState, type PropsWithChildren } from "react";
 import { AppThemeProvider } from "../theme/AppTheme";
 import { startLogMutationRecovery } from "../../features/logging/recovery/logMutationRecovery";
 import type { NutritionRuntime } from "../../runtime/NutritionRuntime";
 import { NutritionRuntimeProvider } from "../../runtime/NutritionRuntimeContext";
-import { remoteNutritionRuntime } from "../../runtime/remote/remoteNutritionRuntime";
-
-const queryClient = new QueryClient();
 
 function LogMutationRecoveryBootstrap({ runtime }: { runtime: NutritionRuntime }) {
   const client = useQueryClient();
@@ -17,10 +14,12 @@ function LogMutationRecoveryBootstrap({ runtime }: { runtime: NutritionRuntime }
   return null;
 }
 
-export function AppProviders({
+function AuthorityScopedProviders({
   children,
-  runtime = remoteNutritionRuntime,
-}: PropsWithChildren<{ runtime?: NutritionRuntime }>) {
+  runtime,
+}: PropsWithChildren<{ runtime: NutritionRuntime }>) {
+  const [queryClient] = useState(() => new QueryClient());
+  useEffect(() => () => queryClient.clear(), [queryClient]);
   return (
     <NutritionRuntimeProvider runtime={runtime}>
       <QueryClientProvider client={queryClient}>
@@ -28,5 +27,17 @@ export function AppProviders({
         <AppThemeProvider>{children}</AppThemeProvider>
       </QueryClientProvider>
     </NutritionRuntimeProvider>
+  );
+}
+
+export function AppProviders({
+  children,
+  runtime,
+}: PropsWithChildren<{ runtime: NutritionRuntime }>) {
+  const authorityKey = `${runtime.authority.kind}:${runtime.authority.recoveryScope}`;
+  return (
+    <AuthorityScopedProviders key={authorityKey} runtime={runtime}>
+      {children}
+    </AuthorityScopedProviders>
   );
 }

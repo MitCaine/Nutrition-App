@@ -61,14 +61,17 @@ pip-compile --strip-extras --all-build-deps --allow-unsafe --extra dev \
 ```bash
 cd apps/mobile
 npm ci
+EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm start
 ```
 
-There is no API URL fallback. Use a LAN-reachable URL for a physical device. A private internal
-build requires HTTPS and an injected private bearer credential. Never put a real credential in
-source or documentation.
+Data authority is explicit and independent of deployment mode. `remote` has no API URL fallback;
+use a LAN-reachable URL for a physical device. `local` requires neither an API URL nor a bearer
+credential and opens the application SQLite database instead. A private remote build requires
+HTTPS and an injected private bearer credential. Never put a real credential in source or
+documentation.
 
 ## If you need to modify Foods or servings
 

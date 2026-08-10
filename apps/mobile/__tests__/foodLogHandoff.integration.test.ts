@@ -1,4 +1,5 @@
 import React from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
@@ -7,6 +8,11 @@ import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../src/fea
 import { FoodDetailsScreen } from "../src/features/foods/screens/FoodDetailsScreen";
 import type { DailyLog, DailyLogEditContext } from "../src/features/logging/api/types";
 import { LogFoodScreen } from "../src/features/logging/screens/LogFoodScreen";
+import {
+  getRecoveryJournalState,
+  loadLogMutationRecoveryJournal,
+  LOG_MUTATION_RECOVERY_STORAGE_KEY,
+} from "../src/features/logging/recovery/logMutationRecovery";
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
@@ -123,7 +129,13 @@ function nutrition(
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.removeItem(LOG_MUTATION_RECOVERY_STORAGE_KEY);
+  await loadLogMutationRecoveryJournal(testRuntime.authority);
+  expect(getRecoveryJournalState(testRuntime.authority)).toEqual(expect.objectContaining({
+    ready: true,
+    records: [],
+  }));
   mockCreateLog.mockClear();
   mockUpdateLog.mockClear();
   mockSetFavorite.mockClear();

@@ -1,10 +1,14 @@
-import { validateMobileConfig } from "../../../config/runtimeConfig";
+import {
+  loadExpoPublicConfig,
+  requireRemoteMobileConfig,
+} from "../../../config/runtimeConfig";
 
-const runtimeConfig = validateMobileConfig({
-  deploymentMode: process.env.EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE,
-  apiUrl: process.env.EXPO_PUBLIC_NUTRITION_API_URL,
-  privateAuthToken: process.env.EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN,
-});
+const runtimeConfig = requireRemoteMobileConfig(loadExpoPublicConfig({
+  EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: process.env.EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY,
+  EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: process.env.EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE,
+  EXPO_PUBLIC_NUTRITION_API_URL: process.env.EXPO_PUBLIC_NUTRITION_API_URL,
+  EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN: process.env.EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN,
+}));
 
 /**
  * Stable local scope for client-only recovery records.  The credential itself

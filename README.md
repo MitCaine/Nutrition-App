@@ -140,12 +140,15 @@ target-activation operation and is not part of ordinary development startup.
 ```bash
 cd apps/mobile
 npm ci
+EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm start
 ```
 
-Use a reachable LAN URL for a physical device. Native Apple Vision OCR requires an iOS development
+Set `EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local` to run against the device SQLite authority; local
+mode does not require an API URL, bearer token, FastAPI, or PostgreSQL. Use a reachable LAN URL for
+a physical device in remote mode. Native Apple Vision OCR requires an iOS development
 build; it is not supplied by Expo Go. The rest of the application can be understood and tested
 without configuring the production-hardening control plane.
 

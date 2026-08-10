@@ -5,6 +5,8 @@ const DEPLOYMENT_MODES = new Set([
   "test",
 ]);
 
+const DATA_AUTHORITIES = new Set(["local", "remote"]);
+
 const LOCAL_ONLY_HOSTS = new Set([
   "localhost",
   "0.0.0.0",
@@ -16,6 +18,15 @@ const LOCAL_ONLY_HOSTS = new Set([
 
 function configurationError(message) {
   return new Error(`Mobile configuration error: ${message}`);
+}
+
+function resolveDataAuthority(value) {
+  if (!value || !DATA_AUTHORITIES.has(value)) {
+    throw configurationError(
+      "EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY must be local or remote",
+    );
+  }
+  return value;
 }
 
 function isLocalOnlyHost(hostname) {
@@ -62,11 +73,19 @@ function normalizeApiBaseUrl(value, deploymentMode) {
 }
 
 function validateMobileConfig(input) {
+  const dataAuthority = resolveDataAuthority(input.dataAuthority);
   const deploymentMode = input.deploymentMode;
   if (!deploymentMode || !DEPLOYMENT_MODES.has(deploymentMode)) {
     throw configurationError(
       "EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE must be development, private_single_user, production, or test",
     );
+  }
+
+  if (dataAuthority === "local") {
+    return {
+      dataAuthority,
+      deploymentMode,
+    };
   }
 
   const apiBaseUrl = normalizeApiBaseUrl(input.apiUrl, deploymentMode);
@@ -83,6 +102,7 @@ function validateMobileConfig(input) {
   }
 
   return {
+    dataAuthority,
     deploymentMode,
     apiBaseUrl,
     privateAuthToken: deploymentMode === "private_single_user" ? token : undefined,
@@ -91,10 +111,27 @@ function validateMobileConfig(input) {
 
 function loadExpoPublicConfig(env) {
   return validateMobileConfig({
+    dataAuthority: env.EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY,
     deploymentMode: env.EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE,
     apiUrl: env.EXPO_PUBLIC_NUTRITION_API_URL,
     privateAuthToken: env.EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN,
   });
 }
 
-module.exports = { isLocalOnlyHost, loadExpoPublicConfig, normalizeApiBaseUrl, validateMobileConfig };
+function requireRemoteMobileConfig(config) {
+  if (config.dataAuthority !== "remote") {
+    throw configurationError(
+      "application-data HTTP clients cannot initialize when authority is local",
+    );
+  }
+  return config;
+}
+
+module.exports = {
+  isLocalOnlyHost,
+  loadExpoPublicConfig,
+  normalizeApiBaseUrl,
+  requireRemoteMobileConfig,
+  resolveDataAuthority,
+  validateMobileConfig,
+};

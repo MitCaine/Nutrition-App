@@ -1,27 +1,50 @@
 import { validateMobileConfig } from "../config/runtimeConfig";
 
 const PRIVATE_TOKEN = "private-test-credential-at-least-32-characters";
+const REMOTE = { dataAuthority: "remote" } as const;
+
+test("local authority needs no API URL or bearer token", () => {
+  expect(validateMobileConfig({
+    dataAuthority: "local",
+    deploymentMode: "production",
+  })).toEqual({ dataAuthority: "local", deploymentMode: "production" });
+});
+
+test("local authority does not validate irrelevant remote-only values", () => {
+  expect(validateMobileConfig({
+    dataAuthority: "local",
+    deploymentMode: "private_single_user",
+    apiUrl: "not-a-url",
+    privateAuthToken: "short",
+  })).toEqual({ dataAuthority: "local", deploymentMode: "private_single_user" });
+});
 
 test("explicit development accepts simulator localhost and LAN HTTP URLs", () => {
   expect(
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "development",
       apiUrl: "http://localhost:8000",
     }).apiBaseUrl,
   ).toBe("http://localhost:8000/api/v1");
   expect(
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "development",
       apiUrl: "http://192.168.1.20:8000/api/v1/",
     }).apiBaseUrl,
   ).toBe("http://192.168.1.20:8000/api/v1");
 });
 
-test("mode and API URL never silently default", () => {
-  expect(() => validateMobileConfig({ apiUrl: "http://localhost:8000" })).toThrow(
+test("authority, deployment mode, and remote API URL never silently default", () => {
+  expect(() => validateMobileConfig({
+    deploymentMode: "development",
+    apiUrl: "http://localhost:8000",
+  })).toThrow("EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY");
+  expect(() => validateMobileConfig({ ...REMOTE, apiUrl: "http://localhost:8000" })).toThrow(
     "EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE",
   );
-  expect(() => validateMobileConfig({ deploymentMode: "development" })).toThrow(
+  expect(() => validateMobileConfig({ ...REMOTE, deploymentMode: "development" })).toThrow(
     "EXPO_PUBLIC_NUTRITION_API_URL",
   );
 });
@@ -35,6 +58,7 @@ test.each([
 ])("private release rejects local-only API host %s", (apiUrl) => {
   expect(() =>
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "private_single_user",
       apiUrl,
       privateAuthToken: PRIVATE_TOKEN,
@@ -45,6 +69,7 @@ test.each([
 test("private release requires HTTPS and its credential", () => {
   expect(() =>
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "private_single_user",
       apiUrl: "http://api.example.test/api/v1",
       privateAuthToken: PRIVATE_TOKEN,
@@ -52,6 +77,7 @@ test("private release requires HTTPS and its credential", () => {
   ).toThrow("must use HTTPS");
   expect(() =>
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "private_single_user",
       apiUrl: "https://api.example.test/api/v1",
     }),
@@ -60,6 +86,7 @@ test("private release requires HTTPS and its credential", () => {
 
 test("valid HTTPS private URL is normalized to one API boundary", () => {
   const config = validateMobileConfig({
+    ...REMOTE,
     deploymentMode: "private_single_user",
     apiUrl: "https://api.example.test/",
     privateAuthToken: PRIVATE_TOKEN,
@@ -67,6 +94,7 @@ test("valid HTTPS private URL is normalized to one API boundary", () => {
   expect(config.apiBaseUrl).toBe("https://api.example.test/api/v1");
   expect(() =>
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "private_single_user",
       apiUrl: "https://api.example.test/api/v1/api/v1",
       privateAuthToken: PRIVATE_TOKEN,
@@ -81,6 +109,7 @@ test.each([
 ])("private release rejects URL credentials, query values, and fragments: %s", (apiUrl) => {
   expect(() =>
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "private_single_user",
       apiUrl,
       privateAuthToken: PRIVATE_TOKEN,
@@ -91,6 +120,7 @@ test.each([
 test("public production remains blocked without a real identity provider", () => {
   expect(() =>
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "production",
       apiUrl: "https://api.example.test",
     }),
@@ -102,6 +132,7 @@ test("configuration errors do not reflect credential values", () => {
   let message = "";
   try {
     validateMobileConfig({
+      ...REMOTE,
       deploymentMode: "private_single_user",
       apiUrl: "not-a-url",
       privateAuthToken: sensitive,

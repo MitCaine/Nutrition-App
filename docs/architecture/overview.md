@@ -15,12 +15,15 @@ document owns structural responsibilities rather than release status or rational
 ```mermaid
 flowchart TB
     subgraph Product["Application functionality"]
-        Mobile["Expo / React Native"] --> API["FastAPI /api/v1"]
+        Mobile["Expo / React Native"] --> Selection["Explicit local or remote authority"]
+        Selection -->|remote| API["FastAPI /api/v1"]
+        Selection -->|local| LocalDB[("Application SQLite")]
         API --> Services["Application services"]
         Services --> Rules["Domain and nutrition rules"]
         Services --> Repos["Repositories"]
         Repos --> AppDB[("Application PostgreSQL")]
         Services --> USDA["USDA FoodData Central"]
+        Selection -.->|local external lookup only| USDA
         Native["Apple Vision on iOS"] --> Mobile
     end
 
@@ -32,9 +35,10 @@ flowchart TB
     end
 ```
 
-The application database is the authority for nutrition data. The control database is the
-authority for operational evidence and promotion workflow. It is not a second application backend
-and does not serve Foods, Recipes, or Daily Logs.
+The explicitly selected application-data authority is either local SQLite or the remote
+FastAPI/PostgreSQL system, never both for one running context. The control database is the authority
+for operational evidence and promotion workflow. It is not a second application backend and does
+not serve Foods, Recipes, or Daily Logs.
 
 ## Mobile layers
 
@@ -43,8 +47,9 @@ The mobile dependency direction is:
 ```text
 screen and navigation
     -> feature hook or local use-case model
-        -> feature API client
-            -> shared API transport
+        -> NutritionRuntime interface
+            -> selected local SQLite adapter
+            OR selected remote API adapter -> shared API transport
 ```
 
 | Layer | Responsibility | Typical location |
@@ -52,13 +57,15 @@ screen and navigation
 | Navigation and screens | User flow, accessibility, loading/error presentation | `src/app`, `src/features/*/screens` |
 | Hooks | Server-state queries, mutations, and cache invalidation | `src/features/*/hooks` |
 | Feature utilities | Form state, display policy, validation, error mapping | `src/features/*/utils`, `validation`, `confirmation` |
+| Runtime boundary | One composed local or remote application-data authority | `src/runtime` |
 | Feature API boundary | Request construction and runtime response validation | `src/features/*/api` |
 | Shared transport | Base URL, headers, authentication, bounded error handling | `src/shared/api/client.ts` |
 | Native boundary | Typed wrapper over the Swift OCR module | `src/native/ocr`, `modules/nutrition-ocr` |
 
-TanStack Query owns in-process server-state caching. Zod validates important runtime boundaries,
+TanStack Query owns authority-scoped in-process application-state caching. Authority changes retire
+the old Query client and recovery bootstrap before the new runtime becomes usable. Zod validates important runtime boundaries,
 particularly OCR and Food source contracts. React Hook Form and feature-specific models own draft
-input. The mobile app does not calculate authoritative persisted nutrition totals.
+input. Each selected runtime remains the sole authority for persisted nutrition totals.
 
 ## Backend layers
 
@@ -109,9 +116,10 @@ session lifecycle so they can be tested exhaustively.
 
 ### Integrations
 
-`app/integrations/usda` is the external FoodData Central boundary. The client owns HTTP and API-key
-behavior; mappers translate variable upstream payloads into the app's stable nutrient and serving
-model. The mobile app never receives the USDA key or raw upstream contract.
+`app/integrations/usda` is the remote FoodData Central boundary. In local mode, the local USDA
+adapter talks directly to FoodData Central through the separately configured personal-credential
+mechanism. Both paths map variable upstream payloads into the app's stable nutrient and serving
+model; the shared backend USDA credential is never embedded in the mobile app.
 
 ## API organization
 

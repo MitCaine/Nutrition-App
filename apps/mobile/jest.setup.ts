@@ -1,3 +1,4 @@
+process.env["EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY"] = "remote";
 process.env["EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE"] = "test";
 process.env["EXPO_PUBLIC_NUTRITION_API_URL"] = "http://localhost:8000/api/v1";
 delete process.env["EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN"];

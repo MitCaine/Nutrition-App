@@ -344,7 +344,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     setPendingDelete(nextPending);
     deleteSubmittingRef.current = true;
     try {
-      const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
+      const overlap = hasOverlappingRecovery(getRecoveryJournalState(runtime.authority).records, {
         mutationType: "delete",
         sourceDate: pendingDelete.log.logged_date,
         targetId: pendingDelete.log.id,

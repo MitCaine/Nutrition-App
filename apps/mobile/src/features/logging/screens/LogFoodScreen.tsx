@@ -501,7 +501,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         payload: { operation: "update", log_id: log.id, input: finalInput },
       });
     }
-    const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
+    const overlap = hasOverlappingRecovery(getRecoveryJournalState(runtime.authority).records, {
       mutationType: restrictedMove ? "move" : "edit",
       sourceDate: log.logged_date,
       destinationDate: typeof updateInput.logged_date === "string" ? updateInput.logged_date : log.logged_date,
@@ -587,7 +587,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       setError("This date is no longer eligible for logging. No entry was created.");
       return;
     }
-    const recoveryHealth = getRecoveryJournalState();
+    const recoveryHealth = getRecoveryJournalState(runtime.authority);
     if (!recoveryHealth.ready) {
       setError("Recovery state is unavailable. Daily Log mutations are temporarily locked until it can be read safely.");
       return;
@@ -749,7 +749,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         },
         payload: { operation: "create", input: createInput },
       });
-      const overlap = hasOverlappingRecovery(getRecoveryJournalState().records, {
+      const overlap = hasOverlappingRecovery(getRecoveryJournalState(runtime.authority).records, {
         mutationType: "create",
         sourceDate: date,
         destinationDate: date,
