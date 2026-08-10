@@ -1,6 +1,5 @@
 /**
- * Public local-foundation entry point. A complete NutritionRuntime remains
- * out of scope until the remaining local feature slices compose all runtime
- * capabilities; the E2-12 Target adapter is available through the foundation.
+ * Public local-foundation entry point. E2-13 completes the local capability
+ * set; explicit application selection and bootstrap remain owned by E2-14.
  */
 export * from "./index";

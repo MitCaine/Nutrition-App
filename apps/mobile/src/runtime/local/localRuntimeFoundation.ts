@@ -40,6 +40,11 @@ import {
   createLocalTargetsRuntime,
   type LocalTargetsRuntimeOptions,
 } from "./localTargetsRuntime";
+import {
+  createLocalOcrRuntime,
+  type LocalOcrRuntime,
+  type LocalOcrRuntimeOptions,
+} from "./localOcrRuntime";
 
 export type LocalRuntimeFoundation = Readonly<{
   database: SQLiteDatabase;
@@ -51,6 +56,7 @@ export type LocalRuntimeFoundation = Readonly<{
   recipes: RecipesRuntime;
   dailyLogs: DailyLogsRuntime;
   targets: TargetsRuntime;
+  ocr: LocalOcrRuntime;
   usda: UsdaRuntime;
 }>;
 
@@ -60,6 +66,7 @@ export type OpenLocalRuntimeFoundationOptions = OpenNutritionDatabaseOptions & R
   recipes?: LocalRecipesRuntimeOptions;
   dailyLogs?: LocalDailyLogsRuntimeOptions;
   targets?: LocalTargetsRuntimeOptions;
+  ocr?: LocalOcrRuntimeOptions;
   usda?: LocalUsdaRuntimeOptions;
 }>;
 
@@ -72,6 +79,7 @@ export async function bootstrapLocalRuntimeFoundation(
   recipesOptions: LocalRecipesRuntimeOptions = {},
   dailyLogsOptions: LocalDailyLogsRuntimeOptions = {},
   targetsOptions: LocalTargetsRuntimeOptions = {},
+  ocrOptions: LocalOcrRuntimeOptions = {},
 ): Promise<LocalRuntimeFoundation> {
   const identity = await ensureLocalOwner(database);
   await ensureLocalNutrientCatalog(database);
@@ -86,6 +94,7 @@ export async function bootstrapLocalRuntimeFoundation(
     recipes: createLocalRecipesRuntime(database, identity.ownerId, recipesOptions),
     dailyLogs: createLocalDailyLogsRuntime(database, identity.ownerId, dailyLogsOptions),
     targets: createLocalTargetsRuntime(database, identity.ownerId, targetsOptions),
+    ocr: createLocalOcrRuntime(database, identity.ownerId, foods, ocrOptions),
     usda: createLocalUsdaRuntime(foods, usdaOptions),
   };
 }
@@ -99,9 +108,8 @@ export type OpenLocalRuntimeHandle = LocalRuntimeFoundation & Readonly<{
 
 /**
  * Open, migrate, and bootstrap the local foundation without selecting a
- * runtime in the app provider. Later feature slices can compose these
- * capabilities into a full NutritionRuntime without changing the authority
- * boundary established here.
+ * runtime in the app provider. E2-14 owns explicit application selection and
+ * bootstrap of this now-complete local capability set.
  */
 export async function openLocalRuntimeFoundation(
   options: OpenLocalRuntimeFoundationOptions = {},
@@ -112,6 +120,7 @@ export async function openLocalRuntimeFoundation(
     recipes: recipesOptions,
     dailyLogs: dailyLogsOptions,
     targets: targetsOptions,
+    ocr: ocrOptions,
     usda: usdaOptions,
     ...databaseOptions
   } = options;
@@ -125,6 +134,7 @@ export async function openLocalRuntimeFoundation(
       recipesOptions,
       dailyLogsOptions,
       targetsOptions,
+      ocrOptions,
     );
     return {
       ...foundation,

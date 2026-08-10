@@ -166,6 +166,10 @@ describe("E2-04 local identity, calendar, and nutrient foundations", () => {
       recoveryScope: `local:${first.identity.ownerId}`,
     });
     expect(first.recipes).toBeDefined();
+    expect(first.ocr).toEqual(expect.objectContaining({
+      parseNutritionLabel: expect.any(Function),
+      confirmNutritionLabel: expect.any(Function),
+    }));
   });
 
   test("seeds the canonical nutrient catalog idempotently and rejects drift", async () => {

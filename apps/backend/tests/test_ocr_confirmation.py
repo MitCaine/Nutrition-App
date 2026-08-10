@@ -1,4 +1,5 @@
 from copy import deepcopy
+import json
 from uuid import UUID, uuid4
 
 import pytest
@@ -64,6 +65,45 @@ def confirmation_payload():
         }],
         "parser_warning_codes": ["unmapped_nutrient"],
     }
+
+
+def _payload_with_trace_bytes(target_bytes, unicode_unit=""):
+    payload = confirmation_payload()
+    payload["parser_warning_codes"] = [""]
+    snapshot = OcrNutritionConfirmationRequest.model_validate(payload).trace_snapshot()
+    base_bytes = len(json.dumps(snapshot, separators=(",", ":")).encode())
+    unit_bytes = len(json.dumps(unicode_unit, separators=(",", ":")).encode()) - 2
+    available = target_bytes - base_bytes
+    unicode_count = 0 if not unicode_unit else available // unit_bytes
+    payload["parser_warning_codes"] = [
+        unicode_unit * unicode_count + "x" * (available - unicode_count * unit_bytes)
+    ]
+    snapshot["parser_warning_codes"] = payload["parser_warning_codes"]
+    assert len(json.dumps(snapshot, separators=(",", ":")).encode()) == target_bytes
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("target_bytes", "unicode_unit", "accepted"),
+    [
+        (47_999, "", True),
+        (48_001, "", False),
+        (48_000, "é", True),
+        (48_001, "é", False),
+        (48_000, "😀", True),
+        (48_001, "😀", False),
+    ],
+)
+def test_confirmation_trace_limit_uses_ascii_escaped_json_bytes(
+    target_bytes, unicode_unit, accepted
+):
+    payload = _payload_with_trace_bytes(target_bytes, unicode_unit)
+
+    if accepted:
+        OcrNutritionConfirmationRequest.model_validate(payload)
+    else:
+        with pytest.raises(ValueError, match="confirmation trace exceeds size limit"):
+            OcrNutritionConfirmationRequest.model_validate(payload)
 
 
 def test_confirmation_creates_manual_food_and_bounded_trace_atomically(client, db_session):

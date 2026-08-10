@@ -184,6 +184,14 @@ export type LocalFoodMutationStage =
   | "after_nutrients"
   | "after_serving";
 
+export type LocalFoodTransactionCreateHooks = Readonly<{
+  onMutationStage?: (
+    stage: Extract<LocalFoodMutationStage, "after_food" | "after_servings" | "after_nutrients">,
+  ) => Promise<void> | void;
+  /** Compose provenance or another required child before the Food response is materialized. */
+  afterChildren?: (foodId: string) => Promise<void> | void;
+}>;
+
 export type LocalFoodsRuntimeOptions = Readonly<{
   /** Injectable failure seam used by focused replacement rollback tests. */
   onMutationStage?: (stage: LocalFoodMutationStage) => Promise<void> | void;
@@ -642,18 +650,33 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           foodId,
         );
       }
-      await this.insertFood(transaction, foodId, normalized);
-      await this.stage("after_food");
-      await this.insertServings(transaction, foodId, normalized.serving_definitions);
-      await this.stage("after_servings");
-      await this.insertNutrients(transaction, foodId, normalized.nutrients);
-      await this.stage("after_nutrients");
-      const result = await this.foodResponse(transaction, foodId);
+      const result = await this.insertCreatedFood(transaction, foodId, normalized);
       if (normalized.client_request_id && requestFingerprint) {
         await this.completeReceipt(transaction, "food.create_manual", normalized.client_request_id, result);
       }
       return result;
     });
+  }
+
+  /**
+   * Internal composition seam for a feature adapter that owns a broader atomic
+   * write. The caller must already hold the established local write authority.
+   */
+  async createInTransaction(
+    transaction: SQLiteDatabase,
+    input: FoodCreateInput,
+    hooks: LocalFoodTransactionCreateHooks = {},
+  ): Promise<Food> {
+    const normalized = this.normalizeCreate(input);
+    if (normalized.client_request_id !== null) {
+      throw invalidFood("Nested Food creation cannot carry a separate request identity.");
+    }
+    return this.insertCreatedFood(transaction, generatedId(), normalized, hooks);
+  }
+
+  /** Read one newly created/replayed Food coherently from the caller's transaction. */
+  async getInTransaction(transaction: SQLiteDatabase, foodId: string): Promise<Food> {
+    return this.foodResponse(transaction, this.requireUuid(foodId));
   }
 
   /**
@@ -1113,6 +1136,25 @@ export class LocalFoodsRuntime implements FoodsRuntime {
 
   private async stage(stage: LocalFoodMutationStage): Promise<void> {
     await this.onMutationStage?.(stage);
+  }
+
+  private async insertCreatedFood(
+    transaction: SQLiteDatabase,
+    foodId: string,
+    input: NormalizedFoodInput,
+    hooks: LocalFoodTransactionCreateHooks = {},
+  ): Promise<Food> {
+    await this.insertFood(transaction, foodId, input);
+    await this.stage("after_food");
+    await hooks.onMutationStage?.("after_food");
+    await this.insertServings(transaction, foodId, input.serving_definitions);
+    await this.stage("after_servings");
+    await hooks.onMutationStage?.("after_servings");
+    await this.insertNutrients(transaction, foodId, input.nutrients);
+    await this.stage("after_nutrients");
+    await hooks.onMutationStage?.("after_nutrients");
+    await hooks.afterChildren?.(foodId);
+    return this.foodResponse(transaction, foodId);
   }
 
   private async insertFood(

@@ -26,6 +26,7 @@ export {
   type LocalFoodImportInput,
   type LocalFoodNutrientSourceMetadata,
   type LocalFoodMutationStage,
+  type LocalFoodTransactionCreateHooks,
   type LocalFoodsRuntimeOptions,
 } from "./localFoodsRuntime";
 export {
@@ -60,6 +61,19 @@ export {
   type LocalTargetMutationStage,
   type LocalTargetsRuntimeOptions,
 } from "./localTargetsRuntime";
+export {
+  LocalOcrRuntime,
+  createLocalOcrRuntime,
+  OCR_CONFIRMATION_TRACE_SCHEMA_VERSION,
+  MAX_OCR_CONFIRMATION_TRACE_BYTES,
+  type LocalOcrConfirmationStage,
+  type LocalOcrRuntimeOptions,
+} from "./localOcrRuntime";
+export {
+  NUTRITION_LABEL_PARSER_VERSION,
+  parseLocalNutritionLabel,
+  type LocalOcrParseInput,
+} from "./localOcrParser";
 export {
   bootstrapLocalRuntimeFoundation,
   openLocalRuntimeFoundation,
