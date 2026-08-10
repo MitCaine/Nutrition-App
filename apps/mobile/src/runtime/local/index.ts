@@ -55,6 +55,12 @@ export {
   type LocalDailyLogsRuntimeOptions,
 } from "./localDailyLogsRuntime";
 export {
+  LocalTargetsRuntime,
+  createLocalTargetsRuntime,
+  type LocalTargetMutationStage,
+  type LocalTargetsRuntimeOptions,
+} from "./localTargetsRuntime";
+export {
   bootstrapLocalRuntimeFoundation,
   openLocalRuntimeFoundation,
   type LocalRuntimeFoundation,

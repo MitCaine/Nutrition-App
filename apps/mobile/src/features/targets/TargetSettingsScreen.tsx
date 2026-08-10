@@ -84,7 +84,7 @@ export function TargetSettingsScreen({
 
   const query = useQuery({
     queryKey: ["targets"],
-    queryFn: runtime.targets.getConfiguration,
+    queryFn: () => runtime.targets.getConfiguration(),
   });
 
   const [draft, setDraft] = useState(EMPTY_TARGET_DRAFT);

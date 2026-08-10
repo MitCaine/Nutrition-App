@@ -5,7 +5,7 @@ import {
   type NutritionDatabaseHandle,
   type OpenNutritionDatabaseOptions,
 } from "../../storage/sqlite/migrations";
-import type { DailyLogsRuntime, NutrientsRuntime, RecipesRuntime, UsdaRuntime } from "../NutritionRuntime";
+import type { DailyLogsRuntime, NutrientsRuntime, RecipesRuntime, TargetsRuntime, UsdaRuntime } from "../NutritionRuntime";
 import {
   ensureLocalOwner,
   type LocalOwnerIdentity,
@@ -36,6 +36,10 @@ import {
   createLocalDailyLogsRuntime,
   type LocalDailyLogsRuntimeOptions,
 } from "./localDailyLogsRuntime";
+import {
+  createLocalTargetsRuntime,
+  type LocalTargetsRuntimeOptions,
+} from "./localTargetsRuntime";
 
 export type LocalRuntimeFoundation = Readonly<{
   database: SQLiteDatabase;
@@ -46,6 +50,7 @@ export type LocalRuntimeFoundation = Readonly<{
   foods: LocalFoodsRuntime;
   recipes: RecipesRuntime;
   dailyLogs: DailyLogsRuntime;
+  targets: TargetsRuntime;
   usda: UsdaRuntime;
 }>;
 
@@ -54,6 +59,7 @@ export type OpenLocalRuntimeFoundationOptions = OpenNutritionDatabaseOptions & R
   foods?: LocalFoodsRuntimeOptions;
   recipes?: LocalRecipesRuntimeOptions;
   dailyLogs?: LocalDailyLogsRuntimeOptions;
+  targets?: LocalTargetsRuntimeOptions;
   usda?: LocalUsdaRuntimeOptions;
 }>;
 
@@ -65,6 +71,7 @@ export async function bootstrapLocalRuntimeFoundation(
   usdaOptions: LocalUsdaRuntimeOptions = {},
   recipesOptions: LocalRecipesRuntimeOptions = {},
   dailyLogsOptions: LocalDailyLogsRuntimeOptions = {},
+  targetsOptions: LocalTargetsRuntimeOptions = {},
 ): Promise<LocalRuntimeFoundation> {
   const identity = await ensureLocalOwner(database);
   await ensureLocalNutrientCatalog(database);
@@ -78,6 +85,7 @@ export async function bootstrapLocalRuntimeFoundation(
     foods,
     recipes: createLocalRecipesRuntime(database, identity.ownerId, recipesOptions),
     dailyLogs: createLocalDailyLogsRuntime(database, identity.ownerId, dailyLogsOptions),
+    targets: createLocalTargetsRuntime(database, identity.ownerId, targetsOptions),
     usda: createLocalUsdaRuntime(foods, usdaOptions),
   };
 }
@@ -103,6 +111,7 @@ export async function openLocalRuntimeFoundation(
     foods: foodsOptions,
     recipes: recipesOptions,
     dailyLogs: dailyLogsOptions,
+    targets: targetsOptions,
     usda: usdaOptions,
     ...databaseOptions
   } = options;
@@ -115,6 +124,7 @@ export async function openLocalRuntimeFoundation(
       usdaOptions,
       recipesOptions,
       dailyLogsOptions,
+      targetsOptions,
     );
     return {
       ...foundation,

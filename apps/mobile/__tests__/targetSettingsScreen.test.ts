@@ -6,6 +6,7 @@ import type { TargetConfiguration } from "../src/features/targets/api/types";
 const mockUpdate = jest.fn();
 const mockReset = jest.fn();
 const mockInvalidate = jest.fn();
+let mockQueryFnError: unknown = null;
 const mockConfiguration: TargetConfiguration = {
   profile: null,
   estimatedMaintenanceCalories: { availability: "unavailable", amount: null, unit: "kcal", authority: "calculated_estimate", reasonCode: "target_profile_incomplete", equation: "mifflin_st_jeor_1990" },
@@ -15,7 +16,16 @@ const mockConfiguration: TargetConfiguration = {
 };
 
 jest.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: mockConfiguration, isLoading: false, isError: false }),
+  useQuery: (options: { queryFn?: () => unknown }) => {
+    if (options.queryFn) {
+      try {
+        void options.queryFn();
+      } catch (error) {
+        mockQueryFnError = error;
+      }
+    }
+    return { data: mockConfiguration, isLoading: false, isError: false };
+  },
   useQueryClient: () => ({ invalidateQueries: (...args: unknown[]) => mockInvalidate(...args) }),
 }));
 jest.mock("../src/features/targets/api/targetApi", () => ({
@@ -41,16 +51,35 @@ const testRuntime = createNutritionTestRuntime({
   },
 });
 
-async function render() {
+const receiverMarker = {};
+const receiverSensitiveTargets = {
+  receiverMarker,
+  ...remoteNutritionRuntime.targets,
+  getConfiguration: function (this: unknown) {
+    if (typeof this !== "object" || this === null || (this as { receiverMarker?: unknown }).receiverMarker !== receiverMarker) {
+      throw new Error("Target configuration receiver was lost");
+    }
+    return Promise.resolve(mockConfiguration);
+  },
+};
+const receiverSensitiveRuntime = createNutritionTestRuntime({ targets: receiverSensitiveTargets });
+
+async function render(runtime = testRuntime) {
   let renderer!: TestRenderer.ReactTestRenderer;
-  await act(async () => { renderer = TestRenderer.create(withNutritionRuntime(React.createElement(TargetSettingsScreen, { onBack: jest.fn() }), testRuntime)); });
+  await act(async () => { renderer = TestRenderer.create(withNutritionRuntime(React.createElement(TargetSettingsScreen, { onBack: jest.fn() }), runtime)); });
   return renderer;
 }
 function action(root: TestRenderer.ReactTestInstance, label: string) { return root.findAllByType(Pressable).find((item) => item.props.accessibilityLabel === label)!; }
 function input(root: TestRenderer.ReactTestInstance, label: string) { return root.findAllByType(TextInput).find((item) => item.props.accessibilityLabel === label)!; }
 function textContent(node: TestRenderer.ReactTestInstance | string): string { return typeof node === "string" ? node : node.children.map((child) => textContent(child as TestRenderer.ReactTestInstance | string)).join(""); }
 
-beforeEach(() => { jest.clearAllMocks(); mockInvalidate.mockResolvedValue(undefined); });
+beforeEach(() => { jest.clearAllMocks(); mockQueryFnError = null; mockInvalidate.mockResolvedValue(undefined); });
+
+test("settings query preserves a receiver-dependent TargetsRuntime method", async () => {
+  const renderer = await render(receiverSensitiveRuntime);
+  expect(mockQueryFnError).toBeNull();
+  await act(async () => renderer.unmount());
+});
 
 test("settings distinguishes FDA Daily Values from optional personal estimates and is accessible", async () => {
   const renderer = await render();

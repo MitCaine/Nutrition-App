@@ -15,6 +15,7 @@ export class LocalRuntimeError extends RuntimeError {
     code: string;
     message: string;
     field?: string;
+    fieldErrorCode?: string;
     retryable?: boolean;
     mutationOutcome?: RuntimeMutationOutcome;
     details?: unknown;
@@ -24,7 +25,7 @@ export class LocalRuntimeError extends RuntimeError {
       code: input.code,
       message: input.message,
       fieldErrors: input.field
-        ? [{ field: input.field, code: input.code, message: input.message }]
+        ? [{ field: input.field, code: input.fieldErrorCode ?? input.code, message: input.message }]
         : [],
       retryable: input.retryable ?? false,
       mutationOutcome: input.mutationOutcome ?? "not_applicable",
