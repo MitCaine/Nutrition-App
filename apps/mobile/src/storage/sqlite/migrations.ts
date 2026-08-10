@@ -90,6 +90,19 @@ export class SQLiteSnapshotReplacementTargetError extends SQLiteMigrationError {
   }
 }
 
+/**
+ * Bounded contention from another SQLite writer.  Runtime adapters translate
+ * this storage-level signal into the shared RuntimeError envelope.
+ */
+export class SQLiteWriteBusyError extends SQLiteMigrationError {
+  readonly code = "sqlite_write_busy";
+
+  constructor() {
+    super("SQLite could not acquire local write authority before the bounded timeout.");
+    this.name = "SQLiteWriteBusyError";
+  }
+}
+
 type SchemaVersionRow = { user_version: number };
 type MigrationLedgerRow = { version: number; migration_id: string };
 
@@ -234,6 +247,44 @@ async function configureExclusiveTransaction(
   }
 }
 
+const SQLITE_OPERATION_TAILS = new WeakMap<SQLiteDatabase, Promise<void>>();
+
+async function withSQLiteOperationOrder<T>(
+  database: SQLiteDatabase,
+  operation: () => Promise<T> | T,
+): Promise<T> {
+  const previous = SQLITE_OPERATION_TAILS.get(database);
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  SQLITE_OPERATION_TAILS.set(database, current);
+
+  if (previous) await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (SQLITE_OPERATION_TAILS.get(database) === current) {
+      SQLITE_OPERATION_TAILS.delete(database);
+    }
+  }
+}
+
+function isSQLiteBusyOrLocked(error: unknown): boolean {
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  const code = typeof candidate?.code === "string" ? candidate.code.toUpperCase() : "";
+  const message = typeof candidate?.message === "string"
+    ? candidate.message.toLowerCase()
+    : String(error).toLowerCase();
+  return code === "SQLITE_BUSY"
+    || code === "SQLITE_LOCKED"
+    || message.includes("sqlite_busy")
+    || message.includes("sqlite_locked")
+    || message.includes("database is busy")
+    || message.includes("database is locked");
+}
+
 /**
  * Run one invariant-sensitive operation on Expo SQLite's isolated native
  * connection and explicit EXCLUSIVE transaction.  Callers must use the
@@ -245,12 +296,34 @@ export async function withExclusiveSQLiteTransaction<T>(
   database: SQLiteDatabase,
   operation: (transaction: SQLiteDatabase) => Promise<T> | T,
 ): Promise<T> {
-  let result!: T;
-  await database.withExclusiveTransactionAsync(async (transaction) => {
-    await configureExclusiveTransaction(transaction);
-    result = await operation(transaction);
+  return withSQLiteOperationOrder(database, async () => {
+    try {
+      let result!: T;
+      await database.withExclusiveTransactionAsync(async (transaction) => {
+        await configureExclusiveTransaction(transaction);
+        result = await operation(transaction);
+      });
+      return result;
+    } catch (error) {
+      if (isSQLiteBusyOrLocked(error)) {
+        throw new SQLiteWriteBusyError();
+      }
+      throw error;
+    }
   });
-  return result;
+}
+
+/**
+ * Run one coherent outer-connection read after every operation that was
+ * already queued when this callback joined the local SQLite FIFO.  The read
+ * occupies its own FIFO slot, so later local writes cannot interleave between
+ * the receipt and resource observations used for one status decision.
+ */
+export function withOrderedSQLiteRead<T>(
+  database: SQLiteDatabase,
+  operation: () => Promise<T> | T,
+): Promise<T> {
+  return withSQLiteOperationOrder(database, operation);
 }
 
 /** Enable the required settings on one newly opened native connection. */
@@ -297,8 +370,7 @@ export async function migrateNutritionDatabase(
   }
 
   const appliedVersions: number[] = [];
-  await database.withExclusiveTransactionAsync(async (transaction) => {
-    await configureExclusiveTransaction(transaction);
+  await withExclusiveSQLiteTransaction(database, async (transaction) => {
     await transaction.execAsync(MIGRATION_LEDGER_DDL);
     for (const migration of migrations.slice(currentVersion)) {
       await migration.up(transaction);
@@ -382,13 +454,18 @@ export async function withDailyLogSnapshotReplacement<T>(
   dailyLogId: string,
   operation: (transaction: SQLiteDatabase) => Promise<T> | T,
   options: Readonly<{
-    beforeTarget?: (transaction: SQLiteDatabase) => Promise<void> | void;
+    beforeTarget?: (
+      transaction: SQLiteDatabase,
+    ) => Promise<{ readonly completed: true; readonly result: T } | void>
+      | { readonly completed: true; readonly result: T }
+      | void;
   }> = {},
 ): Promise<T> {
-  let result!: T;
-  await database.withExclusiveTransactionAsync(async (transaction) => {
-    await configureExclusiveTransaction(transaction);
-    await options.beforeTarget?.(transaction);
+  return withExclusiveSQLiteTransaction(database, async (transaction) => {
+    const prepared = await options.beforeTarget?.(transaction);
+    if (prepared?.completed) {
+      return prepared.result;
+    }
     const target = await transaction.getFirstAsync<{ present: number }>(
       `SELECT 1 AS "present" FROM "daily_logs" WHERE "id" = ? AND "user_id" = ?`,
       [dailyLogId, userId],
@@ -420,7 +497,7 @@ export async function withDailyLogSnapshotReplacement<T>(
        VALUES (?, ?, ?)`,
       [userId, dailyLogId, originalSnapshotCount.snapshot_count],
     );
-    result = await operation(transaction);
+    const result = await operation(transaction);
 
     const scope = await transaction.getFirstAsync<{
       original_snapshot_count: number;
@@ -480,6 +557,6 @@ export async function withDailyLogSnapshotReplacement<T>(
       `DELETE FROM "${SQLITE_SNAPSHOT_SCOPE_TABLE}" WHERE "user_id" = ? AND "daily_log_id" = ?`,
       [userId, dailyLogId],
     );
+    return result;
   });
-  return result;
 }

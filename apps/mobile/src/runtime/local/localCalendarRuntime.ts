@@ -15,7 +15,7 @@ import {
 } from "../../shared/exact/canonicalValues";
 import type { CalendarRuntime } from "../NutritionRuntime";
 import type { RuntimeMutationOutcome } from "../RuntimeError";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { withLocalWriteTransaction } from "./localWriteCoordinator";
 import { LocalRuntimeError } from "./localErrors";
 
 type ProfileRow = Readonly<{
@@ -395,7 +395,7 @@ export class LocalCalendarRuntime implements CalendarRuntime {
 
   async establishTimeZone(timeZone: string): Promise<CalendarState> {
     const proposedTimeZone = normalizeTimeZone(timeZone, "confirmed_non_commit");
-    return withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+    return withLocalWriteTransaction(this.database, async (transaction) => {
       await assertOwner(transaction, this.ownerId, "confirmed_non_commit");
       const now = readClock(this.now);
       const profile = await readProfile(transaction, this.ownerId);
@@ -451,7 +451,7 @@ export class LocalCalendarRuntime implements CalendarRuntime {
     previewToken: string;
   }): Promise<CalendarState> {
     const proposedTimeZone = normalizeTimeZone(input.timeZone, "confirmed_non_commit");
-    return withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+    return withLocalWriteTransaction(this.database, async (transaction) => {
       await assertOwner(transaction, this.ownerId, "confirmed_non_commit");
       const now = readClock(this.now);
       const profile = await readProfile(transaction, this.ownerId);
@@ -498,7 +498,7 @@ export class LocalCalendarRuntime implements CalendarRuntime {
   /** Match the remote precondition used before a Daily Log mutation. */
   async validateMutationContext(expectedRevision: number, loggedDate: string): Promise<void> {
     const canonicalDate = parseDateOnly(loggedDate);
-    await withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+    await withLocalWriteTransaction(this.database, async (transaction) => {
       await assertOwner(transaction, this.ownerId, "confirmed_non_commit");
       const now = readClock(this.now);
       const profile = await readProfile(transaction, this.ownerId);
@@ -524,7 +524,7 @@ export class LocalCalendarRuntime implements CalendarRuntime {
 
   /** Match the remote delete precondition; legacy future cleanup remains allowed. */
   async validateDeleteContext(expectedRevision: number): Promise<void> {
-    await withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+    await withLocalWriteTransaction(this.database, async (transaction) => {
       await assertOwner(transaction, this.ownerId, "confirmed_non_commit");
       const profile = await readProfile(transaction, this.ownerId);
       if (!profile?.authoritative_time_zone) {

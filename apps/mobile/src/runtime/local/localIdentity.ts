@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 
 import { localAuthorityIdentity, type RuntimeAuthorityIdentity } from "../authorityIdentity";
 import { parseUuid, type CanonicalUuid } from "../../shared/exact/canonicalValues";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { withLocalWriteTransaction } from "./localWriteCoordinator";
 import { LocalRuntimeError } from "./localErrors";
 
 /** Reserved local placeholder; local mode does not authenticate over HTTP. */
@@ -37,7 +37,7 @@ function identityConflict(): LocalRuntimeError {
  * arbitrary owner selection.
  */
 export async function ensureLocalOwner(database: SQLiteDatabase): Promise<LocalOwnerIdentity> {
-  return withExclusiveSQLiteTransaction(database, async (transaction) => {
+  return withLocalWriteTransaction(database, async (transaction) => {
     const users = await transaction.getAllAsync<UserRow>(
       `SELECT "id", "email" FROM "users" ORDER BY "id"`,
     );

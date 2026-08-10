@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import type { NutrientDefinition } from "../../features/foods/api/types";
 import type { NutrientsRuntime } from "../NutritionRuntime";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { withLocalWriteTransaction } from "./localWriteCoordinator";
 import { LocalRuntimeError } from "./localErrors";
 
 type NutrientRow = Readonly<{
@@ -68,7 +68,7 @@ async function readAndValidateCatalog(transaction: SQLiteDatabase): Promise<Nutr
 export async function ensureLocalNutrientCatalog(
   database: SQLiteDatabase,
 ): Promise<NutrientDefinition[]> {
-  return withExclusiveSQLiteTransaction(database, async (transaction) => {
+  return withLocalWriteTransaction(database, async (transaction) => {
     for (const [id, displayName, nutrientKind, defaultUnit, parentNutrientId, displayOrder] of
       SQLITE_NUTRIENT_SEED_ROWS) {
       await transaction.runAsync(
@@ -94,4 +94,3 @@ export class LocalNutrientsRuntime implements NutrientsRuntime {
 export function createLocalNutrientsRuntime(database: SQLiteDatabase): NutrientsRuntime {
   return new LocalNutrientsRuntime(database);
 }
-

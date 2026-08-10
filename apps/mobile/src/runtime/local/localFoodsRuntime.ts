@@ -37,7 +37,7 @@ import {
   type ResponseDecimal,
 } from "../../shared/exact/decimal";
 import type { FoodsRuntime } from "../NutritionRuntime";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { withLocalWriteTransaction } from "./localWriteCoordinator";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import { LocalRuntimeError } from "./localErrors";
 import {
@@ -1087,7 +1087,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
 
   private async mutate<T>(operation: (transaction: SQLiteDatabase) => Promise<T>): Promise<T> {
     try {
-      return await withExclusiveSQLiteTransaction(this.database, operation);
+      return await withLocalWriteTransaction(this.database, operation);
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
       const message = String(error).toLowerCase();

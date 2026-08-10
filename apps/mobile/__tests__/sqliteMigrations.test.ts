@@ -20,12 +20,16 @@ import {
   SQLITE_BASELINE_MIGRATION,
   SQLITE_MIGRATIONS,
   SQLiteSnapshotReplacementError,
+  SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
   migrateNutritionDatabase,
   openNutritionDatabase,
   withDailyLogSnapshotReplacement,
+  withExclusiveSQLiteTransaction,
+  withOrderedSQLiteRead,
   type SQLiteMigration,
 } from "../src/storage/sqlite/migrations";
+import { withLocalWriteTransaction } from "../src/runtime/local/localWriteCoordinator";
 import { AppProviders } from "../src/app/providers/AppProviders";
 
 class RecordingSQLiteDatabase {
@@ -348,6 +352,69 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(database.executed).toContain(
       `DELETE FROM "${SQLITE_SNAPSHOT_SCOPE_TABLE}" WHERE "user_id" = ? AND "daily_log_id" = ?`,
     );
+  });
+
+  test("serializes overlapping writes and gives an ordered read one coherent FIFO slot", async () => {
+    const database = new RecordingSQLiteDatabase();
+    let releaseWrite!: () => void;
+    const writeBlocked = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    let releaseRead!: () => void;
+    const readBlocked = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let enteredFirst!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { enteredFirst = resolve; });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => { enteredRead = resolve; });
+    const order: string[] = [];
+
+    const first = withExclusiveSQLiteTransaction(asSQLiteDatabase(database), async () => {
+      order.push("first-start");
+      enteredFirst();
+      await writeBlocked;
+      order.push("first-end");
+    });
+    await firstEntered;
+    const read = withOrderedSQLiteRead(asSQLiteDatabase(database), async () => {
+      order.push("read-start");
+      enteredRead();
+      await readBlocked;
+      order.push("read-end");
+    });
+    const second = withExclusiveSQLiteTransaction(asSQLiteDatabase(database), async () => {
+      order.push("second");
+    });
+    await Promise.resolve();
+
+    expect(database.transactions).toBe(1);
+    expect(order).toEqual(["first-start"]);
+    releaseWrite();
+    await readEntered;
+    expect(database.transactions).toBe(1);
+    expect(order).toEqual(["first-start", "first-end", "read-start"]);
+    releaseRead();
+    await Promise.all([first, read, second]);
+    expect(database.transactions).toBe(2);
+    expect(order).toEqual(["first-start", "first-end", "read-start", "read-end", "second"]);
+  });
+
+  test.each([
+    ["SQLITE_BUSY", "database is busy"],
+    ["SQLITE_LOCKED", "database is locked"],
+  ])("maps bounded %s contention to storage and runtime-neutral errors", async (code, message) => {
+    const database = {
+      withExclusiveTransactionAsync: jest.fn(async () => {
+        throw Object.assign(new Error(message), { code });
+      }),
+    } as unknown as SQLiteDatabase;
+
+    await expect(withExclusiveSQLiteTransaction(database, async () => undefined))
+      .rejects.toBeInstanceOf(SQLiteWriteBusyError);
+    await expect(withLocalWriteTransaction(database, async () => undefined)).rejects.toMatchObject({
+      kind: "unavailable",
+      code: "local_write_busy",
+      retryable: true,
+      mutationOutcome: "confirmed_non_commit",
+    });
+    expect(database.withExclusiveTransactionAsync).toHaveBeenCalledTimes(2);
   });
 
   test("accepts a complete replacement when the surviving header values are unchanged", async () => {

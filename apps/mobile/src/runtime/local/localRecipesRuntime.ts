@@ -30,7 +30,7 @@ import {
   parseNullableDecimal,
   type ExactDecimal,
 } from "../../shared/exact/decimal";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import { withLocalWriteTransaction } from "./localWriteCoordinator";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { RecipesRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
@@ -1628,7 +1628,7 @@ export class LocalRecipesRuntime implements RecipesRuntime {
 
   private async mutate<T>(operation: (transaction: SQLiteDatabase) => Promise<T>): Promise<T> {
     try {
-      return await withExclusiveSQLiteTransaction(this.database, operation);
+      return await withLocalWriteTransaction(this.database, operation);
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
       throw localError({

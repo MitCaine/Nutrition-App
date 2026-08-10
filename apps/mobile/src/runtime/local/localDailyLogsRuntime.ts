@@ -45,14 +45,19 @@ import {
 } from "../../shared/exact/decimal";
 import {
   SQLiteSnapshotReplacementTargetError,
-  withDailyLogSnapshotReplacement,
-  withExclusiveSQLiteTransaction,
 } from "../../storage/sqlite/migrations";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { DailyLogsRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
+import {
+  withLocalDailyLogSnapshotReplacement,
+  withLocalOrderedRead,
+  withLocalWriteTransaction,
+} from "./localWriteCoordinator";
 
 const CREATE_OPERATION = "log.create";
+const UPDATE_OPERATION = "log.update";
+const DELETE_OPERATION = "log.delete";
 const RECENT_ENTRY_LIMIT = 10;
 const MASS_UNITS = new Set(["g", "mg", "mcg"]);
 const NUTRIENT_BASES = new Set(["per_serving", "per_100g", "per_gram"]);
@@ -182,6 +187,8 @@ type NormalizedCreate = Readonly<{
 }>;
 
 type NormalizedUpdate = Readonly<{
+  clientRequestId: string | null;
+  fingerprintFields: readonly string[];
   calendarRevision: number | null;
   expectedUpdatedAt: string | null;
   sourceFoodUpdatedAt: string | null;
@@ -201,8 +208,22 @@ type NormalizedUpdate = Readonly<{
 }>;
 
 type NormalizedDelete = Readonly<{
+  clientRequestId: string | null;
   calendarRevision: number | null;
   expectedUpdatedAt: string | null;
+}>;
+
+type UpdateReceiptSnapshot = Readonly<{
+  kind: "log.update";
+  source_logged_date: string;
+  destination_logged_date: string;
+  result: DailyLog;
+}>;
+
+type DeleteReceiptSnapshot = Readonly<{
+  kind: "log.delete";
+  log_id: string;
+  source_logged_date: string;
 }>;
 
 type SourceNutrient = Readonly<{
@@ -392,6 +413,15 @@ function idempotencyPayloadConflict(): LocalRuntimeError {
     "conflict",
     "log_idempotency_payload_conflict",
     "This logging attempt was already submitted with different details. Start a new log and try again.",
+    "confirmed_non_commit",
+  );
+}
+
+function mutationPayloadConflict(): LocalRuntimeError {
+  return errorFor(
+    "conflict",
+    "log_mutation_payload_conflict",
+    "This mutation identity was already submitted with different details. Start a new mutation and try again.",
     "confirmed_non_commit",
   );
 }
@@ -642,13 +672,14 @@ function parseUpdateInput(input: Partial<DailyLogUpdateInput>): NormalizedUpdate
     calendarRevision = input.calendar_revision;
   }
 
+  let clientRequestId: string | null = null;
   let expectedUpdatedAt: string | null = null;
   let sourceFoodUpdatedAt: string | null = null;
   let sourceRecipePublicationRevisionId: string | null = null;
   let servingDefinitionId: string | null = null;
   const servingDefinitionProvided = definedField(input, "serving_definition_id");
   try {
-    if (input.client_request_id != null) parseUuid(input.client_request_id);
+    if (input.client_request_id != null) clientRequestId = parseUuid(input.client_request_id);
     if (input.expected_updated_at != null) expectedUpdatedAt = parseInstant(input.expected_updated_at);
     if (input.source_food_updated_at != null) sourceFoodUpdatedAt = parseInstant(input.source_food_updated_at);
     if (input.source_recipe_publication_revision_id != null) {
@@ -691,6 +722,19 @@ function parseUpdateInput(input: Partial<DailyLogUpdateInput>): NormalizedUpdate
   }
 
   return {
+    clientRequestId,
+    fingerprintFields: [
+      "calendar_revision",
+      "expected_updated_at",
+      "source_food_updated_at",
+      "source_recipe_publication_revision_id",
+      "logged_date",
+      "amount_quantity",
+      "amount_unit",
+      "serving_definition_id",
+      "meal_type",
+      "notes",
+    ].filter((field) => definedField(input, field)).sort(),
     calendarRevision,
     expectedUpdatedAt,
     sourceFoodUpdatedAt,
@@ -721,14 +765,15 @@ function parseDeleteInput(input: DailyLogDeleteInput): NormalizedDelete {
     }
     calendarRevision = input.calendar_revision;
   }
+  let clientRequestId: string | null = null;
   let expectedUpdatedAt: string | null = null;
   try {
-    if (input.client_request_id != null) parseUuid(input.client_request_id);
+    if (input.client_request_id != null) clientRequestId = parseUuid(input.client_request_id);
     if (input.expected_updated_at != null) expectedUpdatedAt = parseInstant(input.expected_updated_at);
   } catch {
     throw invalidUpdate("The Daily Log delete request contains an invalid identifier or timestamp.");
   }
-  return { calendarRevision, expectedUpdatedAt };
+  return { clientRequestId, calendarRevision, expectedUpdatedAt };
 }
 
 async function creationFingerprint(input: NormalizedCreate): Promise<string> {
@@ -747,6 +792,131 @@ async function creationFingerprint(input: NormalizedCreate): Promise<string> {
     return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, payload);
   } catch {
     throw invalidCreate("The Daily Log request could not be represented canonically.");
+  }
+}
+
+async function mutationFingerprint(
+  operation: typeof UPDATE_OPERATION | typeof DELETE_OPERATION,
+  logId: string,
+  input: NormalizedUpdate | NormalizedDelete,
+): Promise<string> {
+  const payload = operation === UPDATE_OPERATION
+    ? {
+        _fields_set: (input as NormalizedUpdate).fingerprintFields,
+        amount_quantity: (input as NormalizedUpdate).amountQuantityRaw === null
+          ? null
+          : canonicalDecimalForFingerprint((input as NormalizedUpdate).amountQuantityRaw!),
+        amount_unit: (input as NormalizedUpdate).amountUnit,
+        calendar_revision: input.calendarRevision,
+        expected_updated_at: input.expectedUpdatedAt,
+        logged_date: (input as NormalizedUpdate).loggedDate,
+        meal_type: (input as NormalizedUpdate).mealType,
+        notes: (input as NormalizedUpdate).notes,
+        serving_definition_id: (input as NormalizedUpdate).servingDefinitionId,
+        source_food_updated_at: (input as NormalizedUpdate).sourceFoodUpdatedAt,
+        source_recipe_publication_revision_id:
+          (input as NormalizedUpdate).sourceRecipePublicationRevisionId,
+      }
+    : {
+        calendar_revision: input.calendarRevision,
+        expected_updated_at: input.expectedUpdatedAt,
+      };
+  try {
+    return await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      canonicalJsonStringify({
+        operation: operation === UPDATE_OPERATION ? "update" : "delete",
+        log_id: logId,
+        payload,
+      }),
+    );
+  } catch {
+    throw invalidUpdate("The Daily Log mutation could not be represented canonically.");
+  }
+}
+
+async function readMutationReceipt(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  operation: string,
+  clientRequestId: string,
+): Promise<ReceiptRow | null> {
+  return transaction.getFirstAsync<ReceiptRow>(
+    `SELECT "request_fingerprint", "resource_id", "response_snapshot"
+     FROM "create_operation_idempotency"
+     WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
+    [ownerId, operation, clientRequestId],
+  );
+}
+
+async function reserveMutationReceipt(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  operation: string,
+  clientRequestId: string | null,
+  requestFingerprint: string | null,
+  resourceId: string,
+): Promise<void> {
+  if (clientRequestId === null || requestFingerprint === null) return;
+  await transaction.runAsync(
+    `INSERT INTO "create_operation_idempotency"
+      ("id", "user_id", "operation", "client_request_id", "request_fingerprint", "resource_id")
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [parseUuid(Crypto.randomUUID()), ownerId, operation, clientRequestId, requestFingerprint, resourceId],
+  );
+}
+
+async function completeMutationReceipt(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  operation: string,
+  clientRequestId: string | null,
+  snapshot: UpdateReceiptSnapshot | DeleteReceiptSnapshot,
+  completedAt: string,
+): Promise<void> {
+  if (clientRequestId === null) return;
+  await transaction.runAsync(
+    `UPDATE "create_operation_idempotency"
+     SET "response_snapshot" = ?, "completed_at" = ?
+     WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
+    [canonicalJsonStringify(snapshot), completedAt, ownerId, operation, clientRequestId],
+  );
+}
+
+function parseUpdateReceipt(receipt: ReceiptRow): UpdateReceiptSnapshot {
+  if (receipt.response_snapshot === null) throw idempotencyResultUnavailable();
+  try {
+    parseCanonicalJson(receipt.response_snapshot);
+    const snapshot = JSON.parse(receipt.response_snapshot) as Partial<UpdateReceiptSnapshot>;
+    if (
+      snapshot.kind !== UPDATE_OPERATION
+      || typeof snapshot.source_logged_date !== "string"
+      || typeof snapshot.destination_logged_date !== "string"
+      || !snapshot.result
+      || typeof snapshot.result !== "object"
+      || snapshot.result.id !== receipt.resource_id
+    ) throw new Error("invalid update receipt");
+    return snapshot as UpdateReceiptSnapshot;
+  } catch (error) {
+    if (error instanceof LocalRuntimeError) throw error;
+    throw idempotencyResultUnavailable();
+  }
+}
+
+function parseDeleteReceipt(receipt: ReceiptRow): DeleteReceiptSnapshot {
+  if (receipt.response_snapshot === null) throw idempotencyResultUnavailable();
+  try {
+    parseCanonicalJson(receipt.response_snapshot);
+    const snapshot = JSON.parse(receipt.response_snapshot) as Partial<DeleteReceiptSnapshot>;
+    if (
+      snapshot.kind !== DELETE_OPERATION
+      || snapshot.log_id !== receipt.resource_id
+      || typeof snapshot.source_logged_date !== "string"
+    ) throw new Error("invalid delete receipt");
+    return snapshot as DeleteReceiptSnapshot;
+  } catch (error) {
+    if (error instanceof LocalRuntimeError) throw error;
+    throw idempotencyResultUnavailable();
   }
 }
 
@@ -1665,7 +1835,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     const normalized = parseCreateInput(input);
     const requestFingerprint = await creationFingerprint(normalized);
     try {
-      return await withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+      return await withLocalWriteTransaction(this.database, async (transaction) => {
         await validateCreateCalendar(transaction, this.ownerId, normalized, this.now());
         const existingReceipt = await transaction.getFirstAsync<ReceiptRow>(
           `SELECT "request_fingerprint", "resource_id", "response_snapshot"
@@ -2132,27 +2302,73 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     }
     const normalizedOperation = normalizeOperation(operation);
     try {
-      const receipt = await this.database.getFirstAsync<ReceiptRow>(
-        `SELECT "request_fingerprint", "resource_id", "response_snapshot"
-         FROM "create_operation_idempotency"
-         WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
-        [this.ownerId, CREATE_OPERATION, requestId],
-      );
-      if (normalizedOperation !== "create" || !receipt) {
-        return { operation: normalizedOperation, client_request_id: requestId, status: "confirmed_non_commit", log_id: null, result: null };
-      }
-      const log = await loadLog(this.database, this.ownerId, receipt.resource_id);
-      if (!receipt.response_snapshot || !log) {
-        return { operation: "create", client_request_id: requestId, status: "unresolved", log_id: log ? log.id : null, result: null };
-      }
-      return {
-        operation: "create",
-        client_request_id: requestId,
-        status: "confirmed_success",
-        log_id: log.id,
-        result: await logResponse(this.database, this.ownerId, log),
-      };
+      return await withLocalOrderedRead(this.database, async () => {
+        const receiptOperation = normalizedOperation === "create"
+          ? CREATE_OPERATION
+          : normalizedOperation === "update"
+            ? UPDATE_OPERATION
+            : DELETE_OPERATION;
+        const receipt = await this.database.getFirstAsync<ReceiptRow>(
+          `SELECT "request_fingerprint", "resource_id", "response_snapshot"
+           FROM "create_operation_idempotency"
+           WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
+          [this.ownerId, receiptOperation, requestId],
+        );
+        if (!receipt) {
+          return { operation: normalizedOperation, client_request_id: requestId, status: "confirmed_non_commit", log_id: null, result: null };
+        }
+        if (normalizedOperation === "create") {
+          const log = await loadLog(this.database, this.ownerId, receipt.resource_id);
+          if (!receipt.response_snapshot || !log) {
+            return { operation: "create", client_request_id: requestId, status: "unresolved", log_id: log ? log.id : null, result: null };
+          }
+          return {
+            operation: "create",
+            client_request_id: requestId,
+            status: "confirmed_success",
+            log_id: log.id,
+            result: await logResponse(this.database, this.ownerId, log),
+          };
+        }
+
+        if (!receipt.response_snapshot) {
+          return { operation: normalizedOperation, client_request_id: requestId, status: "unresolved", log_id: receipt.resource_id, result: null };
+        }
+        if (normalizedOperation === "update") {
+          const snapshot = parseUpdateReceipt(receipt);
+          // Inspect current resource state as well as the durable receipt.  The
+          // receipt remains authoritative if a later mutation changed/deleted it.
+          await loadLog(this.database, this.ownerId, receipt.resource_id);
+          return {
+            operation: "update",
+            client_request_id: requestId,
+            status: "confirmed_success",
+            log_id: receipt.resource_id,
+            source_logged_date: snapshot.source_logged_date,
+            destination_logged_date: snapshot.destination_logged_date,
+            result: snapshot.result,
+          };
+        }
+
+        const snapshot = parseDeleteReceipt(receipt);
+        const survivingLog = await loadLog(this.database, this.ownerId, receipt.resource_id);
+        if (survivingLog) {
+          return { operation: "delete", client_request_id: requestId, status: "unresolved", log_id: receipt.resource_id, result: null };
+        }
+        return {
+          operation: "delete",
+          client_request_id: requestId,
+          status: "confirmed_success",
+          log_id: snapshot.log_id,
+          source_logged_date: snapshot.source_logged_date,
+          destination_logged_date: null,
+          result: null,
+        };
+      });
     } catch (error) {
+      if (error instanceof LocalRuntimeError && error.code === "log_mutation_unresolved") {
+        return { operation: normalizedOperation, client_request_id: requestId, status: "unresolved", log_id: null, result: null };
+      }
       if (error instanceof LocalRuntimeError) throw error;
       throw readFailure();
     }
@@ -2166,11 +2382,26 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
       throw invalidUpdate("The Daily Log identifier is invalid.", "log_id_invalid", "log_id");
     }
     const normalized = parseUpdateInput(input);
+    const requestFingerprint = normalized.clientRequestId === null
+      ? null
+      : await mutationFingerprint(UPDATE_OPERATION, id, normalized);
     if (normalized.nutritionAffecting) {
-      return this.updateNutrition(id, normalized);
+      return this.updateNutrition(id, normalized, requestFingerprint);
     }
     try {
-      return await withExclusiveSQLiteTransaction(this.database, async (transaction) => {
+      return await withLocalWriteTransaction(this.database, async (transaction) => {
+        if (normalized.clientRequestId !== null && requestFingerprint !== null) {
+          const receipt = await readMutationReceipt(
+            transaction,
+            this.ownerId,
+            UPDATE_OPERATION,
+            normalized.clientRequestId,
+          );
+          if (receipt) {
+            if (receipt.request_fingerprint !== requestFingerprint) throw mutationPayloadConflict();
+            return parseUpdateReceipt(receipt).result;
+          }
+        }
         if (normalized.calendarRevision === null) {
           await requireAuthoritativeTimeZone(transaction, this.ownerId);
         }
@@ -2201,6 +2432,14 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             ) throw staleSource();
           }
         }
+        await reserveMutationReceipt(
+          transaction,
+          this.ownerId,
+          UPDATE_OPERATION,
+          normalized.clientRequestId,
+          requestFingerprint,
+          id,
+        );
         await transaction.runAsync(
           `UPDATE "daily_logs"
            SET "logged_date" = ?, "meal_type" = ?, "notes" = ?, "updated_at" = ?
@@ -2216,7 +2455,21 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
         );
         const updated = await loadLog(transaction, this.ownerId, id);
         if (!updated) throw invalidStored("mutation");
-        return logResponse(transaction, this.ownerId, updated);
+        const response = await logResponse(transaction, this.ownerId, updated);
+        await completeMutationReceipt(
+          transaction,
+          this.ownerId,
+          UPDATE_OPERATION,
+          normalized.clientRequestId,
+          {
+            kind: UPDATE_OPERATION,
+            source_logged_date: storedDate(row.logged_date),
+            destination_logged_date: response.logged_date,
+            result: response,
+          },
+          canonicalNow(this.now),
+        );
+        return response;
       });
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
@@ -2224,9 +2477,13 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     }
   }
 
-  private async updateNutrition(id: string, normalized: NormalizedUpdate): Promise<DailyLog> {
+  private async updateNutrition(
+    id: string,
+    normalized: NormalizedUpdate,
+    requestFingerprint: string | null,
+  ): Promise<DailyLog> {
     try {
-      return await withDailyLogSnapshotReplacement(
+      return await withLocalDailyLogSnapshotReplacement(
         this.database,
         this.ownerId,
         id,
@@ -2338,6 +2595,15 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             );
           }
 
+          await reserveMutationReceipt(
+            transaction,
+            this.ownerId,
+            UPDATE_OPERATION,
+            normalized.clientRequestId,
+            requestFingerprint,
+            id,
+          );
+
           await transaction.runAsync(
             `DELETE FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
             [id],
@@ -2371,14 +2637,41 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           const updated = await loadLog(transaction, this.ownerId, id);
           if (!updated) throw invalidStored("mutation");
           const response = await logResponse(transaction, this.ownerId, updated);
+          await completeMutationReceipt(
+            transaction,
+            this.ownerId,
+            UPDATE_OPERATION,
+            normalized.clientRequestId,
+            {
+              kind: UPDATE_OPERATION,
+              source_logged_date: storedDate(row.logged_date),
+              destination_logged_date: response.logged_date,
+              result: response,
+            },
+            canonicalNow(this.now),
+          );
           await this.nutritionEditStage("before_replacement_scope_completion");
           return response;
         },
-        normalized.calendarRevision === null
-          ? {
-              beforeTarget: (transaction) => requireAuthoritativeTimeZone(transaction, this.ownerId),
+        {
+          beforeTarget: async (transaction) => {
+            if (normalized.clientRequestId !== null && requestFingerprint !== null) {
+              const receipt = await readMutationReceipt(
+                transaction,
+                this.ownerId,
+                UPDATE_OPERATION,
+                normalized.clientRequestId,
+              );
+              if (receipt) {
+                if (receipt.request_fingerprint !== requestFingerprint) throw mutationPayloadConflict();
+                return { completed: true as const, result: parseUpdateReceipt(receipt).result };
+              }
             }
-          : undefined,
+            if (normalized.calendarRevision === null) {
+              await requireAuthoritativeTimeZone(transaction, this.ownerId);
+            }
+          },
+        },
       );
     } catch (error) {
       if (error instanceof SQLiteSnapshotReplacementTargetError) {
@@ -2398,8 +2691,11 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
       throw invalidUpdate("The Daily Log identifier is invalid.", "log_id_invalid", "log_id");
     }
     const normalized = parseDeleteInput(input);
+    const requestFingerprint = normalized.clientRequestId === null
+      ? null
+      : await mutationFingerprint(DELETE_OPERATION, id, normalized);
     try {
-      await withDailyLogSnapshotReplacement(
+      await withLocalDailyLogSnapshotReplacement(
         this.database,
         this.ownerId,
         id,
@@ -2415,6 +2711,14 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
           ) throw staleEntry();
           await validateDeleteCalendar(transaction, this.ownerId, normalized.calendarRevision);
+          await reserveMutationReceipt(
+            transaction,
+            this.ownerId,
+            DELETE_OPERATION,
+            normalized.clientRequestId,
+            requestFingerprint,
+            id,
+          );
           await transaction.runAsync(
             `DELETE FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ?`,
             [id],
@@ -2426,13 +2730,40 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             [id, this.ownerId],
           );
           if (await loadLog(transaction, this.ownerId, id)) throw invalidStored("mutation");
+          await completeMutationReceipt(
+            transaction,
+            this.ownerId,
+            DELETE_OPERATION,
+            normalized.clientRequestId,
+            {
+              kind: DELETE_OPERATION,
+              log_id: id,
+              source_logged_date: storedDate(row.logged_date),
+            },
+            canonicalNow(this.now),
+          );
           await this.deleteStage("before_delete_scope_completion");
         },
-        normalized.calendarRevision === null
-          ? {
-              beforeTarget: (transaction) => requireAuthoritativeTimeZone(transaction, this.ownerId),
+        {
+          beforeTarget: async (transaction) => {
+            if (normalized.clientRequestId !== null && requestFingerprint !== null) {
+              const receipt = await readMutationReceipt(
+                transaction,
+                this.ownerId,
+                DELETE_OPERATION,
+                normalized.clientRequestId,
+              );
+              if (receipt) {
+                if (receipt.request_fingerprint !== requestFingerprint) throw mutationPayloadConflict();
+                parseDeleteReceipt(receipt);
+                return { completed: true as const, result: undefined };
+              }
             }
-          : undefined,
+            if (normalized.calendarRevision === null) {
+              await requireAuthoritativeTimeZone(transaction, this.ownerId);
+            }
+          },
+        },
       );
     } catch (error) {
       if (error instanceof SQLiteSnapshotReplacementTargetError) {

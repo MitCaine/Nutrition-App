@@ -575,7 +575,12 @@ export async function reconcileLogMutationRecoveryRecord(
   if (record.owner_scope !== dependencies.authority.recoveryScope) return "pending";
   const storage = options.storage ?? defaultStorage;
   try {
-    const status = await (options.statusReader ?? dependencies.dailyLogs.getMutationStatus)(record.client_request_id, operationFor(record));
+    const status = options.statusReader
+      ? await options.statusReader(record.client_request_id, operationFor(record))
+      : await dependencies.dailyLogs.getMutationStatus(
+          record.client_request_id,
+          operationFor(record),
+        );
     if (status.status === "confirmed_success") {
       projectConfirmedRecovery(queryClient, record, status);
       await removeLogMutationRecoveryRecord(record, storage);

@@ -1,5 +1,20 @@
 import * as Crypto from "expo-crypto";
 
+const { mkdtempSync, rmSync } = require("node:fs") as {
+  mkdtempSync(prefix: string): string;
+  rmSync(path: string, options: { recursive: boolean; force: boolean }): void;
+};
+const { tmpdir } = require("node:os") as { tmpdir(): string };
+const { join } = require("node:path") as { join(...parts: string[]): string };
+
+import {
+  createLogMutationRecoveryRecord,
+  loadLogMutationRecoveryJournal,
+  reconcileLogMutationRecoveryRecord,
+  upsertLogMutationRecoveryRecord,
+  type RecoveryStorage,
+} from "../src/features/logging/recovery/logMutationRecovery";
+import { localAuthorityIdentity } from "../src/runtime/authorityIdentity";
 import {
   createLocalDailyLogsRuntime,
   type LocalDailyLogCreateStage,
@@ -8,7 +23,14 @@ import {
 } from "../src/runtime/local/localDailyLogsRuntime";
 import { createLocalFoodsRuntime } from "../src/runtime/local/localFoodsRuntime";
 import { ensureLocalNutrientCatalog } from "../src/runtime/local/localNutrientsRuntime";
-import { LocalSQLiteTestDatabase, seedLocalFood, seedLocalOwner, seedPublishedRecipeProjection } from "./localSQLiteTestSupport";
+import {
+  ExpoIsolatedSQLiteTestDatabase,
+  LocalSQLiteTestDatabase,
+  seedLocalFood,
+  seedLocalOwner,
+  seedPublishedRecipeProjection,
+  type LocalSQLiteFixtureDatabase,
+} from "./localSQLiteTestSupport";
 
 const OWNER = "00000000-0000-4000-8000-000000000001";
 const OTHER_OWNER = "00000000-0000-4000-8000-000000000002";
@@ -30,6 +52,16 @@ const REVISION_2_AMOUNT = "00000000-0000-4000-8000-000000000026";
 const REVISION_2_NUTRIENT = "00000000-0000-4000-8000-000000000027";
 
 const NOW = () => new Date("2026-08-09T12:00:00.000Z");
+
+function memoryRecoveryStorage(): RecoveryStorage & { value: string | null } {
+  const state = { value: null as string | null };
+  return {
+    get value() { return state.value; },
+    getItem: jest.fn(async () => state.value),
+    setItem: jest.fn(async (_key: string, value: string) => { state.value = value; }),
+    removeItem: jest.fn(async () => { state.value = null; }),
+  };
+}
 
 const parityFixture = require("../../../packages/shared-contracts/e2-09/daily-log-parity-fixtures.json") as {
   food_serving_per_100g: {
@@ -92,8 +124,8 @@ const parityFixture = require("../../../packages/shared-contracts/e2-09/daily-lo
   canonical_instant_ordering: { older: string; newer: string };
 };
 
-async function prepareDatabase(): Promise<LocalSQLiteTestDatabase> {
-  const database = new LocalSQLiteTestDatabase();
+async function prepareDatabase(path = ":memory:"): Promise<LocalSQLiteTestDatabase> {
+  const database = new LocalSQLiteTestDatabase(path);
   await database.initialize();
   await seedLocalOwner(database, OWNER);
   await database.runAsync(
@@ -105,7 +137,7 @@ async function prepareDatabase(): Promise<LocalSQLiteTestDatabase> {
   return database;
 }
 
-async function seedProteinFood(database: LocalSQLiteTestDatabase): Promise<void> {
+async function seedProteinFood(database: LocalSQLiteFixtureDatabase): Promise<void> {
   await seedLocalFood(database, {
     id: FOOD,
     ownerId: OWNER,
@@ -237,6 +269,7 @@ async function insertHistoricalLog(
 
 describe("E2-09 local Daily Logs", () => {
   let database: LocalSQLiteTestDatabase;
+  const temporaryDirectories = new Set<string>();
 
   beforeEach(async () => {
     (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000000");
@@ -244,7 +277,11 @@ describe("E2-09 local Daily Logs", () => {
     await seedProteinFood(database);
   });
 
-  afterEach(() => database.close());
+  afterEach(() => {
+    database.close();
+    for (const directory of temporaryDirectories) rmSync(directory, { recursive: true, force: true });
+    temporaryDirectories.clear();
+  });
 
   test("creates an owner-scoped immutable snapshot and aggregates known nutrition", async () => {
     const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
@@ -300,6 +337,301 @@ describe("E2-09 local Daily Logs", () => {
       log_id: first.id,
       result: first,
     });
+  });
+
+  test("retains canonical update outcomes, rejects changed payloads, and reconciles after reopen", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000401"));
+    const requestId = "00000000-0000-4000-8000-000000000402";
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000901");
+    const input = {
+      client_request_id: requestId,
+      calendar_revision: 0,
+      amount_quantity: "3.0",
+      notes: "updated once",
+    };
+
+    const first = await runtime.update(created.id, input);
+    await expect(runtime.update(created.id, { ...input, amount_quantity: "3.00" }))
+      .resolves.toEqual(first);
+    await expect(runtime.update(created.id, { ...input, notes: "changed reuse" }))
+      .rejects.toMatchObject({
+        code: "log_mutation_payload_conflict",
+        mutationOutcome: "confirmed_non_commit",
+      });
+
+    const reopened = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    await expect(reopened.getMutationStatus(requestId, "update")).resolves.toMatchObject({
+      status: "confirmed_success",
+      log_id: created.id,
+      source_logged_date: "2026-08-09",
+      destination_logged_date: "2026-08-09",
+      result: first,
+    });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "create_operation_idempotency"
+       WHERE "user_id" = ? AND "operation" = 'log.update' AND "client_request_id" = ?`,
+      [OWNER, requestId],
+    )).toEqual({ count: 1 });
+  });
+
+  test("keeps PATCH field presence fingerprint-significant and rejects invalid identity before a transaction", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000411"));
+    const transactionsBeforeInvalidInput = database.exclusiveTransactionCount;
+    await expect(runtime.update(created.id, {
+      client_request_id: "not-a-uuid",
+      notes: "must not run",
+    })).rejects.toMatchObject({
+      kind: "validation",
+      mutationOutcome: "confirmed_non_commit",
+    });
+    expect(database.exclusiveTransactionCount).toBe(transactionsBeforeInvalidInput);
+
+    const requestId = "00000000-0000-4000-8000-000000000412";
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000906");
+    const exact = { client_request_id: requestId, calendar_revision: 0, notes: null };
+    const first = await runtime.update(created.id, exact);
+    await expect(runtime.update(created.id, exact)).resolves.toEqual(first);
+    await expect(runtime.update(created.id, {
+      client_request_id: requestId,
+      calendar_revision: 0,
+    })).rejects.toMatchObject({ code: "log_mutation_payload_conflict" });
+  });
+
+  test("replays a retained delete after the target is gone and reports durable success after reopen", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000403"));
+    const requestId = "00000000-0000-4000-8000-000000000404";
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000902");
+    const input = { client_request_id: requestId, calendar_revision: 0 };
+
+    await runtime.delete(created.id, input);
+    const reopened = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    await expect(reopened.delete(created.id, input)).resolves.toBeUndefined();
+    await expect(reopened.delete(created.id, { ...input, calendar_revision: 1 }))
+      .rejects.toMatchObject({
+        code: "log_mutation_payload_conflict",
+        mutationOutcome: "confirmed_non_commit",
+      });
+    await expect(reopened.getMutationStatus(requestId, "delete")).resolves.toMatchObject({
+      status: "confirmed_success",
+      log_id: created.id,
+      source_logged_date: "2026-08-09",
+      destination_logged_date: null,
+      result: null,
+    });
+  });
+
+  test("rolls a mutation receipt back with an injected domain failure and confirms non-commit", async () => {
+    const base = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await base.create(createInput("00000000-0000-4000-8000-000000000405"));
+    const requestId = "00000000-0000-4000-8000-000000000406";
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000903");
+    const failing = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onDeleteStage: (stage) => {
+        if (stage === "after_delete_snapshots_removed") throw new Error("injected after receipt");
+      },
+    });
+
+    await expect(failing.delete(created.id, {
+      client_request_id: requestId,
+      calendar_revision: 0,
+    })).rejects.toMatchObject({
+      code: "local_daily_log_mutation_failed",
+      mutationOutcome: "confirmed_non_commit",
+    });
+    await expect(base.getMutationStatus(requestId, "delete")).resolves.toMatchObject({
+      status: "confirmed_non_commit",
+    });
+    await expect(base.list("2026-08-09")).resolves.toEqual([
+      expect.objectContaining({ id: created.id }),
+    ]);
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "create_operation_idempotency"
+       WHERE "user_id" = ? AND "operation" = 'log.delete' AND "client_request_id" = ?`,
+      [OWNER, requestId],
+    )).toEqual({ count: 0 });
+  });
+
+  test("does not infer an incomplete durable receipt to success from resource state", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000407"));
+    const requestId = "00000000-0000-4000-8000-000000000408";
+    await database.runAsync(
+      `INSERT INTO "create_operation_idempotency"
+        ("id", "user_id", "operation", "client_request_id", "request_fingerprint", "resource_id")
+       VALUES (?, ?, 'log.update', ?, 'fingerprint', ?)`,
+      ["00000000-0000-4000-8000-000000000904", OWNER, requestId, created.id],
+    );
+
+    await expect(runtime.getMutationStatus(requestId, "update")).resolves.toMatchObject({
+      status: "unresolved",
+      log_id: created.id,
+      result: null,
+    });
+  });
+
+  test("reconciles a committed update after a lost response and survives an interrupted retry", async () => {
+    const authority = localAuthorityIdentity(OWNER);
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000409"));
+    const requestId = "00000000-0000-4000-8000-000000000410";
+    const updateInput = {
+      client_request_id: requestId,
+      calendar_revision: 0,
+      notes: "durably committed",
+    };
+    const storage = memoryRecoveryStorage();
+    const record = createLogMutationRecoveryRecord({
+      authority,
+      clientRequestId: requestId,
+      mutationType: "edit",
+      targetId: created.id,
+      sourceDate: created.logged_date,
+      destinationDate: created.logged_date,
+      displayContext: { item_name: "Oats", amount_label: "2 servings", meal_label: null },
+      payload: { operation: "update", log_id: created.id, input: updateInput },
+    });
+    await upsertLogMutationRecoveryRecord({ ...record, state: "submitted" }, storage);
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000905");
+
+    await runtime.update(created.id, updateInput); // Simulate losing the resolved response after commit.
+    const reopened = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const dependencies = { authority, dailyLogs: reopened };
+    await expect(reconcileLogMutationRecoveryRecord(record, null, dependencies, {
+      storage,
+      statusReader: async () => { throw new Error("interrupted reconciliation"); },
+    })).resolves.toBe("pending");
+    expect(await loadLogMutationRecoveryJournal(authority, storage)).toHaveLength(1);
+
+    await expect(reconcileLogMutationRecoveryRecord(record, null, dependencies, { storage }))
+      .resolves.toBe("confirmed");
+    expect(await loadLogMutationRecoveryJournal(authority, storage)).toEqual([]);
+    await expect(reconcileLogMutationRecoveryRecord(record, null, dependencies, { storage }))
+      .resolves.toBe("confirmed");
+  });
+
+  test("retains completed mutation receipts across an actual file-backed SQLite connection reopen", async () => {
+    database.close();
+    const directory = mkdtempSync(join(tmpdir(), "nutrition-e211-"));
+    temporaryDirectories.add(directory);
+    const databasePath = join(directory, "nutrition.db");
+    database = await prepareDatabase(databasePath);
+    await seedProteinFood(database);
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000413"));
+    const requestId = "00000000-0000-4000-8000-000000000414";
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000907");
+    const updated = await runtime.update(created.id, {
+      client_request_id: requestId,
+      calendar_revision: 0,
+      notes: "file-backed receipt",
+    });
+
+    database.close();
+    database = new LocalSQLiteTestDatabase(databasePath);
+    await database.initialize();
+    const reopened = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    await expect(reopened.getMutationStatus(requestId, "update")).resolves.toMatchObject({
+      status: "confirmed_success",
+      log_id: created.id,
+      result: updated,
+    });
+    await expect(reopened.update(created.id, {
+      client_request_id: requestId,
+      calendar_revision: 0,
+      notes: "file-backed receipt",
+    })).resolves.toEqual(updated);
+  });
+
+  test("orders create and update status behind already-running isolated-connection writes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "nutrition-e211-status-"));
+    temporaryDirectories.add(directory);
+    const isolated = new ExpoIsolatedSQLiteTestDatabase(join(directory, "nutrition.db"));
+    await isolated.initialize();
+    await seedLocalOwner(isolated, OWNER);
+    await isolated.runAsync(
+      `INSERT INTO "user_profiles" ("user_id", "authoritative_time_zone", "calendar_revision")
+       VALUES (?, 'UTC', 0)`,
+      [OWNER],
+    );
+    await ensureLocalNutrientCatalog(isolated.asExpoDatabase());
+    await seedProteinFood(isolated);
+
+    let releaseMutation!: () => void;
+    const mutationBlocked = new Promise<void>((resolve) => { releaseMutation = resolve; });
+    let markMutationHeld!: () => void;
+    const mutationHeld = new Promise<void>((resolve) => { markMutationHeld = resolve; });
+    const requestId = "00000000-0000-4000-8000-000000000415";
+    const runtime = createLocalDailyLogsRuntime(isolated.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onCreateStage: async (stage) => {
+        if (stage === "before_idempotency_completion") {
+          markMutationHeld();
+          await mutationBlocked;
+        }
+      },
+    });
+
+    const mutation = runtime.create(createInput(requestId));
+    await mutationHeld;
+    let statusSettled = false;
+    const status = runtime.getMutationStatus(requestId, "create").then((result) => {
+      statusSettled = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(statusSettled).toBe(false);
+
+    releaseMutation();
+    const created = await mutation;
+    await expect(status).resolves.toMatchObject({
+      status: "confirmed_success",
+      log_id: created.id,
+      result: created,
+    });
+
+    let releaseUpdate!: () => void;
+    const updateBlocked = new Promise<void>((resolve) => { releaseUpdate = resolve; });
+    let markUpdateHeld!: () => void;
+    const updateHeld = new Promise<void>((resolve) => { markUpdateHeld = resolve; });
+    const updateRequestId = "00000000-0000-4000-8000-000000000416";
+    (Crypto.randomUUID as jest.Mock).mockReturnValue("00000000-0000-4000-8000-000000000908");
+    const updateRuntime = createLocalDailyLogsRuntime(isolated.asExpoDatabase(), OWNER, {
+      now: NOW,
+      onNutritionEditStage: async (stage) => {
+        if (stage === "before_replacement_scope_completion") {
+          markUpdateHeld();
+          await updateBlocked;
+        }
+      },
+    });
+    const update = updateRuntime.update(created.id, {
+      client_request_id: updateRequestId,
+      calendar_revision: 0,
+      amount_quantity: "3",
+    });
+    await updateHeld;
+    let updateStatusSettled = false;
+    const updateStatus = updateRuntime.getMutationStatus(updateRequestId, "update").then((result) => {
+      updateStatusSettled = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(updateStatusSettled).toBe(false);
+
+    releaseUpdate();
+    const updated = await update;
+    await expect(updateStatus).resolves.toMatchObject({
+      status: "confirmed_success",
+      log_id: created.id,
+      result: updated,
+    });
+    isolated.close();
   });
 
   test("fingerprints raw request decimals before persistence rounding", async () => {

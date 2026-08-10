@@ -14,15 +14,27 @@ type SqliteDatabaseSync = {
   prepare(source: string): SqliteStatement;
 };
 
+export type LocalSQLiteFixtureDatabase = {
+  execAsync(source: string): Promise<void>;
+  getFirstAsync<T>(source: string, params?: readonly unknown[]): Promise<T | null>;
+  getAllAsync<T>(source: string, params?: readonly unknown[]): Promise<T[]>;
+  runAsync(source: string, params?: readonly unknown[]): Promise<unknown>;
+  asExpoDatabase(): SQLiteDatabase;
+};
+
 const { DatabaseSync } = require("node:sqlite") as {
   DatabaseSync: new (path: string) => SqliteDatabaseSync;
 };
 
 export class LocalSQLiteTestDatabase {
-  private readonly native = new DatabaseSync(":memory:");
+  private readonly native: SqliteDatabaseSync;
   private transactionTail: Promise<void> = Promise.resolve();
   beforeNextExclusiveTransaction?: () => Promise<void> | void;
   exclusiveTransactionCount = 0;
+
+  constructor(path = ":memory:") {
+    this.native = new DatabaseSync(path);
+  }
 
   async initialize(): Promise<void> {
     this.native.exec("PRAGMA foreign_keys = ON");
@@ -81,8 +93,79 @@ export class LocalSQLiteTestDatabase {
   }
 }
 
+/**
+ * Models Expo's isolated transaction connection while outer reads use a
+ * separate connection that can observe only committed WAL state.
+ */
+export class ExpoIsolatedSQLiteTestDatabase implements LocalSQLiteFixtureDatabase {
+  private readonly reader: SqliteDatabaseSync;
+
+  constructor(private readonly path: string) {
+    this.reader = new DatabaseSync(path);
+  }
+
+  async initialize(): Promise<void> {
+    this.reader.exec("PRAGMA foreign_keys = ON");
+    this.reader.exec("PRAGMA busy_timeout = 5000");
+    this.reader.exec("PRAGMA journal_mode = WAL");
+    this.reader.exec("PRAGMA synchronous = NORMAL");
+    for (const statement of SQLITE_BASELINE_SCHEMA_STATEMENTS) {
+      this.reader.exec(statement);
+    }
+  }
+
+  close(): void {
+    this.reader.close();
+  }
+
+  async execAsync(source: string): Promise<void> {
+    this.reader.exec(source);
+  }
+
+  async getFirstAsync<T>(source: string, params: readonly unknown[] = []): Promise<T | null> {
+    return (this.reader.prepare(source).get(...params) as T | undefined) ?? null;
+  }
+
+  async getAllAsync<T>(source: string, params: readonly unknown[] = []): Promise<T[]> {
+    return this.reader.prepare(source).all(...params) as T[];
+  }
+
+  async runAsync(source: string, params: readonly unknown[] = []): Promise<unknown> {
+    return this.reader.prepare(source).run(...params);
+  }
+
+  async withExclusiveTransactionAsync(
+    operation: (transaction: SQLiteDatabase) => Promise<void>,
+  ): Promise<void> {
+    const writer = new DatabaseSync(this.path);
+    writer.exec("BEGIN");
+    const transaction = {
+      execAsync: async (source: string) => { writer.exec(source); },
+      getFirstAsync: async <T>(source: string, params: readonly unknown[] = []) =>
+        (writer.prepare(source).get(...params) as T | undefined) ?? null,
+      getAllAsync: async <T>(source: string, params: readonly unknown[] = []) =>
+        writer.prepare(source).all(...params) as T[],
+      runAsync: async (source: string, params: readonly unknown[] = []) =>
+        writer.prepare(source).run(...params),
+    } as unknown as SQLiteDatabase;
+    try {
+      await operation(transaction);
+      writer.exec("COMMIT");
+    } catch (error) {
+      try { writer.exec("ROLLBACK"); } catch { /* setup may already have failed */ }
+      throw error;
+    } finally {
+      writer.close();
+    }
+  }
+
+  asExpoDatabase(): SQLiteDatabase {
+    return this as unknown as SQLiteDatabase;
+  }
+}
+
 export async function seedLocalOwner(
-  database: LocalSQLiteTestDatabase,
+  database: LocalSQLiteFixtureDatabase,
   ownerId: string,
 ): Promise<void> {
   await database.runAsync(
@@ -92,7 +175,7 @@ export async function seedLocalOwner(
 }
 
 export async function seedLocalFood(
-  database: LocalSQLiteTestDatabase,
+  database: LocalSQLiteFixtureDatabase,
   input: {
     id: string;
     ownerId: string;
@@ -119,7 +202,7 @@ export async function seedLocalFood(
 }
 
 export async function seedPublishedRecipeProjection(
-  database: LocalSQLiteTestDatabase,
+  database: LocalSQLiteFixtureDatabase,
   input: {
     ownerId: string;
     recipeId: string;

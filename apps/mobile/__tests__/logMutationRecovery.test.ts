@@ -16,6 +16,7 @@ import {
   type RecoveryStorage,
 } from "../src/features/logging/recovery/logMutationRecovery";
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
+import { localAuthorityIdentity } from "../src/runtime/authorityIdentity";
 
 const TEST_AUTHORITY = remoteNutritionRuntime.authority;
 const TEST_RECOVERY_DEPENDENCIES = {
@@ -568,6 +569,37 @@ test("unresolved and transport failures retain recovery records for later retry"
   });
   expect(transport).toBe("pending");
   expect(await loadLogMutationRecoveryJournal(storage)).toHaveLength(1);
+});
+
+test("reconciliation never crosses local and remote authority identities", async () => {
+  const localAuthority = localAuthorityIdentity("00000000-0000-4000-8000-000000000001");
+  const remoteRecord = createLogMutationRecoveryRecord({
+    clientRequestId: "remote-request",
+    mutationType: "edit",
+    targetId: "log-remote",
+    sourceDate: "2026-07-14",
+  });
+  const localRecord = createRecoveryRecordWithDisplayContext({
+    authority: localAuthority,
+    clientRequestId: "local-request",
+    mutationType: "edit",
+    targetId: "log-local",
+    sourceDate: "2026-07-14",
+    displayContext: { item_name: null, amount_label: null, meal_label: null },
+  });
+  const localStatus = jest.fn();
+  const remoteStatus = jest.fn();
+
+  await expect(reconcileRecoveryWithDependencies(remoteRecord, null, {
+    authority: localAuthority,
+    dailyLogs: { ...remoteNutritionRuntime.dailyLogs, getMutationStatus: localStatus },
+  })).resolves.toBe("pending");
+  await expect(reconcileRecoveryWithDependencies(localRecord, null, {
+    authority: TEST_AUTHORITY,
+    dailyLogs: { ...remoteNutritionRuntime.dailyLogs, getMutationStatus: remoteStatus },
+  })).resolves.toBe("pending");
+  expect(localStatus).not.toHaveBeenCalled();
+  expect(remoteStatus).not.toHaveBeenCalled();
 });
 
 test("conflicting authoritative state refreshes affected dates and discards obsolete intent", async () => {
