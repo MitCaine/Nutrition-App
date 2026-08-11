@@ -24,6 +24,10 @@ export const E216_CHECKPOINT_FILE_NAME = "e2-16-checkpoint.json";
 export const E216_CHECKPOINT_SCHEMA = "e2-16-checkpoint.v1";
 export const E216_STAGE_B_CHECKPOINT_FILE_NAME = "e2-16-b-checkpoint.json";
 export const E216_STAGE_B_CHECKPOINT_SCHEMA = "e2-16-b-checkpoint.v1";
+export const E216_STAGE_D_CHECKPOINT_FILE_NAME = "e2-16-d-checkpoint.json";
+export const E216_STAGE_D_CHECKPOINT_SCHEMA = "e2-16-d-checkpoint.v1";
+export const E216_STAGE_D_CONTROL_CHECKPOINT_FILE_NAME = "e2-16-d-control-checkpoint.json";
+export const E216_STAGE_D_CONTROL_CHECKPOINT_SCHEMA = "e2-16-d-control-checkpoint.v1";
 
 export const E216_ALLOWED_DATABASE_NAMES = Object.freeze([
   "e2_16_foundation_ios.db",
@@ -40,6 +44,7 @@ export const E216_ALLOWED_DATABASE_NAMES = Object.freeze([
   "e2_16_future_android.db",
   "e2_16_ledger_ios.db",
   "e2_16_ledger_android.db",
+  "e2_16_termination_ios.db",
 ] as const);
 
 export const E216_DATABASE_STAGES = Object.freeze([
@@ -50,6 +55,7 @@ export const E216_DATABASE_STAGES = Object.freeze([
   "failure",
   "future",
   "ledger",
+  "termination",
 ] as const);
 
 export const E216_STAGE_B_CASE_IDS = Object.freeze([
@@ -175,7 +181,13 @@ export function qualificationDatabaseName(
   stage: E216QualificationDatabaseStage = "foundation",
 ): E216QualificationDatabaseName {
   const normalized = qualificationPlatform(platform);
-  const names: Record<E216QualificationDatabaseStage, Record<E216QualificationPlatform, E216QualificationDatabaseName>> = {
+  if (stage === "termination") {
+    if (normalized !== "ios") {
+      throw new Error("E2-16D termination qualification is supported only on iOS.");
+    }
+    return "e2_16_termination_ios.db";
+  }
+  const names: Record<Exclude<E216QualificationDatabaseStage, "termination">, Record<E216QualificationPlatform, E216QualificationDatabaseName>> = {
     foundation: {
       ios: "e2_16_foundation_ios.db",
       android: "e2_16_foundation_android.db",
@@ -386,6 +398,10 @@ export async function resetE216QualificationDatabase(
   for (const file of exactDatabaseFiles(directory, databaseName)) removeIfPresent(file);
   removeIfPresent(qualificationFile(directory, E216_CHECKPOINT_FILE_NAME));
   removeIfPresent(qualificationFile(directory, E216_STAGE_B_CHECKPOINT_FILE_NAME));
+  if (stage === "termination") {
+    removeIfPresent(qualificationFile(directory, E216_STAGE_D_CHECKPOINT_FILE_NAME));
+    removeIfPresent(qualificationFile(directory, E216_STAGE_D_CONTROL_CHECKPOINT_FILE_NAME));
+  }
   if (exactDatabaseFiles(directory, databaseName).some((file) => file.exists)) {
     throw new Error("E2-16 qualification reset did not leave the isolated database absent.");
   }
@@ -393,6 +409,7 @@ export async function resetE216QualificationDatabase(
 
 export async function resetE216QualificationDatabases(): Promise<void> {
   for (const stage of E216_DATABASE_STAGES) {
+    if (stage === "termination" && Platform.OS !== "ios") continue;
     await resetE216QualificationDatabase(stage);
   }
 }

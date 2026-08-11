@@ -56,6 +56,10 @@ import {
   E216_CHECKPOINT_FILE_NAME,
   E216_DATABASE_ROOT_DIRECTORY_NAME,
   E216_STAGE_B_CHECKPOINT_FILE_NAME,
+  E216_STAGE_D_CHECKPOINT_FILE_NAME,
+  E216_STAGE_D_CHECKPOINT_SCHEMA,
+  E216_STAGE_D_CONTROL_CHECKPOINT_FILE_NAME,
+  E216_STAGE_D_CONTROL_CHECKPOINT_SCHEMA,
   assertE216DatabaseLocation,
   buildE216FoundationCheckpointMarker,
   hasE216FoundationCheckpoint,
@@ -88,6 +92,17 @@ import {
   isExpectedE216StageCRejection,
   withE216StageCHandle,
 } from "../src/dev/e2_16/e216StageCQualification";
+import {
+  E216_STAGE_D_CASE_DEFINITIONS,
+  holdE216TransactionForExternalTermination,
+  isE216StageDCurrentProcessSession,
+  readE216StageDCheckpoint,
+  readE216StageDPreMutationControlCheckpoint,
+  writeE216StageDCheckpoint,
+  writeE216StageDPreMutationControlCheckpoint,
+  type E216StageDCheckpointMarker,
+  type E216StageDPreMutationControlCheckpointMarker,
+} from "../src/dev/e2_16/e216StageDQualification";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../src/storage/sqlite/schema";
 import {
   SQLITE_MIGRATIONS,
@@ -279,7 +294,7 @@ test("E2-16A enables only a development build and fixes the isolated identity", 
   }, true)).toBe(false);
   expect(qualificationDatabaseName("ios")).toBe("e2_16_foundation_ios.db");
   expect(qualificationDatabaseName("android")).toBe("e2_16_foundation_android.db");
-  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(14);
+  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(15);
   expect(E216_ALLOWED_DATABASE_NAMES).not.toContain("nutrition.db");
   expect(E216_DATABASE_ROOT_DIRECTORY_NAME).toBe("E2-16");
   expect(qualificationDatabaseName("ios", "migration")).toBe("e2_16_migration_ios.db");
@@ -288,6 +303,8 @@ test("E2-16A enables only a development build and fixes the isolated identity", 
   expect(qualificationDatabaseName("ios", "failure")).toBe("e2_16_failure_ios.db");
   expect(qualificationDatabaseName("ios", "future")).toBe("e2_16_future_ios.db");
   expect(qualificationDatabaseName("ios", "ledger")).toBe("e2_16_ledger_ios.db");
+  expect(qualificationDatabaseName("ios", "termination")).toBe("e2_16_termination_ios.db");
+  expect(() => qualificationDatabaseName("android", "termination")).toThrow("only on iOS");
 });
 
 test("the database boundary rejects the normal name and every outside root", () => {
@@ -460,7 +477,7 @@ test("a native close failure keeps the qualification handle registered and block
   expect(close).toHaveBeenCalledTimes(3);
 });
 
-test("Stage-B/C reset deletes only current-platform qualification databases", async () => {
+test("Stage-B/C/D reset deletes only current-platform qualification databases", async () => {
   deleteDatabaseAsyncMock.mockClear();
 
   await expect(resetE216QualificationDatabases()).resolves.toBeUndefined();
@@ -473,11 +490,127 @@ test("Stage-B/C reset deletes only current-platform qualification databases", as
     "e2_16_failure_ios.db",
     "e2_16_future_ios.db",
     "e2_16_ledger_ios.db",
+    "e2_16_termination_ios.db",
   ]);
   expect(deleteDatabaseAsyncMock.mock.calls.every(([, directory]) => (
     directory === qualificationDatabaseDirectory()
   ))).toBe(true);
   expect(deleteDatabaseAsyncMock.mock.calls.every(([name]) => name !== "nutrition.db")).toBe(true);
+});
+
+test("E2-16D defines the complete iOS mutation/checkpoint matrix and real transaction seams", () => {
+  expect(E216_STAGE_D_CASE_DEFINITIONS).toHaveLength(12);
+  expect(E216_STAGE_D_CASE_DEFINITIONS.map((definition) => definition.id)).toEqual([
+    "food_create_during_transaction",
+    "food_create_post_commit",
+    "recipe_publish_during_transaction",
+    "recipe_publish_post_commit",
+    "daily_log_edit_during_transaction",
+    "daily_log_edit_post_commit",
+    "daily_log_delete_during_transaction",
+    "daily_log_delete_post_commit",
+    "target_update_during_transaction",
+    "target_update_post_commit",
+    "ocr_confirmation_during_transaction",
+    "ocr_confirmation_post_commit",
+  ]);
+  expect(E216_STAGE_D_CASE_DEFINITIONS
+    .filter((definition) => definition.checkpoint === "during_transaction")
+    .map((definition) => [definition.family, definition.transactionStage])).toEqual([
+      ["food_create", "after_servings"],
+      ["recipe_publish", "after_projection_nutrients"],
+      ["daily_log_edit", "after_old_snapshots_removed"],
+      ["daily_log_delete", "after_delete_snapshots_removed"],
+      ["target_update", "after_write"],
+      ["ocr_confirmation", "before_trace"],
+    ]);
+  expect(E216_STAGE_D_CASE_DEFINITIONS
+    .filter((definition) => definition.checkpoint === "post_commit")
+    .every((definition) => definition.transactionStage === null)).toBe(true);
+});
+
+test("E2-16D verifies the host marker before leaving the real transaction pending", async () => {
+  const marker: E216StageDCheckpointMarker = {
+    schema: E216_STAGE_D_CHECKPOINT_SCHEMA,
+    stage: "E2-16D",
+    caseId: "food_create_during_transaction",
+    family: "food_create",
+    checkpoint: "during_transaction",
+    checkpointReached: "inside_transaction_before_commit",
+    checkpointStage: "after_servings",
+    platform: "ios",
+    databaseName: "e2_16_termination_ios.db",
+    processSessionId: "00000000-0000-4000-8000-000000000000",
+    state: "awaiting_termination",
+    expectedDurableState: "pre_mutation",
+    context: {
+      ownerId: "00000000-0000-4000-8000-000000000001",
+      requestId: "00000000-0000-4000-8000-000000000002",
+      resourceId: null,
+      servingId: null,
+      sourceDate: null,
+    },
+    preMutationState: { family: "food_create", foodCount: 0 },
+    postCommitState: null,
+    result: null,
+  };
+  let settled = false;
+  const pending = holdE216TransactionForExternalTermination(marker);
+  void pending.then(() => { settled = true; });
+
+  expect(readE216StageDCheckpoint()).toEqual(marker);
+  expect(E216_STAGE_D_CHECKPOINT_FILE_NAME).toBe("e2-16-d-checkpoint.json");
+  await Promise.resolve();
+  expect(settled).toBe(false);
+});
+
+test("E2-16D pre-mutation control persists an explicit before-mutation host barrier", () => {
+  const marker: E216StageDPreMutationControlCheckpointMarker = {
+    schema: E216_STAGE_D_CONTROL_CHECKPOINT_SCHEMA,
+    stage: "E2-16D",
+    caseId: "pre_mutation_control",
+    checkpoint: "before_mutation",
+    checkpointReached: "before_mutation",
+    checkpointStage: "fixture_committed_before_mutation",
+    platform: "ios",
+    databaseName: "e2_16_termination_ios.db",
+    processSessionId: "00000000-0000-4000-8000-000000000000",
+    state: "awaiting_termination",
+    expectedDurableState: "pre_mutation",
+    context: {
+      ownerId: OWNER_ID,
+      requestId: "00000000-0000-4000-8000-000000000002",
+      fixtureResourceId: "00000000-0000-4000-8000-000000000003",
+    },
+    preMutationState: {
+      family: "pre_mutation_control",
+      candidate: null,
+      candidateFoodCount: 0,
+      receipt: {
+        operation: "food.create_manual",
+        present: false,
+        resourceId: null,
+        completed: false,
+      },
+    },
+    result: null,
+  };
+
+  writeE216StageDPreMutationControlCheckpoint(marker);
+  expect(readE216StageDPreMutationControlCheckpoint()).toEqual(marker);
+  expect(E216_STAGE_D_CONTROL_CHECKPOINT_FILE_NAME).toBe("e2-16-d-control-checkpoint.json");
+  expect(isE216StageDCurrentProcessSession(marker.processSessionId)).toBe(true);
+  expect(isE216StageDCurrentProcessSession("00000000-0000-4000-8000-000000000004")).toBe(false);
+});
+
+test("E2-16D rejects a marker whose family does not match its case", () => {
+  const marker = readE216StageDCheckpoint();
+  expect(marker).not.toBeNull();
+  const invalid = { ...marker!, family: "target_update" };
+  const uri = `${qualificationDatabaseDirectory()}/${E216_STAGE_D_CHECKPOINT_FILE_NAME}`;
+  mockFileContents.set(uri, JSON.stringify(invalid));
+  expect(() => readE216StageDCheckpoint()).toThrow("marker is invalid");
+  writeE216StageDCheckpoint(marker!);
 });
 
 test("E2-16C keeps production v1 unchanged and injects only one failing v2", () => {

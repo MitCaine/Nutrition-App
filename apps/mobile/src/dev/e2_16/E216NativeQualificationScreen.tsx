@@ -33,6 +33,21 @@ import {
   type E216StageCCaseResult,
 } from "./e216StageCQualification";
 import {
+  E216_STAGE_D_CASE_DEFINITIONS,
+  armE216StageDCase,
+  completeE216StageDCaseAfterRelaunch,
+  completeE216StageDPreMutationControlAfterRelaunch,
+  isE216StageDCurrentProcessSession,
+  prepareE216StageDCase,
+  prepareE216StageDPreMutationControl,
+  readE216StageDCheckpoint,
+  readE216StageDPreMutationControlCheckpoint,
+  resetE216StageDQualification,
+  type E216StageDCaseId,
+  type E216StageDCheckpointMarker,
+  type E216StageDPreMutationControlCheckpointMarker,
+} from "./e216StageDQualification";
+import {
   qualifyE216Database,
   serializeE216IntegrityResult,
   type E216DirectIntegrityResult,
@@ -81,11 +96,16 @@ export default function E216NativeQualificationScreen() {
   const [checkpoint, setCheckpoint] = useState(hasE216FoundationCheckpoint());
   const [stageBCaseStates, setStageBCaseStates] = useState(initialStageBCaseStates);
   const [stageCCaseStates, setStageCCaseStates] = useState(initialStageCCaseStates);
+  const [stageDMarker, setStageDMarker] = useState<E216StageDCheckpointMarker | null>(null);
+  const [stageDControlMarker, setStageDControlMarker] = useState<E216StageDPreMutationControlCheckpointMarker | null>(null);
   const [pendingRestart, setPendingRestart] = useState<E216StageBRestartPending | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const handleRef = useRef<NutritionDatabaseHandle | null>(null);
   handleRef.current = handle;
+  const stageDFamilyAwaitingTermination = stageDMarker?.state === "awaiting_termination";
+  const stageDControlAwaitingTermination = stageDControlMarker?.state === "awaiting_termination";
+  const stageDTerminationPending = stageDFamilyAwaitingTermination || stageDControlAwaitingTermination;
 
   useEffect(() => () => {
     void handleRef.current?.close();
@@ -109,6 +129,31 @@ export default function E216NativeQualificationScreen() {
       setMessage("E2-16B restart checkpoint found. Reopen the isolated database after relaunch.");
     } catch (error) {
       setMessage(`E2-16B checkpoint failed: ${errorMessage(error)}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const marker = readE216StageDCheckpoint();
+      const controlMarker = readE216StageDPreMutationControlCheckpoint();
+      setStageDMarker(marker);
+      setStageDControlMarker(controlMarker);
+      const awaiting = controlMarker?.state === "awaiting_termination"
+        ? controlMarker
+        : marker?.state === "awaiting_termination" ? marker : null;
+      if (awaiting) {
+        setMessage(isE216StageDCurrentProcessSession(awaiting.processSessionId)
+          ? `E2-16D ${awaiting.caseId}: HOST ACTION NOW: terminate and launch.`
+          : `E2-16D ${awaiting.caseId}: RELAUNCH DETECTED: press COMPLETE RESTART INSPECTION.`);
+      } else if (controlMarker?.state === "completed") {
+        setMessage(`E2-16D ${controlMarker.caseId} completed with ${controlMarker.result?.status ?? "unknown"} status.`);
+      } else if (marker?.state === "ready_to_arm") {
+        setMessage(`E2-16D ${marker.caseId} is prepared at the before-mutation checkpoint. Arm it when the host is ready.`);
+      } else if (marker?.state === "completed") {
+        setMessage(`E2-16D ${marker.caseId} completed with ${marker.result?.status ?? "unknown"} status.`);
+      }
+    } catch (error) {
+      setMessage(`E2-16D checkpoint failed: ${errorMessage(error)}`);
     }
   }, []);
 
@@ -334,6 +379,78 @@ export default function E216NativeQualificationScreen() {
     }
   }
 
+  async function prepareStageDCase(caseId: E216StageDCaseId): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await closeFoundationHandle();
+      const marker = await prepareE216StageDCase(caseId);
+      setStageDMarker(marker);
+      setStageDControlMarker(readE216StageDPreMutationControlCheckpoint());
+      setMessage(`${caseId} is durably prepared before mutation. Review the pre-state, then arm the real mutation.`);
+    } catch (error) {
+      setMessage(`E2-16D ${caseId} preparation failed: ${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function prepareStageDPreMutationControl(): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await closeFoundationHandle();
+      const marker = await prepareE216StageDPreMutationControl();
+      setStageDControlMarker(marker);
+      setStageDMarker(readE216StageDCheckpoint());
+      setMessage("E2-16D pre_mutation_control is durably awaiting termination before the mutation-under-test. Do not arm a mutation.");
+    } catch (error) {
+      setMessage(`E2-16D pre_mutation_control preparation failed: ${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function armStageDCase(): Promise<void> {
+    setBusy(true);
+    setMessage("Arming the real production mutation. Do not terminate until the awaiting_termination marker is visible.");
+    try {
+      await closeFoundationHandle();
+      const marker = await armE216StageDCase((checkpointMarker) => {
+        setStageDMarker(checkpointMarker);
+        setMessage(`${checkpointMarker.caseId} reached ${checkpointMarker.checkpointReached}. HOST ACTION NOW: terminate and launch. Do not press reset.`);
+      });
+      setStageDMarker(marker);
+      setMessage(`${marker.caseId} reached ${marker.checkpointReached}. HOST ACTION NOW: terminate and launch. Do not press reset.`);
+    } catch (error) {
+      setBusy(false);
+      setMessage(`E2-16D arm failed: ${errorMessage(error)}`);
+    }
+  }
+
+  async function completeStageDCase(): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await closeFoundationHandle();
+      if (stageDControlAwaitingTermination) {
+        const completed = await completeE216StageDPreMutationControlAfterRelaunch();
+        setStageDControlMarker(readE216StageDPreMutationControlCheckpoint());
+        setStageDMarker(readE216StageDCheckpoint());
+        setMessage(`${completed.caseId} restart inspection ${completed.status === "pass" ? "passed" : "failed"}.`);
+        return;
+      }
+      const completed = await completeE216StageDCaseAfterRelaunch();
+      setStageDMarker(readE216StageDCheckpoint());
+      setStageDControlMarker(readE216StageDPreMutationControlCheckpoint());
+      setMessage(`${completed.caseId} restart inspection ${completed.status === "pass" ? "passed" : "failed"}.`);
+    } catch (error) {
+      setMessage(`E2-16D restart inspection failed: ${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function writeCheckpoint(): void {
     try {
       writeE216FoundationCheckpoint();
@@ -349,6 +466,7 @@ export default function E216NativeQualificationScreen() {
     setMessage(null);
     try {
       await closeFoundationHandle();
+      if (Platform.OS === "ios") await resetE216StageDQualification();
       await resetE216QualificationDatabases();
       clearE216StageBRestartCheckpoint();
       setResult(null);
@@ -356,7 +474,9 @@ export default function E216NativeQualificationScreen() {
       setPendingRestart(null);
       setStageBCaseStates(initialStageBCaseStates());
       setStageCCaseStates(initialStageCCaseStates());
-      setMessage("E2-16A/B/C isolated databases and checkpoints reset.");
+      setStageDMarker(null);
+      setStageDControlMarker(null);
+      setMessage("E2-16A/B/C/D isolated databases, checkpoints, and Stage-D journal state reset.");
     } catch (error) {
       setMessage(`Reset failed: ${errorMessage(error)}`);
     } finally {
@@ -367,9 +487,9 @@ export default function E216NativeQualificationScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Nutrition App E2-16</Text>
-      <Text style={styles.subtitle}>E2-16A/B/C native qualification foundation, lifecycle, and fail-closed migration</Text>
+      <Text style={styles.subtitle}>E2-16A/B/C/D native lifecycle and real process-termination qualification</Text>
       <Text style={styles.warning}>
-        Temporary development-only infrastructure. E2-16D+ termination, filesystem,
+        Temporary development-only infrastructure. E2-16E+ filesystem,
         feature, accessibility, and OCR scenarios are not implemented here.
       </Text>
 
@@ -379,6 +499,7 @@ export default function E216NativeQualificationScreen() {
         <Text selectable style={styles.detail}>Foundation database: e2_16_foundation_&lt;platform&gt;.db</Text>
         <Text selectable style={styles.detail}>Stage-B databases: e2_16_&lt;migration|reopen|restart&gt;_&lt;platform&gt;.db</Text>
         <Text selectable style={styles.detail}>Stage-C databases: e2_16_&lt;failure|future|ledger&gt;_ios.db</Text>
+        <Text selectable style={styles.detail}>Stage-D database: e2_16_termination_ios.db</Text>
         <Text style={styles.detail}>Root: Expo SQLite default root / E2-16</Text>
         <Text style={styles.detail}>Normal nutrition.db is never opened or deleted.</Text>
       </View>
@@ -432,6 +553,115 @@ export default function E216NativeQualificationScreen() {
               {state.error ? <Text accessibilityRole="alert" style={styles.message}>{state.error}</Text> : null}
               {state.result ? (
                 <Text selectable style={styles.result}>{canonicalJsonStringify(state.result)}</Text>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.stageCard}>
+        <Text style={styles.heading}>E2-16D mutation termination (iOS only)</Text>
+        <Text style={styles.detail}>
+          Prepare writes a durable before-mutation marker. Arm runs the real production mutation. During-transaction
+          cases stop on an awaited in-transaction barrier; post-commit cases expose their marker only after the mutation
+          promise has committed. Terminate only when state is awaiting_termination.
+        </Text>
+        <Text selectable style={styles.status}>
+          Active family marker: {stageDMarker ? `${stageDMarker.caseId} / ${stageDMarker.checkpointReached} / ${stageDMarker.state}` : "none"}
+        </Text>
+        {stageDFamilyAwaitingTermination ? (
+          <>
+            <Text style={styles.restartInstruction}>
+              {isE216StageDCurrentProcessSession(stageDMarker!.processSessionId)
+                ? "HOST ACTION NOW: terminate and launch."
+                : "RELAUNCH DETECTED: press COMPLETE RESTART INSPECTION."}
+            </Text>
+            {isE216StageDCurrentProcessSession(stageDMarker!.processSessionId) ? (
+              <Text style={styles.detail}>
+                Run xcrun simctl terminate booted com.portfolio.nutritionapp.e216, then xcrun simctl launch booted com.portfolio.nutritionapp.e216. Do not press reset.
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Complete E2-16D restart inspection"
+              style={styles.button}
+              disabled={busy || Platform.OS !== "ios"}
+              onPress={() => void completeStageDCase()}
+            >
+              <Text style={styles.buttonText}>COMPLETE RESTART INSPECTION</Text>
+            </Pressable>
+          </>
+        ) : null}
+        <View style={styles.caseCard}>
+          <Text style={styles.caseTitle}>Pre-mutation OS-termination control</Text>
+          <Text style={styles.detail}>
+            One shared iOS control prepares a committed Food fixture, captures the authoritative pre-state,
+            and exposes the before_mutation marker without invoking the mutation-under-test.
+          </Text>
+          <Text selectable style={styles.status}>
+            Control marker: {stageDControlMarker ? `${stageDControlMarker.checkpointReached} / ${stageDControlMarker.state}` : "none"}
+          </Text>
+          {stageDControlAwaitingTermination ? (
+            <>
+              <Text style={styles.restartInstruction}>
+                {isE216StageDCurrentProcessSession(stageDControlMarker!.processSessionId)
+                  ? "HOST ACTION NOW: terminate and launch."
+                  : "RELAUNCH DETECTED: press COMPLETE RESTART INSPECTION."}
+              </Text>
+              {isE216StageDCurrentProcessSession(stageDControlMarker!.processSessionId) ? (
+                <Text style={styles.detail}>
+                  Run xcrun simctl terminate booted com.portfolio.nutritionapp.e216, then xcrun simctl launch booted com.portfolio.nutritionapp.e216. Do not press reset.
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Complete E2-16D pre-mutation control restart inspection"
+                style={styles.button}
+                disabled={busy || Platform.OS !== "ios"}
+                onPress={() => void completeStageDCase()}
+              >
+                <Text style={styles.buttonText}>COMPLETE RESTART INSPECTION</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Prepare E2-16D pre-mutation control"
+              style={[styles.button, styles.runAllButton]}
+              disabled={busy || Platform.OS !== "ios" || stageDTerminationPending}
+              onPress={() => void prepareStageDPreMutationControl()}
+            >
+              <Text style={styles.buttonText}>PREPARE BEFORE-MUTATION CONTROL</Text>
+            </Pressable>
+          )}
+          {stageDControlMarker?.state === "completed" && stageDControlMarker.result ? (
+            <Text selectable style={styles.result}>{canonicalJsonStringify(stageDControlMarker.result)}</Text>
+          ) : null}
+        </View>
+        {E216_STAGE_D_CASE_DEFINITIONS.map((definition) => {
+          const prepared = stageDMarker?.caseId === definition.id && stageDMarker.state === "ready_to_arm";
+          const completed = stageDMarker?.caseId === definition.id && stageDMarker.state === "completed";
+          return (
+            <View key={definition.id} style={styles.caseCard}>
+              <Text style={styles.caseTitle}>{definition.title} — {definition.checkpoint === "during_transaction" ? "during transaction" : "post commit"}</Text>
+              <Text style={styles.detail}>{definition.description}</Text>
+              <Text selectable style={styles.detail}>Real checkpoint seam: {definition.transactionStage ?? "production mutation promise resolved"}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${prepared ? "Arm" : "Prepare"} E2-16D ${definition.id}`}
+                style={[styles.button, prepared ? styles.runAllButton : undefined]}
+                disabled={busy || Platform.OS !== "ios" || stageDTerminationPending}
+                onPress={() => prepared ? void armStageDCase() : void prepareStageDCase(definition.id)}
+              >
+                <Text style={styles.buttonText}>{prepared ? "ARM REAL MUTATION" : "PREPARE CASE"}</Text>
+              </Pressable>
+              {prepared ? (
+                <Text style={styles.restartInstruction}>
+                  The before-mutation marker is durable. Arming will replace it only at the requested transaction/commit checkpoint.
+                </Text>
+              ) : null}
+              {completed && stageDMarker?.result ? (
+                <Text selectable style={styles.result}>{canonicalJsonStringify(stageDMarker.result)}</Text>
               ) : null}
             </View>
           );
