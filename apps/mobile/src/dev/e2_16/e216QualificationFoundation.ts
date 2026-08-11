@@ -19,15 +19,46 @@ export const E216_QUALIFICATION_BUNDLE_IDENTIFIER = "com.portfolio.nutritionapp.
 export const E216_DATABASE_ROOT_DIRECTORY_NAME = "E2-16";
 export const E216_CHECKPOINT_FILE_NAME = "e2-16-checkpoint.json";
 export const E216_CHECKPOINT_SCHEMA = "e2-16-checkpoint.v1";
+export const E216_STAGE_B_CHECKPOINT_FILE_NAME = "e2-16-b-checkpoint.json";
+export const E216_STAGE_B_CHECKPOINT_SCHEMA = "e2-16-b-checkpoint.v1";
 
 export const E216_ALLOWED_DATABASE_NAMES = Object.freeze([
   "e2_16_foundation_ios.db",
   "e2_16_foundation_android.db",
+  "e2_16_migration_ios.db",
+  "e2_16_migration_android.db",
+  "e2_16_reopen_ios.db",
+  "e2_16_reopen_android.db",
+  "e2_16_restart_ios.db",
+  "e2_16_restart_android.db",
+] as const);
+
+export const E216_DATABASE_STAGES = Object.freeze([
+  "foundation",
+  "migration",
+  "reopen",
+  "restart",
+] as const);
+
+export const E216_STAGE_B_CASE_IDS = Object.freeze([
+  "fresh_migration",
+  "valid_v1_reopen",
+  "explicit_close_reopen",
+  "ordinary_restart",
 ] as const);
 
 export type E216QualificationPlatform = "ios" | "android";
 export type E216QualificationDatabaseName = (typeof E216_ALLOWED_DATABASE_NAMES)[number];
+export type E216QualificationDatabaseStage = (typeof E216_DATABASE_STAGES)[number];
+export type E216StageBCaseId = (typeof E216_STAGE_B_CASE_IDS)[number];
 export type E216FoundationCheckpoint = "foundation_ready";
+
+export type E216MigrationCheckpointEvidence = Readonly<{
+  fromVersion: number;
+  toVersion: number;
+  appliedVersions: readonly number[];
+  alreadyCurrent: boolean;
+}>;
 
 type QualificationEnvironment = Readonly<{
   EXPO_PUBLIC_E216_NATIVE_QUALIFICATION?: string;
@@ -73,11 +104,28 @@ export function qualificationPlatform(platform: string = Platform.OS): E216Quali
 
 export function qualificationDatabaseName(
   platform: string = Platform.OS,
+  stage: E216QualificationDatabaseStage = "foundation",
 ): E216QualificationDatabaseName {
   const normalized = qualificationPlatform(platform);
-  return normalized === "ios"
-    ? "e2_16_foundation_ios.db"
-    : "e2_16_foundation_android.db";
+  const names: Record<E216QualificationDatabaseStage, Record<E216QualificationPlatform, E216QualificationDatabaseName>> = {
+    foundation: {
+      ios: "e2_16_foundation_ios.db",
+      android: "e2_16_foundation_android.db",
+    },
+    migration: {
+      ios: "e2_16_migration_ios.db",
+      android: "e2_16_migration_android.db",
+    },
+    reopen: {
+      ios: "e2_16_reopen_ios.db",
+      android: "e2_16_reopen_android.db",
+    },
+    restart: {
+      ios: "e2_16_restart_ios.db",
+      android: "e2_16_restart_android.db",
+    },
+  };
+  return names[stage][normalized];
 }
 
 export function isE216DatabaseNameAllowed(value: string): value is E216QualificationDatabaseName {
@@ -170,8 +218,10 @@ export function registerE216QualificationHandle(
 }
 
 /** Open only the current platform's fixed E2-16A database. */
-export async function openE216QualificationDatabase(): Promise<NutritionDatabaseHandle> {
-  const databaseName = qualificationDatabaseName();
+export async function openE216QualificationDatabase(
+  stage: E216QualificationDatabaseStage = "foundation",
+): Promise<NutritionDatabaseHandle> {
+  const databaseName = qualificationDatabaseName(Platform.OS, stage);
   const directory = qualificationDatabaseDirectory();
   assertE216DatabaseLocation(directory, databaseName);
   const handle = await openNutritionDatabase({ databaseName, directory });
@@ -182,8 +232,10 @@ export async function openE216QualificationDatabase(): Promise<NutritionDatabase
  * Reset is intentionally parameterless.  It can only close and remove the
  * exact current-platform database and its exact SQLite sidecars.
  */
-export async function resetE216QualificationDatabase(): Promise<void> {
-  const databaseName = qualificationDatabaseName();
+export async function resetE216QualificationDatabase(
+  stage: E216QualificationDatabaseStage = "foundation",
+): Promise<void> {
+  const databaseName = qualificationDatabaseName(Platform.OS, stage);
   const directory = qualificationDatabaseDirectory();
   assertE216DatabaseLocation(directory, databaseName);
   await checkpointAndCloseHandles();
@@ -195,10 +247,16 @@ export async function resetE216QualificationDatabase(): Promise<void> {
   }
 
   for (const file of exactDatabaseFiles(directory, databaseName)) removeIfPresent(file);
-  const marker = qualificationFile(directory, E216_CHECKPOINT_FILE_NAME);
-  removeIfPresent(marker);
+  removeIfPresent(qualificationFile(directory, E216_CHECKPOINT_FILE_NAME));
+  removeIfPresent(qualificationFile(directory, E216_STAGE_B_CHECKPOINT_FILE_NAME));
   if (exactDatabaseFiles(directory, databaseName).some((file) => file.exists)) {
     throw new Error("E2-16 qualification reset did not leave the isolated database absent.");
+  }
+}
+
+export async function resetE216QualificationDatabases(): Promise<void> {
+  for (const stage of E216_DATABASE_STAGES) {
+    await resetE216QualificationDatabase(stage);
   }
 }
 
@@ -237,4 +295,122 @@ export function writeE216FoundationCheckpoint(): E216CheckpointMarker {
 
 export function hasE216FoundationCheckpoint(): boolean {
   return checkpointMarkerFile().exists;
+}
+
+export type E216StageBCheckpointMarker = Readonly<{
+  schema: typeof E216_STAGE_B_CHECKPOINT_SCHEMA;
+  stage: "E2-16B";
+  caseId: "ordinary_restart";
+  platform: E216QualificationPlatform;
+  databaseName: E216QualificationDatabaseName;
+  ownerIdentityDigest: string;
+  initialMigration: E216MigrationCheckpointEvidence;
+  completedCaseIds: readonly E216StageBCaseId[];
+  runAll: boolean;
+  state: "awaiting_relaunch";
+}>;
+
+function stageBCheckpointFile(): File {
+  return qualificationFile(
+    qualificationDatabaseDirectory(),
+    E216_STAGE_B_CHECKPOINT_FILE_NAME,
+  );
+}
+
+function isStageBCaseId(value: unknown): value is E216StageBCaseId {
+  return typeof value === "string"
+    && (E216_STAGE_B_CASE_IDS as readonly string[]).includes(value);
+}
+
+function isMigrationCheckpointEvidence(value: unknown): value is E216MigrationCheckpointEvidence {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<E216MigrationCheckpointEvidence>;
+  return Number.isSafeInteger(candidate.fromVersion)
+    && Number.isSafeInteger(candidate.toVersion)
+    && Array.isArray(candidate.appliedVersions)
+    && candidate.appliedVersions.every((version) => Number.isSafeInteger(version))
+    && typeof candidate.alreadyCurrent === "boolean";
+}
+
+export function writeE216StageBRestartCheckpoint(
+  ownerIdentityDigest: string,
+  initialMigration: E216MigrationCheckpointEvidence,
+  completedCaseIds: readonly E216StageBCaseId[] = [],
+  runAll = false,
+): E216StageBCheckpointMarker {
+  if (!/^[0-9a-f]{64}$/.test(ownerIdentityDigest)) {
+    throw new Error("E2-16B restart checkpoint owner identity evidence is invalid.");
+  }
+  if (!isMigrationCheckpointEvidence(initialMigration)) {
+    throw new Error("E2-16B restart checkpoint migration evidence is invalid.");
+  }
+  if (new Set(completedCaseIds).size !== completedCaseIds.length || completedCaseIds.some((caseId) => !isStageBCaseId(caseId))) {
+    throw new Error("E2-16B restart checkpoint case evidence is invalid.");
+  }
+  const marker: E216StageBCheckpointMarker = Object.freeze({
+    schema: E216_STAGE_B_CHECKPOINT_SCHEMA,
+    stage: "E2-16B",
+    caseId: "ordinary_restart",
+    platform: qualificationPlatform(),
+    databaseName: qualificationDatabaseName(Platform.OS, "restart"),
+    ownerIdentityDigest,
+    initialMigration: Object.freeze({
+      ...initialMigration,
+      appliedVersions: Object.freeze([...initialMigration.appliedVersions]),
+    }),
+    completedCaseIds: Object.freeze([...completedCaseIds]),
+    runAll,
+    state: "awaiting_relaunch",
+  });
+  const file = stageBCheckpointFile();
+  file.create({ intermediates: true, overwrite: true });
+  file.write(JSON.stringify(marker));
+  if (!file.exists) throw new Error("E2-16B restart checkpoint marker was not created.");
+  return marker;
+}
+
+export function readE216StageBRestartCheckpoint(): E216StageBCheckpointMarker | null {
+  const file = stageBCheckpointFile();
+  if (!file.exists) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(file.textSync()) as unknown;
+  } catch {
+    throw new Error("E2-16B restart checkpoint marker is unreadable.");
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("E2-16B restart checkpoint marker is invalid.");
+  }
+  const candidate = parsed as Partial<E216StageBCheckpointMarker>;
+  const platform = candidate.platform;
+  const completedCaseIds = candidate.completedCaseIds;
+  if (
+    candidate.schema !== E216_STAGE_B_CHECKPOINT_SCHEMA
+    || candidate.stage !== "E2-16B"
+    || candidate.caseId !== "ordinary_restart"
+    || (platform !== "ios" && platform !== "android")
+    || candidate.databaseName !== qualificationDatabaseName(platform, "restart")
+    || typeof candidate.ownerIdentityDigest !== "string"
+    || !/^[0-9a-f]{64}$/.test(candidate.ownerIdentityDigest)
+    || !isMigrationCheckpointEvidence(candidate.initialMigration)
+    || !Array.isArray(completedCaseIds)
+    || completedCaseIds.some((caseId) => !isStageBCaseId(caseId))
+    || new Set(completedCaseIds).size !== completedCaseIds.length
+    || typeof candidate.runAll !== "boolean"
+    || candidate.state !== "awaiting_relaunch"
+  ) {
+    throw new Error("E2-16B restart checkpoint marker is invalid.");
+  }
+  return Object.freeze({
+    ...candidate,
+    initialMigration: Object.freeze({
+      ...candidate.initialMigration,
+      appliedVersions: Object.freeze([...candidate.initialMigration.appliedVersions]),
+    }),
+    completedCaseIds: Object.freeze([...completedCaseIds]),
+  }) as E216StageBCheckpointMarker;
+}
+
+export function clearE216StageBRestartCheckpoint(): void {
+  removeIfPresent(stageBCheckpointFile());
 }

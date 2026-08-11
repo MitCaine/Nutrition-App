@@ -34,7 +34,12 @@ import {
   canonicalTransferJson,
   sha256CanonicalValue,
 } from "../../transfer/e2_15/transferPackage";
-import { qualificationPlatform, qualificationDatabaseName, type E216QualificationPlatform } from "./e216QualificationFoundation";
+import {
+  qualificationPlatform,
+  qualificationDatabaseName,
+  type E216QualificationDatabaseName,
+  type E216QualificationPlatform,
+} from "./e216QualificationFoundation";
 
 type BindValue = string | number | null;
 type JsonRow = Record<string, unknown>;
@@ -47,6 +52,7 @@ type ReadContext = {
 export type E216DirectIntegrityQualifierOptions = Readonly<{
   appVersion?: string;
   commit?: string;
+  databaseName?: E216QualificationDatabaseName;
   platform?: E216QualificationPlatform;
 }>;
 
@@ -1033,7 +1039,7 @@ export async function qualifyE216Database(
     platform,
     appVersion: options.appVersion ?? "development",
     commit: options.commit ?? "unreported",
-    databaseName: qualificationDatabaseName(platform),
+    databaseName: options.databaseName ?? qualificationDatabaseName(platform),
     schema,
     integrity,
     nutrientCatalog,

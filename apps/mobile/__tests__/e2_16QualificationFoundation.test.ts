@@ -38,6 +38,12 @@ jest.mock("expo-file-system", () => {
       mockFileContents.set(this.uri, value);
     }
 
+    textSync(): string {
+      const value = mockFileContents.get(this.uri);
+      if (value === undefined) throw new Error("file does not exist");
+      return value;
+    }
+
     delete(): void {
       mockFileContents.delete(this.uri);
     }
@@ -49,6 +55,7 @@ import {
   E216_ALLOWED_DATABASE_NAMES,
   E216_CHECKPOINT_FILE_NAME,
   E216_DATABASE_ROOT_DIRECTORY_NAME,
+  E216_STAGE_B_CHECKPOINT_FILE_NAME,
   assertE216DatabaseLocation,
   buildE216FoundationCheckpointMarker,
   hasE216FoundationCheckpoint,
@@ -56,13 +63,20 @@ import {
   isE216QualificationEnabled,
   qualificationDatabaseDirectory,
   qualificationDatabaseName,
+  readE216StageBRestartCheckpoint,
   registerE216QualificationHandle,
   resetE216QualificationDatabase,
+  resetE216QualificationDatabases,
+  writeE216StageBRestartCheckpoint,
   writeE216FoundationCheckpoint,
 } from "../src/dev/e2_16/e216QualificationFoundation";
 import {
   qualifyE216Database,
 } from "../src/dev/e2_16/e216DirectIntegrityQualifier";
+import {
+  isCurrentE216ReopenEvidence,
+  isFreshE216MigrationEvidence,
+} from "../src/dev/e2_16/e216StageBQualification";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../src/storage/sqlite/schema";
 import type { NutritionDatabaseHandle } from "../src/storage/sqlite/migrations";
 import { deleteDatabaseAsync } from "expo-sqlite";
@@ -250,9 +264,12 @@ test("E2-16A enables only a development build and fixes the isolated identity", 
   }, true)).toBe(false);
   expect(qualificationDatabaseName("ios")).toBe("e2_16_foundation_ios.db");
   expect(qualificationDatabaseName("android")).toBe("e2_16_foundation_android.db");
-  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(2);
+  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(8);
   expect(E216_ALLOWED_DATABASE_NAMES).not.toContain("nutrition.db");
   expect(E216_DATABASE_ROOT_DIRECTORY_NAME).toBe("E2-16");
+  expect(qualificationDatabaseName("ios", "migration")).toBe("e2_16_migration_ios.db");
+  expect(qualificationDatabaseName("ios", "reopen")).toBe("e2_16_reopen_ios.db");
+  expect(qualificationDatabaseName("ios", "restart")).toBe("e2_16_restart_ios.db");
 });
 
 test("the database boundary rejects the normal name and every outside root", () => {
@@ -289,6 +306,48 @@ test("reset tolerates only the explicit native absent-database condition", async
   await expect(resetE216QualificationDatabase()).rejects.toThrow("permission denied");
 });
 
+test("Stage-B restart checkpoint persists only bounded relaunch evidence", () => {
+  const ownerIdentityDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  const marker = writeE216StageBRestartCheckpoint(ownerIdentityDigest, {
+    fromVersion: 0,
+    toVersion: 1,
+    appliedVersions: [1],
+    alreadyCurrent: false,
+  }, ["fresh_migration", "valid_v1_reopen"], true);
+
+  expect(marker.schema).toBe("e2-16-b-checkpoint.v1");
+  expect(marker.databaseName).toBe("e2_16_restart_ios.db");
+  expect(marker.ownerIdentityDigest).toBe(ownerIdentityDigest);
+  expect(marker.completedCaseIds).toEqual(["fresh_migration", "valid_v1_reopen"]);
+  expect(readE216StageBRestartCheckpoint()).toMatchObject({
+    caseId: "ordinary_restart",
+    runAll: true,
+    state: "awaiting_relaunch",
+  });
+  expect(E216_STAGE_B_CHECKPOINT_FILE_NAME).toBe("e2-16-b-checkpoint.json");
+});
+
+test("Stage-B migration expectations distinguish fresh and already-current v1", () => {
+  expect(isFreshE216MigrationEvidence({
+    fromVersion: 0,
+    toVersion: 1,
+    appliedVersions: [1],
+    alreadyCurrent: false,
+  })).toBe(true);
+  expect(isCurrentE216ReopenEvidence({
+    fromVersion: 1,
+    toVersion: 1,
+    appliedVersions: [],
+    alreadyCurrent: true,
+  })).toBe(true);
+  expect(isCurrentE216ReopenEvidence({
+    fromVersion: 0,
+    toVersion: 1,
+    appliedVersions: [1],
+    alreadyCurrent: false,
+  })).toBe(false);
+});
+
 test("a native close failure keeps the qualification handle registered and blocks reset", async () => {
   const close = jest.fn()
     .mockRejectedValueOnce(new Error("native close failed"))
@@ -307,6 +366,23 @@ test("a native close failure keeps the qualification handle registered and block
 
   await expect(resetE216QualificationDatabase()).resolves.toBeUndefined();
   expect(close).toHaveBeenCalledTimes(3);
+});
+
+test("Stage-B reset deletes only the four current-platform qualification databases", async () => {
+  deleteDatabaseAsyncMock.mockClear();
+
+  await expect(resetE216QualificationDatabases()).resolves.toBeUndefined();
+
+  expect(deleteDatabaseAsyncMock.mock.calls.map(([name]) => name)).toEqual([
+    "e2_16_foundation_ios.db",
+    "e2_16_migration_ios.db",
+    "e2_16_reopen_ios.db",
+    "e2_16_restart_ios.db",
+  ]);
+  expect(deleteDatabaseAsyncMock.mock.calls.every(([, directory]) => (
+    directory === qualificationDatabaseDirectory()
+  ))).toBe(true);
+  expect(deleteDatabaseAsyncMock.mock.calls.every(([name]) => name !== "nutrition.db")).toBe(true);
 });
 
 test.each([
