@@ -294,7 +294,7 @@ test("E2-16A enables only a development build and fixes the isolated identity", 
   }, true)).toBe(false);
   expect(qualificationDatabaseName("ios")).toBe("e2_16_foundation_ios.db");
   expect(qualificationDatabaseName("android")).toBe("e2_16_foundation_android.db");
-  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(15);
+  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(16);
   expect(E216_ALLOWED_DATABASE_NAMES).not.toContain("nutrition.db");
   expect(E216_DATABASE_ROOT_DIRECTORY_NAME).toBe("E2-16");
   expect(qualificationDatabaseName("ios", "migration")).toBe("e2_16_migration_ios.db");
@@ -304,6 +304,8 @@ test("E2-16A enables only a development build and fixes the isolated identity", 
   expect(qualificationDatabaseName("ios", "future")).toBe("e2_16_future_ios.db");
   expect(qualificationDatabaseName("ios", "ledger")).toBe("e2_16_ledger_ios.db");
   expect(qualificationDatabaseName("ios", "termination")).toBe("e2_16_termination_ios.db");
+  expect(qualificationDatabaseName("ios", "storage")).toBe("e2_16_storage_ios.db");
+  expect(() => qualificationDatabaseName("android", "storage")).toThrow("E2-16E");
   expect(() => qualificationDatabaseName("android", "termination")).toThrow("only on iOS");
 });
 
@@ -491,6 +493,7 @@ test("Stage-B/C/D reset deletes only current-platform qualification databases", 
     "e2_16_future_ios.db",
     "e2_16_ledger_ios.db",
     "e2_16_termination_ios.db",
+    "e2_16_storage_ios.db",
   ]);
   expect(deleteDatabaseAsyncMock.mock.calls.every(([, directory]) => (
     directory === qualificationDatabaseDirectory()

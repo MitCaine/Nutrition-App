@@ -48,6 +48,14 @@ import {
   type E216StageDPreMutationControlCheckpointMarker,
 } from "./e216StageDQualification";
 import {
+  E216_STAGE_E_CASE_DEFINITIONS,
+  readE216StageECheckpoint,
+  runE216StageECase,
+  type E216StageECaseId,
+  type E216StageECaseResult,
+  type E216StageECheckpointMarker,
+} from "./e216StageEQualification";
+import {
   qualifyE216Database,
   serializeE216IntegrityResult,
   type E216DirectIntegrityResult,
@@ -65,6 +73,12 @@ type StageBCaseState = Readonly<{
 type StageCCaseState = Readonly<{
   status: "idle" | "running" | "passed" | "failed";
   result?: E216StageCCaseResult;
+  error?: string;
+}>;
+
+type StageECaseState = Readonly<{
+  status: "idle" | "running" | "passed" | "failed";
+  result?: E216StageECaseResult;
   error?: string;
 }>;
 
@@ -86,6 +100,13 @@ function initialStageCCaseStates(): Record<(typeof E216_STAGE_C_CASE_DEFINITIONS
   };
 }
 
+function initialStageECaseStates(): Record<E216StageECaseId, StageECaseState> {
+  return {
+    native_path_open_failure: { status: "idle" },
+    bounded_sqlite_full: { status: "idle" },
+  };
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -96,8 +117,10 @@ export default function E216NativeQualificationScreen() {
   const [checkpoint, setCheckpoint] = useState(hasE216FoundationCheckpoint());
   const [stageBCaseStates, setStageBCaseStates] = useState(initialStageBCaseStates);
   const [stageCCaseStates, setStageCCaseStates] = useState(initialStageCCaseStates);
+  const [stageECaseStates, setStageECaseStates] = useState(initialStageECaseStates);
   const [stageDMarker, setStageDMarker] = useState<E216StageDCheckpointMarker | null>(null);
   const [stageDControlMarker, setStageDControlMarker] = useState<E216StageDPreMutationControlCheckpointMarker | null>(null);
+  const [stageEMarker, setStageEMarker] = useState<E216StageECheckpointMarker | null>(null);
   const [pendingRestart, setPendingRestart] = useState<E216StageBRestartPending | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -129,6 +152,28 @@ export default function E216NativeQualificationScreen() {
       setMessage("E2-16B restart checkpoint found. Reopen the isolated database after relaunch.");
     } catch (error) {
       setMessage(`E2-16B checkpoint failed: ${errorMessage(error)}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const marker = readE216StageECheckpoint();
+      setStageEMarker(marker);
+      if (marker?.state === "completed" && marker.result) {
+        const completedResult = marker.result;
+        setStageECaseStates((current) => ({
+          ...current,
+          [marker.caseId]: {
+            status: completedResult.status === "pass" ? "passed" : "failed",
+            result: completedResult,
+          },
+        }));
+        setMessage(`E2-16E ${marker.caseId} completed with ${completedResult.status} status.`);
+      } else if (marker) {
+        setMessage(`E2-16E ${marker.caseId} is at ${marker.checkpointReached}.`);
+      }
+    } catch (error) {
+      setMessage(`E2-16E checkpoint failed: ${errorMessage(error)}`);
     }
   }, []);
 
@@ -451,6 +496,40 @@ export default function E216NativeQualificationScreen() {
     }
   }
 
+  async function runStageECase(caseId: E216StageECaseId): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    setStageECaseStates((current) => ({
+      ...current,
+      [caseId]: { status: "running" },
+    }));
+    try {
+      await closeFoundationHandle();
+      const outcome = await runE216StageECase(caseId);
+      setStageEMarker(readE216StageECheckpoint());
+      setStageECaseStates((current) => ({
+        ...current,
+        [caseId]: {
+          status: outcome.status === "pass" ? "passed" : "failed",
+          result: outcome,
+        },
+      }));
+      setMessage(
+        outcome.status === "pass"
+          ? `E2-16E ${caseId} passed its native failure and preservation checks.`
+          : `E2-16E ${caseId} failed its native failure or preservation checks.`,
+      );
+    } catch (error) {
+      setStageECaseStates((current) => ({
+        ...current,
+        [caseId]: { status: "failed", error: errorMessage(error) },
+      }));
+      setMessage(`E2-16E ${caseId} failed: ${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function writeCheckpoint(): void {
     try {
       writeE216FoundationCheckpoint();
@@ -474,9 +553,11 @@ export default function E216NativeQualificationScreen() {
       setPendingRestart(null);
       setStageBCaseStates(initialStageBCaseStates());
       setStageCCaseStates(initialStageCCaseStates());
+      setStageECaseStates(initialStageECaseStates());
       setStageDMarker(null);
       setStageDControlMarker(null);
-      setMessage("E2-16A/B/C/D isolated databases, checkpoints, and Stage-D journal state reset.");
+      setStageEMarker(null);
+      setMessage("E2-16A/B/C/D/E isolated databases, checkpoints, and Stage-D journal state reset.");
     } catch (error) {
       setMessage(`Reset failed: ${errorMessage(error)}`);
     } finally {
@@ -487,10 +568,10 @@ export default function E216NativeQualificationScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Nutrition App E2-16</Text>
-      <Text style={styles.subtitle}>E2-16A/B/C/D native lifecycle and real process-termination qualification</Text>
+      <Text style={styles.subtitle}>E2-16A/B/C/D/E native lifecycle, failure, and real process-termination qualification</Text>
       <Text style={styles.warning}>
-        Temporary development-only infrastructure. E2-16E+ filesystem,
-        feature, accessibility, and OCR scenarios are not implemented here.
+        Temporary development-only infrastructure. E2-16F+ feature, accessibility,
+        and OCR-device scenarios are not implemented here.
       </Text>
 
       <View style={styles.card}>
@@ -500,6 +581,7 @@ export default function E216NativeQualificationScreen() {
         <Text selectable style={styles.detail}>Stage-B databases: e2_16_&lt;migration|reopen|restart&gt;_&lt;platform&gt;.db</Text>
         <Text selectable style={styles.detail}>Stage-C databases: e2_16_&lt;failure|future|ledger&gt;_ios.db</Text>
         <Text selectable style={styles.detail}>Stage-D database: e2_16_termination_ios.db</Text>
+        <Text selectable style={styles.detail}>Stage-E database: e2_16_storage_ios.db (iOS only)</Text>
         <Text style={styles.detail}>Root: Expo SQLite default root / E2-16</Text>
         <Text style={styles.detail}>Normal nutrition.db is never opened or deleted.</Text>
       </View>
@@ -517,6 +599,41 @@ export default function E216NativeQualificationScreen() {
         <Pressable accessibilityRole="button" accessibilityLabel="Reset isolated qualification database" style={[styles.button, styles.resetButton]} disabled={busy} onPress={() => void reset()}>
           <Text style={styles.buttonText}>RESET ALL ISOLATED STATE</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.stageCard}>
+        <Text style={styles.heading}>E2-16E filesystem and full-database failure (iOS only)</Text>
+        <Text style={styles.detail}>
+          Each case uses only the disposable Stage-E database. The path case opens the allowlisted database through
+          a regular-file directory path; the full case bounds only that database with max_page_count and fills a
+          harness-owned table until native SQLITE_FULL. Neither case resets or deletes the database during failure.
+        </Text>
+        <Text selectable style={styles.status}>
+          Marker: {stageEMarker ? `${stageEMarker.caseId} / ${stageEMarker.checkpointReached} / ${stageEMarker.state}` : "none"}
+        </Text>
+        {E216_STAGE_E_CASE_DEFINITIONS.map((definition) => {
+          const state = stageECaseStates[definition.id];
+          return (
+            <View key={definition.id} style={styles.caseCard}>
+              <Text style={styles.caseTitle}>{definition.title}</Text>
+              <Text style={styles.detail}>{definition.description}</Text>
+              <Text style={styles.status}>Status: {state.status}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Run E2-16E ${definition.title}`}
+                style={styles.button}
+                disabled={busy || Platform.OS !== "ios"}
+                onPress={() => void runStageECase(definition.id)}
+              >
+                <Text style={styles.buttonText}>RUN CASE</Text>
+              </Pressable>
+              {state.error ? <Text accessibilityRole="alert" style={styles.message}>{state.error}</Text> : null}
+              {state.result ? (
+                <Text selectable style={styles.result}>{canonicalJsonStringify(state.result)}</Text>
+              ) : null}
+            </View>
+          );
+        })}
       </View>
 
       <View style={styles.stageCard}>
