@@ -1,0 +1,258 @@
+{
+  "contract_version": "e2-15.v1",
+  "canonical_json_cases": [
+    {
+      "name": "unicode_escaping_number_spelling_and_null_distinction",
+      "value": {
+        "unicode": "Crème brûlée 🍎",
+        "escaping": "quote \" slash / newline\n tab\t backslash \\",
+        "numbers": {
+          "one": 1.0,
+          "fraction": 1.5,
+          "threshold": 1e-06,
+          "small": 1e-07,
+          "negative_zero": -0.0
+        },
+        "outer_null": null,
+        "inner_json": "null"
+      },
+      "canonical": "{\"escaping\":\"quote \\\" slash / newline\\n tab\\t backslash \\\\\",\"inner_json\":\"null\",\"numbers\":{\"fraction\":1.5,\"negative_zero\":0,\"one\":1,\"small\":1e-7,\"threshold\":0.000001},\"outer_null\":null,\"unicode\":\"Crème brûlée 🍎\"}",
+      "sha256": "303c2b5e9a092375c232289139cbd66e75f31f60bdaff05f16612d1b2087a91e"
+    },
+    {
+      "name": "unicode_object_key_code_point_order",
+      "value": {
+        "😀": "grinning",
+        "𐀀": "linear-b",
+        "Ω": "omega",
+        "é": "e-acute",
+        "A": "ascii"
+      },
+      "canonical": "{\"A\":\"ascii\",\"é\":\"e-acute\",\"Ω\":\"omega\",\"𐀀\":\"linear-b\",\"😀\":\"grinning\"}",
+      "sha256": "4252af03a71a54be3e16a4e0c3d79dd4893f036e9b483a64a53e2189e397521e"
+    },
+    {
+      "name": "json_number_spelling_and_safe_integer_boundaries",
+      "value": {
+        "negative_safe": -9007199254740991,
+        "positive_safe": 9007199254740991,
+        "negative_zero": -0.0,
+        "below_fixed_threshold": 1e-07,
+        "fixed_threshold": 1e-06,
+        "fractional_exponent": 1.2345678901234566e-07
+      },
+      "canonical": "{\"below_fixed_threshold\":1e-7,\"fixed_threshold\":0.000001,\"fractional_exponent\":1.2345678901234566e-7,\"negative_safe\":-9007199254740991,\"negative_zero\":0,\"positive_safe\":9007199254740991}",
+      "sha256": "55c3f63676d85fd63f97399047912da144a6eee6e80062153433f0630725af46"
+    }
+  ],
+  "scalar_cases": [
+    {
+      "name": "canonical_uuid",
+      "kind": "uuid",
+      "input": "A0B1C2D3-E4F5-4678-9012-ABCDEF123456",
+      "canonical": "a0b1c2d3-e4f5-4678-9012-abcdef123456"
+    },
+    {
+      "name": "date",
+      "kind": "date",
+      "input": "2026-02-28",
+      "canonical": "2026-02-28"
+    },
+    {
+      "name": "instant_zero_fraction",
+      "kind": "instant",
+      "input": "2026-02-28T23:59:59.000000Z",
+      "canonical": "2026-02-28T23:59:59Z"
+    },
+    {
+      "name": "instant_six_fraction",
+      "kind": "instant",
+      "input": "2026-02-28T23:59:59.123456Z",
+      "canonical": "2026-02-28T23:59:59.123456Z"
+    },
+    {
+      "name": "fixed_numeric_14_6",
+      "kind": "numeric_14_6",
+      "input": "1.2",
+      "canonical": "1.200000"
+    },
+    {
+      "name": "fixed_numeric_8_3",
+      "kind": "numeric_8_3",
+      "input": "99999.999",
+      "canonical": "99999.999"
+    },
+    {
+      "name": "fixed_numeric_5_4",
+      "kind": "numeric_5_4",
+      "input": "0",
+      "canonical": "0.0000"
+    },
+    {
+      "name": "response_decimal_scale",
+      "kind": "response_decimal",
+      "input": "1.2300",
+      "canonical": "1.2300"
+    },
+    {
+      "name": "sql_null",
+      "kind": "nullable_json_document",
+      "input": null,
+      "canonical": null
+    },
+    {
+      "name": "canonical_json_null_document",
+      "kind": "json_document",
+      "input": "null",
+      "canonical": "null"
+    },
+    {
+      "name": "safe_integer_zero",
+      "kind": "nonnegative_integer",
+      "input": 0,
+      "canonical": 0
+    },
+    {
+      "name": "safe_integer_maximum",
+      "kind": "positive_integer",
+      "input": 9007199254740991,
+      "canonical": 9007199254740991
+    }
+  ],
+  "unsafe_integer_cases": [
+    {
+      "name": "positive_unsafe_integer",
+      "input": "9007199254740992"
+    },
+    {
+      "name": "negative_unsafe_integer",
+      "input": "-9007199254740992"
+    }
+  ],
+  "record_order_cases": [
+    {
+      "name": "composite_primary_key_tuple_order",
+      "primary_key": [
+        "user_id",
+        "food_item_id"
+      ],
+      "unsorted_records": [
+        {
+          "user_id": "f0000000-0000-4000-8000-000000000000",
+          "food_item_id": "0f000000-0000-4000-8000-000000000002"
+        },
+        {
+          "user_id": "0f000000-0000-4000-8000-000000000000",
+          "food_item_id": "f0000000-0000-4000-8000-000000000001"
+        },
+        {
+          "user_id": "0f000000-0000-4000-8000-000000000000",
+          "food_item_id": "0f000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "sorted_records": [
+        {
+          "user_id": "0f000000-0000-4000-8000-000000000000",
+          "food_item_id": "0f000000-0000-4000-8000-000000000001"
+        },
+        {
+          "user_id": "0f000000-0000-4000-8000-000000000000",
+          "food_item_id": "f0000000-0000-4000-8000-000000000001"
+        },
+        {
+          "user_id": "f0000000-0000-4000-8000-000000000000",
+          "food_item_id": "0f000000-0000-4000-8000-000000000002"
+        }
+      ]
+    }
+  ],
+  "section_cases": [
+    {
+      "name": "canonical_uuid_primary_key_order",
+      "section_name": "users",
+      "sorted_records": [
+        {
+          "id": "0f000000-0000-4000-8000-000000000000"
+        },
+        {
+          "id": "f0000000-0000-4000-8000-000000000000"
+        }
+      ],
+      "preimage": "{\"count\":2,\"name\":\"users\",\"records\":[{\"id\":\"0f000000-0000-4000-8000-000000000000\"},{\"id\":\"f0000000-0000-4000-8000-000000000000\"}]}",
+      "digest": "72aad8302868e219312dccfd238e975fe367b787ce482090f79c4b5e960dcb11"
+    },
+    {
+      "name": "empty_section_digest_preimage",
+      "section_name": "users",
+      "sorted_records": [],
+      "preimage": "{\"count\":0,\"name\":\"users\",\"records\":[]}",
+      "digest": "504abae8357482f227bf6b86f154f4c48737c9d50911bc80ee12d06e05b744a1"
+    },
+    {
+      "name": "composite_primary_key_section_preimage",
+      "section_name": "food_favorites",
+      "sorted_records": [
+        {
+          "user_id": "0f000000-0000-4000-8000-000000000000",
+          "food_item_id": "0f000000-0000-4000-8000-000000000001"
+        },
+        {
+          "user_id": "0f000000-0000-4000-8000-000000000000",
+          "food_item_id": "f0000000-0000-4000-8000-000000000001"
+        },
+        {
+          "user_id": "f0000000-0000-4000-8000-000000000000",
+          "food_item_id": "0f000000-0000-4000-8000-000000000002"
+        }
+      ],
+      "preimage": "{\"count\":3,\"name\":\"food_favorites\",\"records\":[{\"food_item_id\":\"0f000000-0000-4000-8000-000000000001\",\"user_id\":\"0f000000-0000-4000-8000-000000000000\"},{\"food_item_id\":\"f0000000-0000-4000-8000-000000000001\",\"user_id\":\"0f000000-0000-4000-8000-000000000000\"},{\"food_item_id\":\"0f000000-0000-4000-8000-000000000002\",\"user_id\":\"f0000000-0000-4000-8000-000000000000\"}]}",
+      "digest": "d63b75cdd1a3e6a06d1dc0f2c7392128956432d76e83a2ff76186f0c2283ab9b"
+    }
+  ],
+  "overall_digest_cases": [
+    {
+      "name": "overall_digest_omits_only_overall_digest",
+      "unsigned_document": {
+        "codec_version": "e2-02.v1",
+        "format": "nutrition-personal-transfer",
+        "owner_id": "a0b1c2d3-e4f5-4678-9012-abcdef123456",
+        "qualification": {
+          "daily_totals": {
+            "count": 0,
+            "records": []
+          }
+        },
+        "sections": [
+          {
+            "count": 0,
+            "digest": "504abae8357482f227bf6b86f154f4c48737c9d50911bc80ee12d06e05b744a1",
+            "name": "users",
+            "records": []
+          }
+        ]
+      },
+      "preimage": "{\"codec_version\":\"e2-02.v1\",\"format\":\"nutrition-personal-transfer\",\"owner_id\":\"a0b1c2d3-e4f5-4678-9012-abcdef123456\",\"qualification\":{\"daily_totals\":{\"count\":0,\"records\":[]}},\"sections\":[{\"count\":0,\"digest\":\"504abae8357482f227bf6b86f154f4c48737c9d50911bc80ee12d06e05b744a1\",\"name\":\"users\",\"records\":[]}]}",
+      "digest": "13e554f285ca4144d3f3c9ba7632224cc03c0e353d272f7d39cef3cfd4fe50d2",
+      "completed_document": {
+        "codec_version": "e2-02.v1",
+        "format": "nutrition-personal-transfer",
+        "owner_id": "a0b1c2d3-e4f5-4678-9012-abcdef123456",
+        "qualification": {
+          "daily_totals": {
+            "count": 0,
+            "records": []
+          }
+        },
+        "sections": [
+          {
+            "count": 0,
+            "digest": "504abae8357482f227bf6b86f154f4c48737c9d50911bc80ee12d06e05b744a1",
+            "name": "users",
+            "records": []
+          }
+        ],
+        "overall_digest": "13e554f285ca4144d3f3c9ba7632224cc03c0e353d272f7d39cef3cfd4fe50d2"
+      }
+    }
+  ]
+}

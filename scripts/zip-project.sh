@@ -66,6 +66,7 @@ INCLUDE_PATHS=(
   apps/mobile/app.json
   apps/mobile/app.config.js
   apps/mobile/babel.config.js
+  apps/mobile/metro.config.js
   apps/mobile/jest.setup.ts
   apps/mobile/.env.example
 )

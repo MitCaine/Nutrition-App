@@ -46,7 +46,7 @@ type TraceRow = Readonly<{
   request_fingerprint: string;
 }>;
 
-type TraceSnapshot = Readonly<{
+export type TraceSnapshot = Readonly<{
   schema_version: typeof OCR_CONFIRMATION_TRACE_SCHEMA_VERSION;
   field_decisions: readonly TraceFieldDecisionInput[];
   unknown_nutrients: OcrConfirmationInput["unknown_nutrients"];
@@ -301,6 +301,57 @@ function validateUnknownNutrients(value: unknown): OcrConfirmationInput["unknown
   });
 }
 
+function assertIntrinsicTrace(decisions: readonly TraceFieldDecisionInput[]): void {
+  const keys = decisions.map(({ field_key }) => field_key);
+  if (new Set(keys).size !== keys.length) {
+    throw invalidConfirmation("Trace field decisions must have unique keys.", ["field_decisions"]);
+  }
+  const byKey = new Map(decisions.map((decision) => [decision.field_key, decision]));
+  if ([...REQUIRED_FIELDS].some((key) => !byKey.has(key))) {
+    throw invalidConfirmation("Confirmation trace is missing Food or serving decisions.", ["field_decisions"]);
+  }
+  const calories = byKey.get("calories") ?? byKey.get("nutrient.calories");
+  if (!calories || calories.decision === "omitted") {
+    throw invalidConfirmation("Calories must be explicitly reviewed and retained.", ["field_decisions"]);
+  }
+}
+
+export function validatePersistedOcrTraceSnapshot(value: unknown): TraceSnapshot {
+  const input = asObject(value, []);
+  assertOnlyKeys(input, [
+    "schema_version", "field_decisions", "unknown_nutrients", "parser_warning_codes",
+  ], []);
+  if (input.schema_version !== OCR_CONFIRMATION_TRACE_SCHEMA_VERSION) {
+    throw invalidConfirmation("Trace schema version is unsupported.", ["schema_version"]);
+  }
+  if (!Array.isArray(input.field_decisions) || input.field_decisions.length < 1 || input.field_decisions.length > 40) {
+    throw invalidConfirmation("Field decisions must contain 1-40 values.", ["field_decisions"]);
+  }
+  const decisions = input.field_decisions.map(validateDecision);
+  const unknownNutrients = validateUnknownNutrients(input.unknown_nutrients);
+  const parserWarningCodes = stringArray(input.parser_warning_codes, {
+    location: ["parser_warning_codes"], maximum: 50,
+  });
+  assertIntrinsicTrace(decisions);
+  const snapshot: TraceSnapshot = {
+    schema_version: OCR_CONFIRMATION_TRACE_SCHEMA_VERSION,
+    field_decisions: decisions,
+    unknown_nutrients: unknownNutrients,
+    parser_warning_codes: parserWarningCodes,
+  };
+  if (canonicalJsonStringify(snapshot) !== canonicalJsonStringify(value)) {
+    throw invalidConfirmation("Trace is not in its exact persisted representation.", []);
+  }
+  if (persistedStrings(snapshot).some((text) => FORBIDDEN_TRACE_REFERENCE.test(text))) {
+    throw invalidConfirmation("Local image references are not allowed in confirmation provenance.", ["field_decisions"]);
+  }
+  const snapshotDocument = canonicalJsonStringify(snapshot);
+  if (pythonAsciiJsonByteLength(snapshotDocument) > MAX_OCR_CONFIRMATION_TRACE_BYTES) {
+    throw invalidConfirmation("Confirmation trace exceeds size limit.", ["field_decisions"]);
+  }
+  return snapshot;
+}
+
 function persistedStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (Array.isArray(value)) return value.flatMap(persistedStrings);
@@ -355,14 +406,8 @@ function assertTraceMatchesFood(food: FoodMutationInput, decisions: readonly Tra
   if (defaultServings.length !== 1) {
     throw invalidConfirmation("Food must contain exactly one default serving.", ["food", "serving_definitions"]);
   }
-  const keys = decisions.map(({ field_key }) => field_key);
-  if (new Set(keys).size !== keys.length) {
-    throw invalidConfirmation("Trace field decisions must have unique keys.", ["field_decisions"]);
-  }
+  assertIntrinsicTrace(decisions);
   const byKey = new Map(decisions.map((decision) => [decision.field_key, decision]));
-  if ([...REQUIRED_FIELDS].some((key) => !byKey.has(key))) {
-    throw invalidConfirmation("Confirmation trace is missing Food or serving decisions.", ["field_decisions"]);
-  }
   const serving = defaultServings[0]!;
   const expectedValues = new Map<string, string | null>([
     ["food.name", food.name.trim()],
@@ -379,10 +424,6 @@ function assertTraceMatchesFood(food: FoodMutationInput, decisions: readonly Tra
     if (byKey.get(key)?.confirmed_value !== expected) {
       throw invalidConfirmation(`Confirmed ${key} differs from Food payload.`, ["field_decisions"]);
     }
-  }
-  const calories = byKey.get("calories") ?? byKey.get("nutrient.calories");
-  if (!calories || calories.decision === "omitted") {
-    throw invalidConfirmation("Calories must be explicitly reviewed and retained.", ["field_decisions"]);
   }
   const nutrientDecisions = new Map(
     decisions.filter(({ nutrient_id }) => nutrient_id !== null).map((decision) => [decision.nutrient_id!, decision]),
@@ -436,19 +477,13 @@ async function validateConfirmation(value: unknown): Promise<ValidatedConfirmati
   });
   const food = input.food as FoodMutationInput;
   assertTraceMatchesFood(food, decisions);
-  const snapshot: TraceSnapshot = {
+  const snapshot = validatePersistedOcrTraceSnapshot({
     schema_version: OCR_CONFIRMATION_TRACE_SCHEMA_VERSION,
     field_decisions: decisions,
     unknown_nutrients: unknownNutrients,
     parser_warning_codes: parserWarningCodes,
-  };
-  if (persistedStrings(snapshot).some((text) => FORBIDDEN_TRACE_REFERENCE.test(text))) {
-    throw invalidConfirmation("Local image references are not allowed in confirmation provenance.", ["field_decisions"]);
-  }
+  });
   const snapshotDocument = canonicalJsonStringify(snapshot);
-  if (pythonAsciiJsonByteLength(snapshotDocument) > MAX_OCR_CONFIRMATION_TRACE_BYTES) {
-    throw invalidConfirmation("Confirmation trace exceeds size limit.", ["field_decisions"]);
-  }
   const fingerprintPayload = {
     parser_version: parserVersion,
     image_source_type: input.image_source_type,

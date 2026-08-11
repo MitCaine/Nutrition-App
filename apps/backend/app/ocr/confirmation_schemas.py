@@ -24,6 +24,10 @@ FIELD_KEYS = {
     "food.name", "food.brand", "food.notes", "serving.display",
     "serving.quantity", "serving.unit", "serving.gram_weight", "calories",
 }
+REQUIRED_TRACE_FIELD_KEYS = {
+    "food.name", "food.brand", "food.notes", "serving.display",
+    "serving.quantity", "serving.unit", "serving.gram_weight",
+}
 
 
 def _persisted_strings(value):
@@ -91,6 +95,49 @@ class UnknownNutrientTrace(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PersistedOcrNutritionConfirmationTrace(BaseModel):
+    """Intrinsic immutable E2-13 trace contract, independent of mutable Food state."""
+
+    schema_version: Literal["ocr_nutrition_confirmation_v1"]
+    field_decisions: list[TraceFieldDecision] = Field(min_length=1, max_length=40)
+    unknown_nutrients: list[UnknownNutrientTrace] = Field(default_factory=list, max_length=30)
+    parser_warning_codes: list[str] = Field(default_factory=list, max_length=50)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_intrinsic_trace(self) -> "PersistedOcrNutritionConfirmationTrace":
+        keys = [item.field_key for item in self.field_decisions]
+        if len(keys) != len(set(keys)):
+            raise ValueError("trace field decisions must have unique keys")
+        by_key = {item.field_key: item for item in self.field_decisions}
+        if not REQUIRED_TRACE_FIELD_KEYS.issubset(by_key):
+            raise ValueError("confirmation trace is missing Food or serving decisions")
+        calories = by_key.get("calories") or by_key.get("nutrient.calories")
+        if calories is None or calories.decision == "omitted":
+            raise ValueError("calories must be explicitly reviewed and retained")
+        snapshot = self.model_dump(mode="json")
+        if any(
+            FORBIDDEN_TRACE_REFERENCE.search(value)
+            for value in _persisted_strings(snapshot)
+        ):
+            raise ValueError("local image references are not allowed in confirmation provenance")
+        if len(json.dumps(snapshot, separators=(",", ":")).encode()) > MAX_TRACE_BYTES:
+            raise ValueError("confirmation trace exceeds size limit")
+        return self
+
+
+def validate_persisted_trace_snapshot(value: object) -> dict:
+    """Return the exact persisted trace or reject coercions and unsupported shapes."""
+
+    validated = PersistedOcrNutritionConfirmationTrace.model_validate(value).model_dump(
+        mode="json"
+    )
+    if validated != value:
+        raise ValueError("confirmation trace is not in its exact persisted representation")
+    return validated
+
+
 class OcrNutritionConfirmationRequest(BaseModel):
     parser_version: str = Field(max_length=64)
     image_source_type: Literal["camera", "photo_library"]
@@ -118,11 +165,7 @@ class OcrNutritionConfirmationRequest(BaseModel):
         if len(keys) != len(set(keys)):
             raise ValueError("trace field decisions must have unique keys")
         by_key = {item.field_key: item for item in self.field_decisions}
-        required_fields = {
-            "food.name", "food.brand", "food.notes", "serving.display",
-            "serving.quantity", "serving.unit", "serving.gram_weight",
-        }
-        if not required_fields.issubset(by_key):
+        if not REQUIRED_TRACE_FIELD_KEYS.issubset(by_key):
             raise ValueError("confirmation trace is missing Food or serving decisions")
         default_serving = next(item for item in self.food.serving_definitions if item.is_default)
         expected_values = {

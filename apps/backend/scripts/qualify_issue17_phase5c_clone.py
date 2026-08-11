@@ -8,7 +8,7 @@ import re
 import secrets
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Mapping
 
 from psycopg import sql
 from sqlalchemy import create_engine, make_url, text
@@ -18,6 +18,10 @@ from sqlalchemy.pool import NullPool
 from app.core.database_identity import database_connect_args
 from app.migrations.immutable_provenance_0020_contracts import (
     EXACT_0020_FUNCTION_DEFINITION_SHA256,
+    EXACT_0024_FUNCTION_DEFINITION_SHA256,
+)
+from app.migrations.immutable_provenance_0025_contracts import (
+    EXACT_0025_FUNCTION_DEFINITION_SHA256,
 )
 from app.operators.historical_recipe_performance_fixtures import (
     INTERNAL_REDUCED_TIER,
@@ -31,7 +35,11 @@ from app.operators.immutable_provenance_qualification import (
     qualify_immutable_provenance_connection,
     qualify_immutable_provenance_manifest,
 )
-from app.operators.immutable_provenance_contracts import MIGRATION_ADVISORY_LOCK_KEY
+from app.operators.immutable_provenance_contracts import (
+    FROZEN_RUNTIME_EXECUTE_ROUTINES,
+    FROZEN_RUNTIME_RELATION_PRIVILEGES,
+    MIGRATION_ADVISORY_LOCK_KEY,
+)
 from app.operators.phase5c4_control_evidence import write_private_file
 from app.operators.phase5c4_prerequisites import (
     fence_event_preimage,
@@ -55,7 +63,10 @@ EXECUTION_REVISION = "0017_phase5c_indexes"
 PROMOTION_REVISION = "0018_phase5c_promotion_prerequisites"
 IMMUTABLE_REVISION = "0020_immutable_provenance_enforcement"
 ACTIVATION_REVISION = "0021_target_activation_execution"
-CURRENT_HEAD = "0024_recipe_log_current_provenance"
+TIME_ZONE_REVISION = "0022_authoritative_user_timezone"
+CALENDAR_REVISION = "0023_calendar_revision"
+PRE_VALIDATOR_REPAIR_REVISION = "0024_recipe_log_current_provenance"
+CURRENT_HEAD = "0025_immutable_validator_head"
 ARCHIVE_SCHEMA = "nutrition_phase5c_archive"
 FIXTURE_SEED = 17
 
@@ -371,6 +382,424 @@ def _collect_exact_0020_immutable_qualification(
     return qualification.to_dict()
 
 
+def _public_table_state(connection: Any) -> dict[str, Any]:
+    table_names = list(
+        connection.scalars(
+            text(
+                "SELECT relation.relname::text "
+                "FROM pg_catalog.pg_class AS relation "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = relation.relnamespace "
+                "WHERE namespace.nspname = 'public' "
+                "AND relation.relkind IN ('r', 'p') "
+                "ORDER BY relation.relname"
+            )
+        )
+    )
+    schema_rows = [
+        dict(row)
+        for row in connection.execute(
+            text(
+                "SELECT relation.relname::text AS table_name, "
+                "attribute.attnum::integer AS ordinal, "
+                "attribute.attname::text AS column_name, "
+                "pg_catalog.format_type(attribute.atttypid, attribute.atttypmod)::text "
+                "AS data_type, attribute.attnotnull AS not_null, "
+                "pg_catalog.pg_get_expr(default_value.adbin, default_value.adrelid)::text "
+                "AS default_expression "
+                "FROM pg_catalog.pg_class AS relation "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = relation.relnamespace "
+                "JOIN pg_catalog.pg_attribute AS attribute "
+                "ON attribute.attrelid = relation.oid "
+                "LEFT JOIN pg_catalog.pg_attrdef AS default_value "
+                "ON default_value.adrelid = relation.oid "
+                "AND default_value.adnum = attribute.attnum "
+                "WHERE namespace.nspname = 'public' "
+                "AND relation.relkind IN ('r', 'p') "
+                "AND attribute.attnum > 0 AND NOT attribute.attisdropped "
+                "ORDER BY relation.relname, attribute.attnum"
+            )
+        ).mappings()
+    ]
+    object_rows = [
+        dict(row)
+        for row in connection.execute(
+            text(
+                "SELECT relation.relname::text AS table_name, 'constraint'::text AS kind, "
+                "constraint_value.conname::text AS name, "
+                "pg_catalog.pg_get_constraintdef(constraint_value.oid, true)::text "
+                "AS definition "
+                "FROM pg_catalog.pg_constraint AS constraint_value "
+                "JOIN pg_catalog.pg_class AS relation "
+                "ON relation.oid = constraint_value.conrelid "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = relation.relnamespace "
+                "WHERE namespace.nspname = 'public' "
+                "UNION ALL "
+                "SELECT table_value.relname::text, 'index'::text, index_value.relname::text, "
+                "pg_catalog.pg_get_indexdef(index_value.oid)::text "
+                "FROM pg_catalog.pg_index AS index_contract "
+                "JOIN pg_catalog.pg_class AS table_value "
+                "ON table_value.oid = index_contract.indrelid "
+                "JOIN pg_catalog.pg_class AS index_value "
+                "ON index_value.oid = index_contract.indexrelid "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = table_value.relnamespace "
+                "WHERE namespace.nspname = 'public' "
+                "UNION ALL "
+                "SELECT relation.relname::text, 'trigger'::text, trigger.tgname::text, "
+                "pg_catalog.pg_get_triggerdef(trigger.oid, true)::text "
+                "FROM pg_catalog.pg_trigger AS trigger "
+                "JOIN pg_catalog.pg_class AS relation ON relation.oid = trigger.tgrelid "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = relation.relnamespace "
+                "WHERE namespace.nspname = 'public' AND NOT trigger.tgisinternal "
+                "ORDER BY 1, 2, 3, 4"
+            )
+        ).mappings()
+    ]
+    preparer = connection.dialect.identifier_preparer
+    content = {}
+    for table_name in table_names:
+        if table_name == "alembic_version":
+            continue
+        quoted = preparer.quote(table_name)
+        rows = list(
+            connection.scalars(
+                text(
+                    f"SELECT pg_catalog.to_jsonb(row_value)::text "
+                    f"FROM public.{quoted} AS row_value "
+                    "ORDER BY pg_catalog.to_jsonb(row_value)::text"
+                )
+            )
+        )
+        content[table_name] = {
+            "row_count": len(rows),
+            "row_digest": canonical_digest(rows),
+        }
+    return {
+        "content_digest": canonical_digest(content),
+        "schema_digest": canonical_digest(
+            {"columns": schema_rows, "objects": object_rows}
+        ),
+        "table_count": len(table_names),
+    }
+
+
+def _runtime_authority_observation(connection: Any) -> dict[str, Any]:
+    privileges = (
+        "DELETE",
+        "INSERT",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE",
+        "UPDATE",
+    )
+    relation_privileges = [
+        {"privilege": str(row[1]), "relation": f"public.{row[0]}"}
+        for row in connection.execute(
+            text(
+                "SELECT relation.relname::text, privilege.name::text "
+                "FROM pg_catalog.pg_class AS relation "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = relation.relnamespace "
+                "CROSS JOIN pg_catalog.unnest(CAST(:privileges AS text[])) "
+                "AS privilege(name) "
+                "WHERE namespace.nspname = 'public' "
+                "AND relation.relkind IN ('r','p','S') "
+                "AND pg_catalog.has_table_privilege("
+                "'nutrition_runtime', relation.oid, privilege.name) "
+                "ORDER BY relation.relname, privilege.name"
+            ),
+            {"privileges": list(privileges)},
+        )
+    ]
+    execute_routines = list(
+        connection.scalars(
+            text(
+                "SELECT pg_catalog.format('%I.%I(%s)', namespace.nspname, "
+                "routine.proname, "
+                "pg_catalog.pg_get_function_identity_arguments(routine.oid)) "
+                "FROM pg_catalog.pg_proc AS routine "
+                "JOIN pg_catalog.pg_namespace AS namespace "
+                "ON namespace.oid = routine.pronamespace "
+                "WHERE namespace.nspname = 'public' "
+                "AND pg_catalog.has_function_privilege("
+                "'nutrition_runtime', routine.oid, 'EXECUTE') "
+                "ORDER BY namespace.nspname, routine.proname, "
+                "pg_catalog.pg_get_function_identity_arguments(routine.oid)"
+            )
+        )
+    )
+    role = dict(
+        connection.execute(
+            text(
+                "SELECT role.rolsuper AS superuser, "
+                "role.rolcreatedb AS create_database, "
+                "role.rolcreaterole AS create_role, "
+                "role.rolreplication AS replication, "
+                "role.rolbypassrls AS bypass_rls, "
+                "pg_catalog.has_database_privilege("
+                "role.rolname, pg_catalog.current_database(), 'CREATE') "
+                "AS database_create, "
+                "pg_catalog.has_database_privilege("
+                "role.rolname, pg_catalog.current_database(), 'TEMP') "
+                "AS database_temp, "
+                "pg_catalog.has_schema_privilege("
+                "role.rolname, 'public', 'CREATE') AS public_schema_create, "
+                "pg_catalog.pg_has_role("
+                "role.rolname, 'nutrition_owner', 'USAGE') AS owner_usage, "
+                "pg_catalog.pg_has_role("
+                "role.rolname, 'nutrition_migrator', 'USAGE') AS migrator_usage "
+                "FROM pg_catalog.pg_roles AS role "
+                "WHERE role.rolname = 'nutrition_runtime'"
+            )
+        ).mappings().one()
+    )
+    expected_relations = [
+        {"privilege": privilege, "relation": f"public.{relation}"}
+        for relation, relation_privileges_value in FROZEN_RUNTIME_RELATION_PRIVILEGES
+        for privilege in relation_privileges_value
+    ]
+    return {
+        "historical_0020_relation_privileges": expected_relations,
+        "historical_0020_runtime_execute_routines": list(
+            FROZEN_RUNTIME_EXECUTE_ROUTINES
+        ),
+        "nutrition_runtime_relation_privileges": relation_privileges,
+        "nutrition_runtime_execute_routines": execute_routines,
+        "nutrition_runtime_role": role,
+    }
+
+
+def _postgres_function_definition_sha256(
+    admin_url: str, function_name: str
+) -> str:
+    engine = _engine(admin_url, read_only=True)
+    try:
+        with engine.connect() as connection:
+            digest = connection.scalar(
+                text(
+                    "SELECT pg_catalog.encode(public.digest("
+                    "pg_catalog.pg_get_functiondef(routine.oid)::text, "
+                    "'sha256'), 'hex') "
+                    "FROM pg_catalog.pg_proc AS routine "
+                    "JOIN pg_catalog.pg_namespace AS namespace "
+                    "ON namespace.oid = routine.pronamespace "
+                    "WHERE namespace.nspname = 'public' "
+                    "AND routine.proname = :function_name"
+                ),
+                {"function_name": function_name},
+            )
+            connection.rollback()
+    finally:
+        engine.dispose()
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise Issue17WorkflowError("issue17_function_definition_digest_invalid")
+    return digest
+
+
+def _collect_validator_repair_observation(
+    qualifier_url: str,
+    *,
+    admin_url: str,
+    expected_revision: str,
+    function_definition_sha256: Mapping[str, str],
+) -> dict[str, Any]:
+    engine = _engine(qualifier_url, read_only=True)
+    admin = _engine(admin_url, read_only=True)
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            revision = str(
+                connection.scalar(text("SELECT version_num FROM public.alembic_version"))
+            )
+            try:
+                manifest = qualify_immutable_provenance_manifest(
+                    connection,
+                    function_definition_sha256=function_definition_sha256,
+                )
+            except Exception:
+                raise Issue17WorkflowError(
+                    "issue17_validator_repair_manifest_observation_failed"
+                ) from None
+            connection.rollback()
+        with admin.connect() as connection:
+            connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            try:
+                validator_result = bool(
+                    connection.scalar(
+                        text(
+                            "SELECT public."
+                            "phase0020_immutable_provenance_integrity_valid()"
+                        )
+                    )
+                )
+            except Exception:
+                raise Issue17WorkflowError(
+                    "issue17_validator_repair_execution_failed"
+                ) from None
+            try:
+                table_state = _public_table_state(connection)
+            except Exception:
+                raise Issue17WorkflowError(
+                    "issue17_validator_repair_table_state_failed"
+                ) from None
+            runtime_authority = _runtime_authority_observation(connection)
+            connection.rollback()
+    finally:
+        admin.dispose()
+        engine.dispose()
+    if revision != expected_revision:
+        raise Issue17WorkflowError("issue17_validator_repair_revision_invalid")
+    return {
+        "alembic_revision": revision,
+        "definition_manifest": manifest,
+        "definition_manifest_digest": canonical_digest(manifest),
+        "integrity_validator_result": validator_result,
+        "runtime_authority": runtime_authority,
+        "table_state": table_state,
+    }
+
+
+def _validate_validator_repair_delta(
+    before: dict[str, Any], after: dict[str, Any]
+) -> dict[str, Any]:
+    before_manifest = before["definition_manifest"]
+    after_manifest = after["definition_manifest"]
+    before_routines = {
+        item["name"]: item for item in before_manifest["routines"]
+    }
+    after_routines = {
+        item["name"]: item for item in after_manifest["routines"]
+    }
+    validator = "phase0020_immutable_provenance_integrity_valid"
+    if (
+        before["integrity_validator_result"] is not False
+        or before["table_state"] != after["table_state"]
+        or set(before_routines) != set(after_routines)
+    ):
+        raise Issue17WorkflowError("issue17_validator_repair_delta_invalid")
+    changed_routines = sorted(
+        name for name in before_routines if before_routines[name] != after_routines[name]
+    )
+    if changed_routines != [validator]:
+        raise Issue17WorkflowError("issue17_validator_repair_scope_invalid")
+    before_without_routines = {**before_manifest, "routines": []}
+    after_without_routines = {**after_manifest, "routines": []}
+    if before_without_routines != after_without_routines:
+        raise Issue17WorkflowError("issue17_validator_repair_manifest_invalid")
+    return {
+        "after": after,
+        "before": before,
+        "changed_routines": changed_routines,
+        "daily_log_guard_definition_unchanged": (
+            before_routines["phase0020_guard_daily_log_mutation"]
+            == after_routines["phase0020_guard_daily_log_mutation"]
+        ),
+        "other_routines_unchanged": True,
+        "post_migration_maintenance_validator_result": after[
+            "integrity_validator_result"
+        ],
+        "table_schema_and_content_unchanged": True,
+    }
+
+
+def _validator_manifest_changed_routines(
+    before: dict[str, Any], after: dict[str, Any]
+) -> list[str]:
+    before_routines = {
+        item["name"]: item for item in before["definition_manifest"]["routines"]
+    }
+    after_routines = {
+        item["name"]: item for item in after["definition_manifest"]["routines"]
+    }
+    return sorted(
+        name for name in before_routines if before_routines[name] != after_routines[name]
+    )
+
+
+def _validate_validator_evolution_preflight(
+    stages: Mapping[str, dict[str, Any]],
+) -> dict[str, Any]:
+    expected_revisions = {
+        "0020": IMMUTABLE_REVISION,
+        "0021": ACTIVATION_REVISION,
+        "0022": TIME_ZONE_REVISION,
+        "0023": CALENDAR_REVISION,
+        "0024": PRE_VALIDATOR_REPAIR_REVISION,
+    }
+    if {
+        name: observation["alembic_revision"]
+        for name, observation in stages.items()
+    } != expected_revisions:
+        raise Issue17WorkflowError("issue17_validator_evolution_revision_invalid")
+    historical_execute = set(FROZEN_RUNTIME_EXECUTE_ROUTINES)
+    execute_0020 = set(
+        stages["0020"]["runtime_authority"][
+            "nutrition_runtime_execute_routines"
+        ]
+    )
+    execute_0021 = set(
+        stages["0021"]["runtime_authority"][
+            "nutrition_runtime_execute_routines"
+        ]
+    )
+    activation_v4 = "public.phase5c_local_admission_v4()"
+    if execute_0020 != historical_execute or execute_0021 != {
+        *historical_execute,
+        activation_v4,
+    }:
+        raise Issue17WorkflowError("issue17_validator_evolution_execute_invalid")
+    if any(
+        set(
+            stages[revision]["runtime_authority"][
+                "nutrition_runtime_execute_routines"
+            ]
+        )
+        != execute_0021
+        for revision in ("0022", "0023", "0024")
+    ):
+        raise Issue17WorkflowError("issue17_validator_evolution_execute_drift")
+    manifest_digests = {
+        revision: stages[revision]["definition_manifest_digest"]
+        for revision in stages
+    }
+    if not (
+        manifest_digests["0020"]
+        == manifest_digests["0021"]
+        == manifest_digests["0022"]
+        == manifest_digests["0023"]
+    ):
+        raise Issue17WorkflowError("issue17_validator_evolution_manifest_drift")
+    changed_0024 = _validator_manifest_changed_routines(
+        stages["0023"], stages["0024"]
+    )
+    if changed_0024 != [
+        "phase0020_guard_daily_log_mutation",
+        "phase0020_immutable_provenance_integrity_valid",
+    ]:
+        raise Issue17WorkflowError("issue17_validator_evolution_0024_invalid")
+    return {
+        "authorized_current_deltas": [
+            {
+                "introduced_by": ACTIVATION_REVISION,
+                "predicate": "nutrition_runtime_execute_routines",
+                "value": activation_v4,
+            },
+            {
+                "introduced_by": PRE_VALIDATOR_REPAIR_REVISION,
+                "predicate": "protection_function_definition",
+                "value": "phase0020_guard_daily_log_mutation",
+            },
+        ],
+        "changed_protection_routines_0023_to_0024": changed_0024,
+        "stages": dict(stages),
+    }
+
+
 def _initialize_promotion_target(
     ops_url: str,
     *,
@@ -560,6 +989,136 @@ def _open_manual_test_runtime(ops_url: str) -> dict[str, Any]:
     }
 
 
+def _qualify_current_validator_perturbations(
+    clone_admin_url: str,
+) -> dict[str, Any]:
+    validator_sql = (
+        "SELECT public.phase0020_immutable_provenance_integrity_valid()"
+    )
+    cases: tuple[tuple[str, tuple[str, ...]], ...] = (
+        (
+            "wrong_application_head",
+            (
+                "UPDATE public.alembic_version SET version_num = "
+                "'0024_recipe_log_current_provenance'",
+            ),
+        ),
+        (
+            "missing_activation_v4_execute",
+            (
+                "REVOKE EXECUTE ON FUNCTION "
+                "public.phase5c_local_admission_v4() FROM nutrition_runtime",
+            ),
+        ),
+        (
+            "unexpected_runtime_execute",
+            (
+                "CREATE FUNCTION public.e215_unexpected_runtime_execute() "
+                "RETURNS boolean LANGUAGE sql AS 'SELECT true'",
+                "GRANT EXECUTE ON FUNCTION "
+                "public.e215_unexpected_runtime_execute() TO nutrition_runtime",
+            ),
+        ),
+        (
+            "wrong_relation_privilege",
+            (
+                "GRANT DELETE ON TABLE public.daily_log_nutrient_snapshots "
+                "TO nutrition_runtime",
+            ),
+        ),
+        (
+            "protected_routine_public_execute_leakage",
+            (
+                "GRANT EXECUTE ON FUNCTION "
+                "public.phase0020_delete_log_snapshots_for_replacement(uuid, uuid) "
+                "TO PUBLIC",
+            ),
+        ),
+        (
+            "wrong_protected_routine_owner",
+            (
+                "ALTER FUNCTION public.phase0020_reject_immutable_row_mutation() "
+                "OWNER TO postgres",
+            ),
+        ),
+        (
+            "wrong_protected_table_owner",
+            (
+                "ALTER TABLE public.recipe_publication_revisions OWNER TO postgres",
+            ),
+        ),
+        (
+            "modified_daily_log_guard",
+            (
+                "CREATE OR REPLACE FUNCTION "
+                "public.phase0020_guard_daily_log_mutation() RETURNS trigger "
+                "LANGUAGE plpgsql VOLATILE SECURITY DEFINER "
+                "SET search_path = pg_catalog, public "
+                "AS $e215$ BEGIN RETURN NEW; END $e215$",
+            ),
+        ),
+        (
+            "disabled_immutable_trigger",
+            (
+                "ALTER TABLE public.recipe_publication_revisions DISABLE TRIGGER "
+                "phase0020_revision_immutable_row",
+            ),
+        ),
+        (
+            "runtime_role_privilege_escalation",
+            ("ALTER ROLE nutrition_runtime CREATEDB",),
+        ),
+        (
+            "runtime_owner_assumption",
+            ("GRANT nutrition_owner TO nutrition_runtime",),
+        ),
+        (
+            "runtime_migrator_assumption",
+            ("GRANT nutrition_migrator TO nutrition_runtime",),
+        ),
+    )
+    engine = _engine(clone_admin_url)
+    results: list[dict[str, Any]] = []
+    try:
+        with engine.connect() as connection:
+            if connection.scalar(text(validator_sql)) is not True:
+                raise Issue17WorkflowError(
+                    "issue17_validator_perturbation_baseline_invalid"
+                )
+            connection.rollback()
+            for name, statements in cases:
+                transaction = connection.begin()
+                try:
+                    for statement in statements:
+                        connection.execute(text(statement))
+                    observed = connection.scalar(text(validator_sql))
+                    if observed is not False:
+                        raise Issue17WorkflowError(
+                            "issue17_validator_perturbation_not_rejected"
+                        )
+                finally:
+                    transaction.rollback()
+                if connection.scalar(text(validator_sql)) is not True:
+                    raise Issue17WorkflowError(
+                        "issue17_validator_perturbation_rollback_invalid"
+                    )
+                connection.rollback()
+                results.append(
+                    {
+                        "case": name,
+                        "perturbed_validator_result": False,
+                        "post_rollback_validator_result": True,
+                    }
+                )
+    finally:
+        engine.dispose()
+    return {
+        "baseline_validator_result": True,
+        "case_count": len(results),
+        "cases": results,
+    }
+
+
 def _post_head_observation(
     clone_admin_url: str,
     qualifier_url: str,
@@ -584,6 +1143,14 @@ def _post_head_observation(
                 )
                 or 0
             )
+            immutable_validator_result = bool(
+                connection.scalar(
+                    text(
+                        "SELECT public."
+                        "phase0020_immutable_provenance_integrity_valid()"
+                    )
+                )
+            )
         with qualifier.connect() as connection:
             connection.execute(text("SET TRANSACTION READ ONLY"))
             raw_observation = connection.scalar(
@@ -599,6 +1166,8 @@ def _post_head_observation(
         admin.dispose()
     if revision != CURRENT_HEAD or runtime_sessions != 0:
         raise Issue17WorkflowError("issue17_final_state_invalid")
+    if fence["fence_mode"] == "open_production" and not immutable_validator_result:
+        raise Issue17WorkflowError("issue17_final_immutable_validator_invalid")
     return {
         "alembic_revision": revision,
         "current_definition_manifest_digest": canonical_digest(immutable_manifest),
@@ -609,6 +1178,7 @@ def _post_head_observation(
         "immutable_provenance_qualification_revision": immutable_qualification[
             "schema_revision"
         ],
+        "immutable_validator_result": immutable_validator_result,
         "runtime_session_count": runtime_sessions,
         **fence,
     }
@@ -959,6 +1529,14 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
     )
     immutable_payload = _collect_exact_0020_immutable_qualification(qualifier_url)
     publish("phase5c-immutable-provenance-qualification-0020.json", immutable_payload)
+    validator_stages: dict[str, dict[str, Any]] = {
+        "0020": _collect_validator_repair_observation(
+            qualifier_url,
+            admin_url=clone_admin_url,
+            expected_revision=IMMUTABLE_REVISION,
+            function_definition_sha256=EXACT_0020_FUNCTION_DEFINITION_SHA256,
+        )
+    }
 
     pre_head_maintenance = json_module(
         "maintenance_close_pre_head",
@@ -991,16 +1569,123 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
         ACTIVATION_REVISION,
         extra_environment=activation_environment,
     )
+    validator_stages["0021"] = _collect_validator_repair_observation(
+        qualifier_url,
+        admin_url=clone_admin_url,
+        expected_revision=ACTIVATION_REVISION,
+        function_definition_sha256=EXACT_0020_FUNCTION_DEFINITION_SHA256,
+    )
     migrate(
-        "clone_migration_head",
+        "clone_migration_0022",
         migrator_url,
-        "head",
+        TIME_ZONE_REVISION,
         extra_environment=activation_environment,
     )
+    validator_stages["0022"] = _collect_validator_repair_observation(
+        qualifier_url,
+        admin_url=clone_admin_url,
+        expected_revision=TIME_ZONE_REVISION,
+        function_definition_sha256=EXACT_0020_FUNCTION_DEFINITION_SHA256,
+    )
+    migrate(
+        "clone_migration_0023",
+        migrator_url,
+        CALENDAR_REVISION,
+        extra_environment=activation_environment,
+    )
+    validator_stages["0023"] = _collect_validator_repair_observation(
+        qualifier_url,
+        admin_url=clone_admin_url,
+        expected_revision=CALENDAR_REVISION,
+        function_definition_sha256=EXACT_0020_FUNCTION_DEFINITION_SHA256,
+    )
+    migrate(
+        "clone_migration_0024",
+        migrator_url,
+        PRE_VALIDATOR_REPAIR_REVISION,
+        extra_environment=activation_environment,
+    )
+    try:
+        validator_before = _collect_validator_repair_observation(
+            qualifier_url,
+            admin_url=clone_admin_url,
+            expected_revision=PRE_VALIDATOR_REPAIR_REVISION,
+            function_definition_sha256=EXACT_0024_FUNCTION_DEFINITION_SHA256,
+        )
+    except Issue17WorkflowError:
+        raise
+    except Exception:
+        raise Issue17WorkflowError(
+            "issue17_validator_before_observation_failed"
+        ) from None
+    validator_stages["0024"] = validator_before
+    validator_evolution = _validate_validator_evolution_preflight(
+        validator_stages
+    )
+    publish(
+        "phase5c-immutable-validator-evolution-0020-0024.json",
+        validator_evolution,
+    )
+    migrate(
+        "clone_migration_0025",
+        migrator_url,
+        CURRENT_HEAD,
+        extra_environment=activation_environment,
+    )
+    installed_0025_validator_hash = _postgres_function_definition_sha256(
+        clone_admin_url,
+        "phase0020_immutable_provenance_integrity_valid",
+    )
+    expected_0025_validator_hash = EXACT_0025_FUNCTION_DEFINITION_SHA256[
+        "phase0020_immutable_provenance_integrity_valid"
+    ]
+    if installed_0025_validator_hash != expected_0025_validator_hash:
+        raise Issue17WorkflowError("issue17_validator_0025_hash_invalid")
+    publish(
+        "phase5c-immutable-validator-hash-0025.json",
+        {
+            "alembic_revision": CURRENT_HEAD,
+            "postgres_major": 16,
+            "validator_definition_sha256": installed_0025_validator_hash,
+        },
+    )
+    try:
+        validator_after = _collect_validator_repair_observation(
+            qualifier_url,
+            admin_url=clone_admin_url,
+            expected_revision=CURRENT_HEAD,
+            function_definition_sha256=EXACT_0025_FUNCTION_DEFINITION_SHA256,
+        )
+    except Issue17WorkflowError:
+        raise
+    except Exception:
+        raise Issue17WorkflowError(
+            "issue17_validator_after_observation_failed"
+        ) from None
+    try:
+        validator_repair = _validate_validator_repair_delta(
+            validator_before, validator_after
+        )
+    except Issue17WorkflowError:
+        raise
+    except Exception:
+        raise Issue17WorkflowError("issue17_validator_repair_delta_failed") from None
+    publish(
+        "phase5c-immutable-validator-repair-0025.json",
+        validator_repair,
+    )
     manual_activation: dict[str, Any] | None = None
+    validator_perturbations: dict[str, Any] | None = None
     if arguments.manual_test:
         manual_activation = _open_manual_test_runtime(ops_url)
         publish("phase5c-manual-test-runtime-open.json", manual_activation)
+        validator_perturbations = _qualify_current_validator_perturbations(
+            clone_admin_url
+        )
+        publish(
+            "phase5c-immutable-validator-perturbations-0025.json",
+            validator_perturbations,
+        )
     post_head = _post_head_observation(
         clone_admin_url,
         qualifier_url,
@@ -1035,9 +1720,19 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
             "maintenance_close": canonical_digest(maintenance),
             "maintenance_close_pre_head": canonical_digest(pre_head_maintenance),
             "runtime_restore_0020": canonical_digest(runtime_restore),
+            "validator_repair_0025": canonical_digest(validator_repair),
             **(
                 {"manual_test_runtime_open": canonical_digest(manual_activation)}
                 if manual_activation is not None
+                else {}
+            ),
+            **(
+                {
+                    "validator_perturbations_0025": canonical_digest(
+                        validator_perturbations
+                    )
+                }
+                if validator_perturbations is not None
                 else {}
             ),
         },

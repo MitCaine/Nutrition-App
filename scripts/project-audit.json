@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0024_recipe_log_current_provenance"
+    "0025_immutable_validator_head"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"

@@ -42,7 +42,7 @@ def _require_opt_in() -> None:
         pytest.skip(f"set {OPT_IN}=1 to run the disposable Issue 17 workflow")
 
 
-def test_issue17_workflow_reaches_0024_and_retains_redacted_evidence(
+def test_issue17_workflow_reaches_0025_and_retains_redacted_evidence(
     tmp_path: Path,
 ) -> None:
     _require_opt_in()
@@ -69,10 +69,10 @@ def test_issue17_workflow_reaches_0024_and_retains_redacted_evidence(
     assert manifest["workflow_version"] == "issue17_phase5c_clone_workflow_v1"
     assert manifest["source_database"] != manifest["clone_database"]
     assert manifest["source_identity_digest"] != manifest["clone_identity_digest"]
-    assert manifest["current_head"] == "0024_recipe_log_current_provenance"
+    assert manifest["current_head"] == "0025_immutable_validator_head"
     assert manifest["test_only_activation_bindings"] is True
     final = manifest["final_observation"]
-    assert final["alembic_revision"] == "0024_recipe_log_current_provenance"
+    assert final["alembic_revision"] == "0025_immutable_validator_head"
     assert final["immutable_provenance_qualification_revision"] == (
         "0020_immutable_provenance_enforcement"
     )
@@ -100,6 +100,9 @@ def test_issue17_workflow_reaches_0024_and_retains_redacted_evidence(
         "phase5c-runtime-restore-0020.json",
         "phase5c-immutable-provenance-qualification-0020.json",
         "phase5c-maintenance-close-pre-head.json",
+        "phase5c-immutable-validator-evolution-0020-0024.json",
+        "phase5c-immutable-validator-hash-0025.json",
+        "phase5c-immutable-validator-repair-0025.json",
         "phase5c-post-head-observation.json",
         "phase5c-workflow-manifest.json",
     }
@@ -110,6 +113,34 @@ def test_issue17_workflow_reaches_0024_and_retains_redacted_evidence(
         document = path.read_text(encoding="utf-8")
         assert "postgresql+psycopg://" not in document
         assert "POSTGRES_PASSWORD" not in document
+
+    repair = json.loads(
+        (output / "phase5c-immutable-validator-repair-0025.json").read_text()
+    )
+    assert repair["before"]["alembic_revision"] == (
+        "0024_recipe_log_current_provenance"
+    )
+    assert repair["before"]["integrity_validator_result"] is False
+    assert repair["after"]["alembic_revision"] == "0025_immutable_validator_head"
+    assert repair["post_migration_maintenance_validator_result"] is False
+    assert repair["changed_routines"] == [
+        "phase0020_immutable_provenance_integrity_valid"
+    ]
+    assert repair["daily_log_guard_definition_unchanged"] is True
+    assert repair["other_routines_unchanged"] is True
+    assert repair["table_schema_and_content_unchanged"] is True
+    assert repair["before"]["table_state"] == repair["after"]["table_state"]
+    evolution = json.loads(
+        (output / "phase5c-immutable-validator-evolution-0020-0024.json").read_text()
+    )
+    assert evolution["changed_protection_routines_0023_to_0024"] == [
+        "phase0020_guard_daily_log_mutation",
+        "phase0020_immutable_provenance_integrity_valid",
+    ]
+    assert evolution["stages"]["0020"]["integrity_validator_result"] is True
+    assert evolution["stages"]["0021"]["runtime_authority"][
+        "nutrition_runtime_execute_routines"
+    ][-1] == "public.phase5c_local_admission_v4()"
 
 
 def test_issue17_manual_mode_opens_runtime_and_retains_container(
@@ -152,12 +183,25 @@ def test_issue17_manual_mode_opens_runtime_and_retains_container(
         )
         assert manifest["manual_test_runtime_open"] is True
         assert manifest["final_observation"]["alembic_revision"] == (
-            "0024_recipe_log_current_provenance"
+            "0025_immutable_validator_head"
         )
         assert manifest["final_observation"]["fence_mode"] == "open_production"
+        assert manifest["final_observation"]["immutable_validator_result"] is True
         assert "phase5c-manual-test-runtime-open.json" in manifest[
             "artifact_files"
         ]
+        perturbations = json.loads(
+            (
+                output / "phase5c-immutable-validator-perturbations-0025.json"
+            ).read_text()
+        )
+        assert perturbations["baseline_validator_result"] is True
+        assert perturbations["case_count"] == 12
+        assert all(
+            case["perturbed_validator_result"] is False
+            and case["post_rollback_validator_result"] is True
+            for case in perturbations["cases"]
+        )
     finally:
         subprocess.run(
             ["docker", "rm", "-f", container_name],

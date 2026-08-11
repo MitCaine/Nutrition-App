@@ -26,7 +26,7 @@ qualification, activation, and recovery work. The
 
 | Authority | Current head |
 | --- | --- |
-| Application migration | `0024_recipe_log_current_provenance` |
+| Application migration | `0025_immutable_validator_head` |
 | Control migration | `ops_0011_phase5c4_recovery_audit` |
 
 Revision `0021_target_activation_execution` is an authorized target-activation migration, not an

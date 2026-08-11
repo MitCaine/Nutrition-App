@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from app.migrations.immutable_provenance_0020_contracts import (
-    EXACT_0024_FUNCTION_DEFINITION_SHA256,
+from app.migrations.immutable_provenance_0025_contracts import (
+    EXACT_0025_FUNCTION_DEFINITION_SHA256,
 )
 from app.operators.resource_membership_contracts import (
     FROZEN_RUNTIME_EXECUTE_ROUTINES as FROZEN_0019_RUNTIME_EXECUTE_ROUTINES,
@@ -315,7 +315,7 @@ ROUTINE_CONTRACTS = (
 # Future migrations must add another revision-scoped mapping rather than mutate
 # either exact-0020 or exact-0024 replay semantics.
 FUNCTION_DEFINITION_SHA256: dict[str, str] = dict(
-    EXACT_0024_FUNCTION_DEFINITION_SHA256
+    EXACT_0025_FUNCTION_DEFINITION_SHA256
 )
 
 # The immutable validator cannot include its own digest or the digest of the

@@ -30,7 +30,7 @@ and emergency-close policies, signer, nonce, and validity interval. Canonical
 bytes and digests are reconstructed independently; caller-projected values do
 not replace authoritative control rows.
 
-The current active application migration head is `0024_recipe_log_current_provenance`; the
+The current active application migration head is `0025_immutable_validator_head`; the
 target-activation procedure remains pinned to its approved `0021_target_activation_execution`
 boundary.
 

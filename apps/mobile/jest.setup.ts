@@ -10,9 +10,16 @@ jest.mock(
 
 jest.mock("expo-crypto", () => ({
   randomUUID: jest.fn(() => "00000000-0000-4000-8000-000000000000"),
-  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
-  digestStringAsync: jest.fn(async (_algorithm: string, data: string) =>
-    require("node:crypto").createHash("sha256").update(data, "utf8").digest("hex")),
+  CryptoDigestAlgorithm: { SHA1: "SHA-1", SHA256: "SHA-256" },
+  digest: jest.fn(async (algorithm: string, data: Uint8Array) => {
+    const name = algorithm === "SHA-1" ? "sha1" : "sha256";
+    const bytes = require("node:crypto").createHash(name).update(data).digest();
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  }),
+  digestStringAsync: jest.fn(async (algorithm: string, data: string) => {
+    const name = algorithm === "SHA-1" ? "sha1" : "sha256";
+    return require("node:crypto").createHash(name).update(data, "utf8").digest("hex");
+  }),
 }));
 
 jest.mock("expo-modules-core", () => ({

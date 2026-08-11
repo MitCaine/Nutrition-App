@@ -1,0 +1,4755 @@
+{
+  "alembic_revision": "0025_immutable_validator_head",
+  "descriptor_version": "e2-15.pg-0025.schema.v1",
+  "immutable_routines": [
+    {
+      "definition_sha256": "af40c11898f5c51b24b0cd63f2b34e29d299324e01ee482fa0b58979d95d59ef",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        },
+        {
+          "grantable": false,
+          "role": "nutrition_runtime"
+        }
+      ],
+      "identity_arguments": "uuid, uuid",
+      "name": "phase0020_delete_log_snapshots_for_replacement",
+      "result": "bigint",
+      "returns_set": false,
+      "security_definer": true,
+      "volatility": "volatile"
+    },
+    {
+      "definition_sha256": "a89f7f97a0e3d88dc78e42a4921c21b41a04a31b09ede963328c42238db2b8b0",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_guard_daily_log_mutation",
+      "result": "trigger",
+      "returns_set": false,
+      "security_definer": true,
+      "volatility": "volatile"
+    },
+    {
+      "definition_sha256": "252eb938b967377650170acbf1c05b7fa95022ac19fbaad3bf015963fe2b98b2",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_guard_snapshot_mutation",
+      "result": "trigger",
+      "returns_set": false,
+      "security_definer": true,
+      "volatility": "volatile"
+    },
+    {
+      "definition_sha256": "59a0bc3d25b6bb99f01bd3629edac86a50c7ec0c216337ea02ea5622be2746bb",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_immutable_provenance_integrity_valid",
+      "result": "boolean",
+      "returns_set": false,
+      "security_definer": true,
+      "volatility": "stable"
+    },
+    {
+      "definition_sha256": "e32da2b471afd466a3bd212900cbf2de4d254f4ee76f19ba6e3d53c199e5c5e2",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_reject_immutable_row_mutation",
+      "result": "trigger",
+      "returns_set": false,
+      "security_definer": false,
+      "volatility": "volatile"
+    },
+    {
+      "definition_sha256": "75d91f883cc6c01347df663c8f9c70fa06c174051940df5bde82df4b78b12adb",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_reject_immutable_truncate",
+      "result": "trigger",
+      "returns_set": false,
+      "security_definer": false,
+      "volatility": "volatile"
+    },
+    {
+      "definition_sha256": "b2849d4b40de9c3b54adcb0cc6033b18c86b023eb20d85f256955552e10d3798",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_require_snapshot_replacement_completion",
+      "result": "trigger",
+      "returns_set": false,
+      "security_definer": true,
+      "volatility": "volatile"
+    },
+    {
+      "definition_sha256": "d5c96dc3f6f77e95a3f10018de516a50809bb9495b2af79295dd4aeb847e8587",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase0020_resource_membership_integrity_valid",
+      "result": "boolean",
+      "returns_set": false,
+      "security_definer": true,
+      "volatility": "stable"
+    },
+    {
+      "definition_sha256": "3099ff5d7fb7582a0b316a73266050445dc816d3975592652a677d3abf4603c8",
+      "execute_acl": [
+        {
+          "grantable": false,
+          "role": "nutrition_canary"
+        },
+        {
+          "grantable": false,
+          "role": "nutrition_owner"
+        },
+        {
+          "grantable": false,
+          "role": "nutrition_runtime"
+        }
+      ],
+      "identity_arguments": "",
+      "name": "phase5c_local_admission_v3",
+      "result": "TABLE(admission_contract_version text, schema_revision text, identity_present boolean, identity_valid boolean, composite_bindings_valid boolean, fence_state_present boolean, fence_state_valid boolean, event_chain_valid boolean, fence_mode text, session_role_valid boolean, role_topology_valid boolean, gate_trigger_coverage_valid boolean, immutability_valid boolean, resource_membership_integrity_valid boolean, immutable_provenance_integrity_valid boolean)",
+      "returns_set": true,
+      "security_definer": true,
+      "volatility": "stable"
+    }
+  ],
+  "immutable_triggers": [
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "UPDATE"
+      ],
+      "function": "phase0020_guard_daily_log_mutation",
+      "initially_deferred": false,
+      "name": "phase0020_daily_log_update_guard",
+      "orientation": "ROW",
+      "table": "daily_logs",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "UPDATE",
+        "DELETE"
+      ],
+      "function": "phase0020_reject_immutable_row_mutation",
+      "initially_deferred": false,
+      "name": "phase0020_ocr_trace_immutable_row",
+      "orientation": "ROW",
+      "table": "ocr_nutrition_confirmation_traces",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "TRUNCATE"
+      ],
+      "function": "phase0020_reject_immutable_truncate",
+      "initially_deferred": false,
+      "name": "phase0020_ocr_trace_immutable_truncate",
+      "orientation": "STATEMENT",
+      "table": "ocr_nutrition_confirmation_traces",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "UPDATE",
+        "DELETE"
+      ],
+      "function": "phase0020_reject_immutable_row_mutation",
+      "initially_deferred": false,
+      "name": "phase0020_revision_amount_immutable_row",
+      "orientation": "ROW",
+      "table": "recipe_publication_amount_definitions",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "TRUNCATE"
+      ],
+      "function": "phase0020_reject_immutable_truncate",
+      "initially_deferred": false,
+      "name": "phase0020_revision_amount_immutable_truncate",
+      "orientation": "STATEMENT",
+      "table": "recipe_publication_amount_definitions",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "UPDATE",
+        "DELETE"
+      ],
+      "function": "phase0020_reject_immutable_row_mutation",
+      "initially_deferred": false,
+      "name": "phase0020_revision_immutable_row",
+      "orientation": "ROW",
+      "table": "recipe_publication_revisions",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "TRUNCATE"
+      ],
+      "function": "phase0020_reject_immutable_truncate",
+      "initially_deferred": false,
+      "name": "phase0020_revision_immutable_truncate",
+      "orientation": "STATEMENT",
+      "table": "recipe_publication_revisions",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "UPDATE",
+        "DELETE"
+      ],
+      "function": "phase0020_reject_immutable_row_mutation",
+      "initially_deferred": false,
+      "name": "phase0020_revision_nutrient_immutable_row",
+      "orientation": "ROW",
+      "table": "recipe_publication_nutrients",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "TRUNCATE"
+      ],
+      "function": "phase0020_reject_immutable_truncate",
+      "initially_deferred": false,
+      "name": "phase0020_revision_nutrient_immutable_truncate",
+      "orientation": "STATEMENT",
+      "table": "recipe_publication_nutrients",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "TRUNCATE"
+      ],
+      "function": "phase0020_reject_immutable_truncate",
+      "initially_deferred": false,
+      "name": "phase0020_snapshot_immutable_truncate",
+      "orientation": "STATEMENT",
+      "table": "daily_log_nutrient_snapshots",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": false,
+      "deferrable": false,
+      "events": [
+        "UPDATE",
+        "DELETE"
+      ],
+      "function": "phase0020_guard_snapshot_mutation",
+      "initially_deferred": false,
+      "name": "phase0020_snapshot_mutation_guard",
+      "orientation": "ROW",
+      "table": "daily_log_nutrient_snapshots",
+      "timing": "BEFORE"
+    },
+    {
+      "constraint": true,
+      "deferrable": true,
+      "events": [
+        "DELETE"
+      ],
+      "function": "phase0020_require_snapshot_replacement_completion",
+      "initially_deferred": true,
+      "name": "phase0020_snapshot_replacement_completion",
+      "orientation": "ROW",
+      "table": "daily_log_nutrient_snapshots",
+      "timing": "AFTER"
+    }
+  ],
+  "optional_tables": {
+    "phase5c_conversion_clone_marker": {
+      "checks": [],
+      "columns": [
+        {
+          "default": null,
+          "name": "marker_format_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "isolation_evidence_contract_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_marker_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_marker_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_clone_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_database_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_production_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "inventory_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_signature",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_signature_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_rules_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_scope",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_digest",
+          "nullable": false,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "primary_key": [
+        "clone_marker_identity"
+      ],
+      "unique_constraints": []
+    }
+  },
+  "postgres_major": "16",
+  "tables": {
+    "alembic_version": {
+      "checks": [],
+      "columns": [
+        {
+          "default": null,
+          "name": "version_num",
+          "nullable": false,
+          "type": "character varying(64)"
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "primary_key": [
+        "version_num"
+      ],
+      "unique_constraints": []
+    },
+    "create_operation_idempotency": {
+      "checks": [
+        {
+          "expression": "response_snapshot IS NULL AND completed_at IS NULL OR response_snapshot IS NOT NULL AND completed_at IS NOT NULL",
+          "name": "ck_create_idempotency_completion_paired"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "operation",
+          "nullable": false,
+          "type": "character varying(64)"
+        },
+        {
+          "default": null,
+          "name": "client_request_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "request_fingerprint",
+          "nullable": false,
+          "type": "character varying(64)"
+        },
+        {
+          "default": null,
+          "name": "resource_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "response_snapshot",
+          "nullable": true,
+          "type": "json"
+        },
+        {
+          "default": null,
+          "name": "completed_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "user_id",
+            "operation",
+            "client_request_id"
+          ],
+          "name": "uq_create_idempotency_user_operation_request"
+        }
+      ]
+    },
+    "daily_log_nutrient_snapshots": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "daily_log_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "source_food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "source_food_nutrient_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "serving_definition_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "nutrient_id",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "data_status",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "consumed_amount_quantity",
+          "nullable": false,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "consumed_amount_unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "consumed_gram_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "consumed_package_fraction",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "calculation_metadata",
+          "nullable": true,
+          "type": "jsonb"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "daily_log_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "daily_logs"
+        },
+        {
+          "columns": [
+            "nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        },
+        {
+          "columns": [
+            "serving_definition_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "SET NULL",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "serving_definitions"
+        },
+        {
+          "columns": [
+            "source_food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "source_food_nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "SET NULL",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_nutrients"
+        },
+        {
+          "columns": [
+            "daily_log_id",
+            "source_food_item_id"
+          ],
+          "deferrable": true,
+          "initially": "DEFERRED",
+          "match": "SIMPLE",
+          "name": "fk_log_snapshots_daily_log_food",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "food_item_id"
+          ],
+          "target_table": "daily_logs"
+        },
+        {
+          "columns": [
+            "serving_definition_id",
+            "source_food_item_id"
+          ],
+          "deferrable": true,
+          "initially": "DEFERRED",
+          "match": "SIMPLE",
+          "name": "fk_log_snapshots_serving_food",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "food_item_id"
+          ],
+          "target_table": "serving_definitions"
+        },
+        {
+          "columns": [
+            "source_food_nutrient_id",
+            "source_food_item_id",
+            "nutrient_id"
+          ],
+          "deferrable": true,
+          "initially": "DEFERRED",
+          "match": "SIMPLE",
+          "name": "fk_log_snapshots_source_nutrient_food_identity",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "food_item_id",
+            "nutrient_id"
+          ],
+          "target_table": "food_nutrients"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "daily_log_id",
+            "source_food_item_id"
+          ],
+          "name": "ix_log_snapshots_daily_log_food",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "serving_definition_id",
+            "source_food_item_id"
+          ],
+          "name": "ix_log_snapshots_serving_food",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "source_food_nutrient_id",
+            "source_food_item_id",
+            "nutrient_id"
+          ],
+          "name": "ix_log_snapshots_source_nutrient_food",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "daily_logs": {
+      "checks": [
+        {
+          "expression": "client_request_id IS NULL AND client_request_fingerprint IS NULL OR client_request_id IS NOT NULL AND client_request_fingerprint IS NOT NULL",
+          "name": "ck_daily_logs_client_request_paired"
+        },
+        {
+          "expression": "recipe_publication_revision_id IS NULL AND recipe_publication_amount_definition_id IS NULL OR recipe_publication_revision_id IS NOT NULL AND recipe_publication_amount_definition_id IS NOT NULL",
+          "name": "ck_daily_logs_publication_links_paired"
+        }
+      ],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "logged_date",
+          "nullable": false,
+          "type": "date"
+        },
+        {
+          "default": null,
+          "name": "meal_type",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "amount_quantity",
+          "nullable": false,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "amount_unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "serving_definition_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "gram_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "package_fraction",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "notes",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "food_name_snapshot",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "recipe_publication_revision_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "recipe_publication_amount_definition_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "client_request_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "client_request_fingerprint",
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "serving_definition_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "SET NULL",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "serving_definitions"
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        },
+        {
+          "columns": [
+            "food_item_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_daily_logs_food_owner",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "recipe_publication_amount_definition_id",
+            "recipe_publication_revision_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_daily_logs_publication_amount_membership",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "revision_id"
+          ],
+          "target_table": "recipe_publication_amount_definitions"
+        },
+        {
+          "columns": [
+            "recipe_publication_revision_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_daily_logs_publication_revision_owner",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "recipe_publication_revisions"
+        },
+        {
+          "columns": [
+            "serving_definition_id",
+            "food_item_id"
+          ],
+          "deferrable": true,
+          "initially": "DEFERRED",
+          "match": "SIMPLE",
+          "name": "fk_daily_logs_serving_food",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "food_item_id"
+          ],
+          "target_table": "serving_definitions"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "food_item_id",
+            "user_id"
+          ],
+          "name": "ix_daily_logs_food_owner",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "serving_definition_id",
+            "food_item_id"
+          ],
+          "name": "ix_daily_logs_serving_food",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "id",
+            "food_item_id"
+          ],
+          "name": "uq_daily_logs_identity_food"
+        },
+        {
+          "columns": [
+            "user_id",
+            "client_request_id"
+          ],
+          "name": "uq_daily_logs_user_client_request"
+        }
+      ]
+    },
+    "food_favorites": {
+      "checks": [],
+      "columns": [
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        },
+        {
+          "columns": [
+            "food_item_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_food_favorites_food_owner",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "food_items"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "user_id",
+        "food_item_id"
+      ],
+      "unique_constraints": []
+    },
+    "food_items": {
+      "checks": [
+        {
+          "expression": "recipe_publication_revision_id IS NULL OR user_id IS NOT NULL",
+          "name": "ck_food_items_publication_revision_has_owner"
+        }
+      ],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "name",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "brand",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_type",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "false",
+          "name": "is_recipe",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "name": "notes",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "deleted_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "recipe_publication_revision_id",
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        },
+        {
+          "columns": [
+            "recipe_publication_revision_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_food_items_publication_revision_owner",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "recipe_publication_revisions"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "user_id",
+            "source_type",
+            "source_id"
+          ],
+          "name": "ix_food_items_active_source_identity",
+          "predicate": "deleted_at IS NULL AND source_id IS NOT NULL",
+          "unique": true
+        },
+        {
+          "columns": [
+            "user_id",
+            "source_type",
+            "source_id"
+          ],
+          "name": "ix_food_items_source_identity_all",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "recipe_publication_revision_id"
+          ],
+          "name": "uq_food_items_publication_revision_projection",
+          "predicate": "recipe_publication_revision_id IS NOT NULL",
+          "unique": true
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "id",
+            "user_id"
+          ],
+          "name": "uq_food_items_identity_user"
+        },
+        {
+          "columns": [
+            "id",
+            "recipe_publication_revision_id",
+            "user_id"
+          ],
+          "name": "uq_food_items_projection_identity_revision_owner"
+        }
+      ]
+    },
+    "food_nutrients": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "nutrient_id",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "basis",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "data_status",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "confidence",
+          "nullable": true,
+          "type": "numeric(5,4)"
+        },
+        {
+          "default": null,
+          "name": "source",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "false",
+          "name": "is_user_confirmed",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "name": "original_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "original_unit",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "original_text",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "name": "ix_food_nutrients_food_item_id",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "id",
+            "food_item_id",
+            "nutrient_id"
+          ],
+          "name": "uq_food_nutrients_identity_food_nutrient"
+        }
+      ]
+    },
+    "food_sources": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "source_type",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "external_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "raw_payload",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "metadata",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "name": "ix_food_sources_food_item_id",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "nutrient_reference_values": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "nutrient_id",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "reference_system",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "population_group",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "min_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "target_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "max_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "metadata",
+          "nullable": true,
+          "type": "jsonb"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "nutrient_id",
+            "reference_system",
+            "population_group",
+            "source_version"
+          ],
+          "name": "ix_nutrient_reference_lookup",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "nutrients": {
+      "checks": [],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "display_name",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "nutrient_kind",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "default_unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "parent_nutrient_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "display_order",
+          "nullable": false,
+          "type": "integer"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "parent_nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "nutrition_targets": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "target_type",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "nutrient_id",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "min_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "target_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "max_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "basis",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "metadata",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "user_id",
+            "target_type",
+            "nutrient_id"
+          ],
+          "name": "uq_nutrition_target_user_type_nutrient"
+        }
+      ]
+    },
+    "ocr_nutrition_confirmation_traces": {
+      "checks": [],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "parser_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "image_source_type",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "trace_snapshot",
+          "nullable": false,
+          "type": "json"
+        },
+        {
+          "default": null,
+          "name": "client_request_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "request_fingerprint",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "confirmed_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        },
+        {
+          "columns": [
+            "food_item_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_ocr_confirmation_traces_food_owner",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "food_items"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "name": "uq_ocr_confirmation_food"
+        },
+        {
+          "columns": [
+            "user_id",
+            "client_request_id"
+          ],
+          "name": "uq_ocr_confirmation_user_request"
+        }
+      ]
+    },
+    "ocr_scans": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "image_metadata",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "ocr_engine",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "raw_ocr_payload",
+          "nullable": false,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "full_text",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "parse_results": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "ocr_scan_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "parser_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "status",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "diagnostics",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "parsed_payload",
+          "nullable": false,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "created_food_item_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "created_food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "ocr_scan_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "ocr_scans"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "parser_corrections": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "ocr_scan_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "parse_result_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "parser_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "field_name",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "nutrient_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "parsed_value",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "confirmed_value",
+          "nullable": true,
+          "type": "jsonb"
+        },
+        {
+          "default": null,
+          "name": "confirmation_action",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        },
+        {
+          "columns": [
+            "ocr_scan_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "ocr_scans"
+        },
+        {
+          "columns": [
+            "parse_result_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "parse_results"
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": []
+    },
+    "phase5c_activation_runtime_commands": {
+      "checks": [
+        {
+          "expression": "attempt_count = 1",
+          "name": "phase5c_activation_runtime_commands_attempt_count_check"
+        },
+        {
+          "expression": "resulting_epoch = (prior_epoch + 1)",
+          "name": "phase5c_activation_runtime_commands_check"
+        },
+        {
+          "expression": "command_kind = 'open_runtime'::text AND activation_request_id IS NOT NULL AND prior_mode = 'closed_cutover'::text AND resulting_mode = 'open_production'::text OR command_kind = 'emergency_close'::text AND activation_request_id IS NULL AND (prior_mode = ANY (ARRAY['closed_cutover'::text, 'open_production'::text, 'closed_incident'::text])) AND resulting_mode = 'closed_incident'::text",
+          "name": "phase5c_activation_runtime_commands_check1"
+        },
+        {
+          "expression": "command_kind = ANY (ARRAY['open_runtime'::text, 'emergency_close'::text])",
+          "name": "phase5c_activation_runtime_commands_command_kind_check"
+        },
+        {
+          "expression": "execution_mechanism = 'target_local_postgresql_v1'::text",
+          "name": "phase5c_activation_runtime_commands_execution_mechanism_check"
+        },
+        {
+          "expression": "fence_event_digest ~ '^[0-9a-f]{64}$'::text",
+          "name": "phase5c_activation_runtime_commands_fence_event_digest_check"
+        },
+        {
+          "expression": "prior_epoch >= 1",
+          "name": "phase5c_activation_runtime_commands_prior_epoch_check"
+        },
+        {
+          "expression": "request_digest ~ '^[0-9a-f]{64}$'::text",
+          "name": "phase5c_activation_runtime_commands_request_digest_check"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "command_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "command_kind",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "'target_local_postgresql_v1'::text",
+          "name": "execution_mechanism",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "1",
+          "name": "attempt_count",
+          "nullable": false,
+          "type": "smallint"
+        },
+        {
+          "default": null,
+          "name": "activation_request_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "request_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "target_database_instance_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "prior_epoch",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "name": "resulting_epoch",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "name": "prior_mode",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "resulting_mode",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "fence_event_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "result_document",
+          "nullable": false,
+          "type": "jsonb"
+        },
+        {
+          "default": "date_trunc('microseconds'::text, clock_timestamp())",
+          "name": "recorded_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "target_database_instance_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "target_instance_id"
+          ],
+          "target_table": "phase5c_promotion_target_identity"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "command_id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "fence_event_digest"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "request_digest"
+          ],
+          "name": null
+        }
+      ]
+    },
+    "phase5c_activation_schema_evidence": {
+      "checks": [
+        {
+          "expression": "deployment_descriptor_digest ~ '^[0-9a-f]{64}$'::text",
+          "name": "phase5c_activation_schema_ev_deployment_descriptor_digest_check"
+        },
+        {
+          "expression": "execution_authorization_envelope_digest ~ '^[0-9a-f]{64}$'::text",
+          "name": "phase5c_activation_schema_ev_execution_authorization_enve_check"
+        },
+        {
+          "expression": "installed_schema_revision = '0021_target_activation_execution'::text",
+          "name": "phase5c_activation_schema_evide_installed_schema_revision_check"
+        },
+        {
+          "expression": "octet_length(execution_authorization_envelope_digest) = 64 AND octet_length(target_identity_digest) = 64 AND octet_length(deployment_descriptor_digest) = 64",
+          "name": "phase5c_activation_schema_evidence_check"
+        },
+        {
+          "expression": "contract_version = 'phase5c4_activation_schema_evidence_v1'::text",
+          "name": "phase5c_activation_schema_evidence_contract_version_check"
+        },
+        {
+          "expression": "migration_digest = '89224c0473bf9677a642e667de6137d1b0854c14da901107a014b97cf6202a90'::text",
+          "name": "phase5c_activation_schema_evidence_migration_digest_check"
+        },
+        {
+          "expression": "migration_identity = '0021_target_activation_execution'::text",
+          "name": "phase5c_activation_schema_evidence_migration_identity_check"
+        },
+        {
+          "expression": "prior_schema_revision = '0020_immutable_provenance_enforcement'::text",
+          "name": "phase5c_activation_schema_evidence_prior_schema_revision_check"
+        },
+        {
+          "expression": "singleton_key = 1",
+          "name": "phase5c_activation_schema_evidence_singleton_key_check"
+        },
+        {
+          "expression": "target_identity_digest ~ '^[0-9a-f]{64}$'::text",
+          "name": "phase5c_activation_schema_evidence_target_identity_digest_check"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "singleton_key",
+          "nullable": false,
+          "type": "smallint"
+        },
+        {
+          "default": null,
+          "name": "contract_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "prior_schema_revision",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "installed_schema_revision",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "migration_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "migration_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_authorization_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "execution_authorization_envelope_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "migration_command_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "migration_action_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "environment_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "attempt_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "target_database_instance_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "target_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "deployment_descriptor_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": "date_trunc('microseconds'::text, clock_timestamp())",
+          "name": "installed_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "target_database_instance_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "target_instance_id"
+          ],
+          "target_table": "phase5c_promotion_target_identity"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "singleton_key"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "migration_action_id"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "migration_command_id"
+          ],
+          "name": null
+        }
+      ]
+    },
+    "phase5c_conversion_metadata": {
+      "checks": [
+        {
+          "expression": "length(archive_checksum) = 64",
+          "name": "ck_phase5c_archive_digest_length"
+        },
+        {
+          "expression": "length(operator_attestation_digest) = 64",
+          "name": "ck_phase5c_attestation_digest_length"
+        },
+        {
+          "expression": "length(clone_database_identity_digest) = 64",
+          "name": "ck_phase5c_clone_database_digest_length"
+        },
+        {
+          "expression": "ingredient_count >= 0",
+          "name": "ck_phase5c_ingredient_count_nonnegative"
+        },
+        {
+          "expression": "length(inventory_digest) = 64",
+          "name": "ck_phase5c_inventory_digest_length"
+        },
+        {
+          "expression": "length(manifest_digest) = 64",
+          "name": "ck_phase5c_manifest_digest_length"
+        },
+        {
+          "expression": "length(clone_marker_digest) = 64",
+          "name": "ck_phase5c_marker_digest_length"
+        },
+        {
+          "expression": "recipe_count >= 0",
+          "name": "ck_phase5c_recipe_count_nonnegative"
+        },
+        {
+          "expression": "length(schema_signature_digest) = 64",
+          "name": "ck_phase5c_schema_digest_length"
+        },
+        {
+          "expression": "length(source_production_identity_digest) = 64",
+          "name": "ck_phase5c_source_database_digest_length"
+        },
+        {
+          "expression": "length(planning_source_checksum) = 64",
+          "name": "ck_phase5c_source_digest_length"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "archive_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_driver_family",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_host",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_port",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "source_database",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_schema",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "archive_schema",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_clone_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "marker_format_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "isolation_evidence_contract_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_marker_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_marker_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_database_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_production_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_scope",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_alembic_revision",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "inventory_contract_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "inventory_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_signature",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_signature_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "recipe_count",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "name": "ingredient_count",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "name": "recipes_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "ingredients_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "archive_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "planning_source_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_rules_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "manifest_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "manifest_digest",
+          "nullable": false,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "primary_key": [
+        "archive_identity"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "archive_schema"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "archive_identity",
+            "clone_marker_digest",
+            "conversion_clone_identity_digest"
+          ],
+          "name": "uq_phase5c_metadata_identity_binding"
+        }
+      ]
+    },
+    "phase5c_conversion_outcomes": {
+      "checks": [
+        {
+          "expression": "NOT (execution_disposition = 'blocked'::text AND planned_disposition <> 'block'::text)",
+          "name": "ck_phase5c_outcome_block_matches_plan"
+        },
+        {
+          "expression": "checkpoint_state = ANY (ARRAY['pending'::text, 'domain_committed'::text, 'completed'::text, 'failed'::text])",
+          "name": "ck_phase5c_outcome_checkpoint_state"
+        },
+        {
+          "expression": "execution_disposition = 'converted'::text AND target_recipe_id IS NOT NULL AND reused_projection_food_item_id IS NOT NULL AND created_revision_id IS NOT NULL AND created_revision_digest IS NOT NULL OR (execution_disposition IS NULL OR execution_disposition <> 'converted'::text) AND target_recipe_id IS NULL AND reused_projection_food_item_id IS NULL AND created_revision_id IS NULL AND created_revision_digest IS NULL",
+          "name": "ck_phase5c_outcome_converted_shape"
+        },
+        {
+          "expression": "length(source_checksum) = 64 AND (created_revision_digest IS NULL OR length(created_revision_digest) = 64)",
+          "name": "ck_phase5c_outcome_digest_lengths"
+        },
+        {
+          "expression": "execution_disposition IS NULL OR (execution_disposition = ANY (ARRAY['converted'::text, 'quarantined'::text, 'blocked'::text, 'failed'::text]))",
+          "name": "ck_phase5c_outcome_execution_disposition"
+        },
+        {
+          "expression": "checkpoint_state = 'failed'::text AND failure_reason_code IS NOT NULL AND verification_state = 'failed'::text OR checkpoint_state <> 'failed'::text AND failure_reason_code IS NULL",
+          "name": "ck_phase5c_outcome_failure_shape"
+        },
+        {
+          "expression": "NOT ((execution_disposition = ANY (ARRAY['quarantined'::text, 'blocked'::text])) AND (checkpoint_state <> 'completed'::text OR verification_state <> 'verified'::text))",
+          "name": "ck_phase5c_outcome_nonconvert_complete"
+        },
+        {
+          "expression": "planned_disposition = ANY (ARRAY['convert'::text, 'quarantine'::text, 'block'::text])",
+          "name": "ck_phase5c_outcome_planned_disposition"
+        },
+        {
+          "expression": "NOT (execution_disposition = 'quarantined'::text AND planned_disposition <> 'quarantine'::text)",
+          "name": "ck_phase5c_outcome_quarantine_matches_plan"
+        },
+        {
+          "expression": "verification_state = ANY (ARRAY['pending'::text, 'verified'::text, 'failed'::text])",
+          "name": "ck_phase5c_outcome_verification_state"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "run_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "source_recipe_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "planned_disposition",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "planned_reason_code",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "source_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_disposition",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "target_recipe_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "reused_projection_food_item_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "created_revision_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "created_revision_digest",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "failure_reason_code",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "checkpoint_state",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "verification_state",
+          "nullable": false,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "created_revision_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "recipe_publication_revisions"
+        },
+        {
+          "columns": [
+            "reused_projection_food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "run_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "phase5c_conversion_runs"
+        },
+        {
+          "columns": [
+            "target_recipe_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "recipes"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "run_id",
+        "source_recipe_id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "run_id",
+            "created_revision_id"
+          ],
+          "name": "uq_phase5c_outcome_run_revision"
+        },
+        {
+          "columns": [
+            "run_id",
+            "target_recipe_id"
+          ],
+          "name": "uq_phase5c_outcome_run_target_recipe"
+        }
+      ]
+    },
+    "phase5c_conversion_runs": {
+      "checks": [
+        {
+          "expression": "length(plan_digest) = 64 AND length(inventory_digest) = 64 AND length(schema_signature_digest) = 64 AND length(recipes_checksum) = 64 AND length(ingredients_checksum) = 64 AND length(archive_checksum) = 64 AND length(planning_source_checksum) = 64 AND length(clone_marker_digest) = 64 AND length(operator_attestation_digest) = 64 AND length(execution_attestation_digest) = 64 AND length(daily_log_state_digest) = 64 AND length(ocr_state_digest) = 64",
+          "name": "ck_phase5c_run_digest_lengths"
+        },
+        {
+          "expression": "execution_attestation_scope = ANY (ARRAY['execution'::text, 'planning_and_execution'::text, 'bridge_planning_and_execution'::text])",
+          "name": "ck_phase5c_run_execution_attestation_scope"
+        },
+        {
+          "expression": "execution_state = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text])",
+          "name": "ck_phase5c_run_execution_state"
+        },
+        {
+          "expression": "execution_state = 'failed'::text AND failure_reason_code IS NOT NULL OR execution_state <> 'failed'::text AND failure_reason_code IS NULL",
+          "name": "ck_phase5c_run_failure_reason"
+        },
+        {
+          "expression": "verification_state = ANY (ARRAY['pending'::text, 'verified'::text, 'failed'::text])",
+          "name": "ck_phase5c_run_verification_state"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "archive_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "plan_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "plan_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "inventory_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_signature",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "schema_signature_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_rules_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "recipes_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "ingredients_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "archive_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "planning_source_checksum",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "clone_marker_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "operator_attestation_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_isolation_contract_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_attestation_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_attestation_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_attestation_scope",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_attestation_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "converter_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "daily_log_state_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "ocr_state_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "execution_state",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "verification_state",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "failure_reason_code",
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "archive_identity"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "archive_identity"
+          ],
+          "target_table": "phase5c_conversion_metadata"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "archive_identity"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "plan_digest"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "id",
+            "archive_identity",
+            "clone_marker_digest"
+          ],
+          "name": "uq_phase5c_run_identity_binding"
+        }
+      ]
+    },
+    "phase5c_promotion_target_identity": {
+      "checks": [
+        {
+          "expression": "archive_identity ~ '^[0-9a-f]{64}$'::text AND clone_marker_digest ~ '^[0-9a-f]{64}$'::text AND conversion_clone_identity_digest ~ '^[0-9a-f]{64}$'::text AND identity_digest ~ '^[0-9a-f]{64}$'::text",
+          "name": "ck_phase5c_target_digest_shape"
+        },
+        {
+          "expression": "identity_version = 'phase5c_promotion_target_identity_v1'::text",
+          "name": "ck_phase5c_target_identity_version"
+        },
+        {
+          "expression": "singleton_key = 1",
+          "name": "ck_phase5c_target_singleton"
+        }
+      ],
+      "columns": [
+        {
+          "default": "nextval('\"public\".phase5c_promotion_target_identity_singleton_key_seq'::regclass)",
+          "name": "singleton_key",
+          "nullable": false,
+          "type": "smallint"
+        },
+        {
+          "default": null,
+          "name": "initialization_command_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "identity_version",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "target_instance_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "target_nonce",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "archive_identity",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_run_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "clone_marker_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "conversion_clone_identity_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "initialized_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "identity_digest",
+          "nullable": false,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "archive_identity",
+            "clone_marker_digest",
+            "conversion_clone_identity_digest"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_phase5c_target_metadata_binding",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "archive_identity",
+            "clone_marker_digest",
+            "conversion_clone_identity_digest"
+          ],
+          "target_table": "phase5c_conversion_metadata"
+        },
+        {
+          "columns": [
+            "conversion_run_id",
+            "archive_identity",
+            "clone_marker_digest"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_phase5c_target_run_binding",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "archive_identity",
+            "clone_marker_digest"
+          ],
+          "target_table": "phase5c_conversion_runs"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "singleton_key"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "conversion_run_id"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "identity_digest"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "initialization_command_id"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "target_instance_id"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "target_nonce"
+          ],
+          "name": null
+        }
+      ]
+    },
+    "phase5c_write_fence_events": {
+      "checks": [
+        {
+          "expression": "epoch = 1 AND from_mode IS NULL AND previous_event_digest IS NULL AND to_mode = 'closed_prequalification'::text AND attempt_id IS NULL AND authorization_digest IS NULL AND artifact_set_digest IS NULL OR epoch > 1 AND from_mode IS NOT NULL AND previous_event_digest IS NOT NULL",
+          "name": "ck_phase5c_fence_event_chain_shape"
+        },
+        {
+          "expression": "event_digest ~ '^[0-9a-f]{64}$'::text AND (previous_event_digest IS NULL OR previous_event_digest ~ '^[0-9a-f]{64}$'::text) AND (authorization_digest IS NULL OR authorization_digest ~ '^[0-9a-f]{64}$'::text) AND (artifact_set_digest IS NULL OR artifact_set_digest ~ '^[0-9a-f]{64}$'::text)",
+          "name": "ck_phase5c_fence_event_digest_shape"
+        },
+        {
+          "expression": "epoch >= 1",
+          "name": "ck_phase5c_fence_event_epoch_positive"
+        },
+        {
+          "expression": "from_mode IS NULL OR (from_mode = ANY (ARRAY['closed_prequalification'::text, 'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, 'retired'::text]))) AND (to_mode = ANY (ARRAY['closed_prequalification'::text, 'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, 'retired'::text])",
+          "name": "ck_phase5c_fence_event_modes"
+        },
+        {
+          "expression": "to_mode <> 'open_production'::text OR attempt_id IS NOT NULL AND authorization_digest IS NOT NULL AND artifact_set_digest IS NOT NULL",
+          "name": "ck_phase5c_fence_event_open_evidence_shape"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "target_instance_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "epoch",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "name": "event_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "command_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "from_mode",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "to_mode",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "attempt_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "authorization_digest",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "artifact_set_digest",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "previous_event_digest",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "event_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "occurred_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "target_instance_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_phase5c_fence_event_target",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "target_instance_id"
+          ],
+          "target_table": "phase5c_promotion_target_identity"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "attempt_id"
+          ],
+          "name": "ix_phase5c_fence_events_attempt",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "target_instance_id",
+        "epoch"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "command_id"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "event_digest"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "event_id"
+          ],
+          "name": null
+        }
+      ]
+    },
+    "phase5c_write_fence_state": {
+      "checks": [
+        {
+          "expression": "last_event_digest ~ '^[0-9a-f]{64}$'::text AND (authorization_digest IS NULL OR authorization_digest ~ '^[0-9a-f]{64}$'::text) AND (artifact_set_digest IS NULL OR artifact_set_digest ~ '^[0-9a-f]{64}$'::text)",
+          "name": "ck_phase5c_fence_digest_shape"
+        },
+        {
+          "expression": "epoch >= 1",
+          "name": "ck_phase5c_fence_epoch_positive"
+        },
+        {
+          "expression": "epoch <> 1 OR mode = 'closed_prequalification'::text AND attempt_id IS NULL AND authorization_digest IS NULL AND artifact_set_digest IS NULL",
+          "name": "ck_phase5c_fence_initial_shape"
+        },
+        {
+          "expression": "mode = ANY (ARRAY['closed_prequalification'::text, 'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, 'retired'::text])",
+          "name": "ck_phase5c_fence_mode"
+        },
+        {
+          "expression": "mode <> 'open_production'::text OR attempt_id IS NOT NULL AND authorization_digest IS NOT NULL AND artifact_set_digest IS NOT NULL",
+          "name": "ck_phase5c_fence_open_evidence_shape"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "target_instance_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "epoch",
+          "nullable": false,
+          "type": "bigint"
+        },
+        {
+          "default": null,
+          "name": "mode",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "attempt_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "authorization_digest",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "artifact_set_digest",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "last_event_digest",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "target_instance_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_phase5c_fence_state_target",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "target_instance_id"
+          ],
+          "target_table": "phase5c_promotion_target_identity"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "target_instance_id"
+      ],
+      "unique_constraints": []
+    },
+    "recipe_ingredients": {
+      "checks": [
+        {
+          "expression": "amount_quantity > 0::numeric",
+          "name": "ck_recipe_ingredients_amount_positive"
+        },
+        {
+          "expression": "resolved_gram_amount IS NULL OR resolved_gram_amount > 0::numeric",
+          "name": "ck_recipe_ingredients_grams_positive"
+        }
+      ],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "recipe_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "position",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "amount_quantity",
+          "nullable": false,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "amount_unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "serving_definition_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "resolved_gram_amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "preparation_note",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "amount_display_quantity",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "amount_display_unit",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "recipe_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "CASCADE",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "recipes"
+        },
+        {
+          "columns": [
+            "serving_definition_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "SET NULL",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "serving_definitions"
+        },
+        {
+          "columns": [
+            "food_item_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_recipe_ingredients_food_owner",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "recipe_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_recipe_ingredients_recipe_owner",
+          "ondelete": "CASCADE",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "recipes"
+        },
+        {
+          "columns": [
+            "serving_definition_id",
+            "food_item_id"
+          ],
+          "deferrable": true,
+          "initially": "DEFERRED",
+          "match": "SIMPLE",
+          "name": "fk_recipe_ingredients_serving_food",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "food_item_id"
+          ],
+          "target_table": "serving_definitions"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "name": "ix_recipe_ingredients_food_item_id",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "food_item_id",
+            "user_id"
+          ],
+          "name": "ix_recipe_ingredients_food_owner",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "recipe_id",
+            "user_id"
+          ],
+          "name": "ix_recipe_ingredients_recipe_owner",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "serving_definition_id"
+          ],
+          "name": "ix_recipe_ingredients_serving_definition_id",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "serving_definition_id",
+            "food_item_id"
+          ],
+          "name": "ix_recipe_ingredients_serving_food",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "recipe_id",
+            "position"
+          ],
+          "name": "uq_recipe_ingredients_recipe_position"
+        }
+      ]
+    },
+    "recipe_publication_amount_definitions": {
+      "checks": [
+        {
+          "expression": "gram_equivalent IS NULL OR gram_equivalent > 0::numeric",
+          "name": "ck_recipe_publication_amount_grams_positive"
+        },
+        {
+          "expression": "semantic_mode = 'g'::text AND display_quantity IS NULL AND display_unit = 'g'::text AND gram_equivalent IS NULL OR semantic_mode = 'serving'::text AND display_quantity IS NOT NULL AND display_quantity > 0::numeric",
+          "name": "ck_recipe_publication_amount_mode_shape"
+        },
+        {
+          "expression": "display_order >= 0",
+          "name": "ck_recipe_publication_amount_order_nonnegative"
+        },
+        {
+          "expression": "semantic_mode = ANY (ARRAY['serving'::text, 'g'::text])",
+          "name": "ck_recipe_publication_amount_semantic_mode"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "revision_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "display_order",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "name": "display_label",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "semantic_mode",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "display_quantity",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "display_unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "gram_equivalent",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "is_default",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "name": "conversion_metadata",
+          "nullable": true,
+          "type": "json"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "revision_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "recipe_publication_revisions"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "revision_id"
+          ],
+          "name": "uq_recipe_publication_amount_one_default",
+          "predicate": "is_default = true",
+          "unique": true
+        },
+        {
+          "columns": [
+            "revision_id"
+          ],
+          "name": "uq_recipe_publication_amount_one_gram_mode",
+          "predicate": "semantic_mode = 'g'",
+          "unique": true
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "id",
+            "revision_id"
+          ],
+          "name": "uq_recipe_publication_amount_identity_revision"
+        },
+        {
+          "columns": [
+            "revision_id",
+            "display_order"
+          ],
+          "name": "uq_recipe_publication_amount_order"
+        },
+        {
+          "columns": [
+            "revision_id",
+            "semantic_mode",
+            "display_label"
+          ],
+          "name": "uq_recipe_publication_amount_semantic_label"
+        }
+      ]
+    },
+    "recipe_publication_nutrients": {
+      "checks": [
+        {
+          "expression": "basis = ANY (ARRAY['per_serving'::text, 'per_100g'::text, 'per_gram'::text])",
+          "name": "ck_recipe_publication_nutrient_basis"
+        },
+        {
+          "expression": "data_status = ANY (ARRAY['known'::text, 'estimated'::text, 'unknown'::text, 'zero'::text])",
+          "name": "ck_recipe_publication_nutrient_status"
+        },
+        {
+          "expression": "data_status = 'unknown'::text AND amount IS NULL OR data_status = 'zero'::text AND amount = 0::numeric OR (data_status = ANY (ARRAY['known'::text, 'estimated'::text])) AND amount IS NOT NULL",
+          "name": "ck_recipe_publication_nutrient_status_amount"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "revision_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "nutrient_id",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "amount",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "basis",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "data_status",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "diagnostic_provenance",
+          "nullable": true,
+          "type": "json"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "nutrient_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "nutrients"
+        },
+        {
+          "columns": [
+            "revision_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "recipe_publication_revisions"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "revision_id",
+            "nutrient_id",
+            "basis"
+          ],
+          "name": "uq_recipe_publication_nutrient_identity_basis"
+        }
+      ]
+    },
+    "recipe_publication_revisions": {
+      "checks": [
+        {
+          "expression": "revision_number > 0",
+          "name": "ck_recipe_publication_revision_number_positive"
+        },
+        {
+          "expression": "creation_origin = ANY (ARRAY['normal_publication'::text, 'explicit_republish'::text, 'legacy_projection_capture'::text])",
+          "name": "ck_recipe_publication_revision_origin"
+        },
+        {
+          "expression": "provenance_confidence = ANY (ARRAY['complete'::text, 'transition_baseline'::text, 'partial'::text, 'ambiguous'::text])",
+          "name": "ck_recipe_publication_revision_provenance"
+        }
+      ],
+      "columns": [
+        {
+          "default": null,
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "recipe_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "revision_number",
+          "nullable": false,
+          "type": "integer"
+        },
+        {
+          "default": "now()",
+          "name": "published_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "creation_origin",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "provenance_confidence",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "published_name",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "published_notes",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "content_digest",
+          "nullable": false,
+          "type": "text"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        },
+        {
+          "columns": [
+            "recipe_id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_recipe_publication_revision_recipe_owner",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "user_id"
+          ],
+          "target_table": "recipes"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "id",
+            "recipe_id",
+            "user_id"
+          ],
+          "name": "uq_recipe_publication_revision_identity_owner"
+        },
+        {
+          "columns": [
+            "id",
+            "user_id"
+          ],
+          "name": "uq_recipe_publication_revision_identity_user"
+        },
+        {
+          "columns": [
+            "recipe_id",
+            "revision_number"
+          ],
+          "name": "uq_recipe_publication_revision_number"
+        }
+      ]
+    },
+    "recipes": {
+      "checks": [
+        {
+          "expression": "final_cooked_weight_grams IS NULL OR final_cooked_weight_grams > 0::numeric",
+          "name": "ck_recipes_final_weight_positive"
+        },
+        {
+          "expression": "published_food_item_id IS NULL) = (active_publication_revision_id IS NULL",
+          "name": "ck_recipes_publication_links_paired"
+        },
+        {
+          "expression": "serving_count_yield IS NULL OR serving_count_yield > 0::numeric",
+          "name": "ck_recipes_serving_count_positive"
+        }
+      ],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "published_food_item_id",
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "name",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "notes",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "serving_count_yield",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "final_cooked_weight_grams",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "deleted_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": null,
+          "name": "final_cooked_weight_display_quantity",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "final_cooked_weight_display_unit",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "false",
+          "name": "needs_republish",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "name": "active_publication_revision_id",
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "published_food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "SET NULL",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        },
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        },
+        {
+          "columns": [
+            "active_publication_revision_id",
+            "id",
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": "fk_recipes_active_publication_revision_owner",
+          "ondelete": "RESTRICT",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "recipe_id",
+            "user_id"
+          ],
+          "target_table": "recipe_publication_revisions"
+        },
+        {
+          "columns": [
+            "published_food_item_id",
+            "active_publication_revision_id",
+            "user_id"
+          ],
+          "deferrable": true,
+          "initially": "DEFERRED",
+          "match": "SIMPLE",
+          "name": "fk_recipes_publication_projection",
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id",
+            "recipe_publication_revision_id",
+            "user_id"
+          ],
+          "target_table": "food_items"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "published_food_item_id",
+            "active_publication_revision_id",
+            "user_id"
+          ],
+          "name": "ix_recipes_publication_projection",
+          "predicate": null,
+          "unique": false
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "published_food_item_id"
+          ],
+          "name": null
+        },
+        {
+          "columns": [
+            "id",
+            "user_id"
+          ],
+          "name": "uq_recipes_id_user_id"
+        }
+      ]
+    },
+    "serving_definitions": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "food_item_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "label",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "quantity",
+          "nullable": false,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "unit",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "gram_weight",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": "false",
+          "name": "is_default",
+          "nullable": false,
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "name": "source",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "confidence",
+          "nullable": true,
+          "type": "numeric(5,4)"
+        },
+        {
+          "default": "false",
+          "name": "is_user_confirmed",
+          "nullable": false,
+          "type": "boolean"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "food_items"
+        }
+      ],
+      "indexes": [
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "name": "ix_serving_definitions_food_item_id",
+          "predicate": null,
+          "unique": false
+        },
+        {
+          "columns": [
+            "food_item_id"
+          ],
+          "name": "uq_serving_definitions_one_default_per_food",
+          "predicate": "is_default = true",
+          "unique": true
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "id",
+            "food_item_id"
+          ],
+          "name": "uq_serving_definitions_identity_food"
+        }
+      ]
+    },
+    "user_profiles": {
+      "checks": [],
+      "columns": [
+        {
+          "default": null,
+          "name": "user_id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "birth_date",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "default": null,
+          "name": "height_cm",
+          "nullable": true,
+          "type": "numeric(8,3)"
+        },
+        {
+          "default": null,
+          "name": "weight_kg",
+          "nullable": true,
+          "type": "numeric(8,3)"
+        },
+        {
+          "default": null,
+          "name": "biological_sex_for_reference_calculations",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "activity_level",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "now()",
+          "name": "updated_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        },
+        {
+          "default": "general_adult",
+          "name": "energy_estimation_context",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "authoritative_time_zone",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "0",
+          "name": "calendar_revision",
+          "nullable": false,
+          "type": "integer"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "user_id"
+          ],
+          "deferrable": false,
+          "initially": null,
+          "match": "SIMPLE",
+          "name": null,
+          "ondelete": "NO ACTION",
+          "onupdate": "NO ACTION",
+          "target_columns": [
+            "id"
+          ],
+          "target_table": "users"
+        }
+      ],
+      "indexes": [],
+      "primary_key": [
+        "user_id"
+      ],
+      "unique_constraints": []
+    },
+    "users": {
+      "checks": [],
+      "columns": [
+        {
+          "default": "gen_random_uuid()",
+          "name": "id",
+          "nullable": false,
+          "type": "uuid"
+        },
+        {
+          "default": null,
+          "name": "email",
+          "nullable": false,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "display_name",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": "now()",
+          "name": "created_at",
+          "nullable": false,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        {
+          "columns": [
+            "email"
+          ],
+          "name": null
+        }
+      ]
+    }
+  }
+}

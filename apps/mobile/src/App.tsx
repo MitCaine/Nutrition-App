@@ -40,13 +40,21 @@ function ProductionApp() {
     return <RuntimeBootstrapStatus kind="failure" message={configured.error} />;
   }
 
+  const renderRuntime = (runtime: Parameters<typeof AppProviders>[0]["runtime"]) => (
+    <AppProviders runtime={runtime}>
+      <ThemedApp />
+    </AppProviders>
+  );
+  if (configured.configuration.dataAuthority === "local") {
+    // Preserve remote startup isolation: evaluate the SQLite/import gate only
+    // after configuration has selected local authority.
+    const { LocalFirstStartRuntimeBootstrap } = require("./transfer/e2_15/LocalFirstStartGate") as
+      typeof import("./transfer/e2_15/LocalFirstStartGate");
+    return <LocalFirstStartRuntimeBootstrap>{renderRuntime}</LocalFirstStartRuntimeBootstrap>;
+  }
   return (
     <ApplicationRuntimeBootstrap configuration={configured.configuration}>
-      {(runtime) => (
-        <AppProviders runtime={runtime}>
-          <ThemedApp />
-        </AppProviders>
-      )}
+      {renderRuntime}
     </ApplicationRuntimeBootstrap>
   );
 }

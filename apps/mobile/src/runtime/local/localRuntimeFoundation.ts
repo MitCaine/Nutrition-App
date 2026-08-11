@@ -106,6 +106,30 @@ export type OpenLocalRuntimeHandle = LocalRuntimeFoundation & Readonly<{
   close(): Promise<void>;
 }>;
 
+/** Complete bootstrap on a migrated handle that E2-15 opened before owner creation. */
+export async function bootstrapOpenedLocalRuntimeFoundation(
+  handle: NutritionDatabaseHandle,
+  options: Omit<OpenLocalRuntimeFoundationOptions, keyof OpenNutritionDatabaseOptions> = {},
+): Promise<OpenLocalRuntimeHandle> {
+  const foundation = await bootstrapLocalRuntimeFoundation(
+    handle.database,
+    options.calendar,
+    options.foods,
+    options.usda,
+    options.recipes,
+    options.dailyLogs,
+    options.targets,
+    options.ocr,
+  );
+  return {
+    ...foundation,
+    migration: handle.migration,
+    readiness: handle.readiness,
+    semanticTables: handle.semanticTables,
+    close: handle.close,
+  };
+}
+
 /**
  * Open, migrate, and bootstrap the local foundation without selecting a
  * runtime in the app provider. E2-14 owns explicit application selection and
@@ -126,23 +150,15 @@ export async function openLocalRuntimeFoundation(
   } = options;
   const handle = await openNutritionDatabase(databaseOptions);
   try {
-    const foundation = await bootstrapLocalRuntimeFoundation(
-      handle.database,
-      calendarOptions,
-      foodsOptions,
-      usdaOptions,
-      recipesOptions,
-      dailyLogsOptions,
-      targetsOptions,
-      ocrOptions,
-    );
-    return {
-      ...foundation,
-      migration: handle.migration,
-      readiness: handle.readiness,
-      semanticTables: handle.semanticTables,
-      close: handle.close,
-    };
+    return await bootstrapOpenedLocalRuntimeFoundation(handle, {
+      calendar: calendarOptions,
+      foods: foodsOptions,
+      usda: usdaOptions,
+      recipes: recipesOptions,
+      dailyLogs: dailyLogsOptions,
+      targets: targetsOptions,
+      ocr: ocrOptions,
+    });
   } catch (error) {
     try {
       await handle.close();

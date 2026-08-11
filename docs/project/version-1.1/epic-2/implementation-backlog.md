@@ -1182,6 +1182,9 @@ Preserve existing personal application data during the local-first cutover.
 
 A bounded point-in-time transfer is materially different from synchronization. It must preserve immutable history exactly without writing to the PostgreSQL source or creating an incremental protocol.
 
+The binding implementation and operator contract is the
+[E2-15 Transfer Architecture and Runbook](e2-15-transfer-architecture.md).
+
 ### Acceptance criteria
 
 - A read-only PostgreSQL exporter emits one versioned transfer package for active application data.
@@ -1248,6 +1251,17 @@ A bounded point-in-time transfer is materially different from synchronization. I
 - Inject failure throughout import and verify an empty target remains.
 - Verify the PostgreSQL source is unchanged.
 - Reserve full real-data and device qualification for owner-coordinated validation and E2-16.
+
+### Qualification status
+
+E2-15 native iOS qualification is complete: C1–C10 each passed individually,
+RUN ALL passed, and the final RESET passed. This included document-picker
+cancellation, the production first-start import UI, and file-backed SQLite
+migration, import, rollback, reimport rejection, bootstrap retry, and reopen
+paths. No personal data or device paths are recorded here.
+
+Separately, the earlier local/no-API iOS and Android Expo exports passed as
+static bundle validation; no Android native runtime execution is claimed.
 
 ### Estimated implementation size
 
