@@ -67,6 +67,8 @@ import {
   registerE216QualificationHandle,
   resetE216QualificationDatabase,
   resetE216QualificationDatabases,
+  withE216QualificationResetDeleteObservation,
+  type E216QualificationResetDeleteOperation,
   writeE216StageBRestartCheckpoint,
   writeE216FoundationCheckpoint,
 } from "../src/dev/e2_16/e216QualificationFoundation";
@@ -77,8 +79,21 @@ import {
   isCurrentE216ReopenEvidence,
   isFreshE216MigrationEvidence,
 } from "../src/dev/e2_16/e216StageBQualification";
+import {
+  E216_STAGE_C_CASE_DEFINITIONS,
+  E216_STAGE_C_FAILING_MIGRATIONS,
+  E216_STAGE_C_INJECTED_MIGRATION_ID,
+  captureE216StageCPhysicalIntegrity,
+  isE216StageCPhysicalIntegrityPass,
+  isExpectedE216StageCRejection,
+  withE216StageCHandle,
+} from "../src/dev/e2_16/e216StageCQualification";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../src/storage/sqlite/schema";
-import type { NutritionDatabaseHandle } from "../src/storage/sqlite/migrations";
+import {
+  SQLITE_MIGRATIONS,
+  SQLiteMigrationError,
+  type NutritionDatabaseHandle,
+} from "../src/storage/sqlite/migrations";
 import { deleteDatabaseAsync } from "expo-sqlite";
 
 const deleteDatabaseAsyncMock = deleteDatabaseAsync as jest.MockedFunction<typeof deleteDatabaseAsync>;
@@ -264,12 +279,15 @@ test("E2-16A enables only a development build and fixes the isolated identity", 
   }, true)).toBe(false);
   expect(qualificationDatabaseName("ios")).toBe("e2_16_foundation_ios.db");
   expect(qualificationDatabaseName("android")).toBe("e2_16_foundation_android.db");
-  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(8);
+  expect(E216_ALLOWED_DATABASE_NAMES).toHaveLength(14);
   expect(E216_ALLOWED_DATABASE_NAMES).not.toContain("nutrition.db");
   expect(E216_DATABASE_ROOT_DIRECTORY_NAME).toBe("E2-16");
   expect(qualificationDatabaseName("ios", "migration")).toBe("e2_16_migration_ios.db");
   expect(qualificationDatabaseName("ios", "reopen")).toBe("e2_16_reopen_ios.db");
   expect(qualificationDatabaseName("ios", "restart")).toBe("e2_16_restart_ios.db");
+  expect(qualificationDatabaseName("ios", "failure")).toBe("e2_16_failure_ios.db");
+  expect(qualificationDatabaseName("ios", "future")).toBe("e2_16_future_ios.db");
+  expect(qualificationDatabaseName("ios", "ledger")).toBe("e2_16_ledger_ios.db");
 });
 
 test("the database boundary rejects the normal name and every outside root", () => {
@@ -304,6 +322,80 @@ test("reset tolerates only the explicit native absent-database condition", async
 
   deleteDatabaseAsyncMock.mockRejectedValueOnce(new Error("E_SQLITE_DELETE_DATABASE: permission denied"));
   await expect(resetE216QualificationDatabase()).rejects.toThrow("permission denied");
+});
+
+test("E2-16C observes the real reset and delete boundary calls", async () => {
+  deleteDatabaseAsyncMock.mockReset().mockResolvedValue(undefined);
+  const observed: E216QualificationResetDeleteOperation[] = [];
+
+  await withE216QualificationResetDeleteObservation(
+    (operation) => observed.push(operation),
+    async () => resetE216QualificationDatabase("failure"),
+  );
+
+  expect(observed).toEqual([
+    {
+      kind: "reset",
+      stage: "failure",
+      databaseName: "e2_16_failure_ios.db",
+    },
+    {
+      kind: "delete",
+      stage: "failure",
+      databaseName: "e2_16_failure_ios.db",
+    },
+  ]);
+  expect(deleteDatabaseAsyncMock).toHaveBeenCalledTimes(1);
+});
+
+test("E2-16C requires healthy physical integrity and zero foreign-key violations", async () => {
+  const queries: string[] = [];
+  const database = {
+    async getAllAsync<T>(sql: string): Promise<T[]> {
+      queries.push(sql);
+      if (sql === "PRAGMA integrity_check") return [{ integrity_check: "ok" } as T];
+      if (sql === "PRAGMA foreign_key_check") return [];
+      return [];
+    },
+  };
+
+  const evidence = await captureE216StageCPhysicalIntegrity(database as unknown as SQLiteDatabase);
+  expect(evidence).toEqual({ integrityCheck: "ok", foreignKeyViolationCount: 0 });
+  expect(isE216StageCPhysicalIntegrityPass(evidence)).toBe(true);
+  expect(queries).toEqual(["PRAGMA integrity_check", "PRAGMA foreign_key_check"]);
+  expect(isE216StageCPhysicalIntegrityPass({ integrityCheck: "failed", foreignKeyViolationCount: 0 })).toBe(false);
+  expect(isE216StageCPhysicalIntegrityPass({ integrityCheck: "ok", foreignKeyViolationCount: 1 })).toBe(false);
+  expect(isE216StageCPhysicalIntegrityPass({ integrityCheck: "unreadable", foreignKeyViolationCount: null })).toBe(false);
+});
+
+test("E2-16C settles its statement chain before closing the inspection handle", async () => {
+  const events: string[] = [];
+  let releaseStatement!: () => void;
+  const statementSettled = new Promise<void>((resolve) => {
+    releaseStatement = resolve;
+  });
+  const handle = {
+    database: {} as SQLiteDatabase,
+    close: jest.fn(async () => {
+      events.push("close");
+      if (!events.includes("statement-settled")) {
+        throw new Error("close-before-stage-c-statement-settlement");
+      }
+    }),
+  };
+
+  const operation = withE216StageCHandle(handle, async () => {
+    events.push("statement-start");
+    await statementSettled;
+    events.push("statement-settled");
+    throw new Error("injected migration failure");
+  });
+
+  await Promise.resolve();
+  expect(handle.close).not.toHaveBeenCalled();
+  releaseStatement();
+  await expect(operation).rejects.toThrow("injected migration failure");
+  expect(events).toEqual(["statement-start", "statement-settled", "close"]);
 });
 
 test("Stage-B restart checkpoint persists only bounded relaunch evidence", () => {
@@ -368,7 +460,7 @@ test("a native close failure keeps the qualification handle registered and block
   expect(close).toHaveBeenCalledTimes(3);
 });
 
-test("Stage-B reset deletes only the four current-platform qualification databases", async () => {
+test("Stage-B/C reset deletes only current-platform qualification databases", async () => {
   deleteDatabaseAsyncMock.mockClear();
 
   await expect(resetE216QualificationDatabases()).resolves.toBeUndefined();
@@ -378,11 +470,47 @@ test("Stage-B reset deletes only the four current-platform qualification databas
     "e2_16_migration_ios.db",
     "e2_16_reopen_ios.db",
     "e2_16_restart_ios.db",
+    "e2_16_failure_ios.db",
+    "e2_16_future_ios.db",
+    "e2_16_ledger_ios.db",
   ]);
   expect(deleteDatabaseAsyncMock.mock.calls.every(([, directory]) => (
     directory === qualificationDatabaseDirectory()
   ))).toBe(true);
   expect(deleteDatabaseAsyncMock.mock.calls.every(([name]) => name !== "nutrition.db")).toBe(true);
+});
+
+test("E2-16C keeps production v1 unchanged and injects only one failing v2", () => {
+  expect(SQLITE_MIGRATIONS).toHaveLength(1);
+  expect(SQLITE_MIGRATIONS[0]).toMatchObject({
+    version: 1,
+    id: "001_initial_runtime_schema",
+  });
+  expect(E216_STAGE_C_FAILING_MIGRATIONS.map((migration) => ({
+    version: migration.version,
+    id: migration.id,
+  }))).toEqual([
+    { version: 1, id: "001_initial_runtime_schema" },
+    { version: 2, id: E216_STAGE_C_INJECTED_MIGRATION_ID },
+  ]);
+  expect(E216_STAGE_C_CASE_DEFINITIONS.map((definition) => definition.id)).toEqual([
+    "failing_v2_rollback",
+    "future_user_version",
+    "missing_ledger",
+    "mismatched_ledger",
+  ]);
+});
+
+test.each([
+  ["failing_v2_rollback", new Error("E2-16C intentionally failing v2 migration."), true],
+  ["future_user_version", new Error("SQLite database schema version 2 is newer than the supported version 1."), true],
+  ["missing_ledger", new SQLiteMigrationError("SQLite migration ledger is missing or unreadable."), true],
+  ["mismatched_ledger", new SQLiteMigrationError("SQLite migration ledger does not match the schema version."), true],
+  ["failing_v2_rollback", new Error("E2-16C unexpected failure"), false],
+  ["future_user_version", new Error("database is locked"), false],
+  ["missing_ledger", new Error("SQLite reset failed"), false],
+])("E2-16C only accepts the expected migration rejection (%s)", (caseId, error, expected) => {
+  expect(isExpectedE216StageCRejection(error, caseId as Parameters<typeof isExpectedE216StageCRejection>[1])).toBe(expected);
 });
 
 test.each([

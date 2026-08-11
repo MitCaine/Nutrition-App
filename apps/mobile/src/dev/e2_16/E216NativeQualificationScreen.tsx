@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +27,12 @@ import {
   type E216StageBRestartPending,
 } from "./e216StageBQualification";
 import {
+  E216_STAGE_C_CASE_DEFINITIONS,
+  runE216StageCCase,
+  runE216StageCRunAll,
+  type E216StageCCaseResult,
+} from "./e216StageCQualification";
+import {
   qualifyE216Database,
   serializeE216IntegrityResult,
   type E216DirectIntegrityResult,
@@ -40,12 +47,27 @@ type StageBCaseState = Readonly<{
   error?: string;
 }>;
 
+type StageCCaseState = Readonly<{
+  status: "idle" | "running" | "passed" | "failed";
+  result?: E216StageCCaseResult;
+  error?: string;
+}>;
+
 function initialStageBCaseStates(): Record<(typeof E216_STAGE_B_CASE_DEFINITIONS)[number]["id"], StageBCaseState> {
   return {
     fresh_migration: { status: "idle" },
     valid_v1_reopen: { status: "idle" },
     explicit_close_reopen: { status: "idle" },
     ordinary_restart: { status: "idle" },
+  };
+}
+
+function initialStageCCaseStates(): Record<(typeof E216_STAGE_C_CASE_DEFINITIONS)[number]["id"], StageCCaseState> {
+  return {
+    failing_v2_rollback: { status: "idle" },
+    future_user_version: { status: "idle" },
+    missing_ledger: { status: "idle" },
+    mismatched_ledger: { status: "idle" },
   };
 }
 
@@ -58,6 +80,7 @@ export default function E216NativeQualificationScreen() {
   const [result, setResult] = useState<E216DirectIntegrityResult | null>(null);
   const [checkpoint, setCheckpoint] = useState(hasE216FoundationCheckpoint());
   const [stageBCaseStates, setStageBCaseStates] = useState(initialStageBCaseStates);
+  const [stageCCaseStates, setStageCCaseStates] = useState(initialStageCCaseStates);
   const [pendingRestart, setPendingRestart] = useState<E216StageBRestartPending | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -244,6 +267,73 @@ export default function E216NativeQualificationScreen() {
     }
   }
 
+  async function runStageCCase(caseId: (typeof E216_STAGE_C_CASE_DEFINITIONS)[number]["id"]): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    setStageCCaseStates((current) => ({
+      ...current,
+      [caseId]: { status: "running" },
+    }));
+    try {
+      await closeFoundationHandle();
+      const outcome = await runE216StageCCase(caseId);
+      setStageCCaseStates((current) => ({
+        ...current,
+        [caseId]: {
+          status: outcome.status === "pass" ? "passed" : "failed",
+          result: outcome,
+        },
+      }));
+      setMessage(
+        outcome.status === "pass"
+          ? `${outcome.caseId} passed its fail-closed checks.`
+          : `${outcome.caseId} failed its fail-closed checks.`,
+      );
+    } catch (error) {
+      setStageCCaseStates((current) => ({
+        ...current,
+        [caseId]: { status: "failed", error: errorMessage(error) },
+      }));
+      setMessage(`E2-16C ${caseId} failed: ${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runStageCAll(): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    setStageCCaseStates((current) => Object.fromEntries(
+      Object.entries(current).map(([caseId]) => [caseId, { status: "running" }]),
+    ) as typeof current);
+    try {
+      await closeFoundationHandle();
+      const outcomes = await runE216StageCRunAll();
+      setStageCCaseStates((current) => ({
+        ...current,
+        ...Object.fromEntries(outcomes.map((outcome) => [outcome.caseId, {
+          status: outcome.status === "pass" ? "passed" : "failed",
+          result: outcome,
+        }])),
+      }));
+      setMessage(
+        outcomes.every((outcome) => outcome.status === "pass")
+          ? "E2-16C RUN ALL passed its fail-closed checks."
+          : "E2-16C RUN ALL completed with one or more failures.",
+      );
+    } catch (error) {
+      setMessage(`E2-16C RUN ALL failed: ${errorMessage(error)}`);
+      setStageCCaseStates((current) => Object.fromEntries(
+        Object.entries(current).map(([caseId, state]) => [
+          caseId,
+          state.status === "running" ? { status: "failed", error: errorMessage(error) } : state,
+        ]),
+      ) as typeof current);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function writeCheckpoint(): void {
     try {
       writeE216FoundationCheckpoint();
@@ -265,7 +355,8 @@ export default function E216NativeQualificationScreen() {
       setCheckpoint(hasE216FoundationCheckpoint());
       setPendingRestart(null);
       setStageBCaseStates(initialStageBCaseStates());
-      setMessage("E2-16A/B isolated databases and checkpoints reset.");
+      setStageCCaseStates(initialStageCCaseStates());
+      setMessage("E2-16A/B/C isolated databases and checkpoints reset.");
     } catch (error) {
       setMessage(`Reset failed: ${errorMessage(error)}`);
     } finally {
@@ -276,9 +367,9 @@ export default function E216NativeQualificationScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Nutrition App E2-16</Text>
-      <Text style={styles.subtitle}>E2-16A/B native qualification foundation and lifecycle</Text>
+      <Text style={styles.subtitle}>E2-16A/B/C native qualification foundation, lifecycle, and fail-closed migration</Text>
       <Text style={styles.warning}>
-        Temporary development-only infrastructure. E2-16C+ failure, termination, filesystem,
+        Temporary development-only infrastructure. E2-16D+ termination, filesystem,
         feature, accessibility, and OCR scenarios are not implemented here.
       </Text>
 
@@ -287,6 +378,7 @@ export default function E216NativeQualificationScreen() {
         <Text selectable style={styles.detail}>Bundle: com.portfolio.nutritionapp.e216</Text>
         <Text selectable style={styles.detail}>Foundation database: e2_16_foundation_&lt;platform&gt;.db</Text>
         <Text selectable style={styles.detail}>Stage-B databases: e2_16_&lt;migration|reopen|restart&gt;_&lt;platform&gt;.db</Text>
+        <Text selectable style={styles.detail}>Stage-C databases: e2_16_&lt;failure|future|ledger&gt;_ios.db</Text>
         <Text style={styles.detail}>Root: Expo SQLite default root / E2-16</Text>
         <Text style={styles.detail}>Normal nutrition.db is never opened or deleted.</Text>
       </View>
@@ -346,7 +438,48 @@ export default function E216NativeQualificationScreen() {
         })}
       </View>
 
-      {busy ? <ActivityIndicator accessibilityLabel="E2-16A operation in progress" /> : null}
+      <View style={styles.stageCard}>
+        <Text style={styles.heading}>E2-16C migration failure qualification (iOS only)</Text>
+        <Text style={styles.detail}>
+          Each case resets only its fixed Stage-C database before setup, then records logical-state digests,
+          physical integrity, rejection evidence, and observed E2-16 reset/delete boundary invocations.
+          No Stage-C case runs on Android.
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Run all E2-16C migration failure cases"
+          style={[styles.button, styles.runAllButton]}
+          disabled={busy || Platform.OS !== "ios"}
+          onPress={() => void runStageCAll()}
+        >
+          <Text style={styles.buttonText}>RUN ALL E2-16C CASES</Text>
+        </Pressable>
+        {E216_STAGE_C_CASE_DEFINITIONS.map((definition) => {
+          const state = stageCCaseStates[definition.id];
+          return (
+            <View key={definition.id} style={styles.caseCard}>
+              <Text style={styles.caseTitle}>{definition.title}</Text>
+              <Text style={styles.detail}>{definition.description}</Text>
+              <Text style={styles.status}>Status: {state.status}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Run E2-16C ${definition.title}`}
+                style={styles.button}
+                disabled={busy || Platform.OS !== "ios"}
+                onPress={() => void runStageCCase(definition.id)}
+              >
+                <Text style={styles.buttonText}>RUN CASE</Text>
+              </Pressable>
+              {state.error ? <Text accessibilityRole="alert" style={styles.message}>{state.error}</Text> : null}
+              {state.result ? (
+                <Text selectable style={styles.result}>{canonicalJsonStringify(state.result)}</Text>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+
+      {busy ? <ActivityIndicator accessibilityLabel="E2-16 qualification operation in progress" /> : null}
       <Text style={styles.status}>Database: {handle ? "open" : "closed"}</Text>
       <Text style={styles.status}>Checkpoint: {checkpoint ? "foundation_ready" : "absent"}</Text>
       {message ? <Text accessibilityRole="alert" style={styles.message}>{message}</Text> : null}

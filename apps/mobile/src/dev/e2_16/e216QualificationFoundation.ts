@@ -2,7 +2,9 @@ import { Directory, File } from "expo-file-system";
 import {
   defaultDatabaseDirectory,
   deleteDatabaseAsync,
+  openDatabaseAsync,
 } from "expo-sqlite";
+import type { SQLiteDatabase } from "expo-sqlite";
 import { Platform } from "react-native";
 
 import {
@@ -10,6 +12,7 @@ import {
 } from "../../storage/sqlite/schema";
 import {
   openNutritionDatabase,
+  type SQLiteMigration,
   type NutritionDatabaseHandle,
 } from "../../storage/sqlite/migrations";
 
@@ -31,6 +34,12 @@ export const E216_ALLOWED_DATABASE_NAMES = Object.freeze([
   "e2_16_reopen_android.db",
   "e2_16_restart_ios.db",
   "e2_16_restart_android.db",
+  "e2_16_failure_ios.db",
+  "e2_16_failure_android.db",
+  "e2_16_future_ios.db",
+  "e2_16_future_android.db",
+  "e2_16_ledger_ios.db",
+  "e2_16_ledger_android.db",
 ] as const);
 
 export const E216_DATABASE_STAGES = Object.freeze([
@@ -38,6 +47,9 @@ export const E216_DATABASE_STAGES = Object.freeze([
   "migration",
   "reopen",
   "restart",
+  "failure",
+  "future",
+  "ledger",
 ] as const);
 
 export const E216_STAGE_B_CASE_IDS = Object.freeze([
@@ -47,10 +59,18 @@ export const E216_STAGE_B_CASE_IDS = Object.freeze([
   "ordinary_restart",
 ] as const);
 
+export const E216_STAGE_C_CASE_IDS = Object.freeze([
+  "failing_v2_rollback",
+  "future_user_version",
+  "missing_ledger",
+  "mismatched_ledger",
+] as const);
+
 export type E216QualificationPlatform = "ios" | "android";
 export type E216QualificationDatabaseName = (typeof E216_ALLOWED_DATABASE_NAMES)[number];
 export type E216QualificationDatabaseStage = (typeof E216_DATABASE_STAGES)[number];
 export type E216StageBCaseId = (typeof E216_STAGE_B_CASE_IDS)[number];
+export type E216StageCCaseId = (typeof E216_STAGE_C_CASE_IDS)[number];
 export type E216FoundationCheckpoint = "foundation_ready";
 
 export type E216MigrationCheckpointEvidence = Readonly<{
@@ -65,7 +85,55 @@ type QualificationEnvironment = Readonly<{
   EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE?: string;
 }>;
 
-const activeQualificationHandles = new Set<NutritionDatabaseHandle>();
+type TrackedQualificationHandle = Readonly<{
+  database: SQLiteDatabase;
+  close(): Promise<void>;
+}>;
+
+/** Each temporary qualification wrapper owns a genuinely separate native connection. */
+const E216_QUALIFICATION_OPEN_OPTIONS = Object.freeze({ useNewConnection: true });
+
+const activeQualificationHandles = new Set<TrackedQualificationHandle>();
+
+export type E216QualificationResetDeleteOperation = Readonly<{
+  kind: "reset" | "delete";
+  stage: E216QualificationDatabaseStage;
+  databaseName: E216QualificationDatabaseName;
+}>;
+
+type E216QualificationResetDeleteObserver = (
+  operation: E216QualificationResetDeleteOperation,
+) => void;
+
+let resetDeleteObserver: E216QualificationResetDeleteObserver | null = null;
+
+function observeResetDeleteOperation(
+  operation: E216QualificationResetDeleteOperation,
+): void {
+  resetDeleteObserver?.(operation);
+}
+
+/**
+ * Harness-only observation seam for the actual E2-16 reset/delete boundary.
+ * It does not alter the reset implementation or any production SQLite path.
+ */
+export async function withE216QualificationResetDeleteObservation<T>(
+  observer: E216QualificationResetDeleteObserver,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previousObserver = resetDeleteObserver;
+  resetDeleteObserver = previousObserver == null
+    ? observer
+    : (event) => {
+      previousObserver(event);
+      observer(event);
+    };
+  try {
+    return await operation();
+  } finally {
+    resetDeleteObserver = previousObserver;
+  }
+}
 
 function errorText(error: unknown): string {
   if (error instanceof Error) {
@@ -123,6 +191,18 @@ export function qualificationDatabaseName(
     restart: {
       ios: "e2_16_restart_ios.db",
       android: "e2_16_restart_android.db",
+    },
+    failure: {
+      ios: "e2_16_failure_ios.db",
+      android: "e2_16_failure_android.db",
+    },
+    future: {
+      ios: "e2_16_future_ios.db",
+      android: "e2_16_future_android.db",
+    },
+    ledger: {
+      ios: "e2_16_ledger_ios.db",
+      android: "e2_16_ledger_android.db",
     },
   };
   return names[stage][normalized];
@@ -217,15 +297,70 @@ export function registerE216QualificationHandle(
   return trackedHandle;
 }
 
-/** Open only the current platform's fixed E2-16A database. */
+/** Open only the current platform's fixed E2-16 qualification database. */
 export async function openE216QualificationDatabase(
   stage: E216QualificationDatabaseStage = "foundation",
 ): Promise<NutritionDatabaseHandle> {
   const databaseName = qualificationDatabaseName(Platform.OS, stage);
   const directory = qualificationDatabaseDirectory();
   assertE216DatabaseLocation(directory, databaseName);
-  const handle = await openNutritionDatabase({ databaseName, directory });
+  const handle = await openNutritionDatabase({
+    databaseName,
+    directory,
+    openOptions: E216_QUALIFICATION_OPEN_OPTIONS,
+  });
   return registerE216QualificationHandle(handle);
+}
+
+/** Open one isolated database with a harness-supplied migration stream. */
+export async function openE216QualificationDatabaseWithMigrations(
+  stage: E216QualificationDatabaseStage,
+  migrations: readonly SQLiteMigration[],
+): Promise<NutritionDatabaseHandle> {
+  const databaseName = qualificationDatabaseName(Platform.OS, stage);
+  const directory = qualificationDatabaseDirectory();
+  assertE216DatabaseLocation(directory, databaseName);
+  const handle = await openNutritionDatabase({
+    databaseName,
+    directory,
+    migrations,
+    openOptions: E216_QUALIFICATION_OPEN_OPTIONS,
+  });
+  return registerE216QualificationHandle(handle);
+}
+
+export type E216QualificationRawDatabaseHandle = Readonly<{
+  database: SQLiteDatabase;
+  close(): Promise<void>;
+}>;
+
+function registerE216QualificationRawDatabase(
+  database: SQLiteDatabase,
+): E216QualificationRawDatabaseHandle {
+  let closed = false;
+  const trackedHandle: E216QualificationRawDatabaseHandle = {
+    database,
+    close: async () => {
+      if (closed) return;
+      await database.closeAsync();
+      closed = true;
+      activeQualificationHandles.delete(trackedHandle);
+    },
+  };
+  activeQualificationHandles.add(trackedHandle);
+  return trackedHandle;
+}
+
+/** Open one isolated database without applying migrations for harness inspection. */
+export async function openE216QualificationRawDatabase(
+  stage: E216QualificationDatabaseStage,
+): Promise<E216QualificationRawDatabaseHandle> {
+  const databaseName = qualificationDatabaseName(Platform.OS, stage);
+  const directory = qualificationDatabaseDirectory();
+  assertE216DatabaseLocation(directory, databaseName);
+  return registerE216QualificationRawDatabase(
+    await openDatabaseAsync(databaseName, E216_QUALIFICATION_OPEN_OPTIONS, directory),
+  );
 }
 
 /**
@@ -238,9 +373,11 @@ export async function resetE216QualificationDatabase(
   const databaseName = qualificationDatabaseName(Platform.OS, stage);
   const directory = qualificationDatabaseDirectory();
   assertE216DatabaseLocation(directory, databaseName);
+  observeResetDeleteOperation({ kind: "reset", stage, databaseName });
   await checkpointAndCloseHandles();
 
   try {
+    observeResetDeleteOperation({ kind: "delete", stage, databaseName });
     await deleteDatabaseAsync(databaseName, directory);
   } catch (error) {
     if (!isE216DatabaseNotFoundError(error)) throw error;
