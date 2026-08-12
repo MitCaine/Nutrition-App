@@ -239,6 +239,100 @@ test("local iOS workflow parses and confirms with FastAPI unavailable", async ()
   }
 });
 
+test("explicitly omitted low-confidence potassium is absent while its immutable decision is retained", async () => {
+  const value = await database();
+  try {
+    const input = confirmation();
+    input.field_decisions.push({
+      field_key: "nutrient.potassium",
+      nutrient_id: "potassium",
+      suggested_value: "35",
+      confirmed_value: null,
+      unit: "mg",
+      decision: "omitted",
+      parse_status: "parsed",
+      comparison: null,
+      confidence: "0.35",
+      source_text: "Potassium 35mg",
+      source_observation_ids: ["potassium-low"],
+      warning_codes: [],
+      resolution: null,
+    });
+
+    const created = await createLocalOcrRuntime(value.asExpoDatabase(), OWNER)
+      .confirmNutritionLabel(input);
+    expect(created.food.nutrients.some(({ nutrient_id }) => nutrient_id === "potassium")).toBe(false);
+    const persisted = await value.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "food_nutrients" WHERE "food_item_id" = ? AND "nutrient_id" = 'potassium'`,
+      [created.food.id],
+    );
+    expect(persisted?.count).toBe(0);
+    const trace = await value.getFirstAsync<{ trace_snapshot: string }>(
+      `SELECT "trace_snapshot" FROM "ocr_nutrition_confirmation_traces" WHERE "food_item_id" = ?`,
+      [created.food.id],
+    );
+    expect(JSON.parse(trace!.trace_snapshot).field_decisions).toContainEqual(expect.objectContaining({
+      field_key: "nutrient.potassium",
+      decision: "omitted",
+      confirmed_value: null,
+      resolution: null,
+    }));
+  } finally {
+    value.close();
+  }
+});
+
+test("manually corrected low-confidence potassium uses the existing Food and provenance transaction", async () => {
+  const value = await database();
+  try {
+    const input = confirmation();
+    input.food.nutrients.push({
+      nutrient_id: "potassium",
+      amount: "470",
+      unit: "mg",
+      basis: "per_serving",
+      data_status: "known",
+    });
+    input.field_decisions.push({
+      field_key: "nutrient.potassium",
+      nutrient_id: "potassium",
+      suggested_value: "35",
+      confirmed_value: "470",
+      unit: "mg",
+      decision: "edited",
+      parse_status: "parsed",
+      comparison: null,
+      confidence: "0.35",
+      source_text: "Potassium 35mg",
+      source_observation_ids: ["potassium-low"],
+      warning_codes: [],
+      resolution: null,
+    });
+
+    const created = await createLocalOcrRuntime(value.asExpoDatabase(), OWNER)
+      .confirmNutritionLabel(input);
+    expect(created.food.nutrients).toContainEqual(expect.objectContaining({
+      nutrient_id: "potassium",
+      amount: "470.000000",
+      data_status: "known",
+    }));
+    const trace = await value.getFirstAsync<{ trace_snapshot: string }>(
+      `SELECT "trace_snapshot" FROM "ocr_nutrition_confirmation_traces" WHERE "food_item_id" = ?`,
+      [created.food.id],
+    );
+    expect(JSON.parse(trace!.trace_snapshot).field_decisions).toContainEqual(expect.objectContaining({
+      field_key: "nutrient.potassium",
+      decision: "edited",
+      suggested_value: "35",
+      confirmed_value: "470",
+      source_observation_ids: ["potassium-low"],
+      resolution: null,
+    }));
+  } finally {
+    value.close();
+  }
+});
+
 test("same-request replay is deterministic and overlapping submissions create no duplicates", async () => {
   const value = await database();
   try {

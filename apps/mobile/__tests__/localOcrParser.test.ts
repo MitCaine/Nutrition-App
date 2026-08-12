@@ -103,6 +103,26 @@ test("numeric, split-line, and dual-column behavior matches backend edge contrac
   });
 });
 
+test("a 35 percent confidence canonical potassium row remains a reviewable parser candidate", () => {
+  const result = parseLocalNutritionLabel({
+    full_text: "ignored",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "calories", text: "Calories 120", confidence: 0.99 },
+      { id: "potassium-low", text: "Potassium 35mg", confidence: 0.35 },
+    ],
+  });
+
+  expect(result.nutrients).toContainEqual(expect.objectContaining({
+    nutrient_id: "potassium",
+    amount: expect.objectContaining({ value: "35", confidence: 0.35 }),
+    unit: expect.objectContaining({ value: "mg" }),
+    confidence: 0.35,
+    status: "parsed",
+    source_observation_ids: ["potassium-low"],
+  }));
+});
+
 test("omitted observations defaults to the same parser request as an empty list", () => {
   const omitted = parseLocalNutritionLabel({
     full_text: "Nutrition Facts\nCalories 100",

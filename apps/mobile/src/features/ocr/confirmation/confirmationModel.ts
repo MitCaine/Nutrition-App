@@ -101,20 +101,61 @@ export function updateReview(field: ConfirmationField, value: string, decision?:
   return { ...field, confirmedValue: value, decision: nextDecision, resolution: field.parseStatus === "ambiguous" || field.comparison ? (changed ? "entered exact value" : "selected suggestion") : field.resolution };
 }
 
-export function confirmationValidationError(draft: NutritionConfirmationDraft): string | null {
-  if (!draft.name.trim()) return "Food name is required.";
-  if (!isPositiveDecimalString(draft.servingQuantity)) return "Enter a positive decimal serving quantity.";
-  if (!isPositiveDecimalString(draft.gramWeight)) return "Enter a positive gram weight for the label serving.";
+export function omitReview(field: ConfirmationField): ConfirmationField {
+  return {
+    ...field,
+    confirmedValue: "",
+    decision: "omitted",
+    resolution: field.parseStatus === "ambiguous" || field.comparison ? "omitted after review" : field.resolution,
+  };
+}
+
+export type ConfirmationValidationIssue = Readonly<{
+  message: string;
+  fieldKey: string | null;
+}>;
+
+function labelList(fields: readonly ConfirmationField[]): string {
+  const labels = fields.map(({ label }) => label);
+  if (labels.length === 1) return labels[0]!;
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
+}
+
+export function confirmationValidationIssue(draft: NutritionConfirmationDraft): ConfirmationValidationIssue | null {
+  if (!draft.name.trim()) return { message: "Food name is required.", fieldKey: "food.name" };
+  if (!isPositiveDecimalString(draft.servingQuantity)) {
+    return { message: "Enter a positive decimal serving quantity.", fieldKey: "serving.quantity" };
+  }
+  if (!isPositiveDecimalString(draft.gramWeight)) {
+    return { message: "Enter a positive gram weight for the label serving.", fieldKey: "serving.gram_weight" };
+  }
   const fields = [draft.calories, ...draft.nutrients];
-  if (fields.some((field) => field.decision === "unresolved")) return "Review every flagged or ambiguous value before creating the Food.";
-  if (draft.unknownNutrients.some((item) => !item.dismissed)) return "Dismiss each unknown nutrient after reviewing its source text.";
+  const unresolved = fields.filter((field) => field.decision === "unresolved");
+  if (unresolved.length > 0) {
+    const names = labelList(unresolved);
+    return {
+      message: `${names} ${unresolved.length === 1 ? "requires" : "require"} review before creating the Food. `
+        + "Resolve each by entering or confirming a value, or by explicitly omitting it when omission is available.",
+      fieldKey: unresolved[0]!.fieldKey,
+    };
+  }
+  if (draft.unknownNutrients.some((item) => !item.dismissed)) {
+    return { message: "Dismiss each unknown nutrient after reviewing its source text.", fieldKey: null };
+  }
   for (const field of fields) {
     if (field.decision !== "omitted" && !isUnsignedDecimalString(field.confirmedValue)) {
-      return `${field.label} must be a nonnegative number or omitted.`;
+      return { message: `${field.label} must be a nonnegative number or omitted.`, fieldKey: field.fieldKey };
     }
-    if (field.comparison === "less_than" && field.decision === "accepted") return `${field.label} is a less-than value; enter an exact replacement or omit it.`;
+    if (field.comparison === "less_than" && field.decision === "accepted") {
+      return { message: `${field.label} is a less-than value; enter an exact replacement or omit it.`, fieldKey: field.fieldKey };
+    }
   }
   return null;
+}
+
+export function confirmationValidationError(draft: NutritionConfirmationDraft): string | null {
+  return confirmationValidationIssue(draft)?.message ?? null;
 }
 
 function retainedNutrient(field: ConfirmationField) {

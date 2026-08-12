@@ -36,6 +36,30 @@ function draft(): NutritionConfirmationDraft {
   };
 }
 
+function unresolvedNutrient(
+  nutrientId: string,
+  label: string,
+  value: string,
+  confidence: number,
+): NutritionConfirmationDraft["nutrients"][number] {
+  return {
+    fieldKey: `nutrient.${nutrientId}`,
+    nutrientId,
+    label,
+    suggestedValue: value,
+    confirmedValue: value,
+    unit: "mg",
+    decision: "unresolved",
+    parseStatus: "parsed",
+    comparison: null,
+    confidence,
+    sourceText: `${label} ${value}mg`,
+    sourceObservationIds: [`obs-${nutrientId}`],
+    warningCodes: [],
+    resolution: null,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -65,6 +89,14 @@ function action(root: TestRenderer.ReactTestInstance, label: string) {
 
 function input(root: TestRenderer.ReactTestInstance, label: string) {
   return root.findAllByType(TextInput).find((item) => item.props.accessibilityLabel === label)!;
+}
+
+function validationMessages(root: TestRenderer.ReactTestInstance): string {
+  return root.findAllByType(Text)
+    .filter((item) => item.props.accessibilityRole === "alert")
+    .map((item) => item.props.children)
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
 }
 
 beforeEach(() => {
@@ -156,6 +188,53 @@ test("validation failure does not bind an intent or issue a request", async () =
   expect(renderer.root.findAllByType(Text).some((item) => item.props.accessibilityRole === "alert")).toBe(true);
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Food name").props["aria-describedby"]).toBeDefined();
+  await act(async () => renderer.unmount());
+});
+
+test("low-confidence potassium validation names and highlights the unresolved nutrient", async () => {
+  const initial = draft();
+  initial.nutrients = [
+    ...initial.nutrients,
+    unresolvedNutrient("potassium", "Potassium", "35", 0.35),
+  ];
+  const { renderer } = await render(initial);
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+
+  expect(mockConfirm).not.toHaveBeenCalled();
+  expect(validationMessages(renderer.root)).toContain("Potassium requires review");
+  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
+test("multiple unresolved nutrients remain independently resolvable", async () => {
+  const initial = draft();
+  initial.nutrients = [
+    ...initial.nutrients,
+    unresolvedNutrient("potassium", "Potassium", "35", 0.35),
+    unresolvedNutrient("iron", "Iron", "4", 0.36),
+  ];
+  const { renderer } = await render(initial);
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  const firstError = validationMessages(renderer.root);
+  expect(firstError).toContain("Potassium");
+  expect(firstError).toContain("Iron");
+
+  await act(async () => action(renderer.root, "Omit Potassium").props.onPress());
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(mockConfirm).not.toHaveBeenCalled();
+  expect(validationMessages(renderer.root)).toContain("Iron requires review");
+  expect(validationMessages(renderer.root)).not.toContain("Potassium");
+  expect(input(renderer.root, "Iron amount").props["aria-invalid"]).toBe(true);
+
+  mockConfirm.mockResolvedValue(foodResponse("food-reviewed"));
+  await act(async () => input(renderer.root, "Iron amount").props.onChangeText("5"));
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(mockConfirm).toHaveBeenCalledTimes(1);
+  const payload = mockConfirm.mock.calls[0][0];
+  expect(payload.food.nutrients.some((item: { nutrient_id: string }) => item.nutrient_id === "potassium")).toBe(false);
+  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "iron", amount: "5" }));
   await act(async () => renderer.unmount());
 });
 

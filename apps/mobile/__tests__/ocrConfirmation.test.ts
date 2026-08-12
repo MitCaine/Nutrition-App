@@ -1,4 +1,11 @@
-import { confirmationPayload, confirmationValidationError, draftFromParsedLabel, updateReview } from "../src/features/ocr/confirmation/confirmationModel";
+import {
+  confirmationPayload,
+  confirmationValidationError,
+  confirmationValidationIssue,
+  draftFromParsedLabel,
+  omitReview,
+  updateReview,
+} from "../src/features/ocr/confirmation/confirmationModel";
 import type { ParsedField, ParsedNutritionLabel } from "../src/features/ocr/api/types";
 
 function field(value: string | boolean | null, status: ParsedField["status"] = "parsed", overrides: Partial<ParsedField> = {}): ParsedField {
@@ -116,12 +123,92 @@ test("confirmation blocks name, unresolved less-than, and unknown rows", () => {
   let draft = draftFromParsedLabel(parsed(), "photo_library");
   expect(confirmationValidationError(draft)).toBe("Food name is required.");
   draft = { ...draft, name: "Cereal", calories: updateReview(draft.calories, "120", "accepted") };
-  expect(confirmationValidationError(draft)).toContain("Review every flagged");
+  expect(confirmationValidationError(draft)).toContain("Protein requires review");
   const protein = draft.nutrients.find((item) => item.nutrientId === "protein")!;
   draft = { ...draft, nutrients: draft.nutrients.map((item) => item === protein ? updateReview(item, "0.5", "edited") : item) };
   expect(confirmationValidationError(draft)).toContain("Dismiss each unknown");
   draft = { ...draft, unknownNutrients: draft.unknownNutrients.map((item) => ({ ...item, dismissed: true })) };
   expect(confirmationValidationError(draft)).toBeNull();
+});
+
+test("low-confidence potassium can be explicitly omitted without fabricating a nutrient value", () => {
+  const input = parsed();
+  input.nutrients = [{
+    nutrient_id: "potassium", original_name: "Potassium",
+    amount: field("35", "parsed", { confidence: 0.35, source_text: "Potassium 35mg", source_observation_ids: ["potassium-low"] }),
+    unit: field("mg", "parsed", { confidence: 0.35, source_text: "Potassium 35mg", source_observation_ids: ["potassium-low"] }),
+    daily_value_percent: null, source_observation_ids: ["potassium-low"], confidence: 0.35,
+    status: "parsed", warning_codes: [],
+  }];
+  let draft = draftFromParsedLabel(input, "camera");
+  const potassium = draft.nutrients[0]!;
+  expect(potassium.decision).toBe("unresolved");
+  draft = { ...draft, name: "Low-confidence label", nutrients: [omitReview(potassium)] };
+
+  const payload = confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")!;
+  expect(payload.food.nutrients.some((nutrient) => nutrient.nutrient_id === "potassium")).toBe(false);
+  expect(payload.field_decisions.find((decision) => decision.field_key === "nutrient.potassium")).toMatchObject({
+    decision: "omitted",
+    confirmed_value: null,
+    suggested_value: "35",
+    confidence: "0.35",
+    resolution: null,
+  });
+});
+
+test("low-confidence potassium can be manually corrected through the existing provenance payload", () => {
+  const input = parsed();
+  input.nutrients = [{
+    nutrient_id: "potassium", original_name: "Potassium",
+    amount: field("35", "parsed", { confidence: 0.35, source_text: "Potassium 35mg", source_observation_ids: ["potassium-low"] }),
+    unit: field("mg", "parsed", { confidence: 0.35, source_text: "Potassium 35mg", source_observation_ids: ["potassium-low"] }),
+    daily_value_percent: null, source_observation_ids: ["potassium-low"], confidence: 0.35,
+    status: "parsed", warning_codes: [],
+  }];
+  let draft = draftFromParsedLabel(input, "camera");
+  draft = { ...draft, name: "Corrected label", nutrients: [updateReview(draft.nutrients[0]!, "470")] };
+
+  const payload = confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")!;
+  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "potassium", amount: "470" }));
+  expect(payload.field_decisions.find((decision) => decision.field_key === "nutrient.potassium")).toMatchObject({
+    decision: "edited",
+    suggested_value: "35",
+    confirmed_value: "470",
+    source_observation_ids: ["potassium-low"],
+    resolution: null,
+  });
+});
+
+test("unresolved validation names every blocker and owns the first field target", () => {
+  const input = parsed();
+  input.nutrients = [
+    { nutrient_id: "potassium", original_name: "Potassium", amount: field("35", "parsed", { confidence: 0.35 }), unit: field("mg"), daily_value_percent: null, source_observation_ids: ["potassium-low"], confidence: 0.35, status: "parsed", warning_codes: [] },
+    { nutrient_id: "iron", original_name: "Iron", amount: field("4", "parsed", { confidence: 0.36 }), unit: field("mg"), daily_value_percent: null, source_observation_ids: ["iron-low"], confidence: 0.36, status: "parsed", warning_codes: [] },
+  ];
+  let draft = { ...draftFromParsedLabel(input, "camera"), name: "Multiple blockers" };
+
+  expect(confirmationValidationIssue(draft)).toMatchObject({
+    fieldKey: "nutrient.potassium",
+    message: expect.stringMatching(/Potassium.*Iron/),
+  });
+  draft = { ...draft, nutrients: [omitReview(draft.nutrients[0]!), draft.nutrients[1]!] };
+  expect(confirmationValidationIssue(draft)).toMatchObject({
+    fieldKey: "nutrient.iron",
+    message: expect.stringContaining("Iron"),
+  });
+  draft = { ...draft, nutrients: [draft.nutrients[0]!, updateReview(draft.nutrients[1]!, "5")] };
+  expect(confirmationValidationIssue(draft)).toBeNull();
+});
+
+test("medium confidence remains reviewable while high confidence remains accepted", () => {
+  const input = parsed();
+  input.nutrients = [
+    { nutrient_id: "potassium", original_name: "Potassium", amount: field("35", "parsed", { confidence: 0.5 }), unit: field("mg"), daily_value_percent: null, source_observation_ids: ["medium"], confidence: 0.5, status: "parsed", warning_codes: [] },
+    { nutrient_id: "iron", original_name: "Iron", amount: field("4", "parsed", { confidence: 0.95 }), unit: field("mg"), daily_value_percent: null, source_observation_ids: ["high"], confidence: 0.95, status: "parsed", warning_codes: [] },
+  ];
+  const draft = draftFromParsedLabel(input, "camera");
+  expect(draft.nutrients.find((item) => item.nutrientId === "potassium")?.decision).toBe("unresolved");
+  expect(draft.nutrients.find((item) => item.nutrientId === "iron")?.decision).toBe("accepted");
 });
 
 test("payload creates manual-compatible amounts, exact trace, and contains no image URI", () => {
