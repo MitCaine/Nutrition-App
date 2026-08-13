@@ -60,14 +60,5 @@ function ProductionApp() {
 }
 
 export default function App() {
-  if (
-    __DEV__
-    && process.env.EXPO_PUBLIC_E216_NATIVE_QUALIFICATION === "1"
-    && process.env.EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE === "development"
-  ) {
-    const { default: E216NativeQualificationScreen } = require("./dev/e2_16/E216NativeQualificationScreen") as
-      typeof import("./dev/e2_16/E216NativeQualificationScreen");
-    return <E216NativeQualificationScreen />;
-  }
   return <ProductionApp />;
 }

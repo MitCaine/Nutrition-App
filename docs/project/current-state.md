@@ -10,7 +10,10 @@ Version 1.0 is complete and is the maintained baseline for Version 1.x. Version 
 development line. The [Version 1.1 Product Roadmap](version-1.1/version-1.1-roadmap.md) is the authoritative
 parent document for its product scope. Epic 1 — Daily Logging Flow has been selected and its
 [Grill record](version-1.1/epic-1/grill.md) is complete. No Version 1.1 Feature
-PRD, architecture review, task breakdown, or implementation has begun.
+PRD for Epic 1 has been started. The technical Epic 2 local-first runtime
+and its bounded E2-16 qualification cleanup are recorded in the [Epic 2 implementation backlog]
+(version-1.1/epic-2/implementation-backlog.md) and [E2-16 closure record]
+(version-1.1/epic-2/e2-16-closure-evidence.md); this does not authorize E2-17 or E2-18.
 
 New Version 1.1 scope should be recorded deliberately rather than inferred from historical stage
 or release documents. The [Historical Knowledge Index](../historical/README.md) preserves the
@@ -18,9 +21,10 @@ Version 1.0 roadmap, release-candidate evidence, and release gate.
 
 ## Current architecture
 
-The application is a mobile client backed by an API and an authoritative application database,
-with a separate optional operations architecture for high-risk migration, promotion, evidence,
-qualification, activation, and recovery work. The
+The explicitly selected mobile application-data authority is either local SQLite or the remote
+FastAPI/PostgreSQL system, never both for one running context. The separate optional operations
+architecture handles high-risk migration, promotion, evidence, qualification, activation, and
+recovery work; it is not a second application backend. The
 [Architecture Overview](../architecture/overview.md) owns the current system and layer model; the
 [Architecture Decision Index](../architecture/decisions.md) owns accepted structural choices.
 
@@ -67,8 +71,9 @@ knowledge system.
   provider or multi-tenant trust model is installed; private-single-user authentication is not a
   scalable account system. See the [Constitution](constitution.md#intended-deployment-model) and
   [Architecture Overview](../architecture/overview.md#configuration-and-authentication).
-- Mobile behavior is online-first. There is no durable offline mutation queue or synchronization
-  engine. See [Project Invariants](invariants.md#why-an-online-first-design).
+- The selected mobile authority is either local SQLite or remote FastAPI/PostgreSQL. There is no
+  synchronization, fallback, dual write, background sync, or shared recovery/cache authority. See
+  [Project Invariants](invariants.md#why-an-online-first-design).
 - Native label recognition requires an iOS development build; Expo Go cannot load the project
   module. See [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md).
 - The independent control gate is not consumed by ordinary application requests. Provider routing,

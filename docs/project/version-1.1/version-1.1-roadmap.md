@@ -11,6 +11,10 @@ below is subordinate to the [Project Constitution](../constitution.md),
 requires an architectural rewrite, technology migration, persistence redesign, public multi-user
 model, or weakened historical guarantee, that scope is not authorized by this roadmap.
 
+The completed technical Epic 2 qualification record is retained in the [E2-16 closure and evidence
+record](epic-2/e2-16-closure-evidence.md). It does not change this product ordering or claim E2-17
+remote qualification or E2-18 final release qualification.
+
 ## Assessment of Version 1.0
 
 ### Strengths
@@ -41,8 +45,9 @@ model, or weakened historical guarantee, that scope is not authorized by this ro
   Recipe discovery exposes little beyond name, ingredient count, and publication state; Recipe
   favorites were explicitly deferred from Version 1.0.
 - Label recognition has a safe privacy and confirmation model, but capture is deliberately basic.
-  Historical release evidence also leaves physical-device camera geometry, permission recovery,
-  and spoken accessibility as areas requiring renewed product confidence.
+  Historical release evidence leaves physical-device camera geometry and permission recovery as
+  areas requiring renewed product confidence; manual VoiceOver/TalkBack qualification is removed
+  personal-project scope.
 - Loading, empty, failure, and retry behavior is mature in some discovery and target surfaces but
   uneven across the Daily Log and Recipe experience.
 
@@ -217,8 +222,8 @@ problems, and can review uncertain results without losing sight of what requires
   confirmed values understandable.
 - Common supported English-language nutrition-label layouts produce a reviewable result or a clear,
   recoverable failure.
-- Real-device accessibility, keyboard, and error-recovery behavior is qualified before the Epic is
-  considered complete.
+- Keyboard and error-recovery behavior is qualified before the Epic is considered complete. Manual
+  VoiceOver/TalkBack and Android native qualification are removed personal-project scope.
 - Images, paths, full OCR text, and unbounded recognition responses remain outside durable storage.
 
 **Major capabilities:**
@@ -231,7 +236,8 @@ problems, and can review uncertain results without losing sight of what requires
 **Explicit non-goals:**
 
 - Barcode scanning or a new product database.
-- Android, web, or Expo Go OCR support.
+- Android native, web, or Expo Go OCR support.
+- Manual VoiceOver/TalkBack qualification for this personal project.
 - Cloud image recognition or retention of label images and raw OCR output.
 - Automatic Food creation without confirmation.
 - Offline parsing, confirmation, or synchronization.

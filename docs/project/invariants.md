@@ -18,10 +18,10 @@ the [Architecture Decision Index](../architecture/decisions.md) points to implem
 | Explicit publication workflow | Users can edit freely while “published” has one transactional meaning. | A Recipe may be stale and marked `needs_republish` until the user publishes again. | An explicit boundary is safer than silently changing every downstream consumer on save. |
 | Generated compatibility Food projection | Published Recipes reuse Food search, serving, ingredient, and logging paths. | Projection state must be regenerated and cannot be treated as historical authority. | Reuse is preferable to a parallel loggable-item hierarchy when the exact revision link remains authoritative. |
 | Service-first, selective repositories | Transaction and ownership authority stay visible while complex queries are reusable. | Persistence access is not mechanically uniform across every service. | A repository per table would add indirection without clarifying responsibility. |
-| No Repository Provider/Factory layer | Construction and transaction ownership remain direct and easy to trace. | Swapping an entire persistence backend is not a plug-in operation. | The application has one authoritative PostgreSQL backend; selective test seams provide enough substitution. |
+| No Repository Provider/Factory layer | Construction and transaction ownership remain direct and easy to trace. | Swapping an entire persistence backend is not a plug-in operation. | Each running context has one explicitly selected local or remote application-data authority; selective test seams provide enough substitution. |
 | Layered ownership enforcement | Friendly service errors and race-resistant database integrity reinforce each other. | Owner predicates and constraints appear at several layers and require coordinated tests. | One missed route check must not permit a cross-user relationship. |
 | PostgreSQL concurrency strategy | Row locks, deterministic ordering, constraints, and one transaction protect graph changes. | Lock-dependent claims require PostgreSQL tests and deliberate deadlock review. | In-process locks or SQLite behavior cannot protect concurrent API workers. |
-| Online-first mobile behavior | Server authority, conflict handling, and historical writes have one clear home. | Users cannot queue durable nutrition mutations while disconnected. | A correct sync engine would need explicit rules for every graph, owner, and immutable-history conflict. |
+| Explicit mobile application-data authority | Each running context has one clear persisted authority and no mixed state. | Local mode does not use the remote API; remote mode does not provide durable local writes. | A correct synchronization engine would need explicit rules for every graph, owner, and immutable-history conflict, so synchronization and fallback remain out of scope. |
 | Bounded OCR provenance | Parser behavior and user corrections remain explainable with limited privacy exposure. | The trace cannot reproduce every detail of the original image or raw OCR response. | Structured evidence needed for diagnosis is worth retaining; sensitive, unbounded capture material is not. |
 
 ## Why immutable Recipe revisions?
@@ -104,13 +104,16 @@ duplicate.
 
 ## Why an online-first design?
 
-The server owns nutrition calculation, ownership, immutable history, and transactional graph
-changes. A durable offline queue would need conflict rules for each of those domains. The current
-application provides in-session caching, explicit errors, and safe retry without pretending that a
-local mutation is committed.
+Mobile startup explicitly selects exactly one `local` or `remote` application-data authority before
+runtime construction. Local mode uses the composed SQLite adapters; remote mode preserves the
+FastAPI/PostgreSQL API and authentication boundary. The selected runtime is the sole authority for
+persisted nutrition totals in that running context.
 
-On-device OCR is a privacy and platform choice, not an offline synchronization architecture. Its
-structured output still goes to the backend parser and confirmation service.
+Selection never implies fallback, dual writes, synchronization, cache sharing, recovery sharing,
+or data migration. TanStack Query may cache authority-scoped data in process, and safe retry may
+replay an idempotent operation, but neither creates a second durable authority. On-device OCR is a
+privacy and platform choice; its bounded parser/confirmation provenance follows the selected
+runtime and is not an offline synchronization mechanism.
 
 ## Why read-only offline snapshots for migration evidence?
 

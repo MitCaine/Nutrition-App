@@ -1289,7 +1289,7 @@ Unit tests and Python SQLite cannot establish native-driver behavior, applicatio
 
 ### Acceptance criteria
 
-- Fresh install succeeds on supported iOS and Android targets.
+- Fresh install succeeds on supported iOS targets. Android native execution is removed personal-project scope.
 - Database close/reopen and ordinary restart preserve all data.
 - Upgrade from every shipped SQLite schema version succeeds.
 - Injected migration failure rolls back.
@@ -1298,7 +1298,7 @@ Unit tests and Python SQLite cannot establish native-driver behavior, applicatio
 - Representative Food, Recipe publication, Daily Log edit/delete, Target, and OCR operations survive restart.
 - Direct integrity qualification passes after each lifecycle scenario.
 - Low-storage or filesystem failure is reported without automatic database reset.
-- Epic 1 accessibility workflows remain operable with VoiceOver and TalkBack where supported.
+- Manual VoiceOver, TalkBack, and Android native accessibility qualification are removed personal-project scope; permanent automated accessibility contracts remain.
 - OCR receives its established iOS physical-device qualification.
 - Remediation remains bounded to approved Epic 2 behavior.
 - ChatGPT Work coordinates physical-device and manual accessibility evidence.
@@ -1339,12 +1339,24 @@ Unit tests and Python SQLite cannot establish native-driver behavior, applicatio
 
 ### Testing requirements
 
-- Run native iOS and Android database lifecycle tests.
+- Run the approved native iOS database lifecycle tests. Android native execution and manual accessibility are removed personal-project scope.
 - Use physical devices or development builds where native behavior requires them.
 - Run upgrade, migration failure, filesystem failure, kill/restart, and reconciliation scenarios.
 - Run representative local feature tests after lifecycle events.
-- Execute manual VoiceOver, TalkBack, and iOS OCR evidence.
+- Use owner-coordinated iOS OCR evidence where required; do not claim removed manual VoiceOver/TalkBack evidence.
 - Keep automated remediation tests focused; broader evidence is the purpose of this issue.
+
+### Qualification status
+
+E2-16A–E2-16J are closed within the retained scope documented in the
+[E2-16 closure and evidence record](e2-16-closure-evidence.md). The temporary E2-16 route,
+isolated identity, database/checkpoint/direct-integrity helpers, failure fixtures, and harness-only
+tests were removed by E2-16J. Permanent SQLite migration, local-authority, OCR, recovery,
+runtime-hook, and E2-15 transfer behavior remains. The complete native Stage-F matrix is not
+claimed; Android, TalkBack, and manual VoiceOver evidence are intentionally not applicable.
+
+E2-17 remote/PostgreSQL qualification and E2-18 final release qualification remain unclaimed and
+are not started by this cleanup.
 
 ### Estimated implementation size
 
@@ -1455,7 +1467,8 @@ Individual issue evidence does not prove that every workflow operates coherently
 - Immutable Log history, Recipe revisions, OCR provenance, fixed source identity, generated projections, ownership, exact decimals, idempotency, and rollback pass direct qualification.
 - The complete local app operates with FastAPI and PostgreSQL unavailable.
 - USDA unavailability is explicit and does not affect saved data.
-- Accessibility evidence from E2-16 is complete.
+- E2-16 evidence is complete only for the retained scope recorded in its closure document; removed
+  manual accessibility scope is not a release claim.
 - Remote mobile and PostgreSQL evidence from E2-17 is complete.
 - One-time personal data import passes if included.
 - Static and runtime audits find no synchronization, dual-write, automatic fallback, speculative tombstones, or cross-authority recovery.
@@ -1505,7 +1518,8 @@ Individual issue evidence does not prove that every workflow operates coherently
 - Run the complete cross-cutting review profile.
 - Run full backend and mobile suites.
 - Run required PostgreSQL and native SQLite opt-in suites.
-- Include physical-device and manual accessibility evidence from E2-16.
+- Include the retained physical-device evidence from E2-16; removed manual accessibility scope is
+  not a release claim.
 - Exercise backend-unavailable local operation and explicit USDA-unavailable behavior.
 - Validate one-time transfer if included.
 - Run documentation, requirement-traceability, repository-integrity, and prohibited-scope audits.
