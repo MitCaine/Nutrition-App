@@ -11,13 +11,14 @@ below is subordinate to the [Project Constitution](../constitution.md),
 requires an architectural rewrite, technology migration, persistence redesign, public multi-user
 model, or weakened historical guarantee, that scope is not authorized by this roadmap.
 
-The completed technical Epic 2 qualification record is retained in the [E2-16 closure and evidence
-record](epic-2/e2-16-closure-evidence.md). It does not change this product ordering or claim E2-17
-remote qualification or E2-18 final release qualification.
-
-E2-17 is planned as three bounded stages: independent mobile/runtime-isolation and
-backend/PostgreSQL qualification, followed by a mixed-authority audit and closure gate. Planning
-the stages does not complete any E2-17 criterion or authorize E2-18.
+Technical Epic 2 has an architecture-gate **PASS** at qualified HEAD
+`219311051e23cfcebdb09d28747874f0d3091faa`. The retained native/accessibility boundary is recorded
+in the [E2-16 closure and evidence record](epic-2/e2-16-closure-evidence.md); remote/PostgreSQL and
+mixed-authority qualification is complete; and the final totals, limitations, transfer-skip
+disposition, traceability, and closure sequence are recorded in the
+[E2-18 release qualification record](epic-2/e2-18-closure-evidence.md). This technical result does
+not reorder or authorize the product Epics below. GitHub #64 and Epic #46 remain administratively
+open until the durable record is committed and pushed.
 
 ## Assessment of Version 1.0
 

@@ -93,19 +93,19 @@
     },
     "E2-16": {
       "number": 62,
-      "source_body_sha256": "30196e5e2e3657e1d11bdedc5fe91f135bd19bab10f52cc2ae3fd0132699050a",
+      "source_body_sha256": "c035122aa3426b11e8a39f0f85b962e07cbe32ba83c22e41d2355ce2410c09e3",
       "title": "E2-16 \u2014 Qualify native SQLite lifecycle, migrations, termination, and accessibility",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/62"
     },
     "E2-17": {
       "number": 63,
-      "source_body_sha256": "fdc9b7505c194c4dcbeeddaf8d6c3b919e8596f0fb7df7450cbc0f2da850fe3d",
+      "source_body_sha256": "46e831758bc89436931c412915371bd86da34b3c07a1fab5579715768bee1414",
       "title": "E2-17 \u2014 Qualify remote-mode regression and absence of mixed authority",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/63"
     },
     "E2-18": {
       "number": 64,
-      "source_body_sha256": "913611b57f43d87cd69827472c26ce69d38a6c06b991f97e55cb3985f0bea61e",
+      "source_body_sha256": "3b379ece99f10dbe66b2a581e299e2288f2742ca92879eb55f44edefee93c8fb",
       "title": "E2-18 \u2014 Run Epic 2 end-to-end release qualification",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/64"
     }
@@ -115,9 +115,9 @@
     "title": "Epic 2 \u2014 Local-First SQLite Runtime",
     "url": "https://github.com/MitCaine/Nutrition-App/issues/46"
   },
-  "epic_checklist_sha256": "00b3c1969b3ba521c52ff6af3f0549b811934bdb32459940e6a3f3c1b1c8cfc0",
+  "epic_checklist_sha256": "06163989f4b46f114b312da69c7b252a10185371c870fb2930eb0b0cba390868",
   "repository": "MitCaine/Nutrition-App",
   "schema_version": 1,
   "source_file": "/Users/mipoo/Nutrition App/docs/project/version-1.1/epic-2/implementation-backlog.md",
-  "source_sha256": "8f9b32a9422324759dc46750c5b3b04fa09bddeeadc1963a9b8ce86740e1f6fb"
+  "source_sha256": "664320a380204980f4f0e5ecb1b42603b2321291036615f289057544493890b7"
 }

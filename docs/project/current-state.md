@@ -11,13 +11,15 @@ development line. The [Version 1.1 Product Roadmap](version-1.1/version-1.1-road
 parent document for its product scope. Epic 1 — Daily Logging Flow has been selected and its
 [Grill record](version-1.1/epic-1/grill.md) is complete. No Version 1.1 Feature
 PRD for Epic 1 has been started. The technical Epic 2 local-first runtime
-and its bounded E2-16 qualification cleanup are recorded in the [Epic 2 implementation backlog]
-(version-1.1/epic-2/implementation-backlog.md) and [E2-16 closure record]
-(version-1.1/epic-2/e2-16-closure-evidence.md). E2-17 qualification is complete: E2-17A/#76 is
-qualified at `5b03bc101e74fdd4a24bb65d08abe655d97b5c16`, E2-17B/#77 is qualified at
-`9404529a2ceb352a4dca81dc0ebba6d1287984e3`, and the E2-17C repository-wide audit proves the
-single-authority boundary and its mixed-authority prohibitions. GitHub issue closure remains an
-architecture-review action; E2-18 remains unstarted.
+and its retained qualification boundaries are recorded in the [Epic 2 implementation backlog]
+(version-1.1/epic-2/implementation-backlog.md), [E2-16 closure record]
+(version-1.1/epic-2/e2-16-closure-evidence.md), and [E2-18 release qualification record]
+(version-1.1/epic-2/e2-18-closure-evidence.md). E2-17 remote/PostgreSQL qualification and the
+mixed-authority prohibition audit are complete. E2-18 has an architecture-gate **PASS** at
+`219311051e23cfcebdb09d28747874f0d3091faa`; its retained native limitations, removed manual
+accessibility scope, fixture-gated transfer skip, and exact automated totals are recorded without
+expanding release claims. GitHub #64 and Epic #46 remain administratively open until this durable
+record is committed and pushed.
 
 New Version 1.1 scope should be recorded deliberately rather than inferred from historical stage
 or release documents. The [Historical Knowledge Index](../historical/README.md) preserves the

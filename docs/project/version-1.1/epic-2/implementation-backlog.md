@@ -1355,8 +1355,9 @@ tests were removed by E2-16J. Permanent SQLite migration, local-authority, OCR, 
 runtime-hook, and E2-15 transfer behavior remains. The complete native Stage-F matrix is not
 claimed; Android, TalkBack, and manual VoiceOver evidence are intentionally not applicable.
 
-E2-17 remote/PostgreSQL qualification and E2-18 final release qualification remain unclaimed and
-are not started by this cleanup.
+At E2-16 closure, E2-17 remote/PostgreSQL qualification and E2-18 final release qualification
+remained unclaimed. Their later outcomes are recorded in their own sections and do not rewrite
+this retained E2-16 scope history.
 
 ### Estimated implementation size
 
@@ -1412,8 +1413,8 @@ and the accepted E2-17B evidence is qualified at commit
 [`9404529a2ceb352a4dca81dc0ebba6d1287984e3`](https://github.com/MitCaine/Nutrition-App/commit/9404529a2ceb352a4dca81dc0ebba6d1287984e3).
 The E2-17C audit completes the mixed-authority prohibition review and proves all twelve parent
 criteria. GitHub [#63](https://github.com/MitCaine/Nutrition-App/issues/63) and
-[#78](https://github.com/MitCaine/Nutrition-App/issues/78) remain open for architecture review;
-this result makes no E2-18 or Epic 2 release-qualification claim.
+[#78](https://github.com/MitCaine/Nutrition-App/issues/78) are closed. This E2-17 result by itself
+makes no E2-18 or Epic 2 release-qualification claim.
 
 ### Out of scope
 
@@ -1544,6 +1545,17 @@ Individual issue evidence does not prove that every workflow operates coherently
 - Validate one-time transfer if included.
 - Run documentation, requirement-traceability, repository-integrity, and prohibited-scope audits.
 - Report exact passes, skips, warnings, manual evidence, and deferred work.
+
+### Qualification status
+
+E2-18 has an architecture-gate **PASS** at qualified HEAD
+[`219311051e23cfcebdb09d28747874f0d3091faa`](https://github.com/MitCaine/Nutrition-App/commit/219311051e23cfcebdb09d28747874f0d3091faa).
+The [E2-18 release qualification record](e2-18-closure-evidence.md) preserves the exact fresh
+automated totals, accepted E2-16/E2-17 evidence, E2-15 fixture-skip disposition, exclusive #64 and
+Epic 2 traceability, invariant matrix, authority-isolation result, retained native limitations,
+and removed manual accessibility/Android/TalkBack scope. GitHub #64 and Epic #46 remain
+administratively open until that record and these bounded planning updates are committed and
+pushed; no product or migration behavior is changed by this reconciliation.
 
 ### Estimated implementation size
 
