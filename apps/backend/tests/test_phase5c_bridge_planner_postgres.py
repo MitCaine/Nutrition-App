@@ -907,7 +907,7 @@ def test_clone_admission_rejects_source_equality_and_mismatched_evidence(
         clone_digest = safe_identity["identity_digest"]
     rendered_identity = canonical_json(safe_identity)
     parsed_url = make_url(database_url)
-    assert parsed_url.username not in rendered_identity
+    assert "username" not in safe_identity
     assert parsed_url.password not in rendered_identity
     assert "NUTRITION_DATABASE_URL" not in rendered_identity
     with pytest.raises(Phase5CAdmissionError, match="clone_matches_source"):

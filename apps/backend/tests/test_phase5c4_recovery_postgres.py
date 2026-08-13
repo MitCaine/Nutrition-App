@@ -9,15 +9,18 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
+from app.migrations.immutable_provenance_0020_contracts import (
+    EXACT_0024_FUNCTION_DEFINITION_SHA256,
+)
 from app.operators import phase5c4_roles as roles
 from app.operators.immutable_provenance_contracts import (
     CURRENT_RUNTIME_SCHEMA_REVISION,
     DAILY_LOG_GUARD_FUNCTION,
-    FUNCTION_DEFINITION_SHA256,
     IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION,
+    MIGRATION_ADVISORY_LOCK_KEY,
 )
 from app.operators.immutable_provenance_qualification import (
-    collect_immutable_provenance_qualification,
+    qualify_immutable_provenance_connection,
 )
 from app.operators.phase5c4_recovery import (
     collect_recovery_database_observation,
@@ -156,7 +159,7 @@ def test_post_0024_evidence_independently_qualifies_current_contract(
             ).all()
             observed_hashes = {str(row[0]): str(row[1]) for row in rows}
             assert observed_hashes[DAILY_LOG_GUARD_FUNCTION] == (
-                FUNCTION_DEFINITION_SHA256[DAILY_LOG_GUARD_FUNCTION]
+                EXACT_0024_FUNCTION_DEFINITION_SHA256[DAILY_LOG_GUARD_FUNCTION]
             )
             assert connection.scalar(
                 text(
@@ -164,14 +167,46 @@ def test_post_0024_evidence_independently_qualifies_current_contract(
                 )
             ) is True
             assert observed_hashes[IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION] == (
-                FUNCTION_DEFINITION_SHA256[
+                EXACT_0024_FUNCTION_DEFINITION_SHA256[
                     IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION
                 ]
             )
     finally:
         engine.dispose()
 
-    qualification = collect_immutable_provenance_qualification(qualifier_url).to_dict()
+    qualifier_engine = create_engine(
+        qualifier_url,
+        poolclass=NullPool,
+        hide_parameters=True,
+        isolation_level="REPEATABLE READ",
+    )
+    try:
+        with qualifier_engine.connect() as connection:
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            boundary = connection.execute(
+                text(
+                    "SELECT session_user::text, current_user::text, "
+                    "current_setting('transaction_read_only'), "
+                    "current_setting('transaction_isolation')"
+                )
+            ).one()
+            assert tuple(boundary) == (
+                "nutrition_qualifier",
+                "nutrition_qualifier",
+                "on",
+                "repeatable read",
+            )
+            connection.execute(
+                text("SELECT pg_catalog.pg_advisory_xact_lock_shared(:lock_id)"),
+                {"lock_id": MIGRATION_ADVISORY_LOCK_KEY},
+            )
+            qualification = qualify_immutable_provenance_connection(
+                connection,
+                function_definition_sha256=EXACT_0024_FUNCTION_DEFINITION_SHA256,
+            ).to_dict()
+    finally:
+        qualifier_engine.dispose()
+
     assert qualification["schema_revision"] == CURRENT_RUNTIME_SCHEMA_REVISION
     assert qualification["resource_membership_integrity_valid"] is True
     assert qualification["immutable_provenance_integrity_valid"] is True
