@@ -13,8 +13,11 @@ parent document for its product scope. Epic 1 — Daily Logging Flow has been se
 PRD for Epic 1 has been started. The technical Epic 2 local-first runtime
 and its bounded E2-16 qualification cleanup are recorded in the [Epic 2 implementation backlog]
 (version-1.1/epic-2/implementation-backlog.md) and [E2-16 closure record]
-(version-1.1/epic-2/e2-16-closure-evidence.md). E2-17 is decomposed into three planned qualification
-stages, but no E2-17 criterion is complete and E2-18 remains unstarted.
+(version-1.1/epic-2/e2-16-closure-evidence.md). E2-17 qualification is complete: E2-17A/#76 is
+qualified at `5b03bc101e74fdd4a24bb65d08abe655d97b5c16`, E2-17B/#77 is qualified at
+`9404529a2ceb352a4dca81dc0ebba6d1287984e3`, and the E2-17C repository-wide audit proves the
+single-authority boundary and its mixed-authority prohibitions. GitHub issue closure remains an
+architecture-review action; E2-18 remains unstarted.
 
 New Version 1.1 scope should be recorded deliberately rather than inferred from historical stage
 or release documents. The [Historical Knowledge Index](../historical/README.md) preserves the

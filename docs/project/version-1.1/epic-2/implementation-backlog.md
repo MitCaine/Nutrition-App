@@ -1406,9 +1406,14 @@ PostgreSQL remains the remote concurrency and production-hardening authority. Cr
   architecture-gate decision, and parent closure.
 
 E2-17A and E2-17B are independent and may execute in either order or in parallel. E2-17C
-depends on accepted evidence from both. Parent [#63](https://github.com/MitCaine/Nutrition-App/issues/63)
-remains open until E2-17C proves all twelve criteria; this decomposition makes no E2-18
-qualification claim.
+depends on accepted evidence from both. The accepted E2-17A evidence is qualified at commit
+[`5b03bc101e74fdd4a24bb65d08abe655d97b5c16`](https://github.com/MitCaine/Nutrition-App/commit/5b03bc101e74fdd4a24bb65d08abe655d97b5c16)
+and the accepted E2-17B evidence is qualified at commit
+[`9404529a2ceb352a4dca81dc0ebba6d1287984e3`](https://github.com/MitCaine/Nutrition-App/commit/9404529a2ceb352a4dca81dc0ebba6d1287984e3).
+The E2-17C audit completes the mixed-authority prohibition review and proves all twelve parent
+criteria. GitHub [#63](https://github.com/MitCaine/Nutrition-App/issues/63) and
+[#78](https://github.com/MitCaine/Nutrition-App/issues/78) remain open for architecture review;
+this result makes no E2-18 or Epic 2 release-qualification claim.
 
 ### Out of scope
 
