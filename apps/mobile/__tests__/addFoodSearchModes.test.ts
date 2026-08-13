@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { ScrollView, Text, TextInput } from "react-native";
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 
 import type { Food } from "../src/features/foods/api/types";

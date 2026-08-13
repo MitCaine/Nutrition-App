@@ -63,7 +63,6 @@ type TransferContract = Readonly<{
 }>;
 
 const CONTRACT = contractJson as unknown as TransferContract;
-const SECTIONS = new Map(CONTRACT.sections.map((section) => [section.name, section]));
 const NUTRIENT_IDS = new Set(SQLITE_NUTRIENT_SEED_ROWS.map(([id]) => id));
 const SHA256 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

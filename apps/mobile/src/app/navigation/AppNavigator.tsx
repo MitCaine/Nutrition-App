@@ -308,7 +308,7 @@ export function AppNavigator() {
         onCreateCustomFood={() => setRoute({ name: "add-custom-food", flow: addFoodFlow })}
         onScanNutritionLabel={Platform.OS === "ios" ? () => setRoute({ name: "add-scan", flow: addFoodFlow }) : undefined}
         onQueryChange={(query) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, { query }) : current)}
-        onScrollSessionChange={(query, offset) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, current.query.trim() ? { searchScrollOffset: offset } : { browseScrollOffset: offset }) : current)}
+        onScrollSessionChange={(query, offset) => setAddFoodFlow((current) => current ? updateAddFoodFlow(current, query.trim() ? { searchScrollOffset: offset } : { browseScrollOffset: offset }) : current)}
       />
     );
   } else if (route.name === "add-usda-preview") {

@@ -305,7 +305,7 @@ export type LocalDailyLogsRuntimeOptions = Readonly<{
   onNutritionEditStage?: (stage: LocalDailyLogNutritionEditStage) => Promise<void> | void;
   /** Runs inside the owner/Log-scoped deletion transaction. */
   onDeleteStage?: (stage: LocalDailyLogDeleteStage) => Promise<void> | void;
-  /** Aggregate deterministic failure-injection seam for local qualification. */
+  /** Aggregate transaction-stage seam for deterministic rollback and interruption tests. */
   onMutationStage?: (stage: LocalDailyLogMutationStage) => Promise<void> | void;
 }>;
 
@@ -1509,8 +1509,6 @@ function chooseRecipeAmount(
 }
 
 function resolveRecipeSource(
-  food: FoodRow,
-  recipe: RecipeRow,
   revision: RevisionRow,
   revisionAmounts: readonly RevisionAmountRow[],
   revisionNutrients: readonly RevisionNutrientRow[],
@@ -1889,8 +1887,6 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           const revisionAmounts = await loadRevisionAmounts(transaction, state.activeRevision.id);
           const revisionNutrients = await loadRevisionNutrients(transaction, state.activeRevision.id);
           resolved = resolveRecipeSource(
-            food,
-            state.recipe,
             state.activeRevision,
             revisionAmounts,
             revisionNutrients,
@@ -2558,8 +2554,6 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             replacementInput = { ...resolverInput, servingDefinitionId: selected.id };
             try {
               resolved = resolveRecipeSource(
-                food,
-                state.recipe,
                 state.activeRevision,
                 currentAmounts,
                 await loadRevisionNutrients(transaction, state.activeRevision.id),

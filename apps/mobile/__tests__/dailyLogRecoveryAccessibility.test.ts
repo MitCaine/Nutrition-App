@@ -2,7 +2,6 @@ import React from "react";
 import { Pressable, Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
-import type { DailyLog } from "../src/features/logging/api/types";
 import {
   createLogMutationRecoveryRecord,
   getRecoveryJournalState,

@@ -288,10 +288,6 @@ function invalidStoredFood(context: FoodOperationContext = "read"): LocalRuntime
   );
 }
 
-function unsupportedLocalFeature(message: string): LocalRuntimeError {
-  return errorFor("unavailable", "feature_not_available", message);
-}
-
 function conflict(message: string, code = "constraint_failed"): LocalRuntimeError {
   return errorFor("conflict", code, message, "confirmed_non_commit");
 }

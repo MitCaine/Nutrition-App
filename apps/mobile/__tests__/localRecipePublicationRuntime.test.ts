@@ -456,7 +456,6 @@ describe("E2-08 local immutable Recipe publication", () => {
     "after_recipe_active_link",
     "before_publication_receipt",
   ] as LocalRecipePublicationStage[])("rolls every publication effect back after %s", async (failureStage) => {
-    const base = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER);
     const recipe = await createExactRecipe();
     const failing = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER, {
       onPublicationStage: (stage) => { if (stage === failureStage) throw new Error("injected"); },

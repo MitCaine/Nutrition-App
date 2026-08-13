@@ -20,7 +20,6 @@ import {
 const OWNER = "00000000-0000-4000-8000-000000000001";
 const OTHER_OWNER = "00000000-0000-4000-8000-000000000002";
 const FOOD = "00000000-0000-4000-8000-000000000101";
-const OTHER_FOOD = "00000000-0000-4000-8000-000000000102";
 
 function targetInput(overrides: Partial<{
   calories: string | null;

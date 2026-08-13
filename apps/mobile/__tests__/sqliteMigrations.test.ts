@@ -18,7 +18,6 @@ import {
 import {
   SQLITE_CONNECTION_SETUP_STATEMENTS,
   SQLITE_BASELINE_MIGRATION,
-  SQLITE_MIGRATIONS,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
