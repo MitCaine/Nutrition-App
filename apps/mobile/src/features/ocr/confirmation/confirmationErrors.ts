@@ -13,8 +13,11 @@ export function confirmationErrorMessage(error: unknown): string {
     if (code === "invalid_ocr_parse_request") {
       return "The scanned label data is no longer valid. Return to scanning and try the image again.";
     }
-    if (code === "invalid_ocr_confirmation_request" || error.kind === "validation") {
-      return "Some confirmed values are invalid. Review the highlighted values and try again.";
+    if (code === "invalid_ocr_confirmation_request") {
+      return "The confirmation could not be safely validated. Review the form and try again.";
+    }
+    if (error.kind === "validation") {
+      return "A confirmed value is invalid. Review the highlighted field and try again.";
     }
     return error.message || "Could not create the scanned Food. Check your connection and try again.";
   }

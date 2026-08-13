@@ -123,6 +123,35 @@ test("a 35 percent confidence canonical potassium row remains a reviewable parse
   }));
 });
 
+test.each([
+  ["Sodium 15mg", "sodium", "15", "mg", "parsed", []],
+  ["Total Fat 8g", "total_fat", "8", "g", "parsed", []],
+  ["Sodium 15g", "sodium", "15", null, "ambiguous", ["nutrient_unit_unknown"]],
+  ["Total Fat 8mg", "total_fat", "8", null, "ambiguous", ["nutrient_unit_unknown"]],
+  ["Sodium 15", "sodium", "15", null, "ambiguous", ["nutrient_unit_unknown"]],
+  ["Sodium 15oz", "sodium", "15", null, "ambiguous", ["nutrient_unit_unknown"]],
+  ["Total Fat 8q", "total_fat", "8", "g", "parsed", ["ocr_character_correction_applied"]],
+] as const)("known nutrient unit review contract: %s", (line, nutrientId, amount, unit, status, warningCodes) => {
+  const result = parseLocalNutritionLabel({
+    full_text: "ignored",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "nutrient", text: line, confidence: 0.99 },
+    ],
+  });
+
+  expect(result.nutrients[0]).toMatchObject({
+    nutrient_id: nutrientId,
+    amount: { value: amount },
+    unit: { value: unit, status },
+    status,
+  });
+  expect(result.nutrients[0]?.warning_codes).toEqual(expect.arrayContaining(warningCodes));
+  if (status === "ambiguous") {
+    expect(result.warnings.map(({ code }) => code)).toContain("nutrient_unit_unknown");
+  }
+});
+
 test("omitted observations defaults to the same parser request as an empty list", () => {
   const omitted = parseLocalNutritionLabel({
     full_text: "Nutrition Facts\nCalories 100",

@@ -344,6 +344,13 @@ def _remove_required_trace_decision(trace: dict) -> None:
     ]
 
 
+def _remove_calories_trace_decision(trace: dict) -> None:
+    trace["field_decisions"] = [
+        row for row in trace["field_decisions"]
+        if row["field_key"] != "nutrient.calories"
+    ]
+
+
 def _duplicate_trace_key(trace: dict) -> None:
     trace["field_decisions"].append(deepcopy(trace["field_decisions"][0]))
 
@@ -399,15 +406,12 @@ def _omitted_with_confirmed_value(trace: dict) -> None:
     trace["field_decisions"][1]["confirmed_value"] = "Brand"
 
 
-def _omitted_calories(trace: dict) -> None:
-    trace["field_decisions"][-1].update(decision="omitted", confirmed_value=None)
-
-
 @pytest.mark.parametrize(
     "mutator",
     [
         lambda trace: trace.update(field_decisions=[]),
         _remove_required_trace_decision,
+        _remove_calories_trace_decision,
         _duplicate_trace_key,
         _invalid_nutrient,
         _invalid_unit,
@@ -419,7 +423,6 @@ def _omitted_calories(trace: dict) -> None:
         _excessive_trace_list,
         _excessive_trace_string,
         _omitted_with_confirmed_value,
-        _omitted_calories,
     ],
 )
 def test_intrinsically_invalid_e2_13_ocr_traces_fail_closed(mutator) -> None:
@@ -431,6 +434,17 @@ def test_intrinsically_invalid_e2_13_ocr_traces_fail_closed(mutator) -> None:
 
 def test_minimal_intrinsically_valid_e2_13_trace_is_transferable() -> None:
     validate_transfer_package(_trace_tamper(lambda _trace: None))
+
+
+def test_explicitly_omitted_calories_trace_is_transferable() -> None:
+    def omit_calories(trace: dict) -> None:
+        calories = next(
+            row for row in trace["field_decisions"]
+            if row["field_key"] == "nutrient.calories"
+        )
+        calories.update(decision="omitted", confirmed_value=None)
+
+    validate_transfer_package(_trace_tamper(omit_calories))
 
 
 def test_representative_cross_runtime_package_covers_the_approved_owner_graph() -> None:

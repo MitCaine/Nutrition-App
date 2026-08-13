@@ -258,7 +258,10 @@ function parseFractionOrDecimal(token: string): NumericResult {
 function normalizeMassUnit(unit: string, expectedUnit: string | null): [string | null, readonly string[]] {
   const normalized = unit.trim().toLocaleLowerCase("en-US").replace(/μ/gu, "µ");
   if (["g", "mg", "mcg", "µg", "ug"].includes(normalized)) {
-    return [normalized === "µg" || normalized === "ug" ? "mcg" : normalized, []];
+    const canonical = normalized === "µg" || normalized === "ug" ? "mcg" : normalized;
+    return expectedUnit !== null && canonical !== expectedUnit
+      ? [null, ["nutrient_unit_unknown"]]
+      : [canonical, []];
   }
   if (normalized === "q" && expectedUnit === "g") {
     return ["g", ["ocr_character_correction_applied"]];

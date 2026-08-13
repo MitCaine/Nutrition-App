@@ -167,7 +167,7 @@ export function useRecentEntries() {
   const runtime = useNutritionRuntime();
   return useQuery<RecentEntry[]>({
     queryKey: ["logs", "recent-entries"],
-    queryFn: runtime.dailyLogs.listRecentEntries,
+    queryFn: () => runtime.dailyLogs.listRecentEntries(),
   });
 }
 
@@ -210,7 +210,8 @@ export function useLogMutations(date: string) {
   return {
     queryClient,
     createLog: useMutation({
-      mutationFn: runtime.dailyLogs.create,
+      mutationFn: (input: Parameters<typeof runtime.dailyLogs.create>[0]) =>
+        runtime.dailyLogs.create(input),
       onSuccess: (result) => { projectConfirmedLog(queryClient, date, result); invalidateUse(); },
     }),
     updateLog: useMutation({

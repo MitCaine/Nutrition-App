@@ -45,16 +45,25 @@ export function useRecipeMutations() {
   const invalidate = () => invalidateRecipeCaches(queryClient);
 
   return {
-    createRecipe: useMutation({ mutationFn: runtime.recipes.create, onSuccess: invalidate }),
+    createRecipe: useMutation({
+      mutationFn: (input: Parameters<typeof runtime.recipes.create>[0]) =>
+        runtime.recipes.create(input),
+      onSuccess: invalidate,
+    }),
     updateRecipe: useMutation({
       mutationFn: ({ recipeId, input }: { recipeId: string; input: RecipeMutationInput }) =>
         runtime.recipes.update(recipeId, input),
       onSuccess: invalidate,
     }),
     deleteRecipe: useMutation({
-      mutationFn: runtime.recipes.delete,
+      mutationFn: (input: Parameters<typeof runtime.recipes.delete>[0]) =>
+        runtime.recipes.delete(input),
       onSuccess: (_data, { recipeId }) => removeDeletedRecipeCaches(queryClient, recipeId),
     }),
-    publishRecipe: useMutation({ mutationFn: runtime.recipes.publish, onSuccess: invalidate }),
+    publishRecipe: useMutation({
+      mutationFn: (input: Parameters<typeof runtime.recipes.publish>[0]) =>
+        runtime.recipes.publish(input),
+      onSuccess: invalidate,
+    }),
   };
 }

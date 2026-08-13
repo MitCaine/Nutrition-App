@@ -14,7 +14,7 @@ export function invalidateFoodDiscoveryCaches(queryClient: QueryClient) {
 
 export function useNutrients() {
   const runtime = useNutritionRuntime();
-  return useQuery({ queryKey: ["nutrients"], queryFn: runtime.nutrients.list });
+  return useQuery({ queryKey: ["nutrients"], queryFn: () => runtime.nutrients.list() });
 }
 
 export function useFoods(query: string) {
@@ -32,7 +32,10 @@ export function useSavedFoods(query: string) {
 
 export function useFavoriteFoods() {
   const runtime = useNutritionRuntime();
-  return useQuery({ queryKey: ["foods", "favorites"], queryFn: runtime.foods.listFavorites });
+  return useQuery({
+    queryKey: ["foods", "favorites"],
+    queryFn: () => runtime.foods.listFavorites(),
+  });
 }
 
 export function useRecentFoods(limit = 10) {
@@ -82,8 +85,16 @@ export function useFoodMutations() {
         runtime.foods.update(foodId, input),
       onSuccess: invalidate,
     }),
-    deleteFood: useMutation({ mutationFn: runtime.foods.delete, onSuccess: invalidateAfterDelete }),
-    duplicateFood: useMutation({ mutationFn: runtime.foods.duplicate, onSuccess: invalidate }),
+    deleteFood: useMutation({
+      mutationFn: (input: Parameters<typeof runtime.foods.delete>[0]) =>
+        runtime.foods.delete(input),
+      onSuccess: invalidateAfterDelete,
+    }),
+    duplicateFood: useMutation({
+      mutationFn: (input: Parameters<typeof runtime.foods.duplicate>[0]) =>
+        runtime.foods.duplicate(input),
+      onSuccess: invalidate,
+    }),
     setFavorite: useMutation({
       mutationFn: ({ foodId, favorite }: { foodId: string; favorite: boolean }) => runtime.foods.setFavorite(foodId, favorite),
       onSuccess: invalidate,

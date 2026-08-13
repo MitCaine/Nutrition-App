@@ -1,12 +1,22 @@
 import {
+  addManualNutrient,
   confirmationPayload,
   confirmationValidationError,
   confirmationValidationIssue,
+  confirmationValidationIssues,
   draftFromParsedLabel,
+  hydrateCanonicalNutrientUnits,
   omitReview,
   updateReview,
 } from "../src/features/ocr/confirmation/confirmationModel";
 import type { ParsedField, ParsedNutritionLabel } from "../src/features/ocr/api/types";
+
+const nutrientDefinitions = [
+  { id: "calories", display_name: "Calories", default_unit: "kcal" as const, nutrient_kind: "energy", parent_nutrient_id: null, display_order: 10 },
+  { id: "total_fat", display_name: "Total Fat", default_unit: "g" as const, nutrient_kind: "macro", parent_nutrient_id: null, display_order: 20 },
+  { id: "sodium", display_name: "Sodium", default_unit: "mg" as const, nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 40 },
+  { id: "potassium", display_name: "Potassium", default_unit: "mg" as const, nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 100 },
+];
 
 function field(value: string | boolean | null, status: ParsedField["status"] = "parsed", overrides: Partial<ParsedField> = {}): ParsedField {
   return { value, comparison: null, source_text: value === null ? "" : `source ${String(value)}`, source_observation_ids: value === null ? [] : ["obs-1"], confidence: 0.95, status, warning_codes: [], ...overrides };
@@ -35,7 +45,7 @@ test("golden parser values become a separate review draft with zero and missing 
   expect(draft.name).toBe("");
   expect(draft.calories.decision).toBe("accepted");
   expect(draft.nutrients.find((item) => item.nutrientId === "sodium")?.confirmedValue).toBe("0");
-  expect(draft.nutrients.find((item) => item.nutrientId === "total_fat")?.decision).toBe("omitted");
+  expect(draft.nutrients.find((item) => item.nutrientId === "total_fat")?.decision).toBe("unresolved");
   expect(draft.nutrients.find((item) => item.nutrientId === "protein")?.decision).toBe("unresolved");
   expect(draft.unknownNutrients[0]?.dismissed).toBe(false);
 });
@@ -77,11 +87,135 @@ test.each([
   expect(draftFromParsedLabel(input, "camera").calories.decision).toBe("unresolved");
 });
 
+test.each([
+  ["potassium", "Potassium", "15", "mg"],
+  ["sodium", "Sodium", "15", "mg"],
+  ["total_fat", "Total Fat", "8", "g"],
+] as const)("catalog hydration gives missing-unit canonical %s its default unit", (nutrientId, label, amount, expectedUnit) => {
+  const base = draftFromParsedLabel(parsed(), "camera");
+  const field = {
+    ...base.nutrients[0]!,
+    fieldKey: `nutrient.${nutrientId}`,
+    nutrientId,
+    label,
+    suggestedValue: amount,
+    confirmedValue: amount,
+    unit: null,
+    decision: "unresolved" as const,
+    parseStatus: "ambiguous" as const,
+    sourceText: `${label} ${amount}`,
+    sourceObservationIds: [`obs-${nutrientId}`],
+    warningCodes: ["nutrient_unit_unknown"],
+  };
+  const hydrated = hydrateCanonicalNutrientUnits({ ...base, nutrients: [field] }, nutrientDefinitions);
+
+  expect(hydrated.nutrients[0]).toMatchObject({
+    unit: expectedUnit,
+    decision: "unresolved",
+    confirmedValue: amount,
+    sourceText: `${label} ${amount}`,
+    warningCodes: ["nutrient_unit_unknown"],
+  });
+  expect(hydrateCanonicalNutrientUnits(hydrated, nutrientDefinitions)).toBe(hydrated);
+});
+
+test("conflicting OCR unit hydrates canonical unit without converting amount or erasing source evidence", () => {
+  const input = parsed();
+  input.nutrients = [{
+    nutrient_id: "sodium",
+    original_name: "Sodium",
+    amount: field("15", "parsed", { source_text: "Sodium 15 g", source_observation_ids: ["obs-conflict"] }),
+    unit: field(null, "ambiguous", { source_text: "Sodium 15 g", source_observation_ids: ["obs-conflict"], warning_codes: ["nutrient_unit_unknown"] }),
+    daily_value_percent: null,
+    source_observation_ids: ["obs-conflict"],
+    confidence: 0.5,
+    status: "ambiguous",
+    warning_codes: ["nutrient_unit_unknown"],
+  }];
+  input.warnings = [];
+
+  const hydrated = hydrateCanonicalNutrientUnits(draftFromParsedLabel(input, "camera"), nutrientDefinitions);
+
+  expect(hydrated.nutrients[0]).toMatchObject({
+    nutrientId: "sodium",
+    confirmedValue: "15",
+    unit: "mg",
+    decision: "unresolved",
+    sourceText: "Sodium 15 g",
+    sourceObservationIds: ["obs-conflict"],
+    warningCodes: ["nutrient_unit_unknown"],
+  });
+});
+
+test("catalog hydration does not invent a unit for an unknown nutrient identity", () => {
+  const base = draftFromParsedLabel(parsed(), "camera");
+  const unknownField = { ...base.nutrients[0]!, fieldKey: "nutrient.unknown", nutrientId: null, unit: null };
+  const hydrated = hydrateCanonicalNutrientUnits({ ...base, nutrients: [unknownField] }, nutrientDefinitions);
+
+  expect(hydrated.nutrients[0]?.unit).toBeNull();
+});
+
+test("missing zero-confidence calories require a usable review decision", () => {
+  const input = parsed();
+  input.calories = field(null, "missing", { confidence: 0 });
+  input.nutrients = [];
+  input.warnings = [];
+
+  const draft = draftFromParsedLabel(input, "camera");
+
+  expect(draft.calories).toMatchObject({
+    suggestedValue: null,
+    confirmedValue: "",
+    confidence: 0,
+    decision: "unresolved",
+  });
+  expect(confirmationValidationIssue({ ...draft, name: "Physical label" })).toMatchObject({
+    message: expect.stringContaining("Calories requires review"),
+    fieldKey: "nutrient.calories",
+  });
+  const corrected = { ...draft, name: "Physical label", calories: updateReview(draft.calories, "70") };
+  expect(confirmationValidationIssue(corrected)).toBeNull();
+  expect(confirmationPayload(corrected, "00000000-0000-4000-8000-000000000001")?.food.nutrients)
+    .toContainEqual(expect.objectContaining({ nutrient_id: "calories", amount: "70" }));
+});
+
+test.each([
+  ["sodium", "Sodium", null, "ambiguous"],
+  ["total_fat", "Total Fat", "oz", "unsupported"],
+] as const)("known %s with a missing or unsupported OCR unit remains unresolved", (nutrientId, label, unitValue, unitStatus) => {
+  const input = parsed();
+  input.nutrients = [{
+    nutrient_id: nutrientId,
+    original_name: label,
+    amount: field("8"),
+    unit: field(unitValue, unitStatus, { warning_codes: ["nutrient_unit_unknown"] }),
+    daily_value_percent: null,
+    source_observation_ids: ["obs-unit"],
+    confidence: 0.95,
+    status: "ambiguous",
+    warning_codes: ["nutrient_unit_unknown"],
+  }];
+  input.warnings = [];
+
+  const reviewField = draftFromParsedLabel(input, "camera").nutrients[0]!;
+
+  expect(reviewField).toMatchObject({
+    nutrientId,
+    confirmedValue: "8",
+    unit: null,
+    decision: "unresolved",
+    parseStatus: "ambiguous",
+    confidence: 0.95,
+    sourceObservationIds: ["obs-1", "obs-unit"],
+    warningCodes: ["nutrient_unit_unknown"],
+  });
+});
+
 test("conflicting total sugars candidates become one diagnostic review row", () => {
   const input = parsed();
   input.nutrients = [
-    { nutrient_id: "total_sugars", original_name: "Total Sugars", amount: field("12", "ambiguous", { source_text: "Total Sugars 12g", source_observation_ids: ["sugars-serving"], confidence: 0.48, warning_codes: ["conflicting_nutrient_values"] }), unit: field("g"), daily_value_percent: null, source_observation_ids: ["sugars-serving"], confidence: 0.48, status: "ambiguous", warning_codes: ["conflicting_nutrient_values"] },
-    { nutrient_id: "total_sugars", original_name: "Total Sugars", amount: field("24", "ambiguous", { source_text: "Total Sugars 24g", source_observation_ids: ["sugars-container"], confidence: 0.47, warning_codes: ["conflicting_nutrient_values"] }), unit: field("g"), daily_value_percent: null, source_observation_ids: ["sugars-container"], confidence: 0.47, status: "ambiguous", warning_codes: ["conflicting_nutrient_values"] },
+    { nutrient_id: "total_sugars", original_name: "Total Sugars", amount: field("12", "ambiguous", { source_text: "Total Sugars 12g", source_observation_ids: ["sugars-serving"], confidence: 0.48, warning_codes: ["conflicting_nutrient_values"] }), unit: field("g", "parsed", { source_text: "Total Sugars 12g", source_observation_ids: ["sugars-serving"] }), daily_value_percent: null, source_observation_ids: ["sugars-serving"], confidence: 0.48, status: "ambiguous", warning_codes: ["conflicting_nutrient_values"] },
+    { nutrient_id: "total_sugars", original_name: "Total Sugars", amount: field("24", "ambiguous", { source_text: "Total Sugars 24g", source_observation_ids: ["sugars-container"], confidence: 0.47, warning_codes: ["conflicting_nutrient_values"] }), unit: field("g", "parsed", { source_text: "Total Sugars 24g", source_observation_ids: ["sugars-container"] }), daily_value_percent: null, source_observation_ids: ["sugars-container"], confidence: 0.47, status: "ambiguous", warning_codes: ["conflicting_nutrient_values"] },
   ];
   input.warnings = [{ code: "conflicting_nutrient_values", message: "Conflicting values", source_observation_ids: ["sugars-serving", "sugars-container"] }];
 
@@ -123,9 +257,12 @@ test("confirmation blocks name, unresolved less-than, and unknown rows", () => {
   let draft = draftFromParsedLabel(parsed(), "photo_library");
   expect(confirmationValidationError(draft)).toBe("Food name is required.");
   draft = { ...draft, name: "Cereal", calories: updateReview(draft.calories, "120", "accepted") };
-  expect(confirmationValidationError(draft)).toContain("Protein requires review");
+  expect(confirmationValidationIssues(draft).map(({ message }) => message)).toEqual(expect.arrayContaining([
+    expect.stringContaining("Total Fat requires review"),
+    expect.stringContaining("Protein requires review"),
+  ]));
   const protein = draft.nutrients.find((item) => item.nutrientId === "protein")!;
-  draft = { ...draft, nutrients: draft.nutrients.map((item) => item === protein ? updateReview(item, "0.5", "edited") : item) };
+  draft = { ...draft, nutrients: draft.nutrients.map((item) => item === protein ? updateReview(item, "0.5", "edited") : item.nutrientId === "total_fat" ? omitReview(item) : item) };
   expect(confirmationValidationError(draft)).toContain("Dismiss each unknown");
   draft = { ...draft, unknownNutrients: draft.unknownNutrients.map((item) => ({ ...item, dismissed: true })) };
   expect(confirmationValidationError(draft)).toBeNull();
@@ -143,6 +280,11 @@ test("low-confidence potassium can be explicitly omitted without fabricating a n
   let draft = draftFromParsedLabel(input, "camera");
   const potassium = draft.nutrients[0]!;
   expect(potassium.decision).toBe("unresolved");
+  expect(updateReview(potassium, "35", "accepted")).toMatchObject({
+    decision: "accepted",
+    confirmedValue: "35",
+    resolution: "accepted OCR suggestion after review",
+  });
   draft = { ...draft, name: "Low-confidence label", nutrients: [omitReview(potassium)] };
 
   const payload = confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")!;
@@ -152,7 +294,8 @@ test("low-confidence potassium can be explicitly omitted without fabricating a n
     confirmed_value: null,
     suggested_value: "35",
     confidence: "0.35",
-    resolution: null,
+    unit: "mg",
+    resolution: "explicitly omitted after review",
   });
 });
 
@@ -175,11 +318,11 @@ test("low-confidence potassium can be manually corrected through the existing pr
     suggested_value: "35",
     confirmed_value: "470",
     source_observation_ids: ["potassium-low"],
-    resolution: null,
+    resolution: "entered exact value after review",
   });
 });
 
-test("unresolved validation names every blocker and owns the first field target", () => {
+test("unresolved validation returns every blocker and owns the first field target", () => {
   const input = parsed();
   input.nutrients = [
     { nutrient_id: "potassium", original_name: "Potassium", amount: field("35", "parsed", { confidence: 0.35 }), unit: field("mg"), daily_value_percent: null, source_observation_ids: ["potassium-low"], confidence: 0.35, status: "parsed", warning_codes: [] },
@@ -187,10 +330,10 @@ test("unresolved validation names every blocker and owns the first field target"
   ];
   let draft = { ...draftFromParsedLabel(input, "camera"), name: "Multiple blockers" };
 
-  expect(confirmationValidationIssue(draft)).toMatchObject({
-    fieldKey: "nutrient.potassium",
-    message: expect.stringMatching(/Potassium.*Iron/),
-  });
+  expect(confirmationValidationIssues(draft)).toEqual([
+    expect.objectContaining({ fieldKey: "nutrient.potassium", message: expect.stringContaining("Potassium") }),
+    expect.objectContaining({ fieldKey: "nutrient.iron", message: expect.stringContaining("Iron") }),
+  ]);
   draft = { ...draft, nutrients: [omitReview(draft.nutrients[0]!), draft.nutrients[1]!] };
   expect(confirmationValidationIssue(draft)).toMatchObject({
     fieldKey: "nutrient.iron",
@@ -211,11 +354,112 @@ test("medium confidence remains reviewable while high confidence remains accepte
   expect(draft.nutrients.find((item) => item.nutrientId === "iron")?.decision).toBe("accepted");
 });
 
+test("accepted invalid values block while unresolved values cannot enter a payload", () => {
+  const draft = { ...draftFromParsedLabel(parsed(), "camera"), name: "Invalid review" };
+  const sodium = draft.nutrients.find((item) => item.nutrientId === "sodium")!;
+  const invalidAccepted = {
+    ...draft,
+    nutrients: draft.nutrients.map((item) => item === sodium ? { ...item, confirmedValue: "", decision: "accepted" as const } : omitReview(item)),
+    unknownNutrients: [],
+  };
+
+  expect(confirmationValidationIssues(invalidAccepted)).toContainEqual(expect.objectContaining({
+    fieldKey: "nutrient.sodium",
+    message: "Sodium must be a nonnegative number.",
+  }));
+  expect(confirmationPayload(invalidAccepted, "00000000-0000-4000-8000-000000000001")).toBeNull();
+  expect(confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")).toBeNull();
+});
+
+test("a high-confidence nutrient remains editable and explicitly omittable", () => {
+  const draft = draftFromParsedLabel(parsed(), "camera");
+  const sodium = draft.nutrients.find((item) => item.nutrientId === "sodium")!;
+
+  expect(updateReview(sodium, "15")).toMatchObject({ decision: "edited", confirmedValue: "15" });
+  expect(omitReview(sodium)).toMatchObject({
+    decision: "omitted",
+    confirmedValue: "",
+    suggestedValue: "0",
+    resolution: "explicitly omitted after review",
+  });
+});
+
+test("a manually added canonical nutrient is unique and has unambiguous provenance", () => {
+  const base = { ...draftFromParsedLabel(parsed(), "camera"), nutrients: [] };
+  const iron = {
+    id: "iron", display_name: "Iron", default_unit: "mg" as const,
+    nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 90,
+  };
+  const added = addManualNutrient(base, iron);
+  const duplicate = addManualNutrient(added, iron);
+  const reviewed = {
+    ...added,
+    name: "Manual iron",
+    calories: omitReview(added.calories),
+    nutrients: [updateReview(added.nutrients[0]!, "4")],
+    unknownNutrients: [],
+  };
+
+  expect(duplicate).toBe(added);
+  expect(added.nutrients).toHaveLength(1);
+  expect(added.nutrients[0]).toMatchObject({ unit: "mg", decision: "unresolved", resolution: "manually added because OCR did not provide it" });
+  const payload = confirmationPayload(reviewed, "00000000-0000-4000-8000-000000000001")!;
+  expect(payload.food.nutrients).toEqual([expect.objectContaining({ nutrient_id: "iron", amount: "4", unit: "mg" })]);
+  expect(payload.field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.iron", suggested_value: null, confirmed_value: "4",
+    decision: "edited", resolution: "manually added because OCR did not provide it",
+  }));
+});
+
+test("an omitted field remains excluded until a value is restored", () => {
+  const base = { ...draftFromParsedLabel(parsed(), "camera"), name: "Omission lifecycle", unknownNutrients: [] };
+  const sodium = base.nutrients.find((item) => item.nutrientId === "sodium")!;
+  const omitted = omitReview(sodium);
+  const omittedDraft = {
+    ...base,
+    calories: omitReview(base.calories),
+    nutrients: base.nutrients.map((item) => item === sodium ? omitted : omitReview(item)),
+  };
+
+  expect(confirmationPayload(omittedDraft, "00000000-0000-4000-8000-000000000001")?.food.nutrients).toEqual([]);
+
+  const restored = updateReview(omitted, "15");
+  const restoredPayload = confirmationPayload({
+    ...omittedDraft,
+    nutrients: omittedDraft.nutrients.map((item) => item.nutrientId === "sodium" ? restored : item),
+  }, "00000000-0000-4000-8000-000000000001")!;
+  expect(restoredPayload.food.nutrients).toEqual([
+    expect.objectContaining({ nutrient_id: "sodium", amount: "15", unit: "mg" }),
+  ]);
+});
+
+test("manual-add origin remains stable through omit and re-edit", () => {
+  const base = { ...draftFromParsedLabel(parsed(), "camera"), nutrients: [] };
+  const iron = {
+    id: "iron", display_name: "Iron", default_unit: "mg" as const,
+    nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 90,
+  };
+  const added = addManualNutrient(base, iron).nutrients[0]!;
+  const firstEdit = updateReview(added, "4");
+  const omitted = omitReview(firstEdit);
+  const restored = updateReview(omitted, "5");
+
+  expect(firstEdit.resolution).toBe("manually added because OCR did not provide it");
+  expect(omitted).toMatchObject({ decision: "omitted", resolution: "manually added because OCR did not provide it" });
+  expect(restored).toMatchObject({
+    confirmedValue: "5",
+    decision: "edited",
+    parseStatus: "missing",
+    confidence: 0,
+    resolution: "manually added because OCR did not provide it",
+  });
+});
+
 test("payload creates manual-compatible amounts, exact trace, and contains no image URI", () => {
   let draft = draftFromParsedLabel(parsed(), "camera");
   draft = {
     ...draft, name: "Cereal", calories: updateReview(draft.calories, "120", "accepted"),
-    nutrients: draft.nutrients.map((item) => item.nutrientId === "protein" ? updateReview(item, "0.5", "edited") : item),
+    nutrients: draft.nutrients.map((item) => item.nutrientId === "protein" ? updateReview(item, "0.5", "edited") : item.nutrientId === "total_fat" ? omitReview(item) : item),
     unknownNutrients: draft.unknownNutrients.map((item) => ({ ...item, dismissed: true })),
   };
   const payload = confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")!;
@@ -229,10 +473,58 @@ test("payload creates manual-compatible amounts, exact trace, and contains no im
   expect(JSON.stringify(payload)).not.toMatch(/file:|image_uri|\.jpg/);
 });
 
+test("physical-label-shaped values remain reviewable when OCR confidence is wrong", () => {
+  const input = parsed();
+  input.calories = field(null, "missing", { confidence: 0 });
+  const rows = [
+    ["total_fat", "Total Fat", "0.5", "g", 1],
+    ["saturated_fat", "Saturated Fat", "0", "g", 0.5],
+    ["trans_fat", "Trans Fat", "0", "g", 0.35],
+    ["cholesterol", "Cholesterol", "0", "mg", 1],
+    ["sodium", "Sodium", "15", "mg", 0.35],
+    ["total_carbohydrate", "Total Carbohydrate", "14", "g", 0.5],
+    ["dietary_fiber", "Dietary Fiber", "2", "g", 1],
+    ["total_sugars", "Total Sugars", "1", "g", 0.35],
+    ["added_sugars", "Added Sugars", "0", "g", 0.5],
+    ["protein", "Protein", "1", "g", 1],
+    ["potassium", "Potassium", "35", "mg", 0.35],
+  ] as const;
+  input.nutrients = rows.map(([nutrientId, label, amount, unit, confidence], index) => ({
+    nutrient_id: nutrientId,
+    original_name: label,
+    amount: field(amount, "parsed", { confidence, source_text: `${label} ${amount}${unit}`, source_observation_ids: [`physical-${index}`] }),
+    unit: field(unit, "parsed", { confidence, source_text: `${label} ${amount}${unit}`, source_observation_ids: [`physical-${index}`] }),
+    daily_value_percent: null,
+    source_observation_ids: [`physical-${index}`],
+    confidence,
+    status: "parsed",
+    warning_codes: [],
+  }));
+  input.warnings = [];
+  const draft = draftFromParsedLabel(input, "camera");
+  const reviewed = {
+    ...draft,
+    name: "Physical label fixture",
+    calories: updateReview(draft.calories, "70"),
+    nutrients: draft.nutrients.map((item) => item.nutrientId === "potassium"
+      ? omitReview(item)
+      : item.decision === "unresolved"
+        ? updateReview(item, item.confirmedValue, "accepted")
+        : item),
+  };
+
+  expect(confirmationValidationIssues(reviewed)).toEqual([]);
+  const payload = confirmationPayload(reviewed, "00000000-0000-4000-8000-000000000001")!;
+  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "calories", amount: "70" }));
+  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "total_fat", amount: "0.5" }));
+  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "sodium", amount: "15" }));
+  expect(payload.food.nutrients.some(({ nutrient_id }) => nutrient_id === "potassium")).toBe(false);
+});
+
 test.each(["1e3", "Infinity", " 1", "1 ", "1,5", "1.2.3", "", " "])("rejects unsupported decimal input %s", (value) => {
   let draft = draftFromParsedLabel(parsed(), "camera");
   draft = { ...draft, name: "Cereal", gramWeight: value, calories: updateReview(draft.calories, "120", "accepted") };
-  expect(confirmationValidationError(draft)).toMatch(/positive gram weight/);
+  expect(confirmationValidationError(draft)).toMatch(/Serving grams must be a positive number/);
 });
 
 test("unchanged less-than suggestion remains unresolved when Use value is requested", () => {

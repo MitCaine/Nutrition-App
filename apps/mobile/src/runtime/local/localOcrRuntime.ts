@@ -93,7 +93,7 @@ function invalidConfirmation(message: string, location: readonly (string | numbe
   return new LocalRuntimeError({
     kind: "validation",
     code: "invalid_ocr_confirmation_request",
-    message: "Some confirmed values are invalid.",
+    message: "The OCR confirmation request is invalid.",
     mutationOutcome: "confirmed_non_commit",
     details: {
       code: "invalid_ocr_confirmation_request",
@@ -310,9 +310,8 @@ function assertIntrinsicTrace(decisions: readonly TraceFieldDecisionInput[]): vo
   if ([...REQUIRED_FIELDS].some((key) => !byKey.has(key))) {
     throw invalidConfirmation("Confirmation trace is missing Food or serving decisions.", ["field_decisions"]);
   }
-  const calories = byKey.get("calories") ?? byKey.get("nutrient.calories");
-  if (!calories || calories.decision === "omitted") {
-    throw invalidConfirmation("Calories must be explicitly reviewed and retained.", ["field_decisions"]);
+  if (!byKey.has("calories") && !byKey.has("nutrient.calories")) {
+    throw invalidConfirmation("Confirmation trace is missing the Calories review decision.", ["field_decisions"]);
   }
 }
 

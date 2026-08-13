@@ -1,4 +1,4 @@
-import type { FoodMutationInput } from "../../foods/api/types";
+import type { FoodMutationInput, NutrientDefinition } from "../../foods/api/types";
 import type { NutrientUnit } from "../../../shared/nutrition/types";
 import type {
   ConfirmationField, NutritionConfirmationDraft, OcrConfirmationInput,
@@ -14,13 +14,14 @@ const NUTRIENT_LABELS: Record<string, string> = {
   vitamin_d: "Vitamin D", calcium: "Calcium", iron: "Iron", potassium: "Potassium", magnesium: "Magnesium",
 };
 
+const MANUAL_ADD_RESOLUTION = "manually added because OCR did not provide it";
+
 function stringValue(field: ParsedField | null | undefined): string {
   return typeof field?.value === "string" ? field.value : typeof field?.value === "number" ? String(field.value) : "";
 }
 
 function initialDecision(field: ParsedField): ReviewDecision {
-  if (field.status === "missing" || field.status === "unsupported") return "omitted";
-  if (field.status === "ambiguous" || field.comparison || field.confidence < 0.8) return "unresolved";
+  if (field.status !== "parsed" || field.comparison || field.confidence < 0.8) return "unresolved";
   return "accepted";
 }
 
@@ -47,9 +48,29 @@ function canonicalReviewFields(parsed: ParsedNutritionLabel): ConfirmationField[
     const first = candidates[0]!;
     const label = NUTRIENT_LABELS[nutrientId] ?? first.original_name;
     if (candidates.length === 1) {
-      return confirmationField(`nutrient.${nutrientId}`, nutrientId, label, first.amount, stringValue(first.unit) || null);
+      const unit = first.unit.status === "parsed" ? stringValue(first.unit) || null : null;
+      const reviewField = confirmationField(`nutrient.${nutrientId}`, nutrientId, label, first.amount, unit);
+      return {
+        ...reviewField,
+        decision: unit && first.status === "parsed" ? reviewField.decision : "unresolved",
+        parseStatus: first.status,
+        confidence: first.confidence,
+        sourceObservationIds: [...new Set([
+          ...first.amount.source_observation_ids,
+          ...first.unit.source_observation_ids,
+          ...first.source_observation_ids,
+        ])],
+        warningCodes: [...new Set([
+          ...first.amount.warning_codes,
+          ...first.unit.warning_codes,
+          ...first.warning_codes,
+        ])],
+      };
     }
-    const units = [...new Set(candidates.map((candidate) => stringValue(candidate.unit)).filter(Boolean))];
+    const units = [...new Set(candidates
+      .filter((candidate) => candidate.unit.status === "parsed")
+      .map((candidate) => stringValue(candidate.unit))
+      .filter(Boolean))];
     return {
       fieldKey: `nutrient.${nutrientId}`,
       nutrientId,
@@ -60,10 +81,18 @@ function canonicalReviewFields(parsed: ParsedNutritionLabel): ConfirmationField[
       decision: "unresolved",
       parseStatus: "ambiguous",
       comparison: null,
-      confidence: Math.min(...candidates.map((candidate) => Math.min(candidate.confidence, candidate.amount.confidence))),
+      confidence: Math.min(...candidates.map((candidate) => Math.min(candidate.confidence, candidate.amount.confidence, candidate.unit.confidence))),
       sourceText: [...new Set(candidates.map((candidate) => candidate.amount.source_text).filter(Boolean))].join(" | "),
-      sourceObservationIds: [...new Set(candidates.flatMap((candidate) => [...candidate.source_observation_ids, ...candidate.amount.source_observation_ids]))],
-      warningCodes: [...new Set(["conflicting_nutrient_values", ...candidates.flatMap((candidate) => [...candidate.warning_codes, ...candidate.amount.warning_codes])])],
+      sourceObservationIds: [...new Set(candidates.flatMap((candidate) => [
+        ...candidate.source_observation_ids,
+        ...candidate.amount.source_observation_ids,
+        ...candidate.unit.source_observation_ids,
+      ]))],
+      warningCodes: [...new Set(["conflicting_nutrient_values", ...candidates.flatMap((candidate) => [
+        ...candidate.warning_codes,
+        ...candidate.amount.warning_codes,
+        ...candidate.unit.warning_codes,
+      ])])],
       resolution: null,
     };
   });
@@ -92,13 +121,51 @@ export function draftFromParsedLabel(parsed: ParsedNutritionLabel, imageSourceTy
   };
 }
 
+export function hydrateCanonicalNutrientUnits(
+  draft: NutritionConfirmationDraft,
+  nutrients: readonly NutrientDefinition[],
+): NutritionConfirmationDraft {
+  const definitionsById = new Map(nutrients.map((nutrient) => [nutrient.id, nutrient]));
+  const hydrateField = (field: ConfirmationField): ConfirmationField => {
+    if (!field.nutrientId) return field;
+    const definition = definitionsById.get(field.nutrientId);
+    if (!definition || field.unit === definition.default_unit) return field;
+    return { ...field, unit: definition.default_unit };
+  };
+  const calories = hydrateField(draft.calories);
+  let nutrientsChanged = false;
+  const hydratedNutrients = draft.nutrients.map((field) => {
+    const hydrated = hydrateField(field);
+    if (hydrated !== field) nutrientsChanged = true;
+    return hydrated;
+  });
+  return calories === draft.calories && !nutrientsChanged
+    ? draft
+    : { ...draft, calories, nutrients: hydratedNutrients };
+}
+
 export function updateReview(field: ConfirmationField, value: string, decision?: ReviewDecision): ConfirmationField {
   const changed = value !== (field.suggestedValue ?? "");
   const nextDecision = decision ?? (changed ? "edited" : "accepted");
   if (field.comparison === "less_than" && !changed && nextDecision === "accepted") {
     return { ...field, confirmedValue: value, decision: "unresolved", resolution: null };
   }
-  return { ...field, confirmedValue: value, decision: nextDecision, resolution: field.parseStatus === "ambiguous" || field.comparison ? (changed ? "entered exact value" : "selected suggestion") : field.resolution };
+  const manuallyAdded = field.resolution === MANUAL_ADD_RESOLUTION;
+  const reviewed = field.decision === "unresolved"
+    || field.decision === "omitted"
+    || field.parseStatus !== "parsed"
+    || field.confidence < 0.8
+    || Boolean(field.comparison);
+  return {
+    ...field,
+    confirmedValue: value,
+    decision: nextDecision,
+    resolution: manuallyAdded
+      ? field.resolution
+      : reviewed
+        ? (changed ? "entered exact value after review" : "accepted OCR suggestion after review")
+        : field.resolution,
+  };
 }
 
 export function omitReview(field: ConfirmationField): ConfirmationField {
@@ -106,7 +173,36 @@ export function omitReview(field: ConfirmationField): ConfirmationField {
     ...field,
     confirmedValue: "",
     decision: "omitted",
-    resolution: field.parseStatus === "ambiguous" || field.comparison ? "omitted after review" : field.resolution,
+    resolution: field.resolution === MANUAL_ADD_RESOLUTION
+      ? MANUAL_ADD_RESOLUTION
+      : "explicitly omitted after review",
+  };
+}
+
+export function addManualNutrient(
+  draft: NutritionConfirmationDraft,
+  nutrient: NutrientDefinition,
+): NutritionConfirmationDraft {
+  const existingIds = new Set([draft.calories.nutrientId, ...draft.nutrients.map(({ nutrientId }) => nutrientId)]);
+  if (existingIds.has(nutrient.id)) return draft;
+  return {
+    ...draft,
+    nutrients: [...draft.nutrients, {
+      fieldKey: `nutrient.${nutrient.id}`,
+      nutrientId: nutrient.id,
+      label: nutrient.display_name,
+      suggestedValue: null,
+      confirmedValue: "",
+      unit: nutrient.default_unit,
+      decision: "unresolved",
+      parseStatus: "missing",
+      comparison: null,
+      confidence: 0,
+      sourceText: "",
+      sourceObservationIds: [],
+      warningCodes: [],
+      resolution: MANUAL_ADD_RESOLUTION,
+    }],
   };
 }
 
@@ -115,43 +211,45 @@ export type ConfirmationValidationIssue = Readonly<{
   fieldKey: string | null;
 }>;
 
-function labelList(fields: readonly ConfirmationField[]): string {
-  const labels = fields.map(({ label }) => label);
-  if (labels.length === 1) return labels[0]!;
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
-  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
+export function confirmationValidationIssues(draft: NutritionConfirmationDraft): ConfirmationValidationIssue[] {
+  const issues: ConfirmationValidationIssue[] = [];
+  if (!draft.name.trim()) issues.push({ message: "Food name is required.", fieldKey: "food.name" });
+  if (!isPositiveDecimalString(draft.servingQuantity)) {
+    issues.push({ message: "Serving quantity must be a positive number.", fieldKey: "serving.quantity" });
+  }
+  if (!isPositiveDecimalString(draft.gramWeight)) {
+    issues.push({ message: "Serving grams must be a positive number.", fieldKey: "serving.gram_weight" });
+  }
+  const fields = [draft.calories, ...draft.nutrients];
+  for (const field of fields) {
+    if (field.decision === "unresolved") {
+      issues.push({
+        message: `${field.label} requires review: enter a value, accept the OCR suggestion, or explicitly omit it.`,
+        fieldKey: field.fieldKey,
+      });
+      continue;
+    }
+    if (field.decision === "omitted") continue;
+    if (!isUnsignedDecimalString(field.confirmedValue)) {
+      issues.push({ message: `${field.label} must be a nonnegative number.`, fieldKey: field.fieldKey });
+      continue;
+    }
+    if (!field.unit) {
+      issues.push({ message: `${field.label} requires a canonical nutrient unit.`, fieldKey: field.fieldKey });
+      continue;
+    }
+    if (field.comparison === "less_than" && field.decision === "accepted") {
+      issues.push({ message: `${field.label} is a less-than value; enter an exact replacement or omit it.`, fieldKey: field.fieldKey });
+    }
+  }
+  if (draft.unknownNutrients.some((item) => !item.dismissed)) {
+    issues.push({ message: "Dismiss each unknown nutrient after reviewing its source text.", fieldKey: null });
+  }
+  return issues;
 }
 
 export function confirmationValidationIssue(draft: NutritionConfirmationDraft): ConfirmationValidationIssue | null {
-  if (!draft.name.trim()) return { message: "Food name is required.", fieldKey: "food.name" };
-  if (!isPositiveDecimalString(draft.servingQuantity)) {
-    return { message: "Enter a positive decimal serving quantity.", fieldKey: "serving.quantity" };
-  }
-  if (!isPositiveDecimalString(draft.gramWeight)) {
-    return { message: "Enter a positive gram weight for the label serving.", fieldKey: "serving.gram_weight" };
-  }
-  const fields = [draft.calories, ...draft.nutrients];
-  const unresolved = fields.filter((field) => field.decision === "unresolved");
-  if (unresolved.length > 0) {
-    const names = labelList(unresolved);
-    return {
-      message: `${names} ${unresolved.length === 1 ? "requires" : "require"} review before creating the Food. `
-        + "Resolve each by entering or confirming a value, or by explicitly omitting it when omission is available.",
-      fieldKey: unresolved[0]!.fieldKey,
-    };
-  }
-  if (draft.unknownNutrients.some((item) => !item.dismissed)) {
-    return { message: "Dismiss each unknown nutrient after reviewing its source text.", fieldKey: null };
-  }
-  for (const field of fields) {
-    if (field.decision !== "omitted" && !isUnsignedDecimalString(field.confirmedValue)) {
-      return { message: `${field.label} must be a nonnegative number or omitted.`, fieldKey: field.fieldKey };
-    }
-    if (field.comparison === "less_than" && field.decision === "accepted") {
-      return { message: `${field.label} is a less-than value; enter an exact replacement or omit it.`, fieldKey: field.fieldKey };
-    }
-  }
-  return null;
+  return confirmationValidationIssues(draft)[0] ?? null;
 }
 
 export function confirmationValidationError(draft: NutritionConfirmationDraft): string | null {
@@ -159,7 +257,7 @@ export function confirmationValidationError(draft: NutritionConfirmationDraft): 
 }
 
 function retainedNutrient(field: ConfirmationField) {
-  if (field.decision === "omitted" || !field.nutrientId) return null;
+  if ((field.decision !== "accepted" && field.decision !== "edited") || !field.nutrientId) return null;
   const amount = field.confirmedValue;
   return {
     nutrient_id: field.nutrientId, amount, unit: field.unit as NutrientUnit,

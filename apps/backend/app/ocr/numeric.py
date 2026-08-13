@@ -55,8 +55,10 @@ def parse_fraction_or_decimal(token: str) -> NumericResult:
 def normalize_mass_unit(unit: str, *, expected_unit: str | None = None) -> tuple[str | None, tuple[str, ...]]:
     normalized = unit.strip().casefold().replace("μ", "µ")
     if normalized in {"g", "mg", "mcg", "µg", "ug"}:
-        return ("mcg" if normalized in {"µg", "ug"} else normalized), ()
+        canonical = "mcg" if normalized in {"µg", "ug"} else normalized
+        if expected_unit is not None and canonical != expected_unit:
+            return None, ("nutrient_unit_unknown",)
+        return canonical, ()
     if normalized == "q" and expected_unit == "g":
         return "g", ("ocr_character_correction_applied",)
     return None, ("nutrient_unit_unknown",)
-

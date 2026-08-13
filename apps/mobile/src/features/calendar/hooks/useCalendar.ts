@@ -7,7 +7,7 @@ export function useCalendarState() {
   const runtime = useNutritionRuntime();
   return useQuery({
     queryKey: CALENDAR_QUERY_KEY,
-    queryFn: runtime.calendar.getState,
+    queryFn: () => runtime.calendar.getState(),
     // ``today`` is derived by the server at read time.  Refresh it so a
     // midnight rollover reclassifies the retained selected date without
     // navigating away from the user's active workflow.
@@ -19,7 +19,8 @@ export function useEstablishCalendarTimeZone() {
   const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: runtime.calendar.establishTimeZone,
+    mutationFn: (timeZone: Parameters<typeof runtime.calendar.establishTimeZone>[0]) =>
+      runtime.calendar.establishTimeZone(timeZone),
     onSuccess: (state) => {
       queryClient.setQueryData(CALENDAR_QUERY_KEY, state);
     },
@@ -28,14 +29,18 @@ export function useEstablishCalendarTimeZone() {
 
 export function usePreviewCalendarTimeZoneChange() {
   const runtime = useNutritionRuntime();
-  return useMutation({ mutationFn: runtime.calendar.previewTimeZoneChange });
+  return useMutation({
+    mutationFn: (timeZone: Parameters<typeof runtime.calendar.previewTimeZoneChange>[0]) =>
+      runtime.calendar.previewTimeZoneChange(timeZone),
+  });
 }
 
 export function useConfirmCalendarTimeZoneChange() {
   const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: runtime.calendar.confirmTimeZoneChange,
+    mutationFn: (input: Parameters<typeof runtime.calendar.confirmTimeZoneChange>[0]) =>
+      runtime.calendar.confirmTimeZoneChange(input),
     onSuccess: (state) => {
       queryClient.setQueryData(CALENDAR_QUERY_KEY, state);
     },

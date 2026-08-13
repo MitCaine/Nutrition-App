@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from app.ocr.numeric import normalize_mass_unit, parse_decimal_token, parse_fraction_or_decimal
 from app.ocr.nutrient_mapping import match_nutrient_name
 from app.ocr.parser import NUTRITION_LABEL_PARSER_VERSION, parse_nutrition_label
@@ -80,6 +82,36 @@ def test_known_nutrient_preserves_amount_when_unit_is_missing() -> None:
     assert sodium.unit.status == "ambiguous"
     assert sodium.status == "ambiguous"
     assert "nutrient_unit_unknown" in sodium.warning_codes
+
+
+@pytest.mark.parametrize(
+    ("line", "nutrient_id", "amount", "unit", "status", "warning_code"),
+    [
+        ("Sodium 15mg", "sodium", Decimal("15"), "mg", "parsed", None),
+        ("Total Fat 8g", "total_fat", Decimal("8"), "g", "parsed", None),
+        ("Sodium 15g", "sodium", Decimal("15"), None, "ambiguous", "nutrient_unit_unknown"),
+        ("Total Fat 8mg", "total_fat", Decimal("8"), None, "ambiguous", "nutrient_unit_unknown"),
+        ("Sodium 15oz", "sodium", Decimal("15"), None, "ambiguous", "nutrient_unit_unknown"),
+        ("Total Fat 8q", "total_fat", Decimal("8"), "g", "parsed", "ocr_character_correction_applied"),
+    ],
+)
+def test_known_nutrient_unit_review_contract(
+    line: str,
+    nutrient_id: str,
+    amount: Decimal,
+    unit: str | None,
+    status: str,
+    warning_code: str | None,
+) -> None:
+    result = parse_lines("Nutrition Facts", line)
+    nutrient = result.nutrients[0]
+    assert nutrient.nutrient_id == nutrient_id
+    assert nutrient.amount.value == amount
+    assert nutrient.unit.value == unit
+    assert nutrient.unit.status == status
+    assert nutrient.status == status
+    if warning_code:
+        assert warning_code in nutrient.warning_codes
 
 
 def test_duplicate_and_conflict_paths_are_deterministic() -> None:

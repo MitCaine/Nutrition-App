@@ -329,6 +329,10 @@ test.each([
     trace.field_decisions = (trace.field_decisions as Record<string, unknown>[])
       .filter((row) => row.field_key !== "food.name");
   }],
+  ["missing calories review decision", (trace: Record<string, unknown>) => {
+    trace.field_decisions = (trace.field_decisions as Record<string, unknown>[])
+      .filter((row) => row.field_key !== "nutrient.calories");
+  }],
   ["duplicate key", (trace: Record<string, unknown>) => {
     const decisions = trace.field_decisions as Record<string, unknown>[];
     decisions.push({ ...decisions[0] });
@@ -371,11 +375,6 @@ test.each([
   ["omitted confirmed mismatch", (trace: Record<string, unknown>) => {
     (trace.field_decisions as Record<string, unknown>[])[1]!.confirmed_value = "Brand";
   }],
-  ["omitted calories", (trace: Record<string, unknown>) => {
-    const calories = (trace.field_decisions as Record<string, unknown>[]).at(-1)!;
-    calories.decision = "omitted";
-    calories.confirmed_value = null;
-  }],
 ] as const)("rejects intrinsically invalid E2-13 trace: %s", async (_name, mutate) => {
   await expect(parseAndValidateTransferPackage(await traceMutation(mutate)))
     .rejects.toMatchObject({ code: "ocr_trace_invalid" });
@@ -384,6 +383,14 @@ test.each([
 test("accepts a minimal intrinsically valid E2-13 trace", async () => {
   await expect(parseAndValidateTransferPackage(await traceMutation(() => {})))
     .resolves.toBeDefined();
+});
+
+test("accepts an explicitly omitted Calories decision because Food does not require a Calories row", async () => {
+  await expect(parseAndValidateTransferPackage(await traceMutation((trace) => {
+    const calories = (trace.field_decisions as Record<string, unknown>[]).at(-1)!;
+    calories.decision = "omitted";
+    calories.confirmed_value = null;
+  }))).resolves.toBeDefined();
 });
 
 test("accepts log.update replay with a current or later-deleted Daily Log", async () => {

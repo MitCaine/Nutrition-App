@@ -239,7 +239,7 @@ test("local iOS workflow parses and confirms with FastAPI unavailable", async ()
   }
 });
 
-test("explicitly omitted low-confidence potassium is absent while its immutable decision is retained", async () => {
+test("physical missing-unit potassium omission persists canonical unit and OCR uncertainty with deterministic replay", async () => {
   const value = await database();
   try {
     const input = confirmation();
@@ -250,17 +250,18 @@ test("explicitly omitted low-confidence potassium is absent while its immutable 
       confirmed_value: null,
       unit: "mg",
       decision: "omitted",
-      parse_status: "parsed",
+      parse_status: "ambiguous",
       comparison: null,
       confidence: "0.35",
-      source_text: "Potassium 35mg",
+      source_text: "potassium",
       source_observation_ids: ["potassium-low"],
-      warning_codes: [],
-      resolution: null,
+      warning_codes: ["nutrient_unit_unknown"],
+      resolution: "explicitly omitted after review",
     });
 
-    const created = await createLocalOcrRuntime(value.asExpoDatabase(), OWNER)
-      .confirmNutritionLabel(input);
+    const runtime = createLocalOcrRuntime(value.asExpoDatabase(), OWNER);
+    const created = await runtime.confirmNutritionLabel(input);
+    expect(await runtime.confirmNutritionLabel(input)).toEqual(created);
     expect(created.food.nutrients.some(({ nutrient_id }) => nutrient_id === "potassium")).toBe(false);
     const persisted = await value.getFirstAsync<{ count: number }>(
       `SELECT COUNT(*) AS "count" FROM "food_nutrients" WHERE "food_item_id" = ? AND "nutrient_id" = 'potassium'`,
@@ -275,8 +276,47 @@ test("explicitly omitted low-confidence potassium is absent while its immutable 
       field_key: "nutrient.potassium",
       decision: "omitted",
       confirmed_value: null,
-      resolution: null,
+      unit: "mg",
+      parse_status: "ambiguous",
+      source_text: "potassium",
+      warning_codes: ["nutrient_unit_unknown"],
+      resolution: "explicitly omitted after review",
     }));
+    expect(await count(value, "food_items")).toBe(1);
+    expect(await count(value, "ocr_nutrition_confirmation_traces")).toBe(1);
+  } finally {
+    value.close();
+  }
+});
+
+test("OCR confirmation accepts explicitly omitted calories because the Food domain permits no calories row", async () => {
+  const value = await database();
+  try {
+    const input = confirmation();
+    input.food = {
+      ...input.food,
+      nutrients: input.food.nutrients.filter(({ nutrient_id }) => nutrient_id !== "calories"),
+    };
+    input.field_decisions = input.field_decisions.map((decision) =>
+      decision.nutrient_id === "calories"
+        ? {
+            ...decision,
+            suggested_value: null,
+            confirmed_value: null,
+            decision: "omitted" as const,
+            parse_status: "missing" as const,
+            confidence: "0",
+            source_text: "",
+            source_observation_ids: [],
+          }
+        : decision,
+    );
+
+    const created = await createLocalOcrRuntime(value.asExpoDatabase(), OWNER)
+      .confirmNutritionLabel(input);
+
+    expect(created.food.nutrients.some(({ nutrient_id }) => nutrient_id === "calories")).toBe(false);
+    expect(await count(value, "ocr_nutrition_confirmation_traces")).toBe(1);
   } finally {
     value.close();
   }
@@ -328,6 +368,62 @@ test("manually corrected low-confidence potassium uses the existing Food and pro
       source_observation_ids: ["potassium-low"],
       resolution: null,
     }));
+  } finally {
+    value.close();
+  }
+});
+
+test("a manually added canonical nutrient persists with exact provenance and deterministic replay", async () => {
+  const value = await database();
+  try {
+    const input = confirmation({ client_request_id: "00000000-0000-4000-8000-000000000902" });
+    input.food.nutrients.push({
+      nutrient_id: "iron",
+      amount: "4",
+      unit: "mg",
+      basis: "per_serving",
+      data_status: "known",
+    });
+    input.field_decisions.push({
+      field_key: "nutrient.iron",
+      nutrient_id: "iron",
+      suggested_value: null,
+      confirmed_value: "4",
+      unit: "mg",
+      decision: "edited",
+      parse_status: "missing",
+      comparison: null,
+      confidence: "0",
+      source_text: "",
+      source_observation_ids: [],
+      warning_codes: [],
+      resolution: "manually added because OCR did not provide it",
+    });
+    const runtime = createLocalOcrRuntime(value.asExpoDatabase(), OWNER);
+
+    const created = await runtime.confirmNutritionLabel(input);
+    const replay = await runtime.confirmNutritionLabel(input);
+
+    expect(replay).toEqual(created);
+    expect(created.food.nutrients).toContainEqual(expect.objectContaining({
+      nutrient_id: "iron",
+      amount: "4.000000",
+      unit: "mg",
+    }));
+    const trace = await value.getFirstAsync<{ trace_snapshot: string }>(
+      `SELECT "trace_snapshot" FROM "ocr_nutrition_confirmation_traces" WHERE "food_item_id" = ?`,
+      [created.food.id],
+    );
+    expect(JSON.parse(trace!.trace_snapshot).field_decisions).toContainEqual(expect.objectContaining({
+      field_key: "nutrient.iron",
+      suggested_value: null,
+      confirmed_value: "4",
+      decision: "edited",
+      parse_status: "missing",
+      resolution: "manually added because OCR did not provide it",
+    }));
+    expect(await count(value, "food_items")).toBe(1);
+    expect(await count(value, "ocr_nutrition_confirmation_traces")).toBe(1);
   } finally {
     value.close();
   }

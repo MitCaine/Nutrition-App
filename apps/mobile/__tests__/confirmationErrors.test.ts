@@ -17,7 +17,7 @@ test("error classification uses only structured API codes", () => {
 
 test("confirmation validation errors receive a review message", () => {
   const error = new ApiError({ status: 400, body: { detail: { code: "invalid_ocr_confirmation_request" } }, message: "raw" });
-  expect(confirmationErrorMessage(error)).toContain("confirmed values are invalid");
+  expect(confirmationErrorMessage(error)).toBe("The confirmation could not be safely validated. Review the form and try again.");
 });
 
 test("parse request errors direct the user back to scanning", () => {

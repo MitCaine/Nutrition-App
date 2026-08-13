@@ -127,6 +127,143 @@ def test_confirmation_creates_manual_food_and_bounded_trace_atomically(client, d
     assert "image" not in trace.trace_snapshot
 
 
+def test_confirmation_allows_explicit_calories_omission_when_food_has_no_calories_row(
+    client, db_session
+):
+    payload = confirmation_payload()
+    payload["food"]["nutrients"] = [
+        item for item in payload["food"]["nutrients"]
+        if item["nutrient_id"] != "calories"
+    ]
+    calories = next(
+        item for item in payload["field_decisions"]
+        if item["nutrient_id"] == "calories"
+    )
+    calories.update(
+        suggested_value=None,
+        confirmed_value=None,
+        decision="omitted",
+        parse_status="missing",
+        confidence="0",
+        source_text="",
+        source_observation_ids=[],
+        resolution="explicitly omitted after review",
+    )
+
+    response = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)
+
+    assert response.status_code == 201, response.text
+    assert all(
+        item["nutrient_id"] != "calories"
+        for item in response.json()["food"]["nutrients"]
+    )
+    trace = db_session.get(
+        OcrNutritionConfirmationTrace, UUID(response.json()["trace_id"])
+    )
+    assert next(
+        item for item in trace.trace_snapshot["field_decisions"]
+        if item["nutrient_id"] == "calories"
+    )["decision"] == "omitted"
+
+
+def test_confirmation_accepts_physical_missing_unit_potassium_omission_with_canonical_unit(
+    client, db_session
+):
+    payload = confirmation_payload()
+    payload["field_decisions"].append(
+        {
+            "field_key": "nutrient.potassium",
+            "nutrient_id": "potassium",
+            "suggested_value": "35",
+            "confirmed_value": None,
+            "unit": "mg",
+            "decision": "omitted",
+            "parse_status": "ambiguous",
+            "comparison": None,
+            "confidence": "0.35",
+            "source_text": "potassium",
+            "source_observation_ids": ["physical-potassium"],
+            "warning_codes": ["nutrient_unit_unknown"],
+            "resolution": "explicitly omitted after review",
+        }
+    )
+
+    response = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)
+
+    assert response.status_code == 201, response.text
+    assert all(
+        item["nutrient_id"] != "potassium"
+        for item in response.json()["food"]["nutrients"]
+    )
+    trace = db_session.get(
+        OcrNutritionConfirmationTrace, UUID(response.json()["trace_id"])
+    )
+    potassium = next(
+        item for item in trace.trace_snapshot["field_decisions"]
+        if item["nutrient_id"] == "potassium"
+    )
+    assert potassium == {
+        "field_key": "nutrient.potassium",
+        "nutrient_id": "potassium",
+        "suggested_value": "35",
+        "confirmed_value": None,
+        "unit": "mg",
+        "decision": "omitted",
+        "parse_status": "ambiguous",
+        "comparison": None,
+        "confidence": "0.35",
+        "source_text": "potassium",
+        "source_observation_ids": ["physical-potassium"],
+        "warning_codes": ["nutrient_unit_unknown"],
+        "resolution": "explicitly omitted after review",
+    }
+
+
+def test_confirmation_persists_unambiguous_manually_added_nutrient(client, db_session):
+    payload = confirmation_payload()
+    payload["food"]["nutrients"].append(
+        {
+            "nutrient_id": "iron",
+            "amount": "4",
+            "unit": "mg",
+            "basis": "per_serving",
+            "data_status": "known",
+        }
+    )
+    payload["field_decisions"].append(
+        {
+            "field_key": "nutrient.iron",
+            "nutrient_id": "iron",
+            "suggested_value": None,
+            "confirmed_value": "4",
+            "unit": "mg",
+            "decision": "edited",
+            "parse_status": "missing",
+            "comparison": None,
+            "confidence": "0",
+            "source_text": "",
+            "source_observation_ids": [],
+            "warning_codes": [],
+            "resolution": "manually added because OCR did not provide it",
+        }
+    )
+
+    response = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)
+
+    assert response.status_code == 201, response.text
+    assert next(
+        item for item in response.json()["food"]["nutrients"]
+        if item["nutrient_id"] == "iron"
+    )["amount"] == "4.000000"
+    trace = db_session.get(
+        OcrNutritionConfirmationTrace, UUID(response.json()["trace_id"])
+    )
+    assert next(
+        item for item in trace.trace_snapshot["field_decisions"]
+        if item["nutrient_id"] == "iron"
+    )["resolution"] == "manually added because OCR did not provide it"
+
+
 def test_confirmation_idempotent_replay_and_payload_conflict(client, db_session):
     payload = confirmation_payload()
     first = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)

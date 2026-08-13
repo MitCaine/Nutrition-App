@@ -32,7 +32,8 @@ export function useUsdaImport() {
   const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: runtime.usda.importFood,
+    mutationFn: (fdcId: Parameters<typeof runtime.usda.importFood>[0]) =>
+      runtime.usda.importFood(fdcId),
     onSuccess: (food) => {
       applyUsdaImportToFoodCache(queryClient, food);
     },

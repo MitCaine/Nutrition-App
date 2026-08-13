@@ -113,9 +113,8 @@ class PersistedOcrNutritionConfirmationTrace(BaseModel):
         by_key = {item.field_key: item for item in self.field_decisions}
         if not REQUIRED_TRACE_FIELD_KEYS.issubset(by_key):
             raise ValueError("confirmation trace is missing Food or serving decisions")
-        calories = by_key.get("calories") or by_key.get("nutrient.calories")
-        if calories is None or calories.decision == "omitted":
-            raise ValueError("calories must be explicitly reviewed and retained")
+        if "calories" not in by_key and "nutrient.calories" not in by_key:
+            raise ValueError("confirmation trace is missing the calories review decision")
         snapshot = self.model_dump(mode="json")
         if any(
             FORBIDDEN_TRACE_REFERENCE.search(value)
@@ -167,6 +166,8 @@ class OcrNutritionConfirmationRequest(BaseModel):
         by_key = {item.field_key: item for item in self.field_decisions}
         if not REQUIRED_TRACE_FIELD_KEYS.issubset(by_key):
             raise ValueError("confirmation trace is missing Food or serving decisions")
+        if "calories" not in by_key and "nutrient.calories" not in by_key:
+            raise ValueError("confirmation trace is missing the calories review decision")
         default_serving = next(item for item in self.food.serving_definitions if item.is_default)
         expected_values = {
             "food.name": self.food.name.strip(),
@@ -180,9 +181,6 @@ class OcrNutritionConfirmationRequest(BaseModel):
         for key, expected in expected_values.items():
             if by_key[key].confirmed_value != expected:
                 raise ValueError(f"confirmed {key} differs from Food payload")
-        calories = by_key.get("calories") or by_key.get("nutrient.calories")
-        if calories is None or calories.decision == "omitted":
-            raise ValueError("calories must be explicitly reviewed and retained")
         nutrient_decisions = {
             item.nutrient_id: item for item in self.field_decisions if item.nutrient_id
         }
