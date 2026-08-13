@@ -77,6 +77,31 @@ test("remote selection loads only the existing remote registry and never opens S
   expect(openLocalRuntime).not.toHaveBeenCalled();
 });
 
+test("a selected-authority failure stays visible and never probes the other authority", async () => {
+  const openLocalRuntime = jest.fn(async () => {
+    throw new Error("local SQLite bootstrap failed");
+  });
+  const loadRemoteRuntime = jest.fn(async () => {
+    throw new Error("remote adapter bootstrap failed");
+  });
+
+  await expect(bootstrapApplicationRuntime(LOCAL_CONFIG, {
+    openLocalRuntime,
+    loadRemoteRuntime,
+  })).rejects.toThrow("local SQLite bootstrap failed");
+  expect(openLocalRuntime).toHaveBeenCalledTimes(1);
+  expect(loadRemoteRuntime).not.toHaveBeenCalled();
+
+  openLocalRuntime.mockClear();
+  loadRemoteRuntime.mockClear();
+  await expect(bootstrapApplicationRuntime(REMOTE_CONFIG, {
+    openLocalRuntime,
+    loadRemoteRuntime,
+  })).rejects.toThrow("remote adapter bootstrap failed");
+  expect(loadRemoteRuntime).toHaveBeenCalledTimes(1);
+  expect(openLocalRuntime).not.toHaveBeenCalled();
+});
+
 test("a mismatched or incomplete registry fails instead of borrowing another authority", async () => {
   const wrong = Object.assign(runtime("remote"), { close: jest.fn(async () => undefined) });
   await expect(bootstrapApplicationRuntime(LOCAL_CONFIG, {
