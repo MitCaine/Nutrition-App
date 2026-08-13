@@ -1395,6 +1395,21 @@ PostgreSQL remains the remote concurrency and production-hardening authority. Cr
 - Any PostgreSQL correction is separately justified as a bounded compatibility defect.
 - Architecture stop: stop if remote compatibility requires redesigning PostgreSQL behavior or introducing shared live state between authorities.
 
+### Execution decomposition
+
+- [#76 — E2-17A — Qualify remote mobile regression and runtime isolation](https://github.com/MitCaine/Nutrition-App/issues/76)
+  owns criteria 1, 4, 5, 6, and 8.
+- [#77 — E2-17B — Qualify backend and PostgreSQL regression](https://github.com/MitCaine/Nutrition-App/issues/77)
+  owns criteria 2, 3, 10, and 11.
+- [#78 — E2-17C — Audit mixed-authority prohibitions and close E2-17](https://github.com/MitCaine/Nutrition-App/issues/78)
+  owns criteria 7, 9, and 12, the final exclusive coverage map, qualification-only cleanup,
+  architecture-gate decision, and parent closure.
+
+E2-17A and E2-17B are independent and may execute in either order or in parallel. E2-17C
+depends on accepted evidence from both. Parent [#63](https://github.com/MitCaine/Nutrition-App/issues/63)
+remains open until E2-17C proves all twelve criteria; this decomposition makes no E2-18
+qualification claim.
+
 ### Out of scope
 
 - Improving PostgreSQL architecture.
@@ -1439,11 +1454,11 @@ PostgreSQL remains the remote concurrency and production-hardening authority. Cr
 
 ### Estimated implementation size
 
-L
+L, decomposed into two independent qualification stages and one dependent closure stage.
 
 ### Recommended Codex model and effort
 
-`gpt-5.6-sol` — xhigh
+`gpt-5.6-sol` / Codex Luna Max — xhigh for each child.
 
 Reason: this is a broad cross-runtime audit involving PostgreSQL concurrency authority and the Epic’s prohibition on mixed state.
 

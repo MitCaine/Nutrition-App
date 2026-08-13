@@ -9,25 +9,25 @@
     },
     "E2-02": {
       "number": 48,
-      "source_body_sha256": "7c356d239e2d037e79ba2fc790c4b219f4d59df665acd9fb3b1f7d589748c7c8",
+      "source_body_sha256": "2efe3bad2d0da20727a1dcdf644e5fde7f8c8bc6dd0bba7c373127a47a373153",
       "title": "E2-02 \u2014 Freeze exact value semantics and parity contracts",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/48"
     },
     "E2-03": {
       "number": 49,
-      "source_body_sha256": "18757b9738f20d9c6914755ad89e2297f863c8394d5c8307127bd61c84484e9e",
+      "source_body_sha256": "b0c323efe49d305cfb8abc7bb6539053ea8ce9996cd0fb79912d3a502df77ac6",
       "title": "E2-03 \u2014 Create the native SQLite schema and migration engine",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/49"
     },
     "E2-04": {
       "number": 50,
-      "source_body_sha256": "697294ce0684609d10e27fe1a31c14e2292cc9ad612c3bffe58c5588f927c944",
+      "source_body_sha256": "f8c9b036a244a16d77b74d6bd3e875c7b286babdfae85592655392e67cfdff7c",
       "title": "E2-04 \u2014 Implement local identity, calendar, and nutrient foundations",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/50"
     },
     "E2-05": {
       "number": 51,
-      "source_body_sha256": "073161e147c2dfe6797834c528bce159f59bb0759b071af316518ba0f82c5e9a",
+      "source_body_sha256": "d952fd69f7e1cfa7b4199803b15eb4503ddbd5ad52ca923b24d08efdc103915b",
       "title": "E2-05 \u2014 Implement local Foods, servings, and nutrition resolution",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/51"
     },
@@ -51,7 +51,7 @@
     },
     "E2-09": {
       "number": 55,
-      "source_body_sha256": "c5bb1a63a496f3bcd616879601cdfb1e31950007d9000a90a6ac2029a098a69e",
+      "source_body_sha256": "36c9d1a67d27b246326e9f4d14c7fc9898f4fd81cb64871696de5a72190de722",
       "title": "E2-09 \u2014 Implement local Daily Log creation, snapshots, summaries, and Repeat",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/55"
     },
@@ -87,25 +87,25 @@
     },
     "E2-15": {
       "number": 61,
-      "source_body_sha256": "e778998cff011a9f272d290a3f5ca86d4c8af107ff2776ef5d82034567fe951e",
+      "source_body_sha256": "8eb5717d7d95871d579c6bb479601dd4390565de4b07ee983e03c9550ab0f026",
       "title": "E2-15 \u2014 Deliver one-time PostgreSQL-to-SQLite personal data transfer",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/61"
     },
     "E2-16": {
       "number": 62,
-      "source_body_sha256": "796accfc96f27489bd8cab9db0eb3a7133c38edd818833fe96084f4c7ce4add1",
+      "source_body_sha256": "30196e5e2e3657e1d11bdedc5fe91f135bd19bab10f52cc2ae3fd0132699050a",
       "title": "E2-16 \u2014 Qualify native SQLite lifecycle, migrations, termination, and accessibility",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/62"
     },
     "E2-17": {
       "number": 63,
-      "source_body_sha256": "6ba692f17bca7b01f88958f38ef147c271552cf73d5c07839e9cefee5de86545",
+      "source_body_sha256": "fdc9b7505c194c4dcbeeddaf8d6c3b919e8596f0fb7df7450cbc0f2da850fe3d",
       "title": "E2-17 \u2014 Qualify remote-mode regression and absence of mixed authority",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/63"
     },
     "E2-18": {
       "number": 64,
-      "source_body_sha256": "ce75f4910c300f1fd8066c5f896df101039c32ed0a8030621fffe3a27587f3a7",
+      "source_body_sha256": "913611b57f43d87cd69827472c26ce69d38a6c06b991f97e55cb3985f0bea61e",
       "title": "E2-18 \u2014 Run Epic 2 end-to-end release qualification",
       "url": "https://github.com/MitCaine/Nutrition-App/issues/64"
     }
@@ -115,9 +115,9 @@
     "title": "Epic 2 \u2014 Local-First SQLite Runtime",
     "url": "https://github.com/MitCaine/Nutrition-App/issues/46"
   },
-  "epic_checklist_sha256": "b7ca24f4481d1681782353773f647b86be2d9c06c87f3e22a51c3e6ef8917fc6",
+  "epic_checklist_sha256": "00b3c1969b3ba521c52ff6af3f0549b811934bdb32459940e6a3f3c1b1c8cfc0",
   "repository": "MitCaine/Nutrition-App",
   "schema_version": 1,
   "source_file": "/Users/mipoo/Nutrition App/docs/project/version-1.1/epic-2/implementation-backlog.md",
-  "source_sha256": "7aeab4911c811db354d744f9c027819150b5e187c9a92c4adb2accf5c3a47abb"
+  "source_sha256": "8f9b32a9422324759dc46750c5b3b04fa09bddeeadc1963a9b8ce86740e1f6fb"
 }

@@ -13,7 +13,8 @@ parent document for its product scope. Epic 1 — Daily Logging Flow has been se
 PRD for Epic 1 has been started. The technical Epic 2 local-first runtime
 and its bounded E2-16 qualification cleanup are recorded in the [Epic 2 implementation backlog]
 (version-1.1/epic-2/implementation-backlog.md) and [E2-16 closure record]
-(version-1.1/epic-2/e2-16-closure-evidence.md); this does not authorize E2-17 or E2-18.
+(version-1.1/epic-2/e2-16-closure-evidence.md). E2-17 is decomposed into three planned qualification
+stages, but no E2-17 criterion is complete and E2-18 remains unstarted.
 
 New Version 1.1 scope should be recorded deliberately rather than inferred from historical stage
 or release documents. The [Historical Knowledge Index](../historical/README.md) preserves the

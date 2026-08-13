@@ -15,6 +15,10 @@ The completed technical Epic 2 qualification record is retained in the [E2-16 cl
 record](epic-2/e2-16-closure-evidence.md). It does not change this product ordering or claim E2-17
 remote qualification or E2-18 final release qualification.
 
+E2-17 is planned as three bounded stages: independent mobile/runtime-isolation and
+backend/PostgreSQL qualification, followed by a mixed-authority audit and closure gate. Planning
+the stages does not complete any E2-17 criterion or authorize E2-18.
+
 ## Assessment of Version 1.0
 
 ### Strengths
