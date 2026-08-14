@@ -50,7 +50,16 @@ export type LocalFirstStartDependencies = Readonly<{
 
 const defaults: LocalFirstStartDependencies = {
   openDatabase: openNutritionDatabase,
-  bootstrap: bootstrapOpenedLocalRuntimeFoundation,
+  bootstrap: (handle) => {
+    const { getStoredUsdaCredential } = require("../../runtime/local/usdaCredentialStore") as
+        typeof import("../../runtime/local/usdaCredentialStore");
+
+    return bootstrapOpenedLocalRuntimeFoundation(handle, {
+      usda: {
+        credentialProvider: getStoredUsdaCredential,
+      },
+    });
+  },
   importTransfer: importPersonalTransfer,
 };
 

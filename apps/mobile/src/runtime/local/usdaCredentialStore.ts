@@ -15,6 +15,14 @@ function secureStore(): SecureStoreModule {
 export async function getStoredUsdaCredential(): Promise<string | null> {
   const value = await secureStore().getItemAsync(USDA_API_KEY_STORAGE_KEY);
   const normalized = value?.trim() ?? "";
+
+  console.log(
+      "[USDA credential diagnostic]",
+      normalized.length > 0
+          ? `configured, length=${normalized.length}`
+          : "not configured",
+  );
+
   return normalized.length > 0 ? normalized : null;
 }
 

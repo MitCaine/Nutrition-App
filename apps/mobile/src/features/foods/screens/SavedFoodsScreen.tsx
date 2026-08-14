@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { isRuntimeError } from "../../../runtime/RuntimeError";
 
 import { useFavoriteFoods, useRecentFoods, useSavedFoods } from "../hooks/useFoods";
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
@@ -118,7 +119,7 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>USDA Results</Text>
             {usda.isLoading ? <Text style={styles.foodMeta}>Searching USDA foods…</Text> : null}
-            {usda.isError ? <Text style={styles.error}>USDA search is unavailable right now.</Text> : null}
+            {usda.isError ? (<Text style={styles.error}>USDA search failed: {isRuntimeError(usda.error) ? usda.error.code ?? usda.error.kind : "unknown"}</Text>) : null}
             {usda.data?.foods.map((food) => {
               const nutrientPreview = formatUsdaNutrientPreview(food.nutrient_preview);
               return (

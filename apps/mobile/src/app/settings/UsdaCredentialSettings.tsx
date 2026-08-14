@@ -104,7 +104,6 @@ export function UsdaCredentialSettings() {
           onChangeText={setApiKey}
           placeholder={status === "configured" ? "Enter a replacement key" : "Enter your personal API key"}
           placeholderTextColor={theme.colors.placeholder}
-          secureTextEntry
           style={styles.input}
           value={apiKey}
         />
