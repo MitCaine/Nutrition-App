@@ -2,6 +2,7 @@
   "expo": {
     "name": "Nutrition App",
     "slug": "nutrition-app",
+    "icon": "./assets/images/icon.png",
     "scheme": "nutritionapp",
     "platforms": [
       "ios",
