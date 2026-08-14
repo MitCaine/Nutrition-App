@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, ScrollView, Text } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
 
 const mockPreview = {
@@ -22,18 +22,22 @@ const mockPreview = {
   }],
 };
 const mockConfirm = jest.fn();
+const mockEstablish = jest.fn();
 const mockReset = jest.fn();
 const mockPreviewMutate = jest.fn();
 let mockPreviewData: typeof mockPreview | undefined = mockPreview;
+let mockCalendarEstablished = true;
 let mockConfirmSuccess = false;
 let mockConfirmError = false;
 
 jest.mock("../src/features/calendar/hooks/useCalendar", () => ({
   useCalendarState: () => ({
-    data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4 },
+    data: mockCalendarEstablished
+      ? { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4 }
+      : { is_established: false, authoritative_time_zone: null, calendar_revision: 4 },
     isError: false,
   }),
-  useEstablishCalendarTimeZone: () => ({ isPending: false, isError: false, mutate: jest.fn() }),
+  useEstablishCalendarTimeZone: () => ({ isPending: false, isError: false, mutate: mockEstablish }),
   usePreviewCalendarTimeZoneChange: () => ({
     data: mockPreviewData,
     isSuccess: mockPreviewData !== undefined,
@@ -79,6 +83,7 @@ function textContent(node: ReactTestInstance): string {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPreviewData = mockPreview;
+  mockCalendarEstablished = true;
   mockConfirmSuccess = false;
   mockConfirmError = false;
 });
@@ -115,6 +120,43 @@ test("Settings presents reviewed impact and confirms the exact preview revision"
     calendarRevision: 4,
     previewToken: "preview-token",
   });
+  await act(async () => renderer.unmount());
+});
+
+test("Settings separates the provisional time-zone label and value and centers option rows", async () => {
+  mockCalendarEstablished = false;
+  mockPreviewData = undefined;
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(SettingsScreen, {
+      onBack: jest.fn(),
+      onOpenNutritionTargets: jest.fn(),
+      onOpenOcrDiagnostics: jest.fn(),
+    }));
+  });
+
+  const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
+  expect(renderer.root.findAllByType(Text).find(
+    (item) => textContent(item) === "Provisional device time zone" && item.props.accessibilityRole === "header",
+  )).toBeDefined();
+  expect(renderer.root.findAllByType(Text).find((item) => textContent(item) === "America/Los_Angeles")).toBeDefined();
+  expect(text).not.toContain("Daily Log changes stay unavailable until you confirm this proposed zone.");
+  const confirm = renderer.root.findByProps({ accessibilityLabel: "Confirm America/Los_Angeles as the Daily Log time zone" });
+  await act(async () => confirm.props.onPress());
+  expect(mockEstablish).toHaveBeenCalledWith("America/Los_Angeles");
+
+  const resolveStyle = (style: unknown) => StyleSheet.flatten(
+    typeof style === "function" ? style({ pressed: false }) : style,
+  );
+  for (const accessibilityLabel of [
+    "System appearance",
+    "Open nutrition targets",
+    "Open Apple Vision OCR diagnostics",
+  ]) {
+    const option = renderer.root.findByProps({ accessibilityLabel });
+    expect(resolveStyle(option.props.style)).toMatchObject({ alignItems: "center", flexDirection: "row" });
+    expect(resolveStyle(option.props.style).flexWrap).toBeUndefined();
+  }
   await act(async () => renderer.unmount());
 });
 

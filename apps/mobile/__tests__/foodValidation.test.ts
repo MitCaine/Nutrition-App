@@ -46,6 +46,24 @@ test("manual food validation distinguishes zero from unknown", () => {
   ).toBe(false);
 });
 
+test.each([
+  ["18.125", true],
+  ["1.2345675", true],
+  ["99999999.9999989", true],
+  ["99999999.999999", true],
+  ["1e100", false],
+  ["100000000.000000", false],
+  ["99999999.9999995", false],
+  ["999999999999999999", false],
+] as const)("manual nutrient amount %s follows the exact NUMERIC(14,6) contract", (amount, expected) => {
+  const result = foodMutationSchema.safeParse({
+    ...validFood,
+    nutrients: [{ ...validFood.nutrients[0], amount }],
+  });
+
+  expect(result.success).toBe(expected);
+});
+
 test("manual food validation requires one default serving", () => {
   expect(
     foodMutationSchema.safeParse({

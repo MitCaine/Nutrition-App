@@ -27,6 +27,7 @@ test("selecting another tab navigates while selecting the active tab is a no-op"
   expect(tabSelectionDestination("daily-log", "recipes")).toBe("recipes");
   expect(tabSelectionDestination("recipes", "foods")).toBe("foods");
   expect(tabSelectionDestination("foods", "foods")).toBeNull();
+  expect(tabSelectionDestination("daily-log", "daily-log", true)).toBe("daily-log");
 });
 
 test("horizontal swipes follow tab order and stop at boundaries", () => {

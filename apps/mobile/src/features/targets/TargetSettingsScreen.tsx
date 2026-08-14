@@ -48,11 +48,9 @@ const ACTIVITY = [
   },
 ] as const;
 
-const CONTEXTS = [
-  "general_adult",
-  "pregnant",
-  "lactating",
-  "specialized_medical",
+const CONDITION_OPTIONS = [
+  { value: "pregnant", label: "Pregnant" },
+  { value: "lactating", label: "Lactating" },
 ] as const;
 
 const PERSONAL_TARGETS = [
@@ -66,11 +64,6 @@ const authorityLabel = (authority: string) =>
   authority === "daily_value"
     ? "FDA Daily Value"
     : authority.replaceAll("_", " ");
-
-const contextLabel = (context: (typeof CONTEXTS)[number]) =>
-  context === "general_adult"
-    ? "General adult"
-    : context.replaceAll("_", " ");
 
 export function TargetSettingsScreen({
   onBack,
@@ -238,176 +231,194 @@ export function TargetSettingsScreen({
               weight-loss or weight-gain adjustment is applied.
             </Text>
 
-            <TextInput
-              editable={!submitting}
-              accessibilityLabel="Birth date"
-              accessibilityState={{ disabled: submitting }}
-              value={draft.birthDate}
-              onChangeText={(birthDate) =>
-                setDraft((current) => ({ ...current, birthDate }))
-              }
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={theme.colors.placeholder}
-              style={styles.input}
-            />
+            <View style={styles.profileRow}>
+              <View style={[styles.profileField, styles.profileFieldWide]}>
+                <Text style={styles.fieldLabel}>Birth date</Text>
+                <TextInput
+                  editable={!submitting}
+                  accessibilityLabel="Birth date"
+                  accessibilityState={{ disabled: submitting }}
+                  value={draft.birthDate}
+                  onChangeText={(birthDate) =>
+                    setDraft((current) => ({ ...current, birthDate }))
+                  }
+                  placeholder="MM-DD-YYYY"
+                  placeholderTextColor={theme.colors.placeholder}
+                  style={[styles.input, styles.profileInput]}
+                />
+              </View>
 
-            <TextInput
-              editable={!submitting}
-              accessibilityLabel="Height in centimeters"
-              accessibilityState={{ disabled: submitting }}
-              value={draft.heightCm}
-              onChangeText={(heightCm) =>
-                setDraft((current) => ({ ...current, heightCm }))
-              }
-              keyboardType="decimal-pad"
-              placeholder="Height (cm)"
-              placeholderTextColor={theme.colors.placeholder}
-              style={styles.input}
-            />
+              <View style={styles.profileField}>
+                <Text style={styles.fieldLabel}>Height (in)</Text>
+                <TextInput
+                  editable={!submitting}
+                  accessibilityLabel="Height in inches"
+                  accessibilityState={{ disabled: submitting }}
+                  value={draft.heightIn}
+                  onChangeText={(heightIn) =>
+                    setDraft((current) => ({ ...current, heightIn }))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="in"
+                  placeholderTextColor={theme.colors.placeholder}
+                  style={[styles.input, styles.profileInput]}
+                />
+              </View>
 
-            <TextInput
-              editable={!submitting}
-              accessibilityLabel="Weight in kilograms"
-              accessibilityState={{ disabled: submitting }}
-              value={draft.weightKg}
-              onChangeText={(weightKg) =>
-                setDraft((current) => ({ ...current, weightKg }))
-              }
-              keyboardType="decimal-pad"
-              placeholder="Weight (kg)"
-              placeholderTextColor={theme.colors.placeholder}
-              style={styles.input}
-            />
+              <View style={styles.profileField}>
+                <Text style={styles.fieldLabel}>Weight (lb)</Text>
+                <TextInput
+                  editable={!submitting}
+                  accessibilityLabel="Weight in pounds"
+                  accessibilityState={{ disabled: submitting }}
+                  value={draft.weightLb}
+                  onChangeText={(weightLb) =>
+                    setDraft((current) => ({ ...current, weightLb }))
+                  }
+                  keyboardType="decimal-pad"
+                  placeholder="lb"
+                  placeholderTextColor={theme.colors.placeholder}
+                  style={[styles.input, styles.profileInput]}
+                />
+              </View>
+            </View>
 
             <View accessibilityRole="radiogroup" style={styles.choiceGroup}>
               <Text style={styles.label}>Sex used by estimation equation</Text>
 
-              {(["male", "female"] as const).map((value) => {
-                const selected = draft.sexForEquation === value;
+              <View style={styles.choiceRow}>
+                {(["male", "female"] as const).map((value) => {
+                  const selected = draft.sexForEquation === value;
 
-                return (
-                  <Pressable
-                    key={value}
-                    disabled={submitting}
-                    accessibilityRole="radio"
-                    accessibilityLabel={`Equation sex ${value}`}
-                    accessibilityState={{
-                      checked: selected,
-                      disabled: submitting,
-                    }}
-                    onPress={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        sexForEquation: value,
-                      }))
-                    }
-                    style={({ pressed }) => [
-                      styles.choice,
-                      selected && styles.choiceSelected,
-                      pressed && styles.choicePressed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.text,
-                        selected && styles.choiceTextSelected,
+                  return (
+                    <Pressable
+                      key={value}
+                      disabled={submitting}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`Equation sex ${value}`}
+                      accessibilityState={{
+                        checked: selected,
+                        disabled: submitting,
+                      }}
+                      onPress={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          sexForEquation: value,
+                          energyEstimationContext: value === "male"
+                            ? "general_adult"
+                            : current.energyEstimationContext,
+                        }))
+                      }
+                      style={({ pressed }) => [
+                        styles.choice,
+                        styles.choiceEqual,
+                        selected && styles.choiceSelected,
+                        pressed && styles.choicePressed,
                       ]}
                     >
-                      {value === "female" ? "Female" : "Male"}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          styles.text,
+                          selected && styles.choiceTextSelected,
+                        ]}
+                      >
+                        {value === "female" ? "Female" : "Male"}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
             <View accessibilityRole="radiogroup" style={styles.choiceGroup}>
               <Text style={styles.label}>Activity level</Text>
 
-              <Text style={styles.notice}>
-                Activity categories are estimates. The multiplier adjusts the
-                resting estimate; actual energy needs may differ.
-              </Text>
+              <View style={styles.choiceGrid}>
+                {ACTIVITY.map((option) => {
+                  const selected = draft.activityLevel === option.value;
 
-              {ACTIVITY.map((option) => {
-                const selected = draft.activityLevel === option.value;
-
-                return (
-                  <Pressable
-                    key={option.value}
-                    disabled={submitting}
-                    accessibilityRole="radio"
-                    accessibilityLabel={`Activity ${option.label}, ${option.description} Resting estimate multiplier ${option.multiplier}`}
-                    accessibilityState={{
-                      checked: selected,
-                      disabled: submitting,
-                    }}
-                    onPress={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        activityLevel: option.value,
-                      }))
-                    }
-                    style={({ pressed }) => [
-                      styles.choice,
-                      selected && styles.choiceSelected,
-                      pressed && styles.choicePressed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.text,
-                        selected && styles.choiceTextSelected,
+                  return (
+                    <Pressable
+                      key={option.value}
+                      disabled={submitting}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`Activity ${option.label}`}
+                      accessibilityState={{
+                        checked: selected,
+                        disabled: submitting,
+                      }}
+                      onPress={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          activityLevel: option.value,
+                        }))
+                      }
+                      style={({ pressed }) => [
+                        styles.choice,
+                        styles.gridChoice,
+                        selected && styles.choiceSelected,
+                        pressed && styles.choicePressed,
                       ]}
                     >
-                      {option.label} · {option.multiplier}
-                    </Text>
-
-                    <Text style={styles.notice}>{option.description}</Text>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          styles.text,
+                          selected && styles.choiceTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
-            <View accessibilityRole="radiogroup" style={styles.choiceGroup}>
-              <Text style={styles.label}>Estimation context</Text>
+            {draft.sexForEquation === "female" ? (
+              <View accessibilityRole="radiogroup" style={styles.choiceGroup}>
+                <Text style={styles.label}>Optional conditions</Text>
 
-              {CONTEXTS.map((value) => {
-                const selected = draft.energyEstimationContext === value;
+                <View style={styles.choiceGrid}>
+                  {CONDITION_OPTIONS.map((option) => {
+                    const selected = draft.energyEstimationContext === option.value;
 
-                return (
-                  <Pressable
-                    key={value}
-                    disabled={submitting}
-                    accessibilityRole="radio"
-                    accessibilityLabel={`Estimation context ${contextLabel(value)}`}
-                    accessibilityState={{
-                      checked: selected,
-                      disabled: submitting,
-                    }}
-                    onPress={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        energyEstimationContext: value,
-                      }))
-                    }
-                    style={({ pressed }) => [
-                      styles.choice,
-                      selected && styles.choiceSelected,
-                      pressed && styles.choicePressed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.text,
-                        selected && styles.choiceTextSelected,
-                      ]}
-                    >
-                      {contextLabel(value)}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                    return (
+                      <Pressable
+                        key={option.value}
+                        disabled={submitting}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`${option.label} condition`}
+                        accessibilityState={{
+                          checked: selected,
+                          disabled: submitting,
+                        }}
+                        onPress={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            energyEstimationContext: selected ? "general_adult" : option.value,
+                          }))
+                        }
+                        style={({ pressed }) => [
+                          styles.choice,
+                          styles.gridChoice,
+                          selected && styles.choiceSelected,
+                          pressed && styles.choicePressed,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.text,
+                            selected && styles.choiceTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             <Text accessibilityLiveRegion="polite" style={styles.result}>
               {estimate?.availability === "available"
@@ -437,9 +448,11 @@ export function TargetSettingsScreen({
                 (item) => item.nutrientId === nutrientId,
               );
 
+              const hasManualOverride = Boolean(draft[key]);
+
               return (
-                <View key={key}>
-                  <View style={styles.targetRow}>
+                <View key={key} style={styles.targetField}>
+                  <View style={styles.targetInputContainer}>
                     <TextInput
                       editable={!submitting}
                       accessibilityLabel={`${label} personal target`}
@@ -454,20 +467,22 @@ export function TargetSettingsScreen({
                       keyboardType="decimal-pad"
                       placeholder={`${label} (${unit}/day)`}
                       placeholderTextColor={theme.colors.placeholder}
-                      style={[styles.input, styles.flex]}
+                      style={[styles.input, styles.targetInput]}
                     />
 
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Reset ${label} personal target`}
-                      disabled={submitting || !draft[key]}
-                      accessibilityState={{
-                        disabled: submitting || !draft[key],
-                      }}
-                      onPress={() => reset(nutrientId)}
-                    >
-                      <Text style={styles.link}>Reset</Text>
-                    </Pressable>
+                    {hasManualOverride ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Reset ${label} target`}
+                        accessibilityHint="Clears the manual target override"
+                        disabled={submitting}
+                        accessibilityState={{ disabled: submitting }}
+                        onPress={() => reset(nutrientId)}
+                        style={styles.resetAction}
+                      >
+                        <Text style={styles.link}>Reset</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
 
                   <Text
@@ -486,11 +501,7 @@ export function TargetSettingsScreen({
               );
             })}
 
-            <Text style={styles.notice}>
-              Micronutrient comparisons use FDA Daily Values (
-              {result?.dailyValueCatalogVersion ?? "loading"}), not personal
-              estimates.
-            </Text>
+            <Text style={styles.notice}>Micronutrient comparisons use FDA Daily Values.</Text>
 
             {error ? (
               <Text
@@ -542,14 +553,28 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontWeight: "700",
     },
     choice: {
+      alignItems: "center",
       backgroundColor: theme.colors.surface,
       borderColor: theme.colors.border,
       borderRadius: 6,
       borderWidth: 1,
+      justifyContent: "center",
       minHeight: 48,
       padding: 12,
     },
+    choiceEqual: {
+      flex: 1,
+    },
     choiceGroup: {
+      gap: 8,
+    },
+    choiceRow: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    choiceGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
       gap: 8,
     },
     choicePressed: {
@@ -566,7 +591,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     content: {
       gap: 10,
       padding: 16,
-      paddingBottom: 80,
+      paddingBottom: 16,
     },
     disabled: {
       opacity: 0.6,
@@ -574,8 +599,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     error: {
       color: theme.colors.errorText,
     },
-    flex: {
-      flex: 1,
+    fieldLabel: {
+      color: theme.colors.text,
+      fontWeight: "700",
+    },
+    gridChoice: {
+      flexBasis: 140,
+      flexGrow: 1,
+      minWidth: 140,
     },
     header: {
       gap: 8,
@@ -606,6 +637,33 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       color: theme.colors.text,
       fontWeight: "700",
     },
+    profileField: {
+      flexBasis: 70,
+      flexGrow: 1,
+      gap: 4,
+      minWidth: 70,
+    },
+    profileFieldWide: {
+      flexBasis: 130,
+      flexGrow: 2,
+      minWidth: 130,
+    },
+    profileInput: {
+      minWidth: 0,
+      width: "100%",
+    },
+    profileRow: {
+      alignItems: "flex-start",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    resetAction: {
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 44,
+      paddingRight: 4,
+    },
     screen: {
       backgroundColor: theme.colors.background,
       flex: 1,
@@ -616,10 +674,24 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontWeight: "800",
       marginTop: 8,
     },
-    targetRow: {
+    targetField: {
+      gap: 6,
+      marginBottom: 4,
+    },
+    targetInput: {
+      backgroundColor: "transparent",
+      borderWidth: 0,
+      flex: 1,
+      minWidth: 0,
+    },
+    targetInputContainer: {
       alignItems: "center",
+      backgroundColor: theme.colors.input,
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      borderWidth: 1,
       flexDirection: "row",
-      gap: 8,
+      minHeight: 44,
     },
     text: {
       color: theme.colors.text,

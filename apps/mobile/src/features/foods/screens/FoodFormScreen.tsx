@@ -134,7 +134,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
-  content: { padding: 16, paddingBottom: 120 },
+  content: { padding: 16, paddingBottom: 16 },
   error: { color: theme.colors.errorText, marginTop: 12 }, flex: { backgroundColor: theme.colors.background, flex: 1 },
   header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },

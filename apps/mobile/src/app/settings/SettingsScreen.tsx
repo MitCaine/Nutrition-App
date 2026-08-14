@@ -17,7 +17,6 @@ import {
 } from "../../shared/accessibility/focus";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
-import { calendarStateLabel } from "../../features/calendar/calendarModel";
 import {
   useCalendarState,
   useConfirmCalendarTimeZoneChange,
@@ -53,6 +52,8 @@ export function SettingsScreen({
   const reviewRequestedRef = useRef(false);
   const proposedTimeZone = deviceTimeZone();
   const isEstablished = calendar.data?.is_established === true;
+  const timeZoneLabel = isEstablished ? "Authoritative time zone" : "Provisional device time zone";
+  const timeZoneValue = isEstablished ? calendar.data?.authoritative_time_zone ?? proposedTimeZone : proposedTimeZone;
   const preview = previewChange.data;
   const reviewingChange = isEstablished && preview !== undefined && !confirmChange.isError;
 
@@ -148,12 +149,10 @@ export function SettingsScreen({
       </View>
       <Text accessibilityRole="header" style={styles.sectionTitle}>Daily Log calendar</Text>
       <View style={styles.calendarCard}>
-        <Text ref={calendarStatusRef} accessibilityRole="header" style={styles.calendarText}>{calendarStateLabel(calendar.data, proposedTimeZone)}</Text>
+        <Text ref={calendarStatusRef} accessibilityRole="header" style={styles.calendarText}>{timeZoneLabel}</Text>
+        <Text accessibilityLabel={`${timeZoneLabel}: ${timeZoneValue}`} style={styles.calendarValue}>{timeZoneValue}</Text>
         {!isEstablished ? (
           <>
-            <Text style={styles.calendarHint}>
-              Daily Log changes stay unavailable until you confirm this proposed zone.
-            </Text>
             <AccessiblePressable
               accessibilityLabel={`Confirm ${proposedTimeZone} as the Daily Log time zone`}
               busy={establish.isPending}
@@ -283,11 +282,12 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     back: { alignItems: "center", alignSelf: "flex-start", borderRadius: 8, flexDirection: "row", flexWrap: "wrap", paddingRight: 10 },
     backText: { color: theme.colors.accent, fontSize: 16 },
     header: { gap: 8 },
-    option: { alignItems: "center", backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between", minHeight: 52, paddingHorizontal: 14, paddingVertical: 8 },
-    optionText: { color: theme.colors.text, flexShrink: 1, fontSize: 17 },
+    option: { alignItems: "center", backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 8, justifyContent: "space-between", minHeight: 52, paddingHorizontal: 14, paddingVertical: 8 },
+    optionText: { color: theme.colors.text, flex: 1, fontSize: 17 },
     options: { borderColor: theme.colors.border, borderRadius: 10, borderWidth: 1, overflow: "hidden" },
     calendarCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 10, borderWidth: 1, gap: 10, padding: 14 },
     calendarText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    calendarValue: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
     calendarHint: { color: theme.colors.secondaryText, fontSize: 14, lineHeight: 20 },
     reviewCard: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
     reviewTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },

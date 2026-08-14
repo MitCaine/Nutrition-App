@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 import * as Crypto from "expo-crypto";
 
@@ -29,13 +29,25 @@ jest.mock("../src/app/theme/AppTheme", () => {
   const actual = jest.requireActual("../src/app/theme/AppTheme");
   return { ...actual, useAppTheme: () => ({ ...actual.LIGHT_THEME, preference: "system", effectiveScheme: "light", setPreference: jest.fn() }) };
 });
+jest.mock("../src/shared/accessibility/focus", () => {
+  const actual = jest.requireActual("../src/shared/accessibility/focus") as typeof import("../src/shared/accessibility/focus");
+  const mockFocusAccessibilityElement = jest.fn(() => jest.fn());
+  return {
+    ...actual,
+    focusAccessibilityElement: mockFocusAccessibilityElement,
+    useAccessibilityScreenFocus: (options: Parameters<typeof actual.useAccessibilityScreenFocus>[0]) =>
+      actual.useAccessibilityScreenFocus({ ...options, requestFocus: mockFocusAccessibilityElement }),
+  };
+});
 
 import type { NutritionConfirmationDraft } from "../src/features/ocr/api/types";
 import { NutritionConfirmationScreen } from "../src/features/ocr/screens/NutritionConfirmationScreen";
 import { ApiError } from "../src/shared/api/client";
+import * as focusModule from "../src/shared/accessibility/focus";
 import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
 const testRuntime = createNutritionTestRuntime();
+const mockFocusAccessibilityElement = focusModule.focusAccessibilityElement as jest.Mock;
 
 function draft(): NutritionConfirmationDraft {
   return {
@@ -93,7 +105,9 @@ function confirmationScreenElement(initialDraft: NutritionConfirmationDraft, onC
 async function render(initialDraft = draft(), onCreated = jest.fn()) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(confirmationScreenElement(initialDraft, onCreated));
+    renderer = TestRenderer.create(confirmationScreenElement(initialDraft, onCreated), {
+      createNodeMock: (element) => ({ ...(element.props as Record<string, unknown>), focus: jest.fn() }),
+    });
   });
   return { renderer, onCreated };
 }
@@ -106,6 +120,22 @@ function input(root: TestRenderer.ReactTestInstance, label: string) {
   return root.findAllByType(TextInput).find((item) => item.props.accessibilityLabel === label)!;
 }
 
+function directedReview(root: TestRenderer.ReactTestInstance) {
+  return root.findByProps({ testID: "nutrition-directed-review" });
+}
+
+function directedAction(root: TestRenderer.ReactTestInstance, label: string) {
+  return directedReview(root).findAllByType(Pressable).find((item) => item.props.accessibilityLabel === label)!;
+}
+
+function directedInput(root: TestRenderer.ReactTestInstance, label: string) {
+  return directedReview(root).findAllByType(TextInput).find((item) => item.props.accessibilityLabel === label)!;
+}
+
+function directedAmount(root: TestRenderer.ReactTestInstance) {
+  return directedReview(root).findByProps({ testID: "nutrition-directed-review-amount" });
+}
+
 function validationMessages(root: TestRenderer.ReactTestInstance): string {
   return root.findAllByType(Text)
     .filter((item) => item.props.accessibilityRole === "alert")
@@ -114,10 +144,42 @@ function validationMessages(root: TestRenderer.ReactTestInstance): string {
     .join(" ");
 }
 
+function textValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(textValue).join("");
+  return "";
+}
+
 function visibleText(root: TestRenderer.ReactTestInstance): string {
   return root.findAllByType(Text)
-    .flatMap((item) => typeof item.props.children === "string" ? [item.props.children] : [])
+    .map((item) => textValue(item.props.children))
     .join(" ");
+}
+
+function directedReviewVisible(root: TestRenderer.ReactTestInstance): boolean {
+  return root.findByType(Modal).props.visible;
+}
+
+function focusTarget(index: number) {
+  const target = mockFocusAccessibilityElement.mock.calls[index]?.[0] as {
+    accessibilityLabel?: unknown;
+    accessibilityRole?: unknown;
+    children?: unknown;
+    props?: {
+      accessibilityLabel?: unknown;
+      accessibilityRole?: unknown;
+      children?: unknown;
+      testID?: unknown;
+    };
+    testID?: unknown;
+  } | undefined;
+  const props = target?.props ?? target;
+  return {
+    accessibilityLabel: props?.accessibilityLabel,
+    accessibilityRole: props?.accessibilityRole,
+    children: props?.children,
+    testID: props?.testID,
+  };
 }
 
 beforeEach(() => {
@@ -213,7 +275,7 @@ test("validation failure does not bind an intent or issue a request", async () =
   await act(async () => renderer.unmount());
 });
 
-test("low-confidence potassium validation names and highlights the unresolved nutrient", async () => {
+test("unresolved potassium blocks final submission behind the directed review CTA", async () => {
   const initial = draft();
   initial.nutrients = [
     ...initial.nutrients,
@@ -221,28 +283,34 @@ test("low-confidence potassium validation names and highlights the unresolved nu
   ];
   const { renderer } = await render(initial);
 
-  await act(async () => action(renderer.root, "Create Food").props.onPress());
-
   expect(mockConfirm).not.toHaveBeenCalled();
-  expect(validationMessages(renderer.root)).toContain("Potassium requires review");
-  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(true);
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(action(renderer.root, "Create Food")).toBeUndefined();
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
   await act(async () => renderer.unmount());
 });
 
 test.each([
-  ["accepting", (renderer: TestRenderer.ReactTestRenderer) => action(renderer.root, "Use Potassium value").props.onPress()],
-  ["editing", (renderer: TestRenderer.ReactTestRenderer) => input(renderer.root, "Potassium amount").props.onChangeText("40")],
-  ["omitting", (renderer: TestRenderer.ReactTestRenderer) => action(renderer.root, "Omit Potassium").props.onPress()],
+  ["accepting", (renderer: TestRenderer.ReactTestRenderer) => directedAction(renderer.root, "Use Potassium value").props.onPress()],
+  ["editing", (renderer: TestRenderer.ReactTestRenderer) => {
+    directedInput(renderer.root, "Potassium amount").props.onChangeText("40");
+    directedAction(renderer.root, "Use Potassium value").props.onPress();
+  }],
+  ["omitting", (renderer: TestRenderer.ReactTestRenderer) => directedAction(renderer.root, "Omit Potassium").props.onPress()],
 ] as const)("low-confidence Potassium stops saying review required after %s", async (_case, resolve) => {
   const initial = draft();
   initial.nutrients = [unresolvedNutrient("potassium", "Potassium", "35", 0.35)];
   const { renderer } = await render(initial);
 
-  expect(visibleText(renderer.root)).toContain("Review required · 35% OCR confidence");
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(directedInput(renderer.root, "Potassium amount").props.accessibilityHint).toContain("Review required");
+  expect(visibleText(renderer.root)).not.toContain("35% OCR confidence");
   await act(async () => resolve(renderer));
 
-  expect(visibleText(renderer.root)).not.toContain("Review required");
-  expect(visibleText(renderer.root)).toContain("Low OCR confidence · 35%");
+  expect(action(renderer.root, "Create Food")).toBeDefined();
+  expect(input(renderer.root, "Potassium amount").props.accessibilityHint).not.toContain("Review required");
+  expect(visibleText(renderer.root)).not.toContain("OCR confidence");
   await act(async () => renderer.unmount());
 });
 
@@ -260,7 +328,7 @@ test("physical missing-unit Potassium displays catalog mg and omission submits c
   const { renderer } = await render(initial);
 
   expect(visibleText(renderer.root)).toContain("Potassium mg");
-  await act(async () => action(renderer.root, "Omit Potassium").props.onPress());
+  await act(async () => directedAction(renderer.root, "Omit Potassium").props.onPress());
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   const payload = mockConfirm.mock.calls[0][0];
@@ -292,13 +360,14 @@ test("physical missing-unit Potassium edit retains catalog mg in Food and trace"
   const { renderer } = await render(initial);
 
   expect(visibleText(renderer.root)).toContain("Potassium mg");
-  await act(async () => input(renderer.root, "Potassium amount").props.onChangeText("15"));
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("15.125"));
+  await act(async () => directedAction(renderer.root, "Use Potassium value").props.onPress());
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   const payload = mockConfirm.mock.calls[0][0];
-  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "potassium", amount: "15", unit: "mg" }));
+  expect(payload.food.nutrients).toContainEqual(expect.objectContaining({ nutrient_id: "potassium", amount: "15.125", unit: "mg" }));
   expect(payload.field_decisions).toContainEqual(expect.objectContaining({
-    field_key: "nutrient.potassium", confirmed_value: "15", decision: "edited", unit: "mg",
+    field_key: "nutrient.potassium", confirmed_value: "15.125", decision: "edited", unit: "mg",
   }));
   await act(async () => renderer.unmount());
 });
@@ -317,8 +386,9 @@ test("catalog arrival hydrates a canonical unit without losing an earlier user e
   const { renderer } = await render(initial);
 
   expect(visibleText(renderer.root)).not.toContain("Potassium mg");
-  await act(async () => input(renderer.root, "Potassium amount").props.onChangeText("15"));
-  expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Potassium, review state edited").length).toBeGreaterThan(0);
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("15"));
+  expect(input(renderer.root, "Potassium amount").props.accessibilityLabel).toBe("Potassium amount");
+  await act(async () => directedAction(renderer.root, "Use Potassium value").props.onPress());
   await act(async () => action(renderer.root, "Create Food").props.onPress());
   expect(mockConfirm).not.toHaveBeenCalled();
   expect(validationMessages(renderer.root)).toContain("nutrient catalog is still loading");
@@ -328,7 +398,7 @@ test("catalog arrival hydrates a canonical unit without losing an earlier user e
 
   expect(visibleText(renderer.root)).toContain("Potassium mg");
   expect(input(renderer.root, "Potassium amount").props.value).toBe("15");
-  expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Potassium, review state edited").length).toBeGreaterThan(0);
+  expect(input(renderer.root, "Potassium amount").props.accessibilityLabel).toBe("Potassium amount");
   await act(async () => action(renderer.root, "Create Food").props.onPress());
   expect(mockConfirm.mock.calls[0][0].food.nutrients).toContainEqual(expect.objectContaining({
     nutrient_id: "potassium", amount: "15", unit: "mg",
@@ -368,7 +438,7 @@ test.each([
 test.each([
   ["edited", "5"],
   ["omitted", ""],
-] as const)("resolved less-than ambiguous nutrient in %s state has no actionable warning", async (decision, confirmedValue) => {
+] as const)("resolved less-than ambiguous nutrient in %s state has no non-actionable metadata", async (decision, confirmedValue) => {
   const initial = draft();
   initial.nutrients = [{
     ...unresolvedNutrient("potassium", "Potassium", "1", 0.5),
@@ -382,7 +452,8 @@ test.each([
 
   expect(visibleText(renderer.root)).not.toContain("requires an exact replacement or omission");
   expect(visibleText(renderer.root)).not.toContain("Review required");
-  expect(visibleText(renderer.root)).toContain("OCR value was less than the detected amount");
+  expect(visibleText(renderer.root)).not.toContain("OCR value was less than the detected amount");
+  expect(visibleText(renderer.root)).not.toContain("less-than");
   await act(async () => renderer.unmount());
 });
 
@@ -397,20 +468,22 @@ test("all blocking fields stay marked while resolving the first blocker", async 
   ];
   const { renderer } = await render(initial);
 
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  await act(async () => directedAction(renderer.root, "Omit Potassium").props.onPress());
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Serving grams").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Calories amount").props["aria-invalid"]).toBe(true);
-  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(true);
-  expect(validationMessages(renderer.root)).toEqual(expect.stringMatching(/Food name.*Serving grams.*Calories.*Potassium/s));
+  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
+  expect(validationMessages(renderer.root)).toEqual(expect.stringMatching(/Food name.*Serving grams.*Calories/s));
 
   await act(async () => input(renderer.root, "Food name").props.onChangeText("Resolved name"));
 
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(false);
   expect(input(renderer.root, "Serving grams").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Calories amount").props["aria-invalid"]).toBe(true);
-  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(true);
+  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
   await act(async () => renderer.unmount());
 });
 
@@ -423,22 +496,24 @@ test("multiple unresolved nutrients remain independently resolvable", async () =
   ];
   const { renderer } = await render(initial);
 
-  await act(async () => action(renderer.root, "Create Food").props.onPress());
-  const firstError = validationMessages(renderer.root);
-  expect(firstError).toContain("Potassium");
-  expect(firstError).toContain("Iron");
-  expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(true);
-  expect(input(renderer.root, "Iron amount").props["aria-invalid"]).toBe(true);
+  expect(action(renderer.root, "Review 2 items")).toBeDefined();
+  expect(visibleText(renderer.root)).toContain("Review 2 items");
+  expect(action(renderer.root, "Create Food")).toBeUndefined();
+  expect(directedReviewVisible(renderer.root)).toBe(true);
 
-  await act(async () => action(renderer.root, "Omit Potassium").props.onPress());
-  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  await act(async () => directedAction(renderer.root, "Omit Potassium").props.onPress());
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(visibleText(renderer.root)).toContain("Review 1 item");
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Iron amount").props.accessibilityHint).toContain("Review required");
+
+  await act(async () => directedInput(renderer.root, "Iron amount").props.onChangeText("5"));
+  expect(action(renderer.root, "Create Food")).toBeUndefined();
+  await act(async () => directedAction(renderer.root, "Use Iron value").props.onPress());
+  expect(action(renderer.root, "Create Food")).toBeDefined();
   expect(mockConfirm).not.toHaveBeenCalled();
-  expect(validationMessages(renderer.root)).toContain("Iron requires review");
-  expect(validationMessages(renderer.root)).not.toContain("Potassium");
-  expect(input(renderer.root, "Iron amount").props["aria-invalid"]).toBe(true);
 
   mockConfirm.mockResolvedValue(foodResponse("food-reviewed"));
-  await act(async () => input(renderer.root, "Iron amount").props.onChangeText("5"));
   await act(async () => action(renderer.root, "Create Food").props.onPress());
   expect(mockConfirm).toHaveBeenCalledTimes(1);
   const payload = mockConfirm.mock.calls[0][0];
@@ -495,9 +570,9 @@ test("missing zero-confidence calories remain editable instead of becoming an ir
   const { renderer } = await render(initial);
 
   expect(input(renderer.root, "Calories amount").props.accessibilityState.disabled).toBe(false);
-  await act(async () => action(renderer.root, "Create Food").props.onPress());
-  expect(validationMessages(renderer.root)).toContain("Calories requires review");
-  await act(async () => input(renderer.root, "Calories amount").props.onChangeText("70"));
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  await act(async () => directedInput(renderer.root, "Calories amount").props.onChangeText("70"));
+  await act(async () => directedAction(renderer.root, "Use Calories value").props.onPress());
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   expect(mockConfirm).toHaveBeenCalledTimes(1);
@@ -521,7 +596,7 @@ test("missing zero-confidence calories can be omitted and then restored without 
   mockConfirm.mockResolvedValue(foodResponse("food-restored-calories"));
   const { renderer } = await render(initial);
 
-  await act(async () => action(renderer.root, "Omit Calories").props.onPress());
+  await act(async () => directedAction(renderer.root, "Omit Calories").props.onPress());
   expect(input(renderer.root, "Calories amount").props.accessibilityState.disabled).toBe(false);
   await act(async () => input(renderer.root, "Calories amount").props.onChangeText("70"));
   await act(async () => action(renderer.root, "Create Food").props.onPress());
@@ -549,7 +624,7 @@ test("omitted low- and high-confidence nutrients can be manually restored and re
   mockConfirm.mockResolvedValue(foodResponse("food-restored-nutrients"));
   const { renderer } = await render(initial);
 
-  await act(async () => action(renderer.root, "Omit Potassium").props.onPress());
+  await act(async () => directedAction(renderer.root, "Omit Potassium").props.onPress());
   await act(async () => action(renderer.root, "Omit Iron").props.onPress());
   await act(async () => input(renderer.root, "Potassium amount").props.onChangeText("40"));
   await act(async () => input(renderer.root, "Iron amount").props.onChangeText("5"));
@@ -606,9 +681,9 @@ test.each([
   mockConfirm.mockResolvedValue(foodResponse(`food-${nutrientId}`));
   const { renderer } = await render(initial);
 
-  await act(async () => action(renderer.root, "Create Food").props.onPress());
-  expect(mockConfirm).not.toHaveBeenCalled();
-  await act(async () => input(renderer.root, `${label} amount`).props.onChangeText(amount));
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  await act(async () => directedInput(renderer.root, `${label} amount`).props.onChangeText(amount));
+  await act(async () => directedAction(renderer.root, `Use ${label} value`).props.onPress());
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   expect(mockConfirm).toHaveBeenCalledTimes(1);
@@ -674,12 +749,18 @@ test("all confirmation controls expose specific accessibility labels and review 
   }
   expect(action(renderer.root, "Dismiss unknown nutrient Molybdenum").props.disabled).toBe(true);
   expect(input(renderer.root, "Sodium amount").props.accessibilityState.disabled).toBe(false);
-  expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Calories, review state accepted").length).toBeGreaterThan(0);
-  expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Sodium, review state omitted").length).toBeGreaterThan(0);
+  expect(input(renderer.root, "Calories amount").props.accessibilityLabel).toBe("Calories amount");
+  expect(input(renderer.root, "Sodium amount").props.accessibilityLabel).toBe("Sodium amount");
+  const caloriesInput = input(renderer.root, "Calories amount");
+  expect(caloriesInput.parent?.findAllByType(Text).some((item) => item.props.children === "kcal")).toBe(true);
+  expect(caloriesInput.parent?.findAllByType(Text).some((item) => item.props.children === "Calories")).toBe(false);
+  expect(caloriesInput.parent?.findAllByType(Pressable).some((item) => item.props.accessibilityLabel === "Omit Calories")).toBe(true);
+  expect(visibleText(renderer.root)).not.toMatch(/Review state:|OCR confidence|Low OCR confidence|OCR result was ambiguous/);
+  expect(visibleText(renderer.root)).not.toContain("Calories 120");
+  expect(visibleText(renderer.root)).not.toContain("Sodium 10mg");
   expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, dismissed").length).toBeGreaterThan(0);
   expect(renderer.root.findAllByType(View).some((item) => item.props.accessibilityLabel?.includes("review state"))).toBe(false);
   expect(renderer.root.findAllByType(View).some((item) => item.props.accessibilityLabel?.startsWith("Unknown nutrient"))).toBe(false);
-  expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Calories, review state accepted")?.props.accessible).toBe(true);
   expect(renderer.root.findAllByType(Text).find((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, dismissed")?.props.accessible).toBe(true);
   expect(action(renderer.root, "Use Calories value")).toBeUndefined();
   expect(action(renderer.root, "Omit Sodium")).toBeDefined();
@@ -688,12 +769,224 @@ test("all confirmation controls expose specific accessibility labels and review 
   await act(async () => renderer.unmount());
 });
 
-test("unresolved review state is exposed to assistive technology", async () => {
+test("ordinary screen focus owns initial entry when no directed review is required", async () => {
+  const { renderer } = await render();
+
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(1);
+  expect(focusTarget(0)).toEqual(expect.objectContaining({
+    accessibilityRole: "header",
+    children: "Confirm nutrition",
+  }));
+  expect(mockFocusAccessibilityElement.mock.calls[0][1]).toMatchObject({ focusKeyboardTarget: false });
+  await act(async () => renderer.unmount());
+});
+
+test("unresolved review opens a focused card without exposing internal state", async () => {
   const initial = draft();
   initial.calories = { ...initial.calories, decision: "unresolved" };
   const { renderer } = await render(initial);
-  expect(renderer.root.findAll((item) => item.props.accessibilityLabel === "Calories, review state unresolved").length).toBeGreaterThan(0);
-  expect(action(renderer.root, "Use Calories value")).toBeDefined();
+  expect(directedInput(renderer.root, "Calories amount").props.accessibilityLabel).toBe("Calories amount");
+  expect(directedInput(renderer.root, "Calories amount").props.accessibilityHint).toContain("Review required");
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(visibleText(renderer.root)).toContain("Review 1 item");
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(visibleText(renderer.root)).not.toContain("review state");
+  expect(directedAction(renderer.root, "Use Calories value")).toBeDefined();
+  expect(mockFocusAccessibilityElement).not.toHaveBeenCalled();
+  await act(async () => renderer.root.findByType(Modal).props.onShow());
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(1);
+  expect(focusTarget(0)).toEqual(expect.objectContaining({ accessibilityLabel: "Calories amount" }));
+  expect(mockFocusAccessibilityElement.mock.calls[0][1]).toEqual({ delayMs: 60, focusKeyboardTarget: false });
+  await act(async () => directedAction(renderer.root, "Close nutrition review").props.onPress());
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(2);
+  expect(focusTarget(1).accessibilityLabel).toBe("Review 1 item");
+  expect(focusTarget(1).children).not.toBe("Confirm nutrition");
+  await act(async () => renderer.unmount());
+});
+
+test("directed review keeps incremental edits unresolved until explicit confirmation", async () => {
+  const initial = draft();
+  initial.nutrients = [unresolvedNutrient("potassium", "Potassium", "35", 0.35)];
+  mockConfirm.mockResolvedValue(foodResponse("food-incremental-edit"));
+  const { renderer } = await render(initial);
+
+  await act(async () => renderer.root.findByType(Modal).props.onShow());
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("4"));
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Potassium amount").props.value).toBe("4");
+  expect(directedInput(renderer.root, "Potassium amount").props.accessibilityHint).toContain("Review required");
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(directedAction(renderer.root, "Use Potassium value")).toBeDefined();
+
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("40"));
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Potassium amount").props.value).toBe("40");
+  expect(directedInput(renderer.root, "Potassium amount").props.accessibilityHint).toContain("Review required");
+  expect(action(renderer.root, "Create Food")).toBeUndefined();
+  expect(mockConfirm).not.toHaveBeenCalled();
+
+  await act(async () => directedAction(renderer.root, "Use Potassium value").props.onPress());
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  expect(action(renderer.root, "Create Food")).toBeDefined();
+  expect(focusTarget(1).accessibilityLabel).toBe("Create Food");
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(mockConfirm.mock.calls[0][0].field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.potassium",
+    confirmed_value: "40",
+    decision: "edited",
+    resolution: "entered exact value after review",
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test("directed review explicitly accepting the original value preserves accepted semantics", async () => {
+  const initial = draft();
+  initial.nutrients = [unresolvedNutrient("potassium", "Potassium", "35", 0.35)];
+  mockConfirm.mockResolvedValue(foodResponse("food-accepted-original"));
+  const { renderer } = await render(initial);
+
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("3"));
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("35"));
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Potassium amount").props.value).toBe("35");
+  await act(async () => directedAction(renderer.root, "Use Potassium value").props.onPress());
+  expect(action(renderer.root, "Create Food")).toBeDefined();
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(mockConfirm.mock.calls[0][0].field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.potassium",
+    confirmed_value: "35",
+    decision: "accepted",
+    resolution: "accepted OCR suggestion after review",
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test("a manually added nutrient remains reviewable until its entered value is explicitly confirmed", async () => {
+  mockConfirm.mockResolvedValue(foodResponse("food-manual-directed"));
+  const { renderer } = await render();
+
+  await act(async () => action(renderer.root, "Add missing nutrient").props.onPress());
+  await act(async () => action(renderer.root, "Add Iron").props.onPress());
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  await act(async () => action(renderer.root, "Review 1 item").props.onPress());
+  expect(directedAction(renderer.root, "Use Iron value")).toBeUndefined();
+
+  await act(async () => directedInput(renderer.root, "Iron amount").props.onChangeText("4"));
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Iron amount").props.value).toBe("4");
+  expect(directedInput(renderer.root, "Iron amount").props.accessibilityHint).toContain("Review required");
+  expect(directedAction(renderer.root, "Use Iron value")).toBeDefined();
+  await act(async () => directedInput(renderer.root, "Iron amount").props.onChangeText("40"));
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Iron amount").props.value).toBe("40");
+  expect(directedInput(renderer.root, "Iron amount").props.accessibilityHint).toContain("Review required");
+
+  await act(async () => directedAction(renderer.root, "Use Iron value").props.onPress());
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(mockConfirm.mock.calls[0][0].field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.iron",
+    suggested_value: null,
+    confirmed_value: "40",
+    decision: "edited",
+    resolution: "manually added because OCR did not provide it",
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test("explicit directed value confirmation advances focus to the next item", async () => {
+  const initial = draft();
+  initial.nutrients = [
+    unresolvedNutrient("potassium", "Potassium", "35", 0.35),
+    unresolvedNutrient("iron", "Iron", "4", 0.36),
+  ];
+  const { renderer } = await render(initial);
+
+  await act(async () => renderer.root.findByType(Modal).props.onShow());
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("3"));
+  expect(directedInput(renderer.root, "Potassium amount").props.value).toBe("3");
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(1);
+  await act(async () => directedInput(renderer.root, "Potassium amount").props.onChangeText("35"));
+  expect(directedInput(renderer.root, "Potassium amount").props.value).toBe("35");
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(1);
+
+  await act(async () => directedAction(renderer.root, "Use Potassium value").props.onPress());
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(directedInput(renderer.root, "Iron amount").props.value).toBe("4");
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(2);
+  expect(focusTarget(1)).toEqual(expect.objectContaining({
+    accessibilityLabel: "Iron amount",
+    testID: "nutrition-directed-review-amount",
+  }));
+  expect(mockFocusAccessibilityElement.mock.calls[1][1]).toEqual({ delayMs: 60, focusKeyboardTarget: false });
+  const transitionCancel = mockFocusAccessibilityElement.mock.results[1]?.value as jest.Mock;
+
+  await act(async () => directedInput(renderer.root, "Iron amount").props.onChangeText("5"));
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(action(renderer.root, "Create Food")).toBeUndefined();
+  await act(async () => directedAction(renderer.root, "Use Iron value").props.onPress());
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  expect(transitionCancel).toHaveBeenCalledTimes(1);
+  expect(focusTarget(2).accessibilityLabel).toBe("Create Food");
+  await act(async () => renderer.unmount());
+});
+
+test("directed review uses modal controls, transitions focus, and preserves payload semantics", async () => {
+  const initial = draft();
+  initial.nutrients = [
+    unresolvedNutrient("potassium", "Potassium", "35", 0.35),
+    unresolvedNutrient("iron", "Iron", "4", 0.36),
+  ];
+  mockConfirm.mockResolvedValue(foodResponse("food-directed-review"));
+  const { renderer } = await render(initial);
+
+  expect(action(renderer.root, "Review 2 items")).toBeDefined();
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(visibleText(renderer.root)).toContain("2 items remaining");
+  expect(visibleText(renderer.root)).not.toContain("Review item 1 of");
+  const background = renderer.root.findAllByType(View).find((item) => item.props.accessibilityElementsHidden === true);
+  expect(background?.props.importantForAccessibility).toBe("no-hide-descendants");
+  await act(async () => renderer.root.findByType(Modal).props.onShow());
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(1);
+  expect(mockFocusAccessibilityElement.mock.calls[0][1]).toEqual({ delayMs: 60, focusKeyboardTarget: false });
+
+  await act(async () => directedAction(renderer.root, "Omit Potassium").props.onPress());
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(visibleText(renderer.root)).toContain("1 item remaining");
+  expect(directedAmount(renderer.root).props.value).toBe("4");
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(2);
+  expect(focusTarget(1)).toEqual(expect.objectContaining({
+    accessibilityLabel: "Iron amount",
+    testID: "nutrition-directed-review-amount",
+  }));
+  expect(mockFocusAccessibilityElement.mock.calls[1][1]).toEqual({ delayMs: 60, focusKeyboardTarget: false });
+  const transitionCancel = mockFocusAccessibilityElement.mock.results[1]?.value as jest.Mock;
+
+  await act(async () => directedInput(renderer.root, "Iron amount").props.onChangeText("5"));
+  expect(action(renderer.root, "Create Food")).toBeUndefined();
+  await act(async () => directedAction(renderer.root, "Use Iron value").props.onPress());
+  expect(action(renderer.root, "Create Food")).toBeDefined();
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  expect(transitionCancel).toHaveBeenCalledTimes(1);
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(3);
+  expect(focusTarget(2).accessibilityLabel).toBe("Create Food");
+  expect(mockFocusAccessibilityElement.mock.calls[2][1]).toEqual({ delayMs: 60, focusKeyboardTarget: false });
+
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+  expect(mockConfirm).toHaveBeenCalledTimes(1);
+  expect(mockConfirm.mock.calls[0][0].field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.potassium", decision: "omitted", confirmed_value: null,
+    source_text: "Potassium 35mg", source_observation_ids: ["obs-potassium"],
+  }));
+  expect(mockConfirm.mock.calls[0][0].field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.iron", decision: "edited", confirmed_value: "5",
+  }));
   await act(async () => renderer.unmount());
 });
 
@@ -702,6 +995,16 @@ test("an unresolved unknown row exposes state without swallowing its dismissal a
   initial.unknownNutrients = initial.unknownNutrients.map((item) => ({ ...item, dismissed: false }));
   const { renderer } = await render(initial);
   expect(renderer.root.findAllByType(Text).some((item) => item.props.accessibilityLabel === "Unknown nutrient Molybdenum, unresolved")).toBe(true);
-  expect(action(renderer.root, "Dismiss unknown nutrient Molybdenum").props.disabled).toBe(false);
+  expect(directedAction(renderer.root, "Dismiss unknown nutrient Molybdenum").props.disabled).toBe(false);
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  await act(async () => renderer.root.findByType(Modal).props.onShow());
+  expect(mockFocusAccessibilityElement).toHaveBeenCalledTimes(1);
+  expect(focusTarget(0)).toEqual(expect.objectContaining({
+    accessibilityRole: "header",
+    children: "Molybdenum",
+  }));
+  expect(mockFocusAccessibilityElement.mock.calls[0][1]).toEqual({ delayMs: 60, focusKeyboardTarget: false });
+  await act(async () => directedAction(renderer.root, "Dismiss unknown nutrient Molybdenum").props.onPress());
+  expect(action(renderer.root, "Create Food")).toBeDefined();
   await act(async () => renderer.unmount());
 });

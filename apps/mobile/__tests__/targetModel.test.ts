@@ -1,5 +1,13 @@
 import { EMPTY_TARGET_DRAFT, targetDraft, targetDraftError, targetInput, targetUnavailableMessage } from "../src/features/targets/targetModel";
 import type { TargetConfiguration } from "../src/features/targets/api/types";
+import {
+  birthDateToCanonical,
+  birthDateToDisplay,
+  centimetersToInches,
+  inchesToCentimeters,
+  kilogramsToPounds,
+  poundsToKilograms,
+} from "../src/features/targets/targetDisplay";
 
 function configuration(): TargetConfiguration {
   return {
@@ -14,10 +22,33 @@ test("target settings map profiles and manual overrides without conflating FDA D
   const draft = targetDraft(configuration());
   expect(draft.protein).toBe("90");
   expect(draft.calories).toBe("");
+  expect(draft.birthDate).toBe("01-01-1990");
+  expect(draft.heightIn).toBe("64.96063");
+  expect(draft.weightLb).toBe("132.277357");
   expect(targetInput(draft)).toMatchObject({
-    profile: { height_cm: "165.000", height_unit: "cm", weight_unit: "kg" },
+    profile: {
+      birth_date: "1990-01-01",
+      height_cm: "165.000",
+      height_unit: "cm",
+      weight_kg: "60.000",
+      weight_unit: "kg",
+    },
     manual_overrides: { protein: "90", calories: null },
   });
+});
+
+test("target profile conversion helpers preserve canonical values through representative UI round trips", () => {
+  expect(centimetersToInches("170.180")).toBe("67");
+  expect(inchesToCentimeters("67")).toBe("170.180");
+  expect(kilogramsToPounds("60.000")).toBe("132.277357");
+  expect(poundsToKilograms("132.277357")).toBe("60.000");
+  expect(birthDateToDisplay("1988-11-18")).toBe("11-18-1988");
+  expect(birthDateToCanonical("11-18-1988")).toBe("1988-11-18");
+});
+
+test("target input preserves female opt-in context and normalizes hidden male conditions", () => {
+  expect(targetInput({ ...EMPTY_TARGET_DRAFT, sexForEquation: "female", energyEstimationContext: "pregnant" }).profile.energy_estimation_context).toBe("pregnant");
+  expect(targetInput({ ...EMPTY_TARGET_DRAFT, sexForEquation: "male", energyEstimationContext: "pregnant" }).profile.energy_estimation_context).toBe("general_adult");
 });
 
 test.each(["1e3", "Infinity", "1,000", " 10", "1.2.3", "-1"])('target validation rejects malformed decimal %s', (value) => {
@@ -31,7 +62,7 @@ test("incomplete profiles remain valid optional configuration with an unavailabl
 });
 
 test("mobile target validation enforces bounded values and real dates", () => {
-  expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, heightCm: "99" })).toContain("between 100 and 250");
+  expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, heightIn: "38" })).toContain("between 39.37 and 98.43 inches");
   expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, calories: "10001" })).toContain("between 500 and 10000");
-  expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, birthDate: "2026-02-30" })).toContain("valid YYYY-MM-DD");
+  expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, birthDate: "02-30-2026" })).toContain("valid MM-DD-YYYY");
 });

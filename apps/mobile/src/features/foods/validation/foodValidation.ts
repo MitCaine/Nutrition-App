@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 import { foodFocusKey, nutrientFocusKey, servingFocusKey, type ServingFocusField } from "../../../shared/forms/focusTargets";
+import { isZeroDecimalString } from "../../../shared/forms/decimalString";
 import { validationIssue, type ValidationIssue } from "../../../shared/forms/validation";
+import { nutrientAmountValidationMessage } from "../../../shared/nutrition/nutrientAmount";
 
 export type FoodValidationTarget =
   | "food.name"
@@ -41,8 +43,15 @@ export const foodNutrientSchema = z
     if ((nutrient.data_status === "known" || nutrient.data_status === "estimated") && !nutrient.amount) {
       ctx.addIssue({ code: "custom", message: "Known and estimated nutrients need an amount" });
     }
-    if (nutrient.data_status === "known" && Number(nutrient.amount) === 0) {
-      ctx.addIssue({ code: "custom", message: "Use zero status for explicit zero values" });
+    if (nutrient.data_status === "known" || nutrient.data_status === "estimated") {
+      if (nutrient.amount) {
+        const exactError = nutrientAmountValidationMessage(nutrient.amount);
+        if (exactError) {
+          ctx.addIssue({ code: "custom", message: exactError });
+        } else if (nutrient.data_status === "known" && isZeroDecimalString(nutrient.amount)) {
+          ctx.addIssue({ code: "custom", message: "Use zero status for explicit zero values" });
+        }
+      }
     }
     if (nutrient.data_status === "unknown" && nutrient.amount) {
       ctx.addIssue({ code: "custom", message: "Unknown nutrients must not include an amount" });

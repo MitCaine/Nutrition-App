@@ -5,6 +5,7 @@ import type {
   ParsedField, ParsedNutritionLabel, ReviewDecision,
 } from "../api/types";
 import { isPositiveDecimalString, isUnsignedDecimalString, isZeroDecimalString } from "../../../shared/forms/decimalString";
+import { nutrientAmountValidationMessage } from "../../../shared/nutrition/nutrientAmount";
 
 const NUTRIENT_LABELS: Record<string, string> = {
   calories: "Calories", total_fat: "Total Fat", saturated_fat: "Saturated Fat",
@@ -232,6 +233,11 @@ export function confirmationValidationIssues(draft: NutritionConfirmationDraft):
     if (field.decision === "omitted") continue;
     if (!isUnsignedDecimalString(field.confirmedValue)) {
       issues.push({ message: `${field.label} must be a nonnegative number.`, fieldKey: field.fieldKey });
+      continue;
+    }
+    const exactAmountError = nutrientAmountValidationMessage(field.confirmedValue);
+    if (exactAmountError) {
+      issues.push({ message: `${field.label}: ${exactAmountError}`, fieldKey: field.fieldKey });
       continue;
     }
     if (!field.unit) {

@@ -371,6 +371,31 @@ test("accepted invalid values block while unresolved values cannot enter a paylo
   expect(confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")).toBeNull();
 });
 
+test.each([
+  ["18.125", true],
+  ["1.2345675", true],
+  ["99999999.9999989", true],
+  ["99999999.999999", true],
+  ["100000000.000000", false],
+  ["99999999.9999995", false],
+  ["999999999999999999", false],
+] as const)("OCR-confirmed nutrient amount %s follows the exact storage contract", (amount, valid) => {
+  const base = draftFromParsedLabel(parsed(), "camera");
+  const sodium = base.nutrients.find((item) => item.nutrientId === "sodium")!;
+  const candidate = {
+    ...base,
+    name: "Exact value fixture",
+    nutrients: [updateReview(sodium, amount, "accepted")],
+    unknownNutrients: [],
+  };
+
+  const issue = confirmationValidationIssue(candidate);
+  expect(issue === null).toBe(valid);
+  if (!valid) {
+    expect(issue?.message).toContain("Sodium: Nutrient amount exceeds the supported range.");
+  }
+});
+
 test("a high-confidence nutrient remains editable and explicitly omittable", () => {
   const draft = draftFromParsedLabel(parsed(), "camera");
   const sodium = draft.nutrients.find((item) => item.nutrientId === "sodium")!;

@@ -41,8 +41,15 @@ type CalendarState = {
 
 jest.mock("../src/shared/components/RootScreenHeader", () => {
   const mockReact = require("react");
-  const { Text: MockText } = require("react-native");
-  return { RootScreenHeader: ({ title }: { title: string }) => mockReact.createElement(MockText, null, title) };
+  const { Pressable: MockPressable, Text: MockText } = require("react-native");
+  return {
+    RootScreenHeader: ({ title, onOpenSettings }: { title: string; onOpenSettings?: () => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockText, null, title),
+      onOpenSettings ? mockReact.createElement(MockPressable, { accessibilityLabel: "Open settings", onPress: onOpenSettings }, mockReact.createElement(MockText, null, "Open settings")) : null,
+    ),
+  };
 });
 
 jest.mock("../src/shared/accessibility/announcements", () => ({
@@ -66,7 +73,21 @@ jest.mock("../src/app/navigation/BottomNavigation", () => {
 // These routes are outside the E1-08 contract. Keeping them inert makes this
 // test exercise the real navigator and logging routes without booting their
 // unrelated data dependencies.
-jest.mock("../src/features/foods/screens/FoodDetailsScreen", () => ({ FoodDetailsScreen: () => null }));
+jest.mock("../src/features/foods/screens/FoodDetailsScreen", () => {
+  const mockReact = require("react");
+  const { Pressable: MockPressable, Text: MockText } = require("react-native");
+  return {
+    FoodDetailsScreen: ({ foodId, onLog }: { foodId: string; onLog: (initialAmount: unknown) => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockText, null, `Food Detail ${foodId}`),
+      mockReact.createElement(MockPressable, {
+        accessibilityLabel: "Log food from detail",
+        onPress: () => onLog({ amountDefinitionId: "serving-1", amountQuantity: "2.5", amountUnit: "serving" }),
+      }, mockReact.createElement(MockText, null, "Log food from detail")),
+    ),
+  };
+});
 jest.mock("../src/features/foods/screens/FoodFormScreen", () => {
   const mockReact = require("react");
   const { Pressable: MockPressable, Text: MockText } = require("react-native");
@@ -80,7 +101,19 @@ jest.mock("../src/features/foods/screens/FoodFormScreen", () => {
     ),
   };
 });
-jest.mock("../src/features/foods/screens/SavedFoodsScreen", () => ({ SavedFoodsScreen: () => null }));
+jest.mock("../src/features/foods/screens/SavedFoodsScreen", () => {
+  const mockReact = require("react");
+  const { Pressable: MockPressable, Text: MockText } = require("react-native");
+  return {
+    SavedFoodsScreen: ({ onOpenFood, onOpenSettings }: { onOpenFood: (foodId: string) => void; onOpenSettings: () => void }) => mockReact.createElement(
+      mockReact.Fragment,
+      null,
+      mockReact.createElement(MockText, null, "Saved Foods root"),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Open Oatmeal detail", onPress: () => onOpenFood("food-oatmeal") }, mockReact.createElement(MockText, null, "Open Oatmeal detail")),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Open Food settings", onPress: onOpenSettings }, mockReact.createElement(MockText, null, "Open Food settings")),
+    ),
+  };
+});
 jest.mock("../src/features/recipes/screens/IngredientPickerScreen", () => ({ IngredientPickerScreen: () => null }));
 jest.mock("../src/features/recipes/screens/RecipeDetailScreen", () => ({ RecipeDetailScreen: () => null }));
 jest.mock("../src/features/recipes/screens/RecipeFormScreen", () => ({ RecipeFormScreen: () => null }));
@@ -113,7 +146,11 @@ jest.mock("../src/features/ocr/screens/NutritionConfirmationScreen", () => {
     ),
   };
 });
-jest.mock("../src/app/settings/SettingsScreen", () => ({ SettingsScreen: () => null }));
+jest.mock("../src/app/settings/SettingsScreen", () => {
+  const mockReact = require("react");
+  const { Text: MockText } = require("react-native");
+  return { SettingsScreen: () => mockReact.createElement(MockText, null, "Settings screen") };
+});
 jest.mock("../src/features/targets/TargetSettingsScreen", () => ({ TargetSettingsScreen: () => null }));
 jest.mock("@react-native-community/datetimepicker", () => ({ __esModule: true, default: () => null }));
 
@@ -384,6 +421,31 @@ afterEach(async () => {
   });
   activeRenderers.clear();
   jest.useRealTimers();
+});
+
+test("Food Detail Log enters shared Log Food with the selected amount when calendar mutations are unavailable", async () => {
+  const renderer = await renderNavigator();
+  mockCalendar.data = { is_established: false, authoritative_time_zone: null, calendar_revision: 4, today: "2026-07-14" };
+  await act(async () => updateNavigator(renderer));
+  await act(async () => labeled(renderer.root, "Open Oatmeal detail").props.onPress());
+  expect(screenText(renderer.root)).toContain("Food Detail food-oatmeal");
+  await act(async () => labeled(renderer.root, "Log food from detail").props.onPress());
+  expect(screenText(renderer.root)).toContain("Log Food");
+  expect(screenText(renderer.root)).not.toContain("Settings screen");
+  expect(renderer.root.findByProps({ accessibilityLabel: "Amount quantity" }).props.value).toBe("2.5");
+  await act(async () => renderer.unmount());
+});
+
+test("selecting the active Daily Log tab closes a Settings overlay opened from Daily Log", async () => {
+  const renderer = await renderNavigator();
+  await act(async () => labeled(renderer.root, "Daily Log tab").props.onPress());
+  expect(screenText(renderer.root)).toContain("Daily Log");
+  await act(async () => labeled(renderer.root, "Open settings").props.onPress());
+  expect(screenText(renderer.root)).toContain("Settings screen");
+  await act(async () => labeled(renderer.root, "Daily Log tab").props.onPress());
+  expect(screenText(renderer.root)).toContain("Daily Log");
+  expect(screenText(renderer.root)).not.toContain("Settings screen");
+  await act(async () => renderer.unmount());
 });
 
 test("named and general Add Food flows use real navigator transitions and return the originating date", async () => {

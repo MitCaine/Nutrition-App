@@ -124,6 +124,7 @@ export function AppNavigator() {
   const recipeSearchScroll = useRef({ query: "", offset: 0 });
   const dailyLogScroll = useRef({ date, offset: 0 });
   const activeTab = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
+  const navigationOverlayOpen = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics";
   const swipeEnabled = isMainTabRoot(route.name);
 
   const openAddLogFood = useCallback((foodId: string, flow: AddFoodFlowState) => {
@@ -182,7 +183,7 @@ export function AppNavigator() {
   }, []);
 
   const selectMainTab = (tab: MainTab) => {
-    const destination = tabSelectionDestination(activeTab, tab);
+    const destination = tabSelectionDestination(activeTab, tab, navigationOverlayOpen);
     if (!destination) {
       return;
     }
@@ -279,10 +280,6 @@ export function AppNavigator() {
         }}
         onEdit={() => setRoute({ name: "edit-food", foodId: route.foodId })}
         onLog={(initialAmount) => {
-          if (!calendarMutationsAvailable) {
-            setRoute({ name: "settings", origin: "foods" });
-            return;
-          }
           setRoute(logFoodRoute(route.foodId, initialAmount));
         }}
       />
@@ -370,10 +367,21 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "log-food") {
-    content = calendarMutationsAvailable ? <LogFoodScreen foodId={route.foodId} date={date} calendarRevision={calendar.data?.calendar_revision} initialAmount={route.initialAmount} onReviewRecovery={() => setRoute({ name: "daily-log" })} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(result) => {
-      if (result) setDailyLogMutationOutcome({ key: `create:${result.id}:${result.updated_at ?? result.logged_date}`, message: `Logged ${result.food_name_snapshot ?? "Daily Log entry"} for ${result.logged_date}.`, focusEntryId: result.id });
-      setRoute({ name: "daily-log" });
-    }} /> : <SettingsScreen onBack={() => setRoute({ name: "daily-log" })} onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })} />;
+    content = (
+      <LogFoodScreen
+        foodId={route.foodId}
+        date={date}
+        calendarRevision={calendar.data?.calendar_revision}
+        initialAmount={route.initialAmount}
+        mutationEnabled={calendarMutationsAvailable}
+        onReviewRecovery={() => setRoute({ name: "daily-log" })}
+        onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })}
+        onSaved={(result) => {
+          if (result) setDailyLogMutationOutcome({ key: `create:${result.id}:${result.updated_at ?? result.logged_date}`, message: `Logged ${result.food_name_snapshot ?? "Daily Log entry"} for ${result.logged_date}.`, focusEntryId: result.id });
+          setRoute({ name: "daily-log" });
+        }}
+      />
+    );
   } else if (route.name === "edit-log") {
     content = calendarMutationsEnabled(calendar.data) ? (
       <EditLogRoute

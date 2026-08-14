@@ -1,47 +1,55 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { createClientRequestId } from "../../logging/utils/clientRequestId";
 import { KeyboardSafeScrollView, type KeyboardSafeScrollViewHandle } from "../../../shared/forms/KeyboardSafeScrollView";
 import { LabeledField } from "../../../shared/forms/LabeledField";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
-import { focusAccessibilityElement, useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
+import { focusAccessibilityElement, useAccessibilityScreenFocus, type CancelAccessibilityFocus } from "../../../shared/accessibility/focus";
 import { useNutrients } from "../../foods/hooks/useFoods";
 import type { ConfirmationField, NutritionConfirmationDraft } from "../api/types";
 import { addManualNutrient, confirmationPayload, confirmationValidationIssues, hydrateCanonicalNutrientUnits, omitReview, updateReview } from "../confirmation/confirmationModel";
 import { bindConfirmationIntent, type ConfirmationIntent } from "../confirmation/confirmationIntent";
 import { confirmationErrorCode, confirmationErrorMessage } from "../confirmation/confirmationErrors";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
+import { NutrientAmountRow } from "../../../shared/nutrition/NutrientAmountRow";
 
 const FINGERPRINT_PLACEHOLDER_REQUEST_ID = "00000000-0000-4000-8000-000000000000";
 
-function showsUseValueAction(field: ConfirmationField): boolean {
-  return Boolean(field.suggestedValue)
+function showsUseValueAction(field: ConfirmationField, allowEnteredValue = false): boolean {
+  const hasSuggestedValue = Boolean(field.suggestedValue);
+  const hasEnteredValueWithoutSuggestion = allowEnteredValue
+    && field.suggestedValue === null
+    && Boolean(field.confirmedValue);
+  return (hasSuggestedValue || hasEnteredValueWithoutSuggestion)
     && (field.decision === "unresolved" || field.decision === "edited" || field.decision === "omitted");
 }
 
-function reviewNotice(field: ConfirmationField): { actionable: boolean; message: string } | null {
-  if (field.decision === "unresolved") {
-    return {
-      actionable: true,
-      message: field.comparison === "less_than"
-        ? "Less-than OCR value requires an exact replacement or omission"
-        : `Review required · ${Math.round(field.confidence * 100)}% OCR confidence`,
-    };
-  }
-  if (field.comparison === "less_than") {
-    return { actionable: false, message: "OCR value was less than the detected amount" };
-  }
-  if (field.confidence < 0.8) {
-    return { actionable: false, message: `Low OCR confidence · ${Math.round(field.confidence * 100)}%` };
-  }
-  if (field.parseStatus === "ambiguous") {
-    return { actionable: false, message: "OCR result was ambiguous" };
-  }
-  return null;
+type DirectedReviewItem =
+  | { kind: "field"; field: ConfirmationField }
+  | { kind: "unknown"; index: number; label: string };
+
+function requiredReviewItems(draft: NutritionConfirmationDraft): DirectedReviewItem[] {
+  const fields = [draft.calories, ...draft.nutrients]
+    .filter((field) => field.decision === "unresolved")
+    .map((field): DirectedReviewItem => ({ kind: "field", field }));
+  const unknownNutrients = draft.unknownNutrients.flatMap((item, index) => item.dismissed
+    ? []
+    : [{ kind: "unknown" as const, index, label: item.originalName }]);
+  return [...fields, ...unknownNutrients];
+}
+
+function directedReviewItemKey(item: DirectedReviewItem | null): string | null {
+  if (!item) return null;
+  return item.kind === "field" ? item.field.fieldKey : `unknown.${item.index}`;
+}
+
+function directedReviewActionCopy(count: number): string {
+  return `Review ${count} item${count === 1 ? "" : "s"}`;
 }
 
 function nutrientCatalogSubmissionError({
@@ -79,6 +87,7 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [showMissingNutrients, setShowMissingNutrients] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [directedReviewVisible, setDirectedReviewVisible] = useState(() => requiredReviewItems(initialDraft).length > 0);
   const submittingRef = useRef(false);
   const mountedRef = useRef(true);
   const cancelClaimedRef = useRef(false);
@@ -87,6 +96,13 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
   const scrollRef = useRef<KeyboardSafeScrollViewHandle>(null);
   const headingRef = useRef<Text>(null);
   const errorRef = useRef<Text>(null);
+  const reviewTriggerRef = useRef<View>(null);
+  const reviewFieldRef = useRef<TextInput>(null);
+  const reviewHeadingRef = useRef<Text>(null);
+  const reviewModalPresentedRef = useRef(false);
+  const reviewFocusedItemKeyRef = useRef<string | null>(null);
+  const reviewTransitionFocusCancelRef = useRef<CancelAccessibilityFocus | null>(null);
+  const initialReviewRequiresModalFocusRef = useRef(requiredReviewItems(initialDraft).length > 0);
   const validationFocusKeyRef = useRef<string | null>(null);
   const announce = useAccessibilityAnnouncement();
   const hydratedDraft = useMemo(
@@ -94,6 +110,9 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
     [draft, nutrientQuery.data],
   );
   const fields = [hydratedDraft.calories, ...hydratedDraft.nutrients];
+  const reviewItems = useMemo(() => requiredReviewItems(hydratedDraft), [hydratedDraft]);
+  const currentReviewItem = reviewItems[0] ?? null;
+  const reviewPresented = directedReviewVisible && reviewItems.length > 0;
   const validationIssues = validationAttempted ? confirmationValidationIssues(hydratedDraft) : [];
   const issuesByField = new Map(validationIssues
     .filter((issue): issue is typeof issue & { fieldKey: string } => issue.fieldKey !== null)
@@ -108,11 +127,45 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
   const availableNutrients = (nutrientQuery.data ?? []).filter(({ id }) => !presentNutrientIds.has(id));
   const availableDefinitionIds = new Set((nutrientQuery.data ?? []).map(({ id }) => id));
   const canonicalUnitsAvailable = fields.every(({ nutrientId }) => nutrientId === null || availableDefinitionIds.has(nutrientId));
-  useAccessibilityScreenFocus({ active: true, routeKey: "nutrition-confirmation", targetRef: headingRef });
+  useAccessibilityScreenFocus({
+    active: !initialReviewRequiresModalFocusRef.current,
+    routeKey: "nutrition-confirmation",
+    targetRef: headingRef,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (reviewItems.length === 0 && directedReviewVisible) setDirectedReviewVisible(false);
+  }, [directedReviewVisible, reviewItems.length]);
+
+  useEffect(() => {
+    if (!reviewPresented) {
+      reviewModalPresentedRef.current = false;
+      reviewFocusedItemKeyRef.current = null;
+      reviewTransitionFocusCancelRef.current?.();
+      reviewTransitionFocusCancelRef.current = null;
+      return;
+    }
+    if (!reviewModalPresentedRef.current) return;
+    const nextItemKey = directedReviewItemKey(currentReviewItem);
+    if (nextItemKey === reviewFocusedItemKeyRef.current) return;
+    reviewTransitionFocusCancelRef.current?.();
+    reviewTransitionFocusCancelRef.current = null;
+    reviewFocusedItemKeyRef.current = nextItemKey;
+    const target = currentReviewItem?.kind === "field" ? reviewFieldRef.current : reviewHeadingRef.current;
+    reviewTransitionFocusCancelRef.current = focusAccessibilityElement(target, {
+      delayMs: 60,
+      focusKeyboardTarget: false,
+    });
+  }, [currentReviewItem, reviewPresented]);
+
+  useEffect(() => () => {
+    reviewTransitionFocusCancelRef.current?.();
+    reviewTransitionFocusCancelRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -131,6 +184,22 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
     ? { ...current, calories: next }
     : { ...current, nutrients: current.nutrients.map((field) => field.fieldKey === next.fieldKey ? next : field) });
 
+  const updateDirectedReviewValue = (field: ConfirmationField, value: string) => replaceField({
+    ...field,
+    confirmedValue: value,
+    decision: "unresolved",
+  });
+
+  const dismissUnknown = (index: number) => setDraft((current) => ({
+    ...current,
+    unknownNutrients: current.unknownNutrients.map((entry, itemIndex) => itemIndex === index ? { ...entry, dismissed: true } : entry),
+  }));
+
+  const renderFieldActions = (field: ConfirmationField, allowEnteredValue = false) => <>
+    {showsUseValueAction(field, allowEnteredValue) ? <AccessiblePressable accessibilityLabel={`Use ${field.label} value`} disabled={submitting} onPress={() => { const value = field.decision === "omitted" ? field.suggestedValue ?? "" : field.confirmedValue; replaceField(updateReview(field, value, value === (field.suggestedValue ?? "") ? "accepted" : "edited")); }}><Text style={styles.link}>Use value</Text></AccessiblePressable> : null}
+    <AccessiblePressable accessibilityLabel={`Omit ${field.label}`} disabled={submitting || field.decision === "omitted"} onPress={() => replaceField(omitReview(field))}><Text style={styles.link}>Omit</Text></AccessiblePressable>
+  </>;
+
   const cancel = () => {
     if (submittingRef.current || cancelClaimedRef.current) return;
     cancelClaimedRef.current = true;
@@ -139,6 +208,10 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
 
   const submit = async () => {
     if (submittingRef.current || cancelClaimedRef.current || successClaimedRef.current) return;
+    if (reviewItems.length > 0) {
+      setDirectedReviewVisible(true);
+      return;
+    }
     const catalogError = nutrientCatalogSubmissionError({
       isError: nutrientQuery.isError,
       isLoading: nutrientQuery.isLoading,
@@ -182,8 +255,15 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
     }
   };
 
+  const handleReviewShow = () => {
+    if (!reviewPresented) return;
+    reviewModalPresentedRef.current = true;
+    reviewFocusedItemKeyRef.current = directedReviewItemKey(currentReviewItem);
+  };
+
   return <View style={styles.screen}>
-    <KeyboardSafeScrollView ref={scrollRef} contentContainerStyle={styles.content}>{(focusProps) => <>
+    <View accessibilityElementsHidden={reviewPresented} importantForAccessibility={reviewPresented ? "no-hide-descendants" : "auto"} style={styles.screenContent}>
+      <KeyboardSafeScrollView ref={scrollRef} contentContainerStyle={styles.content}>{(focusProps) => <>
       <View style={styles.header}><Text ref={headingRef} accessibilityRole="header" style={styles.title}>Confirm nutrition</Text><AccessiblePressable accessibilityLabel="Cancel confirmation" disabled={submitting} onPress={cancel}><Text style={styles.link}>Cancel</Text></AccessiblePressable></View>
       <Text accessibilityLiveRegion="polite" style={styles.notice}>Review flagged values. The image is not uploaded or saved.</Text>
       <Text accessibilityRole="header" style={styles.section}>Food</Text>
@@ -195,29 +275,82 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
       <View style={styles.row}><LabeledField containerStyle={styles.flex} {...focusProps("ocr.servingQuantity")} label="Serving quantity" validationTarget="ocr.servingQuantity" required disabled={submitting} invalid={issuesByField.has("serving.quantity")} error={issuesByField.get("serving.quantity")?.message ?? null} value={draft.servingQuantity} onChangeText={(servingQuantity) => setDraft({ ...draft, servingQuantity })} keyboardType="decimal-pad" placeholder="Quantity" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/><LabeledField containerStyle={styles.flex} {...focusProps("ocr.servingUnit")} label="Serving unit" validationTarget="ocr.servingUnit" disabled={submitting} value={draft.servingUnit} onChangeText={(servingUnit) => setDraft({ ...draft, servingUnit })} placeholder="Unit" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/></View>
       <LabeledField {...focusProps("ocr.gramWeight")} label="Serving grams" validationTarget="ocr.gramWeight" required disabled={submitting} invalid={issuesByField.has("serving.gram_weight")} error={issuesByField.get("serving.gram_weight")?.message ?? null} value={draft.gramWeight} onChangeText={(gramWeight) => setDraft({ ...draft, gramWeight })} keyboardType="decimal-pad" placeholder="Equivalent grams" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/>
       <Text accessibilityRole="header" style={styles.section}>Nutrition per label serving</Text>
-      {fields.map((field) => { const notice = reviewNotice(field); return <View key={field.fieldKey} style={[styles.card, field.decision === "unresolved" && styles.flagged, field.decision === "omitted" && styles.omitted]}>
-        <View style={styles.row}><Text accessible accessibilityLabel={`${field.label}, review state ${field.decision}`} style={styles.fieldLabel}>{field.label}</Text><Text style={styles.meta}>{field.unit ?? ""}</Text></View>
-        {notice ? <Text style={notice.actionable ? styles.warning : styles.meta}>{notice.message}</Text> : null}
-        <Text style={styles.meta}>Review state: {field.decision}</Text>
-        <LabeledField {...focusProps(`ocr.field.${field.fieldKey}`)} label={`${field.label} amount`} validationTarget={`ocr.field.${field.fieldKey}`} disabled={submitting} invalid={issuesByField.has(field.fieldKey)} error={issuesByField.get(field.fieldKey)?.message ?? null} value={field.confirmedValue} onChangeText={(value) => replaceField(updateReview(field, value))} keyboardType="decimal-pad" inputStyle={styles.input}/>
-        <View style={styles.actions}>{showsUseValueAction(field) ? <AccessiblePressable accessibilityLabel={`Use ${field.label} value`} disabled={submitting} onPress={() => { const value = field.decision === "omitted" ? field.suggestedValue ?? "" : field.confirmedValue; replaceField(updateReview(field, value, value === (field.suggestedValue ?? "") ? "accepted" : "edited")); }}><Text style={styles.link}>Use value</Text></AccessiblePressable> : null}<AccessiblePressable accessibilityLabel={`Omit ${field.label}`} disabled={submitting || field.decision === "omitted"} onPress={() => replaceField(omitReview(field))}><Text style={styles.link}>Omit</Text></AccessiblePressable></View>
-        <Text accessible={false} style={styles.source}>Source: {field.sourceText || "No source line"}</Text>
-      </View>; })}
+      {fields.map((field) => <View key={field.fieldKey} style={[styles.card, field.decision === "unresolved" && styles.flagged, field.decision === "omitted" && styles.omitted]}>
+        <NutrientAmountRow
+          {...focusProps(`ocr.field.${field.fieldKey}`)}
+          label={field.label}
+          validationTarget={`ocr.field.${field.fieldKey}`}
+          unit={field.unit}
+          disabled={submitting}
+          reviewRequired={field.decision === "unresolved"}
+          invalid={issuesByField.has(field.fieldKey)}
+          error={issuesByField.get(field.fieldKey)?.message ?? null}
+          action={renderFieldActions(field)}
+          value={field.confirmedValue}
+          onChangeText={(value) => replaceField(updateReview(field, value))}
+          keyboardType="decimal-pad"
+          placeholder="0"
+          placeholderTextColor={theme.colors.placeholder}
+        />
+      </View>)}
       <AccessiblePressable accessibilityLabel="Add missing nutrient" disabled={submitting || nutrientQuery.isLoading || nutrientQuery.isError} onPress={() => setShowMissingNutrients((current) => !current)} style={styles.secondaryButton}><Text style={styles.link}>Add missing nutrient</Text></AccessiblePressable>
       {showMissingNutrients ? <View style={styles.picker}><Text accessibilityRole="header" style={styles.fieldLabel}>Choose a nutrient</Text>{availableNutrients.map((nutrient) => <AccessiblePressable key={nutrient.id} accessibilityLabel={`Add ${nutrient.display_name}`} disabled={submitting} onPress={() => { setDraft((current) => addManualNutrient(current, nutrient)); setShowMissingNutrients(false); }} style={styles.pickerOption}><Text style={styles.link}>{nutrient.display_name} ({nutrient.default_unit})</Text></AccessiblePressable>)}{availableNutrients.length === 0 ? <Text style={styles.meta}>All canonical nutrients are already in this review.</Text> : null}</View> : null}
-      {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><Text accessible={false} style={styles.source}>{item.sourceText}</Text><AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} accessibilityState={{ selected: item.dismissed }} disabled={submitting || item.dismissed} onPress={() => setDraft({ ...draft, unknownNutrients: draft.unknownNutrients.map((entry, itemIndex) => itemIndex === index ? { ...entry, dismissed: true } : entry) })}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></AccessiblePressable></View>)}</> : null}
+      {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, !item.dismissed && styles.flagged, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} accessibilityState={{ selected: item.dismissed }} disabled={submitting || item.dismissed} onPress={() => dismissUnknown(index)}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></AccessiblePressable></View>)}</> : null}
       {displayedError ? <Text ref={errorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{displayedError}</Text> : null}
     </>}</KeyboardSafeScrollView>
-    <View style={styles.saveBar}><AccessiblePressable busy={submitting} accessibilityLabel={submitting ? "Creating Food" : "Create Food"} accessibilityHint="Creates the food, then opens logging confirmation when started from Add Food" onPress={submit} style={[styles.button, submitting && styles.disabled]}><Text style={styles.buttonText}>{submitting ? "Creating Food…" : "Create Food"}</Text></AccessiblePressable></View>
+      <View style={styles.saveBar}><AccessiblePressable ref={reviewTriggerRef} busy={submitting} accessibilityLabel={submitting ? "Creating Food" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"} accessibilityHint={reviewItems.length > 0 ? "Opens the focused review for unresolved nutrition items" : "Creates the food, then opens logging confirmation when started from Add Food"} onPress={reviewItems.length > 0 ? () => setDirectedReviewVisible(true) : submit} style={[styles.button, submitting && styles.disabled]}><Text style={styles.buttonText}>{submitting ? "Creating Food…" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"}</Text></AccessiblePressable></View>
+    </View>
+    <AccessibleModal
+      visible={reviewPresented}
+      title="Review nutrition"
+      onRequestClose={() => setDirectedReviewVisible(false)}
+      busy={submitting}
+      onShow={handleReviewShow}
+      initialFocusRef={currentReviewItem?.kind === "field" ? reviewFieldRef : reviewHeadingRef}
+      returnFocusRef={reviewTriggerRef}
+      fallbackFocusRef={headingRef}
+      backdropStyle={styles.reviewBackdrop}
+      contentStyle={styles.reviewModal}
+      scrollContentStyle={styles.reviewContent}
+      scrollable
+      headingStyle={styles.reviewTitle}
+      testID="nutrition-directed-review"
+    >
+      <Text style={styles.reviewProgress}>{reviewItems.length} item{reviewItems.length === 1 ? "" : "s"} remaining</Text>
+      {currentReviewItem?.kind === "field" ? <View style={styles.reviewItemCard}>
+        <NutrientAmountRow
+          ref={reviewFieldRef}
+          label={currentReviewItem.field.label}
+          validationTarget={`ocr.directed.${currentReviewItem.field.fieldKey}`}
+          unit={currentReviewItem.field.unit}
+          disabled={submitting}
+          reviewRequired
+          invalid={issuesByField.has(currentReviewItem.field.fieldKey)}
+          error={issuesByField.get(currentReviewItem.field.fieldKey)?.message ?? null}
+          action={renderFieldActions(currentReviewItem.field, true)}
+          testID="nutrition-directed-review-amount"
+          value={currentReviewItem.field.confirmedValue}
+          onChangeText={(value) => updateDirectedReviewValue(currentReviewItem.field, value)}
+          keyboardType="decimal-pad"
+          placeholder="0"
+          placeholderTextColor={theme.colors.placeholder}
+        />
+      </View> : currentReviewItem?.kind === "unknown" ? <View style={styles.reviewItemCard}>
+        <Text ref={reviewHeadingRef} accessibilityRole="header" style={styles.reviewItemTitle}>{currentReviewItem.label}</Text>
+        <Text style={styles.reviewInstruction}>Dismiss this unrecognized nutrient before creating the Food.</Text>
+        <AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${currentReviewItem.label}`} disabled={submitting} onPress={() => dismissUnknown(currentReviewItem.index)}><Text style={styles.link}>Dismiss</Text></AccessiblePressable>
+      </View> : null}
+      <AccessiblePressable accessibilityLabel="Close nutrition review" disabled={submitting} onPress={() => setDirectedReviewVisible(false)} style={styles.reviewClose}><Text style={styles.link}>Continue editing</Text></AccessiblePressable>
+    </AccessibleModal>
   </View>;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  actions: { flexDirection: "row", gap: 24 }, button: { alignItems: "center", backgroundColor: theme.colors.primaryActionBackground, borderRadius: 8, minHeight: 48, justifyContent: "center" },
+  button: { alignItems: "center", backgroundColor: theme.colors.primaryActionBackground, borderRadius: 8, minHeight: 48, justifyContent: "center" },
   buttonText: { color: theme.colors.primaryActionForeground, fontSize: 16, fontWeight: "700" }, card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
-  content: { gap: 10, padding: 16, paddingBottom: 120 }, disabled: { opacity: 0.65 }, error: { color: theme.colors.errorText }, fieldLabel: { color: theme.colors.text, flex: 1, fontSize: 16, fontWeight: "700" }, flagged: { borderColor: theme.colors.warningText, borderWidth: 2 }, flex: { flex: 1 },
+  content: { gap: 10, padding: 16, paddingBottom: 120 }, disabled: { opacity: 0.65 }, error: { color: theme.colors.errorText }, fieldLabel: { color: theme.colors.text, flex: 1, fontSize: 16, fontWeight: "700" }, flagged: { borderColor: theme.colors.warningText, borderWidth: 1 }, flex: { flex: 1 },
   header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }, input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, minHeight: 44, padding: 10 }, link: { color: theme.colors.accent, fontWeight: "600" }, meta: { color: theme.colors.secondaryText }, notice: { color: theme.colors.secondaryText }, row: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 }, screen: { backgroundColor: theme.colors.background, flex: 1 }, section: { color: theme.colors.text, fontSize: 19, fontWeight: "800", marginTop: 8 }, source: { color: theme.colors.secondaryText, fontSize: 12 }, title: { color: theme.colors.text, fontSize: 25, fontWeight: "800" }, warning: { color: theme.colors.warningText, fontSize: 13 },
+  reviewBackdrop: { backgroundColor: "rgba(0, 0, 0, 0.45)", padding: 16 }, reviewClose: { alignSelf: "flex-start" }, reviewContent: { padding: 16 }, reviewInstruction: { color: theme.colors.secondaryText }, reviewItemCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.warningText, borderRadius: 8, borderWidth: 1, gap: 10, padding: 14 }, reviewItemTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" }, reviewModal: { backgroundColor: theme.colors.background, borderRadius: 12, maxHeight: "88%" }, reviewProgress: { color: theme.colors.secondaryText }, reviewTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "800" }, saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 }, screen: { backgroundColor: theme.colors.background, flex: 1 }, screenContent: { flex: 1 }, section: { color: theme.colors.text, fontSize: 19, fontWeight: "800", marginTop: 8 }, title: { color: theme.colors.text, fontSize: 25, fontWeight: "800" },
   omitted: { opacity: 0.7 },
   picker: { borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
   pickerOption: { justifyContent: "center", minHeight: 44 },
