@@ -1,9 +1,11 @@
-import { AppNavigator } from "./app/navigation/AppNavigator";
-import { AppProviders } from "./app/providers/AppProviders";
 import { StatusBar } from "react-native";
 import { useMemo } from "react";
-import { loadExpoPublicConfig, type MobileRuntimeConfig } from "../config/runtimeConfig";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
+
+import { AppNavigator } from "./app/navigation/AppNavigator";
+import { AppProviders } from "./app/providers/AppProviders";
 import { statusBarStyle, useAppTheme } from "./app/theme/AppTheme";
+import { loadExpoPublicConfig, type MobileRuntimeConfig } from "../config/runtimeConfig";
 import {
   ApplicationRuntimeBootstrap,
   RuntimeBootstrapStatus,
@@ -11,12 +13,17 @@ import {
 
 function ThemedApp() {
   const theme = useAppTheme();
-  return <><StatusBar barStyle={statusBarStyle(theme)} backgroundColor={theme.colors.background} /><AppNavigator /></>;
+  return (
+    <>
+      <StatusBar barStyle={statusBarStyle(theme)} backgroundColor={theme.colors.background} />
+      <AppNavigator />
+    </>
+  );
 }
 
 function ProductionApp() {
   const configured = useMemo<
-    { ok: true; configuration: MobileRuntimeConfig } | { ok: false; error: string }
+      { ok: true; configuration: MobileRuntimeConfig } | { ok: false; error: string }
   >(() => {
     try {
       return {
@@ -41,17 +48,19 @@ function ProductionApp() {
   }
 
   const renderRuntime = (runtime: Parameters<typeof AppProviders>[0]["runtime"]) => (
-    <AppProviders runtime={runtime}>
-      <ThemedApp />
-    </AppProviders>
+      <AppProviders runtime={runtime}>
+        <ThemedApp />
+      </AppProviders>
   );
+
   if (configured.configuration.dataAuthority === "local") {
     // Preserve remote startup isolation: evaluate the SQLite/import gate only
     // after configuration has selected local authority.
     const { LocalFirstStartRuntimeBootstrap } = require("./transfer/e2_15/LocalFirstStartGate") as
-      typeof import("./transfer/e2_15/LocalFirstStartGate");
+        typeof import("./transfer/e2_15/LocalFirstStartGate");
     return <LocalFirstStartRuntimeBootstrap>{renderRuntime}</LocalFirstStartRuntimeBootstrap>;
   }
+
   return (
     <ApplicationRuntimeBootstrap configuration={configured.configuration}>
       {renderRuntime}
@@ -60,5 +69,9 @@ function ProductionApp() {
 }
 
 export default function App() {
-  return <ProductionApp />;
+  return (
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <ProductionApp />
+    </SafeAreaProvider>
+  );
 }

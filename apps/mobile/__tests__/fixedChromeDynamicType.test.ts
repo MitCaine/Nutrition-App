@@ -6,6 +6,9 @@ import { BottomNavigation } from "../src/app/navigation/BottomNavigation";
 import { RootScreenHeader } from "../src/shared/components/RootScreenHeader";
 
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ bottom: 34, left: 0, right: 0, top: 0 }),
+}));
 jest.mock("../src/app/theme/AppTheme", () => {
   const actual = jest.requireActual("../src/app/theme/AppTheme");
   return { ...actual, useAppTheme: () => ({ ...actual.LIGHT_THEME, preference: "system", effectiveScheme: "light", setPreference: jest.fn() }) };
