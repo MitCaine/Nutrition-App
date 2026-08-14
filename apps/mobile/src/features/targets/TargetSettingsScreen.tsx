@@ -10,6 +10,7 @@ import {
 
 import { useAppTheme } from "../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../shared/forms/KeyboardSafeScrollView";
+import { BackButton } from "../../shared/components/BackButton";
 import type { TargetConfiguration } from "./api/types";
 import { targetErrorMessage } from "./targetErrors";
 import {
@@ -183,13 +184,7 @@ export function TargetSettingsScreen({
           Could not load nutrition targets.
         </Text>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back from nutrition targets"
-          onPress={onBack}
-        >
-          <Text style={styles.link}>Back</Text>
-        </Pressable>
+        <BackButton accessibilityLabel="Back from nutrition targets" onPress={onBack} />
       </View>
     );
   }
@@ -202,15 +197,7 @@ export function TargetSettingsScreen({
         {() => (
           <>
             <View style={styles.header}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back from nutrition targets"
-                accessibilityState={{ disabled: submitting }}
-                disabled={submitting}
-                onPress={onBack}
-              >
-                <Text style={styles.link}>Back</Text>
-              </Pressable>
+              <BackButton accessibilityLabel="Back from nutrition targets" disabled={submitting} onPress={onBack} />
 
               <Text accessibilityRole="header" style={styles.title}>
                 Nutrition targets
@@ -233,7 +220,7 @@ export function TargetSettingsScreen({
 
             <View style={styles.profileRow}>
               <View style={[styles.profileField, styles.profileFieldWide]}>
-                <Text style={styles.fieldLabel}>Birth date</Text>
+                <Text style={styles.profileFieldLabel}>Birth date (MM-DD-YYYY)</Text>
                 <TextInput
                   editable={!submitting}
                   accessibilityLabel="Birth date"
@@ -242,14 +229,13 @@ export function TargetSettingsScreen({
                   onChangeText={(birthDate) =>
                     setDraft((current) => ({ ...current, birthDate }))
                   }
-                  placeholder="MM-DD-YYYY"
                   placeholderTextColor={theme.colors.placeholder}
                   style={[styles.input, styles.profileInput]}
                 />
               </View>
 
               <View style={styles.profileField}>
-                <Text style={styles.fieldLabel}>Height (in)</Text>
+                <Text style={styles.profileFieldLabel}>Height (in)</Text>
                 <TextInput
                   editable={!submitting}
                   accessibilityLabel="Height in inches"
@@ -259,14 +245,13 @@ export function TargetSettingsScreen({
                     setDraft((current) => ({ ...current, heightIn }))
                   }
                   keyboardType="decimal-pad"
-                  placeholder="in"
                   placeholderTextColor={theme.colors.placeholder}
                   style={[styles.input, styles.profileInput]}
                 />
               </View>
 
               <View style={styles.profileField}>
-                <Text style={styles.fieldLabel}>Weight (lb)</Text>
+                <Text style={styles.profileFieldLabel}>Weight (lb)</Text>
                 <TextInput
                   editable={!submitting}
                   accessibilityLabel="Weight in pounds"
@@ -276,7 +261,6 @@ export function TargetSettingsScreen({
                     setDraft((current) => ({ ...current, weightLb }))
                   }
                   keyboardType="decimal-pad"
-                  placeholder="lb"
                   placeholderTextColor={theme.colors.placeholder}
                   style={[styles.input, styles.profileInput]}
                 />
@@ -612,8 +596,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       gap: 8,
     },
     input: {
-      backgroundColor: theme.colors.input,
-      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.secondarySurface,
+      borderColor: theme.colors.searchInputBorder,
       borderRadius: 6,
       borderWidth: 1,
       color: theme.colors.text,
@@ -638,15 +622,22 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontWeight: "700",
     },
     profileField: {
-      flexBasis: 70,
-      flexGrow: 1,
+      flexBasis: 80,
+      flexGrow: 0,
+      flexShrink: 0,
       gap: 4,
-      minWidth: 70,
+      width: 80,
     },
     profileFieldWide: {
-      flexBasis: 130,
-      flexGrow: 2,
-      minWidth: 130,
+      flexBasis: 0,
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 0,
+    },
+    profileFieldLabel: {
+      color: theme.colors.text,
+      fontSize: 12,
+      fontWeight: "700",
     },
     profileInput: {
       minWidth: 0,
@@ -655,7 +646,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     profileRow: {
       alignItems: "flex-start",
       flexDirection: "row",
-      flexWrap: "wrap",
+      flexWrap: "nowrap",
       gap: 8,
     },
     resetAction: {

@@ -69,6 +69,9 @@ export function NutrientEntryList({ nutrients, values, onChange, focusProps, dis
             <NutrientAmountRow
               {...(focusProps ? focusProps(nutrientFocusKey(nutrient.id)) : {})}
               label={nutrient.display_name}
+              containerStyle={styles.amountRow}
+              inputStyle={styles.amountInput}
+              hitSlop={{ top: 2, bottom: 2, left: 0, right: 0 }}
               validationTarget={`nutrient.${nutrient.id}.amount`}
               unit={value.unit}
               value={value.amount ?? ""}
@@ -102,13 +105,22 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
     paddingLeft: 16,
   },
   container: {
-    gap: 12,
+    gap: 10,
+  },
+  amountRow: {
+    gap: 3,
+  },
+  amountInput: {
+    height: 40,
+    minHeight: 40,
+    paddingHorizontal: 8,
+    width: 112,
   },
   row: {
     borderBottomColor: theme.colors.border,
     borderBottomWidth: 1,
     gap: 8,
-    paddingBottom: 12,
+    paddingBottom: 8,
   },
   omitText: {
     color: theme.colors.accent,

@@ -1,5 +1,6 @@
 import type { Food } from "../src/features/foods/api/types";
 import {
+  collapsedResolvedFoodAmounts,
   defaultServing,
   formatFoodNutrientLabel,
   formatNutrientAmount,
@@ -133,6 +134,22 @@ test("food detail amount selection uses resolved options and keeps count-only se
   expect(countOnly?.nutrients[0].data_status).toBe("estimated");
   expect(formatResolvedFoodAmount(countOnly!)).toBe("1 serving");
   expect(formatResolvedFoodNutrient(countOnly!.nutrients[0])).toBe("240kcal");
+});
+
+test("collapsed food detail amounts keep the selected choice visible within a bounded row", () => {
+  const amounts = Array.from({ length: 10 }, (_, index) => ({
+    ...resolvedAmounts[0],
+    amount_definition_id: `amount-${index}`,
+    display_label: `${index + 1} serving`,
+    is_default: index === 0,
+  }));
+  const collapsed = collapsedResolvedFoodAmounts(amounts, amounts[8]);
+
+  expect(collapsed.map((amount) => amount.amount_definition_id)).toEqual([
+    "amount-8",
+    "amount-0",
+    "amount-1",
+  ]);
 });
 
 test("manual food detail helpers keep existing serving and nutrient behavior", () => {

@@ -123,6 +123,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const futureLogs = dailyLogReadState(futureQuery);
   const summaryQuery = useDailySummary(date, !legacyFuture);
   const entriesKnown = logs.kind === "empty" || logs.kind === "success" || logs.kind === "refreshing" || logs.kind === "refresh-failure";
+  const hasLoggedNutrition = logs.data === null ? undefined : logs.data.length > 0;
   const totals = dailySummaryReadState(summaryQuery, entriesKnown);
   const foods = useFoods("");
   const mutations = useLogMutations(date);
@@ -559,14 +560,17 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
           <Text style={styles.text}>Next Day</Text>
         </AccessiblePressable>
       </View>
-      <Text
-        ref={dateHeadingRef}
-        accessibilityLabel={`${formatReadableDate(date)}, ${isProvisional ? "provisional calendar" : dateClassification === "today" ? "authoritative Today" : dateClassification === "future" ? "future browse-only date" : "past date"}`}
-        accessibilityRole="header"
-        style={styles.currentDateHeading}
-      >
-        {formatReadableDate(date)}
-      </Text>
+      <View style={styles.dateHeadingRow}>
+        <Text
+          ref={dateHeadingRef}
+          accessibilityLabel={`${formatReadableDate(date)}, ${isProvisional ? "provisional calendar" : dateClassification === "today" ? "authoritative Today" : dateClassification === "future" ? "future browse-only date" : "past date"}`}
+          accessibilityRole="header"
+          style={styles.currentDateHeading}
+        >
+          {formatReadableDate(date)}
+        </Text>
+        {dateClassification === "today" ? <Text style={styles.dateClassification}>Today</Text> : dateClassification === "future" ? <Text style={styles.dateClassification}>Future</Text> : null}
+      </View>
       <AccessiblePressable
         ref={datePickerTriggerRef}
         accessibilityHint="Opens direct date selection"
@@ -579,9 +583,6 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       >
         <Text style={styles.dateButtonText}>Choose another date</Text>
       </AccessiblePressable>
-      <Text style={styles.dateClassification}>
-        {dateClassification === "today" ? "Today" : dateClassification === "future" ? "Future date" : "Past date"}
-      </Text>
       <DatePickerModal
         date={draftDate}
         visible={pickerOpen}
@@ -611,7 +612,7 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         styles={styles}
         />
       ) : null}
-      <TargetProgressSection date={date} entriesKnown={entriesKnown} onOpenTargets={onOpenNutritionTargets} />
+      <TargetProgressSection date={date} entriesKnown={entriesKnown} hasLoggedNutrition={hasLoggedNutrition} onOpenTargets={onOpenNutritionTargets} />
       <Text accessibilityRole="header" style={styles.sectionTitle}>Totals</Text>
       {totals.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading totals…" /> : null}
       {totals.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing totals…" /> : null}
@@ -1164,12 +1165,13 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   text: { color: theme.colors.text },
   dateButton: { borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 12 },
   dateButtonText: { color: theme.colors.accent, fontWeight: "700" },
-  currentDateHeading: { color: theme.colors.text, fontSize: 20, fontWeight: "700" },
+  currentDateHeading: { color: theme.colors.text, flexShrink: 1, fontSize: 20, fontWeight: "700" },
+  dateHeadingRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" },
   datePreview: { fontSize: 18, fontWeight: "700" },
   deleteText: { color: theme.colors.destructive },
   foodName: { color: theme.colors.text, fontWeight: "700" },
   calendarNotice: { color: theme.colors.secondaryText, fontSize: 14, lineHeight: 20 },
-  dateClassification: { color: theme.colors.secondaryText, fontSize: 14 },
+  dateClassification: { color: theme.colors.secondaryText, fontSize: 14, marginLeft: "auto" },
   dateNavigation: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" },
   disabledButton: { opacity: 0.45 },
   emptyDay: { color: theme.colors.secondaryText, fontSize: 15 },

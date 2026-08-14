@@ -96,6 +96,9 @@ test("Settings presents reviewed impact and confirms the exact preview revision"
       onOpenNutritionTargets: jest.fn(),
     }));
   });
+  const back = renderer.root.findAllByType(Pressable).find((item) => item.props.accessibilityLabel === "Back from settings")!;
+  expect(textContent(back)).toBe("Back");
+  expect(back.props.accessibilityRole).toBe("button");
   const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
   expect(text).toContain("Current zone: UTC");
   expect(text).toContain("Today changes");

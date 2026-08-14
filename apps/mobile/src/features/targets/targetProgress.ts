@@ -75,13 +75,20 @@ export function boundedProgressValue(value: string | null): number {
 }
 
 export function progressAccessibilityLabel(item: DailyTargetComparisonItem, name: string): string {
-  const authority = targetAuthorityLabel(item.authority);
-  const direction = targetDirectionLabel(item.direction).toLowerCase();
+  const direction = item.direction === "unavailable" ? null : accessibleTargetDirectionLabel(item.direction);
   const unit = item.unit === "kcal" ? "kilocalories" : item.unit === "g" ? "grams" : item.unit === "mg" ? "milligrams" : item.unit === "mcg" ? "micrograms" : item.unit;
-  const consumed = item.consumedAmount === null ? "consumed amount unavailable" : `${formatTargetAmount(item.consumedAmount, item.unit)} ${unit} consumed`;
-  const target = item.targetAmount === null ? "no comparison target" : `${formatTargetAmount(item.targetAmount, item.unit)} ${unit} target`;
-  const percentage = item.percentage === null ? "percentage unavailable" : `${formatTargetPercentage(item.percentage)} of ${authority}`;
-  const incomplete = item.hasUnknownContributors ? ", incomplete data" : "";
-  const numericState = item.direction === "limit" && percentageAtOrAbove100(item.percentage) ? ", limit reference reached or exceeded" : "";
-  return `${name}, ${consumed}, ${target}, ${percentage}, ${direction}${numericState}${incomplete}`;
+  const consumed = item.consumedAmount === null ? "no consumed amount" : `${formatTargetAmount(item.consumedAmount, item.unit)} ${unit} consumed`;
+  const target = item.targetAmount === null ? null : `${formatTargetAmount(item.targetAmount, item.unit)} ${unit} target`;
+  const percentage = item.percentage === null ? null : formatTargetPercentage(item.percentage);
+  const numericState = item.direction === "limit" && percentageAtOrAbove100(item.percentage) ? ", limit reached or exceeded" : "";
+  const state = [direction ? `${direction}${numericState}` : null, item.hasUnknownContributors ? "incomplete data" : null].filter(Boolean);
+  return [name, consumed, target, percentage, ...state].filter(Boolean).join(", ");
+}
+
+function accessibleTargetDirectionLabel(direction: TargetDirection): string {
+  if (direction === "limit") return "limit";
+  if (direction === "minimum") return "minimum target";
+  if (direction === "reference") return "reference target";
+  if (direction === "target") return "progress toward target";
+  return "no comparison target";
 }

@@ -7,6 +7,7 @@ const mockUpdate = jest.fn();
 const mockReset = jest.fn();
 const mockInvalidate = jest.fn();
 let mockQueryFnError: unknown = null;
+let mockUseDark = false;
 function createConfiguration(overrides: Partial<TargetConfiguration> = {}): TargetConfiguration {
   return {
     profile: null,
@@ -40,10 +41,12 @@ jest.mock("../src/features/targets/api/targetApi", () => ({
 }));
 jest.mock("../src/app/theme/AppTheme", () => {
   const actual = jest.requireActual("../src/app/theme/AppTheme");
-  return { ...actual, useAppTheme: () => ({ ...actual.LIGHT_THEME, preference: "system", effectiveScheme: "light", setPreference: jest.fn() }) };
+  return { ...actual, useAppTheme: () => ({ ...(mockUseDark ? actual.DARK_THEME : actual.LIGHT_THEME), preference: "system", effectiveScheme: mockUseDark ? "dark" : "light", setPreference: jest.fn() }) };
 });
+jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
 
 import { TargetSettingsScreen } from "../src/features/targets/TargetSettingsScreen";
+import { DARK_THEME, LIGHT_THEME } from "../src/app/theme/AppTheme";
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
@@ -86,17 +89,35 @@ function styledAncestor(node: TestRenderer.ReactTestInstance, predicate: (style:
   }
   return undefined;
 }
+function fieldForLabel(root: TestRenderer.ReactTestInstance, label: string) {
+  return root.findAllByType(Text).find((item) => textContent(item) === label)?.parent;
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockConfiguration = createConfiguration();
   mockQueryFnError = null;
+  mockUseDark = false;
   mockInvalidate.mockResolvedValue(undefined);
 });
 
 test("settings query preserves a receiver-dependent TargetsRuntime method", async () => {
   const renderer = await render(receiverSensitiveRuntime);
   expect(mockQueryFnError).toBeNull();
+  await act(async () => renderer.unmount());
+});
+
+test("nutrition targets uses the shared Settings-style Back action", async () => {
+  const onBack = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(TargetSettingsScreen, { onBack }), testRuntime));
+  });
+  const back = renderer.root.findAllByType(Pressable).find((item) => item.props.accessibilityLabel === "Back from nutrition targets")!;
+  expect(textContent(back)).toBe("Back");
+  expect(back.props.accessibilityRole).toBe("button");
+  await act(async () => back.props.onPress());
+  expect(onBack).toHaveBeenCalledTimes(1);
   await act(async () => renderer.unmount());
 });
 
@@ -169,14 +190,44 @@ test("profile inputs display canonical metric and ISO data in one compact US row
   expect(input(renderer.root, "Birth date").props.value).toBe("11-18-1988");
   expect(input(renderer.root, "Height in inches").props.value).toBe("67");
   expect(input(renderer.root, "Weight in pounds").props.value).toBe("140.00015");
-  expect(renderer.root.findAllByType(Text).map(textContent).join(" ")).toEqual(expect.stringContaining("Height (in)"));
-  expect(renderer.root.findAllByType(Text).map(textContent).join(" ")).toEqual(expect.stringContaining("Weight (lb)"));
-
-  const profileRow = styledAncestor(input(renderer.root, "Birth date"), (style) => style.flexDirection === "row" && style.flexWrap === "wrap");
+  expect(input(renderer.root, "Birth date").props.placeholder).toBeUndefined();
+  expect(input(renderer.root, "Height in inches").props.placeholder).toBeUndefined();
+  expect(input(renderer.root, "Weight in pounds").props.placeholder).toBeUndefined();
+  const visibleText = renderer.root.findAllByType(Text).map(textContent).join(" ");
+  expect(visibleText).toEqual(expect.stringContaining("Birth date (MM-DD-YYYY)"));
+  expect(visibleText).toEqual(expect.stringContaining("Height (in)"));
+  expect(visibleText).toEqual(expect.stringContaining("Weight (lb)"));
+  expect(textContent(fieldForLabel(renderer.root, "Birth date (MM-DD-YYYY)")!)).toBe("Birth date (MM-DD-YYYY)");
+  const profileRow = styledAncestor(input(renderer.root, "Birth date"), (style) => style.flexDirection === "row" && style.flexWrap === "nowrap",);
   expect(profileRow).toBeDefined();
   expect(profileRow?.findAllByType(TextInput)).toHaveLength(3);
-  expect(StyleSheet.flatten(profileRow?.props.style)).toMatchObject({ flexDirection: "row", flexWrap: "wrap" });
+  expect(StyleSheet.flatten(profileRow?.props.style)).toMatchObject({flexDirection: "row", flexWrap: "nowrap", gap: 8,});
+  expect(StyleSheet.flatten(fieldForLabel(renderer.root, "Birth date (MM-DD-YYYY)")?.props.style,),).toMatchObject({flexBasis: 0, flexGrow: 1, flexShrink: 1, minWidth: 0,});
+  expect(StyleSheet.flatten(fieldForLabel(renderer.root, "Height (in)")?.props.style,),).toMatchObject({flexBasis: 80, flexGrow: 0, flexShrink: 0, width: 80,});
+  expect(StyleSheet.flatten(fieldForLabel(renderer.root, "Weight (lb)")?.props.style,),).toMatchObject({flexBasis: 80, flexGrow: 0, flexShrink: 0, width: 80,});
+  const heightFieldStyle = StyleSheet.flatten(fieldForLabel(renderer.root, "Height (in)")?.props.style);
+  const weightFieldStyle = StyleSheet.flatten(fieldForLabel(renderer.root, "Weight (lb)")?.props.style);
+  expect(heightFieldStyle).toMatchObject({flexBasis: 80, flexGrow: 0, flexShrink: 0, width: 80,});
+  expect(weightFieldStyle).toMatchObject({flexBasis: 80, flexGrow: 0, flexShrink: 0, width: 80,});
+  expect(heightFieldStyle).toEqual(weightFieldStyle);
   await act(async () => renderer.unmount());
+});
+
+test("editable inputs and selection controls retain distinct theme surfaces", async () => {
+  for (const [dark, expectedTheme] of [[false, LIGHT_THEME], [true, DARK_THEME]] as const) {
+    mockUseDark = dark;
+    const renderer = await render();
+    const inputStyle = StyleSheet.flatten(input(renderer.root, "Birth date").props.style) as Record<string, unknown>;
+    const choice = action(renderer.root, "Equation sex male");
+    const choiceStyle = StyleSheet.flatten(choice.props.style({ pressed: false })) as Record<string, unknown>;
+    expect(inputStyle.backgroundColor).toBe(expectedTheme.colors.secondarySurface);
+    expect(choiceStyle.backgroundColor).toBe(expectedTheme.colors.surface);
+    expect(inputStyle.backgroundColor).not.toBe(choiceStyle.backgroundColor);
+    expect(inputStyle.borderColor).toBe(expectedTheme.colors.searchInputBorder);
+    expect(choiceStyle.borderColor).toBe(expectedTheme.colors.border);
+    await act(async () => renderer.unmount());
+  }
+  mockUseDark = false;
 });
 
 test("edited US profile values reach the established update contract in canonical units", async () => {

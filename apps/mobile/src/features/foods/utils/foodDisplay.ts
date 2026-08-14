@@ -21,6 +21,23 @@ export function selectedResolvedFoodAmount(
     amounts[0];
 }
 
+export const COLLAPSED_FOOD_AMOUNT_LIMIT = 3;
+
+/** Keeps the selected amount visible while bounding the collapsed choice row. */
+export function collapsedResolvedFoodAmounts(
+  amounts: ResolvedFoodAmount[],
+  selectedAmount: ResolvedFoodAmount | undefined,
+): ResolvedFoodAmount[] {
+  if (amounts.length <= COLLAPSED_FOOD_AMOUNT_LIMIT) {
+    return amounts;
+  }
+  const selected = selectedAmount ?? amounts[0];
+  return [
+    selected,
+    ...amounts.filter((amount) => amount.amount_definition_id !== selected.amount_definition_id),
+  ].slice(0, COLLAPSED_FOOD_AMOUNT_LIMIT);
+}
+
 export function formatResolvedFoodAmount(amount: ResolvedFoodAmount): string {
   if (!amount.resolved_grams) {
     return amount.display_label;

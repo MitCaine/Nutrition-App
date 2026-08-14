@@ -1,6 +1,7 @@
 import React from "react";
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput } from "react-native";
+import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
+import type { Food } from "../src/features/foods/api/types";
 
 let mockNutrients: Array<Record<string, unknown>> = [];
 const mockCreateFood = jest.fn();
@@ -38,8 +39,31 @@ beforeEach(() => {
   mockUpdateFood.mockReset().mockResolvedValue({ id: "food-1" });
 });
 
+const editableFood: Food = {
+  id: "food-edit",
+  name: "Oats",
+  brand: "Pantry Co",
+  notes: null,
+  source_type: "manual",
+  source_id: null,
+  is_recipe: false,
+  source_kind: "manual",
+  source_label: "Manual",
+  is_favorite: false,
+  can_favorite: true,
+  serving_definitions: [
+    { id: "base", label: "100 g", quantity: "100", unit: "g", gram_weight: "100", is_default: true, source: "manual", is_user_confirmed: true },
+    { id: "scoop", label: "1 scoop", quantity: "1", unit: "scoop", gram_weight: "30", is_default: false, source: "manual", is_user_confirmed: true },
+  ],
+  nutrients: [],
+};
+
 function textContent(node: TestRenderer.ReactTestInstance | string): string {
   return typeof node === "string" ? node : node.children.map((child) => textContent(child as TestRenderer.ReactTestInstance | string)).join("");
+}
+
+function managementSurface(node: TestRenderer.ReactTestInstance): TestRenderer.ReactTestInstance {
+  return node.findAllByType(View).find((child) => StyleSheet.flatten(child.props.style)?.minHeight === 32)!;
 }
 
 test("custom food validation keeps values, associates the error, and announces the targeted failure", async () => {
@@ -102,6 +126,89 @@ test("custom food foundations expose headings, persistent field labels, and cont
   await act(async () => renderer.unmount());
 });
 
+test("Edit Food keeps Cancel actionable and uses a larger title than its section headings", async () => {
+  const onCancel = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(FoodFormScreen, {
+      food: editableFood,
+      onCancel,
+      onSaved: jest.fn(),
+    }));
+  });
+  activeRenderers.add(renderer);
+
+  const cancel = renderer.root.findByProps({ accessibilityLabel: "Cancel editing food" });
+  await act(async () => cancel.props.onPress());
+  expect(onCancel).toHaveBeenCalledTimes(1);
+
+  const heading = (label: string) => renderer.root.findAllByType(Text).find(
+    (node) => textContent(node) === label && node.props.accessibilityRole === "header",
+  )!;
+  const titleStyle = StyleSheet.flatten(heading("Edit Food").props.style);
+  const sectionStyles = ["Food", "Amounts", "Portions", "Nutrients"].map((label) =>
+    StyleSheet.flatten(heading(label).props.style),
+  );
+  expect(sectionStyles.every((style) => style.fontSize === sectionStyles[0].fontSize)).toBe(true);
+  expect(sectionStyles.every((style) => style.fontWeight === sectionStyles[0].fontWeight)).toBe(true);
+  expect(titleStyle.fontSize).toBeGreaterThan(sectionStyles[0].fontSize);
+  const brandLabel = renderer.root.findAllByType(Text).find((node) => textContent(node) === "Brand")!;
+  const brandInput = renderer.root.findByProps({ accessibilityLabel: "Brand" });
+  expect(StyleSheet.flatten(brandLabel.props.style)).toMatchObject({ fontSize: 14 });
+  expect(StyleSheet.flatten(brandInput.props.style)).toMatchObject({ fontSize: 16 });
+  await act(async () => renderer.unmount());
+});
+
+test("canonical and custom default controls share a trailing slot and retain lower Edit and Remove actions", async () => {
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(FoodFormScreen, {
+      food: editableFood,
+      onCancel: jest.fn(),
+      onSaved: jest.fn(),
+    }));
+  });
+  activeRenderers.add(renderer);
+
+  const baseControl = renderer.root.findAllByType(View).find((node) =>
+    node.props.accessibilityLabel === "Default amount" && node.props.accessibilityRole === "text",
+  )!;
+  const customControl = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Set 1 scoop as default")!;
+  const baseStyle = StyleSheet.flatten(baseControl.props.style);
+  const customStyle = StyleSheet.flatten(customControl.props.style);
+  expect(baseStyle).toMatchObject({ minHeight: 44, minWidth: 96 });
+  expect(customStyle).toMatchObject({ minHeight: 44, minWidth: 96 });
+  expect(StyleSheet.flatten(managementSurface(baseControl).props.style)).toMatchObject({ minHeight: 32, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 });
+  expect(StyleSheet.flatten(managementSurface(customControl).props.style)).toMatchObject({ minHeight: 32, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 });
+  expect(textContent(baseControl)).toBe("✓ Default");
+  expect(textContent(customControl)).toBe("Set default");
+  const edit = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Edit 1 scoop")!;
+  expect(StyleSheet.flatten(edit.props.style)).toMatchObject({ minHeight: 44, minWidth: 44 });
+  expect(StyleSheet.flatten(managementSurface(edit).props.style)).toMatchObject({ minHeight: 32, paddingHorizontal: 10, paddingVertical: 8 });
+  expect(renderer.root.findByProps({ accessibilityLabel: "Edit 1 scoop" })).toBeDefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: "Remove 1 scoop" })).toBeDefined();
+  expect(renderer.root.findAllByType(Text).map(textContent).join(" ")).not.toContain("Canonical nutrient basis");
+
+  await act(async () => customControl.props.onPress());
+  expect(renderer.root.findAllByProps({ accessibilityLabel: "Set 1 scoop as default" })).toHaveLength(0);
+  const customDefaultControl = renderer.root.findAllByType(View).find((node) =>
+    node.props.accessibilityLabel === "Default amount" && node.props.accessibilityRole === "text",
+  )!;
+  const baseSetDefaultControl = renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Set 100 grams as default amount",
+  )!;
+  expect(textContent(customDefaultControl)).toBe("✓ Default");
+  expect(textContent(baseSetDefaultControl)).toBe("Set default");
+  expect(StyleSheet.flatten(customDefaultControl.props.style)).toMatchObject({ minHeight: 44, minWidth: 96 });
+  expect(StyleSheet.flatten(baseSetDefaultControl.props.style)).toMatchObject({ minHeight: 44, minWidth: 96 });
+  expect(StyleSheet.flatten(managementSurface(customDefaultControl).props.style)).toMatchObject({ minHeight: 32, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 });
+  expect(StyleSheet.flatten(managementSurface(baseSetDefaultControl).props.style)).toMatchObject({ minHeight: 32, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 });
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit 1 scoop" }).props.onPress());
+  expect(StyleSheet.flatten(renderer.root.findByProps({ accessibilityLabel: "1 scoop quantity" }).props.style))
+    .toMatchObject({ minHeight: 44, paddingHorizontal: 8, paddingVertical: 8 });
+  await act(async () => renderer.unmount());
+});
+
 test("serving controls expose contextual expansion and modal radio state", async () => {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -139,7 +246,7 @@ test("manual nutrient rows keep amount text raw and derive known status without 
   expect(amount.props.placeholder).not.toBe("0");
   expect(amount.props["aria-labelledby"]).toBeDefined();
   expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "kcal")).toBe(true);
-  expect(StyleSheet.flatten(amount.props.style)).toMatchObject({ minHeight: 44, minWidth: 96, width: 120 });
+  expect(StyleSheet.flatten(amount.props.style)).toMatchObject({ height: 40, minHeight: 40, minWidth: 96, paddingHorizontal: 8, width: 112 });
   expect(amount.props.accessibilityState).toMatchObject({ disabled: false });
   for (const status of ["known", "zero", "estimated", "unknown"]) {
     expect(renderer.root.findAllByProps({ accessibilityLabel: `Calories status ${status}` })).toHaveLength(0);
@@ -249,7 +356,7 @@ test("manual nutrient hierarchy uses one shared child indent and a normal termin
     let current = node;
     while (current) {
       const style = StyleSheet.flatten(current.props.style);
-      if (style?.borderBottomWidth === 1 && style.paddingBottom === 12) {
+      if (style?.borderBottomWidth === 1 && style.paddingBottom === 8) {
         return current;
       }
       current = current.parent ?? undefined;
@@ -278,7 +385,7 @@ test("manual nutrient hierarchy uses one shared child indent and a normal termin
   }
   expect(renderer.root.findByProps({ accessibilityLabel: "Omit Added Sugars" })).toBeDefined();
   expect(StyleSheet.flatten(renderer.root.findByProps({ accessibilityLabel: "Saturated Fat amount" }).props.style))
-    .toMatchObject({ minHeight: 44, minWidth: 96, width: 120 });
+    .toMatchObject({ height: 40, minHeight: 40, minWidth: 96, paddingHorizontal: 8, width: 112 });
 
   const scrollViews = renderer.root.findAllByType(ScrollView);
   expect(scrollViews).toHaveLength(1);

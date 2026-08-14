@@ -475,7 +475,7 @@ test("named and general Add Food flows use real navigator transitions and return
   expect(labeled(renderer.root, "Meal none").props.accessibilityState.checked).toBe(true);
   await act(async () => labeled(renderer.root, "Save log").props.onPress());
   expect(screenText(renderer.root)).toContain("Oatmeal");
-  expect(screenText(renderer.root)).toContain("Past date");
+  expect(screenText(renderer.root)).not.toContain("Past date");
   await act(async () => renderer.unmount());
 });
 
@@ -650,7 +650,7 @@ test("confirmation and discovery cancellation preserve the flow context", async 
   expect((returnedResultsScroll.instance as unknown as { scrollTo: jest.Mock }).scrollTo).toHaveBeenCalledWith({ y: 73, animated: false });
   expect(screenText(renderer.root)).toContain("Saved Foods");
   await act(async () => labeled(renderer.root, "Cancel Add Food").props.onPress());
-  expect(screenText(renderer.root)).toContain("Past date");
+  expect(screenText(renderer.root)).not.toContain("Past date");
   expect(optionalLabeled(renderer.root, "Add Food to Lunch")).toBeDefined();
   await act(async () => renderer.unmount());
 });

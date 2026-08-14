@@ -16,6 +16,8 @@ import {
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 import { createNutritionTestRuntime, withNutritionRuntime } from "./nutritionRuntimeTestSupport";
 
+jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
+
 let mockFoodQuery: Record<string, unknown>;
 let mockResolvedQuery: Record<string, unknown>;
 let mockEditContextQuery: Record<string, unknown>;
@@ -305,11 +307,12 @@ test("Repeat leaves a non-reusable backend amount unselected and requires review
   await act(async () => renderer.unmount());
 });
 
-test("Food Detail exposes source and guarded accessible favorite state", async () => {
+test("Food Detail hides source metadata and preserves guarded accessible favorite state", async () => {
   const renderer = await render(React.createElement(FoodDetailsScreen, {
     foodId: food.id, onBack: jest.fn(), onDeleted: jest.fn(), onEdit: jest.fn(), onLog: jest.fn(),
   }));
-  expect(hasText(renderer.root, "Manual")).toBe(true);
+  expect(hasText(renderer.root, "Manual")).toBe(false);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Back from food details" })).toBeDefined();
   const favorite = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Favorite food")!;
   expect(favorite.props.accessibilityState).toMatchObject({ selected: false, disabled: false, busy: false });
   await act(async () => { favorite.props.onPress(); favorite.props.onPress(); });
@@ -320,6 +323,41 @@ test("Food Detail exposes source and guarded accessible favorite state", async (
   expect(renderer.root.findAllByType(Text).some((node) => textContent(node).includes("offline"))).toBe(true);
   await act(async () => favorite.props.onPress());
   expect(mockSetFavorite).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.unmount());
+});
+
+test("Food Detail shows a populated brand subtitle without exposing source metadata", async () => {
+  mockFoodQuery = { ...mockFoodQuery, data: { ...food, brand: "  Pantry Co  " } };
+  const renderer = await render(React.createElement(FoodDetailsScreen, {
+    foodId: food.id, onBack: jest.fn(), onDeleted: jest.fn(), onEdit: jest.fn(), onLog: jest.fn(),
+  }));
+
+  expect(hasText(renderer.root, "Pantry Co")).toBe(true);
+  expect(hasText(renderer.root, "Manual")).toBe(false);
+  await act(async () => renderer.unmount());
+});
+
+test("Food Detail bounds collapsed serving choices and preserves a newly selected choice", async () => {
+  const amounts = Array.from({ length: 10 }, (_, index) => amount(`amount-${index}`, "serving", String(index + 1), index === 0));
+  mockResolvedQuery = { ...mockResolvedQuery, data: nutrition(amounts) };
+  const renderer = await render(React.createElement(FoodDetailsScreen, {
+    foodId: food.id, onBack: jest.fn(), onDeleted: jest.fn(), onEdit: jest.fn(), onLog: jest.fn(),
+  }));
+
+  const radios = () => renderer.root.findAllByType(Pressable).filter((node) => node.props.accessibilityRole === "radio");
+  expect(radios()).toHaveLength(3);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Show more serving amounts" }).props.accessibilityState)
+    .toMatchObject({ expanded: false });
+
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Show more serving amounts" }).props.onPress());
+  expect(radios()).toHaveLength(10);
+  const lastAmount = radios().find((radio) => radio.props.accessibilityLabel.startsWith("amount-9"))!;
+  await act(async () => lastAmount.props.onPress());
+
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Show fewer serving amounts" }).props.onPress());
+  expect(radios()).toHaveLength(3);
+  const selectedLastAmount = radios().find((radio) => radio.props.accessibilityLabel.startsWith("amount-9"));
+  expect(selectedLastAmount?.props.accessibilityState).toMatchObject({ checked: true, selected: true });
   await act(async () => renderer.unmount());
 });
 

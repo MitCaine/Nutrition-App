@@ -53,32 +53,82 @@ function allText(root: TestRenderer.ReactTestInstance): string {
 
 beforeEach(() => { mockUseDark = false; });
 
-test("renders direction-aware personal, FDA, unavailable, zero, and uncapped progress", async () => {
+test("renders useful target values while preserving accessible source and direction semantics", async () => {
   const renderer = await render();
   const text = allText(renderer.root);
-  expect(text).toContain("79% · Estimated personal target");
-  expect(text).toContain("180% · FDA Daily Value");
-  expect(text).toContain("120% · FDA Daily Value");
-  expect(text).toContain("Minimum reference");
-  expect(text).toContain("Neutral reference");
+  expect(text).toContain("79%");
+  expect(text).toContain("180%");
+  expect(text).toContain("120%");
+  expect(text).not.toContain("Amount unavailable");
+  expect(text).not.toContain("Percentage unavailable");
+  expect(text).not.toContain("180% · FDA Daily Value");
+  expect(text).not.toContain("120% · FDA Daily Value");
+  expect(text).not.toContain("Neutral reference");
+  expect(text).not.toContain("Limit reference");
+  expect(text).not.toContain("Why this reference?");
+  expect(renderer.root.findAllByType(Text).filter((node) => textContent(node) === "Reference targets use FDA Daily Values where available until you set personal targets.")).toHaveLength(1);
   expect(text).toContain("0 g / 78 g");
-  expect(text).toContain("No comparison target");
+  expect(text).toContain("— / 275 g");
+  expect(text).not.toContain("No comparison target");
   const saturated = renderer.root.findAllByType(Text).find((node) => String(node.props.accessibilityLabel).startsWith("Saturated Fat,"));
-  expect(saturated?.props.accessibilityLabel).toContain("120% of FDA Daily Value, limit reference");
-  expect(saturated?.props.accessibilityLabel).toContain("limit reference reached or exceeded");
+  expect(saturated?.props.accessibilityLabel).toContain("120%, limit");
+  expect(saturated?.props.accessibilityLabel).toContain("limit reached or exceeded");
+  expect(saturated?.props.accessibilityLabel).not.toContain("FDA Daily Value");
+  expect(saturated?.props.accessibilityLabel).not.toContain("Limit reference");
   expect(saturated?.props.accessibilityLabel).toContain("grams");
   const bars = renderer.root.findAllByType(View).filter((node) => node.props.accessibilityRole === "progressbar");
   expect(bars).toHaveLength(0);
   const visualBars = renderer.root.findAllByType(View).filter((node) => node.props.accessible === false);
   expect(visualBars.length).toBeGreaterThan(0);
-  const explain = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Explain protein Daily Value");
-  await act(async () => explain?.props.onPress());
-  expect(allText(renderer.root)).toContain("generally not required on adult labels");
+  expect(renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Explain protein Daily Value")).toBeUndefined();
   await act(async () => renderer.unmount());
 
   const manualCalories = await render({ data: { ...data, comparisons: data.comparisons.map((value) => value.nutrientId === "calories" ? { ...value, authority: "manual_override" as const } : value) } });
-  expect(allText(manualCalories.root)).toContain("79% · Personal target");
+  expect(allText(manualCalories.root)).toContain("79%");
   await act(async () => manualCalories.unmount());
+});
+
+test("empty Daily Log progress keeps cards visible with onboarding guidance and the existing targets action", async () => {
+  const emptyData: DailyTargetComparison = {
+    ...data,
+    comparisons: data.comparisons.map((value) => ({ ...value, consumedAmount: null, percentage: null, hasUnknownContributors: false })),
+  };
+  const open = jest.fn();
+  const renderer = await render({ data: emptyData, hasLoggedNutrition: false, onOpenTargets: open });
+  const text = allText(renderer.root);
+  expect(text).toContain("Log a food to start tracking your nutrition.");
+  expect(text).toContain("FDA Daily Values provide general reference targets where available.");
+  expect(text).toContain("Add your information in Nutrition Targets for personalized calorie and macro targets.");
+  expect(text).toContain("Calories —");
+  expect(text).toContain("Protein — / 50 g");
+  expect(text).toContain("Total Carbohydrate — / 275 g");
+  expect(text).toContain("Total Fat — / 78 g");
+  expect(text).not.toContain("Amount unavailable");
+  expect(text).not.toContain("Percentage unavailable");
+  expect(text).not.toContain("No calorie target set");
+  expect(renderer.root.findAllByType(Text).filter((node) => textContent(node) === "FDA Daily Values provide general reference targets where available.")).toHaveLength(1);
+  expect(text).not.toMatch(/average|demographic|adult profile/i);
+  const action = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Set up nutrition targets");
+  expect(action).toBeDefined();
+  expect(textContent(action!)).toBe("Set up nutrition targets");
+  await act(async () => action?.props.onPress());
+  expect(open).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});
+
+test("logged nutrition removes onboarding and returns to the concise targets action", async () => {
+  const open = jest.fn();
+  const renderer = await render({ hasLoggedNutrition: true, onOpenTargets: open });
+  const text = allText(renderer.root);
+  expect(text).not.toContain("Log a food to start tracking your nutrition.");
+  expect(text).not.toContain("Add your information in Nutrition Targets");
+  expect(text).toContain("Reference targets use FDA Daily Values where available until you set personal targets.");
+  const action = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Nutrition targets");
+  expect(action).toBeDefined();
+  expect(textContent(action!)).toBe("Nutrition targets");
+  await act(async () => action?.props.onPress());
+  expect(open).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
 });
 
 test("announces incomplete unknown contributors without presenting an exact state", async () => {
@@ -97,7 +147,7 @@ test("comparison loading and failure retain a settings link and recoverable retr
   const failed = await render({ data: undefined, isError: true, onRetry: retry, onOpenTargets: open });
   const actions = failed.root.findAllByType(Pressable);
   await act(async () => actions.find((node) => node.props.accessibilityLabel === "Retry target progress")?.props.onPress());
-  await act(async () => actions.find((node) => node.props.accessibilityLabel === "Open Nutrition targets settings")?.props.onPress());
+  await act(async () => actions.find((node) => node.props.accessibilityLabel === "Nutrition targets")?.props.onPress());
   expect(retry).toHaveBeenCalled(); expect(open).toHaveBeenCalled();
   await act(async () => failed.unmount());
 });
@@ -126,8 +176,30 @@ test("no-profile state keeps FDA comparisons while calories has no target", asyn
   const noProfile = { ...data, comparisons: data.comparisons.map((value) => value.nutrientId === "calories" ? { ...value, targetAmount: null, percentage: null, authority: "unavailable" as const, direction: "unavailable" as const, status: "target_unavailable" as const, reasonCode: "target_profile_incomplete" } : value) };
   const renderer = await render({ data: noProfile });
   const text = allText(renderer.root);
-  expect(text).toContain("Calories 1,820 kcal No comparison target");
+  expect(text).toContain("Calories 1,820 kcal");
+  expect(text).not.toContain("No calorie target set");
+  expect(text).not.toContain("Calories 1,820 kcal Percentage unavailable");
+  const calorieValue = renderer.root.findAllByType(Text).find((node) => node.props.accessible === false && textContent(node) === "1,820 kcal");
+  expect(calorieValue).toBeDefined();
   expect(text).toContain("2,600 mg / 2,300 mg");
+  await act(async () => renderer.unmount());
+});
+
+test("calorie no-target state stays concise when consumed amount is unavailable", async () => {
+  const noConsumedCalories = {
+    ...data,
+    comparisons: data.comparisons.map((value) => value.nutrientId === "calories"
+      ? { ...value, consumedAmount: null, targetAmount: null, percentage: null, authority: "unavailable" as const, direction: "unavailable" as const, status: "target_unavailable" as const, reasonCode: "target_profile_incomplete" }
+      : value),
+  };
+  const renderer = await render({ data: noConsumedCalories });
+  const text = allText(renderer.root);
+  expect(text).toContain("Calories —");
+  expect(text).not.toContain("Amount unavailable");
+  expect(text).not.toContain("No calorie target set");
+  expect(text).not.toContain("Percentage unavailable");
+  const calories = renderer.root.findAllByType(Text).find((node) => String(node.props.accessibilityLabel).startsWith("Calories,"));
+  expect(calories?.props.accessibilityLabel).not.toContain("percentage unavailable");
   await act(async () => renderer.unmount());
 });
 

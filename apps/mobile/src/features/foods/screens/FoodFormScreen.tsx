@@ -96,9 +96,9 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             </View>
 
             <Text accessibilityRole="header" style={styles.sectionTitle}>Food</Text>
-            <LabeledField {...focusProps(foodFocusKey("name"))} label="Food name" validationTarget="food.name" required disabled={saving} invalid={form.validationIssue?.target === "food.name"} error={form.validationIssue?.target === "food.name" ? form.error : null} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
-            <LabeledField {...focusProps(foodFocusKey("brand"))} label="Brand" validationTarget="food.brand" disabled={saving} value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
-            <LabeledField {...focusProps(foodFocusKey("notes"))} label="Notes" validationTarget="food.notes" disabled={saving} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+            <LabeledField {...focusProps(foodFocusKey("name"))} label="Food name" labelStyle={styles.fieldLabel} validationTarget="food.name" required disabled={saving} invalid={form.validationIssue?.target === "food.name"} error={form.validationIssue?.target === "food.name" ? form.error : null} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+            <LabeledField {...focusProps(foodFocusKey("brand"))} label="Brand" labelStyle={styles.fieldLabel} validationTarget="food.brand" disabled={saving} value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+            <LabeledField {...focusProps(foodFocusKey("notes"))} label="Notes" labelStyle={styles.fieldLabel} validationTarget="food.notes" disabled={saving} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
 
             {form.error && form.validationIssue?.target !== "food.name" && !form.validationIssue?.target.startsWith("serving.") && !form.validationIssue?.target.startsWith("nutrient.") ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
             {saveError ? <Text ref={saveErrorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
@@ -137,7 +137,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   content: { padding: 16, paddingBottom: 16 },
   error: { color: theme.colors.errorText, marginTop: 12 }, flex: { backgroundColor: theme.colors.background, flex: 1 },
   header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
+  fieldLabel: { color: theme.colors.text, fontSize: 14, fontWeight: "600" },
+  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, fontSize: 16, marginBottom: 12, padding: 12 },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },

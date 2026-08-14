@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
 import { useFood, useFoodMutations, useFoodResolvedNutrition } from "../hooks/useFoods";
 import type { FoodDeleteDependency } from "../api/types";
 import {
+  collapsedResolvedFoodAmounts,
   formatFoodNutrientLabel,
   formatResolvedFoodAmount,
   formatResolvedFoodNutrient,
@@ -19,6 +21,7 @@ import {
 import { foodDetailLoadState } from "../utils/foodDetailState";
 import { foodDetailActions, isRevisionBackedRecipeDetail } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { BackButton } from "../../../shared/components/BackButton";
 import {
   foodDetailLogInitialAmount,
   type LogFoodInitialAmount,
@@ -42,6 +45,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAmountId, setSelectedAmountId] = useState<string | null>(null);
+  const [amountsExpanded, setAmountsExpanded] = useState(false);
   const favoriteClaimedRef = useRef(false);
   const duplicateRequestIdRef = useRef<string | null>(null);
   const deletePending = mutations.deleteFood.isPending;
@@ -105,9 +109,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   if (loadState.kind !== "ready" || !food.data) {
     return (
       <View style={styles.screen}>
-        <Pressable onPress={onBack}>
-          <Text style={styles.text}>Back</Text>
-        </Pressable>
+        <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
         <Text style={loadState.kind === "error" ? styles.error : styles.text}>
           {loadState.kind === "unavailable" || loadState.kind === "error"
             ? loadState.message
@@ -125,9 +127,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   if (resolvedNutrition.isLoading || !resolvedNutrition.data) {
     return (
       <View style={styles.screen}>
-        <Pressable onPress={onBack}>
-          <Text style={styles.text}>Back</Text>
-        </Pressable>
+        <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
         <Text style={resolvedNutrition.isError ? styles.error : styles.text}>
           {resolvedNutrition.isError
             ? apiErrorMessage(resolvedNutrition.error, "Could not resolve nutrition for this food.")
@@ -144,25 +144,26 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
 
   const availableAmounts = resolvedNutrition.data.amounts;
   const selectedAmount = selectedResolvedFoodAmount(availableAmounts, selectedAmountId);
+  const collapsedAmounts = collapsedResolvedFoodAmounts(availableAmounts, selectedAmount);
+  const displayedAmounts = amountsExpanded ? availableAmounts : collapsedAmounts;
+  const hasHiddenAmounts = availableAmounts.length > collapsedAmounts.length;
   const managedByRecipe = isRevisionBackedRecipeDetail(resolvedNutrition.data);
   const actions = foodDetailActions(resolvedNutrition.data);
+  const brand = food.data.brand?.trim();
 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
-      <Pressable onPress={onBack}>
-        <Text style={styles.text}>Back</Text>
-      </Pressable>
+      <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
       <Text style={styles.title}>{food.data.name}</Text>
-      {food.data.brand ? <Text style={styles.text}>{food.data.brand}</Text> : null}
-      <Text accessibilityLabel={`Food source ${food.data.source_label}`} style={styles.sourceLabel}>{food.data.source_label}</Text>
+      {brand ? <Text style={styles.brand}>{brand}</Text> : null}
       {managedByRecipe ? (
         <Text style={styles.publishedContext}>Current published Recipe nutrition</Text>
       ) : null}
       {selectedAmount ? (
         <View style={styles.servingSection}>
           <Text style={styles.servingHeading}>Amount</Text>
-          <View accessibilityLabel="Amount" accessibilityRole="radiogroup" style={styles.servingOptions}>
-            {availableAmounts.map((amount) => {
+          <View accessibilityLabel="Amount" accessibilityRole="radiogroup" style={[styles.servingOptions, amountsExpanded && styles.servingOptionsExpanded]}>
+            {displayedAmounts.map((amount) => {
               const selected = amount.amount_definition_id === selectedAmount.amount_definition_id;
               const formattedAmount = formatResolvedFoodAmount(amount);
               return (
@@ -175,11 +176,22 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
                   onPress={() => setSelectedAmountId(amount.amount_definition_id)}
                   style={[styles.servingOption, selected && styles.servingOptionSelected]}
                 >
-                  <Text style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{formattedAmount}</Text>
+                  <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{formattedAmount}</Text>
                 </Pressable>
               );
             })}
           </View>
+          {hasHiddenAmounts ? (
+            <AccessiblePressable
+              accessibilityHint={amountsExpanded ? "Collapses the serving amount choices" : "Shows more serving amount choices"}
+              accessibilityLabel={amountsExpanded ? "Show fewer serving amounts" : "Show more serving amounts"}
+              accessibilityState={{ expanded: amountsExpanded }}
+              onPress={() => setAmountsExpanded((expanded) => !expanded)}
+              style={styles.servingDisclosure}
+            >
+              <Text style={styles.servingDisclosureText}>{amountsExpanded ? "Fewer serving amounts" : "More serving amounts"}</Text>
+            </AccessiblePressable>
+          ) : null}
         </View>
       ) : null}
       <View style={styles.actions}>
@@ -298,6 +310,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   nutrientRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
   nutrientValue: { color: theme.colors.text, flexShrink: 0, fontWeight: "600", maxWidth: "55%", textAlign: "right" },
   primaryButton: { backgroundColor: theme.colors.accent, borderRadius: 6, padding: 10 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+  brand: { color: theme.colors.secondaryText, fontSize: 16 },
   publishedContext: { color: theme.colors.secondaryText, fontSize: 13 },
   recipeDependencyMeta: { color: theme.colors.secondaryText },
   recipeDependencyName: { color: theme.colors.text, fontWeight: "700" },
@@ -305,13 +318,15 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   screen: { backgroundColor: theme.colors.background, gap: 12, padding: 16, paddingBottom: 32, paddingRight: 28 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   servingHeading: { color: theme.colors.secondaryText, fontSize: 13, fontWeight: "700", textTransform: "uppercase" },
-  servingOption: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 16, borderWidth: 1, maxWidth: "100%", minHeight: 32, paddingHorizontal: 12, paddingVertical: 6 },
+  servingDisclosure: { alignSelf: "flex-start", paddingHorizontal: 4 },
+  servingDisclosureText: { color: theme.colors.accent, fontWeight: "700" },
+  servingOption: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 16, borderWidth: 1, flexShrink: 1, maxWidth: "100%", minHeight: 32, paddingHorizontal: 12, paddingVertical: 6 },
   servingOptionSelected: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
   servingOptionText: { color: theme.colors.secondaryText, flexShrink: 1, fontWeight: "600" },
   servingOptionTextSelected: { color: theme.colors.accent },
-  servingOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  servingOptions: { flexDirection: "row", flexWrap: "nowrap", gap: 8, maxWidth: "100%" },
+  servingOptionsExpanded: { flexWrap: "wrap" },
   servingSection: { gap: 7 },
-  sourceLabel: { color: theme.colors.secondaryText, fontWeight: "600" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
   warningTitle: { color: theme.colors.text, fontWeight: "700" },
   warningText: { color: theme.colors.warningText, fontWeight: "600" },

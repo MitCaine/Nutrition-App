@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal, Pressable, Text } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyLog } from "../src/features/logging/api/types";
@@ -12,6 +12,7 @@ let mockLogs: Record<string, unknown>;
 let mockSummary: Record<string, unknown>;
 let mockCalendar: Record<string, unknown>;
 let mockDeleteMutation: { mutateAsync: jest.Mock; isPending: boolean; projectDelete: jest.Mock; refreshDate: jest.Mock };
+let mockTargetProgressProps: Record<string, unknown> | null = null;
 const mockAccessibilityFocus = jest.fn((_target?: unknown, _options?: unknown) => jest.fn());
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
@@ -19,7 +20,7 @@ jest.mock("../src/shared/accessibility/focus", () => ({
   ...jest.requireActual("../src/shared/accessibility/focus"),
   focusAccessibilityElement: (target: unknown, options: unknown) => mockAccessibilityFocus(target, options),
 }));
-jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
+jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: (props: Record<string, unknown>) => { mockTargetProgressProps = props; return null; } }));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
@@ -70,10 +71,11 @@ async function render(
   extraProps: Partial<React.ComponentProps<typeof DailyLogScreen>> = {},
 ) {
   let renderer!: TestRenderer.ReactTestRenderer;
+  const setDate = jest.fn();
   await act(async () => {
     renderer = TestRenderer.create(withNutritionRuntime(React.createElement(DailyLogScreen, {
       date,
-      setDate: jest.fn(),
+      setDate,
       onAddFood,
       onGeneralAddFood,
       onOpenFood: jest.fn(),
@@ -92,7 +94,7 @@ async function render(
       },
     });
   });
-  return { renderer, onAddFood, onGeneralAddFood };
+  return { renderer, onAddFood, onGeneralAddFood, setDate };
 }
 
 function addFoodButtons(root: TestRenderer.ReactTestInstance): TestRenderer.ReactTestInstance[] {
@@ -117,7 +119,19 @@ beforeEach(() => {
   mockLogs = { data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   mockSummary = { data: { totals: [] }, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
+  mockTargetProgressProps = null;
   mockAccessibilityFocus.mockClear();
+});
+
+test("Daily Log derives Target Progress onboarding from existing entry state", async () => {
+  const empty = await render();
+  expect(mockTargetProgressProps?.hasLoggedNutrition).toBe(false);
+  await act(async () => empty.renderer.unmount());
+
+  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+  const logged = await render();
+  expect(mockTargetProgressProps?.hasLoggedNutrition).toBe(true);
+  await act(async () => logged.renderer.unmount());
 });
 
 test("delete requires contextual destructive confirmation and submits the reviewed entry", async () => {
@@ -215,6 +229,16 @@ test("empty supported days render all named meal Add Food actions with context",
   await act(async () => rendered.renderer.unmount());
 });
 
+test("Daily Log keeps a normal terminal scroll margin without a footer spacer", async () => {
+  const rendered = await render();
+  const scroll = rendered.renderer.root.findAllByType(ScrollView).find((node) => StyleSheet.flatten(node.props.contentContainerStyle)?.paddingRight === 12);
+  const contentStyle = StyleSheet.flatten(scroll?.props.contentContainerStyle);
+  expect(contentStyle).toMatchObject({ paddingBottom: 16 });
+  expect(contentStyle.height).toBeUndefined();
+  expect(contentStyle.minHeight).toBeUndefined();
+  await act(async () => rendered.renderer.unmount());
+});
+
 test("Unassigned remains actionless while named groups retain actions", async () => {
   mockLogs = { ...mockLogs, data: [log(null)] };
   const rendered = await render();
@@ -298,6 +322,48 @@ test("date navigation and section hierarchy expose names, roles, state, and head
     "Snack",
   ]));
   await act(async () => rendered.renderer.unmount());
+});
+
+function dateHeadingRow(root: TestRenderer.ReactTestInstance): TestRenderer.ReactTestInstance {
+  return root.findAllByType(View).find((node) => {
+    const style = StyleSheet.flatten(node.props.style) as Record<string, unknown> | undefined;
+    return style?.flexDirection === "row"
+      && style.justifyContent === "space-between"
+      && node.findAllByType(Text).some((text) => text.props.accessibilityRole === "header");
+  })!;
+}
+
+function dateStatus(root: TestRenderer.ReactTestInstance, value: string): TestRenderer.ReactTestInstance | undefined {
+  return root.findAllByType(Text).find((node) => textContent(node) === value && StyleSheet.flatten(node.props.style)?.marginLeft === "auto");
+}
+
+test("selected date classification is compact and stays with the date heading", async () => {
+  const today = await render("2026-07-14");
+  const todayRow = dateHeadingRow(today.renderer.root);
+  const chooseDate = today.renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel?.startsWith("Choose date, currently"))!;
+  expect(textContent(todayRow)).toContain("Jul 14, 2026");
+  expect(dateStatus(today.renderer.root, "Today")).toBeDefined();
+  expect(StyleSheet.flatten(dateStatus(today.renderer.root, "Today")?.props.style)).toMatchObject({ marginLeft: "auto" });
+  const todayText = screenText(today.renderer.root);
+  expect(todayText.indexOf("Jul 14, 2026")).toBeLessThan(todayText.indexOf("Choose another date"));
+  expect(chooseDate).toBeDefined();
+  await act(async () => today.renderer.unmount());
+
+  const future = await render("2026-07-15");
+  expect(dateStatus(future.renderer.root, "Future")).toBeDefined();
+  expect(screenText(future.renderer.root)).not.toContain("Past date");
+  await act(async () => future.renderer.unmount());
+});
+
+test("past dates omit visible classification while retaining return-to-Today navigation", async () => {
+  const past = await render("2026-07-13");
+  expect(screenText(past.renderer.root)).not.toContain("Past date");
+  expect(dateStatus(past.renderer.root, "Today")).toBeUndefined();
+  const todayButton = past.renderer.root.findByProps({ accessibilityLabel: "Today" });
+  expect(todayButton).toBeDefined();
+  await act(async () => todayButton.props.onPress());
+  expect(past.setDate).toHaveBeenCalledWith("2026-07-14");
+  await act(async () => past.renderer.unmount());
 });
 
 test("entry summaries and repeated actions distinguish otherwise similar foods", async () => {

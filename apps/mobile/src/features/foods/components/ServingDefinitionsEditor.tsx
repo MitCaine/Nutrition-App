@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
@@ -55,20 +55,17 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
           <View style={styles.flex}>
             <Text style={styles.eyebrow}>Base amount</Text>
             <Text style={styles.baseValue}>100 g</Text>
-            <Text style={styles.meta}>Canonical nutrient basis</Text>
           </View>
-          {baseAmount.is_default ? (
-            <View accessible accessibilityLabel="Default amount" accessibilityRole="text" style={styles.defaultStatus}>
-              <Text style={styles.defaultStatusText}>✓ Default</Text>
-            </View>
-          ) : (
-            <AccessiblePressable accessibilityLabel="Set 100 grams as default amount" onPress={() => updateServing(baseAmount.key, { is_default: true })} style={styles.compactButton}>
-              <Text style={styles.text}>Set default</Text>
-            </AccessiblePressable>
-          )}
+          <DefaultServingControl
+            accessibilityLabel={baseAmount.is_default ? "Default amount" : "Set 100 grams as default amount"}
+            disabled={false}
+            isDefault={baseAmount.is_default}
+            onPress={() => updateServing(baseAmount.key, { is_default: true })}
+            styles={styles}
+          />
         </View>
       ) : null}
-      <Text style={styles.portionsTitle}>Portions</Text>
+      <Text accessibilityRole="header" style={styles.portionsTitle}>Portions</Text>
       {portions.map((serving) => {
         const expanded = serving.key === expandedKey;
         return (
@@ -78,7 +75,13 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                 <Text accessibilityRole="header" style={styles.summaryTitle}>{serving.label || generatedAmountLabel(serving.quantity, serving.unit) || "Untitled amount"}</Text>
                 <Text style={styles.meta}>{serving.gram_weight ? `Equivalent to ${serving.gram_weight} g` : "Weight unknown"}</Text>
               </View>
-              {serving.is_default ? <Text style={styles.defaultBadge}>Default</Text> : null}
+              <DefaultServingControl
+                accessibilityLabel={serving.is_default ? "Default amount" : `Set ${serving.label || "amount"} as default`}
+                disabled={!serving.is_default && !amountHasKnownGramWeight(serving)}
+                isDefault={serving.is_default}
+                onPress={() => updateServing(serving.key, { is_default: true })}
+                styles={styles}
+              />
             </View>
             {serving.consistencyWarning ? <Text style={styles.warning}>{serving.consistencyWarning}</Text> : null}
             {expanded ? (
@@ -120,16 +123,14 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                   </View>
                 )}
                 <View style={styles.actions}>
-                  <AccessiblePressable accessibilityLabel={`Set ${serving.label || "amount"} as default`} accessibilityState={{ selected: serving.is_default }} disabled={!serving.is_default && !amountHasKnownGramWeight(serving)} onPress={() => updateServing(serving.key, { is_default: true })} style={[styles.compactButton, serving.is_default && styles.active, !serving.is_default && !amountHasKnownGramWeight(serving) && styles.disabledButton]}><Text style={serving.is_default ? styles.selectedText : styles.text}>{serving.is_default ? "Default" : "Set default"}</Text></AccessiblePressable>
-                  <AccessiblePressable accessibilityLabel={`Remove ${serving.label || "amount"}`} onPress={() => removeServing(serving.key)} style={styles.compactButton}><Text style={styles.removeText}>Remove</Text></AccessiblePressable>
+                  <ServingManagementAction accessibilityLabel={`Remove ${serving.label || "amount"}`} onPress={() => removeServing(serving.key)} styles={styles}><Text style={styles.removeText}>Remove</Text></ServingManagementAction>
                   <AccessiblePressable accessibilityLabel={`Finish editing ${serving.label || "amount"}`} accessibilityState={{ expanded: true }} onPress={() => setExpandedKey(null)} style={styles.compactButton}><Text style={styles.link}>Done</Text></AccessiblePressable>
                 </View>
               </View>
             ) : (
               <View style={styles.actions}>
-                {!serving.is_default ? <AccessiblePressable accessibilityLabel={`Set ${serving.label || "amount"} as default`} disabled={!amountHasKnownGramWeight(serving)} onPress={() => updateServing(serving.key, { is_default: true })} style={[styles.compactButton, !amountHasKnownGramWeight(serving) && styles.disabledButton]}><Text style={styles.text}>Set default</Text></AccessiblePressable> : null}
-                <AccessiblePressable accessibilityLabel={`Edit ${serving.label || "amount"}`} accessibilityState={{ expanded: false }} onPress={() => setExpandedKey(serving.key)} style={styles.compactButton}><Text style={styles.link}>Edit</Text></AccessiblePressable>
-                <AccessiblePressable accessibilityLabel={`Remove ${serving.label || "amount"}`} onPress={() => removeServing(serving.key)} style={styles.compactButton}><Text style={styles.removeText}>Remove</Text></AccessiblePressable>
+                <ServingManagementAction accessibilityLabel={`Edit ${serving.label || "amount"}`} accessibilityState={{ expanded: false }} onPress={() => setExpandedKey(serving.key)} styles={styles}><Text style={styles.link}>Edit</Text></ServingManagementAction>
+                <ServingManagementAction accessibilityLabel={`Remove ${serving.label || "amount"}`} onPress={() => removeServing(serving.key)} styles={styles}><Text style={styles.removeText}>Remove</Text></ServingManagementAction>
               </View>
             )}
           </View>
@@ -149,6 +150,51 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
       />
     </View>
   );
+}
+
+function DefaultServingControl({ accessibilityLabel, disabled, isDefault, onPress, styles }: {
+  accessibilityLabel: string;
+  disabled: boolean;
+  isDefault: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  if (isDefault) {
+    return (
+      <View
+        accessible
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="text"
+        accessibilityState={{ selected: true }}
+        style={styles.defaultControl}
+      >
+        <View style={[styles.defaultControlSurface, styles.defaultControlSurfaceSelected]}><Text style={styles.defaultControlSelectedText}>✓ Default</Text></View>
+      </View>
+    );
+  }
+  return (
+    <AccessiblePressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected: false }}
+      disabled={disabled}
+      onPress={onPress}
+      style={styles.defaultControl}
+    >
+      <View style={styles.defaultControlSurface}><Text style={styles.defaultControlText}>Set default</Text></View>
+    </AccessiblePressable>
+  );
+}
+
+function ServingManagementAction({ accessibilityLabel, accessibilityState, children, onPress, styles }: {
+  accessibilityLabel: string;
+  accessibilityState?: { expanded?: boolean; selected?: boolean };
+  children: ReactNode;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return <AccessiblePressable accessibilityLabel={accessibilityLabel} accessibilityState={accessibilityState} onPress={onPress} style={styles.managementTarget}>
+    <View style={styles.managementSurface}>{children}</View>
+  </AccessiblePressable>;
 }
 
 function UnitPickerModal({ amount, visible, rememberedCustomUnit, onCancel, onRememberCustom, onSelect, returnFocusRef }: { amount: ServingFormValue | null; visible: boolean; rememberedCustomUnit: string; onCancel: () => void; onRememberCustom: (unit: string) => void; onSelect: (unit: string) => void; returnFocusRef: RefObject<View | null> }) {
@@ -190,5 +236,55 @@ function unitDisplay(unit: string): string {
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  text: { color: theme.colors.text }, active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent }, addButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, minHeight: 44, padding: 10 }, addText: { color: theme.colors.accent, fontWeight: "700" }, actions: { flexDirection: "row", flexWrap: "wrap", gap: 7 }, baseRow: { alignItems: "center", backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: 10, padding: 10 }, baseValue: { color: theme.colors.text, fontSize: 18, fontWeight: "700" }, calculatedInput: { color: theme.colors.secondaryText }, compactButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minHeight: 44, paddingHorizontal: 10, paddingVertical: 7 }, container: { gap: 10 }, defaultBadge: { color: theme.colors.accent, fontSize: 12, fontWeight: "700" }, defaultStatus: { alignItems: "center", backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, minHeight: 44, justifyContent: "center", paddingHorizontal: 10, paddingVertical: 7 }, defaultStatusText: { color: theme.colors.accent, fontWeight: "700" }, disabledButton: { opacity: 0.5 }, editor: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 12, paddingTop: 12 }, fieldError: { color: theme.colors.errorText, fontSize: 13, marginTop: 6 }, eyebrow: { color: theme.colors.secondaryText, fontSize: 12, fontWeight: "700", textTransform: "uppercase" }, fieldLabel: { color: theme.colors.text, fontSize: 13, fontWeight: "700", marginBottom: 5 }, flex: { flex: 1, minWidth: 140 }, input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, minHeight: 44, padding: 11 }, labelHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }, link: { color: theme.colors.accent, fontWeight: "700" }, meta: { color: theme.colors.secondaryText, fontSize: 13 }, modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 }, modalCard: { backgroundColor: theme.colors.surface, borderRadius: 10, maxHeight: "80%", padding: 14, width: "100%" }, modalHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 8 }, modalTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "700" }, pickerChoices: { flexDirection: "row", flexWrap: "wrap", gap: 7 }, pickerChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 6, justifyContent: "center", minHeight: 44, paddingHorizontal: 13, paddingVertical: 8 }, selectedPickerChoice: { gap: 8, paddingHorizontal: 15 }, pickerContent: { gap: 14, paddingBottom: 8 }, pickerGroup: { gap: 7 }, portionCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 9, padding: 10 }, portionsTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700", marginTop: 2 }, previewRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" }, previewValue: { color: theme.colors.text, fontWeight: "700" }, removeText: { color: theme.colors.destructive, fontWeight: "600" }, selectedText: { color: theme.colors.accent, fontWeight: "700" }, selector: { alignItems: "center", backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 44, padding: 11 }, selectorChevron: { color: theme.colors.secondaryText, fontSize: 18 }, selectorText: { color: theme.colors.text }, summaryRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8 }, summaryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" }, twoColumn: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, warning: { color: theme.colors.warningText, fontSize: 13 }, weightRow: { alignItems: "flex-end", flexDirection: "row", gap: 8 }, weightUnit: { color: theme.colors.text, fontWeight: "700", paddingBottom: 12 },
+  text: { color: theme.colors.text },
+  active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  addButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, minHeight: 44, paddingHorizontal: 10, paddingVertical: 8 },
+  addText: { color: theme.colors.accent, fontWeight: "700" },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  baseRow: { alignItems: "center", backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: 6, padding: 8 },
+  baseValue: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+  calculatedInput: { color: theme.colors.secondaryText },
+  compactButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minHeight: 44, paddingHorizontal: 6, paddingVertical: 5 },
+  container: { gap: 8 },
+  defaultControl: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 96, paddingHorizontal: 0, paddingVertical: 0 },
+  defaultControlSurface: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 32, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 },
+  defaultControlSurfaceSelected: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+  defaultControlSelectedText: { color: theme.colors.accent, fontWeight: "700" },
+  defaultControlText: { color: theme.colors.text },
+  disabledButton: { opacity: 0.5 },
+  editor: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 12, paddingTop: 12 },
+  fieldError: { color: theme.colors.errorText, fontSize: 13, marginTop: 6 },
+  eyebrow: { color: theme.colors.secondaryText, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
+  fieldLabel: { color: theme.colors.text, fontSize: 13, fontWeight: "700", marginBottom: 5 },
+  flex: { flex: 1, minWidth: 140 },
+  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, fontSize: 16, minHeight: 44, paddingHorizontal: 8, paddingVertical: 8 },
+  labelHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  link: { color: theme.colors.accent, fontWeight: "700" },
+  managementSurface: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 32, paddingHorizontal: 10, paddingVertical: 8 },
+  managementTarget: { alignItems: "center", justifyContent: "center", minHeight: 44, paddingHorizontal: 0, paddingVertical: 0 },
+  meta: { color: theme.colors.secondaryText, fontSize: 13 },
+  modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },
+  modalCard: { backgroundColor: theme.colors.surface, borderRadius: 10, maxHeight: "80%", padding: 14, width: "100%" },
+  modalHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 8 },
+  modalTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "700" },
+  pickerChoices: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  pickerChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 6, justifyContent: "center", minHeight: 44, paddingHorizontal: 13, paddingVertical: 8 },
+  selectedPickerChoice: { gap: 8, paddingHorizontal: 15 },
+  pickerContent: { gap: 14, paddingBottom: 8 },
+  pickerGroup: { gap: 7 },
+  portionCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 8 },
+  portionsTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginTop: 2 },
+  previewRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" },
+  previewValue: { color: theme.colors.text, fontWeight: "700" },
+  removeText: { color: theme.colors.destructive, fontWeight: "600" },
+  selectedText: { color: theme.colors.accent, fontWeight: "700" },
+  selector: { alignItems: "center", backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 44, paddingHorizontal: 8, paddingVertical: 8 },
+  selectorChevron: { color: theme.colors.secondaryText, fontSize: 18 },
+  selectorText: { color: theme.colors.text },
+  summaryRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  summaryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+  twoColumn: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  warning: { color: theme.colors.warningText, fontSize: 13 },
+  weightRow: { alignItems: "flex-end", flexDirection: "row", gap: 8 },
+  weightUnit: { color: theme.colors.text, fontWeight: "700", paddingBottom: 12 },
 }); }

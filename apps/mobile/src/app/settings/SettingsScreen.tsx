@@ -15,6 +15,7 @@ import {
   useAccessibilityScreenFocus,
   type AccessibilityFocusRequester,
 } from "../../shared/accessibility/focus";
+import { BackButton } from "../../shared/components/BackButton";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import {
@@ -122,10 +123,7 @@ export function SettingsScreen({
   return (
     <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" style={styles.scroll}>
       <View style={styles.header}>
-        <AccessiblePressable accessibilityLabel="Back from settings" onPress={onBack} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
-          <Ionicons name="chevron-back" size={24} color={theme.colors.accent} />
-          <Text style={styles.backText}>Back</Text>
-        </AccessiblePressable>
+        <BackButton accessibilityLabel="Back from settings" onPress={onBack} />
         <Text ref={settingsHeadingRef} accessibilityRole="header" style={styles.title}>Settings</Text>
       </View>
       <Text accessibilityRole="header" style={styles.sectionTitle}>Appearance</Text>
@@ -279,8 +277,6 @@ export function SettingsScreen({
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
-    back: { alignItems: "center", alignSelf: "flex-start", borderRadius: 8, flexDirection: "row", flexWrap: "wrap", paddingRight: 10 },
-    backText: { color: theme.colors.accent, fontSize: 16 },
     header: { gap: 8 },
     option: { alignItems: "center", backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 8, justifyContent: "space-between", minHeight: 52, paddingHorizontal: 14, paddingVertical: 8 },
     optionText: { color: theme.colors.text, flex: 1, fontSize: 17 },

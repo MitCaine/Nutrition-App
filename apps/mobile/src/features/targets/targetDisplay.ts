@@ -34,7 +34,8 @@ function formatDecimal(coefficient: bigint, scale: number, trimTrailingZeros: bo
   const digits = coefficient.toString().padStart(scale + 1, "0");
   if (scale === 0) return digits;
   const whole = digits.slice(0, -scale);
-  const fraction = digits.slice(-scale).replace(trimTrailingZeros ? /0+$/ : /$^/, "");
+  const rawFraction = digits.slice(-scale);
+  const fraction = trimTrailingZeros ? rawFraction.replace(/0+$/, "") : rawFraction;
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
