@@ -145,6 +145,21 @@ test("local defaults, explicit overrides, precedence, and reset match remote Tar
       authority: "daily_value",
       direction: "minimum",
     });
+    expect(byId(defaults.effectiveTargets, "protein")).toMatchObject({
+      amount: "50",
+      authority: "daily_value",
+      direction: "reference",
+    });
+    expect(byId(defaults.effectiveTargets, "total_carbohydrate")).toMatchObject({
+      amount: "275",
+      authority: "daily_value",
+      direction: "reference",
+    });
+    expect(byId(defaults.effectiveTargets, "total_fat")).toMatchObject({
+      amount: "78",
+      authority: "daily_value",
+      direction: "reference",
+    });
 
     const updated = await targets.updateConfiguration(targetInput({ calories: "2400", protein: "150" }));
     expect(updated.profile).toMatchObject({ heightCm: "175.000", weightKg: "70.000" });
@@ -154,11 +169,497 @@ test("local defaults, explicit overrides, precedence, and reset match remote Tar
 
     const changedProfile = await targets.updateConfiguration(targetInput({ calories: "2400", protein: null }));
     expect(byId(changedProfile.effectiveTargets, "calories")).toMatchObject({ amount: "2400.000000", authority: "manual_override" });
-    expect(byId(changedProfile.effectiveTargets, "protein")).toMatchObject({ amount: "50", authority: "daily_value" });
+    expect(byId(changedProfile.effectiveTargets, "protein")).toMatchObject({ amount: "56.000000", authority: "calculated_estimate" });
+    expect(byId(changedProfile.effectiveTargets, "total_carbohydrate")).toMatchObject({
+      amount: "317.350000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+    expect(byId(changedProfile.effectiveTargets, "total_fat")).toMatchObject({
+      amount: "70.522222",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
 
     const reset = await targets.resetOverride("calories");
     expect(byId(reset.effectiveTargets, "calories")).toMatchObject({ amount: "2308", authority: "calculated_estimate" });
     expect(reset.manualOverrides).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized iron follows adult age and sex while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "iron")).toMatchObject({
+      amount: "18",
+      authority: "daily_value",
+      direction: "minimum",
+    });
+
+    const male = await targets.updateConfiguration(targetInput());
+    expect(byId(male.effectiveTargets, "iron")).toMatchObject({
+      amount: "8.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const female = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(female.effectiveTargets, "iron")).toMatchObject({
+      amount: "18.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const femaleAge51 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1975-07-14",
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(femaleAge51.effectiveTargets, "iron")).toMatchObject({
+      amount: "8.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized calcium follows adult age and sex while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "calcium")).toMatchObject({
+      amount: "1300",
+      authority: "daily_value",
+      direction: "minimum",
+    });
+
+    const adult = await targets.updateConfiguration(targetInput());
+    expect(byId(adult.effectiveTargets, "calcium")).toMatchObject({
+      amount: "1000.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const femaleAge51 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1975-07-14",
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(femaleAge51.effectiveTargets, "calcium")).toMatchObject({
+      amount: "1200.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const maleAge70 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1956-07-14",
+        sex_for_equation: "male",
+      },
+    });
+    expect(byId(maleAge70.effectiveTargets, "calcium")).toMatchObject({
+      amount: "1000.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const maleAge71 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1955-07-14",
+        sex_for_equation: "male",
+      },
+    });
+    expect(byId(maleAge71.effectiveTargets, "calcium")).toMatchObject({
+      amount: "1200.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized vitamin D follows adult age while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "vitamin_d")).toMatchObject({
+      amount: "20",
+      authority: "daily_value",
+      direction: "minimum",
+    });
+
+    const adult = await targets.updateConfiguration(targetInput());
+    expect(byId(adult.effectiveTargets, "vitamin_d")).toMatchObject({
+      amount: "15.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const age70 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1956-07-14",
+      },
+    });
+    expect(byId(age70.effectiveTargets, "vitamin_d")).toMatchObject({
+      amount: "15.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const age71 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1955-07-14",
+      },
+    });
+    expect(byId(age71.effectiveTargets, "vitamin_d")).toMatchObject({
+      amount: "20.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized potassium follows adult sex while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "potassium")).toMatchObject({
+      amount: "4700",
+      authority: "daily_value",
+      direction: "minimum",
+    });
+
+    const male = await targets.updateConfiguration(targetInput());
+    expect(byId(male.effectiveTargets, "potassium")).toMatchObject({
+      amount: "3400.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const female = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(female.effectiveTargets, "potassium")).toMatchObject({
+      amount: "2600.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized magnesium follows adult age and sex while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "magnesium")).toMatchObject({
+      amount: "420",
+      authority: "daily_value",
+      direction: "reference",
+    });
+
+    const maleAge30 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1996-07-14",
+        sex_for_equation: "male",
+      },
+    });
+    expect(byId(maleAge30.effectiveTargets, "magnesium")).toMatchObject({
+      amount: "400.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const maleAge31 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1995-07-14",
+        sex_for_equation: "male",
+      },
+    });
+    expect(byId(maleAge31.effectiveTargets, "magnesium")).toMatchObject({
+      amount: "420.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const femaleAge30 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1996-07-14",
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(femaleAge30.effectiveTargets, "magnesium")).toMatchObject({
+      amount: "310.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const femaleAge31 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1995-07-14",
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(femaleAge31.effectiveTargets, "magnesium")).toMatchObject({
+      amount: "320.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized fiber follows adult age and sex while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "dietary_fiber")).toMatchObject({
+      amount: "28",
+      authority: "daily_value",
+      direction: "minimum",
+    });
+
+    const maleAge50 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1976-07-14",
+        sex_for_equation: "male",
+      },
+    });
+    expect(byId(maleAge50.effectiveTargets, "dietary_fiber")).toMatchObject({
+      amount: "38.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const maleAge51 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1975-07-14",
+        sex_for_equation: "male",
+      },
+    });
+    expect(byId(maleAge51.effectiveTargets, "dietary_fiber")).toMatchObject({
+      amount: "30.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const femaleAge50 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1976-07-14",
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(femaleAge50.effectiveTargets, "dietary_fiber")).toMatchObject({
+      amount: "25.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+
+    const femaleAge51 = await targets.updateConfiguration({
+      ...targetInput(),
+      profile: {
+        ...targetInput().profile,
+        birth_date: "1975-07-14",
+        sex_for_equation: "female",
+      },
+    });
+    expect(byId(femaleAge51.effectiveTargets, "dietary_fiber")).toMatchObject({
+      amount: "21.000000",
+      authority: "calculated_estimate",
+      direction: "target",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("personalized saturated fat uses ten percent of maintenance energy while retaining FDA fallback", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "saturated_fat")).toMatchObject({
+      amount: "20",
+      authority: "daily_value",
+      direction: "limit",
+    });
+
+    const personalized = await targets.updateConfiguration(targetInput());
+    expect(personalized.estimatedMaintenanceCalories.amount).toBe("2308");
+    expect(byId(personalized.effectiveTargets, "saturated_fat")).toMatchObject({
+      amount: "25.644444",
+      authority: "calculated_estimate",
+      direction: "limit",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("sodium retains the FDA limit when general-adult personalization is available", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "sodium")).toMatchObject({
+      amount: "2300",
+      authority: "daily_value",
+      direction: "limit",
+    });
+
+    const personalized = await targets.updateConfiguration(targetInput());
+    expect(byId(personalized.effectiveTargets, "sodium")).toMatchObject({
+      amount: "2300",
+      authority: "daily_value",
+      direction: "limit",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("added sugars retain the FDA limit when general-adult personalization is available", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "added_sugars")).toMatchObject({
+      amount: "50",
+      authority: "daily_value",
+      direction: "limit",
+    });
+
+    const personalized = await targets.updateConfiguration(targetInput());
+    expect(byId(personalized.effectiveTargets, "added_sugars")).toMatchObject({
+      amount: "50",
+      authority: "daily_value",
+      direction: "limit",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("cholesterol retains the FDA limit when general-adult personalization is available", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+    expect(byId(defaults.effectiveTargets, "cholesterol")).toMatchObject({
+      amount: "300",
+      authority: "daily_value",
+      direction: "limit",
+    });
+
+    const personalized = await targets.updateConfiguration(targetInput());
+    expect(byId(personalized.effectiveTargets, "cholesterol")).toMatchObject({
+      amount: "300",
+      authority: "daily_value",
+      direction: "limit",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("trans fat and total sugars remain unavailable when personalization is available", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const targets = runtime(database);
+
+    const defaults = await targets.getConfiguration();
+
+    expect(byId(defaults.effectiveTargets, "trans_fat")).toMatchObject({
+      amount: null,
+      authority: "unavailable",
+      direction: "unavailable",
+      noteCode: "daily_value_not_established",
+    });
+    expect(byId(defaults.effectiveTargets, "total_sugars")).toMatchObject({
+      amount: null,
+      authority: "unavailable",
+      direction: "unavailable",
+      noteCode: "daily_value_not_established",
+    });
+
+    const personalized = await targets.updateConfiguration(targetInput());
+
+    expect(byId(personalized.effectiveTargets, "trans_fat")).toMatchObject({
+      amount: null,
+      authority: "unavailable",
+      direction: "unavailable",
+      noteCode: "daily_value_not_established",
+    });
+    expect(byId(personalized.effectiveTargets, "total_sugars")).toMatchObject({
+      amount: null,
+      authority: "unavailable",
+      direction: "unavailable",
+      noteCode: "daily_value_not_established",
+    });
   } finally {
     database.close();
   }
@@ -177,6 +678,11 @@ test("incomplete, unsupported, and age-limited profiles remain explicitly unavai
       amount: null,
       reasonCode: "target_estimate_unsupported_context",
     });
+    expect(byId(unsupported.effectiveTargets, "protein")).toMatchObject({
+      amount: "50",
+      authority: "daily_value",
+      direction: "reference",
+    });
 
     const ageLimited = await targets.updateConfiguration({
       ...targetInput(),
@@ -184,6 +690,11 @@ test("incomplete, unsupported, and age-limited profiles remain explicitly unavai
     });
     expect(ageLimited.estimatedMaintenanceCalories.reasonCode).toBe("target_estimate_unsupported_age");
     expect(byId(ageLimited.effectiveTargets, "calories")).toMatchObject({ authority: "unavailable", reasonCode: "target_estimate_unsupported_age" });
+    expect(byId(ageLimited.effectiveTargets, "protein")).toMatchObject({
+      amount: "50",
+      authority: "daily_value",
+      direction: "reference",
+    });
   } finally {
     database.close();
   }

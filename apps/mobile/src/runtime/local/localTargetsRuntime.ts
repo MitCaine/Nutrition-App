@@ -9,6 +9,18 @@ import type {
   TargetProfile,
   TargetValue,
 } from "../../features/targets/api/types";
+import { generalAdultCalciumTarget } from "../../features/targets/calciumRecommendation";
+import {
+  generalAdultCarbohydrateTarget,
+  generalAdultFatTarget,
+} from "../../features/targets/macroRecommendation";
+import { generalAdultFiberTarget } from "../../features/targets/fiberRecommendation";
+import { generalAdultIronTarget } from "../../features/targets/ironRecommendation";
+import { generalAdultMagnesiumTarget } from "../../features/targets/magnesiumRecommendation";
+import { generalAdultPotassiumTarget } from "../../features/targets/potassiumRecommendation";
+import { generalAdultProteinTarget } from "../../features/targets/proteinRecommendation";
+import { generalAdultSaturatedFatLimit } from "../../features/targets/saturatedFatRecommendation";
+import { generalAdultVitaminDTarget } from "../../features/targets/vitaminDRecommendation";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import {
   parseDateOnly,
@@ -589,6 +601,75 @@ async function buildConfiguration(
   const estimate = estimateMaintenanceCalories(profile, asOf);
   const values = dailyValues();
   const dailyById = new Map(values.map((value) => [value.nutrientId, value]));
+  const profileAge = profile?.birthDate
+    ? ageOn(profile.birthDate, asOf)
+    : null;
+  const personalizedProtein =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+    && profileAge >= 19
+      ? generalAdultProteinTarget(profile.weightKg)
+      : null;
+  const personalizedCarbohydrate =
+    profile?.energyEstimationContext === "general_adult"
+    && estimate.availability === "available"
+      ? generalAdultCarbohydrateTarget(estimate.amount)
+      : null;
+  const personalizedFat =
+    profile?.energyEstimationContext === "general_adult"
+    && estimate.availability === "available"
+      ? generalAdultFatTarget(estimate.amount)
+      : null;
+  const personalizedSaturatedFat =
+    profile?.energyEstimationContext === "general_adult"
+    && estimate.availability === "available"
+      ? generalAdultSaturatedFatLimit(estimate.amount)
+      : null;
+  const personalizedIron =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+      ? generalAdultIronTarget(
+          profileAge,
+          profile.sexForEquation,
+        )
+      : null;
+  const personalizedPotassium =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+      ? generalAdultPotassiumTarget(
+          profileAge,
+          profile.sexForEquation,
+        )
+      : null;
+  const personalizedMagnesium =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+      ? generalAdultMagnesiumTarget(
+          profileAge,
+          profile.sexForEquation,
+        )
+      : null;
+  const personalizedFiber =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+      ? generalAdultFiberTarget(
+          profileAge,
+          profile.sexForEquation,
+        )
+      : null;
+  const personalizedCalcium =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+      ? generalAdultCalciumTarget(
+          profileAge,
+          profile.sexForEquation,
+        )
+      : null;
+  const personalizedVitaminD =
+    profile?.energyEstimationContext === "general_adult"
+    && profileAge !== null
+      ? generalAdultVitaminDTarget(profileAge)
+      : null;
   const effectiveTargets: TargetValue[] = [];
   for (const [nutrientId, , , defaultUnit] of SQLITE_NUTRIENT_SEED_ROWS) {
     const override = overrides.get(nutrientId);
@@ -601,6 +682,106 @@ async function buildConfiguration(
         nutrientId,
         amount: estimate.amount,
         unit: "kcal",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "protein" && personalizedProtein !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedProtein,
+        unit: "g",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "total_carbohydrate" && personalizedCarbohydrate !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedCarbohydrate,
+        unit: "g",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "total_fat" && personalizedFat !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedFat,
+        unit: "g",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "saturated_fat" && personalizedSaturatedFat !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedSaturatedFat,
+        unit: "g",
+        authority: "calculated_estimate",
+        direction: "limit",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "iron" && personalizedIron !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedIron,
+        unit: "mg",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "calcium" && personalizedCalcium !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedCalcium,
+        unit: "mg",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "vitamin_d" && personalizedVitaminD !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedVitaminD,
+        unit: "mcg",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "potassium" && personalizedPotassium !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedPotassium,
+        unit: "mg",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "magnesium" && personalizedMagnesium !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedMagnesium,
+        unit: "mg",
+        authority: "calculated_estimate",
+        direction: "target",
+        reasonCode: null,
+        noteCode: null,
+      });
+    } else if (nutrientId === "dietary_fiber" && personalizedFiber !== null) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: personalizedFiber,
+        unit: "g",
         authority: "calculated_estimate",
         direction: "target",
         reasonCode: null,
