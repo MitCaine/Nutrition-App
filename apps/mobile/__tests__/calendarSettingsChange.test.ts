@@ -69,6 +69,9 @@ jest.mock("../src/app/theme/AppTheme", () => {
 jest.mock("../src/features/ocr/diagnostics/diagnosticsModel", () => ({
   isOcrDiagnosticsEnabled: () => false,
 }));
+jest.mock("../src/features/calendar/deviceTimeZone", () => ({
+  deviceTimeZone: () => "America/Los_Angeles",
+}));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
 
 import { SettingsScreen } from "../src/app/settings/SettingsScreen";
