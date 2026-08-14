@@ -231,9 +231,13 @@ test("empty supported days render all named meal Add Food actions with context",
 
 test("Daily Log keeps a normal terminal scroll margin without a footer spacer", async () => {
   const rendered = await render();
-  const scroll = rendered.renderer.root.findAllByType(ScrollView).find((node) => StyleSheet.flatten(node.props.contentContainerStyle)?.paddingRight === 12);
-  const contentStyle = StyleSheet.flatten(scroll?.props.contentContainerStyle);
+  const scroll = rendered.renderer.root.findAllByType(ScrollView).find(
+    (node) => node.props.scrollEventThrottle === 100 && node.props.scrollIndicatorInsets?.right === 1,
+  );
+  expect(scroll).toBeDefined();
+  const contentStyle = StyleSheet.flatten(scroll!.props.contentContainerStyle);
   expect(contentStyle).toMatchObject({ paddingBottom: 16 });
+  expect(contentStyle.paddingRight).toBeUndefined();
   expect(contentStyle.height).toBeUndefined();
   expect(contentStyle.minHeight).toBeUndefined();
   await act(async () => rendered.renderer.unmount());

@@ -1202,7 +1202,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   noteToggle: { color: theme.colors.accent, fontWeight: "600" },
   mealGroup: { gap: 8 },
   refreshingText: { color: theme.colors.secondaryText, fontSize: 13 },
-  screen: { gap: 12, paddingBottom: 16, paddingRight: 12 },
+  screen: { gap: 12, paddingBottom: 16 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   totalRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, justifyContent: "space-between" },
