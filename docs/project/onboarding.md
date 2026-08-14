@@ -52,8 +52,11 @@ Feature and operations guides are task-specific follow-up reading, not a prerequ
 ## Working rules
 
 - Treat implementation as authoritative and report documentation drift.
+- Determine the selected application-data authority before tracing a feature: local goes through
+  `NutritionRuntime` to SQLite; remote goes through the remote adapter to FastAPI/PostgreSQL.
 - Preserve immutable history, ownership, unknown-versus-zero semantics, and exact replay behavior.
-- Use PostgreSQL for claims about migrations, locks, roles, grants, or concurrency.
+- Use native/file-backed SQLite evidence for local schema/lifecycle/transaction claims; use
+  PostgreSQL for remote Alembic, row-lock, role, grant, and multi-worker concurrency claims.
 - Do not infer authority from a command return when an authoritative observation is required.
 - Keep historical records point-in-time; update current guides and link to the record.
 - Finish with the validation selected by the Testing Guide and the session-end contract.

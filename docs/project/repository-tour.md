@@ -10,13 +10,15 @@ developer should explore it, rather than alphabetically.
 ```mermaid
 flowchart TD
     Root["README and docs index"] --> Mobile["apps/mobile/src/features"]
-    Root --> Backend["apps/backend/app"]
-    Mobile --> ApiClient["Feature API clients"]
-    ApiClient --> Routers["Backend API routers"]
+    Mobile --> Runtime["NutritionRuntime"]
+    Runtime -->|local| Local["src/runtime/local"]
+    Local --> SQLite["src/storage/sqlite"]
+    Runtime -->|remote| Remote["src/runtime/remote"]
+    Remote --> Routers["Backend API routers"]
     Routers --> Services["Application services"]
     Services --> Domain["Domain and nutrition rules"]
-    Services --> Repositories["Repositories and models"]
-    Repositories --> Migrations["Application migrations"]
+    Services --> Repositories["PostgreSQL repositories and models"]
+    Repositories --> Migrations["Remote application Alembic migrations"]
     Root --> Tests["Backend and mobile tests"]
     Root -.->|only for operations work| Operators["Phase 5 operators and control migrations"]
 ```
@@ -24,11 +26,15 @@ flowchart TD
 For a feature change, follow one real user action end to end:
 
 1. Find the screen under `apps/mobile/src/features/<feature>/screens`.
-2. Follow its hook into `api/` and then the corresponding FastAPI router.
-3. Follow the router into its service.
-4. Read the domain or nutrition utility called by that service.
-5. Inspect the repository and model only when persistence behavior matters.
-6. Find the matching backend and mobile tests before changing the contract.
+2. Follow its hook/API contract into `NutritionRuntime`.
+3. Determine the selected implementation path: `src/runtime/local` + SQLite or
+   `src/runtime/remote` + FastAPI.
+4. For local behavior, follow the local runtime/use-case code into `src/storage/sqlite` only when
+   persistence matters.
+5. For remote behavior, follow the router into its service/domain/repository as needed.
+6. Find the matching mobile tests plus local or remote qualification before changing the contract.
+
+Do not assume a mobile feature call necessarily crosses HTTP.
 
 ## Top-level map
 
@@ -40,19 +46,25 @@ technical layer across the whole app.
 ```text
 src/app/                  Navigation, providers, settings, and theme
 src/features/             Foods, Recipes, Logging, USDA, OCR, and Targets
-src/shared/               API transport, forms, idempotency, and display utilities
+src/runtime/              NutritionRuntime plus local and remote authority adapters
+src/storage/sqlite/       Local semantic schema, schema-version migrations, and SQLite foundation
+src/shared/               Shared contracts, exact-value helpers, remote transport, forms, and display utilities
 src/native/ocr/           TypeScript boundary to the native OCR module
 modules/nutrition-ocr/    Swift Apple Vision Expo module and native tests
-__tests__/                Jest unit, component-model, and flow tests
-config/                   Runtime configuration validation
+__tests__/                Jest unit, runtime, component-model, and flow tests
+config/                   Runtime/deployment configuration validation
 ```
 
-Start with a feature's `screens/`, then `hooks/`, `api/`, and `utils/`. The shared API client is the
-only place that should apply base URL and authentication policy.
+Start with a feature's `screens/`, then `hooks/`, `api/`, and `utils/`. Follow the feature call
+through `NutritionRuntime` before choosing an implementation path. Local mode continues under
+`src/runtime/local` and `src/storage/sqlite`; remote mode continues through the remote adapter and
+shared API client. Base URL and authentication policy belong only to remote transport.
 
 ### `apps/backend`
 
-The FastAPI application and all authoritative domain behavior.
+The preserved FastAPI/PostgreSQL remote authority and PostgreSQL reference implementation. It is
+authoritative when mobile authority is `remote`; local application-data operations do not require
+this process.
 
 ```text
 app/api/v1/routers/       HTTP translation and response status mapping
@@ -103,17 +115,33 @@ under `historical/` and stays outside the default context.
 
 ## The persistence map
 
-There are two independent database domains:
+There are three distinct persistence domains:
 
-| Database | Migration stream | Contains |
+| Authority/domain | Evolution mechanism | Contains |
 | --- | --- | --- |
-| Application PostgreSQL | `apps/backend/app/migrations` | Users, Foods, Recipes, revisions, Logs, OCR traces, Targets, historical conversion metadata, and local write-fence prerequisites |
-| Control PostgreSQL | `apps/backend/app/control_migrations` | Immutable operational evidence, promotion workflow, leases/outbox, admission decisions, and typed evidence projections |
+| Local application SQLite | `apps/mobile/src/storage/sqlite` schema version + migrations | Local Users/profile, Foods, Recipes, immutable revisions, Logs/snapshots, OCR traces, Targets, favorites, idempotency, and local runtime state |
+| Remote application PostgreSQL | `apps/backend/app/migrations` Alembic stream | Preserved remote application data plus PostgreSQL-specific historical conversion and production prerequisites |
+| Control PostgreSQL | `apps/backend/app/control_migrations` Alembic stream | Immutable operational evidence, promotion workflow, leases/outbox, admission decisions, and typed evidence projections |
 
-Most developers use only the application database. Never run the control migration stream against
-the application database or infer that a control-table model belongs in the user-facing API.
-The current application head is `0021_target_activation_execution`; the current control head is
-`ops_0011_phase5c4_recovery_audit`.
+Only one **application-data** authority is selected for a running mobile context. Control PostgreSQL
+is operations-only. Local SQLite is not a cache of remote PostgreSQL, and the PostgreSQL Alembic
+history is not mechanically replayed into SQLite.
+
+Current PostgreSQL heads remain canonical in [Current State](current-state.md). For repository
+orientation, the remote application lineage includes the specially authorized
+`0021_target_activation_execution` activation revision, while the current control migration head
+is `ops_0011_phase5c4_recovery_audit`.
+
+### Authority-first rule
+
+Before following any feature walkthrough below, decide whether the change is:
+
+- authority-neutral contract/presentation work;
+- local SQLite runtime work;
+- remote FastAPI/PostgreSQL work; or
+- parity work that must preserve both.
+
+That decision determines which implementation and tests are authoritative.
 
 ## Find your change
 
@@ -280,30 +308,36 @@ decision and then identifies the contracts and proofs that normally move with it
   components only for behavior genuinely reused across features.
 - **Expected tests:** Screen/model state, validation, API mapping, loading/error/retry behavior,
   navigation handoff, accessibility-sensitive layout, and affected integration flows.
-- **Preserve:** The central API/authentication client, explicit server authority, safe retry IDs,
-  stale-response suppression, and no implied success before the backend commits.
-- **Decisions:** [Online-first mobile architecture](../architecture/decisions.md#online-first-mobile-architecture)
+- **Preserve:** Explicit selected-runtime authority, remote transport centralization when remote,
+  safe retry IDs, stale-response suppression, and no implied success before the selected authority
+  commits.
+- **Decisions:** [Explicit mobile application-data authority](../architecture/decisions.md#explicit-mobile-application-data-authority)
   and [fail-closed configuration](../architecture/decisions.md#fail-closed-deployment-configuration).
 
-### Adding offline persistence
+### Changing local SQLite persistence
 
-- **Begin:** Treat this as an architecture change, not a storage-library task. Start with the
-  [offline boundary](../features/ocr-search-and-offline.md#offline-and-caching-behavior) and enumerate which
-  reads, mutations, conflicts, identities, and historical records would be synchronized.
-- **Architecture and reading:** Read [Why an online-first design?](invariants.md#why-an-online-first-design),
-  transaction boundaries, ownership, idempotency, and revision-backed history before proposing a
-  local schema or queue.
-- **Typical directories:** A future design would cross feature hooks, the shared API/idempotency
-  client, runtime configuration, and backend replay contracts. There is currently no native SQLite
-  persistence layer or Repository Provider/Factory to extend.
-- **Expected tests:** Restart persistence, queue replay, payload conflicts, ordering, identity
-  changes, schema migration, partial synchronization, deletion, stale revision, and network
-  failure injection across backend and mobile.
-- **Preserve:** PostgreSQL remains authoritative; a queued mutation is not displayed as committed;
-  immutable snapshots/revisions and owner boundaries survive replay; conflicts are explicit.
-- **Decisions:** [Online-first mobile architecture](../architecture/decisions.md#online-first-mobile-architecture).
-  A durable offline mutation system requires a new bounded ADR because it changes this accepted
-  decision.
+Local SQLite persistence is implemented and authoritative in local mode; it is no longer a future
+offline-cache proposal.
+
+- **Begin:** Start at `NutritionRuntime`, the owning `src/runtime/local/*Runtime.ts` adapter, and
+  `src/storage/sqlite/schema.ts` / `migrations.ts`.
+- **Architecture and reading:** Read [Explicit mobile application-data authority](../architecture/decisions.md#explicit-mobile-application-data-authority),
+  [Offline and caching behavior](../features/ocr-search-and-offline.md#offline-and-caching-behavior),
+  and the persistence section of the [Architecture Overview](../architecture/overview.md#persistence-and-transaction-boundaries).
+- **Typical directories:** `apps/mobile/src/runtime/local`, `apps/mobile/src/storage/sqlite`,
+  authority bootstrap/recovery code, and focused mobile tests.
+- **Expected tests:** exact-value parity, schema creation/upgrade/rollback, file-backed transaction
+  visibility, write coordination, restart recovery, idempotency/reconciliation, immutable
+  Recipe/Log history, owner scoping, and affected UI/runtime contracts. Native SQLite evidence is
+  required for claims the JavaScript test double cannot establish.
+- **Preserve:** one selected authority, no sync/dual-write/fallback, immutable Daily Log history,
+  immutable Recipe revisions, OCR provenance, fixed source identity, exact decimals, rollback, and
+  confirmed-versus-unresolved mutation outcomes.
+- **Do not:** port Alembic revisions one-by-one, add Phase 5/control-plane tables, or introduce a
+  generic repository-provider abstraction merely because two authorities exist.
+
+Any future **synchronization** or multi-device merge remains a new architecture decision; local
+SQLite itself is already application-data behavior.
 
 ## What to ignore
 

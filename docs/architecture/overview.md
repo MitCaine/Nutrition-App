@@ -2,9 +2,11 @@
 
 > **Document role: Current Guide.**
 
-Nutrition App has a conventional mobile/API/data architecture at its center and a separate,
-optional operations architecture around production promotion. Keeping those two views distinct is
-the most important aid to understanding the repository.
+Nutrition App is local-first at the mobile runtime boundary. `NutritionRuntime` explicitly
+selects one authoritative application-data runtime: on-device SQLite for local mode or the
+preserved FastAPI/PostgreSQL system for remote mode. A separate optional operations architecture
+surrounds the remote PostgreSQL promotion path. Keeping application authority selection and
+production operations distinct is the most important aid to understanding the repository.
 
 The [Project Constitution](../project/constitution.md) defines the boundaries this architecture
 must serve. [Current State](../project/current-state.md) records active heads and limitations; this
@@ -58,8 +60,8 @@ screen and navigation
 | Hooks | Server-state queries, mutations, and cache invalidation | `src/features/*/hooks` |
 | Feature utilities | Form state, display policy, validation, error mapping | `src/features/*/utils`, `validation`, `confirmation` |
 | Runtime boundary | One composed local or remote application-data authority | `src/runtime` |
-| Feature API boundary | Request construction and runtime response validation | `src/features/*/api` |
-| Shared transport | Base URL, headers, authentication, bounded error handling | `src/shared/api/client.ts` |
+| Feature/runtime boundary | Authority-neutral request/response contracts consumed through `NutritionRuntime` | `src/features/*/api`, `src/runtime/NutritionRuntime.ts` |
+| Shared remote transport | Base URL, headers, authentication, bounded error handling for remote mode only | `src/shared/api/client.ts` |
 | Native boundary | Typed wrapper over the Swift OCR module | `src/native/ocr`, `modules/nutrition-ocr` |
 
 TanStack Query owns authority-scoped in-process application-state caching. Authority changes retire
@@ -68,6 +70,11 @@ particularly OCR and Food source contracts. React Hook Form and feature-specific
 input. Each selected runtime remains the sole authority for persisted nutrition totals.
 
 ## Backend layers
+
+These layers describe the preserved **remote** authority. They remain authoritative whenever
+`NutritionRuntime` selects `remote` and remain the PostgreSQL reference implementation for remote
+transaction/concurrency behavior. Local mode does not route application-data operations through
+these HTTP/service/repository layers.
 
 ```mermaid
 flowchart LR
@@ -141,8 +148,11 @@ meaning and ownership rather than duplicating generated schema details.
 
 ### Application data
 
-The application database stores mutable definitions and immutable historical facts together, with
-explicit links between them:
+The application has one semantic data model exposed through `NutritionRuntime`, but two alternative
+physical authorities. A running context selects one before application-data bootstrap; local and
+remote persistence are never merged implicitly.
+
+The durable model includes mutable definitions and immutable historical facts:
 
 - Foods, servings, and authored Recipes are mutable definitions.
 - Recipe publication revisions are immutable snapshots.
@@ -152,26 +162,54 @@ explicit links between them:
 
 The [domain guides](../features/foods-and-nutrition.md) explain those relationships in user terms.
 
-### Locking
+#### Local SQLite authority
 
-Application mutations use deterministic lock protocols where Food and Recipe dependency graphs can
-race. Food rows are locked in UUID order before dependent Recipe rows. Authored Recipe graph-edge
-changes first lock the owning user row so graph discovery and cycle validation serialize per owner.
-PostgreSQL concurrency tests—not SQLite behavior—are the authority for those guarantees.
+`apps/mobile/src/storage/sqlite/schema.ts` defines the fresh local semantic schema. It is
+intentionally **not** a replay of PostgreSQL Alembic history. The baseline uses explicit
+schema-version migration bookkeeping, exact canonical text encodings for decimal/domain values,
+foreign-key enforcement, WAL mode, bounded busy handling, and local transaction/write
+coordination.
+
+Local runtime adapters under `apps/mobile/src/runtime/local` implement Foods, Recipes, immutable
+publication, Daily Logs/snapshots, Targets, OCR, Calendar, and USDA against that authority. Phase 5
+control-plane, role, promotion, fencing, and evidence infrastructure is not part of the SQLite
+schema.
+
+#### Remote PostgreSQL authority
+
+The preserved FastAPI/SQLAlchemy implementation persists the same application semantics in
+PostgreSQL when `NutritionRuntime` selects `remote`. PostgreSQL-specific constraints, lock
+protocols, role topology, Alembic migration history, and production-hardening machinery remain
+intact and are not weakened by local mode.
+
+### Locking and write coordination
+
+Remote mutations use deterministic PostgreSQL lock protocols where Food and Recipe dependency
+graphs can race. Food rows are locked in UUID order before dependent Recipe rows; authored Recipe
+graph-edge changes serialize graph discovery per owner. PostgreSQL concurrency tests are the
+authority for those row-lock guarantees.
+
+Local SQLite uses its own bounded write coordination and transactional semantics. It preserves the
+same domain outcomes—atomic generations, immutable history, owner scope, replay, and rollback—
+without pretending that SQLite implements PostgreSQL row locks.
 
 ### Migrations
 
-Two Alembic streams exist:
+Persistence evolution has three deliberately separate mechanisms:
 
-1. `app/migrations` changes the application database. Its current head is
-   `0021_target_activation_execution`.
-2. `app/control_migrations` changes the independent operations database. Its current head is
-   `ops_0011_phase5c4_recovery_audit`.
+1. **Local SQLite schema-version migrations** under `apps/mobile/src/storage/sqlite`. The local
+   schema is a fresh semantic model and does not replay Alembic revision-by-revision.
+2. **Remote application Alembic migrations** under `apps/backend/app/migrations`. They preserve the
+   PostgreSQL application's historical migration lineage and production prerequisites.
+3. **Control Alembic migrations** under `apps/backend/app/control_migrations`. They change only the
+   independent operations database.
 
-Application migration 0004 deliberately refuses unsafe in-place migration of populated legacy
-Recipe tables. The Phase 5 offline bridge and converter are the supported historical path. See the
-[Control Plane Guide](../operations/control-plane.md) before changing any migration from 0015 onward or any
-control migration.
+[Current State](../project/current-state.md) owns the active PostgreSQL heads. The remote
+application lineage includes the specially authorized `0021_target_activation_execution`
+activation revision, and the current control migration head is
+`ops_0011_phase5c4_recovery_audit`. Application and control migration streams must never be pointed
+at each other's database, and Phase 5/control-plane infrastructure must not leak into the local
+SQLite schema.
 
 ## Configuration and authentication
 
@@ -210,8 +248,9 @@ Tests are layered to match the claim being made:
 
 - pure unit tests prove calculation and canonical-contract behavior;
 - FastAPI tests prove ownership and API behavior;
-- Jest tests prove mobile models and interaction flows;
-- PostgreSQL tests prove locking, constraints, role boundaries, migrations, and concurrency;
+- Jest tests prove mobile models, authority routing, local-runtime parity, and interaction flows;
+- native SQLite qualification proves `expo-sqlite` lifecycle, migration, transaction, and restart claims that mocks cannot establish;
+- PostgreSQL tests prove remote locking, constraints, role boundaries, Alembic migrations, and concurrency;
 - MinIO tests prove exact object-version and retention behavior;
 - qualification tests deliberately tamper with security-critical objects to prevent false-green
   manifests.

@@ -18,8 +18,7 @@ and its retained qualification boundaries are recorded in the [Epic 2 implementa
 mixed-authority prohibition audit are complete. E2-18 has an architecture-gate **PASS** at
 `219311051e23cfcebdb09d28747874f0d3091faa`; its retained native limitations, removed manual
 accessibility scope, fixture-gated transfer skip, and exact automated totals are recorded without
-expanding release claims. GitHub #64 and Epic #46 remain administratively open until this durable
-record is committed and pushed.
+expanding release claims. GitHub #64 and Epic #46 are closed; Epic 2 is complete.
 
 New Version 1.1 scope should be recorded deliberately rather than inferred from historical stage
 or release documents. The [Historical Knowledge Index](../historical/README.md) preserves the

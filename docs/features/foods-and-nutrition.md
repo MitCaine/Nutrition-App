@@ -23,9 +23,10 @@ means the source does not support a numeric contribution and must remain visible
 quality information.
 
 Supported calculation units are `kcal`, `g`, `mg`, and `mcg`. Compatible mass units normalize
-before aggregation; incompatible units fail instead of being silently combined. Authoritative
-backend calculations use Python `Decimal`, and API values are represented without floating-point
-assumptions.
+before aggregation; incompatible units fail instead of being silently combined. Exact decimal
+semantics are preserved by both authorities: the remote backend uses Python `Decimal`, while the
+local runtime uses fixed-scale canonical decimal text and exact TypeScript helpers rather than
+floating-point persistence.
 
 The nutrient catalog defines stable identity and display ordering. FDA Daily Values live in a
 separate reference table because regulatory targets are versioned reference data, not properties
@@ -81,31 +82,45 @@ making the copy depend on later source edits.
 
 ### USDA FoodData Central
 
-USDA access is backend-only:
+USDA access follows the explicitly selected runtime:
 
 ```mermaid
 sequenceDiagram
     participant Mobile
+    participant Local as Local USDA runtime
+    participant SQLite
     participant API as FastAPI
-    participant USDA as FoodData Central
     participant DB as PostgreSQL
+    participant USDA as FoodData Central
 
-    Mobile->>API: Search or preview
-    API->>USDA: Server-side request with API key
-    USDA-->>API: Variable upstream payload
-    API-->>Mobile: Normalized preview contract
-    Mobile->>API: Import exact FDC ID
-    API->>USDA: Refresh authoritative detail
-    API->>DB: Persist canonical Food, nutrients, servings, provenance
-    API-->>Mobile: Saved Food
+    alt Local authority
+        Mobile->>Local: Search / preview / import
+        Local->>USDA: Direct request with request-time personal credential
+        USDA-->>Local: Variable upstream payload
+        Local->>SQLite: Persist canonical imported Food
+        Local-->>Mobile: Normalized result
+    else Remote authority
+        Mobile->>API: Search / preview / import
+        API->>USDA: Server-side request with backend credential
+        USDA-->>API: Variable upstream payload
+        API->>DB: Persist canonical imported Food
+        API-->>Mobile: Normalized result
+    end
 ```
+
+Local mode must not embed or persist a shared backend USDA secret; its credential provider resolves
+a personal credential at request time. Remote mode retains backend-owned credential handling.
+Both paths normalize variable upstream payloads into the same stable nutrient/serving/source
+semantics.
 
 The mapper prefers stable USDA nutrient IDs, then nutrient numbers, with narrow display-name
 fallbacks for upstream variation. USDA nutrient records are stored per 100 grams. Imported Foods
 always receive a `100 g` serving; branded/portion servings are added only with valid gram weights.
 
-Duplicate import is based on active `(user, USDA source, FDC ID)` identity, not name. A concurrent
-unique-index race returns the newly existing Food. A soft-deleted old import can be imported again.
+Duplicate import is based on active `(owner, USDA source, FDC ID)` identity, not name. Repeated or
+concurrent imports follow the selected authority's established source-identity/idempotency contract
+rather than creating a second active source identity. A soft-deleted old import can be imported
+again when the established flow permits it.
 
 ### OCR-confirmed Food
 
@@ -122,9 +137,10 @@ not a generic editable Food. See [Recipes and Nutrition History](recipes-and-log
 ## Favorites, recents, and search
 
 Favorites are naturally idempotent owner/Food relationships. Recents are derived from actual Daily
-Log use and ordered deterministically. Saved Food search is an owner-scoped backend query; the
-mobile discovery screen combines it with USDA results after a debounced query of at least two
-characters. There is no separate search index or ranking service.
+Log use and ordered deterministically. Saved Food search is owner-scoped within the selected
+authority: SQLite in local mode or the FastAPI/PostgreSQL query in remote mode. The mobile
+discovery screen combines saved results with selected-authority USDA results after a debounced
+query of at least two characters. There is no separate full-text index or shared ranking service.
 
 Search presentation and network behavior are documented in
 [OCR, Search, and Offline Behavior](ocr-search-and-offline.md#unified-food-search).
@@ -145,9 +161,10 @@ historical Logs.
 
 ## Ownership and retry behavior
 
-Every persisted Food is resolved through the authenticated user's boundary. Service checks and
-owner-aware foreign keys prevent a user from attaching another user's Food, serving, Recipe
-revision, or target.
+Every persisted Food is resolved through the selected authority's owner identity boundary.
+Remote mode derives that identity through authentication; local mode uses its established local
+profile/owner identity. Authority-specific checks and relational guards prevent one owner from
+attaching another owner's Food, serving, Recipe revision, or target.
 
 Retryable create operations use a client request UUID bound to a canonical payload fingerprint and
 stored response snapshot. Exact replay returns the original committed resource. Reusing the UUID

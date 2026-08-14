@@ -3,7 +3,10 @@
 > **Document role: Current Guide.**
 
 Use this guide to turn “I need to modify…” into a bounded reading and testing plan. Start at the
-service or mobile feature named below; do not begin by editing migrations or control-plane code.
+mobile feature and `NutritionRuntime` boundary named below, then follow the selected authority.
+Local application-data work continues through `apps/mobile/src/runtime/local` and SQLite; remote
+work continues through the FastAPI/PostgreSQL path. Do not begin by editing migrations or
+control-plane code.
 
 Every implementation session must follow the mandatory
 [Repository Session Contract](../operations/session-contract.md#repository-session-contract). The workflow
@@ -11,7 +14,10 @@ is defined there rather than duplicated in this guide.
 
 ## Configuration and startup
 
-### Backend
+### Backend (remote authority only)
+
+The backend is required for `remote` authority and backend-specific qualification; local
+application-data mode does not require FastAPI or PostgreSQL.
 
 `apps/backend/app/core/config.py` is the configuration authority. Copy
 `apps/backend/.env.example` to `.env` and set the deployment mode explicitly.
@@ -58,20 +64,34 @@ pip-compile --strip-extras --all-build-deps --allow-unsafe --extra dev \
 
 ### Mobile
 
+Local-first development:
+
 ```bash
 cd apps/mobile
 npm ci
+EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local \
+EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
+  npm start
+```
+
+Remote/reference development:
+
+```bash
+cd apps/mobile
 EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm start
 ```
 
-Data authority is explicit and independent of deployment mode. `remote` has no API URL fallback;
-use a LAN-reachable URL for a physical device. `local` requires neither an API URL nor a bearer
-credential and opens the application SQLite database instead. A private remote build requires
+Data authority is explicit and independent of deployment mode. `local` requires neither an API URL
+nor a bearer credential and opens the authoritative application SQLite database. `remote` has no
+API URL fallback; use a LAN-reachable URL for a physical device. A private remote build requires
 HTTPS and an injected private bearer credential. Never put a real credential in source or
 documentation.
+
+For every feature change, determine whether the contract change is authority-neutral, local-only,
+remote-only, or a parity change before editing implementation.
 
 ## If you need to modify Foods or servings
 
@@ -122,16 +142,20 @@ concurrency and Recipe-revision editing tests when lock or snapshot behavior cha
 
 ## If you need to modify USDA
 
-Begin at `app/services/usda_service.py`, then separate concerns:
+Begin at `NutritionRuntime.usda`, then separate the selected authority:
 
-- HTTP/key/timeouts/errors: `app/integrations/usda/client.py`
-- upstream-to-domain mapping: `app/integrations/usda/mappers.py`
-- public normalization contracts: integration schemas and USDA router
-- mobile query/preview/import: `apps/mobile/src/features/usda`
+- local transport/mapping/import: `apps/mobile/src/runtime/local/localUsdaRuntime.ts`
+- local saved-Food authority: `localFoodsRuntime.ts` plus SQLite persistence
+- remote HTTP/key/timeouts/errors: `app/integrations/usda/client.py`
+- remote upstream-to-domain mapping: `app/integrations/usda/mappers.py`
+- remote service/API: `app/services/usda_service.py` and the USDA router
+- mobile query/preview/import presentation: `apps/mobile/src/features/usda`
 
-Preserve backend-only API-key handling, per-100g semantics, unknown-versus-zero, valid gram weights,
-and source-identity deduplication. Use mocked client/mapper tests for most changes; use live upstream
-checks only as explicit manual qualification.
+Local mode resolves a personal USDA credential at request time and must not persist or embed it.
+Remote mode retains backend-owned USDA credentials. Preserve per-100g semantics,
+unknown-versus-zero, valid gram weights, source-identity deduplication, and explicit import in both
+authorities. Use mocked transport/mapper tests for most changes; use live upstream checks only as
+explicit manual qualification.
 
 ## If you need to modify OCR
 
@@ -149,8 +173,9 @@ ownership, and trace-lifecycle tests. Do not make persisted OCR traces resolver 
 
 ## If you need to modify Search or discovery
 
-There is no standalone search subsystem. Saved Food filtering begins at the Food list endpoint and
-repository. Unified presentation is in:
+There is no standalone search subsystem. Saved Food filtering begins at the selected runtime's
+`foods.list` implementation: local SQLite in local mode or the Food list endpoint/repository in
+remote mode. Unified presentation is in:
 
 - `SavedFoodsScreen.tsx`;
 - `useDebouncedSearchQuery.ts`;
@@ -163,7 +188,9 @@ difference between importing an upstream Food and selecting a saved Food.
 
 ## If you need to modify Targets
 
-Begin with `app/services/target_service.py` and `app/targets`. The mobile implementation is under
+Begin at `NutritionRuntime.targets`. Local behavior is in
+`apps/mobile/src/runtime/local/localTargetsRuntime.ts`; remote behavior remains in
+`app/services/target_service.py` and `app/targets`. The mobile presentation is under
 `src/features/targets`. Target changes must not write Daily Logs or nutrient snapshots. Effective
 authority remains manual override, calculated calorie estimate, FDA reference, then unavailable.
 
@@ -177,11 +204,19 @@ production provider is an intentional fail-closed condition.
 
 ## If you need to modify migrations
 
-### Application migrations
+### Local SQLite schema evolution
 
-Create new revisions under `app/migrations/versions`; do not rewrite committed migration history.
-Use `NUTRITION_DATABASE_URL` explicitly. Review both a fresh upgrade and the oldest supported
-populated path.
+Local persistence is owned by `apps/mobile/src/storage/sqlite/schema.ts` and `migrations.ts`.
+SQLite is a fresh semantic schema, not an Alembic replay. Preserve exact canonical value encodings,
+schema-version bookkeeping, migration rollback, foreign-key integrity, and native lifecycle
+qualification. Do not import Phase 5/control-plane tables, PostgreSQL roles/grants, or
+migration-by-migration historical machinery into SQLite.
+
+### Remote application migrations
+
+Create new remote revisions under `app/migrations/versions`; do not rewrite committed migration
+history. Use `NUTRITION_DATABASE_URL` explicitly. Review both a fresh upgrade and the oldest
+supported populated path.
 
 Migration 0004 refuses populated legacy Recipe state by design. Migrations 0015–0017 support the
 offline historical bridge/converter, 0018 adds promotion prerequisites, and 0019 adds
@@ -194,8 +229,9 @@ is forward-only.
 ### Control migrations
 
 Control migrations use `alembic-control.ini`, an independent database, and the explicit
-`NUTRITION_CONTROL_MIGRATION_DATABASE_URL`. Never point them at the application database. Changes
-require role/grant, SECURITY DEFINER, qualification, tamper, downgrade, and re-upgrade review.
+`NUTRITION_CONTROL_MIGRATION_DATABASE_URL`. Never point them at the remote application database and
+never port them into local SQLite. Changes require role/grant, SECURITY DEFINER, qualification,
+tamper, downgrade, and re-upgrade review.
 
 Continue with the [Control Plane Guide](../operations/control-plane.md) before editing ops migrations.
 
@@ -226,7 +262,9 @@ Before finishing any feature change:
 - update backend and mobile contracts together where required;
 - add a migration only for persistent schema change;
 - test the smallest unit plus the cross-layer flow;
-- use PostgreSQL, not SQLite, for claims about locks, constraints, grants, or concurrency;
+- use native/file-backed SQLite qualification for claims about local SQLite lifecycle,
+  transactions, schema evolution, or restart behavior;
+- use PostgreSQL for remote row-lock, PostgreSQL constraint/grant, role, or multi-worker concurrency claims;
 - update the reader guide if responsibility or an invariant changed.
 
 ## Next reading

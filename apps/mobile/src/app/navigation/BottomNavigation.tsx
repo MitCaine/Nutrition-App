@@ -66,16 +66,16 @@ function buildDockGeometry(screenWidth: number, bottomSafeAreaInset: number) {
     dockWidth / 2,
     previousDockHeight - previousTopRadius,
   );
-  const maximumAcceptedTopReduction = Math.min(
-    Math.max(previousDockHeight - TAB_HEIGHT, 0),
-    Math.max(previousDockHeight - previousTopRadius - lowerCurveExtent, 0),
+  const maximumTopReduction = Math.min(
+      Math.max(previousDockHeight - TAB_HEIGHT, 0),
+      Math.max(previousDockHeight - previousTopRadius - lowerCurveExtent, 0),
   );
-  const acceptedTopReduction = Math.min(
-    ACCEPTED_NAVIGATION_TOP_REDUCTION,
-    maximumAcceptedTopReduction,
+  const topReduction = Math.min(
+      NAVIGATION_TOP_REDUCTION,
+      maximumTopReduction,
   );
-  const acceptedDockHeight = previousDockHeight - acceptedTopReduction;
-  const dockHeight = acceptedDockHeight - NAVIGATION_TOP_REDUCTION;
+  const MIN_VISIBLE_DOCK_HEIGHT = 42;
+  const dockHeight = Math.max(previousDockHeight - NAVIGATION_TOP_REDUCTION, MIN_VISIBLE_DOCK_HEIGHT,);
   const lowerCurveStartY = dockHeight - lowerCurveExtent;
   const topRadius = Math.min(previousTopRadius, Math.max(lowerCurveStartY, 0));
   const lowerCurveControlOffset = lowerCurveExtent * QUARTER_CIRCLE_CONTROL_FACTOR;

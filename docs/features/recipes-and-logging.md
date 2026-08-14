@@ -31,7 +31,10 @@ edges use this database lock order:
 5. ingredient replacement.
 
 The user-row lock serializes graph changes for one owner while allowing different owners to proceed
-independently. PostgreSQL tests prove this behavior under real concurrency.
+independently in the remote PostgreSQL authority. Local SQLite preserves the same owner-local,
+active, acyclic graph semantics through its local transaction/write-coordination model rather than
+pretending to provide PostgreSQL row locks. PostgreSQL tests remain authoritative for the remote
+lock protocol; local runtime/native SQLite tests are authoritative for local transaction behavior.
 
 ## Publication
 
@@ -85,24 +88,30 @@ The projection is managed state:
 ```mermaid
 sequenceDiagram
     participant User
-    participant Log as Log service
+    participant Runtime as Selected NutritionRuntime
     participant Source as Food or Recipe revision
-    participant DB as PostgreSQL
+    participant Store as SQLite or PostgreSQL
 
-    User->>Log: Log amount and client request ID
-    Log->>Source: Lock and resolve exact amount
-    Source-->>Log: Nutrients plus provenance
-    Log->>DB: Insert Daily Log
-    Log->>DB: Insert nutrient snapshots
-    Log->>DB: Complete idempotency receipt
-    DB-->>User: Historical Log response
+    User->>Runtime: Log amount and client request ID
+    Runtime->>Source: Resolve one exact committed source generation
+    Source-->>Runtime: Nutrients plus provenance
+    Runtime->>Store: Insert Daily Log and nutrient snapshots atomically
+    Runtime->>Store: Complete idempotency/receipt state
+    Store-->>User: Historical Log response
 ```
+
+Local and remote authorities must produce the same historical meaning, but their concurrency
+mechanisms differ. Remote mode uses PostgreSQL transactions/locks; local mode uses coordinated
+SQLite transactions. Neither may expose a committed Log before the selected authority has actually
+committed it.
 
 ### Logging a mutable Food
 
-The service locks the Food, reloads its current serving and nutrient children, resolves the consumed
-amount, and writes nutrient snapshots in the same transaction. This prevents a snapshot from
-combining children from different committed Food generations.
+The selected runtime resolves one coherent committed Food generation and writes the resulting
+nutrient snapshots atomically. Remote mode locks the Food and reloads its serving/nutrient children
+inside the PostgreSQL transaction. Local mode serializes the SQLite mutation path and resolves the
+same generation inside the local transaction. A snapshot must never combine children from
+different committed Food generations.
 
 ### Logging a published Recipe
 

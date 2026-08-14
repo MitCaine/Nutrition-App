@@ -23,8 +23,10 @@ not a Saved Food until import succeeds. See [Food sources](../features/foods-and
 ### USDA Food and USDA import
 
 A **USDA Food** is an upstream FoodData Central search or preview result. **USDA import** is the
-explicit backend transaction that normalizes it into a user-owned Saved Food with retained source
-identity. See [USDA FoodData Central](../features/foods-and-nutrition.md#usda-fooddata-central).
+explicit selected-authority operation that normalizes it into a user-owned Saved Food with retained
+source identity: local mode imports into SQLite after a direct USDA request, while remote mode uses
+the FastAPI/PostgreSQL integration. See
+[USDA FoodData Central](../features/foods-and-nutrition.md#usda-fooddata-central).
 
 ### Recipe
 
@@ -83,8 +85,8 @@ Recipe. See [Logging a published Recipe](../features/recipes-and-logging.md#logg
 
 ### Revision Resolution
 
-The backend process that resolves a Recipe-backed Food/Log to one exact immutable revision and
-amount definition before calculating consumed nutrition. See
+The selected runtime process that resolves a Recipe-backed Food/Log to one exact immutable revision
+and amount definition before calculating consumed nutrition. See
 [Revision-backed nutrition logging](../architecture/decisions.md#revision-backed-nutrition-logging).
 
 ### Daily Log
@@ -119,51 +121,88 @@ prevent a resource UUID from crossing user boundaries. See
 
 ## Code and persistence boundaries
 
+### NutritionRuntime
+
+The mobile application's authority-neutral interface for Calendar, nutrients, Foods, Recipes,
+Daily Logs, Targets, OCR, and USDA. Startup selects exactly one implementation before
+application-data use: local SQLite or remote FastAPI/PostgreSQL. Feature code should not bypass
+this boundary to mix authorities. See
+[Explicit mobile application-data authority](../architecture/decisions.md#explicit-mobile-application-data-authority).
+
+### Local SQLite Authority / Local Mode
+
+The authoritative on-device application-data runtime selected with
+`EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local`. It persists the current semantic model in
+`expo-sqlite` and does not require FastAPI/PostgreSQL for application-data operations. It is not a
+cache or replica of the remote database and does not synchronize automatically.
+
+### Remote Authority / Remote Mode
+
+The preserved FastAPI/PostgreSQL application runtime selected with
+`EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote`. Mobile requests use the remote adapter and central
+HTTP/authentication client. Remote mode does not receive durable local application-data writes as a
+fallback.
+
 ### Canonical Domain Model
 
-The shared meaning enforced by backend schemas, domain/nutrition code, services, and persistence—not
-a single class or generated cross-platform model. Backend Pydantic/domain behavior is authoritative;
-the small `packages/shared-contracts` reference is not a generated API SDK. See
+The shared semantic meaning that both runtime authorities must preserve: nutrition/status
+semantics, immutable Recipe revisions, Daily Log snapshots, owner scope, idempotency, provenance,
+and public response contracts. It is not one generated cross-platform class. See
 [System boundaries](../architecture/overview.md#system-boundaries).
+
+### Runtime Adapter
+
+A local or remote implementation of the `NutritionRuntime` capability interfaces. Local adapters
+own application behavior against SQLite; remote adapters translate the same mobile-facing contract
+to the existing FastAPI API.
 
 ### Repository Contract
 
-The owner-scoped, transaction-aware query or persistence behavior exposed by one of the selective
-backend repository classes. It is an internal Python boundary, not a swappable storage-provider
-interface. See [Repositories and models](../architecture/overview.md#repositories-and-models).
+In the remote backend, the owner-scoped, transaction-aware query or persistence behavior exposed by
+selective Python repository classes. It is not the cross-authority abstraction; that role belongs
+to `NutritionRuntime`. Local runtime code may use local repository helpers where they clarify
+SQLite persistence without reproducing the backend's class structure.
 
 ### Persistence Layer
 
-SQLAlchemy models, repositories, migrations, constraints, and transaction behavior that store the
-application domain in PostgreSQL. Services own use-case transactions; repositories do not become a
-second business-authority layer.
+The authority-specific durable implementation beneath `NutritionRuntime`.
+
+- Local mode: `apps/mobile/src/storage/sqlite` plus local runtime/repository code.
+- Remote mode: SQLAlchemy models/repositories plus application Alembic migrations in PostgreSQL.
+- Operations: independent control PostgreSQL, which is not an application-data authority.
 
 ### Repository Provider / Repository Factory
 
-Not implemented abstractions in this repository. The app uses selective repository classes and
-direct construction/dependency wiring for one authoritative PostgreSQL backend. Introducing a
-provider or factory to swap persistence engines would be a new architectural decision, not an
-extension point that already exists. See the
-[repository tradeoff](../project/invariants.md#decision-tradeoffs-at-a-glance).
+A generic swappable persistence-provider/factory abstraction is not implemented. `NutritionRuntime`
+is a deliberate application capability boundary, not a table-by-table repository factory. Adding a
+generic ORM/provider layer would be a new architectural decision.
 
 ### Native SQLite
 
-Not part of the mobile runtime. SQLite may appear in backend unit-test configuration for portable
-logic, but PostgreSQL is authoritative for locks, constraints, grants, migrations, and concurrency.
-The mobile app has no durable SQLite nutrition cache or mutation queue. See
-[Offline and caching behavior](../features/ocr-search-and-offline.md#offline-and-caching-behavior).
+The implemented local application-data authority. `expo-sqlite` stores the fresh semantic local
+schema, with explicit schema versioning/migrations, canonical exact-value encodings, foreign keys,
+WAL configuration, bounded busy handling, and local transaction/write coordination. It is not an
+offline cache layered under PostgreSQL.
+
+### SQLite Schema Evolution
+
+The local schema-version migration mechanism under `apps/mobile/src/storage/sqlite`. The SQLite
+schema is a fresh semantic model and intentionally does not replay PostgreSQL Alembic
+revision-by-revision. Phase 5/control-plane and PostgreSQL role/promotion infrastructure stay out of
+SQLite.
 
 ### Application Migration Stream
 
-The Alembic history under `app/migrations`, applied only to the application PostgreSQL database.
-It owns Foods, Recipes, Logs, OCR traces, Targets, historical-conversion metadata, and local fence
-prerequisites. See [Migrations](../architecture/overview.md#migrations).
+The Alembic history under `apps/backend/app/migrations`, applied only to the **remote application
+PostgreSQL** database. It preserves the existing remote migration lineage, historical conversion
+metadata, and production prerequisites. It is not the local SQLite migration mechanism.
 
 ### Control Migration Stream
 
-The independent Alembic history under `app/control_migrations`, applied only with the control
-migration configuration and credential. It owns promotion evidence and authority, never feature
-tables. See [Qualification and migration safety](../operations/control-plane.md#qualification-and-migration-safety).
+The independent Alembic history under `apps/backend/app/control_migrations`, applied only with the
+control migration configuration and credential. It owns promotion evidence and authority, never
+feature tables and never local SQLite. See
+[Qualification and migration safety](../operations/control-plane.md#qualification-and-migration-safety).
 
 ## Historical conversion and control operations
 

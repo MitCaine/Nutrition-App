@@ -104,6 +104,9 @@ duplicate.
 
 ## Why an online-first design?
 
+The heading is retained as a stable historical anchor; the active mobile architecture is now
+local-first with explicit authority selection.
+
 Mobile startup explicitly selects exactly one `local` or `remote` application-data authority before
 runtime construction. Local mode uses the composed SQLite adapters; remote mode preserves the
 FastAPI/PostgreSQL API and authentication boundary. The selected runtime is the sole authority for
@@ -179,10 +182,14 @@ against a manifest that merely checks its happy path or forgets a newly authorit
 
 ## Why two migration streams?
 
-Application data and promotion authority have different owners, credentials, lifecycles, and
-failure modes. Application Alembic migrations must never acquire implicit authority over the
-control ledger, and control migrations must not become feature-table migrations. Separate streams
-make that boundary explicit and testable.
+This heading refers to the two **PostgreSQL Alembic** streams: remote application data and
+promotion/control authority have different owners, credentials, lifecycles, and failure modes.
+Application Alembic migrations must never acquire implicit authority over the control ledger, and
+control migrations must not become feature-table migrations.
+
+Local SQLite is a third persistence-evolution mechanism, not a third Alembic stream. Its
+schema-version migration engine owns the fresh local semantic schema and must not replay the
+PostgreSQL migration history or absorb Phase 5/control-plane infrastructure.
 
 ## Application requirement or production infrastructure?
 

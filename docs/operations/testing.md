@@ -2,8 +2,9 @@
 
 > **Document role: Operational Reference.**
 
-The test strategy follows architectural claims. Fast unit tests explain behavior; PostgreSQL and
-MinIO suites prove guarantees that mocks or SQLite cannot establish.
+The test strategy follows architectural claims. Fast unit tests explain behavior; native/file-backed
+SQLite qualification proves local storage/lifecycle claims; PostgreSQL suites prove remote
+locking, role, migration, and concurrency claims; MinIO suites prove object-retention behavior.
 
 ## Baseline validation
 
@@ -32,16 +33,23 @@ dependencies.
 cd apps/mobile
 npm test
 npm run typecheck
+
+EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local \
+EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
+  npm run config:validate
+
 EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm run config:validate
 ```
 
-Jest covers pure feature models, runtime validation, API mappings, cache invalidation, and rendered
-flow behavior. Native Apple Vision geometry/runtime tests live under
-`modules/nutrition-ocr/ios-tests` and must also run through the native iOS test target before an OCR
-release.
+Jest covers pure feature models, authority routing, local-runtime parity, remote API mappings,
+cache/recovery scoping, and rendered flow behavior. Native/file-backed SQLite qualification is
+required for claims about `expo-sqlite` lifecycle, migrations, transaction visibility, termination,
+and restart semantics that mocks cannot establish. Native Apple Vision geometry/runtime tests live
+under `modules/nutrition-ocr/ios-tests` and must also run through the native iOS test target before
+an OCR release.
 
 ## What each backend suite proves
 
@@ -310,7 +318,8 @@ at a shared or production object store.
 | API/schema/service | Focused backend tests plus affected mobile mapping/flow tests |
 | Food/Recipe dependency locks | Focused unit/API tests plus PostgreSQL concurrency marker |
 | Migration | Fresh upgrade, supported populated upgrade, downgrade policy, re-upgrade, schema authority |
-| Auth/config | Release configuration, API authentication, mobile runtime config, Compose validation |
+| Auth/config | Local and remote mobile runtime config, remote API authentication, release configuration, Compose validation |
+| Local SQLite persistence/runtime | Focused local runtime/Jest coverage plus native/file-backed SQLite qualification for lifecycle or transaction claims |
 | Control contract | Python canonical/tamper tests and cross-language PostgreSQL parity |
 | Control routine/grant | Complete control PostgreSQL, role, qualification, replay, concurrency, downgrade suites |
 | MinIO behavior | Unit adapter tests plus disposable integration and restart persistence |

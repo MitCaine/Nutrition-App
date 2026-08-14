@@ -143,7 +143,9 @@ Logs can depend on the item.
 ### Search is composed, not centralized
 
 **Decision:** The mobile discovery screen combines an owner-scoped saved-Food query with a separate
-backend USDA query. There is no search index or shared ranking service.
+selected-authority USDA query. Local mode can call FoodData Central directly through
+`localUsdaRuntime`; remote mode uses the backend USDA integration. There is no shared search index
+or ranking service.
 
 **Consequence:** The two sources have different identity and persistence semantics. Keeping them
 separate makes imports explicit and lets each failure or loading state remain visible.
@@ -231,11 +233,14 @@ transport policy.
 
 ### Separate application and control migration streams
 
-**Decision:** Application data and operational promotion authority use separate Alembic streams,
-credentials, and PostgreSQL databases.
+**Decision:** Remote application data and operational promotion authority use separate Alembic
+streams, credentials, and PostgreSQL databases. Local SQLite has its own schema-version migration
+engine and is intentionally not an Alembic replay.
 
-**Consequence:** Feature migrations must not implicitly control the promotion ledger, and control
-migrations must not become a second application schema authority.
+**Consequence:** Local SQLite evolution, remote feature migrations, and control migrations are
+separate authority boundaries. Feature migrations must not implicitly control the promotion
+ledger, control migrations must not become application schema, and PostgreSQL migration history
+must not be mechanically ported into SQLite.
 
 **Read more:** [Architecture Overview](overview.md#migrations),
 [Control Plane Guide](../operations/control-plane.md#qualification-and-migration-safety), and

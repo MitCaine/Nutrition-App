@@ -2,9 +2,12 @@
 
 Nutrition App is an iOS-first nutrition tracker for building a personal food library, publishing
 reusable recipes, scanning nutrition labels, and recording nutrition history without allowing
-later edits to rewrite the past. A React Native mobile client talks to a FastAPI API backed by
-PostgreSQL; Apple Vision performs OCR on the device, and the backend owns nutrition calculation,
-validation, persistence, USDA integration, and historical guarantees.
+later edits to rewrite the past. The React Native client enters application data through an
+explicit `NutritionRuntime` authority boundary. In the default local-first path, on-device SQLite
+is the authoritative application-data store and the local runtime owns Foods, Recipes, Daily Logs,
+Targets, OCR parsing/confirmation, and USDA import. The existing FastAPI/PostgreSQL system remains
+available as an alternate remote/reference authority. Apple Vision performs OCR on device. The two
+authorities do not synchronize, dual-write, fail over, or silently mix.
 
 The repository also contains an advanced production-hardening and promotion control plane. That
 subsystem protects high-risk historical database conversion and deployment operations. It is
@@ -16,8 +19,8 @@ Daily Logs, USDA, OCR, Search, or Targets work.
 ```mermaid
 flowchart TD
     Repo["Nutrition App repository"] --> Apps["apps"]
-    Apps --> Backend["backend: FastAPI and PostgreSQL domain"]
-    Apps --> Mobile["mobile: Expo, React Native, and iOS OCR"]
+    Apps --> Backend["backend: preserved remote FastAPI/PostgreSQL authority"]
+    Apps --> Mobile["mobile: Expo, React Native, SQLite local runtime, and iOS OCR"]
     Repo --> Docs["docs: purpose-organized project knowledge"]
     Repo --> Engineering["engineering: contributor workflow and conventions"]
     Repo --> Packages["packages: shared contract references"]
@@ -27,13 +30,13 @@ flowchart TD
 
 | Area | Responsibility |
 | --- | --- |
-| `apps/backend` | Authoritative API behavior, nutrition rules, persistence, migrations, operators, and backend tests |
-| `apps/mobile` | User experience, mobile state, typed API boundaries, and native Apple Vision integration |
+| `apps/backend` | Preserved remote FastAPI/PostgreSQL authority, remote domain behavior, migrations, operators, and backend tests |
+| `apps/mobile` | User experience, `NutritionRuntime`, authoritative local SQLite runtime, remote adapter, and native Apple Vision integration |
 | `docs` | Current project, architecture, feature, operations, reference, and historical knowledge |
 | `engineering` | Change lifecycle, Git conventions, review, merge, release, and automation ownership |
 | `packages` | Small shared contract references; not a generated client SDK |
 | `scripts` | Discoverable repository lifecycle, validation, runtime, qualification, and packaging entry points |
-| Compose files | Local application PostgreSQL and disposable Phase 5C4 MinIO qualification |
+| Compose files | Optional remote/reference PostgreSQL and disposable Phase 5C4 qualification infrastructure |
 
 The [Repository Tour](docs/project/repository-tour.md) explains where to begin for each feature and which
 advanced directories can be ignored during ordinary application work.
@@ -75,21 +78,29 @@ advanced directories can be ignored during ordinary application work.
 flowchart LR
     subgraph Mobile["React Native mobile app"]
         Screen["Screens and navigation"] --> Hook["Feature hooks and state"]
-        Hook --> Client["Typed API clients"]
-        Vision["Apple Vision OCR"] --> Client
+        Hook --> Runtime["NutritionRuntime"]
+        Vision["Apple Vision OCR"] --> Runtime
     end
 
-    Client --> API["FastAPI routers"]
+    Runtime -->|local authority| Local["Local runtime adapters"]
+    Local --> LocalDB[("Application SQLite")]
+    Local --> USDA["USDA FoodData Central"]
+
+    Runtime -->|remote authority| Remote["Remote API adapter"]
+    Remote --> API["FastAPI /api/v1"]
     API --> Service["Application services"]
     Service --> Domain["Nutrition and domain rules"]
     Service --> Repository["Repositories"]
     Repository --> AppDB[("Application PostgreSQL")]
-    Service --> USDA["USDA FoodData Central"]
+    Service --> USDA
 
-    Control["Optional promotion control plane"] -.->|operations only| AppDB
+    Control["Optional promotion control plane"] -.->|remote operations only| AppDB
     Control --> ControlDB[("Independent control PostgreSQL")]
     Control --> WORM["MinIO WORM evidence"]
 ```
+
+Exactly one application-data branch is authoritative in a running context. Local SQLite and remote
+FastAPI/PostgreSQL are alternatives, not synchronized copies.
 
 For layer responsibilities, persistence boundaries, and the two migration streams, read the
 [Architecture Overview](docs/architecture/overview.md). For a six-month-return orientation, start with the
@@ -99,26 +110,40 @@ For layer responsibilities, persistence boundaries, and the two migration stream
 
 | Area | Technology |
 | --- | --- |
-| Mobile | React Native 0.79, Expo 53, TypeScript, React Navigation, TanStack Query, Zod |
+| Mobile | React Native 0.86, Expo 57, TypeScript 6, React Navigation 7, TanStack Query, Zod |
+| Local application data | `expo-sqlite`, fresh semantic SQLite schema, schema-version migration engine |
 | Native OCR | Swift Expo module using Apple Vision |
-| Backend | Python 3.10+, FastAPI, Pydantic, SQLAlchemy 2 |
-| Primary data | PostgreSQL 16, Alembic |
-| External data | USDA FoodData Central API |
+| Remote backend | Python 3.10+, FastAPI, Pydantic, SQLAlchemy 2 |
+| Remote application data | PostgreSQL 16, Alembic |
+| External data | USDA FoodData Central API; direct local adapter or remote backend integration |
 | Advanced operational evidence | Independent PostgreSQL control database and MinIO object lock |
-| Tests | Pytest, Jest, PostgreSQL concurrency suites, native Swift tests |
+| Tests | Pytest, Jest, native/file-backed SQLite qualification, PostgreSQL concurrency suites, native Swift tests |
 | Quality | Ruff and TypeScript compiler |
 
 ## Quick start
 
-### 1. Start PostgreSQL
+### 1. Start the mobile client with the local SQLite authority
+
+```bash
+cd apps/mobile
+npm ci
+EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local \
+EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
+  npm start
+```
+
+This is the local-first application-data runtime. Foods, Recipes, Daily Logs, Targets, OCR
+confirmation, and saved nutrition persist in on-device SQLite without FastAPI or PostgreSQL. USDA
+still requires upstream network access and a request-time personal credential when local USDA is
+configured. Native Apple Vision OCR requires an iOS development build; it is not supplied by Expo
+Go.
+
+### 2. Optional: start the preserved remote FastAPI/PostgreSQL authority
+
+Use this path for remote-mode development, PostgreSQL-specific behavior, or backend work:
 
 ```bash
 docker compose up -d postgres
-```
-
-### 2. Start the backend
-
-```bash
 cd apps/backend
 python3 -m venv .venv
 source .venv/bin/activate
@@ -129,28 +154,24 @@ alembic upgrade 0020_immutable_provenance_enforcement
 uvicorn app.main:app --reload
 ```
 
-The example explicitly selects `development` mode and PostgreSQL at `localhost:5432`. The API is
-available at `http://localhost:8000`; FastAPI's interactive schema is at `/docs`. Liveness is
-`/api/v1/health` and database-backed readiness is `/api/v1/ready`. The repository application
-migration head is `0021_target_activation_execution`, but that revision is an authenticated
-target-activation operation and is not part of ordinary development startup.
+The remote API is available at `http://localhost:8000`; FastAPI's interactive schema is at
+`/docs`. Liveness is `/api/v1/health` and database-backed readiness is `/api/v1/ready`. Current
+remote migration heads and special operational migration boundaries are recorded in
+[Current State](docs/project/current-state.md).
 
-### 3. Start the mobile client
+### 3. Point the mobile client at remote authority
 
 ```bash
 cd apps/mobile
-npm ci
 EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=remote \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
 EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm start
 ```
 
-Set `EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local` to run against the device SQLite authority; local
-mode does not require an API URL, bearer token, FastAPI, or PostgreSQL. Use a reachable LAN URL for
-a physical device in remote mode. Native Apple Vision OCR requires an iOS development
-build; it is not supplied by Expo Go. The rest of the application can be understood and tested
-without configuring the production-hardening control plane.
+Remote mode preserves the existing API/authentication/PostgreSQL boundary. Use a reachable LAN URL
+for a physical device. Authority selection is explicit: there is no fallback, dual-write,
+synchronization, or silent mixing between local and remote data.
 
 For configuration modes, private deployment constraints, migration safety, and canary behavior,
 read the [Development Guide](docs/project/development-guide.md#configuration-and-startup).
@@ -199,7 +220,7 @@ Start at the [Documentation Index](docs/README.md), or choose a path:
 | Look up project terminology | [Glossary](docs/reference/glossary.md) |
 | Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
 | Turn an approved backlog into GitHub delivery work | [GitHub Implementation Workflow](docs/project/github-workflow.md) |
-| Implement the approved Epic 2 runtime backlog | [Epic 2 Implementation Backlog](docs/project/version-1.1/epic-2/implementation-backlog.md) |
+| Review the completed Epic 2 local-first runtime backlog | [Epic 2 Implementation Backlog](docs/project/version-1.1/epic-2/implementation-backlog.md) |
 | Operate or review the one-time PostgreSQL-to-SQLite transfer | [E2-15 Transfer Architecture and Runbook](docs/project/version-1.1/epic-2/e2-15-transfer-architecture.md) |
 | Extend the current E1-17 accessibility foundations | [E1-17 Stage 1 Accessibility Foundations](docs/project/version-1.1/epic-1/accessibility-remediation-stage-1.md) |
 | Review the E1-17 Daily Log and mutation accessibility pass | [E1-17 Stage 2 Daily Log, Mutations, Cleanup, and Recovery](docs/project/version-1.1/epic-1/accessibility-remediation-stage-2.md) |

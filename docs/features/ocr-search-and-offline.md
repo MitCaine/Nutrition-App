@@ -84,7 +84,7 @@ The Saved Foods screen composes two independent authority-scoped queries:
 flowchart LR
     Query["Debounced user query"] --> Saved["Owner-scoped saved Food search"]
     Query --> Threshold{"At least 2 characters?"}
-    Threshold -- Yes --> USDA["Backend USDA search"]
+    Threshold -- Yes --> USDA["Selected-authority USDA search"]
     Threshold -- No --> NoUSDA["Skip USDA"]
     Saved --> Sections["Saved Foods section"]
     USDA --> Sections
@@ -92,9 +92,10 @@ flowchart LR
     Recents["Recent Log use"] --> Discovery
 ```
 
-There is no local full-text index and no shared backend ranking engine. Saved results come from the
-application database; USDA results come through the backend integration. The client suppresses
-results for stale debounced queries and restores the in-session query/scroll position.
+There is no local full-text index and no shared ranking engine. Saved results come from the selected
+application-data authority. USDA results come from `localUsdaRuntime` directly to FoodData Central
+in local mode or through the backend integration in remote mode. The client suppresses results for
+stale debounced queries and restores the in-session query/scroll position.
 
 Recipe ingredient selection searches saved Foods, including active Recipe projections. It does not
 silently import USDA results; importing creates a normal saved Food first.
@@ -113,7 +114,7 @@ remote mode requires its API. Neither mode silently falls back to the other.
 | Theme preference | Persisted best-effort in AsyncStorage |
 | Apple Vision text recognition | Runs on-device after a local image is acquired |
 | OCR parsing and confirmation | Local mode uses the local parser/runtime; remote mode requires the backend |
-| USDA search and import | Requires backend and upstream network availability |
+| USDA search and import | Requires upstream network availability; local mode also requires a request-time personal USDA credential, while remote mode requires the backend |
 | Retry after uncertain response | Safe for covered creates through payload-bound request IDs |
 
 TanStack Query's provider currently uses its normal in-memory `QueryClient`; no cache persister is
@@ -125,12 +126,13 @@ This distinction matters: idempotency makes retrying an uncertain network outcom
 not make the application offline-capable. Any future durable offline work would need an explicit
 sync/conflict architecture and should not be inferred from current caches.
 
-## Central API and authentication boundary
+## Runtime and remote API boundary
 
-Remote feature clients call `src/shared/api/client.ts`; local features use the composed SQLite
-runtime. Runtime configuration has no localhost fallback, and private remote builds attach the
-configured bearer token centrally. Feature modules should not construct independent base URLs,
-duplicate credentials, or log secrets.
+Feature code targets `NutritionRuntime`; it must not choose persistence authority ad hoc. Remote
+runtime adapters call `src/shared/api/client.ts`; local adapters use the composed SQLite runtime.
+Runtime configuration has no localhost fallback for remote mode, and private remote builds attach
+the configured bearer token centrally. Feature modules should not construct independent base URLs,
+duplicate credentials, bypass the selected runtime, or log secrets.
 
 Mobile response validation is strongest at variable or privacy-sensitive boundaries, especially
 OCR and Food source contracts. Pydantic remains the authoritative server-side request/response
