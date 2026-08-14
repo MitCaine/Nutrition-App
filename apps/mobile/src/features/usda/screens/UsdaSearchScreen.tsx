@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { isRuntimeError } from "../../../runtime/RuntimeError";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
@@ -23,6 +24,7 @@ export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Pro
     query,
     isLoading: results.isLoading,
     isError: results.isError,
+    errorCode: isRuntimeError(results.error) ? results.error.code : null,
     resultCount: results.data?.foods.length,
   });
   useAccessibilityScreenFocus({ active: true, routeKey: "usda-search", targetRef: headingRef });

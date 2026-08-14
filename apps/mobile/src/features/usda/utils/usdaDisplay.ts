@@ -5,6 +5,7 @@ export type UsdaSearchStateInput = {
   query: string;
   isLoading: boolean;
   isError: boolean;
+  errorCode?: string | null;
   resultCount?: number;
 };
 
@@ -14,6 +15,9 @@ export function usdaSearchMessage(state: UsdaSearchStateInput): string | null {
   }
   if (state.isLoading) {
     return "Searching USDA foods...";
+  }
+  if (state.isError && state.errorCode === "usda_credentials_unconfigured") {
+    return "USDA search needs a personal API key. Add it in Settings and try again.";
   }
   if (state.isError) {
     return "USDA search is unavailable right now. Try again later.";

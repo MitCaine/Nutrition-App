@@ -15,8 +15,12 @@ export function NutritionRuntimeProvider({
   );
 }
 
+export function useOptionalNutritionRuntime(): NutritionRuntime | null {
+  return useContext(NutritionRuntimeContext);
+}
+
 export function useNutritionRuntime(): NutritionRuntime {
-  const runtime = useContext(NutritionRuntimeContext);
+  const runtime = useOptionalNutritionRuntime();
   if (!runtime) {
     throw new Error("NutritionRuntime is unavailable. Mount this caller within NutritionRuntimeProvider.");
   }

@@ -17,6 +17,7 @@ import {
 } from "../../shared/accessibility/focus";
 import { BackButton } from "../../shared/components/BackButton";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
+import { UsdaCredentialSettings } from "./UsdaCredentialSettings";
 import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import {
   useCalendarState,
@@ -253,6 +254,7 @@ export function SettingsScreen({
           />
         ) : null}
       </View>
+      <UsdaCredentialSettings />
       <Text accessibilityRole="header" style={styles.sectionTitle}>Nutrition</Text>
       <AccessiblePressable accessibilityLabel="Open nutrition targets" onPress={onOpenNutritionTargets} style={({ pressed }) => [styles.option, pressed && styles.pressed]}>
         <Text style={styles.optionText}>Nutrition targets</Text>

@@ -29,7 +29,11 @@ const defaultDependencies: ApplicationRuntimeBootstrapDependencies = {
     // only point at which either registry module is evaluated.
     const { openLocalRuntimeFoundation } = require("./local/localRuntimeFoundation") as
       typeof import("./local/localRuntimeFoundation");
-    return openLocalRuntimeFoundation();
+    const { getStoredUsdaCredential } = require("./local/usdaCredentialStore") as
+      typeof import("./local/usdaCredentialStore");
+    return openLocalRuntimeFoundation({
+      usda: { credentialProvider: getStoredUsdaCredential },
+    });
   },
   async loadRemoteRuntime() {
     const { remoteNutritionRuntime } = require("./remote/remoteNutritionRuntime") as
