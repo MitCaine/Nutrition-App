@@ -24,13 +24,13 @@ test("target settings map profiles and manual overrides without conflating FDA D
   expect(draft.calories).toBe("");
   expect(draft.birthDate).toBe("01-01-1990");
   expect(draft.heightIn).toBe("64.96063");
-  expect(draft.weightLb).toBe("132.277357");
+  expect(draft.weightLb).toBe("132.3");
   expect(targetInput(draft)).toMatchObject({
     profile: {
       birth_date: "1990-01-01",
       height_cm: "165.000",
       height_unit: "cm",
-      weight_kg: "60.000",
+      weight_kg: "60.010",
       weight_unit: "kg",
     },
     manual_overrides: { protein: "90", calories: null },
@@ -40,8 +40,9 @@ test("target settings map profiles and manual overrides without conflating FDA D
 test("target profile conversion helpers preserve canonical values through representative UI round trips", () => {
   expect(centimetersToInches("170.180")).toBe("67");
   expect(inchesToCentimeters("67")).toBe("170.180");
-  expect(kilogramsToPounds("60.000")).toBe("132.277357");
-  expect(poundsToKilograms("132.277357")).toBe("60.000");
+  expect(kilogramsToPounds("60.000")).toBe("132.3");
+  expect(poundsToKilograms("132.277")).toBe("60.000");
+  expect(kilogramsToPounds(poundsToKilograms("270"))).toBe("270");
   expect(birthDateToDisplay("1988-11-18")).toBe("11-18-1988");
   expect(birthDateToCanonical("11-18-1988")).toBe("1988-11-18");
 });

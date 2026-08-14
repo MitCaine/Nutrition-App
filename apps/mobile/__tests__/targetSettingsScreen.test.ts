@@ -189,7 +189,7 @@ test("profile inputs display canonical metric and ISO data in one compact US row
   const renderer = await render();
   expect(input(renderer.root, "Birth date").props.value).toBe("11-18-1988");
   expect(input(renderer.root, "Height in inches").props.value).toBe("67");
-  expect(input(renderer.root, "Weight in pounds").props.value).toBe("140.00015");
+  expect(input(renderer.root, "Weight in pounds").props.value).toBe("140");
   expect(input(renderer.root, "Birth date").props.placeholder).toBeUndefined();
   expect(input(renderer.root, "Height in inches").props.placeholder).toBeUndefined();
   expect(input(renderer.root, "Weight in pounds").props.placeholder).toBeUndefined();

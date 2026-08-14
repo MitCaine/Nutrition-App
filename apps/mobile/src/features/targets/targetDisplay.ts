@@ -1,6 +1,7 @@
 import { NUMERIC_8_3 } from "../../shared/exact/decimal";
 
 const DISPLAY_SCALE = 6;
+const WEIGHT_DISPLAY_SCALE = 1;
 
 type Conversion = Readonly<{
   numerator: bigint;
@@ -55,7 +56,7 @@ export function inchesToCentimeters(value: string): string | null {
 }
 
 export function kilogramsToPounds(value: string | null): string {
-  return value === null || value === "" ? "" : convert(value, KG_TO_POUNDS, DISPLAY_SCALE, true);
+  return value === null || value === "" ? "" : convert(value, KG_TO_POUNDS, WEIGHT_DISPLAY_SCALE, true);
 }
 
 export function poundsToKilograms(value: string): string | null {
