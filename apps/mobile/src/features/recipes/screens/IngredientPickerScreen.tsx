@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 
+import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { useFoods } from "../../foods/hooks/useFoods";
 import type { Food } from "../../foods/api/types";
 import { foodMeta } from "../utils/recipeDraft";
@@ -41,16 +42,16 @@ export function IngredientPickerScreen({
         onChangeText={setQuery}
         placeholder="Search saved foods"
         style={styles.search}
-      autoCapitalize="none"
-      placeholderTextColor={theme.colors.placeholder}
+        autoCapitalize="none"
+        placeholderTextColor={theme.colors.placeholder}
       />
       <Pressable onPress={onSearchUsda} style={styles.secondaryButton}>
         <Text style={styles.secondaryText}>Search USDA</Text>
       </Pressable>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}>
-        {foods.isLoading ? <Text style={styles.meta}>Loading...</Text> : null}
-        {foods.isError ? <Text style={styles.error}>Could not load foods.</Text> : null}
-        {selectableFoods.length === 0 && !foods.isLoading ? <Text style={styles.meta}>No saved foods found.</Text> : null}
+        {foods.isLoading ? <AccessibilityStatus kind="loading" message="Loading saved foods…" /> : null}
+        {foods.isError ? <AccessibilityStatus kind="retryable-failure" message="Could not load saved foods." retryContext="saved foods" onRetry={() => { void foods.refetch(); }} messageStyle={styles.error} /> : null}
+        {selectableFoods.length === 0 && !foods.isLoading && !foods.isError ? <AccessibilityStatus kind="empty" message="No saved foods found." /> : null}
         {selectableFoods.map((food) => {
           const disabled = food.id === currentPublishedFoodItemId;
           return (
