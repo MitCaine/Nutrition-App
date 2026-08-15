@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { formatDisplayNumber } from "../../../shared/nutrition/display";
 import { isUnknownOnlyAggregatedTotal } from "../../../shared/nutrition/display";
@@ -90,6 +90,20 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
       }
       setDeleteError(recipeDeleteErrorMessage(error));
     }
+  }
+
+  function confirmDeleteRecipe() {
+    if (mutations.deleteRecipe.isPending) {
+      return;
+    }
+    Alert.alert(
+      "Delete Recipe?",
+      `Delete ${recipe.name}? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => { void deleteRecipe(false); } },
+      ],
+    );
   }
 
   const foodsById = new Map(ingredientFoods.map((food) => [food.id, food]));
@@ -188,7 +202,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
           </Text>
         </Pressable>
         {deleteError ? <Text style={styles.error}>{deleteError}</Text> : null}
-        <Pressable onPress={() => deleteRecipe(false)} disabled={mutations.deleteRecipe.isPending} style={styles.deleteButton}>
+        <Pressable onPress={confirmDeleteRecipe} disabled={mutations.deleteRecipe.isPending} style={styles.deleteButton}>
           <Text style={styles.deleteText}>{mutations.deleteRecipe.isPending ? "Deleting..." : "Delete Recipe"}</Text>
         </Pressable>
       </ScrollView>
