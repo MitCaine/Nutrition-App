@@ -138,21 +138,21 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
           <>
             <View style={styles.header}>
               <Text style={styles.title}>{draft.recipeId ? "Edit Recipe" : "New Recipe"}</Text>
-              <Pressable onPress={onCancel}>
+              <Pressable disabled={isSaving} onPress={onCancel} style={isSaving && styles.disabledButton}>
                 <Text style={styles.text}>Cancel</Text>
               </Pressable>
             </View>
             <View style={styles.topField}>
               <Text style={styles.formLabel}>Recipe name</Text>
-              <TextInput {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+              <TextInput editable={!isSaving} {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View style={styles.topField}>
               <Text style={styles.formLabel}>Notes</Text>
-              <TextInput {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+              <TextInput editable={!isSaving} {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Ingredients</Text>
-              <Pressable onPress={onAddIngredient}>
+              <Pressable disabled={isSaving} onPress={onAddIngredient} style={isSaving && styles.disabledButton}>
                 <Text style={styles.link}>Add</Text>
               </Pressable>
             </View>
@@ -164,39 +164,41 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     <Text style={styles.ingredientName}>{ingredient.food.name}</Text>
                     <Text style={styles.meta}>{formatIngredientAmount(ingredient)}</Text>
                   </View>
-                  <Pressable onPress={() => setDraft({ ...draft, ingredients: draft.ingredients.filter((item) => item.localId !== ingredient.localId) })}>
+                  <Pressable disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: draft.ingredients.filter((item) => item.localId !== ingredient.localId) })} style={isSaving && styles.disabledButton}>
                     <Text style={styles.error}>Remove</Text>
                   </Pressable>
                 </View>
                 <View style={styles.segmented}>
                   <Pressable
+                    disabled={isSaving}
                     onPress={() => {
                       updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "g"));
                       setExpandedCustomServingForms((current) => collapseCustomServing(current, ingredient.localId));
                     }}
-                    style={[styles.segment, ingredient.amountUnit === "g" && styles.segmentActive]}
+                    style={[styles.segment, ingredient.amountUnit === "g" && styles.segmentActive, isSaving && styles.disabledButton]}
                   >
                     <Text style={styles.text}>Grams</Text>
                   </Pressable>
-                  <Pressable onPress={() => updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "serving"))} style={[styles.segment, ingredient.amountUnit === "serving" && styles.segmentActive]}>
+                  <Pressable disabled={isSaving} onPress={() => updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "serving"))} style={[styles.segment, ingredient.amountUnit === "serving" && styles.segmentActive, isSaving && styles.disabledButton]}>
                     <Text style={styles.text}>Serving</Text>
                   </Pressable>
                 </View>
                 <View style={styles.twoColumn}>
-                  <TextInput value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-                  {ingredient.amountUnit === "g" ? <MassUnitSelector value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} /> : null}
+                  <TextInput editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+                  {ingredient.amountUnit === "g" ? <MassUnitSelector disabled={isSaving} value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} /> : null}
                 </View>
                 {ingredient.amountUnit === "g" && convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit) ? <Text style={styles.meta}>{convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit)}</Text> : null}
                 {ingredient.amountUnit === "serving" ? (
                   <>
                     <View style={styles.servings}>
                       {usefulServingDefinitions(ingredient.food.serving_definitions).map((serving) => (
-                        <Pressable key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive]}>
+                        <Pressable disabled={isSaving} key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive, isSaving && styles.disabledButton]}>
                           <Text style={styles.text}>{formatServingChoiceLabel(serving)}</Text>
                         </Pressable>
                       ))}
                     </View>
                     <CustomServingEditor
+                      disabled={isSaving}
                       expanded={isCustomServingExpanded(expandedCustomServingForms, ingredient.localId)}
                       value={customServingForms[ingredient.localId] ?? emptyCustomServingForm()}
                       onExpand={() => setExpandedCustomServingForms((current) => expandCustomServing(current, ingredient.localId))}
@@ -209,12 +211,12 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     />
                   </>
                 ) : null}
-                <TextInput value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+                <TextInput editable={!isSaving} value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
                 <View style={styles.reorder}>
-                  <Pressable onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, -1) })}>
+                  <Pressable disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, -1) })} style={isSaving && styles.disabledButton}>
                     <Text style={styles.link}>Up</Text>
                   </Pressable>
-                  <Pressable onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, 1) })}>
+                  <Pressable disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, 1) })} style={isSaving && styles.disabledButton}>
                     <Text style={styles.link}>Down</Text>
                   </Pressable>
                 </View>
@@ -222,7 +224,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
             ))}
             <Text style={styles.optionalSectionTitle}>Yield (optional)</Text>
             <Text style={styles.formLabel}>Number of servings</Text>
-            <TextInput value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+            <TextInput editable={!isSaving} value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
             {draft.legacyCookedWeight ? (
               <View style={styles.legacyCompatibility}>
                 <Text style={styles.formLabel}>Legacy cooked weight</Text>
@@ -264,6 +266,7 @@ function isMatchingCreatedServing(serving: ServingDefinition, form: CustomServin
 }
 
 function CustomServingEditor({
+  disabled,
   expanded,
   value,
   onExpand,
@@ -271,6 +274,7 @@ function CustomServingEditor({
   onChange,
   onAdd,
 }: {
+  disabled: boolean;
   expanded: boolean;
   value: CustomServingForm;
   onExpand: () => void;
@@ -281,7 +285,7 @@ function CustomServingEditor({
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   if (!expanded) {
     return (
-      <Pressable onPress={onExpand} style={styles.addServingButton}>
+      <Pressable disabled={disabled} onPress={onExpand} style={[styles.addServingButton, disabled && styles.disabledButton]}>
         <Text style={styles.link}>Add custom serving</Text>
       </Pressable>
     );
@@ -290,28 +294,28 @@ function CustomServingEditor({
   return (
     <View style={styles.customServing}>
       <Text style={styles.label}>Add custom serving</Text>
-      <TextInput value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+      <TextInput editable={!disabled} value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
       <View style={styles.twoColumn}>
-        <TextInput value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-        <TextInput value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]} />
+        <TextInput editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+        <TextInput editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]} />
       </View>
-      <TextInput value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-      <Pressable onPress={onAdd} style={styles.addServingButton}>
+      <TextInput editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+      <Pressable disabled={disabled} onPress={onAdd} style={[styles.addServingButton, disabled && styles.disabledButton]}>
         <Text style={styles.link}>Add custom serving</Text>
       </Pressable>
-      <Pressable onPress={onCancel} style={styles.secondaryButton}>
+      <Pressable disabled={disabled} onPress={onCancel} style={[styles.secondaryButton, disabled && styles.disabledButton]}>
         <Text style={styles.text}>Cancel</Text>
       </Pressable>
     </View>
   );
 }
 
-function MassUnitSelector({ value, onChange }: { value: MassUnit; onChange: (unit: MassUnit) => void }) {
+function MassUnitSelector({ disabled, value, onChange }: { disabled: boolean; value: MassUnit; onChange: (unit: MassUnit) => void }) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.unitSelector}>
       {(["g", "oz", "lb"] as MassUnit[]).map((unit) => (
-        <Pressable key={unit} onPress={() => onChange(unit)} style={[styles.unitChoice, value === unit && styles.segmentActive]}>
+        <Pressable disabled={disabled} key={unit} onPress={() => onChange(unit)} style={[styles.unitChoice, value === unit && styles.segmentActive, disabled && styles.disabledButton]}>
           <Text style={styles.text}>{unit}</Text>
         </Pressable>
       ))}
