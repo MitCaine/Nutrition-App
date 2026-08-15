@@ -64,7 +64,14 @@ export function RecipeListScreen({ query, setQuery, onCreate, onOpenRecipe, mess
         {recipes.isError ? <AccessibilityStatus kind="retryable-failure" message="Could not load recipes." retryContext="recipes" onRetry={() => { void recipes.refetch(); }} messageStyle={styles.error} /> : null}
         {!recipes.isLoading && !recipes.isError && recipes.data?.length === 0 ? <AccessibilityStatus kind="empty" message="No recipes yet." /> : null}
         {recipes.data?.map((recipe) => (
-          <Pressable key={recipe.id} onPress={() => onOpenRecipe(recipe.id)} style={styles.row}>
+          <Pressable
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={`${recipe.name}, ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? "" : "s"}${recipe.published_food_item_id ? ", published" : ""}`}
+            key={recipe.id}
+            onPress={() => onOpenRecipe(recipe.id)}
+            style={styles.row}
+          >
             <Text style={styles.name}>{recipe.name}</Text>
             <Text style={styles.meta}>
               {recipe.ingredients.length} ingredient{recipe.ingredients.length === 1 ? "" : "s"}
@@ -87,6 +94,8 @@ export function RecipeListScreen({ query, setQuery, onCreate, onOpenRecipe, mess
         <View style={styles.searchContainer}>
           <View style={styles.searchRow}>
             <TextInput
+              accessibilityLabel="Search recipes"
+              accessibilityHint="Filters saved recipes"
               value={query}
               onChangeText={updateQuery}
               placeholder="Search recipes"
