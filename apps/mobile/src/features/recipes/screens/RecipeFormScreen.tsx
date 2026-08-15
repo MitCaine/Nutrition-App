@@ -226,9 +226,14 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                 </View>
               </View>
             ))}
-            <Text accessibilityRole="header" style={styles.optionalSectionTitle}>Yield (optional)</Text>
+            <Text accessibilityRole="header" style={styles.optionalSectionTitle}>Yield</Text>
+            <Text style={styles.meta}>
+              {draft.legacyCookedWeight
+                ? "This Recipe has a stored legacy cooked weight, so a serving count is optional for publishing."
+                : "Optional while drafting. Required before publishing."}
+            </Text>
             <Text style={styles.formLabel}>Number of servings</Text>
-            <TextInput accessibilityLabel="Recipe number of servings" editable={!isSaving} value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+            <TextInput accessibilityLabel="Recipe number of servings" editable={!isSaving} value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="e.g. 6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
             {draft.legacyCookedWeight ? (
               <View style={styles.legacyCompatibility}>
                 <Text style={styles.formLabel}>Legacy cooked weight</Text>
