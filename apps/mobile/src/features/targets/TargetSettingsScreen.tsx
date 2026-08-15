@@ -11,6 +11,7 @@ import {
 import { useAppTheme } from "../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../shared/forms/KeyboardSafeScrollView";
 import { BackButton } from "../../shared/components/BackButton";
+import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { formatDisplayNumber } from "../../shared/nutrition/display";
 import type { TargetConfiguration } from "./api/types";
 import { targetErrorMessage } from "./targetErrors";
@@ -85,6 +86,7 @@ export function TargetSettingsScreen({
   const [draft, setDraft] = useState(EMPTY_TARGET_DRAFT);
   const [result, setResult] = useState<TargetConfiguration | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const initialized = useRef(false);
@@ -105,6 +107,8 @@ export function TargetSettingsScreen({
       return;
     }
 
+    setSuccessMessage(null);
+
     const validation = targetDraftError(draft);
 
     if (validation) {
@@ -116,6 +120,7 @@ export function TargetSettingsScreen({
     setSubmitting(true);
     setError(null);
 
+
     try {
       const next = await runtime.targets.updateConfiguration(targetInput(draft));
 
@@ -126,6 +131,7 @@ export function TargetSettingsScreen({
       await queryClient.invalidateQueries({
         queryKey: ["target-comparison"],
       });
+      setSuccessMessage("Nutrition targets saved.");
     } catch (caught) {
       setError(targetErrorMessage(caught));
     } finally {
@@ -142,6 +148,8 @@ export function TargetSettingsScreen({
     submittingRef.current = true;
     setSubmitting(true);
     setError(null);
+    setSuccessMessage(null);
+
 
     try {
       const next = await runtime.targets.resetOverride(nutrientId);
@@ -151,6 +159,16 @@ export function TargetSettingsScreen({
           : nutrientId === "total_fat"
             ? "totalFat"
             : nutrientId;
+      const nutrientLabel =
+          nutrientId === "total_carbohydrate"
+              ? "Carbohydrate"
+              : nutrientId === "total_fat"
+                  ? "Fat"
+                  : nutrientId === "calories"
+                      ? "Calories"
+                      : nutrientId === "protein"
+                          ? "Protein"
+                          : "Nutrition";
 
       setResult(next);
       setDraft((current) => ({
@@ -162,6 +180,7 @@ export function TargetSettingsScreen({
       await queryClient.invalidateQueries({
         queryKey: ["target-comparison"],
       });
+      setSuccessMessage(`${nutrientLabel} target reset.`);
     } catch (caught) {
       setError(targetErrorMessage(caught));
     } finally {
@@ -204,6 +223,11 @@ export function TargetSettingsScreen({
                 Nutrition targets
               </Text>
             </View>
+
+            <TransientSuccessBanner
+                message={successMessage}
+                onExpired={() => setSuccessMessage(null)}
+            />
 
             <Text style={styles.notice}>
               FDA Daily Values are regulatory references. Personal targets are

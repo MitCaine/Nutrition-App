@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
@@ -22,6 +22,7 @@ import { foodDetailLoadState } from "../utils/foodDetailState";
 import { foodDetailActions, isRevisionBackedRecipeDetail } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { BackButton } from "../../../shared/components/BackButton";
+import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import {
   foodDetailLogInitialAmount,
   type LogFoodInitialAmount,
@@ -44,12 +45,14 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const mutations = useFoodMutations();
   const [dependency, setDependency] = useState<FoodDeleteDependency | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedAmountId, setSelectedAmountId] = useState<string | null>(null);
   const [amountsExpanded, setAmountsExpanded] = useState(false);
   const favoriteClaimedRef = useRef(false);
   const duplicateRequestIdRef = useRef<string | null>(null);
   const deletePending = mutations.deleteFood.isPending;
   const favoritePending = mutations.setFavorite.isPending;
+  const clearSuccessMessage = useCallback(() => {setSuccessMessage(null);}, []);
   const loadState = foodDetailLoadState({
     hasData: Boolean(food.data),
     isLoading: food.isLoading,
@@ -83,26 +86,47 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
 
   const toggleFavorite = () => {
     if (favoriteClaimedRef.current || favoritePending || !food.data?.can_favorite) return;
+
+    const nextFavorite = !food.data.is_favorite;
+
     favoriteClaimedRef.current = true;
     setError(null);
+    setSuccessMessage(null);
+
     mutations.setFavorite.mutate(
-      { foodId, favorite: !food.data.is_favorite },
-      {
-        onError: (favoriteError) => setError(apiErrorMessage(favoriteError, "Could not update favorite")),
-        onSettled: () => { favoriteClaimedRef.current = false; },
-      },
+        { foodId, favorite: nextFavorite },
+        {
+          onSuccess: () => {
+            setSuccessMessage(
+                nextFavorite ? "Added to favorites." : "Removed from favorites.",
+            );
+          },
+          onError: (favoriteError) =>
+              setError(apiErrorMessage(favoriteError, "Could not update favorite")),
+          onSettled: () => {
+            favoriteClaimedRef.current = false;
+          },
+        },
     );
   };
 
   const duplicate = () => {
     if (mutations.duplicateFood.isPending) return;
+
     duplicateRequestIdRef.current ??= createClientRequestId();
+    setError(null);
+    setSuccessMessage(null);
+
     mutations.duplicateFood.mutate(
-      { foodId, clientRequestId: duplicateRequestIdRef.current },
-      {
-        onSuccess: () => { duplicateRequestIdRef.current = null; },
-        onError: (duplicateError) => setError(apiErrorMessage(duplicateError, "Could not duplicate food")),
-      },
+        { foodId, clientRequestId: duplicateRequestIdRef.current },
+        {
+          onSuccess: (duplicatedFood) => {
+            duplicateRequestIdRef.current = null;
+            setSuccessMessage(`Duplicated as ${duplicatedFood.name}.`);
+          },
+          onError: (duplicateError) =>
+              setError(apiErrorMessage(duplicateError, "Could not duplicate food")),
+        },
     );
   };
 
@@ -154,6 +178,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   return (
     <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
       <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
+      <TransientSuccessBanner message={successMessage} onExpired={clearSuccessMessage}/>
       <Text style={styles.title}>{food.data.name}</Text>
       {brand ? <Text style={styles.brand}>{brand}</Text> : null}
       {managedByRecipe ? (
@@ -206,8 +231,20 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
             <Text style={styles.text}>Edit</Text>
           </Pressable>
         ) : null}
-        <Pressable onPress={duplicate} style={styles.secondaryButton}>
-          <Text style={styles.text}>Duplicate</Text>
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Duplicate food"
+            accessibilityState={{
+              disabled: mutations.duplicateFood.isPending,
+              busy: mutations.duplicateFood.isPending,
+            }}
+            disabled={mutations.duplicateFood.isPending}
+            onPress={duplicate}
+            style={styles.secondaryButton}
+        >
+          <Text style={styles.text}>
+            {mutations.duplicateFood.isPending ? "Duplicating…" : "Duplicate"}
+          </Text>
         </Pressable>
         {food.data.can_favorite ? <Pressable accessibilityRole="button" accessibilityLabel={food.data.is_favorite ? "Unfavorite food" : "Favorite food"} accessibilityState={{ selected: food.data.is_favorite, disabled: favoritePending, busy: favoritePending }} disabled={favoritePending} onPress={toggleFavorite} style={styles.secondaryButton}><Text style={styles.text}>{favoritePending ? "Updating…" : food.data.is_favorite ? "Unfavorite" : "Favorite"}</Text></Pressable> : null}
         {actions.canDelete ? (

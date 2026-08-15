@@ -9,6 +9,7 @@ import {
   removeStoredUsdaCredential,
   setStoredUsdaCredential,
 } from "../../runtime/local/usdaCredentialStore";
+import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 
 type CredentialStatus = "loading" | "configured" | "unconfigured" | "error";
 
@@ -22,11 +23,13 @@ export function UsdaCredentialSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     if (!isLocalAuthority) return;
     setStatus("loading");
     setMessage(null);
+    setSuccessMessage(null);
     try {
       setStatus((await isUsdaCredentialConfigured()) ? "configured" : "unconfigured");
     } catch {
@@ -43,16 +46,18 @@ export function UsdaCredentialSettings() {
   const saveCredential = useCallback(async () => {
     const normalized = apiKey.trim();
     if (normalized.length === 0) {
+      setSuccessMessage(null);
       setMessage("Enter a USDA API key before saving.");
       return;
     }
     setIsSaving(true);
     setMessage(null);
+    setSuccessMessage(null);
     try {
       await setStoredUsdaCredential(normalized);
       setApiKey("");
       setStatus("configured");
-      setMessage("USDA API key saved securely on this device.");
+      setSuccessMessage("USDA API key saved securely on this device.");
     } catch {
       setMessage("The USDA API key could not be saved. Try again.");
     } finally {
@@ -63,11 +68,12 @@ export function UsdaCredentialSettings() {
   const removeCredential = useCallback(async () => {
     setIsRemoving(true);
     setMessage(null);
+    setSuccessMessage(null);
     try {
       await removeStoredUsdaCredential();
       setApiKey("");
       setStatus("unconfigured");
-      setMessage("USDA API key removed from this device.");
+      setSuccessMessage("USDA API key removed from this device.");
     } catch {
       setMessage("The USDA API key could not be removed. Try again.");
     } finally {
@@ -89,6 +95,12 @@ export function UsdaCredentialSettings() {
   return (
     <>
       <Text accessibilityRole="header" style={styles.sectionTitle}>USDA FoodData Central</Text>
+
+      <TransientSuccessBanner
+          message={successMessage}
+          onExpired={() => setSuccessMessage(null)}
+      />
+
       <View style={styles.card}>
         <Text style={styles.description}>
           Add your personal USDA FoodData Central API key to search and import USDA foods directly in local mode. The saved key is never displayed again.

@@ -6,6 +6,7 @@ import {
   announceAccessibility,
   useAccessibilityAnnouncement,
   type AccessibilityAnnouncer,
+  type AccessibilityAnnouncementKind,
 } from "../accessibility/announcements";
 
 export const SUCCESS_BANNER_DURATION_MS = 5000;
@@ -20,11 +21,15 @@ export function TransientSuccessBanner({
   onExpired,
   durationMs = SUCCESS_BANNER_DURATION_MS,
   announcer = announceAccessibility,
+  announcementKey,
+  announcementKind = "success",
 }: {
   message?: string | null;
   onExpired?: () => void;
   durationMs?: number;
   announcer?: AccessibilityAnnouncer;
+  announcementKey?: string;
+  announcementKind?: AccessibilityAnnouncementKind;
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -35,8 +40,7 @@ export function TransientSuccessBanner({
   }, [durationMs, message, onExpired]);
   useEffect(() => {
     if (!message) return;
-    return announce(message, { key: `success-banner:${message}`, kind: "success", priority: "polite" });
-  }, [announce, message]);
+    return announce(message, {key: announcementKey ?? `success-banner:${message}`, kind: announcementKind, priority: "polite",});  }, [announce, announcementKey, announcementKind, message]);
   if (!message) return null;
   return <View style={styles.banner}><Text accessibilityLiveRegion="polite" style={styles.text}>{message}</Text></View>;
 }

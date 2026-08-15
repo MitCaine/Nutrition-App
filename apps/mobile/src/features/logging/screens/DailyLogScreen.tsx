@@ -10,6 +10,7 @@ import {
 import { useFoods } from "../../foods/hooks/useFoods";
 import type { DailyLog, DailyLogDeleteInput } from "../api/types";
 import { RuntimeError } from "../../../runtime/RuntimeError";
+import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import { dailyLogReadState, dailySummaryReadState, useDailyLogs, useDailySummary, useFutureLogs, useLogMutations } from "../hooks/useLogs";
 import {
@@ -114,6 +115,8 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteOverlapRecord, setDeleteOverlapRecord] = useState<LogMutationRecoveryRecord | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [successAnnouncementKey, setSuccessAnnouncementKey] = useState<string | null>(null);
   const announce = useAccessibilityAnnouncement();
   const deleteSubmittingRef = useRef(false);
   const deleteSeparateActionAcknowledgmentRef = useRef<string | null>(null);
@@ -164,12 +167,20 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   useEffect(() => () => pendingFocus.current?.(), []);
   useEffect(() => {
     if (!mutationOutcome) return;
-    const cancel = announce(mutationOutcome.message, { key: mutationOutcome.key, kind: "mutation-outcome" });
-    if (mutationOutcome.focusDateHeading) focusTarget(dateHeadingRef.current);
-    else if (mutationOutcome.focusEntryId) focusTarget(entryRefs.current.get(mutationOutcome.focusEntryId) ?? dateHeadingRef.current ?? screenHeadingRef.current);
+    setSuccessMessage(mutationOutcome.message);
+    setSuccessAnnouncementKey(mutationOutcome.key);
+    if (mutationOutcome.focusDateHeading) {
+      focusTarget(dateHeadingRef.current);
+    } else if (mutationOutcome.focusEntryId) {
+      focusTarget(
+          entryRefs.current.get(mutationOutcome.focusEntryId)
+          ?? dateHeadingRef.current
+          ?? screenHeadingRef.current,
+      );
+    }
+
     onMutationOutcomeHandled?.();
-    return cancel;
-  }, [announce, mutationOutcome, onMutationOutcomeHandled]);
+  }, [mutationOutcome, onMutationOutcomeHandled]);
   useEffect(() => {
     if (!returnFocusKey) return;
     focusTarget(actionRefs.current.get(returnFocusKey) ?? dateHeadingRef.current ?? screenHeadingRef.current);
@@ -222,6 +233,8 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 
   const beginDelete = (log: DailyLog) => {
     setDeleteNotice(null);
+    setSuccessMessage(null);
+    setSuccessAnnouncementKey(null);
     setDeleteOverlapRecord(null);
     deleteSeparateActionAcknowledgmentRef.current = null;
     setPendingDelete({ log, input: null, phase: "confirming", message: null });
@@ -264,8 +277,9 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         if (recoveryRecord) await removeLogMutationRecoveryRecord(recoveryRecord);
         setPendingDelete(null);
         const message = `Deleted ${loggedFoodDisplayName(pending.log, foodNames)} permanently.`;
-        setDeleteNotice(message);
-        announce(message, { key: `delete:${pending.input.client_request_id}:confirmed`, kind: "mutation-outcome" });
+        setDeleteNotice(null);
+        setSuccessMessage(message);
+        setSuccessAnnouncementKey(`delete:${pending.input.client_request_id}:confirmed`);
         if (successor) focusTarget(successor);
         return;
       }
@@ -364,8 +378,9 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       setPendingDelete(null);
       setDeleteOverlapRecord(null);
       const message = `Deleted ${loggedFoodDisplayName(pendingDelete.log, foodNames)} permanently.`;
-      setDeleteNotice(message);
-      announce(message, { key: `delete:${input.client_request_id}:confirmed`, kind: "mutation-outcome" });
+      setDeleteNotice(null);
+      setSuccessMessage(message);
+      setSuccessAnnouncementKey(`delete:${input.client_request_id}:confirmed`);
       if (successor) focusTarget(successor);
     } catch (error) {
       const errorCode = logEditErrorCode(error);
@@ -432,6 +447,15 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       <View style={styles.root}>
         <View style={styles.chrome}>
           <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
+          <TransientSuccessBanner
+              message={successMessage}
+              announcementKey={successAnnouncementKey ?? undefined}
+              announcementKind="mutation-outcome"
+              onExpired={() => {
+                setSuccessMessage(null);
+                setSuccessAnnouncementKey(null);
+              }}
+          />
           <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
         </View>
         <ScrollView
@@ -520,6 +544,15 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     <View style={styles.root}>
       <View style={styles.chrome}>
         <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
+        <TransientSuccessBanner
+            message={successMessage}
+            announcementKey={successAnnouncementKey ?? undefined}
+            announcementKind="mutation-outcome"
+            onExpired={() => {
+              setSuccessMessage(null);
+              setSuccessAnnouncementKey(null);
+            }}
+        />
         <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
       </View>
       <ScrollView

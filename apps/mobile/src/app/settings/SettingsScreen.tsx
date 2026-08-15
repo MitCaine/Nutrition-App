@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../theme/AppTheme";
@@ -7,7 +7,6 @@ import { AccessiblePressable } from "../../shared/accessibility/AccessiblePressa
 import { AccessibilityStatus } from "../../shared/accessibility/AccessibilityStatus";
 import {
   announceAccessibility,
-  useAccessibilityAnnouncement,
   type AccessibilityAnnouncer,
 } from "../../shared/accessibility/announcements";
 import {
@@ -16,6 +15,7 @@ import {
   type AccessibilityFocusRequester,
 } from "../../shared/accessibility/focus";
 import { BackButton } from "../../shared/components/BackButton";
+import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { UsdaCredentialSettings } from "./UsdaCredentialSettings";
 import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
@@ -47,7 +47,7 @@ export function SettingsScreen({
   const establish = useEstablishCalendarTimeZone();
   const previewChange = usePreviewCalendarTimeZoneChange();
   const confirmChange = useConfirmCalendarTimeZoneChange();
-  const announce = useAccessibilityAnnouncement(accessibilityAnnouncer);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const settingsHeadingRef = useRef<Text>(null);
   const calendarStatusRef = useRef<Text>(null);
   const reviewHeadingRef = useRef<Text>(null);
@@ -74,37 +74,44 @@ export function SettingsScreen({
 
   useEffect(() => {
     if (!establish.isSuccess) return;
-    const cancelAnnouncement = announce(
-      `Daily Log time zone confirmed as ${proposedTimeZone}.`,
-      { key: `calendar-established:${proposedTimeZone}`, kind: "success" },
-    );
+
+    setSuccessMessage(`Daily Log time zone confirmed as ${proposedTimeZone}.`);
+
     const cancelFocus = requestAccessibilityFocus(calendarStatusRef.current, {
       delayMs: 0,
       focusKeyboardTarget: false,
     });
-    return () => {
-      cancelAnnouncement();
-      cancelFocus();
-    };
-  }, [announce, establish.isSuccess, proposedTimeZone, requestAccessibilityFocus]);
+
+    return cancelFocus;
+  }, [establish.isSuccess, proposedTimeZone, requestAccessibilityFocus]);
 
   useEffect(() => {
     if (confirmChange.isSuccess) {
       const confirmedTimeZone = preview?.proposed_time_zone ?? proposedTimeZone;
-      announce(
-        `Daily Log time zone changed to ${confirmedTimeZone}. Entry dates and historical nutrition were not changed.`,
-        { key: `calendar-changed:${confirmedTimeZone}`, kind: "success" },
+
+      setSuccessMessage(
+          `Daily Log time zone changed to ${confirmedTimeZone}. Entry dates and historical nutrition were not changed.`,
       );
+
       previewChange.reset();
       confirmChange.reset();
+
       return requestAccessibilityFocus(calendarStatusRef.current, {
         delayMs: 0,
         focusKeyboardTarget: false,
       });
     }
-  }, [announce, confirmChange.isSuccess, confirmChange.reset, preview?.proposed_time_zone, previewChange.reset, proposedTimeZone, requestAccessibilityFocus]);
+  }, [
+    confirmChange.isSuccess,
+    confirmChange.reset,
+    preview?.proposed_time_zone,
+    previewChange.reset,
+    proposedTimeZone,
+    requestAccessibilityFocus,
+  ]);
 
   function reviewTimeZoneChange() {
+    setSuccessMessage(null);
     reviewRequestedRef.current = true;
     previewChange.reset();
     confirmChange.reset();
@@ -112,6 +119,7 @@ export function SettingsScreen({
   }
 
   function confirmTimeZoneChange() {
+    setSuccessMessage(null);
     if (!preview) {
       return;
     }
@@ -127,6 +135,13 @@ export function SettingsScreen({
         <BackButton accessibilityLabel="Back from settings" onPress={onBack} />
         <Text ref={settingsHeadingRef} accessibilityRole="header" style={styles.title}>Settings</Text>
       </View>
+
+      <TransientSuccessBanner
+          message={successMessage}
+          onExpired={() => setSuccessMessage(null)}
+          announcer={accessibilityAnnouncer}
+      />
+
       <Text accessibilityRole="header" style={styles.sectionTitle}>Appearance</Text>
       <View style={styles.options} accessibilityRole="radiogroup">
         {APPEARANCE_OPTIONS.map((option) => {
