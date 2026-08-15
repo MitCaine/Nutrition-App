@@ -137,22 +137,22 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
         {(focusProps) => (
           <>
             <View style={styles.header}>
-              <Text style={styles.title}>{draft.recipeId ? "Edit Recipe" : "New Recipe"}</Text>
-              <Pressable disabled={isSaving} onPress={onCancel} style={isSaving && styles.disabledButton}>
+              <Text accessibilityRole="header" style={styles.title}>{draft.recipeId ? "Edit Recipe" : "New Recipe"}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Cancel Recipe editing" accessibilityState={{ disabled: isSaving }} disabled={isSaving} onPress={onCancel} style={isSaving && styles.disabledButton}>
                 <Text style={styles.text}>Cancel</Text>
               </Pressable>
             </View>
             <View style={styles.topField}>
               <Text style={styles.formLabel}>Recipe name</Text>
-              <TextInput editable={!isSaving} {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+              <TextInput accessibilityLabel="Recipe name" editable={!isSaving} {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View style={styles.topField}>
               <Text style={styles.formLabel}>Notes</Text>
-              <TextInput editable={!isSaving} {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+              <TextInput accessibilityLabel="Recipe notes" editable={!isSaving} {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Ingredients</Text>
-              <Pressable disabled={isSaving} onPress={onAddIngredient} style={isSaving && styles.disabledButton}>
+              <Text accessibilityRole="header" style={styles.sectionTitle}>Ingredients</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Add ingredient" accessibilityState={{ disabled: isSaving }} disabled={isSaving} onPress={onAddIngredient} style={isSaving && styles.disabledButton}>
                 <Text style={styles.link}>Add</Text>
               </Pressable>
             </View>
@@ -164,12 +164,15 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     <Text style={styles.ingredientName}>{ingredient.food.name}</Text>
                     <Text style={styles.meta}>{formatIngredientAmount(ingredient)}</Text>
                   </View>
-                  <Pressable disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: draft.ingredients.filter((item) => item.localId !== ingredient.localId) })} style={isSaving && styles.disabledButton}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${ingredient.food.name} from Recipe`} accessibilityState={{ disabled: isSaving }} disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: draft.ingredients.filter((item) => item.localId !== ingredient.localId) })} style={isSaving && styles.disabledButton}>
                     <Text style={styles.error}>Remove</Text>
                   </Pressable>
                 </View>
-                <View style={styles.segmented}>
+                <View accessibilityRole="radiogroup" accessibilityLabel={`${ingredient.food.name} amount type`} style={styles.segmented}>
                   <Pressable
+                    accessibilityRole="radio"
+                    accessibilityLabel={`${ingredient.food.name} amount in grams`}
+                    accessibilityState={{ checked: ingredient.amountUnit === "g", disabled: isSaving }}
                     disabled={isSaving}
                     onPress={() => {
                       updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "g"));
@@ -179,26 +182,27 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                   >
                     <Text style={styles.text}>Grams</Text>
                   </Pressable>
-                  <Pressable disabled={isSaving} onPress={() => updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "serving"))} style={[styles.segment, ingredient.amountUnit === "serving" && styles.segmentActive, isSaving && styles.disabledButton]}>
+                  <Pressable accessibilityRole="radio" accessibilityLabel={`${ingredient.food.name} amount by serving`} accessibilityState={{ checked: ingredient.amountUnit === "serving", disabled: isSaving }} disabled={isSaving} onPress={() => updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "serving"))} style={[styles.segment, ingredient.amountUnit === "serving" && styles.segmentActive, isSaving && styles.disabledButton]}>
                     <Text style={styles.text}>Serving</Text>
                   </Pressable>
                 </View>
                 <View style={styles.twoColumn}>
-                  <TextInput editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-                  {ingredient.amountUnit === "g" ? <MassUnitSelector disabled={isSaving} value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} /> : null}
+                  <TextInput accessibilityLabel={`${ingredient.food.name} amount`} editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+                  {ingredient.amountUnit === "g" ? <MassUnitSelector disabled={isSaving} foodName={ingredient.food.name} value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} /> : null}
                 </View>
                 {ingredient.amountUnit === "g" && convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit) ? <Text style={styles.meta}>{convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit)}</Text> : null}
                 {ingredient.amountUnit === "serving" ? (
                   <>
-                    <View style={styles.servings}>
+                    <View accessibilityRole="radiogroup" accessibilityLabel={`${ingredient.food.name} serving`} style={styles.servings}>
                       {usefulServingDefinitions(ingredient.food.serving_definitions).map((serving) => (
-                        <Pressable disabled={isSaving} key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive, isSaving && styles.disabledButton]}>
+                        <Pressable accessibilityRole="radio" accessibilityLabel={formatServingChoiceLabel(serving)} accessibilityState={{ checked: ingredient.servingDefinitionId === serving.id, disabled: isSaving }} disabled={isSaving} key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive, isSaving && styles.disabledButton]}>
                           <Text style={styles.text}>{formatServingChoiceLabel(serving)}</Text>
                         </Pressable>
                       ))}
                     </View>
                     <CustomServingEditor
                       disabled={isSaving}
+                      foodName={ingredient.food.name}
                       expanded={isCustomServingExpanded(expandedCustomServingForms, ingredient.localId)}
                       value={customServingForms[ingredient.localId] ?? emptyCustomServingForm()}
                       onExpand={() => setExpandedCustomServingForms((current) => expandCustomServing(current, ingredient.localId))}
@@ -211,20 +215,20 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     />
                   </>
                 ) : null}
-                <TextInput editable={!isSaving} value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+                <TextInput accessibilityLabel={`${ingredient.food.name} preparation note`} editable={!isSaving} value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
                 <View style={styles.reorder}>
-                  <Pressable disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, -1) })} style={isSaving && styles.disabledButton}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${ingredient.food.name} up`} accessibilityState={{ disabled: isSaving || index === 0 }} disabled={isSaving || index === 0} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, -1) })} style={(isSaving || index === 0) && styles.disabledButton}>
                     <Text style={styles.link}>Up</Text>
                   </Pressable>
-                  <Pressable disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, 1) })} style={isSaving && styles.disabledButton}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${ingredient.food.name} down`} accessibilityState={{ disabled: isSaving || index === draft.ingredients.length - 1 }} disabled={isSaving || index === draft.ingredients.length - 1} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, 1) })} style={(isSaving || index === draft.ingredients.length - 1) && styles.disabledButton}>
                     <Text style={styles.link}>Down</Text>
                   </Pressable>
                 </View>
               </View>
             ))}
-            <Text style={styles.optionalSectionTitle}>Yield (optional)</Text>
+            <Text accessibilityRole="header" style={styles.optionalSectionTitle}>Yield (optional)</Text>
             <Text style={styles.formLabel}>Number of servings</Text>
-            <TextInput editable={!isSaving} value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+            <TextInput accessibilityLabel="Recipe number of servings" editable={!isSaving} value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
             {draft.legacyCookedWeight ? (
               <View style={styles.legacyCompatibility}>
                 <Text style={styles.formLabel}>Legacy cooked weight</Text>
@@ -232,14 +236,14 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                 <Text style={styles.meta}>Stored for compatibility with existing recipe data.</Text>
               </View>
             ) : null}
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            {mutations.createRecipe.isError || mutations.updateRecipe.isError ? <Text style={styles.error}>{error ?? "Could not save recipe."}</Text> : null}
+            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+            {mutations.createRecipe.isError || mutations.updateRecipe.isError ? <Text accessibilityRole="alert" style={styles.error}>{error ?? "Could not save recipe."}</Text> : null}
           </>
         )}
       </KeyboardSafeScrollView>
       <View style={styles.saveBar}>
-        <Pressable onPress={save} disabled={isSaving} style={[styles.primaryButton, isSaving && styles.disabledButton]}>
-          <Text style={styles.primaryText}>{isSaving ? "Saving..." : "Save Recipe"}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={isSaving ? "Saving Recipe" : "Save Recipe"} accessibilityState={{ disabled: isSaving, busy: isSaving }} onPress={save} disabled={isSaving} style={[styles.primaryButton, isSaving && styles.disabledButton]}>
+          <Text style={styles.primaryText}>{isSaving ? "Saving…" : "Save Recipe"}</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -267,6 +271,7 @@ function isMatchingCreatedServing(serving: ServingDefinition, form: CustomServin
 
 function CustomServingEditor({
   disabled,
+  foodName,
   expanded,
   value,
   onExpand,
@@ -275,6 +280,7 @@ function CustomServingEditor({
   onAdd,
 }: {
   disabled: boolean;
+  foodName: string;
   expanded: boolean;
   value: CustomServingForm;
   onExpand: () => void;
@@ -285,37 +291,38 @@ function CustomServingEditor({
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   if (!expanded) {
     return (
-      <Pressable disabled={disabled} onPress={onExpand} style={[styles.addServingButton, disabled && styles.disabledButton]}>
-        <Text style={styles.link}>Add custom serving</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Add reusable serving to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onExpand} style={[styles.addServingButton, disabled && styles.disabledButton]}>
+        <Text style={styles.link}>Add serving to {foodName}</Text>
       </Pressable>
     );
   }
 
   return (
     <View style={styles.customServing}>
-      <Text style={styles.label}>Add custom serving</Text>
-      <TextInput editable={!disabled} value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+      <Text accessibilityRole="header" style={styles.label}>Add serving to {foodName}</Text>
+      <Text style={styles.meta}>This saves a reusable serving to the Food immediately, even if you later cancel this Recipe.</Text>
+      <TextInput accessibilityLabel={`${foodName} serving label`} editable={!disabled} value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
       <View style={styles.twoColumn}>
-        <TextInput editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-        <TextInput editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]} />
+        <TextInput accessibilityLabel={`${foodName} serving quantity`} editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+        <TextInput accessibilityLabel={`${foodName} serving unit`} editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]} />
       </View>
-      <TextInput editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-      <Pressable disabled={disabled} onPress={onAdd} style={[styles.addServingButton, disabled && styles.disabledButton]}>
-        <Text style={styles.link}>Add custom serving</Text>
+      <TextInput accessibilityLabel={`${foodName} serving gram weight`} editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+      <Pressable accessibilityRole="button" accessibilityLabel={`Save reusable serving to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onAdd} style={[styles.addServingButton, disabled && styles.disabledButton]}>
+        <Text style={styles.link}>Save serving</Text>
       </Pressable>
-      <Pressable disabled={disabled} onPress={onCancel} style={[styles.secondaryButton, disabled && styles.disabledButton]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Cancel adding serving to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onCancel} style={[styles.secondaryButton, disabled && styles.disabledButton]}>
         <Text style={styles.text}>Cancel</Text>
       </Pressable>
     </View>
   );
 }
 
-function MassUnitSelector({ disabled, value, onChange }: { disabled: boolean; value: MassUnit; onChange: (unit: MassUnit) => void }) {
+function MassUnitSelector({ disabled, foodName, value, onChange }: { disabled: boolean; foodName: string; value: MassUnit; onChange: (unit: MassUnit) => void }) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   return (
-    <View style={styles.unitSelector}>
+    <View accessibilityRole="radiogroup" accessibilityLabel={`${foodName} mass unit`} style={styles.unitSelector}>
       {(["g", "oz", "lb"] as MassUnit[]).map((unit) => (
-        <Pressable disabled={disabled} key={unit} onPress={() => onChange(unit)} style={[styles.unitChoice, value === unit && styles.segmentActive, disabled && styles.disabledButton]}>
+        <Pressable accessibilityRole="radio" accessibilityLabel={`${unit} mass unit`} accessibilityState={{ checked: value === unit, disabled }} disabled={disabled} key={unit} onPress={() => onChange(unit)} style={[styles.unitChoice, value === unit && styles.segmentActive, disabled && styles.disabledButton]}>
           <Text style={styles.text}>{unit}</Text>
         </Pressable>
       ))}
