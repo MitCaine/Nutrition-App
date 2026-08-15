@@ -32,20 +32,23 @@ export function IngredientPickerScreen({
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={onBack}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back from ingredient picker" onPress={onBack}>
           <Text style={styles.text}>Back</Text>
         </Pressable>
-        <Text style={styles.title}>Add Ingredient</Text>
+        <Text accessibilityRole="header" style={styles.title}>Add Ingredient</Text>
       </View>
       <TextInput
+        accessibilityLabel="Search saved foods for an ingredient"
+        accessibilityHint="Filters saved foods available to add to the Recipe"
         value={query}
         onChangeText={setQuery}
         placeholder="Search saved foods"
         style={styles.search}
         autoCapitalize="none"
+        returnKeyType="search"
         placeholderTextColor={theme.colors.placeholder}
       />
-      <Pressable onPress={onSearchUsda} style={styles.secondaryButton}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Search USDA for an ingredient" onPress={onSearchUsda} style={styles.secondaryButton}>
         <Text style={styles.secondaryText}>Search USDA</Text>
       </Pressable>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}>
