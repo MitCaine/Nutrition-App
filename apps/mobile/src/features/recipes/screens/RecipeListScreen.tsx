@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 
 import { useRecipes } from "../hooks/useRecipes";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 
@@ -59,9 +60,9 @@ export function RecipeListScreen({ query, setQuery, onCreate, onOpenRecipe, mess
           }
         }}
       >
-        {recipes.isLoading ? <Text style={styles.meta}>Loading...</Text> : null}
-        {recipes.isError ? <Text style={styles.error}>Could not load recipes.</Text> : null}
-        {recipes.data?.length === 0 ? <Text style={styles.meta}>No recipes yet.</Text> : null}
+        {recipes.isLoading ? <AccessibilityStatus kind="loading" message="Loading recipes…" /> : null}
+        {recipes.isError ? <AccessibilityStatus kind="retryable-failure" message="Could not load recipes." retryContext="recipes" onRetry={() => { void recipes.refetch(); }} messageStyle={styles.error} /> : null}
+        {!recipes.isLoading && !recipes.isError && recipes.data?.length === 0 ? <AccessibilityStatus kind="empty" message="No recipes yet." /> : null}
         {recipes.data?.map((recipe) => (
           <Pressable key={recipe.id} onPress={() => onOpenRecipe(recipe.id)} style={styles.row}>
             <Text style={styles.name}>{recipe.name}</Text>
