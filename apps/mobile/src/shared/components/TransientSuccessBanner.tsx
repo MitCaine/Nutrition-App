@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { AccessiblePressable } from "../accessibility/AccessiblePressable";
 
 import { useAppTheme } from "../../app/theme/AppTheme";
 import {
@@ -34,20 +35,74 @@ export function TransientSuccessBanner({
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const announce = useAccessibilityAnnouncement(announcer);
+  const onExpiredRef = useRef(onExpired);
   useEffect(() => {
-    if (!message || !onExpired) return;
-    return scheduleBannerExpiration(onExpired, durationMs);
-  }, [durationMs, message, onExpired]);
+    onExpiredRef.current = onExpired;
+  }, [onExpired]);
+  useEffect(() => {
+    if (!message || !onExpiredRef.current) return;
+    return scheduleBannerExpiration(() => {
+      onExpiredRef.current?.();
+    }, durationMs);
+  }, [durationMs, message]);
   useEffect(() => {
     if (!message) return;
     return announce(message, {key: announcementKey ?? `success-banner:${message}`, kind: announcementKind, priority: "polite",});  }, [announce, announcementKey, announcementKind, message]);
   if (!message) return null;
-  return <View style={styles.banner}><Text accessibilityLiveRegion="polite" style={styles.text}>{message}</Text></View>;
+
+  return (
+      <View style={styles.banner}>
+        <Text accessibilityLiveRegion="polite" style={styles.text}>
+          {message}
+        </Text>
+
+        {onExpired ? (
+            <AccessiblePressable
+                accessibilityLabel="Dismiss confirmation"
+                onPress={onExpired}
+                style={({ pressed }) => [
+                  styles.dismissButton,
+                  pressed && styles.dismissButtonPressed,
+                ]}
+            >
+              <Text accessible={false} style={styles.dismissText}>
+                ×
+              </Text>
+            </AccessiblePressable>
+        ) : null}
+      </View>
+  );
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
-    banner: { backgroundColor: theme.colors.successBackground, borderColor: theme.colors.successBorder, borderRadius: 6, borderWidth: 1, padding: 12 },
-    text: { color: theme.colors.successText, fontWeight: "700" },
+    banner: {
+      alignItems: "center",
+      backgroundColor: theme.colors.successBackground,
+      borderColor: theme.colors.successBorder,
+      borderRadius: 6,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 8,
+      paddingLeft: 12,
+      paddingRight: 4,
+      paddingVertical: 4,
+    },
+    text: {
+      color: theme.colors.successText,
+      flex: 1,
+      fontWeight: "700",
+    },
+    dismissButton: {
+      borderRadius: 6,
+    },
+    dismissButtonPressed: {
+      opacity: 0.6,
+    },
+    dismissText: {
+      color: theme.colors.successText,
+      fontSize: 24,
+      lineHeight: 26,
+    },
   });
 }
