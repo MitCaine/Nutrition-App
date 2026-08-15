@@ -290,11 +290,11 @@ test("sex controls share an equal-width row and female-only condition choices ar
 
 test("effective target copy remains sourced while FDA identifiers stay internal", async () => {
   mockConfiguration = createConfiguration({
-    effectiveTargets: [{ nutrientId: "protein", amount: "50", unit: "g", authority: "daily_value", direction: "reference", reasonCode: null, noteCode: null }],
+    effectiveTargets: [{ nutrientId: "protein", amount: "98.339200", unit: "g", authority: "daily_value", direction: "reference", reasonCode: null, noteCode: null }],
   });
   const renderer = await render();
   const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
-  expect(text).toContain("Effective: 50 g/day · FDA Daily Value");
+  expect(text).toContain("Effective: 98.3 g/day · FDA Daily Value");
   expect(text).toContain("Micronutrient comparisons use FDA Daily Values.");
   expect(text).not.toContain("fda_daily_values_2016_v1");
   await act(async () => renderer.unmount());

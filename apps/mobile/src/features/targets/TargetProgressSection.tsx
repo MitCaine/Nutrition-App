@@ -43,7 +43,13 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
   const inferredHasLoggedNutrition = state.data
     ? rows.some((item) => item.consumedAmount !== null || item.hasUnknownContributors)
     : undefined;
+  const hasPersonalizedTargets = Boolean(
+    state.data?.comparisons.some(
+      (item) => item.authority === "calculated_estimate" || item.authority === "manual_override",
+    ),
+  );
   const showOnboarding = (hasLoggedNutrition ?? inferredHasLoggedNutrition) === false;
+  const showTargetsAction = !showOnboarding || !hasPersonalizedTargets;
   const targetsActionLabel = showOnboarding ? "Set up nutrition targets" : "Nutrition targets";
   const initialFailure = state.kind === "initial-failure"
     ? userFacingEpicOneError(state.error, { fallbackSummary: "Target comparisons are unavailable." })
@@ -51,12 +57,16 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
   return <View style={styles.section}>
     <View style={styles.headingRow}>
       <Text accessibilityRole="header" style={styles.heading}>Target Progress</Text>
-      <AccessiblePressable accessibilityLabel={targetsActionLabel} onPress={onOpenTargets}><Text style={styles.link}>{targetsActionLabel}</Text></AccessiblePressable>
+      {showTargetsAction ? (
+        <AccessiblePressable accessibilityLabel={targetsActionLabel} onPress={onOpenTargets}>
+          <Text style={styles.link}>{targetsActionLabel}</Text>
+        </AccessiblePressable>
+      ) : null}
     </View>
     {showOnboarding ? <View style={styles.onboardingCopy}>
       <Text style={styles.sectionNote}>Log a food to start tracking your nutrition.</Text>
       <Text accessibilityLabel="FDA Daily Values provide general reference targets where available." style={styles.sectionNote}>FDA Daily Values provide general reference targets where available.</Text>
-      <Text style={styles.sectionNote}>Add your information in Nutrition Targets for personalized calorie and macro targets.</Text>
+      {!hasPersonalizedTargets ? <Text style={styles.sectionNote}>Add your information in Nutrition Targets for personalized calorie and macro targets.</Text> : null}
     </View> : <Text accessibilityLabel="Reference targets use FDA Daily Values where available until you set personal targets." style={styles.sectionNote}>Reference targets use FDA Daily Values where available until you set personal targets.</Text>}
     {state.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading target comparisons…" messageStyle={styles.secondary} /> : null}
     {state.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message={initialFailure!.summary} onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}

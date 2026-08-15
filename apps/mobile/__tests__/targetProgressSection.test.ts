@@ -88,31 +88,73 @@ test("renders useful target values while preserving accessible source and direct
   await act(async () => manualCalories.unmount());
 });
 
-test("empty Daily Log progress keeps cards visible with onboarding guidance and the existing targets action", async () => {
+test("empty Daily Log with personalized targets hides the setup action", async () => {
   const emptyData: DailyTargetComparison = {
     ...data,
-    comparisons: data.comparisons.map((value) => ({ ...value, consumedAmount: null, percentage: null, hasUnknownContributors: false })),
+    comparisons: data.comparisons.map((value) => ({
+      ...value,
+      consumedAmount: null,
+      percentage: null,
+      hasUnknownContributors: false,
+    })),
   };
   const open = jest.fn();
   const renderer = await render({ data: emptyData, hasLoggedNutrition: false, onOpenTargets: open });
   const text = allText(renderer.root);
+
   expect(text).toContain("Log a food to start tracking your nutrition.");
   expect(text).toContain("FDA Daily Values provide general reference targets where available.");
+  expect(text).not.toContain("Add your information in Nutrition Targets");
+  expect(
+    renderer.root.findAllByType(Pressable).find(
+      (node) => node.props.accessibilityLabel === "Set up nutrition targets",
+    ),
+  ).toBeUndefined();
+  expect(open).not.toHaveBeenCalled();
+
+  await act(async () => renderer.unmount());
+});
+
+test("empty Daily Log without personalized targets retains the setup action", async () => {
+  const unconfiguredData: DailyTargetComparison = {
+    ...data,
+    comparisons: data.comparisons.map((value) => ({
+      ...value,
+      consumedAmount: null,
+      percentage: null,
+      hasUnknownContributors: false,
+      ...(value.nutrientId === "calories"
+        ? {
+            targetAmount: null,
+            authority: "unavailable" as const,
+            direction: "unavailable" as const,
+            status: "target_unavailable" as const,
+            reasonCode: "target_profile_incomplete",
+          }
+        : {}),
+    })),
+  };
+
+  const open = jest.fn();
+  const renderer = await render({
+    data: unconfiguredData,
+    hasLoggedNutrition: false,
+    onOpenTargets: open,
+  });
+  const text = allText(renderer.root);
+
+  expect(text).toContain("Log a food to start tracking your nutrition.");
   expect(text).toContain("Add your information in Nutrition Targets for personalized calorie and macro targets.");
-  expect(text).toContain("Calories —");
-  expect(text).toContain("Protein — / 50 g");
-  expect(text).toContain("Total Carbohydrate — / 275 g");
-  expect(text).toContain("Total Fat — / 78 g");
-  expect(text).not.toContain("Amount unavailable");
-  expect(text).not.toContain("Percentage unavailable");
-  expect(text).not.toContain("No calorie target set");
-  expect(renderer.root.findAllByType(Text).filter((node) => textContent(node) === "FDA Daily Values provide general reference targets where available.")).toHaveLength(1);
-  expect(text).not.toMatch(/average|demographic|adult profile/i);
-  const action = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Set up nutrition targets");
+
+  const action = renderer.root.findAllByType(Pressable).find(
+    (node) => node.props.accessibilityLabel === "Set up nutrition targets",
+  );
   expect(action).toBeDefined();
   expect(textContent(action!)).toBe("Set up nutrition targets");
+
   await act(async () => action?.props.onPress());
   expect(open).toHaveBeenCalledTimes(1);
+
   await act(async () => renderer.unmount());
 });
 

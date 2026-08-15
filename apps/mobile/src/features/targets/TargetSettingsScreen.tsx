@@ -11,6 +11,7 @@ import {
 import { useAppTheme } from "../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../shared/forms/KeyboardSafeScrollView";
 import { BackButton } from "../../shared/components/BackButton";
+import { formatDisplayNumber } from "../../shared/nutrition/display";
 import type { TargetConfiguration } from "./api/types";
 import { targetErrorMessage } from "./targetErrors";
 import {
@@ -478,7 +479,7 @@ export function TargetSettingsScreen({
                     style={styles.notice}
                   >
                     {effective?.amount
-                      ? `Effective: ${effective.amount} ${effective.unit}/day · ${authorityLabel(effective.authority)}`
+                      ? `Effective: ${formatDisplayNumber(effective.amount, { maxFractionDigits: 1 })} ${effective.unit}/day · ${authorityLabel(effective.authority)}`
                       : "Effective target unavailable"}
                   </Text>
                 </View>
