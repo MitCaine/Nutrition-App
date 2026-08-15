@@ -202,7 +202,18 @@ export function formatIngredientAmount(ingredient: DraftIngredient): string {
 }
 
 export function formatServingChoiceLabel(serving: { label: string; gram_weight?: string | null }): string {
-  return serving.gram_weight ? `${serving.label} (${formatAmountWithUnit(serving.gram_weight, "g")})` : serving.label;
+  if (!serving.gram_weight || servingLabelAlreadyIncludesGramWeight(serving.label, serving.gram_weight)) {
+    return serving.label;
+  }
+  return `${serving.label} (${formatAmountWithUnit(serving.gram_weight, "g")})`;
+}
+
+function servingLabelAlreadyIncludesGramWeight(label: string, gramWeight: string): boolean {
+  const match = label.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:g|gram|grams)$/i);
+  if (!match) {
+    return false;
+  }
+  return Number(match[1]) === Number(gramWeight);
 }
 
 export function usefulServingDefinitions<T extends { label: string; gram_weight?: string | null }>(servings: T[]): T[] {
