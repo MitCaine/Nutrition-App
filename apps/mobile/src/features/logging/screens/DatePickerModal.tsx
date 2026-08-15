@@ -1,5 +1,5 @@
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { useMemo, type RefObject } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useMemo, type ComponentProps, type RefObject } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -19,22 +19,21 @@ type Props = {
   fallbackFocusRef?: RefObject<AccessibilityFocusTarget | null>;
 };
 
+type DateTimePickerValueChangeHandler = NonNullable<ComponentProps<typeof DateTimePicker>["onValueChange"]>;
+
 /** Shared date picker used by Daily Log browsing and existing-log editing. */
 export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, maximumDate, returnFocusRef, fallbackFocusRef }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  function handleValueChange(_event: DateTimePickerEvent, selectedDate?: Date) {
-    if (!selectedDate) {
-      return;
-    }
+  const handleValueChange: DateTimePickerValueChangeHandler = (_event, selectedDate) => {
     if (Platform.OS === "android") {
       onChange(selectedDate);
       onConfirm(selectedDate);
       return;
     }
     onChange(selectedDate);
-  }
+  };
 
   if (Platform.OS === "android") {
     return visible ? (
