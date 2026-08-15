@@ -51,6 +51,7 @@ Start with [Onboarding](project/onboarding.md). It gives the shortest productive
 - [Repository Tour](project/repository-tour.md): directory map and change walkthroughs.
 - [Development Guide](project/development-guide.md): code ownership, configuration, and change checklist.
 - [GitHub Implementation Workflow](project/github-workflow.md): planning-to-delivery flow, GitHub artifact responsibilities, and backlog automation.
+- [Implementation Lessons](project/implementation-lessons.md): retained engineering lessons from completed implementation work.
 
 ## Completed planning and implementation records
 
@@ -61,6 +62,8 @@ The Version 1.1 planning and local-first implementation program is complete. Its
 - [Epic 1 Feature PRD](project/version-1.1/epic-1/feature-prd.md).
 - [Epic 1 Architecture Review](project/version-1.1/epic-1/architecture-review.md).
 - [Epic 1 Implementation Backlog](project/version-1.1/epic-1/implementation-backlog.md).
+- [E1-17 Accessibility Remediation Stage 1](project/version-1.1/epic-1/accessibility-remediation-stage-1.md).
+- [E1-17 Accessibility Remediation Stage 2](project/version-1.1/epic-1/accessibility-remediation-stage-2.md).
 - [Epic 1 release qualification](project/version-1.1/epic-1/release-qualification.md).
 - [Epic 2 Local-First Runtime Implementation Backlog](project/version-1.1/epic-2/implementation-backlog.md).
 - [E2-15 Transfer Architecture and Runbook](project/version-1.1/epic-2/e2-15-transfer-architecture.md).
