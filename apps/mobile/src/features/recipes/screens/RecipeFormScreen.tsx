@@ -5,9 +5,11 @@ import { useAppTheme } from "../../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
 import { recipeFocusKey } from "../../../shared/forms/focusTargets";
 import { useRecipeMutations } from "../hooks/useRecipes";
-import type { ServingDefinition } from "../../foods/api/types";
+import type { ServingDefinition, ServingDefinitionInput } from "../../foods/api/types";
+import { generatedAmountLabel } from "../../foods/utils/amountForm";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import {
+  buildCustomServingDefinition,
   buildRecipePayload,
   formatLegacyCookedWeight,
   formatServingChoiceLabel,
@@ -16,7 +18,7 @@ import {
   usefulServingDefinitions,
   validateRecipeDraft,
 } from "../utils/recipeDraft";
-import type { DraftIngredient, RecipeDraft } from "../utils/recipeDraft";
+import type { CustomServingDraft, DraftIngredient, RecipeDraft } from "../utils/recipeDraft";
 import { convertedGramsPreview, type MassUnit } from "../utils/massUnits";
 import { recipeApiErrorMessage } from "../utils/recipeErrors";
 import {
@@ -96,13 +98,11 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
 
   async function addCustomServing(ingredient: DraftIngredient) {
     const form = customServingForms[ingredient.localId] ?? emptyCustomServingForm();
-    const servingPayload = {
-      label: form.label,
-      quantity: form.quantity,
-      unit: form.unit,
-      gram_weight: form.gramWeight,
-      is_default: false,
-    };
+    const servingPayload = buildCustomServingDefinition(form);
+    if (!servingPayload) {
+      setError("Enter a positive quantity and gram weight, choose a unit, and complete any custom display name before saving the serving size.");
+      return;
+    }
     const intent = bindCreateIntent(
       servingIntentRefs.current[ingredient.localId] ?? null,
       servingPayload,
@@ -114,7 +114,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
         ...servingPayload,
         client_request_id: intent.requestId,
       });
-      const serving = food.serving_definitions.find((item) => isMatchingCreatedServing(item, form));
+      const serving = food.serving_definitions.find((item) => isMatchingCreatedServing(item, servingPayload));
       updateIngredient(ingredient.localId, {
         food,
         amountUnit: "serving",
@@ -265,22 +265,17 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
   );
 }
 
-type CustomServingForm = {
-  label: string;
-  quantity: string;
-  unit: string;
-  gramWeight: string;
-};
+type CustomServingForm = CustomServingDraft;
 
 function emptyCustomServingForm(): CustomServingForm {
-  return { label: "", quantity: "1", unit: "", gramWeight: "" };
+  return { quantity: "1", unit: "", gramWeight: "", customLabel: "", useCustomLabel: false };
 }
 
-function isMatchingCreatedServing(serving: ServingDefinition, form: CustomServingForm) {
+function isMatchingCreatedServing(serving: ServingDefinition, input: ServingDefinitionInput) {
   return (
-    serving.label === form.label.trim() &&
-    serving.quantity === Number(form.quantity).toFixed(6) &&
-    serving.unit === form.unit.trim().toLowerCase()
+    serving.label === input.label.trim() &&
+    serving.quantity === Number(input.quantity).toFixed(6) &&
+    serving.unit === input.unit.trim().toLowerCase()
   );
 }
 
@@ -305,6 +300,14 @@ function CustomServingEditor({
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const automaticLabel = generatedAmountLabel(value.quantity, value.unit);
+  const displayLabel = value.useCustomLabel ? value.customLabel.trim() || automaticLabel : automaticLabel;
+  const gramWeight = Number(value.gramWeight) > 0 ? value.gramWeight : null;
+  const preview = displayLabel
+    ? formatServingChoiceLabel({ label: displayLabel, gram_weight: gramWeight })
+    : "Enter a quantity and unit to preview this serving size.";
+  const canSave = buildCustomServingDefinition(value) !== null;
+
   if (!expanded) {
     return (
       <Pressable accessibilityRole="button" accessibilityLabel={`Create a new serving size for ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onExpand} style={[styles.addServingButton, disabled && styles.disabledButton]}>
@@ -315,27 +318,48 @@ function CustomServingEditor({
 
   return (
     <View style={styles.customServing}>
-      <Text accessibilityRole="header" style={styles.label}>Create a new serving size for {foodName}</Text>
-      <Text style={styles.meta}>Use this only if the serving size you need is not listed above. It is saved to {foodName} immediately and can be reused elsewhere, even if you later cancel this Recipe.</Text>
-
-      <Text style={styles.fieldLabel}>Serving label</Text>
-      <TextInput accessibilityLabel={`${foodName} serving label`} editable={!disabled} value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="e.g. 1 slice" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+      <Text accessibilityRole="header" style={styles.label}>Create a serving size for {foodName}</Text>
+      <Text style={styles.meta}>Define the serving with a quantity, unit, and gram weight. The display name is generated from those values unless you choose to customize it.</Text>
 
       <View style={styles.twoColumn}>
         <View style={styles.flex}>
           <Text style={styles.fieldLabel}>Quantity</Text>
-          <TextInput accessibilityLabel={`${foodName} serving quantity`} editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="e.g. 1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+          <TextInput accessibilityLabel={`${foodName} serving quantity`} editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="e.g. 2" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
         </View>
         <View style={styles.flex}>
           <Text style={styles.fieldLabel}>Unit</Text>
-          <TextInput accessibilityLabel={`${foodName} serving unit`} editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="e.g. slice" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+          <TextInput accessibilityLabel={`${foodName} serving unit`} editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="e.g. slice" placeholderTextColor={theme.colors.placeholder} autoCapitalize="none" style={styles.input} />
         </View>
       </View>
 
       <Text style={styles.fieldLabel}>Gram weight</Text>
-      <TextInput accessibilityLabel={`${foodName} serving gram weight`} editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="e.g. 28" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-      <Pressable accessibilityRole="button" accessibilityLabel={`Save new serving size to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onAdd} style={[styles.addServingButton, disabled && styles.disabledButton]}>
-        <Text style={styles.link}>Save new serving size</Text>
+      <TextInput accessibilityLabel={`${foodName} serving gram weight`} editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="e.g. 56" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+
+      <View style={styles.previewCard}>
+        <Text style={styles.fieldLabel}>Will appear as</Text>
+        <Text style={styles.previewText}>{preview}</Text>
+      </View>
+
+      {value.useCustomLabel ? (
+        <View>
+          <View style={styles.labelHeader}>
+            <Text style={styles.fieldLabel}>Custom display name</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Use automatic serving name for ${foodName}`} disabled={disabled} onPress={() => onChange({ ...value, customLabel: "", useCustomLabel: false })}>
+              <Text style={styles.link}>Use automatic</Text>
+            </Pressable>
+          </View>
+          <TextInput accessibilityLabel={`${foodName} custom serving display name`} editable={!disabled} value={value.customLabel} onChangeText={(customLabel) => onChange({ ...value, customLabel })} placeholder={automaticLabel ? `e.g. ${automaticLabel}, thick-cut` : "Custom display name"} placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+        </View>
+      ) : (
+        <Pressable accessibilityRole="button" accessibilityLabel={`Customize serving display name for ${foodName}`} disabled={disabled} onPress={() => onChange({ ...value, customLabel: automaticLabel, useCustomLabel: true })} style={styles.compactButton}>
+          <Text style={styles.link}>Customize display name</Text>
+        </Pressable>
+      )}
+
+      <Text style={styles.meta}>Saving adds this serving size to {foodName} immediately. It remains available if you cancel this Recipe. Edit or remove saved serving sizes from the Food editor.</Text>
+      {!canSave ? <Text style={styles.meta}>Enter a positive quantity and gram weight, a unit, and any enabled custom display name before saving.</Text> : null}
+      <Pressable accessibilityRole="button" accessibilityLabel={`Save new serving size to ${foodName}`} accessibilityState={{ disabled: disabled || !canSave }} disabled={disabled || !canSave} onPress={onAdd} style={[styles.addServingButton, (disabled || !canSave) && styles.disabledButton]}>
+        <Text style={styles.link}>Save serving size to {foodName}</Text>
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel={`Cancel creating serving size for ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onCancel} style={[styles.secondaryButton, disabled && styles.disabledButton]}>
         <Text style={styles.text}>Cancel</Text>
@@ -363,6 +387,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     text: { color: theme.colors.text },
     content: { padding: 16, paddingBottom: 120 },
     addServingButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 10 },
+    compactButton: { alignSelf: "flex-start", paddingVertical: 4 },
     customServing: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 8, marginTop: 10, padding: 10 },
     disabledButton: { opacity: 0.55 },
     error: { color: theme.colors.errorText },
@@ -374,10 +399,13 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     ingredientName: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
     input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
     label: { color: theme.colors.text, fontWeight: "700", marginTop: 10 },
+    labelHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
     legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, marginTop: 10, padding: 12 },
     link: { color: theme.colors.accent, fontWeight: "700" },
     meta: { color: theme.colors.secondaryText },
     optionalSectionTitle: { color: theme.colors.secondaryText, fontSize: 17, fontWeight: "700", marginBottom: 5, marginTop: 22 },
+    previewCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
+    previewText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
     primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
     primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
     reorder: { flexDirection: "row", gap: 16 },
