@@ -131,7 +131,7 @@ test("new recipe payload omits legacy cooked-weight fields", () => {
 
 test("switching ingredient modes clears incompatible serving state and formats amounts", () => {
   const servingIngredient = ingredientForFood(food);
-  expect(formatIngredientAmount(servingIngredient)).toBe("1 1 cup");
+  expect(formatIngredientAmount(servingIngredient)).toBe("1 cup");
 
   const gramIngredient = switchIngredientMode(servingIngredient, "g");
   expect(gramIngredient.servingDefinitionId).toBeNull();
@@ -299,7 +299,7 @@ test("serving and ingredient detail display include labels and gram weights", ()
       amountUnit: "serving",
       servingDefinitionId: "serving-1",
     }),
-  ).toBe("Black Beans - 1 1 cup");
+  ).toBe("Black Beans - 1 cup");
   expect(
     formatRecipeIngredientDetail({
       food: usdaFood,
