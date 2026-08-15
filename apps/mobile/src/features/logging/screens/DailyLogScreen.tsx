@@ -430,8 +430,10 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   if (legacyFuture) {
     return (
       <View style={styles.root}>
-        <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
-        <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+        <View style={styles.chrome}>
+          <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
+          <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+        </View>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.screen}
@@ -516,8 +518,10 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
 
   return (
     <View style={styles.root}>
-      <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
-      <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+      <View style={styles.chrome}>
+        <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
+        <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+      </View>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.screen}
@@ -1183,6 +1187,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   recoveryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
   warningCard: { backgroundColor: theme.colors.warningBackground, borderRadius: 6, gap: 6, padding: 10 },
   compatibilityNotice: { color: theme.colors.warningText, fontSize: 13, lineHeight: 18 },
+  chrome: { gap: 12, paddingHorizontal: 16 },
   errorRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "space-between" },
   entriesHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   groupTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
@@ -1195,14 +1200,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   modalCard: { backgroundColor: theme.colors.surface, borderRadius: 8, gap: 14, padding: 16, width: "100%" },
   primaryButton: { backgroundColor: theme.colors.accent, borderRadius: 6, paddingHorizontal: 14, paddingVertical: 10 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
-  root: { backgroundColor: theme.colors.background, flex: 1, gap: 12, paddingHorizontal: 16, paddingTop: 16 },
+  root: { backgroundColor: theme.colors.background, flex: 1, gap: 12, paddingTop: 16 },
   navigationButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
   noteText: { color: theme.colors.text, lineHeight: 20 },
   noteMeasure: { left: 0, opacity: 0, position: "absolute", right: 0 },
   noteToggle: { color: theme.colors.accent, fontWeight: "600" },
   mealGroup: { gap: 8 },
   refreshingText: { color: theme.colors.secondaryText, fontSize: 13 },
-  screen: { gap: 12, paddingBottom: 16 },
+  screen: { gap: 12, paddingBottom: 16, paddingHorizontal: 16 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   totalRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, justifyContent: "space-between" },
