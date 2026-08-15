@@ -9,7 +9,6 @@ import type { ServingDefinition } from "../../foods/api/types";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import {
   buildRecipePayload,
-  formatIngredientAmount,
   formatLegacyCookedWeight,
   formatServingChoiceLabel,
   moveIngredient,
@@ -39,7 +38,8 @@ type Props = {
 
 export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngredient }: Props) {
   const runtime = useNutritionRuntime();
-  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const mutations = useRecipeMutations();
   const [error, setError] = useState<string | null>(null);
   const [customServingForms, setCustomServingForms] = useState<Record<string, CustomServingForm>>({});
@@ -162,12 +162,13 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                 <View style={styles.rowHeader}>
                   <View style={styles.flex}>
                     <Text style={styles.ingredientName}>{ingredient.food.name}</Text>
-                    <Text style={styles.meta}>{formatIngredientAmount(ingredient)}</Text>
                   </View>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${ingredient.food.name} from Recipe`} accessibilityState={{ disabled: isSaving }} disabled={isSaving} onPress={() => setDraft({ ...draft, ingredients: draft.ingredients.filter((item) => item.localId !== ingredient.localId) })} style={isSaving && styles.disabledButton}>
                     <Text style={styles.error}>Remove</Text>
                   </Pressable>
                 </View>
+
+                <Text style={styles.formLabel}>Measure by</Text>
                 <View accessibilityRole="radiogroup" accessibilityLabel={`${ingredient.food.name} amount type`} style={styles.segmented}>
                   <Pressable
                     accessibilityRole="radio"
@@ -180,20 +181,28 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                     }}
                     style={[styles.segment, ingredient.amountUnit === "g" && styles.segmentActive, isSaving && styles.disabledButton]}
                   >
-                    <Text style={styles.text}>Grams</Text>
+                    <Text style={styles.text}>Weight</Text>
                   </Pressable>
                   <Pressable accessibilityRole="radio" accessibilityLabel={`${ingredient.food.name} amount by serving`} accessibilityState={{ checked: ingredient.amountUnit === "serving", disabled: isSaving }} disabled={isSaving} onPress={() => updateIngredient(ingredient.localId, switchIngredientMode(ingredient, "serving"))} style={[styles.segment, ingredient.amountUnit === "serving" && styles.segmentActive, isSaving && styles.disabledButton]}>
-                    <Text style={styles.text}>Serving</Text>
+                    <Text style={styles.text}>Servings</Text>
                   </Pressable>
                 </View>
-                <View style={styles.twoColumn}>
-                  <TextInput accessibilityLabel={`${ingredient.food.name} amount`} editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-                  {ingredient.amountUnit === "g" ? <MassUnitSelector disabled={isSaving} foodName={ingredient.food.name} value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} /> : null}
-                </View>
-                {ingredient.amountUnit === "g" && convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit) ? <Text style={styles.meta}>{convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit)}</Text> : null}
-                {ingredient.amountUnit === "serving" ? (
+
+                {ingredient.amountUnit === "g" ? (
                   <>
-                    <View accessibilityRole="radiogroup" accessibilityLabel={`${ingredient.food.name} serving`} style={styles.servings}>
+                    <Text style={styles.formLabel}>Amount</Text>
+                    <View style={styles.twoColumn}>
+                      <TextInput accessibilityLabel={`${ingredient.food.name} weight amount`} editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="Amount" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
+                      <MassUnitSelector disabled={isSaving} foodName={ingredient.food.name} value={ingredient.massUnit} onChange={(massUnit) => updateIngredient(ingredient.localId, { massUnit })} />
+                    </View>
+                    {convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit) ? <Text style={styles.meta}>{convertedGramsPreview(ingredient.amountQuantity, ingredient.massUnit)}</Text> : null}
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.formLabel}>Number of servings</Text>
+                    <TextInput accessibilityLabel={`${ingredient.food.name} number of servings`} editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="e.g. 1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+                    <Text style={styles.formLabel}>Serving size</Text>
+                    <View accessibilityRole="radiogroup" accessibilityLabel={`${ingredient.food.name} serving size`} style={styles.servings}>
                       {usefulServingDefinitions(ingredient.food.serving_definitions).map((serving) => (
                         <Pressable accessibilityRole="radio" accessibilityLabel={formatServingChoiceLabel(serving)} accessibilityState={{ checked: ingredient.servingDefinitionId === serving.id, disabled: isSaving }} disabled={isSaving} key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive, isSaving && styles.disabledButton]}>
                           <Text style={styles.text}>{formatServingChoiceLabel(serving)}</Text>
@@ -214,7 +223,8 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                       onAdd={() => addCustomServing(ingredient)}
                     />
                   </>
-                ) : null}
+                )}
+
                 <TextInput accessibilityLabel={`${ingredient.food.name} preparation note`} editable={!isSaving} value={ingredient.preparationNote} onChangeText={(preparationNote) => updateIngredient(ingredient.localId, { preparationNote })} placeholder="Preparation note" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
                 <View style={styles.reorder}>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Move ${ingredient.food.name} up`} accessibilityState={{ disabled: isSaving || index === 0 }} disabled={isSaving || index === 0} onPress={() => setDraft({ ...draft, ingredients: moveIngredient(draft.ingredients, index, -1) })} style={(isSaving || index === 0) && styles.disabledButton}>
@@ -293,29 +303,41 @@ function CustomServingEditor({
   onChange: (value: CustomServingForm) => void;
   onAdd: () => void;
 }) {
-  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   if (!expanded) {
     return (
-      <Pressable accessibilityRole="button" accessibilityLabel={`Add reusable serving to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onExpand} style={[styles.addServingButton, disabled && styles.disabledButton]}>
-        <Text style={styles.link}>Add serving to {foodName}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Create a new serving size for ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onExpand} style={[styles.addServingButton, disabled && styles.disabledButton]}>
+        <Text style={styles.link}>Create a new serving size</Text>
       </Pressable>
     );
   }
 
   return (
     <View style={styles.customServing}>
-      <Text accessibilityRole="header" style={styles.label}>Add serving to {foodName}</Text>
-      <Text style={styles.meta}>This saves a reusable serving to the Food immediately, even if you later cancel this Recipe.</Text>
-      <TextInput accessibilityLabel={`${foodName} serving label`} editable={!disabled} value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="1 medium" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+      <Text accessibilityRole="header" style={styles.label}>Create a new serving size for {foodName}</Text>
+      <Text style={styles.meta}>Use this only if the serving size you need is not listed above. It is saved to {foodName} immediately and can be reused elsewhere, even if you later cancel this Recipe.</Text>
+
+      <Text style={styles.fieldLabel}>Serving label</Text>
+      <TextInput accessibilityLabel={`${foodName} serving label`} editable={!disabled} value={value.label} onChangeText={(label) => onChange({ ...value, label })} placeholder="e.g. 1 slice" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+
       <View style={styles.twoColumn}>
-        <TextInput accessibilityLabel={`${foodName} serving quantity`} editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={[styles.input, styles.flex]} />
-        <TextInput accessibilityLabel={`${foodName} serving unit`} editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="medium" placeholderTextColor={theme.colors.placeholder} style={[styles.input, styles.flex]} />
+        <View style={styles.flex}>
+          <Text style={styles.fieldLabel}>Quantity</Text>
+          <TextInput accessibilityLabel={`${foodName} serving quantity`} editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="e.g. 1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.fieldLabel}>Unit</Text>
+          <TextInput accessibilityLabel={`${foodName} serving unit`} editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="e.g. slice" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
+        </View>
       </View>
-      <TextInput accessibilityLabel={`${foodName} serving gram weight`} editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="Gram weight" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-      <Pressable accessibilityRole="button" accessibilityLabel={`Save reusable serving to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onAdd} style={[styles.addServingButton, disabled && styles.disabledButton]}>
-        <Text style={styles.link}>Save serving</Text>
+
+      <Text style={styles.fieldLabel}>Gram weight</Text>
+      <TextInput accessibilityLabel={`${foodName} serving gram weight`} editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="e.g. 28" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+      <Pressable accessibilityRole="button" accessibilityLabel={`Save new serving size to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onAdd} style={[styles.addServingButton, disabled && styles.disabledButton]}>
+        <Text style={styles.link}>Save new serving size</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Cancel adding serving to ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onCancel} style={[styles.secondaryButton, disabled && styles.disabledButton]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Cancel creating serving size for ${foodName}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onCancel} style={[styles.secondaryButton, disabled && styles.disabledButton]}>
         <Text style={styles.text}>Cancel</Text>
       </Pressable>
     </View>
@@ -323,7 +345,8 @@ function CustomServingEditor({
 }
 
 function MassUnitSelector({ disabled, foodName, value, onChange }: { disabled: boolean; foodName: string; value: MassUnit; onChange: (unit: MassUnit) => void }) {
-  const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={`${foodName} mass unit`} style={styles.unitSelector}>
       {(["g", "oz", "lb"] as MassUnit[]).map((unit) => (
@@ -335,37 +358,43 @@ function MassUnitSelector({ disabled, foodName, value, onChange }: { disabled: b
   );
 }
 
-function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  text: { color: theme.colors.text },
-  content: { padding: 16, paddingBottom: 120 },
-  addServingButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 10 },
-  customServing: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 8, padding: 10 },
-  disabledButton: { opacity: 0.55 },
-  error: { color: theme.colors.errorText }, flex: { backgroundColor: theme.colors.background, flex: 1 },
-  formLabel: { color: theme.colors.text, fontWeight: "700", marginBottom: 7, marginTop: 10 },
-  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
-  ingredientCard: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 10, paddingVertical: 12 },
-  ingredientName: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
-  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
-  label: { color: theme.colors.text, fontWeight: "700", marginTop: 10 },
-  legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, marginTop: 10, padding: 12 },
-  link: { color: theme.colors.accent, fontWeight: "700" }, meta: { color: theme.colors.secondaryText },
-  optionalSectionTitle: { color: theme.colors.secondaryText, fontSize: 17, fontWeight: "700", marginBottom: 5, marginTop: 22 },
-  primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
-  reorder: { flexDirection: "row", gap: 16 },
-  rowHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
-  saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 },
-  sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
-  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },
-  secondaryButton: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
-  segmented: { flexDirection: "row", gap: 8 },
-  segment: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flex: 1, padding: 10 },
-  segmentActive: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
-  servingChoice: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 8 },
-  servings: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
-  topField: { marginBottom: 2 },
-  twoColumn: { flexDirection: "row", gap: 10 },
-  unitChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minWidth: 42, padding: 10 },
-  unitSelector: { flexDirection: "row", gap: 6, marginBottom: 12 },
-}); }
+function createStyles(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
+    text: { color: theme.colors.text },
+    content: { padding: 16, paddingBottom: 120 },
+    addServingButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 10 },
+    customServing: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 8, marginTop: 10, padding: 10 },
+    disabledButton: { opacity: 0.55 },
+    error: { color: theme.colors.errorText },
+    fieldLabel: { color: theme.colors.secondaryText, fontWeight: "600", marginBottom: 5 },
+    flex: { backgroundColor: theme.colors.background, flex: 1 },
+    formLabel: { color: theme.colors.text, fontWeight: "700", marginBottom: 7, marginTop: 10 },
+    header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
+    ingredientCard: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 10, paddingVertical: 12 },
+    ingredientName: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, marginBottom: 12, padding: 12 },
+    label: { color: theme.colors.text, fontWeight: "700", marginTop: 10 },
+    legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, marginTop: 10, padding: 12 },
+    link: { color: theme.colors.accent, fontWeight: "700" },
+    meta: { color: theme.colors.secondaryText },
+    optionalSectionTitle: { color: theme.colors.secondaryText, fontSize: 17, fontWeight: "700", marginBottom: 5, marginTop: 22 },
+    primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 },
+    primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
+    reorder: { flexDirection: "row", gap: 16 },
+    rowHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
+    saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 },
+    sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+    sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },
+    secondaryButton: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
+    segmented: { flexDirection: "row", gap: 8 },
+    segment: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flex: 1, padding: 10 },
+    segmentActive: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+    servingChoice: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 8 },
+    servings: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
+    topField: { marginBottom: 2 },
+    twoColumn: { flexDirection: "row", gap: 10 },
+    unitChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minWidth: 42, padding: 10 },
+    unitSelector: { flexDirection: "row", gap: 6, marginBottom: 12 },
+  });
+}
