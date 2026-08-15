@@ -1,5 +1,5 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { useMemo, type ComponentProps, type RefObject } from "react";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { useMemo, type RefObject } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -19,33 +19,30 @@ type Props = {
   fallbackFocusRef?: RefObject<AccessibilityFocusTarget | null>;
 };
 
-type DateTimePickerValueChangeHandler = NonNullable<ComponentProps<typeof DateTimePicker>["onValueChange"]>;
-
 /** Shared date picker used by Daily Log browsing and existing-log editing. */
 export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, maximumDate, returnFocusRef, fallbackFocusRef }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const handleValueChange: DateTimePickerValueChangeHandler = (_event, selectedDate) => {
+  function handleChange(event: DateTimePickerEvent, selectedDate?: Date) {
+    if (event.type === "dismissed") {
+      onCancel();
+      return;
+    }
+    if (!selectedDate) {
+      return;
+    }
     if (Platform.OS === "android") {
       onChange(selectedDate);
       onConfirm(selectedDate);
       return;
     }
     onChange(selectedDate);
-  };
+  }
 
   if (Platform.OS === "android") {
     return visible ? (
-      <DateTimePicker
-        accessibilityLabel="Select date"
-        value={date}
-        mode="date"
-        display="default"
-        maximumDate={maximumDate}
-        onValueChange={handleValueChange}
-        onDismiss={onCancel}
-      />
+      <DateTimePicker accessibilityLabel="Select date" value={date} mode="date" display="default" maximumDate={maximumDate} onChange={handleChange} />
     ) : null;
   }
 
@@ -68,7 +65,7 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
             mode="date"
             display="spinner"
             maximumDate={maximumDate}
-            onValueChange={handleValueChange}
+            onChange={handleChange}
             themeVariant={theme.mode}
           />
           <View style={styles.modalActions}>
