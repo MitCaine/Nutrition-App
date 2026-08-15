@@ -37,17 +37,30 @@ export function IngredientPickerScreen({
         </Pressable>
         <Text accessibilityRole="header" style={styles.title}>Add Ingredient</Text>
       </View>
-      <TextInput
-        accessibilityLabel="Search saved foods for an ingredient"
-        accessibilityHint="Filters saved foods available to add to the Recipe"
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search saved foods"
-        style={styles.search}
-        autoCapitalize="none"
-        returnKeyType="search"
-        placeholderTextColor={theme.colors.placeholder}
-      />
+      <View style={styles.searchRow}>
+        <TextInput
+          accessibilityLabel="Search saved foods for an ingredient"
+          accessibilityHint="Filters saved foods available to add to the Recipe"
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search saved foods"
+          style={styles.search}
+          autoCapitalize="none"
+          returnKeyType="search"
+          placeholderTextColor={theme.colors.placeholder}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear ingredient search"
+          accessible={Boolean(query)}
+          disabled={!query}
+          pointerEvents={query ? "auto" : "none"}
+          onPress={() => setQuery("")}
+          style={[styles.clearButton, !query && styles.clearButtonHidden]}
+        >
+          <Text style={styles.clearText}>×</Text>
+        </Pressable>
+      </View>
       <Pressable accessibilityRole="button" accessibilityLabel="Search USDA for an ingredient" onPress={onSearchUsda} style={styles.secondaryButton}>
         <Text style={styles.secondaryText}>Search USDA</Text>
       </Pressable>
@@ -82,6 +95,9 @@ export function IngredientPickerScreen({
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
+  clearButton: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 44 },
+  clearButtonHidden: { opacity: 0 },
+  clearText: { color: theme.colors.secondaryText, fontSize: 26, lineHeight: 28 },
   disabledRow: { opacity: 0.45 },
   error: { color: theme.colors.errorText },
   header: { gap: 8 },
@@ -89,7 +105,8 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   meta: { color: theme.colors.secondaryText }, name: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
   row: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 14, padding: 16 },
-  search: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
+  search: { color: theme.colors.text, flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
+  searchRow: { alignItems: "center", backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flexDirection: "row" },
   secondaryButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 12 },
   secondaryText: { color: theme.colors.accent, fontWeight: "700" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
