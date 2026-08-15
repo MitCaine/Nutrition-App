@@ -24,11 +24,26 @@ export const AMOUNT_UNIT_GROUPS: ReadonlyArray<{
 
 const MASS_GRAMS: Record<string, number> = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 };
 const DISPLAY_UNITS: Record<string, string> = { tbsp: "Tbsp", ml: "mL", l: "L" };
+const UNIT_ALIASES: Record<string, string> = {
+  servings: "serving",
+  pieces: "piece",
+  slices: "slice",
+  containers: "container",
+  packages: "package",
+};
+const COUNT_PLURALS: Record<string, string> = {
+  serving: "servings",
+  piece: "pieces",
+  slice: "slices",
+  container: "containers",
+  package: "packages",
+};
 
 export function normalizedAmountUnit(rawUnit: string): string | null {
   const normalized = rawUnit.trim().toLowerCase().replace(/\s+/g, " ");
-  return AMOUNT_UNIT_GROUPS.flatMap((group) => group.units).some((unit) => unit.value === normalized)
-    ? normalized
+  const canonical = UNIT_ALIASES[normalized] ?? normalized;
+  return AMOUNT_UNIT_GROUPS.flatMap((group) => group.units).some((unit) => unit.value === canonical)
+    ? canonical
     : null;
 }
 
@@ -70,9 +85,14 @@ export function revealCustomUnit(state: UnitPickerDraftState): UnitPickerDraftSt
 }
 
 export function generatedAmountLabel(quantity: string, rawUnit: string): string {
-  const unit = normalizedAmountUnit(rawUnit) ?? rawUnit.trim();
+  const normalized = normalizedAmountUnit(rawUnit);
+  const unit = normalized ?? rawUnit.trim();
   if (!quantity.trim() || !unit) return "";
-  return `${quantity.trim()} ${DISPLAY_UNITS[unit] ?? unit}`;
+  const numericQuantity = Number(quantity);
+  const displayUnit = normalized && COUNT_PLURALS[normalized] && Number.isFinite(numericQuantity) && numericQuantity !== 1
+    ? COUNT_PLURALS[normalized]
+    : DISPLAY_UNITS[unit] ?? unit;
+  return `${quantity.trim()} ${displayUnit}`;
 }
 
 export function parseSimpleAmountLabel(label: string): { quantity: string; unit: string } | null {
