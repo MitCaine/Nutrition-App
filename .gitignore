@@ -34,3 +34,6 @@ coverage/
 *.log
 
 .project-runtime/
+
+# Local personal-device installation helper
+/scripts/install-iphone.sh
