@@ -38,16 +38,27 @@ export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Pro
         <Text ref={headingRef} accessibilityRole="header" style={styles.title}>Search USDA</Text>
       </View>
       <Text nativeID="usda-search-label" style={styles.fieldLabel}>Search USDA foods</Text>
-      <TextInput
-        aria-labelledby="usda-search-label"
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Banana, oats, chicken breast"
-        style={styles.search}
-        autoCapitalize="none"
-        returnKeyType="search"
-        placeholderTextColor={theme.colors.placeholder}
-      />
+      <View style={styles.searchRow}>
+        <TextInput
+          aria-labelledby="usda-search-label"
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Banana, oats, chicken breast"
+          style={styles.search}
+          autoCapitalize="none"
+          returnKeyType="search"
+          placeholderTextColor={theme.colors.placeholder}
+        />
+        <AccessiblePressable
+          accessibilityLabel="Clear USDA search"
+          disabled={!query}
+          onPress={() => setQuery("")}
+          pointerEvents={query ? "auto" : "none"}
+          style={!query ? styles.clearButtonHidden : undefined}
+        >
+          <Text style={styles.clearText}>×</Text>
+        </AccessiblePressable>
+      </View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.results}>
         {message ? results.isError ? (
           <AccessibilityStatus kind="retryable-failure" message={message} retryContext="USDA search" onRetry={() => { void results.refetch(); }} messageStyle={styles.error} />
@@ -77,6 +88,8 @@ export function UsdaSearchScreen({ query, setQuery, onBack, onOpenPreview }: Pro
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
+  clearButtonHidden: { opacity: 0 },
+  clearText: { color: theme.colors.secondaryText, fontSize: 26, lineHeight: 28 },
   error: { color: theme.colors.errorText },
   disabled: { opacity: 0.5 },
   fieldLabel: { color: theme.colors.text, fontWeight: "700" },
@@ -86,6 +99,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   resultRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
   results: { paddingBottom: 24 },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 14, padding: 16 },
-  search: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, padding: 12 },
+  search: { color: theme.colors.text, flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
+  searchRow: { alignItems: "center", backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flexDirection: "row" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
 }); }
