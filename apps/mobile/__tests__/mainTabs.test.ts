@@ -22,11 +22,12 @@ test("main and nested routes select the correct bottom tab", () => {
   expect(mainTabForRoute("recipe-detail")).toBe("recipes");
 });
 
-test("selecting another tab navigates while selecting the active tab is a no-op", () => {
+test("selecting any tab navigates to that tab root, including the active tab", () => {
   expect(tabSelectionDestination("foods", "daily-log")).toBe("daily-log");
   expect(tabSelectionDestination("daily-log", "recipes")).toBe("recipes");
   expect(tabSelectionDestination("recipes", "foods")).toBe("foods");
-  expect(tabSelectionDestination("foods", "foods")).toBeNull();
+  expect(tabSelectionDestination("foods", "foods")).toBe("foods");
+  expect(tabSelectionDestination("recipes", "recipes")).toBe("recipes");
   expect(tabSelectionDestination("daily-log", "daily-log", true)).toBe("daily-log");
 });
 
