@@ -110,6 +110,17 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
   const foodsById = new Map(ingredientFoods.map((food) => [food.id, food]));
   const publishPending = mutations.publishRecipe.isPending;
   const publishDisabled = !canPublish || publishPending;
+  const publishRequirementMessage = !canPublish
+    ? recipe.needs_republish
+      ? "Recipe changed since publishing. Enter the number of servings, then republish to update its published nutrition."
+      : "Enter the number of servings before publishing."
+    : null;
+  const republishMessage = recipe.needs_republish && canPublish
+    ? "Recipe changed since publishing. Republish to update its published nutrition."
+    : null;
+  const publishedStatusMessage = recipe.needs_republish
+    ? "Previously published nutrition is still available."
+    : "Published nutrition is available.";
 
   return (
     <View style={styles.screen}>
@@ -127,7 +138,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
         <View style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>Yield</Text>
           <Text style={styles.meta}>
-            Servings: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Draft"}
+            Servings: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Not set"}
           </Text>
         </View>
         {legacyCookedWeight ? (
@@ -166,7 +177,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
           />
         ) : null}
         {editBlockedMessage ? <Text accessibilityRole="alert" style={styles.error}>{editBlockedMessage}</Text> : null}
-        {!canPublish ? <Text style={styles.error}>Add servings or cooked weight before publishing.</Text> : null}
+        {publishRequirementMessage ? <Text style={styles.error}>{publishRequirementMessage}</Text> : null}
         {mutations.publishRecipe.isError ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {recipeNutritionErrorMessage(
@@ -177,7 +188,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
         ) : null}
         {recipe.published_food_item_id ? (
           <>
-            <Text style={styles.success}>Published nutrition is available.</Text>
+            <Text style={styles.success}>{publishedStatusMessage}</Text>
             <View style={styles.publishedActions}>
               <Pressable
                 accessibilityRole="button"
@@ -198,7 +209,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
             </View>
           </>
         ) : null}
-        {recipe.needs_republish ? <Text style={styles.warning}>Recipe changed since publishing. Republish to update its published nutrition.</Text> : null}
+        {republishMessage ? <Text style={styles.warning}>{republishMessage}</Text> : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={recipe.published_food_item_id ? "Republish Recipe food" : "Publish Recipe as food"}
