@@ -61,7 +61,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
 
   return (
     <View style={styles.screen}>
-      <AccessiblePressable accessibilityLabel="Back from USDA food details" onPress={onBack}>
+      <AccessiblePressable accessibilityLabel="Back from USDA food details" busy={importer.isPending} onPress={onBack}>
         <Text style={styles.text}>Back</Text>
       </AccessiblePressable>
       <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
@@ -109,7 +109,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
 
         {importer.isError ? <AccessibilityStatus kind="retryable-failure" message={usdaImportErrorMessage()} retryContext="USDA import" onRetry={importFood} announce={announce} announcementKey={`usda-import-${fdcId}`} messageStyle={styles.error} /> : null}
         <AccessiblePressable accessibilityLabel={importer.isPending ? `Importing ${preview.data.name}` : `Import ${preview.data.name}`} accessibilityHint="Creates a saved food, then opens logging confirmation" busy={importer.isPending} onPress={importFood} style={styles.primaryButton}>
-          <Text style={styles.primaryText}>{importer.isPending ? "Importing..." : "Import Food"}</Text>
+          <Text style={styles.primaryText}>{importer.isPending ? "Importing…" : "Import Food"}</Text>
         </AccessiblePressable>
       </ScrollView>
     </View>
