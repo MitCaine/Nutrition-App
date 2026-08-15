@@ -50,10 +50,7 @@ export function settingsOriginForRoute(routeName: string): MainTab {
   return mainTabForRoute(routeName);
 }
 
-export function tabSelectionDestination(current: MainTab, selected: MainTab, dismissOverlay = false): MainTab | null {
-  if (current === selected) {
-    return dismissOverlay ? selected : null;
-  }
+export function tabSelectionDestination(current: MainTab, selected: MainTab, _dismissOverlay = false): MainTab | null {
   return selected;
 }
 
