@@ -6,9 +6,9 @@ The default application runtime is fully local: on-device SQLite is authoritativ
 
 ## Current product state
 
-The application is in a complete, usable post-1.0 state and is currently evolving through incremental feature and UI releases. The local-first SQLite runtime, native iOS OCR path, secure USDA credential flow, immutable Daily Log history, immutable Recipe publication revisions, transfer/import tooling, accessibility foundations, and personalized general-adult nutrition targets are implemented and covered by automated qualification.
+Version 1.2 is the current product line. The application is in a complete, usable post-1.0 state, with the Version 1.1 local-first migration program completed and subsequent target-personalization and UI work incorporated into the current application.
 
-Recent product work includes:
+Current capabilities include:
 
 - Local-first SQLite authority for the complete personal nutrition workflow.
 - Native Apple Vision nutrition-label OCR and structured confirmation/correction flow.
@@ -18,7 +18,8 @@ Recent product work includes:
 - Immutable Daily Log nutrition snapshots so later Food and Recipe edits cannot rewrite history.
 - Immutable Recipe publication revisions with generated Food compatibility projections.
 - Explicit local/remote runtime authority selection with no synchronization or hidden fallback.
-- Physical-iPhone release qualification in addition to Jest, TypeScript, Expo configuration, SQLite, PostgreSQL, and native tests.
+- One-time PostgreSQL-to-SQLite transfer tooling for installations moving from the preserved remote runtime.
+- Accessibility-focused navigation, focus management, and physical-iPhone release qualification.
 
 ## Repository at a glance
 
@@ -30,7 +31,7 @@ flowchart TD
     Repo --> Docs["docs: current architecture, product state, operations, and historical implementation records"]
     Repo --> Engineering["engineering: contributor workflow and conventions"]
     Repo --> Packages["packages: shared contract references"]
-    Repo --> Scripts["scripts: lifecycle, validation, qualification, and packaging entry points"]
+    Repo --> Scripts["scripts: lifecycle, validation, qualification, transfer, and packaging entry points"]
 ```
 
 | Area | Responsibility |
@@ -119,6 +120,7 @@ For a self-contained Release build on a physical iPhone:
 cd apps/mobile
 export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
 export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
+unset EXPO_PUBLIC_E216_NATIVE_QUALIFICATION
 unset EXPO_PUBLIC_NUTRITION_API_URL
 unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
 npx expo run:ios --configuration Release --device
@@ -158,7 +160,7 @@ There is no automatic fallback, synchronization, dual-write, or authority mixing
 
 Contributors should start with [Contributing](CONTRIBUTING.md) and the [Engineering Workflow](engineering/README.md). Feature delivery uses approved planning artifacts and GitHub Epics/issues for implementation sequencing. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
 
-The local-first migration work under `docs/project/version-1.1/` is retained as implementation history and qualification evidence. It should not be read as meaning the current product is still at the Version 1.1 starting state.
+The completed Version 1.1 planning and local-first implementation material under `docs/project/version-1.1/` is retained as implementation history and qualification evidence. It should not be read as the current release state.
 
 ## Documentation
 
@@ -207,6 +209,6 @@ Additional PostgreSQL concurrency, control-database, native SQLite, transfer, pe
 
 ## Release status
 
-The repository contains historical Version 1.0 and Version 1.1 planning/qualification material because those documents record how the application reached its current architecture. Current product state should be taken from this README and [Current State](docs/project/current-state.md), not inferred from the names of historical planning directories.
+Version 1.2 is the current product line. Historical Version 1.0 and Version 1.1 planning/qualification material remains in the repository because those documents record how the application reached its current architecture; they are not current planning guidance.
 
 The primary application today is the local-first iOS runtime backed by SQLite. FastAPI/PostgreSQL remains intentionally preserved for alternate/reference operation and historical compatibility, not as a prerequisite for normal use.
