@@ -99,6 +99,27 @@ test("OCR serving editor accepts common fractions and normalizes them before per
   await act(async () => renderer.unmount());
 });
 
+test("OCR serving editor recovers structured values from a clear serving display instead of retaining fallbacks", async () => {
+  const onPatch = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(Harness, {
+      initial: { servingDisplay: "2/3 cup (55 g)", servingQuantity: "1", servingUnit: "serving", gramWeight: "" },
+      onPatch,
+    }));
+  });
+
+  expect(onPatch).toHaveBeenCalledWith({
+    servingQuantity: "0.666666667",
+    servingUnit: "cup",
+    gramWeight: "55",
+  });
+  expect(input(renderer.root, "Serving quantity").props.value).toBe("2/3");
+  expect(input(renderer.root, "Serving grams").props.value).toBe("55");
+  expect(visibleText(renderer.root)).toContain("82.5 g per cup · 55 g total");
+  await act(async () => renderer.unmount());
+});
+
 test("OCR serving editor uses deterministic weight conversion and supports custom units", async () => {
   const onPatch = jest.fn();
   let renderer!: TestRenderer.ReactTestRenderer;
@@ -114,6 +135,7 @@ test("OCR serving editor uses deterministic weight conversion and supports custo
   expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "oz", gramWeight: "56.699046" });
   expect(input(renderer.root, "Serving grams").props.value).toBe("56.699046");
   expect(input(renderer.root, "Serving grams").props.editable).toBe(false);
+  expect(visibleText(renderer.root)).toContain("56.7 g total");
 
   await act(async () => action(renderer.root, "Serving unit").props.onPress());
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "Custom unit" }).props.onPress());
