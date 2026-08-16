@@ -20,6 +20,10 @@ test("the mobile package boundary consumes the fixed shared contract", () => {
   expect(E2_15_SECTION_NAMES).toEqual(contract.sections.map((section) => section.name));
   expect(E2_15_SECTION_NAMES).toHaveLength(17);
   expect(contract.source.expected_public_tables).toHaveLength(31);
+  expect(contract.target).toEqual({
+    sqlite_schema_version: 1,
+    migration_ids: ["001_initial_runtime_schema"],
+  });
 });
 
 test("Python and TypeScript emit identical canonical bytes and digests", async () => {

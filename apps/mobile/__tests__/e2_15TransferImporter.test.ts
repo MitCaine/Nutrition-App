@@ -76,6 +76,32 @@ async function minimalDocument(): Promise<string> {
   }));
 }
 
+async function representativeDocumentWithFoodNutrients(
+  mutate: (rows: Array<Record<string, unknown>>) => void,
+): Promise<string> {
+  const packageValue = JSON.parse(
+    JSON.stringify(representativePackage),
+  ) as Record<string, unknown>;
+  const sections = packageValue.sections as Array<Record<string, unknown>>;
+  const foodNutrients = sections.find(
+    (section) => section.name === "food_nutrients",
+  );
+  if (!foodNutrients) {
+    throw new Error("representative package lacks food_nutrients");
+  }
+
+  const rows = foodNutrients.records as Array<Record<string, unknown>>;
+  mutate(rows);
+
+  Object.assign(
+    foodNutrients,
+    await buildTransferSection("food_nutrients", rows),
+  );
+
+  delete packageValue.overall_digest;
+  return canonicalTransferJson(await withOverallDigest(packageValue));
+}
+
 async function migratedDatabase(): Promise<LocalSQLiteTestDatabase> {
   const database = new LocalSQLiteTestDatabase();
   await migrateNutritionDatabase(database.asExpoDatabase());
@@ -94,6 +120,58 @@ test("imports a validated package in one exclusive transaction and rejects reimp
       .rejects.toMatchObject({ code: "target_not_empty" });
     await expect(database.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS "count" FROM "users"`))
       .resolves.toEqual({ count: 1 });
+  } finally {
+    database.close();
+  }
+});
+
+test("rejects a negative Food nutrient transfer before database mutation", async () => {
+  const database = await migratedDatabase();
+  try {
+    const document = await representativeDocumentWithFoodNutrients((rows) => {
+      rows[0] = {
+        ...rows[0],
+        amount: "-1.000000",
+      };
+    });
+
+    await expect(
+      importPersonalTransfer(database.asExpoDatabase(), document),
+    ).rejects.toMatchObject({
+      code: "invalid_record_value",
+    });
+
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "users"`,
+    )).resolves.toEqual({ count: 0 });
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "food_nutrients"`,
+    )).resolves.toEqual({ count: 0 });
+  } finally {
+    database.close();
+  }
+});
+
+test("rejects duplicate Food nutrient identities atomically", async () => {
+  const database = await migratedDatabase();
+  try {
+    const document = await representativeDocumentWithFoodNutrients((rows) => {
+      rows.push({
+        ...rows[0],
+        id: "00000000-0000-4000-8000-000000000039",
+      });
+    });
+
+    await expect(
+      importPersonalTransfer(database.asExpoDatabase(), document),
+    ).rejects.toThrow(/UNIQUE constraint failed/);
+
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "users"`,
+    )).resolves.toEqual({ count: 0 });
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "food_nutrients"`,
+    )).resolves.toEqual({ count: 0 });
   } finally {
     database.close();
   }

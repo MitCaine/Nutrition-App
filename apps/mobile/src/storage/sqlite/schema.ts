@@ -9,7 +9,7 @@
  * columns and their relational guards.
  */
 
-export const SQLITE_SCHEMA_VERSION = 1;
+export const SQLITE_SCHEMA_VERSION = 2;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";

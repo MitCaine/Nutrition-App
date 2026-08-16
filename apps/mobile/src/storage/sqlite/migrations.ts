@@ -151,10 +151,10 @@ export const SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION: SQLiteMigration = {
         "SQLite Food nutrient integrity migration found a negative authoritative nutrient amount.",
       );
     }
-    const duplicate = await database.getFirstAsync<{ food_item_id: string; nutrient_id: string }>(
-      `SELECT "food_item_id", "nutrient_id"
+    const duplicate = await database.getFirstAsync<{ food_item_id: string; nutrient_id: string; basis: string }>(
+      `SELECT "food_item_id", "nutrient_id", "basis"
        FROM "food_nutrients"
-       GROUP BY "food_item_id", "nutrient_id"
+       GROUP BY "food_item_id", "nutrient_id", "basis"
        HAVING COUNT(*) > 1
        LIMIT 1`,
     );
@@ -164,8 +164,8 @@ export const SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION: SQLiteMigration = {
       );
     }
     await database.execAsync(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "uq_food_nutrients_food_nutrient"
-        ON "food_nutrients" ("food_item_id", "nutrient_id");
+      CREATE UNIQUE INDEX IF NOT EXISTS "uq_food_nutrients_food_nutrient_basis"
+        ON "food_nutrients" ("food_item_id", "nutrient_id", "basis");
       CREATE TRIGGER IF NOT EXISTS "trg_food_nutrients_nonnegative_insert"
       BEFORE INSERT ON "food_nutrients"
       WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = '-'

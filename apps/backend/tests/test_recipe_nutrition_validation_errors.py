@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.models.food import FoodNutrient
 from app.models.recipe import Recipe
@@ -125,11 +128,11 @@ def test_unsupported_conversion_returns_structured_validation(
     }
 
 
-def test_ambiguous_nutrient_basis_returns_structured_validation(
+def test_duplicate_nutrient_basis_is_rejected_before_recipe_resolution(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    food = _per_100g_food(client, name="Ambiguous Rice")
+    food = _per_100g_food(client, name="Duplicate Rice")
     recipe_id = _gram_recipe(client, food)
     ingredient_food = db_session.get(Recipe, recipe_id).ingredients[0].food_item
     ingredient_food.nutrients.append(
@@ -144,16 +147,14 @@ def test_ambiguous_nutrient_basis_returns_structured_validation(
             is_user_confirmed=True,
         )
     )
-    db_session.commit()
 
-    response = client.get(f"/api/v1/recipes/{recipe_id}/nutrition")
+    with pytest.raises(
+        IntegrityError,
+        match="UNIQUE constraint failed",
+    ):
+        db_session.commit()
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
-        "code": "ingredient_nutrient_basis_ambiguous",
-        "message": "Cannot calculate nutrition for Ambiguous Rice because its nutrient data has conflicting bases.",
-        "food_name": "Ambiguous Rice",
-    }
+    db_session.rollback()
 
 
 def test_other_known_nutrition_validation_uses_stable_invalid_data_code(

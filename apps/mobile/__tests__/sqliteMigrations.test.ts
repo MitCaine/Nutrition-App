@@ -18,6 +18,7 @@ import {
 import {
   SQLITE_CONNECTION_SETUP_STATEMENTS,
   SQLITE_BASELINE_MIGRATION,
+  SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -51,6 +52,8 @@ class RecordingSQLiteDatabase {
     headerTouched: number;
   } | null = null;
   closed = false;
+  hasNegativeFoodNutrient = false;
+  hasDuplicateFoodNutrient = false;
 
   async execAsync(source: string): Promise<void> {
     this.executed.push(source);
@@ -90,6 +93,25 @@ class RecordingSQLiteDatabase {
     }
     if (source === "PRAGMA user_version") {
       return { user_version: this.userVersion } as T;
+    }
+    if (
+      source.includes('FROM "food_nutrients"') &&
+      source.includes("substr(\"amount\", 1, 1) = '-'")
+    ) {
+      return this.hasNegativeFoodNutrient
+        ? ({ id: "negative-food-nutrient" } as T)
+        : null;
+    }
+    if (
+      source.includes('FROM "food_nutrients"') &&
+      source.includes('GROUP BY "food_item_id", "nutrient_id", "basis"')
+    ) {
+      return this.hasDuplicateFoodNutrient
+        ? ({
+            food_item_id: "food-1",
+            nutrient_id: "nutrient-1",
+          } as T)
+        : null;
     }
     if (source.includes('COUNT(*) AS "snapshot_count"')) {
       return { snapshot_count: this.snapshotCount } as T;
@@ -269,19 +291,20 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(statements).toContain("phase0020_snapshot_replacement_delete_count");
   });
 
-  test("installs the baseline atomically and is a no-op once current", async () => {
+  test("installs the current migration stream atomically and is a no-op once current", async () => {
     const database = new RecordingSQLiteDatabase();
 
     const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [SQLITE_SCHEMA_VERSION],
+      appliedVersions: [1, 2],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
     expect(database.ledger).toEqual([
-      { version: SQLITE_SCHEMA_VERSION, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -295,7 +318,72 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(1);
+    expect(database.ledger).toHaveLength(2);
+  });
+
+  test("upgrades an existing v1 database to the Food nutrient integrity schema", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 1;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+    ];
+
+    const result = await migrateNutritionDatabase(asSQLiteDatabase(database));
+
+    expect(result).toEqual({
+      fromVersion: 1,
+      toVersion: 2,
+      appliedVersions: [2],
+      alreadyCurrent: false,
+    });
+    expect(database.userVersion).toBe(2);
+    expect(database.ledger).toEqual([
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+    ]);
+  });
+
+  test("fails closed when a v1 database contains a negative authoritative Food nutrient", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 1;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+    ];
+    database.hasNegativeFoodNutrient = true;
+
+    await expect(
+      migrateNutritionDatabase(asSQLiteDatabase(database)),
+    ).rejects.toThrow(
+      "SQLite Food nutrient integrity migration found a negative authoritative nutrient amount.",
+    );
+
+    expect(database.userVersion).toBe(1);
+    expect(database.ledger).toEqual([
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+    ]);
+  });
+
+  test("fails closed when a v1 database contains duplicate Food nutrient identities", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 1;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+    ];
+    database.hasDuplicateFoodNutrient = true;
+
+    await expect(
+      migrateNutritionDatabase(asSQLiteDatabase(database)),
+    ).rejects.toThrow(
+      "SQLite Food nutrient integrity migration found duplicate nutrient identities for one Food.",
+    );
+
+    expect(database.userVersion).toBe(1);
+    expect(database.ledger).toEqual([
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+    ]);
   });
 
   test("rolls back an injected migration failure without resetting the database", async () => {

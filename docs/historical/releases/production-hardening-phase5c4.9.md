@@ -14,9 +14,9 @@ Phase 5C4.9 changes no application or control migration head. The authoritative
 heads remain:
 
 Subsequent active development now continues from application head
-`0025_immutable_validator_head`; migration `0024_recipe_log_current_provenance`
-remains part of the frozen historical chain, and this release boundary remains
-frozen as recorded below.
+`0026_food_nutrient_integrity`; predecessor `0025_immutable_validator_head` and
+migration `0024_recipe_log_current_provenance` remain part of the historical
+chain, and this release boundary remains frozen as recorded below.
 
 - application: `0021_target_activation_execution`;
 - control: `ops_0011_phase5c4_recovery_audit`.

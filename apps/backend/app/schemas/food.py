@@ -20,10 +20,18 @@ VALID_NUTRIENT_IDS = {nutrient.id for nutrient in NUTRIENT_CATALOG}
 NUTRIENTS_BY_ID = {nutrient.id: nutrient for nutrient in NUTRIENT_CATALOG}
 
 
-def _validate_unique_nutrient_ids(nutrients: list[FoodNutrientInput]) -> None:
-    nutrient_ids = [nutrient.nutrient_id for nutrient in nutrients]
-    if len(set(nutrient_ids)) != len(nutrient_ids):
-        raise ValueError("foods cannot contain duplicate nutrient IDs")
+def _validate_unique_nutrient_identities(
+    nutrients: list[FoodNutrientInput],
+) -> None:
+    identities = [
+        (nutrient.nutrient_id, nutrient.basis.value)
+        for nutrient in nutrients
+    ]
+    if len(set(identities)) != len(identities):
+        raise ValueError(
+            "foods cannot contain duplicate nutrient identities for the same basis"
+        )
+
 
 
 class OriginalNutrientValueSchema(BaseModel):
@@ -105,7 +113,7 @@ class FoodCreateRequest(BaseModel):
         default_count = sum(1 for serving in self.serving_definitions if serving.is_default)
         if default_count != 1:
             raise ValueError("foods with serving definitions must have exactly one default serving")
-        _validate_unique_nutrient_ids(self.nutrients)
+        _validate_unique_nutrient_identities(self.nutrients)
         return self
 
 
@@ -129,7 +137,7 @@ class FoodUpdateRequest(BaseModel):
                     "foods with serving definitions must have exactly one default serving"
                 )
         if self.nutrients is not None:
-            _validate_unique_nutrient_ids(self.nutrients)
+            _validate_unique_nutrient_identities(self.nutrients)
         return self
 
 

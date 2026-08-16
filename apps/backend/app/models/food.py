@@ -194,7 +194,8 @@ class FoodNutrient(Base):
         UniqueConstraint(
             "food_item_id",
             "nutrient_id",
-            name="uq_food_nutrients_food_nutrient",
+            "basis",
+            name="uq_food_nutrients_food_nutrient_basis",
         ),
         CheckConstraint(
             "amount IS NULL OR amount >= 0",

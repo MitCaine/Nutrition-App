@@ -530,6 +530,7 @@ class FoodService:
                 dependency_affecting = True
             if payload.nutrients is not None:
                 food.nutrients.clear()
+                self.db.flush()
                 self._replace_nutrients(food, payload.nutrients)
             now = datetime.now(timezone.utc)
             food.updated_at = now
