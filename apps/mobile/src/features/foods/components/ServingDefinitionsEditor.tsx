@@ -1,24 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
-import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { LabeledField } from "../../../shared/forms/LabeledField";
 import { servingFocusKey } from "../../../shared/forms/focusTargets";
 import type { FocusTargetRegistration } from "../../../shared/forms/KeyboardSafeScrollView";
 import type { ServingFormValue } from "../hooks/useFoodForm";
 import {
-  AMOUNT_UNIT_GROUPS,
   amountHasKnownGramWeight,
   amountUnitCategory,
-  createUnitPickerDraftState,
   DEFAULT_AMOUNT_WEIGHT_MESSAGE,
+  divideAmountValues,
   generatedAmountLabel,
-  normalizedAmountUnit,
-  revealCustomUnit,
-  selectedUnitGroup,
-  unitChoiceSelected,
-  type AmountUnitCategory,
+  massGramEquivalent,
+  multiplyAmountValues,
 } from "../utils/amountForm";
 
 type Props = {
@@ -39,21 +34,82 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
   const baseAmount = servings.find((serving) => serving.isBaseAmount);
   const portions = servings.filter((serving) => !serving.isBaseAmount);
   const [expandedKey, setExpandedKey] = useState<string | null>(() => portions.find((serving) => serving.consistencyWarning)?.key ?? null);
-  const [unitPickerKey, setUnitPickerKey] = useState<string | null>(null);
-  const unitPickerReturnRef = useRef<View>(null);
-  const [customUnitDrafts, setCustomUnitDrafts] = useState<Record<string, string>>({});
+  const [gramWeightPerUnitDrafts, setGramWeightPerUnitDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (invalidServingKey && !servings.find((serving) => serving.key === invalidServingKey)?.isBaseAmount) setExpandedKey(invalidServingKey);
+    if (invalidServingKey && !servings.find((serving) => serving.key === invalidServingKey)?.isBaseAmount) {
+      setExpandedKey(invalidServingKey);
+    }
   }, [invalidServingKey, servings]);
 
-  const pickerAmount = portions.find((serving) => serving.key === unitPickerKey) ?? null;
+  useEffect(() => {
+    if (!expandedKey) return;
+    const serving = servings.find((item) => item.key === expandedKey);
+    if (!serving || serving.isBaseAmount) return;
+    setGramWeightPerUnitDrafts((current) => {
+      if (current[serving.key] !== undefined) return current;
+      return { ...current, [serving.key]: gramWeightPerUnit(serving) };
+    });
+  }, [expandedKey, servings]);
+
+  function openEditor(serving: ServingFormValue) {
+    setGramWeightPerUnitDrafts((current) => current[serving.key] !== undefined
+      ? current
+      : { ...current, [serving.key]: gramWeightPerUnit(serving) });
+    setExpandedKey(serving.key);
+  }
+
+  function updateQuantity(serving: ServingFormValue, quantity: string) {
+    if (amountUnitCategory(serving.unit) === "weight") {
+      updateServing(serving.key, { quantity, consistencyWarning: undefined });
+      return;
+    }
+    const perUnit = gramWeightPerUnitDrafts[serving.key] ?? gramWeightPerUnit(serving);
+    const total = multiplyAmountValues(quantity, perUnit);
+    updateServing(serving.key, {
+      quantity,
+      consistencyWarning: undefined,
+      ...(total !== null ? { gram_weight: total } : {}),
+    });
+  }
+
+  function updateUnit(serving: ServingFormValue, unit: string) {
+    const previousCategory = amountUnitCategory(serving.unit);
+    const nextCategory = amountUnitCategory(unit);
+    if (nextCategory === "weight") {
+      setGramWeightPerUnitDrafts((current) => ({
+        ...current,
+        [serving.key]: massGramEquivalent("1", unit) ?? "",
+      }));
+      updateServing(serving.key, { unit, consistencyWarning: undefined });
+      return;
+    }
+    if (previousCategory === "weight") {
+      setGramWeightPerUnitDrafts((current) => ({ ...current, [serving.key]: "" }));
+      updateServing(serving.key, { unit, consistencyWarning: undefined });
+      return;
+    }
+    const perUnit = gramWeightPerUnitDrafts[serving.key] ?? gramWeightPerUnit(serving);
+    const total = multiplyAmountValues(serving.quantity, perUnit);
+    updateServing(serving.key, {
+      unit,
+      consistencyWarning: undefined,
+      ...(total !== null ? { gram_weight: total } : {}),
+    });
+  }
+
+  function updateGramWeightPerUnit(serving: ServingFormValue, perUnit: string) {
+    setGramWeightPerUnitDrafts((current) => ({ ...current, [serving.key]: perUnit }));
+    const total = multiplyAmountValues(serving.quantity, perUnit);
+    updateServing(serving.key, { gram_weight: total ?? "" });
+  }
+
   return (
     <View style={styles.container}>
       {baseAmount ? (
         <View style={styles.baseRow}>
           <View style={styles.flex}>
-            <Text style={styles.eyebrow}>Base amount</Text>
+            <Text style={styles.eyebrow}>Nutrition base</Text>
             <Text style={styles.baseValue}>100 g</Text>
           </View>
           <DefaultServingControl
@@ -65,91 +121,192 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
           />
         </View>
       ) : null}
-      <Text accessibilityRole="header" style={styles.portionsTitle}>Portions</Text>
+
+      <Text accessibilityRole="header" style={styles.portionsTitle}>Custom serving sizes</Text>
+      {portions.length === 0 ? <Text style={styles.meta}>No custom serving sizes yet.</Text> : null}
+
       {portions.map((serving) => {
         const expanded = serving.key === expandedKey;
+        const automaticLabel = generatedAmountLabel(serving.quantity, serving.unit);
+        const displayLabel = serving.labelMode === "manual" ? serving.label.trim() || automaticLabel : automaticLabel;
+        const perUnit = gramWeightPerUnitDrafts[serving.key] ?? gramWeightPerUnit(serving);
+        const weightReadOnly = amountUnitCategory(serving.unit) === "weight";
+        const preview = servingPreview(serving, displayLabel);
         return (
           <View key={serving.key} style={styles.portionCard}>
             <View style={styles.summaryRow}>
               <View style={styles.flex}>
-                <Text accessibilityRole="header" style={styles.summaryTitle}>{serving.label || generatedAmountLabel(serving.quantity, serving.unit) || "Untitled amount"}</Text>
-                <Text style={styles.meta}>{serving.gram_weight ? `Equivalent to ${serving.gram_weight} g` : "Weight unknown"}</Text>
+                <Text accessibilityRole="header" style={styles.summaryTitle}>{displayLabel || "New serving size"}</Text>
+                <Text style={styles.meta}>{servingWeightSummary(serving)}</Text>
               </View>
               <DefaultServingControl
-                accessibilityLabel={serving.is_default ? "Default amount" : `Set ${serving.label || "amount"} as default`}
+                accessibilityLabel={serving.is_default ? "Default amount" : `Set ${displayLabel || "serving size"} as default`}
                 disabled={!serving.is_default && !amountHasKnownGramWeight(serving)}
                 isDefault={serving.is_default}
                 onPress={() => updateServing(serving.key, { is_default: true })}
                 styles={styles}
               />
             </View>
+
             {serving.consistencyWarning ? <Text style={styles.warning}>{serving.consistencyWarning}</Text> : null}
+
             {expanded ? (
               <View style={styles.editor}>
+                <Text style={styles.meta}>Enter how many units make up this serving and the gram weight of one unit. The total serving weight updates automatically.</Text>
+
                 <View style={styles.twoColumn}>
-                  <LabeledField containerStyle={styles.flex} label={`${serving.label || "Amount"} quantity`} validationTarget={`serving.${serving.key}.quantity`} {...focusProps(servingFocusKey(serving.key, "quantity"))} invalid={validationTarget === `serving.${serving.key}.quantity`} error={validationTarget === `serving.${serving.key}.quantity` ? validationError : null} value={serving.quantity} onChangeText={(quantity) => updateServing(serving.key, { quantity, consistencyWarning: undefined })} keyboardType="decimal-pad" placeholder="1" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
-                  <View style={styles.flex}>
-                    <Text style={styles.fieldLabel}>Unit</Text>
-                    <AccessiblePressable ref={unitPickerReturnRef} accessibilityLabel={`Choose unit for ${serving.label || "amount"}, current unit ${unitDisplay(serving.unit)}`} accessibilityState={{ expanded: unitPickerKey === serving.key }} onPress={() => {
-                      if (amountUnitCategory(serving.unit) === "custom" && customUnitDrafts[serving.key] === undefined) {
-                        setCustomUnitDrafts((drafts) => ({ ...drafts, [serving.key]: serving.unit }));
-                      }
-                      setUnitPickerKey(serving.key);
-                    }} style={styles.selector}>
-                      <Text style={styles.selectorText}>{unitDisplay(serving.unit)}</Text>
-                      <Text style={styles.selectorChevron}>⌄</Text>
-                    </AccessiblePressable>
-                  </View>
+                  <LabeledField
+                    containerStyle={styles.flex}
+                    label="Quantity"
+                    validationTarget={`serving.${serving.key}.quantity`}
+                    {...focusProps(servingFocusKey(serving.key, "quantity"))}
+                    invalid={validationTarget === `serving.${serving.key}.quantity`}
+                    error={validationTarget === `serving.${serving.key}.quantity` ? validationError : null}
+                    value={serving.quantity}
+                    onChangeText={(quantity) => updateQuantity(serving, quantity)}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 2"
+                    placeholderTextColor={theme.colors.placeholder}
+                    inputStyle={styles.input}
+                  />
+                  <LabeledField
+                    containerStyle={styles.flex}
+                    label="Unit"
+                    validationTarget={`serving.${serving.key}.unit`}
+                    {...focusProps(servingFocusKey(serving.key, "unit"))}
+                    invalid={validationTarget === `serving.${serving.key}.unit`}
+                    error={validationTarget === `serving.${serving.key}.unit` ? validationError : null}
+                    value={serving.unit}
+                    onChangeText={(unit) => updateUnit(serving, unit)}
+                    placeholder="e.g. slice"
+                    placeholderTextColor={theme.colors.placeholder}
+                    inputStyle={styles.input}
+                  />
                 </View>
-                <View>
-                  <View style={styles.weightRow}>
-                    <LabeledField containerStyle={styles.flex} label={`${serving.label || "Amount"} equivalent weight`} validationTarget={`serving.${serving.key}.gramWeight`} {...focusProps(servingFocusKey(serving.key, "gramWeight"))} value={serving.gram_weight ?? ""} onChangeText={(gram_weight) => updateServing(serving.key, { gram_weight })} readOnly={amountUnitCategory(serving.unit) === "weight"} keyboardType="decimal-pad" placeholder="Unknown" placeholderTextColor={theme.colors.placeholder} inputStyle={[styles.input, amountUnitCategory(serving.unit) === "weight" && styles.calculatedInput]} invalid={defaultAmountError?.key === serving.key || validationTarget === `serving.${serving.key}.gramWeight`} error={defaultAmountError?.key === serving.key ? defaultAmountError.message : validationTarget === `serving.${serving.key}.gramWeight` ? validationError : null} />
-                    <Text style={styles.weightUnit}>g</Text>
-                  </View>
-                  {!serving.is_default && !amountHasKnownGramWeight(serving) && defaultAmountError?.key !== serving.key ? <Text style={styles.fieldError}>{DEFAULT_AMOUNT_WEIGHT_MESSAGE}</Text> : null}
+
+                <LabeledField
+                  label={gramWeightFieldLabel(serving.unit)}
+                  validationTarget={`serving.${serving.key}.gramWeight`}
+                  {...focusProps(servingFocusKey(serving.key, "gramWeight"))}
+                  value={perUnit}
+                  onChangeText={(value) => updateGramWeightPerUnit(serving, value)}
+                  readOnly={weightReadOnly}
+                  keyboardType="decimal-pad"
+                  placeholder={weightReadOnly ? "Calculated" : "e.g. 28"}
+                  placeholderTextColor={theme.colors.placeholder}
+                  inputStyle={[styles.input, weightReadOnly && styles.calculatedInput]}
+                  invalid={defaultAmountError?.key === serving.key || validationTarget === `serving.${serving.key}.gramWeight`}
+                  error={defaultAmountError?.key === serving.key ? defaultAmountError.message : validationTarget === `serving.${serving.key}.gramWeight` ? validationError : null}
+                />
+
+                {!serving.is_default && !amountHasKnownGramWeight(serving) && defaultAmountError?.key !== serving.key
+                  ? <Text style={styles.fieldError}>{DEFAULT_AMOUNT_WEIGHT_MESSAGE}</Text>
+                  : null}
+
+                <View style={styles.previewCard}>
+                  <Text style={styles.fieldLabel}>Will appear as</Text>
+                  <Text style={styles.previewText}>{preview}</Text>
                 </View>
+
                 {serving.labelMode === "manual" ? (
                   <View>
                     <View style={styles.labelHeader}>
-                      <Text style={styles.fieldLabel}>Custom display label</Text>
-                      <AccessiblePressable accessibilityLabel={`Use automatic label for ${serving.label || "amount"}`} onPress={() => updateServing(serving.key, { labelMode: "automatic" })}><Text style={styles.link}>Use automatic</Text></AccessiblePressable>
+                      <Text style={styles.fieldLabel}>Custom display name</Text>
+                      <AccessiblePressable accessibilityLabel={`Use automatic label for ${displayLabel || "serving size"}`} onPress={() => updateServing(serving.key, { labelMode: "automatic" })}>
+                        <Text style={styles.link}>Use automatic</Text>
+                      </AccessiblePressable>
                     </View>
-                    <LabeledField label="Custom display label" validationTarget={`serving.${serving.key}.label`} {...focusProps(servingFocusKey(serving.key, "label"))} invalid={validationTarget === `serving.${serving.key}.label`} error={validationTarget === `serving.${serving.key}.label` ? validationError : null} value={serving.label} onChangeText={(label) => updateServing(serving.key, { label, labelMode: "manual" })} placeholder="Display label" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+                    <LabeledField
+                      label="Custom display name"
+                      validationTarget={`serving.${serving.key}.label`}
+                      {...focusProps(servingFocusKey(serving.key, "label"))}
+                      invalid={validationTarget === `serving.${serving.key}.label`}
+                      error={validationTarget === `serving.${serving.key}.label` ? validationError : null}
+                      value={serving.label}
+                      onChangeText={(label) => updateServing(serving.key, { label, labelMode: "manual" })}
+                      placeholder={automaticLabel ? `e.g. ${automaticLabel}, thick-cut` : "Custom display name"}
+                      placeholderTextColor={theme.colors.placeholder}
+                      inputStyle={styles.input}
+                    />
                   </View>
                 ) : (
-                  <View style={styles.previewRow}>
-                    <Text style={styles.meta}>Shown as: <Text style={styles.previewValue}>{generatedAmountLabel(serving.quantity, serving.unit) || "—"}</Text></Text>
-                    <AccessiblePressable accessibilityLabel={`Customize label for ${serving.label || generatedAmountLabel(serving.quantity, serving.unit) || "amount"}`} onPress={() => updateServing(serving.key, { labelMode: "manual", label: generatedAmountLabel(serving.quantity, serving.unit) })}><Text style={styles.link}>Customize label</Text></AccessiblePressable>
-                  </View>
+                  <AccessiblePressable
+                    accessibilityLabel={`Customize label for ${displayLabel || "serving size"}`}
+                    onPress={() => updateServing(serving.key, { labelMode: "manual", label: automaticLabel })}
+                    style={styles.compactLink}
+                  >
+                    <Text style={styles.link}>Customize display name</Text>
+                  </AccessiblePressable>
                 )}
+
                 <View style={styles.actions}>
-                  <ServingManagementAction accessibilityLabel={`Remove ${serving.label || "amount"}`} onPress={() => removeServing(serving.key)} styles={styles}><Text style={styles.removeText}>Remove</Text></ServingManagementAction>
-                  <AccessiblePressable accessibilityLabel={`Finish editing ${serving.label || "amount"}`} accessibilityState={{ expanded: true }} onPress={() => setExpandedKey(null)} style={styles.compactButton}><Text style={styles.link}>Done</Text></AccessiblePressable>
+                  <ServingManagementAction accessibilityLabel={`Remove ${displayLabel || "serving size"}`} onPress={() => removeServing(serving.key)} styles={styles}>
+                    <Text style={styles.removeText}>Remove</Text>
+                  </ServingManagementAction>
+                  <AccessiblePressable accessibilityLabel={`Finish editing ${displayLabel || "serving size"}`} accessibilityState={{ expanded: true }} onPress={() => setExpandedKey(null)} style={styles.compactButton}>
+                    <Text style={styles.link}>Done</Text>
+                  </AccessiblePressable>
                 </View>
               </View>
             ) : (
               <View style={styles.actions}>
-                <ServingManagementAction accessibilityLabel={`Edit ${serving.label || "amount"}`} accessibilityState={{ expanded: false }} onPress={() => setExpandedKey(serving.key)} styles={styles}><Text style={styles.link}>Edit</Text></ServingManagementAction>
-                <ServingManagementAction accessibilityLabel={`Remove ${serving.label || "amount"}`} onPress={() => removeServing(serving.key)} styles={styles}><Text style={styles.removeText}>Remove</Text></ServingManagementAction>
+                <ServingManagementAction accessibilityLabel={`Edit ${displayLabel || "serving size"}`} accessibilityState={{ expanded: false }} onPress={() => openEditor(serving)} styles={styles}>
+                  <Text style={styles.link}>Edit</Text>
+                </ServingManagementAction>
+                <ServingManagementAction accessibilityLabel={`Remove ${displayLabel || "serving size"}`} onPress={() => removeServing(serving.key)} styles={styles}>
+                  <Text style={styles.removeText}>Remove</Text>
+                </ServingManagementAction>
               </View>
             )}
           </View>
         );
       })}
-      <AccessiblePressable accessibilityLabel="Add another amount" accessibilityHint="Adds and expands a new serving amount" onPress={() => setExpandedKey(addServing())} style={styles.addButton}><Text style={styles.addText}>Add amount</Text></AccessiblePressable>
-      <UnitPickerModal
-        amount={pickerAmount}
-        visible={Boolean(pickerAmount)}
-        rememberedCustomUnit={pickerAmount ? customUnitDrafts[pickerAmount.key] ?? "" : ""}
-        onCancel={() => setUnitPickerKey(null)}
-        onRememberCustom={(unit) => {
-          if (pickerAmount) setCustomUnitDrafts((drafts) => ({ ...drafts, [pickerAmount.key]: unit }));
-        }}
-        onSelect={(unit) => { if (pickerAmount) updateServing(pickerAmount.key, { unit, consistencyWarning: undefined }); setUnitPickerKey(null); }}
-        returnFocusRef={unitPickerReturnRef}
-      />
+
+      <AccessiblePressable
+        accessibilityLabel="Add serving size"
+        accessibilityHint="Adds and expands a new serving size"
+        onPress={() => setExpandedKey(addServing())}
+        style={styles.addButton}
+      >
+        <Text style={styles.addText}>Add serving size</Text>
+      </AccessiblePressable>
     </View>
   );
+}
+
+function gramWeightPerUnit(serving: ServingFormValue): string {
+  const massUnitWeight = massGramEquivalent("1", serving.unit);
+  if (massUnitWeight !== null) return massUnitWeight;
+  return divideAmountValues(serving.gram_weight ?? "", serving.quantity) ?? "";
+}
+
+function gramWeightFieldLabel(unit: string): string {
+  const displayUnit = servingUnitDisplay(unit);
+  return displayUnit ? `Grams per ${displayUnit}` : "Grams per unit";
+}
+
+function servingUnitDisplay(unit: string): string {
+  const oneUnit = generatedAmountLabel("1", unit).trim();
+  return oneUnit.startsWith("1 ") ? oneUnit.slice(2) : unit.trim();
+}
+
+function servingPreview(serving: ServingFormValue, displayLabel: string): string {
+  if (!displayLabel) return "Enter a quantity and unit to preview this serving size.";
+  if (!amountHasKnownGramWeight(serving)) return displayLabel;
+  return `${displayLabel} (${serving.gram_weight} g)`;
+}
+
+function servingWeightSummary(serving: ServingFormValue): string {
+  if (!amountHasKnownGramWeight(serving)) return "Gram weight not set";
+  if (amountUnitCategory(serving.unit) === "weight") return `${serving.gram_weight} g total`;
+  const perUnit = divideAmountValues(serving.gram_weight ?? "", serving.quantity);
+  const unit = servingUnitDisplay(serving.unit);
+  if (perUnit && unit) {
+    return Number(serving.quantity) === 1
+      ? `${perUnit} g per ${unit}`
+      : `${perUnit} g per ${unit} · ${serving.gram_weight} g total`;
+  }
+  return `${serving.gram_weight} g total`;
 }
 
 function DefaultServingControl({ accessibilityLabel, disabled, isDefault, onPress, styles }: {
@@ -168,7 +325,9 @@ function DefaultServingControl({ accessibilityLabel, disabled, isDefault, onPres
         accessibilityState={{ selected: true }}
         style={styles.defaultControl}
       >
-        <View style={[styles.defaultControlSurface, styles.defaultControlSurfaceSelected]}><Text style={styles.defaultControlSelectedText}>✓ Default</Text></View>
+        <View style={[styles.defaultControlSurface, styles.defaultControlSurfaceSelected]}>
+          <Text style={styles.defaultControlSelectedText}>✓ Default</Text>
+        </View>
       </View>
     );
   }
@@ -180,7 +339,9 @@ function DefaultServingControl({ accessibilityLabel, disabled, isDefault, onPres
       onPress={onPress}
       style={styles.defaultControl}
     >
-      <View style={styles.defaultControlSurface}><Text style={styles.defaultControlText}>Set default</Text></View>
+      <View style={styles.defaultControlSurface}>
+        <Text style={styles.defaultControlText}>Set default</Text>
+      </View>
     </AccessiblePressable>
   );
 }
@@ -192,99 +353,49 @@ function ServingManagementAction({ accessibilityLabel, accessibilityState, child
   onPress: () => void;
   styles: ReturnType<typeof createStyles>;
 }) {
-  return <AccessiblePressable accessibilityLabel={accessibilityLabel} accessibilityState={accessibilityState} onPress={onPress} style={styles.managementTarget}>
-    <View style={styles.managementSurface}>{children}</View>
-  </AccessiblePressable>;
-}
-
-function UnitPickerModal({ amount, visible, rememberedCustomUnit, onCancel, onRememberCustom, onSelect, returnFocusRef }: { amount: ServingFormValue | null; visible: boolean; rememberedCustomUnit: string; onCancel: () => void; onRememberCustom: (unit: string) => void; onSelect: (unit: string) => void; returnFocusRef: RefObject<View | null> }) {
-  const theme = useAppTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  const scrollRef = useRef<ScrollView>(null);
-  const categoryPositions = useRef<Partial<Record<AmountUnitCategory, number>>>({});
-  const [draft, setDraft] = useState(() => createUnitPickerDraftState(amount?.unit ?? "", rememberedCustomUnit));
-  const selectedCategory = selectedUnitGroup(amount?.unit ?? "");
-  useEffect(() => {
-    if (visible) {
-      categoryPositions.current = {};
-      setDraft(createUnitPickerDraftState(amount?.unit ?? "", rememberedCustomUnit));
-    }
-  }, [amount?.key, amount?.unit, rememberedCustomUnit, visible]);
-
-  function scrollSelectedCategoryIntoView() {
-    const y = categoryPositions.current[selectedCategory];
-    if (y !== undefined) scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: false });
-  }
-
   return (
-    <AccessibleModal title={`Choose unit${amount?.label ? ` for ${amount.label}` : ""}`} visible={visible} onRequestClose={onCancel} returnFocusRef={returnFocusRef} backdropStyle={styles.modalBackdrop} contentStyle={styles.modalCard} headingStyle={styles.modalTitle}>
-        <View style={styles.modalHeader}><View /><AccessiblePressable accessibilityLabel="Cancel choosing unit" onPress={onCancel}><Text style={styles.link}>Cancel</Text></AccessiblePressable></View>
-        <ScrollView ref={scrollRef} contentContainerStyle={styles.pickerContent} keyboardShouldPersistTaps="handled" onContentSizeChange={scrollSelectedCategoryIntoView}>
-          {AMOUNT_UNIT_GROUPS.map((group) => <View key={group.category} onLayout={(event) => { categoryPositions.current[group.category] = event.nativeEvent.layout.y; }} style={styles.pickerGroup}><Text style={styles.eyebrow}>{group.label}</Text><View style={styles.pickerChoices}>{group.units.map((unit) => {
-            const selected = unitChoiceSelected(amount?.unit ?? "", unit.value);
-            return <AccessiblePressable accessibilityLabel={unit.label} accessibilityRole="radio" accessibilityState={{ checked: selected, selected }} key={unit.value} onPress={() => onSelect(unit.value)} style={[styles.pickerChoice, selected && styles.selectedPickerChoice, selected && styles.active]}><Text style={selected ? styles.selectedText : styles.text}>{unit.label}</Text>{selected ? <Text style={styles.selectedText}>✓</Text> : null}</AccessiblePressable>;
-          })}</View></View>)}
-          <View onLayout={(event) => { categoryPositions.current.custom = event.nativeEvent.layout.y; }} style={styles.pickerGroup}><Text style={styles.eyebrow}>Custom</Text><View style={styles.pickerChoices}><AccessiblePressable accessibilityLabel="Custom unit" accessibilityRole="radio" accessibilityState={{ checked: selectedCategory === "custom", selected: selectedCategory === "custom" }} onPress={() => setDraft(revealCustomUnit)} style={[styles.pickerChoice, selectedCategory === "custom" && styles.selectedPickerChoice, selectedCategory === "custom" && styles.active]}><Text style={selectedCategory === "custom" ? styles.selectedText : styles.text}>Custom</Text>{selectedCategory === "custom" ? <Text style={styles.selectedText}>✓</Text> : null}</AccessiblePressable></View>{draft.customOpen ? <><LabeledField autoFocus label="Custom unit name" validationTarget="serving.customUnit" value={draft.customDraft} onChangeText={(customDraft) => setDraft((current) => ({ ...current, customDraft }))} placeholder="scoop" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} /><AccessiblePressable accessibilityLabel={`Use custom unit ${draft.customDraft.trim() || "blank"}`} disabled={!draft.customDraft.trim()} onPress={() => { const unit = draft.customDraft.trim(); onRememberCustom(unit); onSelect(unit); }} style={[styles.addButton, !draft.customDraft.trim() && styles.disabledButton]}><Text style={styles.addText}>Use custom unit</Text></AccessiblePressable></> : null}</View>
-        </ScrollView>
-    </AccessibleModal>
+    <AccessiblePressable accessibilityLabel={accessibilityLabel} accessibilityState={accessibilityState} onPress={onPress} style={styles.managementTarget}>
+      <View style={styles.managementSurface}>{children}</View>
+    </AccessiblePressable>
   );
 }
 
-function unitDisplay(unit: string): string {
-  const normalized = normalizedAmountUnit(unit);
-  return AMOUNT_UNIT_GROUPS.flatMap((group) => group.units).find((choice) => choice.value === normalized)?.label ?? (unit || "Custom");
+function createStyles(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
+    text: { color: theme.colors.text },
+    addButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, minHeight: 44, paddingHorizontal: 10, paddingVertical: 10 },
+    addText: { color: theme.colors.accent, fontWeight: "700" },
+    actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    baseRow: { alignItems: "center", backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: 8, padding: 12 },
+    baseValue: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    calculatedInput: { color: theme.colors.secondaryText },
+    compactButton: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 12, paddingVertical: 8 },
+    compactLink: { alignSelf: "flex-start", minHeight: 44, justifyContent: "center" },
+    container: { gap: 10 },
+    defaultControl: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 96 },
+    defaultControlSurface: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 36, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 },
+    defaultControlSurfaceSelected: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
+    defaultControlSelectedText: { color: theme.colors.accent, fontWeight: "700" },
+    defaultControlText: { color: theme.colors.text },
+    editor: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 12, paddingTop: 12 },
+    eyebrow: { color: theme.colors.secondaryText, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
+    fieldError: { color: theme.colors.errorText, fontSize: 13 },
+    fieldLabel: { color: theme.colors.secondaryText, fontSize: 13, fontWeight: "700", marginBottom: 5 },
+    flex: { flex: 1, minWidth: 140 },
+    input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, fontSize: 16, minHeight: 44, paddingHorizontal: 10, paddingVertical: 10 },
+    labelHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" },
+    link: { color: theme.colors.accent, fontWeight: "700" },
+    managementSurface: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 36, paddingHorizontal: 12, paddingVertical: 8 },
+    managementTarget: { alignItems: "center", justifyContent: "center", minHeight: 44 },
+    meta: { color: theme.colors.secondaryText, fontSize: 13 },
+    portionCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
+    portionsTitle: { color: theme.colors.text, fontSize: 17, fontWeight: "700", marginTop: 4 },
+    previewCard: { backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
+    previewText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    removeText: { color: theme.colors.destructive, fontWeight: "600" },
+    summaryRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    summaryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    twoColumn: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+    warning: { color: theme.colors.warningText, fontSize: 13 },
+  });
 }
-
-function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  text: { color: theme.colors.text },
-  active: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
-  addButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, minHeight: 44, paddingHorizontal: 10, paddingVertical: 8 },
-  addText: { color: theme.colors.accent, fontWeight: "700" },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  baseRow: { alignItems: "center", backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: 6, padding: 8 },
-  baseValue: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
-  calculatedInput: { color: theme.colors.secondaryText },
-  compactButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minHeight: 44, paddingHorizontal: 6, paddingVertical: 5 },
-  container: { gap: 8 },
-  defaultControl: { alignItems: "center", justifyContent: "center", minHeight: 44, minWidth: 96, paddingHorizontal: 0, paddingVertical: 0 },
-  defaultControlSurface: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 32, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 },
-  defaultControlSurfaceSelected: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
-  defaultControlSelectedText: { color: theme.colors.accent, fontWeight: "700" },
-  defaultControlText: { color: theme.colors.text },
-  disabledButton: { opacity: 0.5 },
-  editor: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 12, paddingTop: 12 },
-  fieldError: { color: theme.colors.errorText, fontSize: 13, marginTop: 6 },
-  eyebrow: { color: theme.colors.secondaryText, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
-  fieldLabel: { color: theme.colors.text, fontSize: 13, fontWeight: "700", marginBottom: 5 },
-  flex: { flex: 1, minWidth: 140 },
-  input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, fontSize: 16, minHeight: 44, paddingHorizontal: 8, paddingVertical: 8 },
-  labelHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  link: { color: theme.colors.accent, fontWeight: "700" },
-  managementSurface: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 32, paddingHorizontal: 10, paddingVertical: 8 },
-  managementTarget: { alignItems: "center", justifyContent: "center", minHeight: 44, paddingHorizontal: 0, paddingVertical: 0 },
-  meta: { color: theme.colors.secondaryText, fontSize: 13 },
-  modalBackdrop: { alignItems: "center", backgroundColor: theme.colors.modalBackdrop, flex: 1, justifyContent: "center", padding: 18 },
-  modalCard: { backgroundColor: theme.colors.surface, borderRadius: 10, maxHeight: "80%", padding: 14, width: "100%" },
-  modalHeader: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 8 },
-  modalTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "700" },
-  pickerChoices: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  pickerChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: "row", gap: 6, justifyContent: "center", minHeight: 44, paddingHorizontal: 13, paddingVertical: 8 },
-  selectedPickerChoice: { gap: 8, paddingHorizontal: 15 },
-  pickerContent: { gap: 14, paddingBottom: 8 },
-  pickerGroup: { gap: 7 },
-  portionCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 6, padding: 8 },
-  portionsTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginTop: 2 },
-  previewRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "space-between" },
-  previewValue: { color: theme.colors.text, fontWeight: "700" },
-  removeText: { color: theme.colors.destructive, fontWeight: "600" },
-  selectedText: { color: theme.colors.accent, fontWeight: "700" },
-  selector: { alignItems: "center", backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 44, paddingHorizontal: 8, paddingVertical: 8 },
-  selectorChevron: { color: theme.colors.secondaryText, fontSize: 18 },
-  selectorText: { color: theme.colors.text },
-  summaryRow: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  summaryTitle: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
-  twoColumn: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  warning: { color: theme.colors.warningText, fontSize: 13 },
-  weightRow: { alignItems: "flex-end", flexDirection: "row", gap: 8 },
-  weightUnit: { color: theme.colors.text, fontWeight: "700", paddingBottom: 12 },
-}); }
