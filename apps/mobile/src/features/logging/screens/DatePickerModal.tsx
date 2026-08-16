@@ -1,4 +1,4 @@
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import DateTimePicker, { type DateTimePickerChangeEvent } from "@react-native-community/datetimepicker";
 import { useMemo, type RefObject } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 
@@ -24,7 +24,7 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  function handleValueChange(_event: DateTimePickerEvent, selectedDate: Date) {
+  function handleValueChange(_event: DateTimePickerChangeEvent, selectedDate: Date) {
     if (Platform.OS === "android") {
       onChange(selectedDate);
       onConfirm(selectedDate);
