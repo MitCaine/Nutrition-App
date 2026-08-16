@@ -13,11 +13,11 @@ test("serving choices retain useful gram context for non-mass labels", () => {
   expect(formatServingChoiceLabel({ label: "1 slice", gram_weight: "2" })).toBe("1 slice (2g)");
 });
 
-test("recipe serving creation derives the normal label from quantity and unit", () => {
+test("recipe serving creation derives total gram weight from quantity and per-unit weight", () => {
   expect(buildCustomServingDefinition({
     quantity: "2",
     unit: "slices",
-    gramWeight: "56",
+    gramWeightPerUnit: "28",
     customLabel: "",
     useCustomLabel: false,
   })).toEqual({
@@ -29,11 +29,21 @@ test("recipe serving creation derives the normal label from quantity and unit", 
   });
 });
 
+test("recipe serving gram multiplication preserves decimal precision", () => {
+  expect(buildCustomServingDefinition({
+    quantity: "1.5",
+    unit: "slice",
+    gramWeightPerUnit: "28.35",
+    customLabel: "",
+    useCustomLabel: false,
+  })?.gram_weight).toBe("42.525");
+});
+
 test("recipe serving creation supports an explicit display-name override", () => {
   expect(buildCustomServingDefinition({
     quantity: "2",
     unit: "slice",
-    gramWeight: "56",
+    gramWeightPerUnit: "28",
     customLabel: "2 thick-cut slices",
     useCustomLabel: true,
   })?.label).toBe("2 thick-cut slices");
@@ -43,7 +53,7 @@ test("recipe serving creation requires positive structured values", () => {
   expect(buildCustomServingDefinition({
     quantity: "2",
     unit: "slice",
-    gramWeight: "",
+    gramWeightPerUnit: "",
     customLabel: "",
     useCustomLabel: false,
   })).toBeNull();
