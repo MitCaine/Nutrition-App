@@ -206,7 +206,7 @@ export function OcrServingEditor({
         value={value.gramWeight}
         onChangeText={updateServingGramWeight}
         keyboardType="decimal-pad"
-        placeholder={weightReadOnly ? "Calculated" : "Enter label grams"}
+        placeholder={weightReadOnly ? "Calculated" : "e.g. 55"}
         placeholderTextColor={theme.colors.placeholder}
         inputStyle={[styles.input, weightReadOnly && styles.calculatedInput]}
         hint={weightReadOnly

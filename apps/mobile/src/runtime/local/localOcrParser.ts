@@ -103,6 +103,10 @@ const ONLY_AMOUNT = /^(?:<\s*)?\d[\d.,]*\s*(?:mcg|mg|g|q|µg|ug)(?:\s*\d[\d.,]*\
 const ONLY_DAILY_VALUE = /^\d[\d.,]*\s*%$/u;
 const ONLY_CALORIE_AMOUNT = /^\d[\d.,]*$/u;
 const CALORIES_LABEL = /^calories\s*:?$/iu;
+const SERVING_SIZE_LABEL_ONLY = /^serving\s+size\s*:?\s*$/iu;
+const SERVING_SIZE_VALUE = /^(?:\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?(?:\s*\(\s*\d+(?:[.,]\d+)?\s*g\s*\))?\s*$/iu;
+const SERVING_SIZE_WITHOUT_GRAMS = /^serving\s+size\s*:?\s*(?:\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?\s*$/iu;
+const ONLY_SERVING_GRAMS = /^\(\s*\d+(?:[.,]\d+)?\s*g\s*\)$/iu;
 
 function invalidParse(message: string, location: readonly (string | number)[] = []): LocalRuntimeError {
   return new LocalRuntimeError({
@@ -347,6 +351,28 @@ function prepareJoinedLines(lines: readonly SourceLine[]): SourceLine[] {
     const current = lines[index]!;
     const next = lines[index + 1];
     if (next) {
+      if (SERVING_SIZE_LABEL_ONLY.test(current.text) && SERVING_SIZE_VALUE.test(next.text)) {
+        let joined = mergeLines(current, next);
+        const following = lines[index + 2];
+        if (
+          following
+          && SERVING_SIZE_WITHOUT_GRAMS.test(joined.text)
+          && ONLY_SERVING_GRAMS.test(following.text)
+        ) {
+          joined = mergeLines(joined, following);
+          prepared.push(joined);
+          index += 3;
+          continue;
+        }
+        prepared.push(joined);
+        index += 2;
+        continue;
+      }
+      if (SERVING_SIZE_WITHOUT_GRAMS.test(current.text) && ONLY_SERVING_GRAMS.test(next.text)) {
+        prepared.push(mergeLines(current, next));
+        index += 2;
+        continue;
+      }
       if (CALORIES_LABEL.test(current.text) && ONLY_CALORIE_AMOUNT.test(next.text)) {
         prepared.push(mergeLines(current, next));
         index += 2;

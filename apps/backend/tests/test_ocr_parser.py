@@ -206,3 +206,32 @@ def test_dual_column_calories_selects_per_serving_value() -> None:
         "per-serving-calories",
     ]
     assert "440" in [line.text for line in result.unparsed_lines]
+def test_split_serving_size_observations_preserve_provenance() -> None:
+    result = parse_lines(
+        "Nutrition Facts",
+        "Serving size",
+        "2/3 cup (55 g)",
+        "Calories 100",
+    )
+
+    assert result.serving.serving_size_display.value == "2/3 cup (55 g)"
+    assert result.serving.serving_quantity.value == Decimal("0.666667")
+    assert result.serving.serving_unit.value == "cup"
+    assert result.serving.gram_weight.value == Decimal("55")
+    assert result.serving.serving_quantity.source_observation_ids == ["obs-2", "obs-3"]
+    assert result.serving.gram_weight.source_observation_ids == ["obs-2", "obs-3"]
+
+
+def test_split_serving_gram_observation_preserves_provenance() -> None:
+    result = parse_lines(
+        "Nutrition Facts",
+        "Serving size 2/3 cup",
+        "(55 g)",
+        "Calories 100",
+    )
+
+    assert result.serving.serving_size_display.value == "2/3 cup (55 g)"
+    assert result.serving.serving_quantity.value == Decimal("0.666667")
+    assert result.serving.serving_unit.value == "cup"
+    assert result.serving.gram_weight.value == Decimal("55")
+    assert result.serving.gram_weight.source_observation_ids == ["obs-2", "obs-3"]

@@ -106,8 +106,8 @@ export function draftFromParsedLabel(parsed: ParsedNutritionLabel, imageSourceTy
   return {
     parserVersion: parsed.parser_version, imageSourceType, name: "", brand: "", notes: "",
     servingDisplay: stringValue(parsed.serving?.serving_size_display),
-    servingQuantity: stringValue(parsed.serving?.serving_quantity) || "1",
-    servingUnit: stringValue(parsed.serving?.serving_unit) || "serving",
+    servingQuantity: stringValue(parsed.serving?.serving_quantity),
+    servingUnit: stringValue(parsed.serving?.serving_unit),
     gramWeight: stringValue(parsed.serving?.gram_weight), calories, nutrients: canonical,
     servingProvenance: {
       display: parsed.serving?.serving_size_display ?? null,
