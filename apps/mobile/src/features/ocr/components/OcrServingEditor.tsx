@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -64,6 +64,15 @@ export function OcrServingEditor({
   const [labelMode, setLabelMode] = useState<AmountLabelMode>(() =>
     value.servingDisplay.trim() ? "manual" : "automatic",
   );
+  const initialRecoveryRef = useRef<ServingPatch | null | undefined>(undefined);
+  if (initialRecoveryRef.current === undefined) {
+    const patch: ServingPatch = {};
+    if (initialQuantity !== value.servingQuantity) patch.servingQuantity = initialQuantity;
+    if (initialUnit !== value.servingUnit) patch.servingUnit = initialUnit;
+    if (initialGramWeight !== value.gramWeight) patch.gramWeight = initialGramWeight;
+    initialRecoveryRef.current = Object.keys(patch).length > 0 ? patch : null;
+  }
+  const recoveryPending = initialRecoveryRef.current !== null;
   const canonicalQuantity = normalizeServingQuantityInput(quantityDraft) ?? value.servingQuantity;
   const automaticLabel = generatedAmountDisplayLabel(canonicalQuantity, value.servingUnit);
   const displayLabel = labelMode === "manual"
@@ -73,20 +82,18 @@ export function OcrServingEditor({
   const unitFocus = focusProps("ocr.servingUnit");
 
   useEffect(() => {
-    const recovered = recoverServingDisplay(value.servingDisplay);
-    if (!recovered) return;
-    const patch: ServingPatch = {};
-    if (shouldRecoverQuantity(value.servingQuantity, recovered.quantity)) patch.servingQuantity = recovered.quantity;
-    if (shouldRecoverUnit(value.servingUnit, recovered.unit)) patch.servingUnit = recovered.unit;
-    if (!value.gramWeight.trim() && recovered.gramWeight) patch.gramWeight = recovered.gramWeight;
-    if (Object.keys(patch).length > 0) onChange(patch);
-  }, [onChange, value.gramWeight, value.servingDisplay, value.servingQuantity, value.servingUnit]);
+    const patch = initialRecoveryRef.current;
+    if (!patch) return;
+    initialRecoveryRef.current = null;
+    onChange(patch);
+  }, [onChange]);
 
   useEffect(() => {
+    if (recoveryPending) return;
     const normalizedQuantity = normalizeServingQuantityInput(quantityDraft);
     if (!normalizedQuantity || normalizedQuantity === value.servingQuantity) return;
     onChange({ servingQuantity: normalizedQuantity });
-  }, [onChange, quantityDraft, value.servingQuantity]);
+  }, [onChange, quantityDraft, recoveryPending, value.servingQuantity]);
 
   useEffect(() => {
     if (value.gramWeight.trim() || !weightReadOnly) return;
