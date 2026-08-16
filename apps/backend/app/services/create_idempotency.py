@@ -19,6 +19,42 @@ from app.models.create_idempotency import CreateOperationIdempotency
 CREATE_IDEMPOTENCY_CONSTRAINT = "uq_create_idempotency_user_operation_request"
 
 
+SERVING_REFERENCE_KEYS = (
+    "reference_quantity",
+    "reference_unit",
+    "reference_gram_weight",
+)
+
+
+def omit_null_serving_reference_triplets(value: Any) -> Any:
+    """Preserve pre-0027 request fingerprints when serving references are absent.
+
+    The reference-measurement fields were added after create-idempotency receipts
+    already existed.  Current Pydantic models materialize those optional fields
+    as explicit ``None`` values, whereas historical request payloads had no such
+    keys.  Removing only an all-null serving-reference triplet keeps legacy
+    retries byte-semantically equivalent without changing any other optional
+    field's fingerprint behavior.  Non-null reference measurements remain part
+    of the request fingerprint.
+    """
+    if isinstance(value, dict):
+        result = {
+            key: omit_null_serving_reference_triplets(item)
+            for key, item in value.items()
+        }
+        if all(key in result for key in SERVING_REFERENCE_KEYS) and all(
+            result[key] is None for key in SERVING_REFERENCE_KEYS
+        ):
+            for key in SERVING_REFERENCE_KEYS:
+                result.pop(key)
+        return result
+    if isinstance(value, list):
+        return [omit_null_serving_reference_triplets(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(omit_null_serving_reference_triplets(item) for item in value)
+    return value
+
+
 class CreateOperationIdempotencyConflictError(ValueError):
     code = "create_idempotency_payload_conflict"
     message = (

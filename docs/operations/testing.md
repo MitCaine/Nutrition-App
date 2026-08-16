@@ -259,9 +259,11 @@ certification, so it must not be cited as proof of those gates.
 
 ### Phase 5C4.9 Version 1.0 release gate
 
-The current application migration head is `0021_target_activation_execution`;
-the current control migration head is `ops_0011_phase5c4_recovery_audit`.
-Release qualification does not change either head.
+For the frozen Phase 5C4.9 release boundary, the application head recorded here is
+`0021_target_activation_execution` and the control head is
+`ops_0011_phase5c4_recovery_audit`. Active development now continues from
+`0027_serving_reference_measurement`; this historical release qualification does not rewrite its
+point-in-time application head.
 
 The single authoritative command manifest is
 [Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md). It combines

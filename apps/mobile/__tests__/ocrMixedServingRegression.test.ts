@@ -91,6 +91,7 @@ test("OCR display recovery keeps a mixed fraction in quantity instead of creatin
     servingQuantity: "1.5",
     servingUnit: "cup",
     gramWeight: "208",
+    servingDisplay: "",
   });
   expect(onPatch).not.toHaveBeenCalledWith(
     expect.objectContaining({ servingUnit: "1/2 cup" }),

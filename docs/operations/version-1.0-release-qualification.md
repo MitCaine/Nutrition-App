@@ -5,7 +5,7 @@
 
 ## Release boundary
 
-The current active development head is `0026_food_nutrient_integrity`; the Version 1.0
+The current active development head is `0027_serving_reference_measurement`; the Version 1.0
 release boundary below remains pinned to its historical application head.
 
 The application migration head is `0021_target_activation_execution`; the control migration head

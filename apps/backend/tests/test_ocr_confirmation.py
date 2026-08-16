@@ -264,6 +264,37 @@ def test_confirmation_persists_unambiguous_manually_added_nutrient(client, db_se
     )["resolution"] == "manually added because OCR did not provide it"
 
 
+
+
+def test_confirmation_fingerprint_preserves_pre_0027_null_reference_compatibility():
+    payload = confirmation_payload()
+    current = OcrNutritionConfirmationRequest.model_validate(payload)
+    compatible_fingerprint = _fingerprint(current)
+
+    legacy_payload = current.model_dump(mode="json", exclude={"client_request_id"})
+    for serving in legacy_payload["food"]["serving_definitions"]:
+        serving.pop("reference_quantity", None)
+        serving.pop("reference_unit", None)
+        serving.pop("reference_gram_weight", None)
+    from hashlib import sha256
+    legacy_fingerprint = sha256(
+        json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert compatible_fingerprint == legacy_fingerprint
+
+    with_reference = deepcopy(payload)
+    default = next(
+        serving for serving in with_reference["food"]["serving_definitions"]
+        if serving["is_default"]
+    )
+    default.update(
+        reference_quantity="1",
+        reference_unit="cup",
+        reference_gram_weight="30",
+    )
+    referenced = OcrNutritionConfirmationRequest.model_validate(with_reference)
+    assert _fingerprint(referenced) != legacy_fingerprint
+
 def test_confirmation_idempotent_replay_and_payload_conflict(client, db_session):
     payload = confirmation_payload()
     first = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)

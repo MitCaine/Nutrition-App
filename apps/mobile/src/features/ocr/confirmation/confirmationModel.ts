@@ -1,5 +1,5 @@
 import type { FoodMutationInput, NutrientDefinition } from "../../foods/api/types";
-import { generatedAmountLabel } from "../../foods/utils/amountForm";
+import { generatedAmountLabel, normalizeServingQuantityInput } from "../../foods/utils/amountForm";
 import type { NutrientUnit } from "../../../shared/nutrition/types";
 import type {
   ConfirmationField, NutritionConfirmationDraft, OcrConfirmationInput,
@@ -222,6 +222,25 @@ export function confirmationValidationIssues(draft: NutritionConfirmationDraft):
   if (!isPositiveDecimalString(draft.gramWeight)) {
     issues.push({ message: "Serving grams must be a positive number.", fieldKey: "serving.gram_weight" });
   }
+  const referenceParts = [
+    draft.servingReferenceQuantity,
+    draft.servingReferenceUnit,
+    draft.servingReferenceGramWeight,
+  ];
+  const hasReference = referenceParts.some((value) => value != null);
+  const completeReference = referenceParts.every((value) => typeof value === "string" && value.trim().length > 0);
+  if (hasReference && !completeReference) {
+    issues.push({ message: "Reference measurement requires quantity, unit, and grams.", fieldKey: "serving.quantity" });
+  } else if (completeReference && (
+    !isPositiveDecimalString(draft.servingReferenceQuantity as string)
+    || !(draft.servingReferenceUnit as string).trim()
+    || !isPositiveDecimalString(draft.servingReferenceGramWeight as string)
+  )) {
+    issues.push({ message: "Reference measurement must use positive quantity and gram values.", fieldKey: "serving.quantity" });
+  }
+  if (draft.servingConversionReviewRequired) {
+    issues.push({ message: "Check the serving quantity before saving.", fieldKey: "serving.quantity" });
+  }
   const fields = [draft.calories, ...draft.nutrients];
   for (const field of fields) {
     if (field.decision === "unresolved") {
@@ -276,13 +295,30 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
   if (confirmationValidationError(draft)) return null;
   const fields = [draft.calories, ...draft.nutrients];
   const nutrients = fields.map(retainedNutrient).filter((value): value is NonNullable<typeof value> => Boolean(value));
-  const grams = draft.gramWeight;
-  const servingLabel = draft.servingDisplay.trim() || generatedAmountLabel(draft.servingQuantity, draft.servingUnit);
+  const currentQuantity = normalizeServingQuantityInput(draft.servingQuantity) ?? draft.servingQuantity;
+  const grams = normalizeServingQuantityInput(draft.gramWeight) ?? draft.gramWeight;
+  const hasPersistedReference = draft.servingReferenceQuantity != null
+    && draft.servingReferenceUnit != null
+    && draft.servingReferenceGramWeight != null;
+  const rawReferenceQuantity = hasPersistedReference ? draft.servingReferenceQuantity as string : currentQuantity;
+  const rawReferenceGrams = hasPersistedReference ? draft.servingReferenceGramWeight as string : grams;
+  const referenceQuantity = normalizeServingQuantityInput(rawReferenceQuantity) ?? rawReferenceQuantity;
+  const referenceGrams = normalizeServingQuantityInput(rawReferenceGrams) ?? rawReferenceGrams;
+  const servingLabel = draft.servingDisplay.trim() || generatedAmountLabel(currentQuantity, draft.servingUnit);
   const food: FoodMutationInput = {
     name: draft.name.trim(), brand: draft.brand.trim() || null, notes: draft.notes.trim() || null,
     serving_definitions: [
       { label: "100 g", quantity: "100", unit: "g", gram_weight: "100", is_default: false },
-      { label: servingLabel, quantity: draft.servingQuantity || "1", unit: draft.servingUnit || "serving", gram_weight: grams, is_default: true },
+      {
+        label: servingLabel,
+        quantity: currentQuantity || "1",
+        unit: draft.servingUnit || "serving",
+        gram_weight: grams,
+        is_default: true,
+        reference_quantity: referenceQuantity || "1",
+        reference_unit: hasPersistedReference ? (draft.servingReferenceUnit as string) : (draft.servingUnit || "serving"),
+        reference_gram_weight: referenceGrams,
+      },
     ],
     nutrients,
   };

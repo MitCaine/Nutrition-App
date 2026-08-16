@@ -79,33 +79,7 @@ def test_postgresql_reflection_defaults_are_normalized_without_hiding_changes() 
 
 
 def _current_source_schema() -> dict:
-    observed = deepcopy(SOURCE_SCHEMA)
-    food = observed["tables"]["food_nutrients"]
-
-    food["checks"].append(
-        deepcopy(
-            e2_15_exporter.EXPECTED_0026_FOOD_NUTRIENT_CHECK
-        )
-    )
-    food["unique_constraints"].append(
-        deepcopy(
-            e2_15_exporter.EXPECTED_0026_FOOD_NUTRIENT_UNIQUE
-        )
-    )
-
-    food["checks"].sort(
-        key=lambda item: (
-            item["name"] or "",
-            item["expression"],
-        )
-    )
-    food["unique_constraints"].sort(
-        key=lambda item: (
-            item["name"] or "",
-            item["columns"],
-        )
-    )
-    return observed
+    return deepcopy(SOURCE_SCHEMA)
 
 
 class _SchemaQualificationConnection:

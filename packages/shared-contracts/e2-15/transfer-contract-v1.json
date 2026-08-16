@@ -1,0 +1,426 @@
+{
+  "contract_version": "e2-15.v1",
+  "format": "nutrition-personal-transfer",
+  "format_version": "1",
+  "codec_version": "e2-02.v1",
+  "maximum_bytes": 67108864,
+  "nutrient_catalog_digest": "3c9466c127f770a2cd6d97a0c8252d945e784b57cff8e20653116ef4f56080d7",
+  "target_schema_descriptor_digest": "53e2a2f2343ea28eb085c352a99174fb806c091ebf2b15f451d485daabc72f94",
+  "source": {
+    "postgres_major": "16",
+    "alembic_revision": "0025_immutable_validator_head",
+    "schema_contract": "e2-15.pg-0025.v1",
+    "schema_descriptor_digest": "86a85f715671eaab93d2d9f787350fe2953b07f5b17494330f1f899727b224ba",
+    "expected_public_tables": [
+      "alembic_version",
+      "create_operation_idempotency",
+      "daily_log_nutrient_snapshots",
+      "daily_logs",
+      "food_favorites",
+      "food_items",
+      "food_nutrients",
+      "food_sources",
+      "nutrient_reference_values",
+      "nutrients",
+      "nutrition_targets",
+      "ocr_nutrition_confirmation_traces",
+      "ocr_scans",
+      "parse_results",
+      "parser_corrections",
+      "phase5c_activation_runtime_commands",
+      "phase5c_activation_schema_evidence",
+      "phase5c_conversion_metadata",
+      "phase5c_conversion_outcomes",
+      "phase5c_conversion_runs",
+      "phase5c_promotion_target_identity",
+      "phase5c_write_fence_events",
+      "phase5c_write_fence_state",
+      "recipe_ingredients",
+      "recipe_publication_amount_definitions",
+      "recipe_publication_nutrients",
+      "recipe_publication_revisions",
+      "recipes",
+      "serving_definitions",
+      "user_profiles",
+      "users"
+    ],
+    "optional_public_tables": [
+      "phase5c_conversion_clone_marker"
+    ],
+    "required_immutable_triggers": [
+      "phase0020_daily_log_update_guard",
+      "phase0020_ocr_trace_immutable_row",
+      "phase0020_ocr_trace_immutable_truncate",
+      "phase0020_revision_amount_immutable_row",
+      "phase0020_revision_amount_immutable_truncate",
+      "phase0020_revision_immutable_row",
+      "phase0020_revision_immutable_truncate",
+      "phase0020_revision_nutrient_immutable_row",
+      "phase0020_revision_nutrient_immutable_truncate",
+      "phase0020_snapshot_immutable_truncate",
+      "phase0020_snapshot_mutation_guard",
+      "phase0020_snapshot_replacement_completion"
+    ],
+    "required_immutable_routines": [
+      "phase0020_delete_log_snapshots_for_replacement",
+      "phase0020_guard_daily_log_mutation",
+      "phase0020_guard_snapshot_mutation",
+      "phase0020_immutable_provenance_integrity_valid",
+      "phase0020_reject_immutable_row_mutation",
+      "phase0020_reject_immutable_truncate",
+      "phase0020_require_snapshot_replacement_completion",
+      "phase0020_resource_membership_integrity_valid",
+      "phase5c_local_admission_v3"
+    ]
+  },
+  "target": {
+    "sqlite_schema_version": 1,
+    "migration_ids": ["001_initial_runtime_schema"]
+  },
+  "idempotency": {
+    "policy_version": "e2-15.idempotency.v1",
+    "copied_operations": [
+      "food.add_serving",
+      "food.create_manual",
+      "food.duplicate",
+      "recipe.create",
+      "recipe.publish"
+    ],
+    "translated_operations": ["log.update"],
+    "reconstructed_operations": ["log.create"],
+    "excluded_operations": ["log.delete"]
+  },
+  "sections": [
+    {
+      "name": "users",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["email", "text"],
+        ["display_name", "nullable_text"],
+        ["created_at", "instant"]
+      ]
+    },
+    {
+      "name": "user_profiles",
+      "primary_key": ["user_id"],
+      "columns": [
+        ["user_id", "uuid"],
+        ["birth_date", "nullable_date"],
+        ["height_cm", "nullable_numeric_8_3"],
+        ["weight_kg", "nullable_numeric_8_3"],
+        ["biological_sex_for_reference_calculations", "nullable_text"],
+        ["activity_level", "nullable_text"],
+        ["energy_estimation_context", "text"],
+        ["authoritative_time_zone", "nullable_time_zone"],
+        ["calendar_revision", "nonnegative_integer"],
+        ["created_at", "instant"],
+        ["updated_at", "instant"]
+      ]
+    },
+    {
+      "name": "food_items",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["name", "text"],
+        ["brand", "nullable_text"],
+        ["source_type", "text"],
+        ["source_id", "nullable_text"],
+        ["recipe_publication_revision_id", "nullable_uuid"],
+        ["is_recipe", "boolean"],
+        ["notes", "nullable_text"],
+        ["created_at", "instant"],
+        ["updated_at", "instant"],
+        ["deleted_at", "nullable_instant"]
+      ]
+    },
+    {
+      "name": "food_sources",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["source_type", "text"],
+        ["external_id", "nullable_text"],
+        ["raw_payload", "nullable_json_document"],
+        ["metadata", "nullable_json_document"],
+        ["created_at", "instant"]
+      ]
+    },
+    {
+      "name": "food_nutrients",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["nutrient_id", "nutrient_id"],
+        ["amount", "nullable_numeric_14_6"],
+        ["unit", "text"],
+        ["basis", "text"],
+        ["data_status", "nutrient_status"],
+        ["confidence", "nullable_numeric_5_4"],
+        ["source", "text"],
+        ["is_user_confirmed", "boolean"],
+        ["original_amount", "nullable_numeric_14_6"],
+        ["original_unit", "nullable_text"],
+        ["original_text", "nullable_text"],
+        ["created_at", "instant"],
+        ["updated_at", "instant"]
+      ]
+    },
+    {
+      "name": "serving_definitions",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["label", "text"],
+        ["quantity", "numeric_14_6"],
+        ["unit", "text"],
+        ["gram_weight", "nullable_numeric_14_6"],
+        ["is_default", "boolean"],
+        ["source", "text"],
+        ["confidence", "nullable_numeric_5_4"],
+        ["is_user_confirmed", "boolean"]
+      ]
+    },
+    {
+      "name": "food_favorites",
+      "primary_key": ["user_id", "food_item_id"],
+      "columns": [
+        ["user_id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["created_at", "instant"]
+      ]
+    },
+    {
+      "name": "recipes",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["published_food_item_id", "nullable_uuid"],
+        ["active_publication_revision_id", "nullable_uuid"],
+        ["name", "text"],
+        ["notes", "nullable_text"],
+        ["serving_count_yield", "nullable_numeric_14_6"],
+        ["final_cooked_weight_grams", "nullable_numeric_14_6"],
+        ["final_cooked_weight_display_quantity", "nullable_numeric_14_6"],
+        ["final_cooked_weight_display_unit", "nullable_text"],
+        ["needs_republish", "boolean"],
+        ["created_at", "instant"],
+        ["updated_at", "instant"],
+        ["deleted_at", "nullable_instant"]
+      ]
+    },
+    {
+      "name": "recipe_ingredients",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["recipe_id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["position", "nonnegative_integer"],
+        ["amount_quantity", "numeric_14_6"],
+        ["amount_unit", "text"],
+        ["amount_display_quantity", "nullable_numeric_14_6"],
+        ["amount_display_unit", "nullable_text"],
+        ["serving_definition_id", "nullable_uuid"],
+        ["resolved_gram_amount", "nullable_numeric_14_6"],
+        ["preparation_note", "nullable_text"]
+      ]
+    },
+    {
+      "name": "recipe_publication_revisions",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["recipe_id", "uuid"],
+        ["user_id", "uuid"],
+        ["revision_number", "positive_integer"],
+        ["published_at", "instant"],
+        ["creation_origin", "publication_origin"],
+        ["provenance_confidence", "publication_confidence"],
+        ["published_name", "text"],
+        ["published_notes", "nullable_text"],
+        ["content_digest", "sha256"]
+      ]
+    },
+    {
+      "name": "recipe_publication_amount_definitions",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["revision_id", "uuid"],
+        ["display_order", "nonnegative_integer"],
+        ["display_label", "text"],
+        ["semantic_mode", "publication_amount_mode"],
+        ["display_quantity", "nullable_numeric_14_6"],
+        ["display_unit", "text"],
+        ["gram_equivalent", "nullable_numeric_14_6"],
+        ["is_default", "boolean"],
+        ["conversion_metadata", "nullable_json_document"]
+      ]
+    },
+    {
+      "name": "recipe_publication_nutrients",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["revision_id", "uuid"],
+        ["nutrient_id", "nutrient_id"],
+        ["amount", "nullable_numeric_14_6"],
+        ["unit", "text"],
+        ["basis", "publication_nutrient_basis"],
+        ["data_status", "nutrient_status"],
+        ["diagnostic_provenance", "nullable_json_document"]
+      ]
+    },
+    {
+      "name": "daily_logs",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["food_name_snapshot", "nullable_text"],
+        ["client_request_id", "nullable_uuid"],
+        ["client_request_fingerprint", "nullable_sha256"],
+        ["logged_date", "date"],
+        ["meal_type", "nullable_text"],
+        ["amount_quantity", "numeric_14_6"],
+        ["amount_unit", "text"],
+        ["serving_definition_id", "nullable_uuid"],
+        ["recipe_publication_revision_id", "nullable_uuid"],
+        ["recipe_publication_amount_definition_id", "nullable_uuid"],
+        ["gram_amount", "nullable_numeric_14_6"],
+        ["package_fraction", "nullable_numeric_14_6"],
+        ["notes", "nullable_text"],
+        ["created_at", "instant"],
+        ["updated_at", "instant"]
+      ]
+    },
+    {
+      "name": "daily_log_nutrient_snapshots",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["daily_log_id", "uuid"],
+        ["source_food_item_id", "uuid"],
+        ["source_food_nutrient_id", "nullable_uuid"],
+        ["serving_definition_id", "nullable_uuid"],
+        ["nutrient_id", "nutrient_id"],
+        ["amount", "nullable_numeric_14_6"],
+        ["unit", "text"],
+        ["data_status", "nutrient_status"],
+        ["consumed_amount_quantity", "numeric_14_6"],
+        ["consumed_amount_unit", "text"],
+        ["consumed_gram_amount", "nullable_numeric_14_6"],
+        ["consumed_package_fraction", "nullable_numeric_14_6"],
+        ["calculation_metadata", "nullable_json_document"]
+      ]
+    },
+    {
+      "name": "ocr_nutrition_confirmation_traces",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["food_item_id", "uuid"],
+        ["parser_version", "text"],
+        ["image_source_type", "image_source_type"],
+        ["schema_version", "ocr_trace_schema"],
+        ["trace_snapshot", "json_document"],
+        ["client_request_id", "uuid"],
+        ["request_fingerprint", "sha256"],
+        ["confirmed_at", "instant"]
+      ]
+    },
+    {
+      "name": "nutrition_targets",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["target_type", "text"],
+        ["nutrient_id", "nutrient_id"],
+        ["min_amount", "nullable_numeric_14_6"],
+        ["target_amount", "nullable_numeric_14_6"],
+        ["max_amount", "nullable_numeric_14_6"],
+        ["unit", "text"],
+        ["basis", "text"],
+        ["source", "text"],
+        ["metadata", "nullable_json_document"],
+        ["created_at", "instant"],
+        ["updated_at", "instant"]
+      ]
+    },
+    {
+      "name": "create_operation_idempotency",
+      "primary_key": ["id"],
+      "columns": [
+        ["id", "uuid"],
+        ["user_id", "uuid"],
+        ["operation", "idempotency_operation"],
+        ["client_request_id", "uuid"],
+        ["request_fingerprint", "sha256"],
+        ["resource_id", "uuid"],
+        ["response_snapshot", "json_document"],
+        ["completed_at", "instant"],
+        ["created_at", "instant"]
+      ]
+    }
+  ],
+  "enums": {
+    "idempotency_operation": [
+      "food.add_serving",
+      "food.create_manual",
+      "food.duplicate",
+      "log.create",
+      "log.update",
+      "recipe.create",
+      "recipe.publish"
+    ],
+    "image_source_type": ["camera", "photo_library"],
+    "nutrient_status": ["estimated", "known", "unknown", "zero"],
+    "ocr_trace_schema": ["ocr_nutrition_confirmation_v1"],
+    "publication_amount_mode": ["g", "serving"],
+    "publication_confidence": ["ambiguous", "complete", "partial", "transition_baseline"],
+    "publication_nutrient_basis": ["per_100g", "per_gram", "per_serving"],
+    "publication_origin": ["explicit_republish", "legacy_projection_capture", "normal_publication"]
+  },
+  "qualification": {
+    "daily_totals_columns": [
+      ["logged_date", "date"],
+      ["nutrient_id", "nutrient_id"],
+      ["amount_known", "response_decimal"],
+      ["amount_estimated", "response_decimal"],
+      ["unit", "text"],
+      ["has_unknown_contributors", "boolean"],
+      ["unknown_contributor_count", "nonnegative_integer"]
+    ],
+    "daily_totals_primary_key": ["logged_date", "nutrient_id"]
+  },
+  "privacy": {
+    "forbidden_package_sections": [
+      "nutrients",
+      "nutrient_reference_values",
+      "ocr_scans",
+      "parse_results",
+      "parser_corrections"
+    ],
+    "forbidden_ocr_trace_keys": [
+      "bounding_box",
+      "full_text",
+      "image",
+      "image_metadata",
+      "image_path",
+      "image_uri",
+      "ocr_engine",
+      "raw_ocr_payload"
+    ]
+  }
+}

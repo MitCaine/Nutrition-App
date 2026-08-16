@@ -15,7 +15,7 @@ DESCRIPTOR_PATH = (
 def test_pg_0024_source_descriptor_is_complete_frozen_and_digest_bound() -> None:
     frozen = json.loads(DESCRIPTOR_PATH.read_text(encoding="utf-8"))
 
-    assert frozen["descriptor_version"] == "e2-15.pg-0025.schema.v1"
+    assert frozen["descriptor_version"] == "e2-15.pg-0027.schema.v2"
     assert len(frozen["tables"]) == 31
     assert set(frozen["tables"]) == set(CONTRACT["source"]["expected_public_tables"])
     assert CONTRACT["source"]["optional_public_tables"] == [

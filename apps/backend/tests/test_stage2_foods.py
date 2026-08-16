@@ -177,6 +177,94 @@ def test_add_custom_serving_definition_to_existing_food(client: TestClient) -> N
     assert custom["is_default"] is False
 
 
+def test_serving_reference_measurement_round_trips_and_updates(client: TestClient) -> None:
+    payload = food_payload("Honey Dressing")
+    payload["serving_definitions"][0] = {
+        "label": "16 tbsp",
+        "quantity": "16",
+        "unit": "tbsp",
+        "gram_weight": "100",
+        "reference_quantity": "1",
+        "reference_unit": "cup",
+        "reference_gram_weight": "100",
+        "is_default": True,
+    }
+    create = client.post("/api/v1/foods", json=payload)
+    assert create.status_code == 201, create.text
+    serving = create.json()["serving_definitions"][0]
+    assert serving["quantity"] == "16.000000"
+    assert serving["unit"] == "tbsp"
+    assert serving["gram_weight"] == "100.000000"
+    assert serving["reference_quantity"] == "1.000000"
+    assert serving["reference_unit"] == "cup"
+    assert serving["reference_gram_weight"] == "100.000000"
+
+    duplicate = client.post(f"/api/v1/foods/{create.json()['id']}/duplicate")
+    assert duplicate.status_code == 201, duplicate.text
+    duplicated_serving = duplicate.json()["serving_definitions"][0]
+    assert duplicated_serving["quantity"] == "16.000000"
+    assert duplicated_serving["unit"] == "tbsp"
+    assert duplicated_serving["gram_weight"] == "100.000000"
+    assert duplicated_serving["reference_quantity"] == "1.000000"
+    assert duplicated_serving["reference_unit"] == "cup"
+    assert duplicated_serving["reference_gram_weight"] == "100.000000"
+
+    update_payload = food_payload("Honey Dressing")
+    update_payload["serving_definitions"][0] = {
+        "label": "16 tbsp",
+        "quantity": "16",
+        "unit": "tbsp",
+        "gram_weight": "100",
+        "reference_quantity": "1",
+        "reference_unit": "cup",
+        "reference_gram_weight": "110",
+        "is_default": True,
+    }
+    update = client.patch(
+        f"/api/v1/foods/{create.json()['id']}", json=update_payload
+    )
+    assert update.status_code == 200, update.text
+    updated_serving = update.json()["serving_definitions"][0]
+    assert updated_serving["reference_quantity"] == "1.000000"
+    assert updated_serving["reference_unit"] == "cup"
+    assert updated_serving["reference_gram_weight"] == "110.000000"
+
+    retrieved = client.get(f"/api/v1/foods/{create.json()['id']}").json()
+    persisted = retrieved["serving_definitions"][0]
+    assert persisted["reference_quantity"] == "1.000000"
+    assert persisted["reference_unit"] == "cup"
+    assert persisted["reference_gram_weight"] == "110.000000"
+
+    plain = create_food(client, "Plain Servings Food")
+    assert plain["serving_definitions"][0]["reference_quantity"] is None
+    assert plain["serving_definitions"][0]["reference_unit"] is None
+    assert plain["serving_definitions"][0]["reference_gram_weight"] is None
+
+
+@pytest.mark.parametrize(
+    "reference_patch",
+    [
+        {"reference_quantity": "1"},
+        {"reference_unit": "cup"},
+        {"reference_gram_weight": "100"},
+        {"reference_quantity": "1", "reference_unit": "cup"},
+        {"reference_quantity": "1", "reference_gram_weight": "100"},
+        {"reference_unit": "cup", "reference_gram_weight": "100"},
+        {"reference_quantity": "0", "reference_unit": "cup", "reference_gram_weight": "100"},
+        {"reference_quantity": "1", "reference_unit": "cup", "reference_gram_weight": "0"},
+        {"reference_quantity": "1", "reference_unit": "   ", "reference_gram_weight": "100"},
+    ],
+)
+def test_serving_reference_measurement_is_complete_or_absent(
+    client: TestClient,
+    reference_patch: dict,
+) -> None:
+    payload = food_payload("Reference Validation")
+    payload["serving_definitions"][0].update(reference_patch)
+    response = client.post("/api/v1/foods", json=payload)
+    assert response.status_code == 422, response.text
+
+
 def _create_recipe_using_food(client: TestClient, food: dict, name: str, positions: list[int] | None = None) -> dict:
     positions = positions or [0]
     payload = {

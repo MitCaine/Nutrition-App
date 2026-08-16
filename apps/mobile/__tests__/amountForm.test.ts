@@ -5,11 +5,13 @@ import {
   AMOUNT_UNIT_GROUPS,
   canonicalBaseAmount,
   createUnitPickerDraftState,
+  currentVolumeAnchor,
   DEFAULT_AMOUNT_WEIGHT_MESSAGE,
   divideAmountValues,
   formatServingGramForDisplay,
   formatServingLabelForDisplay,
   formatServingQuantityForDisplay,
+  exactCurrentGrams,
   generatedAmountDisplayLabel,
   generatedAmountLabel,
   isCanonicalBaseAmount,
@@ -21,7 +23,9 @@ import {
   repairLegacyStructuredAmount,
   dedupeCanonicalBaseAmounts,
   repairDuplicateAmountKeys,
+  recalculateCurrentForReferenceEdit,
   revealCustomUnit,
+  scaledCurrentGrams,
   selectedUnitGroup,
   unitChoiceSelected,
   type AmountFormValue,
@@ -61,6 +65,52 @@ test("serving per-unit weight arithmetic is deterministic", () => {
   expect(multiplyAmountValues("1.5", "28.35")).toBe("42.525");
   expect(divideAmountValues("56", "2")).toBe("28");
   expect(divideAmountValues("42.525", "1.5")).toBe("28.35");
+});
+
+
+test("stable references derive current grams without promoting rounded display values", () => {
+  const reference = { quantity: "1", unit: "cup", gramWeight: "100" };
+  expect(exactCurrentGrams("8", "tbsp", reference)).toBe("50");
+  expect(exactCurrentGrams("2", "oz", reference)).toBe("56.699046");
+  expect(scaledCurrentGrams("2", "100", "1")).toBe("50");
+});
+
+test("current volume anchors represent the current physical amount rather than the full stable reference", () => {
+  const reference = { quantity: "1", unit: "cup", gramWeight: "100" };
+  expect(currentVolumeAnchor({ quantity: "8", unit: "tbsp", gramWeight: "50" }, reference)).toEqual({
+    quantity: "0.5", unit: "cup",
+  });
+  expect(currentVolumeAnchor({ quantity: "3.53", unit: "oz", gramWeight: "100" }, reference)).toEqual({
+    quantity: "1", unit: "cup",
+  });
+});
+
+test("reference edits recalculate compatible current representations without replacing their unit", () => {
+  const previous = { quantity: "1", unit: "cup", gramWeight: "100" };
+  const next = { quantity: "1", unit: "cup", gramWeight: "110" };
+  expect(recalculateCurrentForReferenceEdit({ quantity: "16", unit: "tbsp", gramWeight: "100" }, previous, next)).toEqual({
+    quantity: "16", gramWeight: "110",
+  });
+  expect(recalculateCurrentForReferenceEdit({ quantity: "8", unit: "tbsp", gramWeight: "50" }, previous, next)).toEqual({
+    quantity: "8", gramWeight: "55",
+  });
+  expect(recalculateCurrentForReferenceEdit({ quantity: "3.53", unit: "oz", gramWeight: "100" }, previous, next)).toEqual({
+    quantity: "3.88", gramWeight: "110",
+  });
+});
+
+test("reference edits use the new count/custom relationship only for the same unit", () => {
+  expect(recalculateCurrentForReferenceEdit(
+    { quantity: "2", unit: "piece", gramWeight: "100" },
+    { quantity: "2", unit: "piece", gramWeight: "100" },
+    { quantity: "1", unit: "piece", gramWeight: "100" },
+  )).toEqual({ quantity: "2", gramWeight: "200" });
+
+  expect(recalculateCurrentForReferenceEdit(
+    { quantity: "8", unit: "tsp", gramWeight: "50" },
+    { quantity: "8", unit: "tsp", gramWeight: "50" },
+    { quantity: "1", unit: "piece", gramWeight: "100" },
+  )).toBeNull();
 });
 
 test("serving per-unit weight arithmetic rejects empty and non-positive values", () => {
@@ -175,7 +225,7 @@ test("manual display labels survive quantity and unit changes until reset", () =
   const manual = { ...portion, label: "1 cup, chopped", labelMode: "manual" as const };
   const changed = applyAmountPatch(manual, { quantity: "3", unit: "cup" });
   expect(changed.label).toBe("1 cup, chopped");
-  expect(applyAmountPatch(changed, { labelMode: "automatic" }).label).toBe("3 cup");
+  expect(applyAmountPatch(changed, { labelMode: "automatic" }).label).toBe("3 cups");
 });
 
 test("mass edits refresh generated label and gram equivalent", () => {

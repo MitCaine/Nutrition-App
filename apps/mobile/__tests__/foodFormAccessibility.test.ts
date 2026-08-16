@@ -208,8 +208,8 @@ test("canonical and custom default controls share a trailing slot and retain low
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit 1 scoop" }).props.onPress());
   expect(StyleSheet.flatten(renderer.root.findByProps({ accessibilityLabel: "Quantity" }).props.style))
     .toMatchObject({ minHeight: 44, paddingHorizontal: 10, paddingVertical: 10 });
-  expect(renderer.root.findByProps({ accessibilityLabel: "Unit" }).props.value).toBe("scoop");
-  expect(renderer.root.findByProps({ accessibilityLabel: "Grams per scoop" }).props.value).toBe("30");
+  expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "Reference measurement")).toBe(true);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Edit reference measurement" })).toBeDefined();
   await act(async () => renderer.unmount());
 });
 
@@ -228,20 +228,20 @@ test("Food serving creation uses the same structured quantity, unit, and per-uni
   expect(add.props.accessibilityHint).toContain("expands");
   await act(async () => add.props.onPress());
 
-  const quantity = renderer.root.findByProps({ accessibilityLabel: "Quantity" });
-  const unit = renderer.root.findByProps({ accessibilityLabel: "Unit" });
-  expect(quantity.props.value).toBe("1");
-  expect(unit.props.value).toBe("");
+  const referenceQuantity = renderer.root.findByProps({ accessibilityLabel: "Reference quantity" });
+  const referenceUnit = renderer.root.findByProps({ accessibilityLabel: "Reference unit" });
+  expect(referenceQuantity.props.value).toBe("1");
+  expect(referenceUnit.props.value).toBe("");
 
-  await act(async () => unit.props.onChangeText("slice"));
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Quantity" }).props.onChangeText("2"));
-  const gramsPerSlice = renderer.root.findByProps({ accessibilityLabel: "Grams per slice" });
-  await act(async () => gramsPerSlice.props.onChangeText("28"));
+  const referenceUnitInput = renderer.root.findAllByProps({ accessibilityLabel: "Reference unit" })
+    .find((node) => typeof node.props.onChangeText === "function")!;
+  await act(async () => referenceUnitInput.props.onChangeText("slice"));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Reference quantity" }).props.onChangeText("2"));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Reference grams" }).props.onChangeText("56"));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Confirm reference measurement" }).props.onPress());
   expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "2 slices (56 g)")).toBe(true);
-
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Quantity" }).props.onChangeText("3"));
-  expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "3 slices (84 g)")).toBe(true);
-  expect(renderer.root.findByProps({ accessibilityLabel: "Customize label for 3 slices" })).toBeDefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: "Edit reference measurement" })).toBeDefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: "Quantity" }).props.value).toBe("2");
   await act(async () => renderer.unmount());
 });
 

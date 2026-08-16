@@ -371,15 +371,34 @@ function normalizedFoodFingerprint(food: FoodMutationInput): unknown {
     name: food.name,
     brand: food.brand ?? null,
     notes: food.notes ?? null,
-    serving_definitions: food.serving_definitions.map((serving, index) => ({
-      label: serving.label,
-      quantity: normalizedDecimal(serving.quantity, ["food", "serving_definitions", index, "quantity"]),
-      unit: serving.unit.trim().toLocaleLowerCase("en-US"),
-      gram_weight: serving.gram_weight == null
-        ? null
-        : normalizedDecimal(serving.gram_weight, ["food", "serving_definitions", index, "gram_weight"]),
-      is_default: serving.is_default,
-    })),
+    serving_definitions: food.serving_definitions.map((serving, index) => {
+      const base = {
+        label: serving.label,
+        quantity: normalizedDecimal(serving.quantity, ["food", "serving_definitions", index, "quantity"]),
+        unit: serving.unit.trim().toLocaleLowerCase("en-US"),
+        gram_weight: serving.gram_weight == null
+          ? null
+          : normalizedDecimal(serving.gram_weight, ["food", "serving_definitions", index, "gram_weight"]),
+        is_default: serving.is_default,
+      };
+      if (
+        serving.reference_quantity == null
+        && serving.reference_unit == null
+        && serving.reference_gram_weight == null
+      ) {
+        return base;
+      }
+      return {
+        ...base,
+        reference_quantity: serving.reference_quantity == null
+          ? null
+          : normalizedDecimal(serving.reference_quantity, ["food", "serving_definitions", index, "reference_quantity"]),
+        reference_unit: serving.reference_unit == null ? null : serving.reference_unit.trim().toLocaleLowerCase("en-US"),
+        reference_gram_weight: serving.reference_gram_weight == null
+          ? null
+          : normalizedDecimal(serving.reference_gram_weight, ["food", "serving_definitions", index, "reference_gram_weight"]),
+      };
+    }),
     nutrients: food.nutrients.map((nutrient, index) => ({
       nutrient_id: nutrient.nutrient_id,
       amount: nutrient.data_status === "zero"

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 
+from app.transfer.e2_15 import CONTRACT
 from app.transfer.e2_15_exporter import TransferExportError, export_personal_transfer
 
 
@@ -42,9 +43,9 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(
             {
                 "byte_count": result.byte_count,
-                "format_version": "1",
+                "format_version": CONTRACT["format_version"],
                 "overall_digest": result.overall_digest,
-                "schema_contract": "e2-15.pg-0025.v1",
+                "schema_contract": CONTRACT["source"]["schema_contract"],
                 "section_counts": dict(result.section_counts),
                 "status": "complete",
             },

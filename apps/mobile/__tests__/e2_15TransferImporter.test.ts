@@ -1,5 +1,6 @@
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
+import legacyRepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
 
 const { mkdtempSync, rmSync } = require("node:fs") as {
   mkdtempSync(prefix: string): string;
@@ -120,6 +121,56 @@ test("imports a validated package in one exclusive transaction and rejects reimp
       .rejects.toMatchObject({ code: "target_not_empty" });
     await expect(database.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS "count" FROM "users"`))
       .resolves.toEqual({ count: 1 });
+  } finally {
+    database.close();
+  }
+});
+
+test("imports a frozen v1 package into the v3 target with null serving references", async () => {
+  const database = await migratedDatabase();
+  try {
+    const result = await importPersonalTransfer(
+      database.asExpoDatabase(),
+      canonicalTransferJson(legacyRepresentativePackage),
+    );
+    expect(result.ownerId).toBe(OWNER);
+    const serving = await database.getFirstAsync<{
+      reference_quantity: string | null;
+      reference_unit: string | null;
+      reference_gram_weight: string | null;
+    }>(`SELECT "reference_quantity", "reference_unit", "reference_gram_weight"
+       FROM "serving_definitions" ORDER BY "id" LIMIT 1`);
+    expect(serving).toEqual({
+      reference_quantity: null,
+      reference_unit: null,
+      reference_gram_weight: null,
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("preserves current and reference serving measurements through a v2 transfer", async () => {
+  const database = await migratedDatabase();
+  try {
+    await importPersonalTransfer(database.asExpoDatabase(), canonicalTransferJson(representativePackage));
+    const serving = await database.getFirstAsync<{
+      quantity: string;
+      unit: string;
+      gram_weight: string | null;
+      reference_quantity: string | null;
+      reference_unit: string | null;
+      reference_gram_weight: string | null;
+    }>(`SELECT "quantity", "unit", "gram_weight", "reference_quantity", "reference_unit", "reference_gram_weight"
+       FROM "serving_definitions" WHERE "id" = ?`, ["00000000-0000-4000-8000-000000000020"]);
+    expect(serving).toEqual({
+      quantity: "1.000000",
+      unit: "serving",
+      gram_weight: "100.000000",
+      reference_quantity: "1.000000",
+      reference_unit: "cup",
+      reference_gram_weight: "100.000000",
+    });
   } finally {
     database.close();
   }

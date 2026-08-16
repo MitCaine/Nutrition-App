@@ -1,6 +1,6 @@
 {
-  "descriptor_version": "e2-15.sqlite-v3.schema.v2",
-  "user_version": 3,
+  "descriptor_version": "e2-15.sqlite-v1.schema.v1",
+  "user_version": 1,
   "objects": [
     {
       "type": "index",
@@ -228,7 +228,7 @@
       "type": "table",
       "name": "serving_definitions",
       "tbl_name": "serving_definitions",
-      "sql": "CREATE TABLE \"serving_definitions\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"label\" TEXT NOT NULL,\n    \"quantity\" TEXT NOT NULL,\n    \"unit\" TEXT NOT NULL,\n    \"gram_weight\" TEXT,\n    \"reference_quantity\" TEXT,\n    \"reference_unit\" TEXT,\n    \"reference_gram_weight\" TEXT,\n    \"is_default\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_default\" IN (0, 1)),\n    \"source\" TEXT NOT NULL,\n    \"confidence\" TEXT,\n    \"is_user_confirmed\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_user_confirmed\" IN (0, 1)),\n    CONSTRAINT \"uq_serving_definitions_identity_food\" UNIQUE (\"id\", \"food_item_id\"),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\")\n  )"
+      "sql": "CREATE TABLE \"serving_definitions\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"food_item_id\" TEXT NOT NULL,\n    \"label\" TEXT NOT NULL,\n    \"quantity\" TEXT NOT NULL,\n    \"unit\" TEXT NOT NULL,\n    \"gram_weight\" TEXT,\n    \"is_default\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_default\" IN (0, 1)),\n    \"source\" TEXT NOT NULL,\n    \"confidence\" TEXT,\n    \"is_user_confirmed\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_user_confirmed\" IN (0, 1)),\n    CONSTRAINT \"uq_serving_definitions_identity_food\" UNIQUE (\"id\", \"food_item_id\"),\n    FOREIGN KEY (\"food_item_id\") REFERENCES \"food_items\" (\"id\")\n  )"
     },
     {
       "type": "table",
@@ -2637,33 +2637,6 @@
         },
         {
           "cid": 6,
-          "name": "reference_quantity",
-          "type": "TEXT",
-          "notnull": 0,
-          "default": null,
-          "primary_key_position": 0,
-          "hidden": 0
-        },
-        {
-          "cid": 7,
-          "name": "reference_unit",
-          "type": "TEXT",
-          "notnull": 0,
-          "default": null,
-          "primary_key_position": 0,
-          "hidden": 0
-        },
-        {
-          "cid": 8,
-          "name": "reference_gram_weight",
-          "type": "TEXT",
-          "notnull": 0,
-          "default": null,
-          "primary_key_position": 0,
-          "hidden": 0
-        },
-        {
-          "cid": 9,
           "name": "is_default",
           "type": "INTEGER",
           "notnull": 1,
@@ -2672,7 +2645,7 @@
           "hidden": 0
         },
         {
-          "cid": 10,
+          "cid": 7,
           "name": "source",
           "type": "TEXT",
           "notnull": 1,
@@ -2681,7 +2654,7 @@
           "hidden": 0
         },
         {
-          "cid": 11,
+          "cid": 8,
           "name": "confidence",
           "type": "TEXT",
           "notnull": 0,
@@ -2690,7 +2663,7 @@
           "hidden": 0
         },
         {
-          "cid": 12,
+          "cid": 9,
           "name": "is_user_confirmed",
           "type": "INTEGER",
           "notnull": 1,

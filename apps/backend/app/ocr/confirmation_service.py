@@ -15,6 +15,7 @@ from app.ocr.confirmation_schemas import (
 )
 from app.repositories.food_repository import FoodRepository
 from app.services.food_service import FoodService
+from app.services.create_idempotency import omit_null_serving_reference_triplets
 
 
 class OcrConfirmationIdempotencyConflict(ValueError):
@@ -24,7 +25,8 @@ class OcrConfirmationIdempotencyConflict(ValueError):
 def _fingerprint(payload: OcrNutritionConfirmationRequest) -> str:
     """Hash canonical mappings/scalars while preserving semantically meaningful array order."""
     value = payload.model_dump(mode="json", exclude={"client_request_id"})
-    return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    compatible = omit_null_serving_reference_triplets(value)
+    return sha256(json.dumps(compatible, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _is_confirmation_request_unique_conflict(exc: IntegrityError) -> bool:

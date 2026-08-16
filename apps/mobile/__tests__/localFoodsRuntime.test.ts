@@ -7,6 +7,7 @@ import {
   type LocalFoodMutationStage,
 } from "../src/runtime/local";
 import type { FoodCreateInput } from "../src/features/foods/api/types";
+import { serializeCalendarPreviewTokenPayload } from "../src/runtime/local/localCalendarRuntime";
 
 const parityFixture = require("../../../packages/shared-contracts/e2-05/food-parity-fixtures.json") as {
   manual_serving_resolution: {
@@ -37,6 +38,9 @@ type ServingRow = {
   quantity: string;
   unit: string;
   gram_weight: string | null;
+  reference_quantity: string | null;
+  reference_unit: string | null;
+  reference_gram_weight: string | null;
   is_default: number;
   source: string;
   is_user_confirmed: number;
@@ -232,10 +236,14 @@ class FoodSQLiteFake {
       return;
     }
     if (source.includes('INSERT INTO "serving_definitions"')) {
-      const [id, foodId, label, quantity, unit, gramWeight, isDefault] = params;
+      const [id, foodId, label, quantity, unit, gramWeight, referenceQuantity, referenceUnit, referenceGramWeight, isDefault] = params;
       this.state.servings.push({
         id: String(id), food_item_id: String(foodId), label: String(label), quantity: String(quantity), unit: String(unit),
-        gram_weight: gramWeight == null ? null : String(gramWeight), is_default: Number(isDefault),
+        gram_weight: gramWeight == null ? null : String(gramWeight),
+        reference_quantity: referenceQuantity == null ? null : String(referenceQuantity),
+        reference_unit: referenceUnit == null ? null : String(referenceUnit),
+        reference_gram_weight: referenceGramWeight == null ? null : String(referenceGramWeight),
+        is_default: Number(isDefault),
         source: source.includes("'usda_fdc', 0") ? "usda_fdc" : "manual",
         is_user_confirmed: source.includes("'usda_fdc', 0") ? 0 : 1,
       });
@@ -385,6 +393,9 @@ function appendSimpleFood(
     quantity: "1.000000",
     unit: "serving",
     gram_weight: "50.000000",
+    reference_quantity: null,
+    reference_unit: null,
+    reference_gram_weight: null,
     is_default: 1,
     source: input.sourceType === "recipe" ? "recipe" : "manual",
     is_user_confirmed: input.sourceType === "recipe" ? 0 : 1,
@@ -392,6 +403,104 @@ function appendSimpleFood(
 }
 
 describe("E2-05 local Foods runtime", () => {
+  test("persists, reloads, updates, and duplicates current and reference serving measurements independently", async () => {
+    const fake = new FoodSQLiteFake();
+    const runtime = createLocalFoodsRuntime(database(fake), OWNER);
+    const created = await runtime.create({
+      ...foodInput({
+        serving_definitions: [{
+          label: "8 Tbsp",
+          quantity: "8",
+          unit: "tbsp",
+          gram_weight: "50",
+          reference_quantity: "1",
+          reference_unit: "cup",
+          reference_gram_weight: "100",
+          is_default: true,
+        }],
+      }),
+      client_request_id: "00000000-0000-4000-8000-000000000301",
+    });
+
+    expect(created.serving_definitions[0]).toMatchObject({
+      quantity: "8.000000",
+      unit: "tbsp",
+      gram_weight: "50.000000",
+      reference_quantity: "1.000000",
+      reference_unit: "cup",
+      reference_gram_weight: "100.000000",
+    });
+    await expect(createLocalFoodsRuntime(database(fake), OWNER).get(created.id)).resolves.toMatchObject({
+      serving_definitions: [expect.objectContaining({
+        quantity: "8.000000",
+        unit: "tbsp",
+        gram_weight: "50.000000",
+        reference_quantity: "1.000000",
+        reference_unit: "cup",
+        reference_gram_weight: "100.000000",
+      })],
+    });
+
+    const updated = await runtime.update(created.id, foodInput({
+      name: "Updated reference oats",
+      serving_definitions: [{
+        label: "4 Tbsp",
+        quantity: "4",
+        unit: "tbsp",
+        gram_weight: "25",
+        reference_quantity: "1",
+        reference_unit: "cup",
+        reference_gram_weight: "100",
+        is_default: true,
+      }],
+    }));
+    expect(updated.serving_definitions[0]).toMatchObject({
+      quantity: "4.000000",
+      gram_weight: "25.000000",
+      reference_quantity: "1.000000",
+      reference_unit: "cup",
+      reference_gram_weight: "100.000000",
+    });
+
+    const duplicate = await runtime.duplicate({
+      foodId: created.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000302",
+    });
+    expect(duplicate.serving_definitions[0]).toMatchObject({
+      quantity: "4.000000",
+      unit: "tbsp",
+      gram_weight: "25.000000",
+      reference_quantity: "1.000000",
+      reference_unit: "cup",
+      reference_gram_weight: "100.000000",
+    });
+  });
+
+  test.each([
+    [{ reference_quantity: "1", reference_unit: null, reference_gram_weight: "100" }],
+    [{ reference_quantity: null, reference_unit: "cup", reference_gram_weight: "100" }],
+    [{ reference_quantity: "1", reference_unit: "cup", reference_gram_weight: null }],
+    [{ reference_quantity: "0", reference_unit: "cup", reference_gram_weight: "100" }],
+    [{ reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "0" }],
+    [{ reference_quantity: "1", reference_unit: "   ", reference_gram_weight: "100" }],
+  ])("rejects incomplete or non-positive reference triplets: %p", async (reference) => {
+    const fake = new FoodSQLiteFake();
+    const runtime = createLocalFoodsRuntime(database(fake), OWNER);
+    await expect(runtime.create({
+      ...foodInput({
+        serving_definitions: [{
+          label: "1 cup",
+          quantity: "1",
+          unit: "cup",
+          gram_weight: "100",
+          is_default: true,
+          ...reference,
+        }],
+      }),
+      client_request_id: "00000000-0000-4000-8000-000000000303",
+    })).rejects.toMatchObject({ code: "food_validation_failed" });
+  });
+
   beforeEach(() => {
     let counter = 10;
     (Crypto.randomUUID as jest.Mock).mockImplementation(() => {
@@ -432,6 +541,22 @@ describe("E2-05 local Foods runtime", () => {
       client_request_id: "00000000-0000-4000-8000-000000000105",
     };
     const withServing = await runtime.createServingDefinition(created.id, servingInput);
+    const legacyServingFingerprint = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      serializeCalendarPreviewTokenPayload({
+        context: { food_id: created.id },
+        payload: {
+          label: "1 tablespoon",
+          quantity: "1.000000",
+          unit: "tablespoon",
+          gram_weight: "5.000000",
+          is_default: false,
+        },
+      } as never),
+    );
+    expect(fake.state.receipts.find((receipt) =>
+      receipt.operation === "food.add_serving" && receipt.client_request_id === servingInput.client_request_id
+    )?.request_fingerprint).toBe(legacyServingFingerprint);
     expect(withServing.serving_definitions.map((serving) => serving.label)).toEqual([
       "1 bowl",
       "1 tablespoon",
@@ -461,8 +586,31 @@ describe("E2-05 local Foods runtime", () => {
     const original = await runtime.create({ ...foodInput({
       serving_definitions: [{ label: "1 cup", quantity: "1", unit: "cup", gram_weight: "50", is_default: true }],
     }), client_request_id: createRequestId });
+    const legacyCreateFingerprint = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      serializeCalendarPreviewTokenPayload({
+        context: {},
+        payload: {
+          name: "Oats",
+          brand: "Kitchen",
+          notes: "plain",
+          serving_definitions: [{
+            label: "1 cup", quantity: "1.000000", unit: "cup", gram_weight: "50.000000", is_default: true,
+          }],
+          nutrients: [
+            { nutrient_id: "protein", amount: "20.000000", unit: "g", basis: "per_100g", data_status: "known" },
+            { nutrient_id: "calories", amount: "200.000000", unit: "kcal", basis: "per_serving", data_status: "known" },
+            { nutrient_id: "calcium", amount: "0.000000", unit: "mg", basis: "per_serving", data_status: "zero" },
+            { nutrient_id: "vitamin_d", amount: null, unit: "mcg", basis: "per_serving", data_status: "unknown" },
+          ],
+        },
+      } as never),
+    );
+    expect(fake.state.receipts.find((receipt) =>
+      receipt.operation === "food.create_manual" && receipt.client_request_id === createRequestId
+    )?.request_fingerprint).toBe(legacyCreateFingerprint);
     await expect(runtime.create({ ...foodInput({
-      serving_definitions: [{ label: "1 cup", quantity: "1.000000", unit: "cup", gram_weight: "50.000000", is_default: true }],
+      serving_definitions: [{ label: "1 cup", quantity: "1.000000", unit: "cup", gram_weight: "50.000000", reference_quantity: null, reference_unit: null, reference_gram_weight: null, is_default: true }],
     }), client_request_id: createRequestId })).resolves.toEqual(original);
     await expect(runtime.create({ ...foodInput({ name: "Changed details" }), client_request_id: createRequestId })).rejects.toMatchObject({
       code: "create_idempotency_payload_conflict",
@@ -694,6 +842,9 @@ describe("E2-05 local Foods runtime", () => {
       quantity: "1.000000",
       unit: "serving",
       gram_weight: "50.000000",
+      reference_quantity: null,
+      reference_unit: null,
+      reference_gram_weight: null,
       is_default: 1,
       source: "recipe",
       is_user_confirmed: 0,

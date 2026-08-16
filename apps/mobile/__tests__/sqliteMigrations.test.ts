@@ -19,6 +19,7 @@ import {
   SQLITE_CONNECTION_SETUP_STATEMENTS,
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
+  SQLITE_SERVING_REFERENCE_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -54,11 +55,18 @@ class RecordingSQLiteDatabase {
   closed = false;
   hasNegativeFoodNutrient = false;
   hasDuplicateFoodNutrient = false;
+  servingReferenceColumns = false;
 
   async execAsync(source: string): Promise<void> {
     this.executed.push(source);
     if (source.includes(`CREATE TABLE IF NOT EXISTS "${SQLITE_MIGRATION_LEDGER_TABLE}"`)) {
       this.ledgerTableExists = true;
+    }
+    if (source.includes('CREATE TABLE IF NOT EXISTS "serving_definitions"') && source.includes('"reference_quantity" TEXT')) {
+      this.servingReferenceColumns = true;
+    }
+    if (source.includes('ALTER TABLE "serving_definitions" ADD COLUMN "reference_')) {
+      this.servingReferenceColumns = true;
     }
     const match = source.match(/^PRAGMA user_version = (\d+)$/);
     if (match) {
@@ -134,6 +142,11 @@ class RecordingSQLiteDatabase {
   }
 
   async getAllAsync<T>(source: string): Promise<T[]> {
+    if (source === 'PRAGMA table_info("serving_definitions")') {
+      return (this.servingReferenceColumns
+        ? [{ name: "reference_quantity" }, { name: "reference_unit" }, { name: "reference_gram_weight" }]
+        : []) as T[];
+    }
     if (source.includes(`FROM "${SQLITE_MIGRATION_LEDGER_TABLE}"`)) {
       if (!this.ledgerTableExists) {
         throw new Error("no such table: nutrition_schema_migrations");
@@ -185,6 +198,7 @@ class RecordingSQLiteDatabase {
       snapshotCount: this.snapshotCount,
       logPresent: this.logPresent,
       scope: this.scope == null ? null : { ...this.scope },
+      servingReferenceColumns: this.servingReferenceColumns,
     };
     const transaction = {
       execAsync: async (source: string) => {
@@ -214,6 +228,7 @@ class RecordingSQLiteDatabase {
       this.snapshotCount = snapshot.snapshotCount;
       this.logPresent = snapshot.logPresent;
       this.scope = snapshot.scope;
+      this.servingReferenceColumns = snapshot.servingReferenceColumns;
       throw error;
     }
   }
@@ -298,13 +313,14 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [1, 2],
+      appliedVersions: [1, 2, 3],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+      { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -318,7 +334,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(2);
+    expect(database.ledger).toHaveLength(3);
   });
 
   test("upgrades an existing v1 database to the Food nutrient integrity schema", async () => {
@@ -333,15 +349,44 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 1,
-      toVersion: 2,
-      appliedVersions: [2],
+      toVersion: 3,
+      appliedVersions: [2, 3],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(2);
+    expect(database.userVersion).toBe(3);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+      { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
     ]);
+    expect(database.servingReferenceColumns).toBe(true);
+  });
+
+  test("upgrades an existing v2 database with nullable serving reference columns exactly once", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 2;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+    ];
+
+    const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
+    expect(first).toEqual({ fromVersion: 2, toVersion: 3, appliedVersions: [3], alreadyCurrent: false });
+    expect(database.userVersion).toBe(3);
+    expect(database.servingReferenceColumns).toBe(true);
+    expect(database.executed.join("\n")).toContain(
+      'ALTER TABLE "serving_definitions" ADD COLUMN "reference_quantity" TEXT',
+    );
+
+    const alterCount = database.executed.filter((statement) =>
+      statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
+    ).length;
+    const second = await migrateNutritionDatabase(asSQLiteDatabase(database));
+    expect(second).toEqual({ fromVersion: 3, toVersion: 3, appliedVersions: [], alreadyCurrent: true });
+    expect(database.executed.filter((statement) =>
+      statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
+    ).length).toBe(alterCount);
   });
 
   test("fails closed when a v1 database contains a negative authoritative Food nutrient", async () => {

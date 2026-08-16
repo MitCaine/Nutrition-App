@@ -473,7 +473,7 @@ test("all blocking fields stay marked while resolving the first blocker", async 
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(true);
-  expect(input(renderer.root, "Serving grams").props["aria-invalid"]).toBe(true);
+  expect(input(renderer.root, "Reference grams").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Calories amount").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
   expect(validationMessages(renderer.root)).toEqual(expect.stringMatching(/Food name.*Serving grams.*Calories/s));
@@ -481,7 +481,7 @@ test("all blocking fields stay marked while resolving the first blocker", async 
   await act(async () => input(renderer.root, "Food name").props.onChangeText("Resolved name"));
 
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(false);
-  expect(input(renderer.root, "Serving grams").props["aria-invalid"]).toBe(true);
+  expect(input(renderer.root, "Reference grams").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Calories amount").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
   await act(async () => renderer.unmount());
@@ -741,7 +741,7 @@ test("success invokes onCreated once", async () => {
 
 test("all confirmation controls expose specific accessibility labels and review semantics", async () => {
   const { renderer } = await render();
-  for (const label of ["Food name", "Brand", "Notes", "Serving label", "Serving quantity", "Serving unit", "Serving grams", "Calories amount", "Sodium amount"]) {
+  for (const label of ["Food name", "Brand", "Notes", "Serving quantity", "Serving unit", "Calories amount", "Sodium amount"]) {
     expect(input(renderer.root, label)).toBeDefined();
   }
   for (const label of ["Cancel confirmation", "Omit Calories", "Omit Sodium", "Add missing nutrient", "Dismiss unknown nutrient Molybdenum", "Create Food"]) {

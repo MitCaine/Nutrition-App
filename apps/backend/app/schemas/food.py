@@ -84,6 +84,9 @@ class ServingDefinitionInput(BaseModel):
     quantity: DecimalInput
     unit: str = Field(min_length=1)
     gram_weight: DecimalInput = None
+    reference_quantity: DecimalInput = None
+    reference_unit: str | None = Field(default=None, min_length=1)
+    reference_gram_weight: DecimalInput = None
     is_default: bool = False
 
     @model_validator(mode="after")
@@ -92,6 +95,33 @@ class ServingDefinitionInput(BaseModel):
             raise ValueError("serving quantity must be greater than zero")
         if self.gram_weight is not None and self.gram_weight <= 0:
             raise ValueError("gram weight must be greater than zero when provided")
+        has_reference = any(
+            field is not None
+            for field in (
+                self.reference_quantity,
+                self.reference_unit,
+                self.reference_gram_weight,
+            )
+        )
+        if has_reference:
+            if (
+                self.reference_quantity is None
+                or self.reference_unit is None
+                or not self.reference_unit.strip()
+                or self.reference_gram_weight is None
+            ):
+                raise ValueError(
+                    "serving reference measurement requires quantity, unit, and gram weight"
+                )
+            if self.reference_quantity <= 0:
+                raise ValueError(
+                    "reference quantity must be greater than zero when provided"
+                )
+            if self.reference_gram_weight <= 0:
+                raise ValueError(
+                    "reference gram weight must be greater than zero when provided"
+                )
+            self.reference_unit = self.reference_unit.strip().lower()
         self.unit = self.unit.strip().lower()
         return self
 
@@ -147,6 +177,9 @@ class ServingDefinitionResponse(BaseModel):
     quantity: Decimal
     unit: str
     gram_weight: Decimal | None
+    reference_quantity: Decimal | None = None
+    reference_unit: str | None = None
+    reference_gram_weight: Decimal | None = None
     is_default: bool
     source: str
     is_user_confirmed: bool

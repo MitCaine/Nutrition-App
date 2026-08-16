@@ -268,6 +268,58 @@ test("confirmation blocks name, unresolved less-than, and unknown rows", () => {
   expect(confirmationValidationError(draft)).toBeNull();
 });
 
+test("confirmation requires the persisted serving reference to be all-or-none", () => {
+  let draft = draftFromParsedLabel(parsed(), "camera");
+  draft = {
+    ...draft,
+    name: "Reference validation",
+    calories: updateReview(draft.calories, "120", "accepted"),
+    nutrients: draft.nutrients.map((item) => omitReview(item)),
+    unknownNutrients: [],
+    servingReferenceQuantity: "1",
+    servingReferenceUnit: null,
+    servingReferenceGramWeight: "30",
+  };
+
+  expect(confirmationValidationIssues(draft)).toContainEqual({
+    message: "Reference measurement requires quantity, unit, and grams.",
+    fieldKey: "serving.quantity",
+  });
+  expect(confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")).toBeNull();
+
+  const complete = { ...draft, servingReferenceUnit: "cup" };
+  expect(confirmationValidationIssues(complete)).toEqual([]);
+  expect(confirmationPayload(complete, "00000000-0000-4000-8000-000000000001")?.food.serving_definitions[1]).toEqual(
+    expect.objectContaining({
+      reference_quantity: "1",
+      reference_unit: "cup",
+      reference_gram_weight: "30",
+    }),
+  );
+});
+
+test("confirmation blocks an unresolved serving-unit conversion until quantity review completes", () => {
+  let draft = draftFromParsedLabel(parsed(), "camera");
+  draft = {
+    ...draft,
+    name: "Needs serving review",
+    calories: updateReview(draft.calories, "120", "accepted"),
+    nutrients: draft.nutrients.map((item) => omitReview(item)),
+    unknownNutrients: [],
+    servingConversionReviewRequired: true,
+  };
+
+  expect(confirmationValidationIssues(draft)).toContainEqual({
+    message: "Check the serving quantity before saving.",
+    fieldKey: "serving.quantity",
+  });
+  expect(confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")).toBeNull();
+
+  const reviewed = { ...draft, servingConversionReviewRequired: false };
+  expect(confirmationValidationIssues(reviewed)).toEqual([]);
+  expect(confirmationPayload(reviewed, "00000000-0000-4000-8000-000000000001")).not.toBeNull();
+});
+
 test("low-confidence potassium can be explicitly omitted without fabricating a nutrient value", () => {
   const input = parsed();
   input.nutrients = [{

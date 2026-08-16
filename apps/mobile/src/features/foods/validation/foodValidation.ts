@@ -20,14 +20,30 @@ export const servingSchema = z
     quantity: z.string().min(1),
     unit: z.string().min(1),
     gram_weight: z.string().optional().nullable(),
+    reference_quantity: z.string().optional().nullable(),
+    reference_unit: z.string().optional().nullable(),
+    reference_gram_weight: z.string().optional().nullable(),
     is_default: z.boolean(),
   })
   .superRefine((serving, ctx) => {
-    if (Number(serving.quantity) <= 0) {
-      ctx.addIssue({ code: "custom", message: "Serving quantity must be greater than zero" });
+    if (!Number.isFinite(Number(serving.quantity)) || Number(serving.quantity) <= 0) {
+      ctx.addIssue({ code: "custom", message: "Serving quantity must be a decimal greater than zero" });
     }
     if (serving.gram_weight && (!Number.isFinite(Number(serving.gram_weight)) || Number(serving.gram_weight) <= 0)) {
       ctx.addIssue({ code: "custom", message: "Gram weight must be greater than zero" });
+    }
+    const referenceValues = [serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight];
+    const hasReference = referenceValues.some((value) => value != null);
+    const completeReference = referenceValues.every((value) => typeof value === "string" && value.trim().length > 0);
+    if (hasReference && !completeReference) {
+      ctx.addIssue({ code: "custom", path: ["reference_quantity"], message: "Reference measurement must include quantity, unit, and gram weight" });
+    } else if (completeReference) {
+      if (!Number.isFinite(Number(serving.reference_quantity)) || Number(serving.reference_quantity) <= 0) {
+        ctx.addIssue({ code: "custom", path: ["reference_quantity"], message: "Reference quantity must be greater than zero" });
+      }
+      if (!Number.isFinite(Number(serving.reference_gram_weight)) || Number(serving.reference_gram_weight) <= 0) {
+        ctx.addIssue({ code: "custom", path: ["reference_gram_weight"], message: "Reference gram weight must be greater than zero" });
+      }
     }
   });
 

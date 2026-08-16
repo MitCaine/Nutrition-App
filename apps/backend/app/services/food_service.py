@@ -50,6 +50,7 @@ from app.services.create_idempotency import (
     CreateOperationResultUnavailableError,
     create_fingerprint,
     is_create_idempotency_conflict,
+    omit_null_serving_reference_triplets,
 )
 
 
@@ -109,7 +110,9 @@ class FoodService:
 
     def create_manual_food(self, user_id: UUID, payload: FoodCreateRequest) -> FoodResponse:
         request_id = payload.client_request_id
-        fingerprint = create_fingerprint(payload)
+        fingerprint = create_fingerprint(
+            omit_null_serving_reference_triplets(payload.model_dump(mode="python"))
+        )
         if request_id is not None:
             receipt = self.create_idempotency.find(
                 user_id, "food.create_manual", request_id, fingerprint
@@ -620,6 +623,9 @@ class FoodService:
                         quantity=serving.quantity,
                         unit=serving.unit,
                         gram_weight=serving.gram_weight,
+                        reference_quantity=serving.reference_quantity,
+                        reference_unit=serving.reference_unit,
+                        reference_gram_weight=serving.reference_gram_weight,
                         is_default=serving.is_default,
                         source="manual",
                         is_user_confirmed=True,
@@ -670,7 +676,10 @@ class FoodService:
         # The API uses ServingDefinitionCreateRequest; accepting the historical
         # base schema keeps internal service callers source-compatible.
         request_id = getattr(payload, "client_request_id", None)
-        fingerprint = create_fingerprint(payload, context={"food_id": str(food_id)})
+        fingerprint = create_fingerprint(
+            omit_null_serving_reference_triplets(payload.model_dump(mode="python")),
+            context={"food_id": str(food_id)},
+        )
         if request_id is not None:
             receipt = self.create_idempotency.find(
                 user_id, "food.add_serving", request_id, fingerprint
@@ -701,6 +710,9 @@ class FoodService:
                     quantity=payload.quantity,
                     unit=payload.unit,
                     gram_weight=payload.gram_weight,
+                    reference_quantity=payload.reference_quantity,
+                    reference_unit=payload.reference_unit,
+                    reference_gram_weight=payload.reference_gram_weight,
                     is_default=payload.is_default,
                     source="manual",
                     is_user_confirmed=True,
@@ -963,6 +975,9 @@ class FoodService:
                 quantity=serving.quantity,
                 unit=serving.unit,
                 gram_weight=serving.gram_weight,
+                reference_quantity=serving.reference_quantity,
+                reference_unit=serving.reference_unit,
+                reference_gram_weight=serving.reference_gram_weight,
                 is_default=serving.is_default,
                 source="manual",
                 is_user_confirmed=True,

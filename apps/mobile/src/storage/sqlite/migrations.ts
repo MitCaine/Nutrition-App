@@ -182,9 +182,25 @@ export const SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_SERVING_REFERENCE_MIGRATION: SQLiteMigration = {
+  version: 3,
+  id: "003_serving_reference_measurement",
+  async up(database) {
+    // Fresh installs create the current baseline schema directly; only pre-existing
+    // databases need the new columns added.
+    const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info("serving_definitions")`);
+    const existing = new Set(columns.map((column) => column.name));
+    const additions = ["reference_quantity", "reference_unit", "reference_gram_weight"]
+      .filter((column) => !existing.has(column))
+      .map((column) => `ALTER TABLE "serving_definitions" ADD COLUMN "${column}" TEXT;`);
+    if (additions.length > 0) await database.execAsync(additions.join("\n"));
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
+  SQLITE_SERVING_REFERENCE_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {

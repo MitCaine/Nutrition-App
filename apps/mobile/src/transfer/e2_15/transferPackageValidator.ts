@@ -2,6 +2,8 @@ import * as Crypto from "expo-crypto";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import sourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema.json";
+import legacyContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
+import legacySourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v1.json";
 
 import {
   canonicalJsonStringify,
@@ -63,6 +65,7 @@ type TransferContract = Readonly<{
 }>;
 
 const CONTRACT = contractJson as unknown as TransferContract;
+const LEGACY_CONTRACT = legacyContractJson as unknown as TransferContract;
 const NUTRIENT_IDS = new Set(SQLITE_NUTRIENT_SEED_ROWS.map(([id]) => id));
 const SHA256 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -213,6 +216,23 @@ function validateOwnerGraph(packageValue: JsonRecord): void {
   }
   const foods = new Map((records.get("food_items") as JsonRecord[]).map((row) => [row.id, row]));
   const servings = new Map((records.get("serving_definitions") as JsonRecord[]).map((row) => [row.id, row]));
+  for (const serving of servings.values()) {
+    if (!("reference_quantity" in serving)) continue; // frozen v1 rows predate the explicit reference measurement
+    const referenceParts = [serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight];
+    if (referenceParts.some((value) => value !== null)) {
+      if (referenceParts.some((value) => value === null)) {
+        invalid("owner_graph_invalid", "Serving reference measurement is incomplete.");
+      }
+      if (
+        Number(serving.reference_quantity) <= 0
+        || typeof serving.reference_unit !== "string"
+        || !serving.reference_unit.trim()
+        || Number(serving.reference_gram_weight) <= 0
+      ) {
+        invalid("owner_graph_invalid", "Serving reference measurement is invalid.");
+      }
+    }
+  }
   const foodNutrients = new Map((records.get("food_nutrients") as JsonRecord[]).map((row) => [row.id, row]));
   const recipes = new Map((records.get("recipes") as JsonRecord[]).map((row) => [row.id, row]));
   const revisions = new Map((records.get("recipe_publication_revisions") as JsonRecord[]).map((row) => [row.id, row]));
@@ -392,6 +412,10 @@ const SERVING_RESPONSE_KEYS = [
   "id", "label", "quantity", "unit", "gram_weight", "is_default", "source",
   "is_user_confirmed",
 ] as const;
+const SERVING_RESPONSE_KEYS_V2 = [
+  "id", "label", "quantity", "unit", "gram_weight", "reference_quantity",
+  "reference_unit", "reference_gram_weight", "is_default", "source", "is_user_confirmed",
+] as const;
 const NUTRIENT_RESPONSE_KEYS = [
   "id", "nutrient_id", "amount", "unit", "basis", "data_status", "source",
   "is_user_confirmed", "original_amount", "original_unit", "original_text",
@@ -460,7 +484,7 @@ function requireNullableResponseDecimal(value: unknown): void {
   if (value !== null) requireResponseDecimal(value);
 }
 
-function validateFoodResponse(value: unknown): JsonRecord {
+function validateFoodResponse(value: unknown, withReferenceMeasurement: boolean): JsonRecord {
   const food = exactKeys(value, FOOD_RESPONSE_KEYS, "idempotency_policy_invalid");
   requireUuid(food.id);
   requireText(food.name);
@@ -481,12 +505,47 @@ function validateFoodResponse(value: unknown): JsonRecord {
     invalid("idempotency_policy_invalid", "Receipt response is malformed.");
   }
   food.serving_definitions = food.serving_definitions.map((value) => {
-    const serving = exactKeys(value, SERVING_RESPONSE_KEYS, "idempotency_policy_invalid");
+    let serving: JsonRecord;
+    if (withReferenceMeasurement) {
+      const candidate = object(value, "idempotency_policy_invalid");
+      const actual = Object.keys(candidate).sort().join("\u0000");
+      const v2 = [...SERVING_RESPONSE_KEYS_V2].sort().join("\u0000");
+      const legacy = [...SERVING_RESPONSE_KEYS].sort().join("\u0000");
+      if (actual === v2) {
+        serving = exactKeys(candidate, SERVING_RESPONSE_KEYS_V2, "idempotency_policy_invalid");
+      } else if (actual === legacy) {
+        // Historical receipts written before 0027 preserve their exact replay snapshot.
+        serving = exactKeys(candidate, SERVING_RESPONSE_KEYS, "idempotency_policy_invalid");
+      } else {
+        invalid("idempotency_policy_invalid", "Receipt response is malformed.");
+      }
+    } else {
+      serving = exactKeys(value, SERVING_RESPONSE_KEYS, "idempotency_policy_invalid");
+    }
     requireUuid(serving.id);
     requireText(serving.label);
     requireResponseDecimal(serving.quantity);
     requireText(serving.unit);
     requireNullableResponseDecimal(serving.gram_weight);
+    if (withReferenceMeasurement && "reference_quantity" in serving) {
+      requireNullableResponseDecimal(serving.reference_quantity);
+      requireNullableText(serving.reference_unit);
+      requireNullableResponseDecimal(serving.reference_gram_weight);
+      const referenceParts = [serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight];
+      if (referenceParts.some((item) => item !== null)) {
+        if (referenceParts.some((item) => item === null)) {
+          invalid("idempotency_policy_invalid", "Receipt serving reference measurement is incomplete.");
+        }
+        if (
+          Number(serving.reference_quantity) <= 0
+          || typeof serving.reference_unit !== "string"
+          || !serving.reference_unit.trim()
+          || Number(serving.reference_gram_weight) <= 0
+        ) {
+          invalid("idempotency_policy_invalid", "Receipt serving reference measurement is invalid.");
+        }
+      }
+    }
     requireBoolean(serving.is_default);
     requireText(serving.source);
     requireBoolean(serving.is_user_confirmed);
@@ -578,6 +637,7 @@ function validatePortableReceipt(
   snapshot: unknown,
   records: Map<string, JsonRecord[]>,
   ownerId: string,
+  withReferenceMeasurement: boolean,
 ): void {
   const foods = new Map(records.get("food_items")!.map((row) => [row.id, row]));
   const servings = new Map(records.get("serving_definitions")!.map((row) => [row.id, row]));
@@ -586,7 +646,7 @@ function validatePortableReceipt(
   if (receipt.user_id !== ownerId) invalid("idempotency_policy_invalid", "Portable receipt owner is invalid.");
 
   if (["food.create_manual", "food.duplicate", "food.add_serving"].includes(receipt.operation as string)) {
-    const response = validateFoodResponse(snapshot);
+    const response = validateFoodResponse(snapshot, withReferenceMeasurement);
     const responseFood = foods.get(response.id);
     if (responseFood === undefined) invalid("idempotency_policy_invalid", "Portable Food receipt is not owner-reachable.");
     if (
@@ -632,7 +692,7 @@ function validatePortableReceipt(
   if (receipt.operation === "recipe.publish") {
     const envelope = exactKeys(snapshot, ["recipe", "food"], "idempotency_policy_invalid");
     const recipeSnapshot = validateRecipeResponse(envelope.recipe);
-    const foodSnapshot = validateFoodResponse(envelope.food);
+    const foodSnapshot = validateFoodResponse(envelope.food, withReferenceMeasurement);
     const revision = revisions.get(receipt.resource_id);
     if (
       revision === undefined || revision.user_id !== ownerId || revision.recipe_id !== recipeSnapshot.id
@@ -647,10 +707,10 @@ function validatePortableReceipt(
   invalid("idempotency_policy_invalid", "Portable receipt operation is unsupported.");
 }
 
-async function validateIdempotencyPolicy(packageValue: JsonRecord): Promise<void> {
+async function validateIdempotencyPolicy(packageValue: JsonRecord, contract: TransferContract): Promise<void> {
   const records = recordsByName(packageValue);
   const receipts = records.get("create_operation_idempotency") as JsonRecord[];
-  const copied = new Set(CONTRACT.idempotency.copied_operations);
+  const copied = new Set(contract.idempotency.copied_operations);
   const copiedCount = receipts.filter((row) => copied.has(row.operation as string)).length;
   const translatedCount = receipts.filter((row) => row.operation === "log.update").length;
   const reconstructedCount = receipts.filter((row) => row.operation === "log.create").length;
@@ -705,7 +765,13 @@ async function validateIdempotencyPolicy(packageValue: JsonRecord): Promise<void
         invalid("idempotency_policy_invalid", "Translated update dates are invalid.");
       }
     } else if (copied.has(receipt.operation as string)) {
-      validatePortableReceipt(receipt, snapshot, records, packageValue.owner_id as string);
+      validatePortableReceipt(
+        receipt,
+        snapshot,
+        records,
+        packageValue.owner_id as string,
+        contract.format_version === "2",
+      );
     }
   }
 }
@@ -730,47 +796,53 @@ export async function parseAndValidateTransferPackage(document: string): Promise
   try { parsed = JSON.parse(document) as unknown; } catch { invalid("noncanonical_package", "Transfer package is malformed."); }
   if (canonicalTransferJson(parsed) !== document) invalid("noncanonical_package", "Transfer package is not canonical JSON.");
   const packageValue = exactKeys(parsed, TOP_LEVEL_KEYS);
-  if (packageValue.format !== CONTRACT.format || packageValue.format_version !== CONTRACT.format_version || packageValue.codec_version !== CONTRACT.codec_version) {
+  const contract = packageValue.format_version === CONTRACT.format_version
+    ? CONTRACT
+    : packageValue.format_version === LEGACY_CONTRACT.format_version
+    ? LEGACY_CONTRACT
+    : null;
+  const installedSourceSchema = contract === CONTRACT ? sourceSchema : legacySourceSchema;
+  if (contract === null || packageValue.format !== contract.format || packageValue.codec_version !== contract.codec_version) {
     invalid("unsupported_package", "Transfer package version is unsupported.");
   }
   const source = exactKeys(packageValue.source, ["postgres_major", "alembic_revision", "schema_contract", "schema_contract_digest"]);
   const expectedSource = {
-    postgres_major: CONTRACT.source.postgres_major,
-    alembic_revision: CONTRACT.source.alembic_revision,
-    schema_contract: CONTRACT.source.schema_contract,
-    schema_contract_digest: CONTRACT.source.schema_descriptor_digest,
+    postgres_major: contract.source.postgres_major,
+    alembic_revision: contract.source.alembic_revision,
+    schema_contract: contract.source.schema_contract,
+    schema_contract_digest: contract.source.schema_descriptor_digest,
   };
   if (canonicalJsonStringify(source) !== canonicalJsonStringify(expectedSource)) invalid("unsupported_source", "Transfer source is unsupported.");
-  if (await sha256CanonicalValue(sourceSchema) !== CONTRACT.source.schema_descriptor_digest) invalid("unsupported_source", "Installed source descriptor is invalid.");
-  if (canonicalJsonStringify(packageValue.target) !== canonicalJsonStringify(CONTRACT.target)) invalid("unsupported_target", "Transfer target is unsupported.");
+  if (await sha256CanonicalValue(installedSourceSchema) !== contract.source.schema_descriptor_digest) invalid("unsupported_source", "Installed source descriptor is invalid.");
+  if (canonicalJsonStringify(packageValue.target) !== canonicalJsonStringify(contract.target)) invalid("unsupported_target", "Transfer target is unsupported.");
   validateScalar("instant", packageValue.exported_at);
   validateScalar("uuid", packageValue.owner_id);
-  if (packageValue.nutrient_catalog_digest !== CONTRACT.nutrient_catalog_digest) invalid("nutrient_catalog_invalid", "Transfer nutrient catalog is unsupported.");
+  if (packageValue.nutrient_catalog_digest !== contract.nutrient_catalog_digest) invalid("nutrient_catalog_invalid", "Transfer nutrient catalog is unsupported.");
 
   const policy = exactKeys(packageValue.idempotency_policy, [
     "version", "copied_portable_count", "translated_log_update_count",
     "reconstructed_log_create_count", "excluded_log_delete_count",
   ]);
-  if (policy.version !== CONTRACT.idempotency.policy_version) invalid("idempotency_policy_invalid", "Receipt policy is unsupported.");
+  if (policy.version !== contract.idempotency.policy_version) invalid("idempotency_policy_invalid", "Receipt policy is unsupported.");
   for (const key of Object.keys(policy).filter((key) => key !== "version")) validateScalar("nonnegative_integer", policy[key]);
 
-  if (!Array.isArray(packageValue.sections) || packageValue.sections.length !== CONTRACT.sections.length) invalid("section_order_invalid", "Transfer section order is invalid.");
+  if (!Array.isArray(packageValue.sections) || packageValue.sections.length !== contract.sections.length) invalid("section_order_invalid", "Transfer section order is invalid.");
   const sections: JsonRecord[] = [];
-  for (let index = 0; index < CONTRACT.sections.length; index += 1) {
-    sections.push(await validateSection(packageValue.sections[index], CONTRACT.sections[index]));
+  for (let index = 0; index < contract.sections.length; index += 1) {
+    sections.push(await validateSection(packageValue.sections[index], contract.sections[index]));
   }
   packageValue.sections = sections;
 
   const qualification = exactKeys(packageValue.qualification, ["daily_totals"], "invalid_qualification_shape");
   const totalsContract: SectionContract = {
     name: "daily_totals",
-    columns: CONTRACT.qualification.daily_totals_columns,
-    primary_key: CONTRACT.qualification.daily_totals_primary_key,
+    columns: contract.qualification.daily_totals_columns,
+    primary_key: contract.qualification.daily_totals_primary_key,
   };
   qualification.daily_totals = await validateSection(qualification.daily_totals, totalsContract);
   validateOwnerGraph(packageValue);
   validateOcrPrivacy(packageValue);
-  await validateIdempotencyPolicy(packageValue);
+  await validateIdempotencyPolicy(packageValue, contract);
 
   if (typeof packageValue.overall_digest !== "string" || !SHA256.test(packageValue.overall_digest)) invalid("overall_digest_invalid", "Transfer package digest is invalid.");
   const unsigned = { ...packageValue };

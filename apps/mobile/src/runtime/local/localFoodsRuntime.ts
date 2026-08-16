@@ -85,6 +85,9 @@ type ServingRow = Readonly<{
   quantity: string;
   unit: string;
   gram_weight: string | null;
+  reference_quantity: string | null;
+  reference_unit: string | null;
+  reference_gram_weight: string | null;
   is_default: number;
   source: string;
   is_user_confirmed: number;
@@ -159,6 +162,9 @@ type NormalizedServing = Readonly<{
   unit: string;
   gram_weight: ExactDecimal | null;
   is_default: boolean;
+  reference_quantity: ExactDecimal | null;
+  reference_unit: string | null;
+  reference_gram_weight: ExactDecimal | null;
 }>;
 
 type NormalizedNutrient = Readonly<{
@@ -409,7 +415,29 @@ function normalizeServing(value: unknown): NormalizedServing {
   if (typeof input.is_default !== "boolean") {
     throw invalidFood("Serving default state must be boolean.");
   }
-  return { label, quantity, unit, gram_weight: gramWeight, is_default: input.is_default };
+  let referenceQuantity: ExactDecimal | null = null;
+  let referenceUnit: string | null = null;
+  let referenceGramWeight: ExactDecimal | null = null;
+  const hasReference = input.reference_quantity != null || input.reference_unit != null || input.reference_gram_weight != null;
+  if (hasReference) {
+    if (input.reference_quantity == null || typeof input.reference_unit !== "string" || !input.reference_unit.trim() || input.reference_gram_weight == null) {
+      throw invalidFood("Serving reference measurements require quantity, unit, and gram weight.");
+    }
+    try {
+      referenceQuantity = parseDecimal(input.reference_quantity, NUMERIC_14_6);
+      referenceGramWeight = parseDecimal(input.reference_gram_weight, NUMERIC_14_6);
+    } catch {
+      throw invalidFood("Serving reference measurements must be positive decimals.");
+    }
+    if (compareDecimals(referenceQuantity, "0.000000", NUMERIC_14_6) <= 0) {
+      throw invalidFood("Serving reference quantity must be greater than zero.");
+    }
+    if (compareDecimals(referenceGramWeight, "0.000000", NUMERIC_14_6) <= 0) {
+      throw invalidFood("Serving reference gram weight must be greater than zero.");
+    }
+    referenceUnit = input.reference_unit.trim().toLowerCase();
+  }
+  return { label, quantity, unit, gram_weight: gramWeight, is_default: input.is_default, reference_quantity: referenceQuantity, reference_unit: referenceUnit, reference_gram_weight: referenceGramWeight };
 }
 
 function normalizeNutrient(value: unknown): NormalizedNutrient {
@@ -488,6 +516,29 @@ function normalizeFoodInput(value: unknown, requireClientRequestId = false): Nor
     serving_definitions: servingDefinitions,
     nutrients: input.nutrients.map(normalizeNutrient),
     client_request_id: clientRequestId,
+  };
+}
+
+function servingFingerprintValue(serving: NormalizedServing): unknown {
+  const base = {
+    label: serving.label,
+    quantity: serving.quantity,
+    unit: serving.unit,
+    gram_weight: serving.gram_weight,
+    is_default: serving.is_default,
+  };
+  if (
+    serving.reference_quantity === null
+    && serving.reference_unit === null
+    && serving.reference_gram_weight === null
+  ) {
+    return base;
+  }
+  return {
+    ...base,
+    reference_quantity: serving.reference_quantity,
+    reference_unit: serving.reference_unit,
+    reference_gram_weight: serving.reference_gram_weight,
   };
 }
 
@@ -621,7 +672,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           name: normalized.name,
           brand: normalized.brand,
           notes: normalized.notes,
-          serving_definitions: normalized.serving_definitions,
+          serving_definitions: normalized.serving_definitions.map(servingFingerprintValue),
           nutrients: normalized.nutrients,
         },
       })
@@ -843,6 +894,9 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           quantity: parseStorageDecimal(serving.quantity, false, "mutation") as ExactDecimal,
           unit: serving.unit,
           gram_weight: parseStorageDecimal(serving.gram_weight, true, "mutation"),
+          reference_quantity: serving.reference_quantity == null ? null : parseStorageDecimal(serving.reference_quantity, false, "mutation"),
+          reference_unit: serving.reference_unit ?? null,
+          reference_gram_weight: serving.reference_gram_weight == null ? null : parseStorageDecimal(serving.reference_gram_weight, true, "mutation"),
           is_default: parsePersistedBoolean(serving.is_default, "mutation"),
         })),
         nutrients: source.nutrients.map((nutrient) => normalizeNutrient({
@@ -884,7 +938,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     const serving = normalizeServing(input);
     const clientRequestId = input.client_request_id == null ? null : this.requireUuid(input.client_request_id);
     const requestFingerprint = clientRequestId
-      ? await fingerprint({ context: { food_id: id }, payload: serving })
+      ? await fingerprint({ context: { food_id: id }, payload: servingFingerprintValue(serving) })
       : null;
     return this.mutate(async (transaction) => {
       if (clientRequestId && requestFingerprint) {
@@ -913,9 +967,9 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       }
       await transaction.runAsync(
         `INSERT INTO "serving_definitions"
-          ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
-        [servingId, id, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
+          ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "reference_quantity", "reference_unit", "reference_gram_weight", "is_default", "source", "is_user_confirmed")
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
+        [servingId, id, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight, serving.is_default ? 1 : 0],
       );
       const updatedAt = canonicalNow(this.now);
       await transaction.runAsync(
@@ -1188,17 +1242,17 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       if (source === "usda_fdc") {
         await transaction.runAsync(
           `INSERT INTO "serving_definitions"
-            ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'usda_fdc', 0)`,
-          [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
+            ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "reference_quantity", "reference_unit", "reference_gram_weight", "is_default", "source", "is_user_confirmed")
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'usda_fdc', 0)`,
+          [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight, serving.is_default ? 1 : 0],
         );
         continue;
       }
       await transaction.runAsync(
         `INSERT INTO "serving_definitions"
-         ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
-        [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.is_default ? 1 : 0],
+         ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "reference_quantity", "reference_unit", "reference_gram_weight", "is_default", "source", "is_user_confirmed")
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 1)`,
+        [generatedId(), foodId, serving.label, serving.quantity, serving.unit, serving.gram_weight, serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight, serving.is_default ? 1 : 0],
       );
     }
   }
@@ -1420,7 +1474,7 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     readInstant(row.updated_at, context);
     if (row.deleted_at !== null) readInstant(row.deleted_at, context);
     const servings = await transaction.getAllAsync<ServingRow>(
-      `SELECT "id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed"
+      `SELECT "id", "food_item_id", "label", "quantity", "unit", "gram_weight", "reference_quantity", "reference_unit", "reference_gram_weight", "is_default", "source", "is_user_confirmed"
        FROM "serving_definitions" WHERE "food_item_id" = ? ORDER BY "label", "id"`,
       [row.id],
     );
@@ -1434,6 +1488,22 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       parsePersistedUuid(serving.id, context);
       parseStorageDecimal(serving.quantity, false, context);
       parseStorageDecimal(serving.gram_weight, true, context);
+      const hasReference = serving.reference_quantity != null || serving.reference_unit != null || serving.reference_gram_weight != null;
+      if (hasReference) {
+        if (serving.reference_quantity == null || serving.reference_unit == null || !serving.reference_unit.trim() || serving.reference_gram_weight == null) {
+          throw invalidStoredFood(context);
+        }
+        const referenceQuantity = parseStorageDecimal(serving.reference_quantity, false, context);
+        const referenceGramWeight = parseStorageDecimal(serving.reference_gram_weight, false, context);
+        if (
+          referenceQuantity == null
+          || referenceGramWeight == null
+          || compareDecimals(referenceQuantity, "0.000000", NUMERIC_14_6) <= 0
+          || compareDecimals(referenceGramWeight, "0.000000", NUMERIC_14_6) <= 0
+        ) {
+          throw invalidStoredFood(context);
+        }
+      }
       parsePersistedBoolean(serving.is_default, context);
       parsePersistedBoolean(serving.is_user_confirmed, context);
     }
@@ -1545,6 +1615,13 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       quantity: parseStorageDecimal(row.quantity, false, context) as string,
       unit: row.unit,
       gram_weight: parseStorageDecimal(row.gram_weight, true, context) as string | null,
+      ...(row.reference_quantity != null || row.reference_unit != null || row.reference_gram_weight != null
+        ? {
+            reference_quantity: row.reference_quantity == null ? null : parseStorageDecimal(row.reference_quantity, false, context) as string,
+            reference_unit: row.reference_unit,
+            reference_gram_weight: row.reference_gram_weight == null ? null : parseStorageDecimal(row.reference_gram_weight, true, context) as string | null,
+          }
+        : {}),
       is_default: parsePersistedBoolean(row.is_default, context),
       source: row.source,
       is_user_confirmed: parsePersistedBoolean(row.is_user_confirmed, context),

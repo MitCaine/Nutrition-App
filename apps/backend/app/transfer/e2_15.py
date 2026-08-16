@@ -586,6 +586,29 @@ def _validate_owner_graph(package: Mapping[str, Any]) -> None:
 
     foods = {row["id"]: row for row in records["food_items"]}
     servings = {row["id"]: row for row in records["serving_definitions"]}
+    for serving in servings.values():
+        if "reference_quantity" not in serving:
+            continue  # frozen v1 rows predate the explicit reference measurement
+        parts = (
+            serving["reference_quantity"],
+            serving["reference_unit"],
+            serving["reference_gram_weight"],
+        )
+        if any(value is not None for value in parts):
+            if any(value is None for value in parts):
+                raise _invalid(
+                    "owner_graph_invalid",
+                    "Serving reference measurement is incomplete.",
+                )
+            if (
+                Decimal(str(serving["reference_quantity"])) <= 0
+                or not str(serving["reference_unit"]).strip()
+                or Decimal(str(serving["reference_gram_weight"])) <= 0
+            ):
+                raise _invalid(
+                    "owner_graph_invalid",
+                    "Serving reference measurement is invalid.",
+                )
     food_nutrients = {row["id"]: row for row in records["food_nutrients"]}
     recipes = {row["id"]: row for row in records["recipes"]}
     revisions = {row["id"]: row for row in records["recipe_publication_revisions"]}
@@ -838,6 +861,96 @@ def _exact_response_snapshot(
     return validated
 
 
+
+
+def _validate_food_response_reference_measurements(response: Mapping[str, Any]) -> None:
+    for serving in response.get("serving_definitions", []):
+        if not isinstance(serving, Mapping):
+            raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.")
+        reference_keys = ("reference_quantity", "reference_unit", "reference_gram_weight")
+        present = [key in serving for key in reference_keys]
+        if not any(present):
+            continue  # Historical pre-0027 receipt snapshot.
+        if not all(present):
+            raise _invalid("idempotency_policy_invalid", "Receipt serving reference measurement is incomplete.")
+        parts = tuple(serving[key] for key in reference_keys)
+        if all(value is None for value in parts):
+            continue
+        if any(value is None for value in parts):
+            raise _invalid("idempotency_policy_invalid", "Receipt serving reference measurement is incomplete.")
+        try:
+            if (
+                Decimal(str(serving["reference_quantity"])) <= 0
+                or not str(serving["reference_unit"]).strip()
+                or Decimal(str(serving["reference_gram_weight"])) <= 0
+            ):
+                raise ValueError
+        except (ArithmeticError, TypeError, ValueError):
+            raise _invalid("idempotency_policy_invalid", "Receipt serving reference measurement is invalid.") from None
+
+
+def _expand_legacy_food_reference_fields(food: Any) -> dict[str, Any]:
+    if not isinstance(food, dict) or not isinstance(food.get("serving_definitions"), list):
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.")
+    expanded = deepcopy(food)
+    for serving in expanded["serving_definitions"]:
+        if not isinstance(serving, dict):
+            raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.")
+        reference_keys = ("reference_quantity", "reference_unit", "reference_gram_weight")
+        if any(key in serving for key in reference_keys):
+            raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.")
+        for key in reference_keys:
+            serving[key] = None
+    return expanded
+
+
+def _exact_food_response_snapshot(snapshot: Any) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.")
+    try:
+        validated = FoodResponse.model_validate(snapshot).model_dump(mode="json")
+    except ValidationError:
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.") from None
+    if validated == snapshot:
+        _validate_food_response_reference_measurements(snapshot)
+        return validated
+
+    # Receipts written before 0027 legitimately lack all three reference keys. Preserve their
+    # exact replay snapshot while validating every other field through the current response model.
+    expanded = _expand_legacy_food_reference_fields(snapshot)
+    try:
+        validated_expanded = FoodResponse.model_validate(expanded).model_dump(mode="json")
+    except ValidationError:
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.") from None
+    if validated_expanded != expanded:
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot has an unsupported shape.")
+    _validate_food_response_reference_measurements(snapshot)
+    return deepcopy(snapshot)
+
+
+def _exact_recipe_publish_response_snapshot(snapshot: Any) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.")
+    try:
+        validated = RecipePublishResponse.model_validate(snapshot).model_dump(mode="json")
+    except ValidationError:
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.") from None
+    if validated == snapshot:
+        _validate_food_response_reference_measurements(snapshot.get("food", {}))
+        return validated
+
+    expanded = deepcopy(snapshot)
+    expanded["food"] = _expand_legacy_food_reference_fields(expanded.get("food"))
+    try:
+        validated_expanded = RecipePublishResponse.model_validate(expanded).model_dump(mode="json")
+    except ValidationError:
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot is malformed.") from None
+    if validated_expanded != expanded:
+        raise _invalid("idempotency_policy_invalid", "Portable receipt snapshot has an unsupported shape.")
+    _validate_food_response_reference_measurements(snapshot.get("food", {}))
+    return deepcopy(snapshot)
+
+
 class _LocalDailyLogResponse(BaseModel):
     id: UUID
     food_item_id: UUID
@@ -876,7 +989,7 @@ def validate_portable_receipt(
         raise _invalid("idempotency_policy_invalid", "Portable receipt owner is invalid.")
 
     if operation in {"food.create_manual", "food.duplicate", "food.add_serving"}:
-        response = _exact_response_snapshot(snapshot, FoodResponse)
+        response = _exact_food_response_snapshot(snapshot)
         response_food = foods.get(response["id"])
         if response_food is None:
             raise _invalid("idempotency_policy_invalid", "Portable Food receipt is not owner-reachable.")
@@ -932,7 +1045,7 @@ def validate_portable_receipt(
         return
 
     if operation == "recipe.publish":
-        response = _exact_response_snapshot(snapshot, RecipePublishResponse)
+        response = _exact_recipe_publish_response_snapshot(snapshot)
         recipe_snapshot = response["recipe"]
         food_snapshot = response["food"]
         revision = revisions.get(receipt["resource_id"])

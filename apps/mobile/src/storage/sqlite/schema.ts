@@ -9,7 +9,7 @@
  * columns and their relational guards.
  */
 
-export const SQLITE_SCHEMA_VERSION = 2;
+export const SQLITE_SCHEMA_VERSION = 3;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";
@@ -154,6 +154,9 @@ export const SQLITE_BASELINE_SCHEMA_STATEMENTS: readonly string[] = [
     "quantity" TEXT NOT NULL,
     "unit" TEXT NOT NULL,
     "gram_weight" TEXT,
+    "reference_quantity" TEXT,
+    "reference_unit" TEXT,
+    "reference_gram_weight" TEXT,
     "is_default" ${bool("is_default")},
     "source" TEXT NOT NULL,
     "confidence" TEXT,

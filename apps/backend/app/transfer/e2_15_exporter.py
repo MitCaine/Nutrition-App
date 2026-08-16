@@ -97,15 +97,7 @@ EXPECTED_CLONE_MARKER_PROTECTIONS = (
     ),
 )
 _POSTGRES_DIALECT = postgresql.dialect()
-CURRENT_EXPORT_SOURCE_REVISION = "0026_food_nutrient_integrity"
-EXPECTED_0026_FOOD_NUTRIENT_CHECK = {
-    "expression": "amount IS NULL OR amount >= 0::numeric",
-    "name": "ck_food_nutrients_amount_nonnegative",
-}
-EXPECTED_0026_FOOD_NUTRIENT_UNIQUE = {
-    "columns": ["food_item_id", "nutrient_id", "basis"],
-    "name": "uq_food_nutrients_food_nutrient_basis",
-}
+CURRENT_EXPORT_SOURCE_REVISION = "0027_serving_reference_measurement"
 
 
 def canonical_owner_id(value: str) -> str:
@@ -362,55 +354,15 @@ def observe_source_schema(connection: Connection) -> dict[str, Any]:
 def project_current_source_tables_to_frozen_contract(
     actual: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Qualify 0026-only constraints, then project back to frozen pg-0025."""
+    """Qualify the current 0027 source schema.
 
-    current_food = actual.get("food_nutrients")
-    if not isinstance(current_food, Mapping):
-        raise _fail(
-            "source_schema_invalid",
-            "PostgreSQL current Food nutrient schema is unavailable.",
-        )
+    The function name is retained for the established test seam, but E2-15 v2 no
+    longer projects current rows back to the old pg-0025 descriptor: the serving
+    reference triplet is transferable application data and must remain visible.
+    """
 
-    frozen_food = SOURCE_SCHEMA["tables"]["food_nutrients"]
-
-    current_checks = list(current_food.get("checks", []))
-    current_uniques = list(current_food.get("unique_constraints", []))
-    frozen_checks = list(frozen_food["checks"])
-    frozen_uniques = list(frozen_food["unique_constraints"])
-
-    missing_checks = [
-        item for item in frozen_checks if item not in current_checks
-    ]
-    missing_uniques = [
-        item for item in frozen_uniques if item not in current_uniques
-    ]
-    extra_checks = [
-        item for item in current_checks if item not in frozen_checks
-    ]
-    extra_uniques = [
-        item for item in current_uniques if item not in frozen_uniques
-    ]
-
-    if (
-        missing_checks
-        or missing_uniques
-        or extra_checks != [EXPECTED_0026_FOOD_NUTRIENT_CHECK]
-        or extra_uniques != [EXPECTED_0026_FOOD_NUTRIENT_UNIQUE]
-    ):
-        raise _fail(
-            "source_schema_invalid",
-            "PostgreSQL 0026 Food nutrient integrity extension is invalid.",
-        )
-
-    projected = {
-        name: dict(table)
-        for name, table in actual.items()
-    }
-    projected_food = dict(current_food)
-    projected_food["checks"] = frozen_checks
-    projected_food["unique_constraints"] = frozen_uniques
-    projected["food_nutrients"] = projected_food
-    return projected
+    validate_source_schema_tables(actual)
+    return {name: dict(table) for name, table in actual.items()}
 
 
 def validate_source_schema_tables(actual: Mapping[str, Any]) -> bool:
@@ -426,7 +378,7 @@ def validate_source_schema_tables(actual: Mapping[str, Any]) -> bool:
     ):
         raise _fail(
             "source_schema_invalid",
-            "PostgreSQL source schema differs from pg-0025.",
+            "PostgreSQL source schema differs from pg-0027.",
         )
     marker_present = OPTIONAL_CLONE_MARKER_TABLE in extra_names
     if marker_present and actual[OPTIONAL_CLONE_MARKER_TABLE] != optional[
@@ -434,7 +386,7 @@ def validate_source_schema_tables(actual: Mapping[str, Any]) -> bool:
     ]:
         raise _fail(
             "source_schema_invalid",
-            "PostgreSQL optional clone-marker schema differs from pg-0025.",
+            "PostgreSQL optional clone-marker schema differs from pg-0027.",
         )
     return marker_present
 
@@ -510,7 +462,7 @@ def qualify_source_schema(connection: Connection) -> None:
     if canonical_digest(SOURCE_SCHEMA) != SCHEMA_CONTRACT_DIGEST:
         raise _fail(
             "source_schema_invalid",
-            "Installed pg-0025 schema contract is invalid.",
+            "Installed pg-0027 schema contract is invalid.",
         )
     projected_tables = project_current_source_tables_to_frozen_contract(
         observed["tables"]

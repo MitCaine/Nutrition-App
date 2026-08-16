@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0026_food_nutrient_integrity"
+    "0027_serving_reference_measurement"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"

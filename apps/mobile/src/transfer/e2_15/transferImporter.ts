@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
+import legacyContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
 import targetSchemaJson from "../../../../../packages/shared-contracts/e2-15/target-schema.json";
 
 import { createLocalDailyLogsRuntime } from "../../runtime/local/localDailyLogsRuntime";
@@ -35,11 +36,13 @@ type SectionContract = Readonly<{
   columns: readonly (readonly [string, string])[];
 }>;
 type Contract = Readonly<{
+  format_version: string;
   nutrient_catalog_digest: string;
   target_schema_descriptor_digest: string;
   sections: readonly SectionContract[];
 }>;
 const CONTRACT = contractJson as unknown as Contract;
+const LEGACY_CONTRACT = legacyContractJson as unknown as Contract;
 const SECTION_CONTRACTS = new Map(CONTRACT.sections.map((section) => [section.name, section]));
 
 const E2_15_RUNTIME_SCHEMA_EXTENSION_OBJECTS = [
@@ -175,7 +178,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   const actual = new Set(objects.map((row) => `${row.type}:${row.name}`));
   const expected = expectedSchemaObjects();
   if (actual.size !== expected.size || [...actual].some((name) => !expected.has(name))) {
-    invalid("target_schema_invalid", "SQLite schema objects differ from version 1.");
+    invalid("target_schema_invalid", "SQLite schema objects differ from version 3.");
   }
 
   const descriptorObjects = await database.getAllAsync<{
@@ -219,7 +222,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   for (const [table, expectedColumns] of tableColumns) {
     const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info("${table}")`);
     if (canonicalTransferJson(columns.map((row) => row.name)) !== canonicalTransferJson(expectedColumns)) {
-      invalid("target_schema_invalid", `SQLite table ${table} columns differ from version 1.`);
+      invalid("target_schema_invalid", `SQLite table ${table} columns differ from version 3.`);
     }
   }
 
@@ -249,15 +252,15 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
     };
   }
   const descriptor = {
-    descriptor_version: "e2-15.sqlite-v1.schema.v1",
-    user_version: 1,
+    descriptor_version: targetSchemaJson.descriptor_version,
+    user_version: targetSchemaJson.user_version,
     objects: transferDescriptorObjects,
     tables: descriptorTables,
   };
   if (
     canonicalTransferJson(descriptor) !== canonicalTransferJson(targetSchemaJson)
     || await sha256CanonicalValue(descriptor) !== CONTRACT.target_schema_descriptor_digest
-  ) invalid("target_schema_invalid", "SQLite version 1 schema descriptor is invalid.");
+  ) invalid("target_schema_invalid", "SQLite schema descriptor is invalid.");
 
   const nutrientRows = await database.getAllAsync<JsonRecord>(
     `SELECT "id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order"
@@ -294,6 +297,7 @@ async function assertTargetEmpty(database: SQLiteDatabase): Promise<void> {
 }
 
 function sqliteValue(value: unknown, kind: string): string | number | null {
+  if (value === undefined && kind.startsWith("nullable_")) return null;
   if (value === null) return null;
   const effective = kind.startsWith("nullable_") ? kind.slice("nullable_".length) : kind;
   if (effective === "boolean") return value ? 1 : 0;
@@ -329,7 +333,10 @@ async function qualifySections(
   packageValue: ValidatedTransferPackage,
 ): Promise<void> {
   const packaged = recordsByName(packageValue);
-  for (const section of CONTRACT.sections) {
+  const qualificationContract = packageValue.format_version === LEGACY_CONTRACT.format_version
+    ? LEGACY_CONTRACT
+    : CONTRACT;
+  for (const section of qualificationContract.sections) {
     const columnsSql = section.columns.map(([name]) => `"${name}"`).join(", ");
     const rows = await database.getAllAsync<JsonRecord>(
       `SELECT ${columnsSql} FROM "${section.name}"`,

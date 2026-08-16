@@ -72,6 +72,11 @@ export type NutritionConfirmationDraft = {
   servingQuantity: string;
   servingUnit: string;
   gramWeight: string;
+  servingReferenceQuantity?: string | null;
+  servingReferenceUnit?: string | null;
+  servingReferenceGramWeight?: string | null;
+  /** Editor-only guard: true while a unit change still needs an explicit quantity review. */
+  servingConversionReviewRequired?: boolean;
   servingProvenance: {
     display: ParsedField | null;
     quantity: ParsedField | null;

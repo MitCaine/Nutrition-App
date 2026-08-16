@@ -452,6 +452,46 @@ test("same-request replay is deterministic and overlapping submissions create no
   }
 });
 
+test("OCR confirmation idempotency distinguishes stable serving references from the current representation", async () => {
+  const value = await database();
+  try {
+    const runtime = createLocalOcrRuntime(value.asExpoDatabase(), OWNER);
+    const input = confirmation();
+    const defaultServing = input.food.serving_definitions.find((serving) => serving.is_default)!;
+    const withReference: OcrConfirmationInput = {
+      ...input,
+      food: {
+        ...input.food,
+        serving_definitions: input.food.serving_definitions.map((serving) =>
+          serving === defaultServing
+            ? { ...serving, reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "30" }
+            : serving),
+      },
+    };
+
+    const created = await runtime.confirmNutritionLabel(withReference);
+    expect(created.food.serving_definitions.find((serving) => serving.is_default)).toMatchObject({
+      quantity: "1.000000", unit: "cup", gram_weight: "30.000000",
+      reference_quantity: "1.000000", reference_unit: "cup", reference_gram_weight: "30.000000",
+    });
+    await expect(runtime.confirmNutritionLabel(withReference)).resolves.toEqual(created);
+
+    const changedReference: OcrConfirmationInput = {
+      ...withReference,
+      food: {
+        ...withReference.food,
+        serving_definitions: withReference.food.serving_definitions.map((serving) =>
+          serving.is_default ? { ...serving, reference_gram_weight: "35" } : serving),
+      },
+    };
+    await expect(runtime.confirmNutritionLabel(changedReference)).rejects.toMatchObject({
+      code: "ocr_confirmation_idempotency_conflict",
+    });
+  } finally {
+    value.close();
+  }
+});
+
 test("confirmation replay survives database reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "nutrition-e213-reopen-"));
   const path = join(directory, "nutrition.sqlite");

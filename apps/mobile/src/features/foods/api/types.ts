@@ -9,6 +9,9 @@ export type ServingDefinitionInput = {
   unit: string;
   gram_weight?: string | null;
   is_default: boolean;
+  reference_quantity?: string | null;
+  reference_unit?: string | null;
+  reference_gram_weight?: string | null;
 };
 
 export type FoodNutrientInput = {

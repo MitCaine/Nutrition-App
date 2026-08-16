@@ -42,7 +42,7 @@ def test_shared_contract_fixes_the_approved_package_boundary() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     assert contract["format"] == "nutrition-personal-transfer"
-    assert contract["format_version"] == "1"
+    assert contract["format_version"] == "2"
     assert contract["codec_version"] == "e2-02.v1"
     assert contract["maximum_bytes"] == 64 * 1024 * 1024 == MAXIMUM_TRANSFER_BYTES
     assert tuple(section["name"] for section in contract["sections"]) == SECTION_NAMES
@@ -185,18 +185,15 @@ def _minimal_document() -> dict:
     ]
     return {
         "format": "nutrition-personal-transfer",
-        "format_version": "1",
+        "format_version": CONTRACT["format_version"],
         "codec_version": "e2-02.v1",
         "source": {
             "postgres_major": "16",
-            "alembic_revision": "0025_immutable_validator_head",
-            "schema_contract": "e2-15.pg-0025.v1",
+            "alembic_revision": CONTRACT["source"]["alembic_revision"],
+            "schema_contract": CONTRACT["source"]["schema_contract"],
             "schema_contract_digest": SCHEMA_CONTRACT_DIGEST,
         },
-        "target": {
-            "sqlite_schema_version": 1,
-            "migration_ids": ["001_initial_runtime_schema"],
-        },
+        "target": CONTRACT["target"],
         "exported_at": INSTANT,
         "owner_id": OWNER_ID,
         "nutrient_catalog_digest": CONTRACT["nutrient_catalog_digest"],
@@ -479,6 +476,31 @@ def _resigned_representative(mutator) -> bytes:
     return serialize_transfer_document(fixture)
 
 
+
+
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda serving: serving.update(reference_gram_weight=None),
+        lambda serving: serving.update(reference_quantity="0.000000"),
+        lambda serving: serving.update(reference_gram_weight="0.000000"),
+        lambda serving: serving.update(reference_unit=""),
+    ],
+)
+def test_v2_transfer_rejects_incomplete_or_nonpositive_serving_reference_measurements(mutator) -> None:
+    def mutate(_package, sections) -> None:
+        serving = next(
+            row for row in sections["serving_definitions"]["records"]
+            if row["reference_quantity"] is not None
+        )
+        mutator(serving)
+
+    with pytest.raises(TransferPackageError) as failure:
+        validate_transfer_package(_resigned_representative(mutate))
+
+    assert failure.value.code == "owner_graph_invalid"
+
+
 def _food_response(food: dict, source_kind: str, *, servings: list[dict] | None = None) -> dict:
     return {
         "id": food["id"],
@@ -550,6 +572,9 @@ def _portable_receipt_mutation(operation: str, tamper=None):
                         "quantity": "1.000000",
                         "unit": "cup",
                         "gram_weight": "125.000000",
+                        "reference_quantity": None,
+                        "reference_unit": None,
+                        "reference_gram_weight": None,
                         "is_default": False,
                         "source": "manual",
                         "is_user_confirmed": True,
@@ -619,6 +644,36 @@ def test_portable_receipts_validate_exact_shapes_and_reject_operation_tampering(
             _resigned_representative(_portable_receipt_mutation(operation, tamper))
         )
 
+    assert failure.value.code == "idempotency_policy_invalid"
+
+
+def test_pre_0027_food_receipt_without_reference_keys_remains_portable() -> None:
+    def remove_reference_keys(_receipt, snapshot) -> None:
+        serving = snapshot["serving_definitions"][0]
+        serving.pop("reference_quantity")
+        serving.pop("reference_unit")
+        serving.pop("reference_gram_weight")
+
+    validate_transfer_package(
+        _resigned_representative(
+            _portable_receipt_mutation("food.add_serving", remove_reference_keys)
+        )
+    )
+
+
+def test_v2_food_receipt_rejects_partial_reference_measurement() -> None:
+    def partial_reference(_receipt, snapshot) -> None:
+        serving = snapshot["serving_definitions"][0]
+        serving["reference_quantity"] = "1.000000"
+        serving["reference_unit"] = "cup"
+        serving["reference_gram_weight"] = None
+
+    with pytest.raises(TransferPackageError) as failure:
+        validate_transfer_package(
+            _resigned_representative(
+                _portable_receipt_mutation("food.add_serving", partial_reference)
+            )
+        )
     assert failure.value.code == "idempotency_policy_invalid"
 
 

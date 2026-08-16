@@ -1,6 +1,6 @@
 {
-  "alembic_revision": "0027_serving_reference_measurement",
-  "descriptor_version": "e2-15.pg-0027.schema.v2",
+  "alembic_revision": "0025_immutable_validator_head",
+  "descriptor_version": "e2-15.pg-0025.schema.v1",
   "immutable_routines": [
     {
       "definition_sha256": "af40c11898f5c51b24b0cd63f2b34e29d299324e01ee482fa0b58979d95d59ef",
@@ -1289,12 +1289,7 @@
       ]
     },
     "food_nutrients": {
-      "checks": [
-        {
-          "expression": "amount IS NULL OR amount >= 0::numeric",
-          "name": "ck_food_nutrients_amount_nonnegative"
-        }
-      ],
+      "checks": [],
       "columns": [
         {
           "default": "gen_random_uuid()",
@@ -1433,14 +1428,6 @@
         "id"
       ],
       "unique_constraints": [
-        {
-          "columns": [
-            "food_item_id",
-            "nutrient_id",
-            "basis"
-          ],
-          "name": "uq_food_nutrients_food_nutrient_basis"
-        },
         {
           "columns": [
             "id",
@@ -4553,24 +4540,6 @@
         {
           "default": null,
           "name": "gram_weight",
-          "nullable": true,
-          "type": "numeric(14,6)"
-        },
-        {
-          "default": null,
-          "name": "reference_quantity",
-          "nullable": true,
-          "type": "numeric(14,6)"
-        },
-        {
-          "default": null,
-          "name": "reference_unit",
-          "nullable": true,
-          "type": "text"
-        },
-        {
-          "default": null,
-          "name": "reference_gram_weight",
           "nullable": true,
           "type": "numeric(14,6)"
         },

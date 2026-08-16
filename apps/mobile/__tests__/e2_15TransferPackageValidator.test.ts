@@ -1,5 +1,6 @@
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
+import legacyRepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
 
 import {
   buildTransferSection,
@@ -117,6 +118,11 @@ test("validates and deeply freezes a complete canonical package before SQLite", 
   expect(Object.isFrozen(validated.sections)).toBe(true);
 });
 
+test("continues to validate the frozen v1 transfer package for legacy one-time imports", async () => {
+  const validated = await parseAndValidateTransferPackage(canonicalTransferJson(legacyRepresentativePackage));
+  expect(validated.format_version).toBe("1");
+});
+
 test("rejects noncanonical, tampered, unsupported, and duplicate-key documents", async () => {
   const source = await minimalDocument();
   const canonical = canonicalTransferJson(source);
@@ -153,6 +159,23 @@ async function mutatedRepresentative(
   }));
   return canonicalTransferJson(await withOverallDigest(value));
 }
+
+
+test.each([
+  ["missing grams", (serving: Record<string, unknown>) => { serving.reference_gram_weight = null; }],
+  ["zero quantity", (serving: Record<string, unknown>) => { serving.reference_quantity = "0.000000"; }],
+  ["zero grams", (serving: Record<string, unknown>) => { serving.reference_gram_weight = "0.000000"; }],
+  ["blank unit", (serving: Record<string, unknown>) => { serving.reference_unit = ""; }],
+])("rejects v2 serving reference measurements with %s", async (_label, mutate) => {
+  const document = await mutatedRepresentative((_value, sections) => {
+    const servings = sections.get("serving_definitions")!.records as Record<string, unknown>[];
+    const serving = servings.find((row) => row.reference_quantity !== null)!;
+    mutate(serving);
+  });
+  await expect(parseAndValidateTransferPackage(document)).rejects.toMatchObject({
+    code: "owner_graph_invalid",
+  });
+});
 
 async function traceMutation(
   mutate: (trace: Record<string, unknown>) => void,
@@ -261,6 +284,9 @@ function portableReceiptMutation(operation: string, tamper?: ReceiptTamper) {
           quantity: "1.000000",
           unit: "cup",
           gram_weight: "125.000000",
+          reference_quantity: null,
+          reference_unit: null,
+          reference_gram_weight: null,
           is_default: false,
           source: "manual",
           is_user_confirmed: true,
@@ -444,6 +470,28 @@ test.each([
   )).resolves.toBeDefined();
   await expect(parseAndValidateTransferPackage(
     await mutatedRepresentative(portableReceiptMutation(operation, tamper)),
+  )).rejects.toMatchObject({ code: "idempotency_policy_invalid" });
+});
+
+test("accepts pre-0027 Food receipts whose serving snapshots have no reference keys", async () => {
+  await expect(parseAndValidateTransferPackage(
+    await mutatedRepresentative(portableReceiptMutation("food.add_serving", (_receipt, snapshot) => {
+      const serving = (snapshot.serving_definitions as Record<string, unknown>[])[0];
+      delete serving.reference_quantity;
+      delete serving.reference_unit;
+      delete serving.reference_gram_weight;
+    })),
+  )).resolves.toBeDefined();
+});
+
+test("rejects v2 Food receipt snapshots with a partial serving reference", async () => {
+  await expect(parseAndValidateTransferPackage(
+    await mutatedRepresentative(portableReceiptMutation("food.add_serving", (_receipt, snapshot) => {
+      const serving = (snapshot.serving_definitions as Record<string, unknown>[])[0];
+      serving.reference_quantity = "1.000000";
+      serving.reference_unit = "cup";
+      serving.reference_gram_weight = null;
+    })),
   )).rejects.toMatchObject({ code: "idempotency_policy_invalid" });
 });
 

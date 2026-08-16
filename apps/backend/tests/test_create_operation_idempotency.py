@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from uuid import uuid4
 
 import pytest
@@ -15,10 +16,57 @@ from app.models.recipe import Recipe
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
 from app.schemas.food import FoodCreateRequest
-from app.services.create_idempotency import is_create_idempotency_conflict
+from app.services.create_idempotency import create_fingerprint, is_create_idempotency_conflict
 from app.services.food_service import FoodService
 from tests.test_stage2_foods import food_payload
 
+
+
+
+def _legacy_food_request_fingerprint(payload: FoodCreateRequest) -> str:
+    value = payload.model_dump(mode="python")
+    for serving in value["serving_definitions"]:
+        serving.pop("reference_quantity", None)
+        serving.pop("reference_unit", None)
+        serving.pop("reference_gram_weight", None)
+    return create_fingerprint(value)
+
+
+def test_food_create_replays_pre_0027_receipt_without_reference_fields(
+    client: TestClient, db_session: Session
+) -> None:
+    request_id = str(uuid4())
+    body = {**food_payload("Legacy Reference Retry"), "client_request_id": request_id}
+    first = client.post("/api/v1/foods", json=body)
+    assert first.status_code == 201, first.text
+
+    receipt = db_session.scalar(
+        select(CreateOperationIdempotency).where(
+            CreateOperationIdempotency.operation == "food.create_manual",
+            CreateOperationIdempotency.client_request_id == request_id,
+        )
+    )
+    assert receipt is not None
+    legacy_payload = FoodCreateRequest(**body)
+    receipt.request_fingerprint = _legacy_food_request_fingerprint(legacy_payload)
+    db_session.commit()
+
+    replay = client.post("/api/v1/foods", json=body)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+
+    changed = deepcopy(body)
+    changed["serving_definitions"] = [
+        {
+            **changed["serving_definitions"][0],
+            "reference_quantity": "1",
+            "reference_unit": "serving",
+            "reference_gram_weight": "100",
+        }
+    ]
+    conflict_response = client.post("/api/v1/foods", json=changed)
+    assert conflict_response.status_code == 409
+    assert conflict_response.json()["detail"]["code"] == "create_idempotency_payload_conflict"
 
 def test_manual_food_replay_returns_original_and_payload_mismatch_conflicts(
     client: TestClient,
@@ -91,6 +139,59 @@ def test_duplicate_and_serving_create_replay_without_duplicate_rows(
         )
     ) == 1
 
+
+
+
+def test_add_serving_replays_pre_0027_receipt_without_reference_fields(
+    client: TestClient, db_session: Session
+) -> None:
+    source = client.post("/api/v1/foods", json=food_payload("Legacy Serving Parent")).json()
+    request_id = str(uuid4())
+    body = {
+        "client_request_id": request_id,
+        "label": "1 legacy portion",
+        "quantity": "1",
+        "unit": "portion",
+        "gram_weight": "42",
+        "is_default": False,
+    }
+    first = client.post(f"/api/v1/foods/{source['id']}/serving-definitions", json=body)
+    assert first.status_code == 201, first.text
+
+    receipt = db_session.scalar(
+        select(CreateOperationIdempotency).where(
+            CreateOperationIdempotency.operation == "food.add_serving",
+            CreateOperationIdempotency.client_request_id == request_id,
+        )
+    )
+    assert receipt is not None
+    legacy_value = {
+        "label": "1 legacy portion",
+        "quantity": "1",
+        "unit": "portion",
+        "gram_weight": "42",
+        "is_default": False,
+    }
+    receipt.request_fingerprint = create_fingerprint(
+        legacy_value, context={"food_id": source["id"]}
+    )
+    db_session.commit()
+
+    replay = client.post(f"/api/v1/foods/{source['id']}/serving-definitions", json=body)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+
+    changed = {
+        **body,
+        "reference_quantity": "1",
+        "reference_unit": "portion",
+        "reference_gram_weight": "42",
+    }
+    conflict_response = client.post(
+        f"/api/v1/foods/{source['id']}/serving-definitions", json=changed
+    )
+    assert conflict_response.status_code == 409
+    assert conflict_response.json()["detail"]["code"] == "create_idempotency_payload_conflict"
 
 def test_recipe_create_and_publish_replay_preserve_single_revision(
     client: TestClient,

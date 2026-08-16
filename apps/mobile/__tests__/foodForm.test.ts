@@ -7,6 +7,11 @@ import {
   updateServingValues,
   type ServingFormValue,
 } from "../src/features/foods/hooks/useFoodForm";
+import { createServingFormValues } from "../src/features/foods/hooks/useFoodForm";
+import { normalizeServingQuantityInput } from "../src/features/foods/utils/amountForm";
+import { foodMutationSchema, servingSchema } from "../src/features/foods/validation/foodValidation";
+import type { Food } from "../src/features/foods/api/types";
+import { parseDecimal } from "../src/shared/exact/decimal";
 
 test("serving form trims raw decimals for initial display", () => {
   expect(formatServingFormNumber("100.000000")).toBe("100");
@@ -65,3 +70,80 @@ test("new serving client keys are stable-value-independent and unique", () => {
   expect(first).not.toBe(second);
   expect(first).toMatch(/^client-serving-\d+$/);
 });
+
+
+test("valid loose quantity input is canonicalized instead of failing the runtime decimal parser", () => {
+  // The physical-QA state: quantity typed as ".5" with a known positive total.
+  expect(normalizeServingQuantityInput(".5")).toBe("0.5");
+  expect(normalizeServingQuantityInput("2/3")).toBe("0.666666667");
+  expect(normalizeServingQuantityInput("1 1/2")).toBe("1.5");
+  // The runtime parser (source of the false "must be non-negative decimals" error) accepts
+  // the canonical form and rejects the loose form; payloads must therefore be canonicalized.
+  expect(parseDecimal("0.5")).toBe("0.500000");
+  expect(() => parseDecimal(".5")).toThrow();
+  // The client schema accepts the canonical form and still rejects genuinely invalid values.
+  expect(servingSchema.safeParse({ label: "0.5 tsp", quantity: "0.5", unit: "tsp", gram_weight: "139", is_default: false }).success).toBe(true);
+  expect(servingSchema.safeParse({ label: "bad", quantity: "-1", unit: "tsp", gram_weight: "139", is_default: false }).success).toBe(false);
+  expect(servingSchema.safeParse({ label: "bad", quantity: "abc", unit: "tsp", gram_weight: "139", is_default: false }).success).toBe(false);
+});
+
+test("reference and current representation survive a save/reload model round trip independently", () => {
+  const saved = createServingFormValues({
+    ...baseFoodFixture(),
+    serving_definitions: [
+      { id: "base", label: "100 g", quantity: "100", unit: "g", gram_weight: "100", is_default: false, source: "manual", is_user_confirmed: true },
+      {
+        id: "tbsp", label: "8 Tbsp", quantity: "8", unit: "tbsp", gram_weight: "50", is_default: true,
+        reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "100",
+        source: "manual", is_user_confirmed: true,
+      },
+    ],
+  });
+  const serving = saved.find((item) => item.unit === "tbsp")!;
+  expect(serving).toEqual(expect.objectContaining({
+    quantity: "8", unit: "tbsp", gram_weight: "50",
+    reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "100",
+  }));
+  const parsed = foodMutationSchema.safeParse({
+    name: "Flour",
+    brand: null,
+    notes: null,
+    serving_definitions: saved.map(({ key, originalQuantity, originalGramWeight, isBaseAmount, labelMode, consistencyWarning, ...rest }) => rest),
+    nutrients: [],
+  });
+  expect(parsed.success).toBe(true);
+  if (parsed.success) {
+    expect(parsed.data.serving_definitions[1]).toEqual(expect.objectContaining({
+      quantity: "8", unit: "tbsp", gram_weight: "50",
+      reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "100",
+    }));
+  }
+});
+
+test("reference triplet is all-or-none", () => {
+  const base = { label: "8 Tbsp", quantity: "8", unit: "tbsp", gram_weight: "50", is_default: true };
+  expect(servingSchema.safeParse({ ...base, reference_quantity: null, reference_unit: null, reference_gram_weight: null }).success).toBe(true);
+  expect(servingSchema.safeParse({ ...base, reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "100" }).success).toBe(true);
+  expect(servingSchema.safeParse({ ...base, reference_quantity: "1", reference_unit: null, reference_gram_weight: "100" }).success).toBe(false);
+  expect(servingSchema.safeParse({ ...base, reference_quantity: "1", reference_unit: "cup", reference_gram_weight: null }).success).toBe(false);
+  expect(servingSchema.safeParse({ ...base, reference_quantity: "0", reference_unit: "cup", reference_gram_weight: "100" }).success).toBe(false);
+  expect(servingSchema.safeParse({ ...base, reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "-1" }).success).toBe(false);
+});
+
+function baseFoodFixture(): Food {
+  return {
+    id: "food-1",
+    name: "Flour",
+    brand: null,
+    notes: null,
+    source_type: "manual",
+    source_id: null,
+    is_recipe: false,
+    source_kind: "manual",
+    source_label: "Manual",
+    is_favorite: false,
+    can_favorite: true,
+    serving_definitions: [],
+    nutrients: [],
+  };
+}
