@@ -106,12 +106,6 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     if (!mapped.some((serving) => serving.isBaseAmount)) {
       mapped.unshift(canonicalBaseAmount(createClientServingKey(), !mapped.some((serving) => serving.is_default)));
     }
-    if (mapped.length === 1) {
-      mapped.push({
-        key: createClientServingKey(), label: "1 serving", quantity: "1", unit: "serving", gram_weight: "",
-        is_default: false, isBaseAmount: false, labelMode: "automatic",
-      });
-    }
     return mapped;
   });
   const [values, setValues] = useState<FoodNutrientInput[]>(() => {
@@ -157,7 +151,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     const key = createClientServingKey();
     setServings((current) => [
       ...current,
-      { key, label: "1 serving", quantity: "1", unit: "serving", gram_weight: "", is_default: false, isBaseAmount: false, labelMode: "automatic" },
+      { key, label: "", quantity: "1", unit: "", gram_weight: "", is_default: false, isBaseAmount: false, labelMode: "automatic" },
     ]);
     return key;
   }
