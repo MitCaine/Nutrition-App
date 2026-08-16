@@ -1,5 +1,6 @@
 import type { Food, FoodResolvedNutrition, ResolvedFoodAmount } from "../../foods/api/types";
 import { defaultServing } from "../../foods/utils/foodDisplay";
+import { formatServingLabelForDisplay } from "../../foods/utils/amountForm";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
 import type { DailyLog, DailyLogEditContext, DailyLogInput, DailyLogUpdateInput } from "../api/types";
 import { normalizeLogMeal, normalizeLogNote } from "../validation/logContracts";
@@ -263,4 +264,10 @@ export function formatInitialLogAmount(amount?: string | null): string {
 
 export function formatServingGramWeight(gramWeight?: string | null): string | null {
   return gramWeight ? formatAmountWithUnit(gramWeight, "g") : null;
+}
+
+/** Presentation-only: serving-choice labels keep their canonical stored value in form state
+ * and mutation payloads; only rendering goes through the shared serving display formatter. */
+export function logServingChoiceDisplayLabel(serving: Pick<LogServingChoice, "label">): string {
+  return formatServingLabelForDisplay(serving.label);
 }

@@ -7,6 +7,7 @@ import {
   formatServingGramWeight,
   initialServingId,
   initialEditAmountId,
+  logServingChoiceDisplayLabel,
 } from "../src/features/logging/utils/logFoodForm";
 import type { DailyLog, DailyLogEditContext } from "../src/features/logging/api/types";
 
@@ -167,6 +168,67 @@ test("log form display formatting trims initial amounts and serving gram weights
   expect(formatServingGramWeight("100.000000")).toBe("100g");
   expect(formatServingGramWeight("85.500000")).toBe("85.5g");
   expect(formatServingGramWeight(null)).toBeNull();
+});
+
+test("log serving-choice display labels humanize canonical labels while choice state stays canonical", () => {
+  const fractionalFood: Food = {
+    ...importedFood,
+    serving_definitions: [
+      {
+        id: "serving-cup",
+        label: "0.666666667 cup",
+        quantity: "0.666666667",
+        unit: "cup",
+        gram_weight: "82.089552",
+        is_default: true,
+        source: "usda_fdc",
+        is_user_confirmed: false,
+      },
+      {
+        id: "serving-half",
+        label: "0.5 cup",
+        quantity: "0.5",
+        unit: "cup",
+        gram_weight: "41.044776",
+        is_default: false,
+        source: "usda_fdc",
+        is_user_confirmed: false,
+      },
+      {
+        id: "serving-manual",
+        label: "Small bowl",
+        quantity: "1",
+        unit: "bowl",
+        gram_weight: "45",
+        is_default: false,
+        source: "usda_fdc",
+        is_user_confirmed: false,
+      },
+    ],
+  };
+
+  const choices = editServingChoices(fractionalFood, undefined);
+
+  expect(choices.map((choice) => logServingChoiceDisplayLabel(choice))).toEqual([
+    "2/3 cup",
+    "1/2 cup",
+    "Small bowl",
+  ]);
+  expect(choices.map((choice) => choice.label)).toEqual([
+    "0.666666667 cup",
+    "0.5 cup",
+    "Small bowl",
+  ]);
+
+  const input = buildLogInput({
+    foodId: fractionalFood.id,
+    date: "2026-07-08",
+    amount: "1",
+    unit: "serving",
+    selectedServingId: choices[0].id,
+  });
+  expect(JSON.stringify(input)).not.toContain("2/3 cup");
+  expect(input.serving_definition_id).toBe("serving-cup");
 });
 
 test("log update input omits creation-only food item id", () => {

@@ -22,6 +22,7 @@ import {
   formatServingGramWeight,
   initialEditAmountId,
   initialServingId,
+  logServingChoiceDisplayLabel,
   resolveCreateLogInitialization,
   shouldApplyCreateLogInitialization,
   type LogFoodInitialAmount,
@@ -1059,8 +1060,8 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
                 key={serving.id}
                 accessibilityLabel={
                   serving.gram_weight
-                    ? `${serving.label}, ${formatServingGramWeight(serving.gram_weight)}`
-                    : serving.label
+                    ? `${logServingChoiceDisplayLabel(serving)}, ${formatServingGramWeight(serving.gram_weight)}`
+                    : logServingChoiceDisplayLabel(serving)
                 }
                 accessibilityRole="radio"
                 accessibilityState={{
@@ -1077,7 +1078,7 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
                 }}
                 style={[styles.servingButton, selectedServingId === serving.id && styles.active, (isSubmitting || nutritionEditUnavailable) && styles.disabled]}
               >
-                <Text style={styles.text}>{serving.label}</Text>
+                <Text style={styles.text}>{logServingChoiceDisplayLabel(serving)}</Text>
                 {serving.gram_weight ? <Text style={styles.servingMeta}>{formatServingGramWeight(serving.gram_weight)}</Text> : null}
               </AccessiblePressable>
             ))}

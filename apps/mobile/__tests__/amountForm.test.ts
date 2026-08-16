@@ -99,6 +99,52 @@ test("serving display formatting hides canonical precision without changing cano
   expect(formatServingLabelForDisplay("1 cup, chopped")).toBe("1 cup, chopped");
 });
 
+test("common fraction quantities render as explicit fractions", () => {
+  expect(formatServingQuantityForDisplay("0.5")).toBe("1/2");
+  expect(formatServingQuantityForDisplay("0.25")).toBe("1/4");
+  expect(formatServingQuantityForDisplay("0.75")).toBe("3/4");
+  expect(formatServingQuantityForDisplay("0.2")).toBe("1/5");
+  expect(formatServingQuantityForDisplay("0.375")).toBe("3/8");
+  expect(formatServingQuantityForDisplay("0.625")).toBe("5/8");
+  expect(formatServingQuantityForDisplay("1.25")).toBe("1 1/4");
+  expect(formatServingQuantityForDisplay("2.5")).toBe("2 1/2");
+  expect(formatServingQuantityForDisplay("2.25")).toBe("2 1/4");
+  expect(formatServingQuantityForDisplay("2.0")).toBe("2");
+  expect(formatServingQuantityForDisplay("0.666")).toBe("2/3");
+  expect(formatServingLabelForDisplay("0.5 cup")).toBe("1/2 cup");
+  expect(formatServingLabelForDisplay("0.25 cup")).toBe("1/4 cup");
+});
+
+test("quantities outside the fraction tolerance stay bounded decimals", () => {
+  expect(formatServingQuantityForDisplay("0.62")).toBe("0.62");
+  expect(formatServingQuantityForDisplay("0.71")).toBe("0.71");
+  expect(formatServingQuantityForDisplay("1.9")).toBe("1.9");
+  expect(formatServingQuantityForDisplay("1234.5678")).toBe("1234.568");
+  expect(formatServingQuantityForDisplay("0.10")).toBe("0.1");
+  expect(formatServingQuantityForDisplay("2.26")).toBe("2.26");
+  expect(formatServingLabelForDisplay("0.62 cup")).toBe("0.62 cup");
+  expect(formatServingLabelForDisplay("Small bowl")).toBe("Small bowl");
+});
+
+test("fraction display round-trips to the same canonical decimal", () => {
+  const canonical = "0.666666667";
+  const display = formatServingQuantityForDisplay(canonical);
+  expect(display).toBe("2/3");
+  expect(normalizeServingQuantityInput(display)).toBe(canonical);
+  const halfCanonical = normalizeServingQuantityInput("1/2");
+  expect(formatServingQuantityForDisplay(halfCanonical!)).toBe("1/2");
+  expect(normalizeServingQuantityInput(formatServingQuantityForDisplay(halfCanonical!))).toBe(halfCanonical);
+});
+
+test("gram summaries hide storage-scale precision without touching the source value", () => {
+  const perUnit = "123.134328";
+  const total = "82.089552";
+  expect(formatServingGramForDisplay(perUnit)).toBe("123.1");
+  expect(formatServingGramForDisplay(total)).toBe("82.1");
+  expect(perUnit).toBe("123.134328");
+  expect(total).toBe("82.089552");
+});
+
 test.each([
   ["100 g", { quantity: "100", unit: "g" }],
   ["2 Tbsp", { quantity: "2", unit: "tbsp" }],
