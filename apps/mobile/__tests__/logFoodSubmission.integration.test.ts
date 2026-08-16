@@ -532,7 +532,7 @@ test("unavailable Recipe edit remains metadata-only", async () => {
   await act(async () => notes.props.onChangeText("metadata correction"));
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit log date" }).props.onPress());
   const picker = renderer.root.findByProps({ mode: "date" });
-  await act(async () => picker.props.onChange({ type: "set" }, new Date(2026, 6, 12)));
+  await act(async () => picker.props.onValueChange({}, new Date(2026, 6, 12)));
   await act(async () => pressableWithText(renderer.root, "Done").props.onPress());
   act(() => { void pressableWithText(renderer.root, "Save Changes").props.onPress(); });
   await flushRecoveryBarrier();
@@ -557,7 +557,7 @@ test("edit date picker submits the selected destination date", async () => {
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit log date" }).props.onPress());
 
   const picker = renderer.root.findByProps({ mode: "date" });
-  await act(async () => picker.props.onChange({ type: "set" }, new Date(2026, 6, 12)));
+  await act(async () => picker.props.onValueChange({}, new Date(2026, 6, 12)));
   await act(async () => pressableWithText(renderer.root, "Done").props.onPress());
   act(() => { void pressableWithText(renderer.root, "Save Changes").props.onPress(); });
   await flushRecoveryBarrier();
