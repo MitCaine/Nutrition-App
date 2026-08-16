@@ -73,6 +73,34 @@ export function nutrientPayloadNumber(displayValue: string | null | undefined, o
   return displayValue === formatNutrientFormNumber(originalValue) ? String(originalValue) : displayValue;
 }
 
+export function createServingFormValues(food: Food | undefined): ServingFormValue[] {
+  const source: InitialServing[] = food?.serving_definitions.length ? food.serving_definitions : [];
+  let mapped: ServingFormValue[] = source.map((serving) => {
+    const quantity = String(serving.quantity);
+    const gramWeight = serving.gram_weight == null ? "" : String(serving.gram_weight);
+    const displayQuantity = formatServingFormNumber(quantity);
+    const displayGramWeight = formatServingFormNumber(gramWeight);
+    const isBaseAmount = isCanonicalBaseAmount(serving);
+    return repairLegacyStructuredAmount({
+      key: serving.id ?? createClientServingKey(),
+      label: isBaseAmount ? "100 g" : serving.label,
+      quantity: isBaseAmount ? "100" : displayQuantity,
+      unit: isBaseAmount ? "g" : serving.unit,
+      gram_weight: isBaseAmount ? "100" : displayGramWeight,
+      is_default: serving.is_default,
+      isBaseAmount,
+      labelMode: isBaseAmount || serving.label.trim() === generatedAmountLabel(displayQuantity, serving.unit) ? "automatic" as const : "manual" as const,
+      originalQuantity: quantity,
+      originalGramWeight: gramWeight,
+    });
+  });
+  mapped = dedupeCanonicalBaseAmounts(repairDuplicateAmountKeys(mapped, createClientServingKey));
+  if (!mapped.some((serving) => serving.isBaseAmount)) {
+    mapped.unshift(canonicalBaseAmount(createClientServingKey(), !mapped.some((serving) => serving.is_default)));
+  }
+  return mapped;
+}
+
 export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinition[]) {
   const [name, setName] = useState(food?.name ?? "");
   const [brand, setBrand] = useState(food?.brand ?? "");
@@ -81,33 +109,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
   const [currentValidationIssue, setCurrentValidationIssue] = useState<ValidationIssue<FoodValidationTarget> | null>(null);
   const [invalidServingKey, setInvalidServingKey] = useState<string | null>(null);
   const [defaultAmountError, setDefaultAmountError] = useState<{ key: string; message: string } | null>(null);
-  const [servings, setServings] = useState<ServingFormValue[]>(() => {
-    const source: InitialServing[] = food?.serving_definitions.length ? food.serving_definitions : [];
-    let mapped: ServingFormValue[] = source.map((serving) => {
-      const quantity = String(serving.quantity);
-      const gramWeight = serving.gram_weight == null ? "" : String(serving.gram_weight);
-      const displayQuantity = formatServingFormNumber(quantity);
-      const displayGramWeight = formatServingFormNumber(gramWeight);
-      const isBaseAmount = isCanonicalBaseAmount(serving);
-      return repairLegacyStructuredAmount({
-        key: serving.id ?? createClientServingKey(),
-        label: isBaseAmount ? "100 g" : serving.label,
-        quantity: isBaseAmount ? "100" : displayQuantity,
-        unit: isBaseAmount ? "g" : serving.unit,
-        gram_weight: isBaseAmount ? "100" : displayGramWeight,
-        is_default: serving.is_default,
-        isBaseAmount,
-        labelMode: isBaseAmount || serving.label.trim() === generatedAmountLabel(displayQuantity, serving.unit) ? "automatic" as const : "manual" as const,
-        originalQuantity: quantity,
-        originalGramWeight: gramWeight,
-      });
-    });
-    mapped = dedupeCanonicalBaseAmounts(repairDuplicateAmountKeys(mapped, createClientServingKey));
-    if (!mapped.some((serving) => serving.isBaseAmount)) {
-      mapped.unshift(canonicalBaseAmount(createClientServingKey(), !mapped.some((serving) => serving.is_default)));
-    }
-    return mapped;
-  });
+  const [servings, setServings] = useState<ServingFormValue[]>(() => createServingFormValues(food));
   const [values, setValues] = useState<FoodNutrientInput[]>(() => {
     if (!food) {
       return [];
@@ -173,6 +175,12 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     });
   }
 
+  function restoreServings() {
+    setDefaultAmountError(null);
+    setInvalidServingKey(null);
+    setServings(createServingFormValues(food));
+  }
+
   function buildPayload(): FoodPayloadValidationResult {
     const input: FoodMutationInput = {
       name,
@@ -223,6 +231,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     updateServing,
     addServing,
     removeServing,
+    restoreServings,
     nutrients: mergedValues,
     setNutrients: setValues,
     error,
