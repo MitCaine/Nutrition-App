@@ -32,6 +32,10 @@ type Props = {
   gramWeightError?: string | null;
 };
 
+const QUANTITY_SCALE = 1_000_000_000;
+const COMMON_FRACTION_DENOMINATORS = [2, 3, 4, 5, 8] as const;
+const COMMON_FRACTION_TOLERANCE = 0.001;
+
 /** Structured serving authoring for OCR confirmation without changing OCR payload authority. */
 export function OcrServingEditor({
   value,
@@ -43,11 +47,16 @@ export function OcrServingEditor({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [gramWeightPerUnit, setGramWeightPerUnit] = useState(() => initialGramWeightPerUnit(value));
+  const [quantityDraft, setQuantityDraft] = useState(() => friendlyInitialQuantity(value.servingQuantity));
+  const [gramWeightPerUnit, setGramWeightPerUnit] = useState(() => initialGramWeightPerUnit(
+    value,
+    normalizedQuantityInput(friendlyInitialQuantity(value.servingQuantity)) ?? value.servingQuantity,
+  ));
   const [labelMode, setLabelMode] = useState<AmountLabelMode>(() =>
     value.servingDisplay.trim() ? "manual" : "automatic",
   );
-  const automaticLabel = generatedAmountLabel(value.servingQuantity, value.servingUnit);
+  const canonicalQuantity = normalizedQuantityInput(quantityDraft) ?? value.servingQuantity;
+  const automaticLabel = generatedDisplayLabel(quantityDraft, canonicalQuantity, value.servingUnit);
   const displayLabel = labelMode === "manual"
     ? value.servingDisplay.trim() || automaticLabel
     : automaticLabel;
@@ -55,25 +64,42 @@ export function OcrServingEditor({
   const unitFocus = focusProps("ocr.servingUnit");
 
   useEffect(() => {
-    if (value.gramWeight.trim() || !weightReadOnly) return;
-    const resolvedWeight = massGramEquivalent(value.servingQuantity, value.servingUnit);
-    if (resolvedWeight !== null) onChange({ gramWeight: resolvedWeight });
-  }, [onChange, value.gramWeight, value.servingQuantity, value.servingUnit, weightReadOnly]);
+    const normalizedQuantity = normalizedQuantityInput(quantityDraft);
+    if (!normalizedQuantity || normalizedQuantity === value.servingQuantity) return;
+    onChange({ servingQuantity: normalizedQuantity });
+  }, [onChange, quantityDraft, value.servingQuantity]);
 
-  function updateQuantity(servingQuantity: string) {
-    const gramWeight = multiplyAmountValues(servingQuantity, gramWeightPerUnit) ?? "";
-    onChange({ servingQuantity, gramWeight });
+  useEffect(() => {
+    if (value.gramWeight.trim() || !weightReadOnly) return;
+    const normalizedQuantity = normalizedQuantityInput(quantityDraft) ?? value.servingQuantity;
+    const resolvedWeight = massGramEquivalent(normalizedQuantity, value.servingUnit);
+    if (resolvedWeight !== null) onChange({ gramWeight: resolvedWeight });
+  }, [onChange, quantityDraft, value.gramWeight, value.servingQuantity, value.servingUnit, weightReadOnly]);
+
+  function updateQuantity(rawQuantity: string) {
+    setQuantityDraft(rawQuantity);
+    const servingQuantity = normalizedQuantityInput(rawQuantity);
+    if (!servingQuantity) {
+      onChange({ servingQuantity: "" });
+      return;
+    }
+    const gramWeight = multiplyAmountValues(servingQuantity, gramWeightPerUnit);
+    onChange({
+      servingQuantity,
+      ...(gramWeight !== null ? { gramWeight } : {}),
+    });
   }
 
   function updateUnit(servingUnit: string) {
     const previousCategory = amountUnitCategory(value.servingUnit);
     const nextCategory = amountUnitCategory(servingUnit);
+    const servingQuantity = normalizedQuantityInput(quantityDraft) ?? value.servingQuantity;
     if (nextCategory === "weight") {
       const nextPerUnit = massGramEquivalent("1", servingUnit) ?? "";
       setGramWeightPerUnit(nextPerUnit);
       onChange({
         servingUnit,
-        gramWeight: massGramEquivalent(value.servingQuantity, servingUnit) ?? "",
+        gramWeight: massGramEquivalent(servingQuantity, servingUnit) ?? "",
       });
       return;
     }
@@ -84,13 +110,14 @@ export function OcrServingEditor({
     }
     onChange({
       servingUnit,
-      gramWeight: multiplyAmountValues(value.servingQuantity, gramWeightPerUnit) ?? "",
+      gramWeight: multiplyAmountValues(servingQuantity, gramWeightPerUnit) ?? "",
     });
   }
 
-  function updateGramWeightPerUnit(nextPerUnit: string) {
-    setGramWeightPerUnit(nextPerUnit);
-    onChange({ gramWeight: multiplyAmountValues(value.servingQuantity, nextPerUnit) ?? "" });
+  function updateServingGramWeight(gramWeight: string) {
+    const servingQuantity = normalizedQuantityInput(quantityDraft) ?? value.servingQuantity;
+    setGramWeightPerUnit(divideAmountValues(gramWeight, servingQuantity) ?? "");
+    onChange({ gramWeight });
   }
 
   function useAutomaticLabel() {
@@ -106,7 +133,7 @@ export function OcrServingEditor({
   return (
     <View style={styles.card}>
       <Text style={styles.meta}>
-        Enter how many units make up the label serving and the gram weight of one unit. The total serving weight updates automatically.
+        Enter the serving amount shown on the label and its total gram weight. The per-unit equivalent is calculated automatically.
       </Text>
 
       <View style={styles.twoColumn}>
@@ -120,12 +147,13 @@ export function OcrServingEditor({
           disabled={disabled}
           invalid={Boolean(quantityError)}
           error={quantityError}
-          value={value.servingQuantity}
+          value={quantityDraft}
           onChangeText={updateQuantity}
-          keyboardType="decimal-pad"
-          placeholder="e.g. 2"
+          keyboardType="numbers-and-punctuation"
+          placeholder="e.g. 2/3"
           placeholderTextColor={theme.colors.placeholder}
           inputStyle={styles.input}
+          hint="Enter a decimal or simple fraction, such as 2/3."
         />
         <ServingUnitPicker
           value={value.servingUnit}
@@ -140,7 +168,7 @@ export function OcrServingEditor({
       </View>
 
       <LabeledField
-        label={gramWeightFieldLabel(value.servingUnit)}
+        label="Serving grams"
         accessibilityLabel="Serving grams"
         validationTarget="ocr.gramWeight"
         {...focusProps("ocr.gramWeight")}
@@ -149,20 +177,22 @@ export function OcrServingEditor({
         readOnly={weightReadOnly}
         invalid={Boolean(gramWeightError)}
         error={gramWeightError}
-        value={gramWeightPerUnit}
-        onChangeText={updateGramWeightPerUnit}
+        value={value.gramWeight}
+        onChangeText={updateServingGramWeight}
         keyboardType="decimal-pad"
-        placeholder={weightReadOnly ? "Calculated" : "e.g. 28"}
+        placeholder={weightReadOnly ? "Calculated" : "e.g. 55"}
         placeholderTextColor={theme.colors.placeholder}
         inputStyle={[styles.input, weightReadOnly && styles.calculatedInput]}
-        hint={weightReadOnly ? "Weight-unit conversion is calculated when that unit is selected." : "Enter the gram weight of one unit."}
+        hint={weightReadOnly
+          ? "Weight-unit conversion is calculated when that unit is selected."
+          : "Enter the total gram weight shown for this serving. The per-unit equivalent is calculated automatically."}
       />
 
       <View style={styles.previewCard}>
         <Text style={styles.fieldLabel}>Will appear as</Text>
         <Text style={styles.previewText}>{servingPreview(displayLabel, value.gramWeight)}</Text>
-        {servingWeightSummary(value, gramWeightPerUnit) ? (
-          <Text style={styles.meta}>{servingWeightSummary(value, gramWeightPerUnit)}</Text>
+        {servingWeightSummary(value, quantityDraft, gramWeightPerUnit) ? (
+          <Text style={styles.meta}>{servingWeightSummary(value, quantityDraft, gramWeightPerUnit)}</Text>
         ) : null}
       </View>
 
@@ -205,15 +235,18 @@ export function OcrServingEditor({
   );
 }
 
-function initialGramWeightPerUnit(value: ServingValue): string {
-  return divideAmountValues(value.gramWeight, value.servingQuantity)
+function initialGramWeightPerUnit(value: ServingValue, servingQuantity: string): string {
+  return divideAmountValues(value.gramWeight, servingQuantity)
     ?? massGramEquivalent("1", value.servingUnit)
     ?? "";
 }
 
-function gramWeightFieldLabel(unit: string): string {
-  const displayUnit = servingUnitDisplay(unit);
-  return displayUnit ? `Grams per ${displayUnit}` : "Grams per unit";
+function generatedDisplayLabel(displayQuantity: string, canonicalQuantity: string, unit: string): string {
+  const canonicalLabel = generatedAmountLabel(canonicalQuantity, unit);
+  const quantity = displayQuantity.trim();
+  if (!canonicalLabel || !quantity) return canonicalLabel;
+  const separator = canonicalLabel.indexOf(" ");
+  return separator < 0 ? canonicalLabel : `${quantity}${canonicalLabel.slice(separator)}`;
 }
 
 function servingUnitDisplay(unit: string): string {
@@ -227,15 +260,77 @@ function servingPreview(displayLabel: string, gramWeight: string): string {
   return `${displayLabel} (${gramWeight} g)`;
 }
 
-function servingWeightSummary(value: ServingValue, gramWeightPerUnit: string): string {
+function servingWeightSummary(value: ServingValue, quantityDraft: string, gramWeightPerUnit: string): string {
   if (!positiveDecimal(value.gramWeight)) return "Gram weight not set";
   const unit = servingUnitDisplay(value.servingUnit);
+  const servingQuantity = normalizedQuantityInput(quantityDraft) ?? value.servingQuantity;
   if (positiveDecimal(gramWeightPerUnit) && unit) {
-    return Number(value.servingQuantity) === 1
+    return Number(servingQuantity) === 1
       ? `${gramWeightPerUnit} g per ${unit}`
       : `${gramWeightPerUnit} g per ${unit} · ${value.gramWeight} g total`;
   }
   return `${value.gramWeight} g total`;
+}
+
+function friendlyInitialQuantity(quantity: string): string {
+  const normalized = normalizedQuantityInput(quantity);
+  if (!normalized) return quantity;
+  const numeric = Number(normalized);
+  const whole = Math.floor(numeric);
+  const fractional = numeric - whole;
+  if (fractional <= COMMON_FRACTION_TOLERANCE) return normalized;
+
+  let best: { numerator: number; denominator: number; error: number } | null = null;
+  for (const denominator of COMMON_FRACTION_DENOMINATORS) {
+    for (let numerator = 1; numerator < denominator; numerator += 1) {
+      const error = Math.abs(fractional - numerator / denominator);
+      if (!best || error < best.error) best = { numerator, denominator, error };
+    }
+  }
+  if (!best || best.error > COMMON_FRACTION_TOLERANCE) return normalized;
+  const divisor = greatestCommonDivisor(best.numerator, best.denominator);
+  const fraction = `${best.numerator / divisor}/${best.denominator / divisor}`;
+  return whole > 0 ? `${whole} ${fraction}` : fraction;
+}
+
+function normalizedQuantityInput(rawQuantity: string): string | null {
+  const value = rawQuantity.trim().replace(/\s+/g, " ");
+  const mixed = value.match(/^(\d+) (\d+)\/(\d+)$/);
+  if (mixed) {
+    const whole = Number(mixed[1]);
+    const numerator = Number(mixed[2]);
+    const denominator = Number(mixed[3]);
+    if (denominator <= 0) return null;
+    return normalizedPositiveNumber(whole + numerator / denominator);
+  }
+
+  const fraction = value.match(/^(\d+)\/(\d+)$/);
+  if (fraction) {
+    const numerator = Number(fraction[1]);
+    const denominator = Number(fraction[2]);
+    if (denominator <= 0) return null;
+    return normalizedPositiveNumber(numerator / denominator);
+  }
+
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) return null;
+  return normalizedPositiveNumber(Number(value));
+}
+
+function normalizedPositiveNumber(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const rounded = Math.round(value * QUANTITY_SCALE) / QUANTITY_SCALE;
+  return rounded.toFixed(9).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function greatestCommonDivisor(left: number, right: number): number {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
 }
 
 function labelIncludesGramWeight(label: string): boolean {
