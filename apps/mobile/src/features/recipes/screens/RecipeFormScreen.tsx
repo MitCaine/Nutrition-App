@@ -6,7 +6,7 @@ import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScroll
 import { recipeFocusKey } from "../../../shared/forms/focusTargets";
 import { useRecipeMutations } from "../hooks/useRecipes";
 import type { ServingDefinition, ServingDefinitionInput } from "../../foods/api/types";
-import { generatedAmountLabel } from "../../foods/utils/amountForm";
+import { generatedAmountLabel, normalizedAmountUnit } from "../../foods/utils/amountForm";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import {
   buildCustomServingDefinition,
@@ -100,7 +100,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
     const form = customServingForms[ingredient.localId] ?? emptyCustomServingForm();
     const servingPayload = buildCustomServingDefinition(form);
     if (!servingPayload) {
-      setError("Enter a positive quantity and gram weight, choose a unit, and complete any custom display name before saving the serving size.");
+      setError("Enter a positive quantity and gram weight per unit, choose a unit, and complete any custom display name before saving the serving size.");
       return;
     }
     const intent = bindCreateIntent(
@@ -268,7 +268,7 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
 type CustomServingForm = CustomServingDraft;
 
 function emptyCustomServingForm(): CustomServingForm {
-  return { quantity: "1", unit: "", gramWeight: "", customLabel: "", useCustomLabel: false };
+  return { quantity: "1", unit: "", gramWeightPerUnit: "", customLabel: "", useCustomLabel: false };
 }
 
 function isMatchingCreatedServing(serving: ServingDefinition, input: ServingDefinitionInput) {
@@ -302,11 +302,13 @@ function CustomServingEditor({
   const styles = useMemo(() => createStyles(theme), [theme]);
   const automaticLabel = generatedAmountLabel(value.quantity, value.unit);
   const displayLabel = value.useCustomLabel ? value.customLabel.trim() || automaticLabel : automaticLabel;
-  const gramWeight = Number(value.gramWeight) > 0 ? value.gramWeight : null;
+  const normalizedUnit = normalizedAmountUnit(value.unit) ?? value.unit.trim().toLowerCase().replace(/\s+/g, " ");
+  const gramWeightLabel = normalizedUnit ? `Grams per ${normalizedUnit}` : "Grams per unit";
+  const servingDefinition = buildCustomServingDefinition(value);
   const preview = displayLabel
-    ? formatServingChoiceLabel({ label: displayLabel, gram_weight: gramWeight })
+    ? formatServingChoiceLabel({ label: displayLabel, gram_weight: servingDefinition?.gram_weight ?? null })
     : "Enter a quantity and unit to preview this serving size.";
-  const canSave = buildCustomServingDefinition(value) !== null;
+  const canSave = servingDefinition !== null;
 
   if (!expanded) {
     return (
@@ -319,7 +321,7 @@ function CustomServingEditor({
   return (
     <View style={styles.customServing}>
       <Text accessibilityRole="header" style={styles.label}>Create a serving size for {foodName}</Text>
-      <Text style={styles.meta}>Define the serving with a quantity, unit, and gram weight. The display name is generated from those values unless you choose to customize it.</Text>
+      <Text style={styles.meta}>Enter how many units make up the serving and the gram weight of one unit. The total serving weight is calculated automatically.</Text>
 
       <View style={styles.twoColumn}>
         <View style={styles.flex}>
@@ -332,8 +334,8 @@ function CustomServingEditor({
         </View>
       </View>
 
-      <Text style={styles.fieldLabel}>Gram weight</Text>
-      <TextInput accessibilityLabel={`${foodName} serving gram weight`} editable={!disabled} value={value.gramWeight} onChangeText={(gramWeight) => onChange({ ...value, gramWeight })} placeholder="e.g. 56" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
+      <Text style={styles.fieldLabel}>{gramWeightLabel}</Text>
+      <TextInput accessibilityLabel={`${foodName} ${gramWeightLabel.toLowerCase()}`} editable={!disabled} value={value.gramWeightPerUnit} onChangeText={(gramWeightPerUnit) => onChange({ ...value, gramWeightPerUnit })} placeholder="e.g. 28" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
 
       <View style={styles.previewCard}>
         <Text style={styles.fieldLabel}>Will appear as</Text>
@@ -357,7 +359,7 @@ function CustomServingEditor({
       )}
 
       <Text style={styles.meta}>Saving adds this serving size to {foodName} immediately. It remains available if you cancel this Recipe. Edit or remove saved serving sizes from the Food editor.</Text>
-      {!canSave ? <Text style={styles.meta}>Enter a positive quantity and gram weight, a unit, and any enabled custom display name before saving.</Text> : null}
+      {!canSave ? <Text style={styles.meta}>Enter a positive quantity and gram weight per unit, a unit, and any enabled custom display name before saving.</Text> : null}
       <Pressable accessibilityRole="button" accessibilityLabel={`Save new serving size to ${foodName}`} accessibilityState={{ disabled: disabled || !canSave }} disabled={disabled || !canSave} onPress={onAdd} style={[styles.addServingButton, (disabled || !canSave) && styles.disabledButton]}>
         <Text style={styles.link}>Save serving size to {foodName}</Text>
       </Pressable>
