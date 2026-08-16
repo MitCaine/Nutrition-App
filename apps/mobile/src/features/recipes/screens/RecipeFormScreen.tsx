@@ -6,6 +6,7 @@ import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScroll
 import { recipeFocusKey } from "../../../shared/forms/focusTargets";
 import { useRecipeMutations } from "../hooks/useRecipes";
 import type { ServingDefinition, ServingDefinitionInput } from "../../foods/api/types";
+import { ServingUnitPicker } from "../../foods/components/ServingUnitPicker";
 import { generatedAmountLabel, normalizedAmountUnit } from "../../foods/utils/amountForm";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import {
@@ -328,10 +329,13 @@ function CustomServingEditor({
           <Text style={styles.fieldLabel}>Quantity</Text>
           <TextInput accessibilityLabel={`${foodName} serving quantity`} editable={!disabled} value={value.quantity} onChangeText={(quantity) => onChange({ ...value, quantity })} placeholder="e.g. 2" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
         </View>
-        <View style={styles.flex}>
-          <Text style={styles.fieldLabel}>Unit</Text>
-          <TextInput accessibilityLabel={`${foodName} serving unit`} editable={!disabled} value={value.unit} onChangeText={(unit) => onChange({ ...value, unit })} placeholder="e.g. slice" placeholderTextColor={theme.colors.placeholder} autoCapitalize="none" style={styles.input} />
-        </View>
+        <ServingUnitPicker
+          value={value.unit}
+          onChange={(unit) => onChange({ ...value, unit })}
+          disabled={disabled}
+          contextLabel={`serving size for ${foodName}`}
+          containerStyle={styles.flex}
+        />
       </View>
 
       <Text style={styles.fieldLabel}>{gramWeightLabel}</Text>

@@ -90,10 +90,17 @@ export function generatedAmountLabel(quantity: string, rawUnit: string): string 
   const unit = normalized ?? rawUnit.trim();
   if (!quantity.trim() || !unit) return "";
   const numericQuantity = Number(quantity);
-  const displayUnit = normalized && COUNT_PLURALS[normalized] && Number.isFinite(numericQuantity) && numericQuantity !== 1
+  const shouldPluralize = Number.isFinite(numericQuantity) && numericQuantity !== 1;
+  const displayUnit = normalized && COUNT_PLURALS[normalized] && shouldPluralize
     ? COUNT_PLURALS[normalized]
-    : DISPLAY_UNITS[unit] ?? unit;
+    : !normalized && shouldPluralize
+      ? pluralizedCustomUnit(unit)
+      : DISPLAY_UNITS[unit] ?? unit;
   return `${quantity.trim()} ${displayUnit}`;
+}
+
+function pluralizedCustomUnit(unit: string): string {
+  return /s$/i.test(unit) ? unit : `${unit}s`;
 }
 
 export function parseSimpleAmountLabel(label: string): { quantity: string; unit: string } | null {

@@ -68,7 +68,7 @@ test.each(["tsp", "tbsp", "cup", "serving", "piece", "scoop"])("%s does not fabr
   expect(massGramEquivalent("2", unit)).toBeNull();
 });
 
-test("recognized units generate labels while uncommon units remain valid raw text", () => {
+test("recognized and custom units generate deterministic singular/plural labels", () => {
   expect(generatedAmountLabel("2", "tbsp")).toBe("2 Tbsp");
   expect(generatedAmountLabel("1", "slice")).toBe("1 slice");
   expect(generatedAmountLabel("2", "slice")).toBe("2 slices");
@@ -76,6 +76,9 @@ test("recognized units generate labels while uncommon units remain valid raw tex
   expect(normalizedAmountUnit("slices")).toBe("slice");
   expect(normalizedAmountUnit("scoop")).toBeNull();
   expect(generatedAmountLabel("1", "scoop")).toBe("1 scoop");
+  expect(generatedAmountLabel("2", "scoop")).toBe("2 scoops");
+  expect(generatedAmountLabel("2", "Scoop")).toBe("2 Scoops");
+  expect(generatedAmountLabel("2", "scoops")).toBe("2 scoops");
 });
 
 test.each([
