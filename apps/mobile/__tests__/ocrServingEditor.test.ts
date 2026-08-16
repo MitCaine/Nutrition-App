@@ -43,7 +43,7 @@ function visibleText(root: TestRenderer.ReactTestInstance): string {
   return root.findAllByType(Text).map((node) => textValue(node.props.children)).join(" ");
 }
 
-test("OCR serving editor derives per-unit grams while preserving an OCR display override", async () => {
+test("OCR serving editor exposes total serving grams while deriving the per-unit equivalent", async () => {
   const onPatch = jest.fn();
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -53,14 +53,14 @@ test("OCR serving editor derives per-unit grams while preserving an OCR display 
     }));
   });
 
-  expect(input(renderer.root, "Serving grams").props.value).toBe("15");
+  expect(input(renderer.root, "Serving grams").props.value).toBe("30");
   expect(input(renderer.root, "Serving grams").props.editable).toBe(true);
   expect(visibleText(renderer.root)).toContain("2 cups (30g)");
   expect(visibleText(renderer.root)).toContain("15 g per cup · 30 g total");
   expect(visibleText(renderer.root)).not.toContain("2 cups (30g) (30 g)");
 
   await act(async () => input(renderer.root, "Serving quantity").props.onChangeText("3"));
-  expect(input(renderer.root, "Serving grams").props.value).toBe("15");
+  expect(input(renderer.root, "Serving grams").props.value).toBe("45");
   expect(onPatch).toHaveBeenLastCalledWith({ servingQuantity: "3", gramWeight: "45" });
   expect(visibleText(renderer.root)).toContain("15 g per cup · 45 g total");
   expect(visibleText(renderer.root)).toContain("2 cups (30g)");
@@ -69,6 +69,33 @@ test("OCR serving editor derives per-unit grams while preserving an OCR display 
   await act(async () => action(renderer.root, "Use automatic label for 2 cups (30g)").props.onPress());
   expect(onPatch).toHaveBeenLastCalledWith({ servingDisplay: "" });
   expect(visibleText(renderer.root)).toContain("3 cup (45 g)");
+  await act(async () => renderer.unmount());
+});
+
+test("OCR serving editor accepts common fractions and normalizes them before persistence", async () => {
+  const onPatch = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(Harness, {
+      initial: { servingDisplay: "2/3 cup (55g)", servingQuantity: ".667", servingUnit: "cup", gramWeight: "55" },
+      onPatch,
+    }));
+  });
+
+  expect(input(renderer.root, "Serving quantity").props.value).toBe("2/3");
+  expect(input(renderer.root, "Serving quantity").props.keyboardType).toBe("numbers-and-punctuation");
+  expect(input(renderer.root, "Serving grams").props.value).toBe("55");
+  expect(visibleText(renderer.root)).toContain("82.5 g per cup · 55 g total");
+  expect(onPatch).toHaveBeenCalledWith({ servingQuantity: "0.666666667" });
+
+  onPatch.mockClear();
+  await act(async () => input(renderer.root, "Serving quantity").props.onChangeText("1"));
+  expect(onPatch).toHaveBeenLastCalledWith({ servingQuantity: "1", gramWeight: "82.5" });
+  expect(input(renderer.root, "Serving grams").props.value).toBe("82.5");
+
+  await act(async () => input(renderer.root, "Serving quantity").props.onChangeText("2/3"));
+  expect(onPatch).toHaveBeenLastCalledWith({ servingQuantity: "0.666666667", gramWeight: "55" });
+  expect(input(renderer.root, "Serving grams").props.value).toBe("55");
   await act(async () => renderer.unmount());
 });
 
@@ -85,7 +112,7 @@ test("OCR serving editor uses deterministic weight conversion and supports custo
   await act(async () => action(renderer.root, "Serving unit").props.onPress());
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "oz" }).props.onPress());
   expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "oz", gramWeight: "56.699046" });
-  expect(input(renderer.root, "Serving grams").props.value).toBe("28.349523");
+  expect(input(renderer.root, "Serving grams").props.value).toBe("56.699046");
   expect(input(renderer.root, "Serving grams").props.editable).toBe(false);
 
   await act(async () => action(renderer.root, "Serving unit").props.onPress());
@@ -95,8 +122,9 @@ test("OCR serving editor uses deterministic weight conversion and supports custo
   expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "scoop", gramWeight: "" });
   expect(input(renderer.root, "Serving grams").props.editable).toBe(true);
 
-  await act(async () => input(renderer.root, "Serving grams").props.onChangeText("15"));
+  await act(async () => input(renderer.root, "Serving grams").props.onChangeText("30"));
   expect(onPatch).toHaveBeenLastCalledWith({ gramWeight: "30" });
+  expect(visibleText(renderer.root)).toContain("15 g per scoop · 30 g total");
   expect(visibleText(renderer.root)).toContain("2 scoops (30 g)");
   await act(async () => renderer.unmount());
 });
@@ -111,7 +139,7 @@ test("recognized weight units derive a missing total gram weight without overwri
     }));
   });
   expect(onPatch).toHaveBeenCalledWith({ gramWeight: "28" });
-  expect(input(renderer.root, "Serving grams").props.value).toBe("1");
+  expect(input(renderer.root, "Serving grams").props.value).toBe("28");
   expect(input(renderer.root, "Serving grams").props.editable).toBe(false);
   await act(async () => renderer.unmount());
 
@@ -124,6 +152,7 @@ test("recognized weight units derive a missing total gram weight without overwri
   });
   expect(onPatch).not.toHaveBeenCalled();
   expect(input(renderer.root, "Serving grams").props.value).toBe("28");
+  expect(visibleText(renderer.root)).toContain("28 g per oz");
   await act(async () => renderer.unmount());
 });
 
