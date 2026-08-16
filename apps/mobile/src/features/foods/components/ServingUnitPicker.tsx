@@ -110,9 +110,9 @@ export function ServingUnitPicker({
       </AccessiblePressable>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
-      <AccessibleModal
+      {visible ? <AccessibleModal
         title={context ? `Choose unit for ${context}` : "Choose unit"}
-        visible={visible}
+        visible
         onRequestClose={() => setVisible(false)}
         returnFocusRef={triggerRef}
         backdropStyle={styles.modalBackdrop}
@@ -193,7 +193,7 @@ export function ServingUnitPicker({
             </View>
           ) : null}
         </View>
-      </AccessibleModal>
+      </AccessibleModal> : null}
     </View>
   );
 }
