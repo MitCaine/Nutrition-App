@@ -33,8 +33,14 @@ function action(root: TestRenderer.ReactTestInstance, label: string) {
   return root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === label)!;
 }
 
+function textValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(textValue).join("");
+  return "";
+}
+
 function visibleText(root: TestRenderer.ReactTestInstance): string {
-  return root.findAllByType(Text).map((node) => node.children.join("")).join(" ");
+  return root.findAllByType(Text).map((node) => textValue(node.props.children)).join(" ");
 }
 
 test("OCR serving editor derives per-unit grams while preserving an OCR display override", async () => {
