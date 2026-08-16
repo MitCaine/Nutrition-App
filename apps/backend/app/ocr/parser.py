@@ -41,12 +41,12 @@ _ONLY_CALORIE_AMOUNT = re.compile(r"^\d[\d.,]*$")
 _CALORIES_LABEL = re.compile(r"^calories\s*:?$", re.IGNORECASE)
 _SERVING_SIZE_LABEL_ONLY = re.compile(r"^serving\s+size\s*:?\s*$", re.IGNORECASE)
 _SERVING_SIZE_VALUE = re.compile(
-    r"^(?:\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?"
+    r"^(?:\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?"
     r"(?:\s*\(\s*\d+(?:[.,]\d+)?\s*g\s*\))?\s*$",
     re.IGNORECASE,
 )
 _SERVING_SIZE_WITHOUT_GRAMS = re.compile(
-    r"^serving\s+size\s*:?\s*(?:\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)"
+    r"^serving\s+size\s*:?\s*(?:\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)"
     r"\s+[^()\d]+?\s*$",
     re.IGNORECASE,
 )
@@ -265,8 +265,8 @@ def _parse_serving(
         display_field = _field(display, size_line, status="parsed", confidence=size_line.confidence)
         grams = re.search(r"\(\s*(?P<grams>\d+(?:[.,]\d+)?)\s*g\s*\)", display, re.IGNORECASE)
         household = re.match(
-            r"(?P<quantity>\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)\s*(?P<unit>[^()\d]+?)"
-            r"(?:\s*\(|$)",
+            r"(?P<quantity>\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)"
+            r"\s*(?P<unit>[^()\d]+?)(?:\s*\(|$)",
             display,
         )
         if household:

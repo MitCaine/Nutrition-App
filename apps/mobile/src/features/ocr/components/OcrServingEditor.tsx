@@ -179,7 +179,7 @@ export function OcrServingEditor({
           placeholder="e.g. 2/3"
           placeholderTextColor={theme.colors.placeholder}
           inputStyle={styles.input}
-          hint="Enter a decimal or simple fraction, such as 2/3."
+          hint="Enter a decimal, fraction, or mixed fraction, such as 1 1/2."
         />
         <ServingUnitPicker
           value={value.servingUnit}
@@ -293,9 +293,10 @@ function servingWeightSummary(value: ServingValue, quantityDraft: string, gramWe
 }
 
 function recoverServingDisplay(display: string): { quantity: string; unit: string; gramWeight: string | null } | null {
-  const match = display.trim().match(/^(\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+([^()]+?)(?:\s*\(\s*(\d+(?:[.,]\d+)?)\s*g\s*\))?$/i);
+  const match = display.trim().match(/^(\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+([^()\d]+?)(?:\s*\(\s*(\d+(?:[.,]\d+)?)\s*g\s*\))?$/i);
   if (!match) return null;
-  const quantity = normalizeServingQuantityInput(match[1].replace(/\s+/g, ""));
+  const quantityText = match[1].trim().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ");
+  const quantity = normalizeServingQuantityInput(quantityText);
   const unit = match[2].trim().replace(/\s+/g, " ").toLowerCase();
   if (!quantity || !unit) return null;
   const gramWeight = match[3]?.replace(",", ".") ?? null;
