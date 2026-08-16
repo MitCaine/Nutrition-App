@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -53,6 +53,12 @@ export function OcrServingEditor({
     : automaticLabel;
   const weightReadOnly = amountUnitCategory(value.servingUnit) === "weight";
   const unitFocus = focusProps("ocr.servingUnit");
+
+  useEffect(() => {
+    if (value.gramWeight.trim() || !weightReadOnly) return;
+    const resolvedWeight = massGramEquivalent(value.servingQuantity, value.servingUnit);
+    if (resolvedWeight !== null) onChange({ gramWeight: resolvedWeight });
+  }, [onChange, value.gramWeight, value.servingQuantity, value.servingUnit, weightReadOnly]);
 
   function updateQuantity(servingQuantity: string) {
     const gramWeight = multiplyAmountValues(servingQuantity, gramWeightPerUnit) ?? "";
@@ -217,7 +223,7 @@ function servingUnitDisplay(unit: string): string {
 
 function servingPreview(displayLabel: string, gramWeight: string): string {
   if (!displayLabel) return "Enter a quantity and unit to preview this serving size.";
-  if (!positiveDecimal(gramWeight) || labelAlreadyIncludesGramWeight(displayLabel, gramWeight)) return displayLabel;
+  if (!positiveDecimal(gramWeight) || labelIncludesGramWeight(displayLabel)) return displayLabel;
   return `${displayLabel} (${gramWeight} g)`;
 }
 
@@ -232,9 +238,8 @@ function servingWeightSummary(value: ServingValue, gramWeightPerUnit: string): s
   return `${value.gramWeight} g total`;
 }
 
-function labelAlreadyIncludesGramWeight(label: string, gramWeight: string): boolean {
-  const match = label.trim().match(/\(\s*([0-9]+(?:\.[0-9]+)?)\s*(?:g|gram|grams)\s*\)$/i);
-  return Boolean(match && Number(match[1]) === Number(gramWeight));
+function labelIncludesGramWeight(label: string): boolean {
+  return /\(\s*[0-9]+(?:\.[0-9]+)?\s*(?:g|gram|grams)\s*\)$/i.test(label.trim());
 }
 
 function positiveDecimal(value: string): boolean {

@@ -58,6 +58,7 @@ test("OCR serving editor derives per-unit grams while preserving an OCR display 
   expect(onPatch).toHaveBeenLastCalledWith({ servingQuantity: "3", gramWeight: "45" });
   expect(visibleText(renderer.root)).toContain("15 g per cup · 45 g total");
   expect(visibleText(renderer.root)).toContain("2 cups (30g)");
+  expect(visibleText(renderer.root)).not.toContain("2 cups (30g) (45 g)");
 
   await act(async () => action(renderer.root, "Use automatic label for 2 cups (30g)").props.onPress());
   expect(onPatch).toHaveBeenLastCalledWith({ servingDisplay: "" });
@@ -91,6 +92,32 @@ test("OCR serving editor uses deterministic weight conversion and supports custo
   await act(async () => input(renderer.root, "Serving grams").props.onChangeText("15"));
   expect(onPatch).toHaveBeenLastCalledWith({ gramWeight: "30" });
   expect(visibleText(renderer.root)).toContain("2 scoops (30 g)");
+  await act(async () => renderer.unmount());
+});
+
+test("recognized weight units derive a missing total gram weight without overwriting an explicit OCR equivalent", async () => {
+  const onPatch = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(Harness, {
+      initial: { servingDisplay: "28 g", servingQuantity: "28", servingUnit: "g", gramWeight: "" },
+      onPatch,
+    }));
+  });
+  expect(onPatch).toHaveBeenCalledWith({ gramWeight: "28" });
+  expect(input(renderer.root, "Serving grams").props.value).toBe("1");
+  expect(input(renderer.root, "Serving grams").props.editable).toBe(false);
+  await act(async () => renderer.unmount());
+
+  onPatch.mockClear();
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(Harness, {
+      initial: { servingDisplay: "1 oz (28g)", servingQuantity: "1", servingUnit: "oz", gramWeight: "28" },
+      onPatch,
+    }));
+  });
+  expect(onPatch).not.toHaveBeenCalled();
+  expect(input(renderer.root, "Serving grams").props.value).toBe("28");
   await act(async () => renderer.unmount());
 });
 
