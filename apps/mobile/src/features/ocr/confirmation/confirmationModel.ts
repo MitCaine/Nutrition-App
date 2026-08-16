@@ -1,4 +1,5 @@
 import type { FoodMutationInput, NutrientDefinition } from "../../foods/api/types";
+import { generatedAmountLabel } from "../../foods/utils/amountForm";
 import type { NutrientUnit } from "../../../shared/nutrition/types";
 import type {
   ConfirmationField, NutritionConfirmationDraft, OcrConfirmationInput,
@@ -105,8 +106,8 @@ export function draftFromParsedLabel(parsed: ParsedNutritionLabel, imageSourceTy
   return {
     parserVersion: parsed.parser_version, imageSourceType, name: "", brand: "", notes: "",
     servingDisplay: stringValue(parsed.serving?.serving_size_display),
-    servingQuantity: stringValue(parsed.serving?.serving_quantity) || "1",
-    servingUnit: stringValue(parsed.serving?.serving_unit) || "serving",
+    servingQuantity: stringValue(parsed.serving?.serving_quantity),
+    servingUnit: stringValue(parsed.serving?.serving_unit),
     gramWeight: stringValue(parsed.serving?.gram_weight), calories, nutrients: canonical,
     servingProvenance: {
       display: parsed.serving?.serving_size_display ?? null,
@@ -276,7 +277,7 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
   const fields = [draft.calories, ...draft.nutrients];
   const nutrients = fields.map(retainedNutrient).filter((value): value is NonNullable<typeof value> => Boolean(value));
   const grams = draft.gramWeight;
-  const servingLabel = draft.servingDisplay || `${draft.servingQuantity} ${draft.servingUnit}`;
+  const servingLabel = draft.servingDisplay.trim() || generatedAmountLabel(draft.servingQuantity, draft.servingUnit);
   const food: FoodMutationInput = {
     name: draft.name.trim(), brand: draft.brand.trim() || null, notes: draft.notes.trim() || null,
     serving_definitions: [

@@ -40,6 +40,17 @@ def parse_decimal_token(token: str) -> NumericResult:
 
 def parse_fraction_or_decimal(token: str) -> NumericResult:
     value = token.strip()
+    mixed = re.fullmatch(r"(\d+)\s+(\d+)\s*/\s*(\d+)", value)
+    if mixed:
+        denominator = Decimal(mixed.group(3))
+        if denominator == 0:
+            return NumericResult(None, "ambiguous")
+        result = (
+            Decimal(mixed.group(1))
+            + Decimal(mixed.group(2)) / denominator
+        ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+        return NumericResult(result, "parsed")
+
     fraction = re.fullmatch(r"(\d+)\s*/\s*(\d+)", value)
     if fraction:
         denominator = Decimal(fraction.group(2))

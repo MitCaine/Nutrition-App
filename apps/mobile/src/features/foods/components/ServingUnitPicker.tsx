@@ -19,6 +19,7 @@ type Props = {
   onChange: (unit: string) => void;
   disabled?: boolean;
   contextLabel?: string;
+  accessibilityLabel?: string;
   invalid?: boolean;
   error?: string | null;
   containerStyle?: StyleProp<ViewStyle>;
@@ -26,12 +27,13 @@ type Props = {
   onFocus?: () => void;
 };
 
-/** Presentation-only unit selection shared by Food and Recipe serving flows. */
+/** Presentation-only unit selection shared by Food, Recipe, and OCR serving flows. */
 export function ServingUnitPicker({
   value,
   onChange,
   disabled = false,
   contextLabel,
+  accessibilityLabel,
   invalid = false,
   error,
   containerStyle,
@@ -51,9 +53,13 @@ export function ServingUnitPicker({
   const displayValue = unitDisplay(value);
   const spokenValue = value.trim() ? displayValue : "not selected";
   const context = contextLabel?.trim();
-  const triggerLabel = context
+  const dynamicTriggerLabel = context
     ? `Choose unit for ${context}, current unit ${spokenValue}`
     : `Choose unit, current unit ${spokenValue}`;
+  const triggerLabel = accessibilityLabel ?? dynamicTriggerLabel;
+  const triggerHint = error || (accessibilityLabel
+    ? `Current unit ${spokenValue}. Opens serving unit choices.`
+    : "Opens serving unit choices");
 
   function assignTrigger(view: View | null) {
     triggerRef.current = view;
@@ -79,7 +85,7 @@ export function ServingUnitPicker({
       <AccessiblePressable
         ref={assignTrigger}
         accessibilityLabel={triggerLabel}
-        accessibilityHint={error || "Opens serving unit choices"}
+        accessibilityHint={triggerHint}
         accessibilityState={{ expanded: visible, disabled }}
         aria-invalid={invalid}
         disabled={disabled}
@@ -90,7 +96,7 @@ export function ServingUnitPicker({
         <TextInput
           accessible={false}
           accessibilityElementsHidden
-          accessibilityLabel="Unit"
+          accessibilityLabel={accessibilityLabel ?? "Unit"}
           editable={false}
           importantForAccessibility="no-hide-descendants"
           onChangeText={onChange}
@@ -104,9 +110,9 @@ export function ServingUnitPicker({
       </AccessiblePressable>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
-      <AccessibleModal
+      {visible ? <AccessibleModal
         title={context ? `Choose unit for ${context}` : "Choose unit"}
-        visible={visible}
+        visible
         onRequestClose={() => setVisible(false)}
         returnFocusRef={triggerRef}
         backdropStyle={styles.modalBackdrop}
@@ -187,7 +193,7 @@ export function ServingUnitPicker({
             </View>
           ) : null}
         </View>
-      </AccessibleModal>
+      </AccessibleModal> : null}
     </View>
   );
 }

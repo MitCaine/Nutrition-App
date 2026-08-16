@@ -39,6 +39,7 @@ export const LabeledField = forwardRef<TextInput, Props>(function LabeledField(
     disabled = false,
     readOnly = false,
     editable,
+    accessibilityLabel,
     accessibilityState,
     containerStyle,
     labelStyle,
@@ -60,6 +61,7 @@ export const LabeledField = forwardRef<TextInput, Props>(function LabeledField(
   const accessibilityHint = [hint, required ? "Required." : null, readOnly ? "Read only." : null]
     .filter(Boolean)
     .join(" ");
+  const fieldAccessibilityLabel = accessibilityLabel ?? label;
   return (
     <View style={[styles.container, containerStyle]}>
       <Text nativeID={labelId} style={[styles.label, labelStyle]}>
@@ -68,12 +70,12 @@ export const LabeledField = forwardRef<TextInput, Props>(function LabeledField(
       <TextInput
         {...inputProps}
         ref={ref}
-        accessibilityLabel={label}
+        accessibilityLabel={fieldAccessibilityLabel}
         accessibilityHint={accessibilityHint || undefined}
         accessibilityState={{ ...accessibilityState, disabled: interactionDisabled }}
         aria-describedby={error ? errorId : undefined}
         aria-invalid={invalid}
-        aria-label={label}
+        aria-label={fieldAccessibilityLabel}
         aria-labelledby={labelId}
         aria-readonly={readOnly}
         aria-required={required}

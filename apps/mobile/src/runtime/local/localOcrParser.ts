@@ -103,6 +103,10 @@ const ONLY_AMOUNT = /^(?:<\s*)?\d[\d.,]*\s*(?:mcg|mg|g|q|µg|ug)(?:\s*\d[\d.,]*\
 const ONLY_DAILY_VALUE = /^\d[\d.,]*\s*%$/u;
 const ONLY_CALORIE_AMOUNT = /^\d[\d.,]*$/u;
 const CALORIES_LABEL = /^calories\s*:?$/iu;
+const SERVING_SIZE_LABEL_ONLY = /^serving\s+size\s*:?\s*$/iu;
+const SERVING_SIZE_VALUE = /^(?:\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?(?:\s*\(\s*\d+(?:[.,]\d+)?\s*g\s*\))?\s*$/iu;
+const SERVING_SIZE_WITHOUT_GRAMS = /^serving\s+size\s*:?\s*(?:\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?\s*$/iu;
+const ONLY_SERVING_GRAMS = /^\(\s*\d+(?:[.,]\d+)?\s*g\s*\)$/iu;
 
 function invalidParse(message: string, location: readonly (string | number)[] = []): LocalRuntimeError {
   return new LocalRuntimeError({
@@ -238,11 +242,17 @@ function parseDecimalToken(token: string): NumericResult {
 
 function parseFractionOrDecimal(token: string): NumericResult {
   const value = token.trim();
+  const mixed = /^(\d+)\s+(\d+)\s*\/\s*(\d+)$/u.exec(value);
   const fraction = /^(\d+)\s*\/\s*(\d+)$/u.exec(value);
-  if (!fraction) return parseDecimalToken(value);
-  const denominator = BigInt(fraction[2]!);
+  if (!mixed && !fraction) return parseDecimalToken(value);
+
+  const denominator = BigInt((mixed?.[3] ?? fraction?.[2])!);
   if (denominator === 0n) return { value: null, status: "ambiguous", warningCodes: [], lessThan: false };
-  const numerator = BigInt(fraction[1]!) * 1_000_000n;
+
+  const numeratorValue = mixed
+    ? BigInt(mixed[1]!) * denominator + BigInt(mixed[2]!)
+    : BigInt(fraction![1]!);
+  const numerator = numeratorValue * 1_000_000n;
   const quotient = numerator / denominator;
   const remainder = numerator % denominator;
   const rounded = remainder * 2n >= denominator ? quotient + 1n : quotient;
@@ -347,6 +357,28 @@ function prepareJoinedLines(lines: readonly SourceLine[]): SourceLine[] {
     const current = lines[index]!;
     const next = lines[index + 1];
     if (next) {
+      if (SERVING_SIZE_LABEL_ONLY.test(current.text) && SERVING_SIZE_VALUE.test(next.text)) {
+        let joined = mergeLines(current, next);
+        const following = lines[index + 2];
+        if (
+          following
+          && SERVING_SIZE_WITHOUT_GRAMS.test(joined.text)
+          && ONLY_SERVING_GRAMS.test(following.text)
+        ) {
+          joined = mergeLines(joined, following);
+          prepared.push(joined);
+          index += 3;
+          continue;
+        }
+        prepared.push(joined);
+        index += 2;
+        continue;
+      }
+      if (SERVING_SIZE_WITHOUT_GRAMS.test(current.text) && ONLY_SERVING_GRAMS.test(next.text)) {
+        prepared.push(mergeLines(current, next));
+        index += 2;
+        continue;
+      }
       if (CALORIES_LABEL.test(current.text) && ONLY_CALORIE_AMOUNT.test(next.text)) {
         prepared.push(mergeLines(current, next));
         index += 2;
@@ -455,7 +487,7 @@ function parseServing(lines: readonly SourceLine[], warnings: WarningCollector):
     const display = sizeMatch.groups?.display?.trim() ?? "";
     displayField = field(display, sizeLine, { status: "parsed", confidence: sizeLine.confidence });
     const grams = /\(\s*(?<grams>\d+(?:[.,]\d+)?)\s*g\s*\)/iu.exec(display);
-    const household = /^(?<quantity>\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s*(?<unit>[^()\d]+?)(?:\s*\(|$)/u.exec(display);
+    const household = /^(?<quantity>\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s*(?<unit>[^()\d]+?)(?:\s*\(|$)/u.exec(display);
     if (household) {
       const quantity = parseFractionOrDecimal(household.groups?.quantity ?? "");
       quantityField = field(quantity.value, sizeLine, {

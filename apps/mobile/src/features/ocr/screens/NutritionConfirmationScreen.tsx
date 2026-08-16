@@ -12,6 +12,7 @@ import { useAccessibilityAnnouncement } from "../../../shared/accessibility/anno
 import { focusAccessibilityElement, useAccessibilityScreenFocus, type CancelAccessibilityFocus } from "../../../shared/accessibility/focus";
 import { useNutrients } from "../../foods/hooks/useFoods";
 import type { ConfirmationField, NutritionConfirmationDraft } from "../api/types";
+import { OcrServingEditor } from "../components/OcrServingEditor";
 import { addManualNutrient, confirmationPayload, confirmationValidationIssues, hydrateCanonicalNutrientUnits, omitReview, updateReview } from "../confirmation/confirmationModel";
 import { bindConfirmationIntent, type ConfirmationIntent } from "../confirmation/confirmationIntent";
 import { confirmationErrorCode, confirmationErrorMessage } from "../confirmation/confirmationErrors";
@@ -271,9 +272,19 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
       <LabeledField {...focusProps("ocr.brand")} label="Brand" validationTarget="ocr.brand" disabled={submitting} value={draft.brand} onChangeText={(brand) => setDraft({ ...draft, brand })} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/>
       <LabeledField {...focusProps("ocr.notes")} label="Notes" validationTarget="ocr.notes" disabled={submitting} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/>
       <Text accessibilityRole="header" style={styles.section}>Serving</Text>
-      <LabeledField {...focusProps("ocr.servingDisplay")} label="Serving label" validationTarget="ocr.servingDisplay" disabled={submitting} value={draft.servingDisplay} onChangeText={(servingDisplay) => setDraft({ ...draft, servingDisplay })} placeholder="Serving label" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/>
-      <View style={styles.row}><LabeledField containerStyle={styles.flex} {...focusProps("ocr.servingQuantity")} label="Serving quantity" validationTarget="ocr.servingQuantity" required disabled={submitting} invalid={issuesByField.has("serving.quantity")} error={issuesByField.get("serving.quantity")?.message ?? null} value={draft.servingQuantity} onChangeText={(servingQuantity) => setDraft({ ...draft, servingQuantity })} keyboardType="decimal-pad" placeholder="Quantity" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/><LabeledField containerStyle={styles.flex} {...focusProps("ocr.servingUnit")} label="Serving unit" validationTarget="ocr.servingUnit" disabled={submitting} value={draft.servingUnit} onChangeText={(servingUnit) => setDraft({ ...draft, servingUnit })} placeholder="Unit" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/></View>
-      <LabeledField {...focusProps("ocr.gramWeight")} label="Serving grams" validationTarget="ocr.gramWeight" required disabled={submitting} invalid={issuesByField.has("serving.gram_weight")} error={issuesByField.get("serving.gram_weight")?.message ?? null} value={draft.gramWeight} onChangeText={(gramWeight) => setDraft({ ...draft, gramWeight })} keyboardType="decimal-pad" placeholder="Equivalent grams" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/>
+      <OcrServingEditor
+        value={{
+          servingDisplay: draft.servingDisplay,
+          servingQuantity: draft.servingQuantity,
+          servingUnit: draft.servingUnit,
+          gramWeight: draft.gramWeight,
+        }}
+        onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
+        disabled={submitting}
+        focusProps={focusProps}
+        quantityError={issuesByField.get("serving.quantity")?.message ?? null}
+        gramWeightError={issuesByField.get("serving.gram_weight")?.message ?? null}
+      />
       <Text accessibilityRole="header" style={styles.section}>Nutrition per label serving</Text>
       {fields.map((field) => <View key={field.fieldKey} style={[styles.card, field.decision === "unresolved" && styles.flagged, field.decision === "omitted" && styles.omitted]}>
         <NutrientAmountRow
@@ -295,7 +306,7 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
       </View>)}
       <AccessiblePressable accessibilityLabel="Add missing nutrient" disabled={submitting || nutrientQuery.isLoading || nutrientQuery.isError} onPress={() => setShowMissingNutrients((current) => !current)} style={styles.secondaryButton}><Text style={styles.link}>Add missing nutrient</Text></AccessiblePressable>
       {showMissingNutrients ? <View style={styles.picker}><Text accessibilityRole="header" style={styles.fieldLabel}>Choose a nutrient</Text>{availableNutrients.map((nutrient) => <AccessiblePressable key={nutrient.id} accessibilityLabel={`Add ${nutrient.display_name}`} disabled={submitting} onPress={() => { setDraft((current) => addManualNutrient(current, nutrient)); setShowMissingNutrients(false); }} style={styles.pickerOption}><Text style={styles.link}>{nutrient.display_name} ({nutrient.default_unit})</Text></AccessiblePressable>)}{availableNutrients.length === 0 ? <Text style={styles.meta}>All canonical nutrients are already in this review.</Text> : null}</View> : null}
-      {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, !item.dismissed && styles.flagged, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} accessibilityState={{ selected: item.dismissed }} disabled={submitting || item.dismissed} onPress={() => dismissUnknown(index)}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></AccessiblePressable></View>)}</> : null}
+      {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, !item.dismissed && styles.flagged, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} disabled={submitting || item.dismissed} onPress={() => dismissUnknown(index)}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></AccessiblePressable></View>)}</> : null}
       {displayedError ? <Text ref={errorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{displayedError}</Text> : null}
     </>}</KeyboardSafeScrollView>
       <View style={styles.saveBar}><AccessiblePressable ref={reviewTriggerRef} busy={submitting} accessibilityLabel={submitting ? "Creating Food" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"} accessibilityHint={reviewItems.length > 0 ? "Opens the focused review for unresolved nutrition items" : "Creates the food, then opens logging confirmation when started from Add Food"} onPress={reviewItems.length > 0 ? () => setDirectedReviewVisible(true) : submit} style={[styles.button, submitting && styles.disabled]}><Text style={styles.buttonText}>{submitting ? "Creating Food…" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"}</Text></AccessiblePressable></View>

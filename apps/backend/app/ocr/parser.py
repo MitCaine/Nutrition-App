@@ -39,6 +39,21 @@ _ONLY_AMOUNT = re.compile(
 _ONLY_DV = re.compile(r"^\d[\d.,]*\s*%$")
 _ONLY_CALORIE_AMOUNT = re.compile(r"^\d[\d.,]*$")
 _CALORIES_LABEL = re.compile(r"^calories\s*:?$", re.IGNORECASE)
+_SERVING_SIZE_LABEL_ONLY = re.compile(r"^serving\s+size\s*:?\s*$", re.IGNORECASE)
+_SERVING_SIZE_VALUE = re.compile(
+    r"^(?:\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)\s+[^()\d]+?"
+    r"(?:\s*\(\s*\d+(?:[.,]\d+)?\s*g\s*\))?\s*$",
+    re.IGNORECASE,
+)
+_SERVING_SIZE_WITHOUT_GRAMS = re.compile(
+    r"^serving\s+size\s*:?\s*(?:\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)"
+    r"\s+[^()\d]+?\s*$",
+    re.IGNORECASE,
+)
+_ONLY_SERVING_GRAMS = re.compile(
+    r"^\(\s*\d+(?:[.,]\d+)?\s*g\s*\)$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -144,6 +159,30 @@ def _prepare_joined_lines(lines: list[SourceLine]) -> list[SourceLine]:
         current = lines[index]
         if index + 1 < len(lines):
             next_line = lines[index + 1]
+            if (
+                _SERVING_SIZE_LABEL_ONLY.fullmatch(current.text)
+                and _SERVING_SIZE_VALUE.fullmatch(next_line.text)
+            ):
+                joined = _merge_lines(current, next_line)
+                if index + 2 < len(lines):
+                    following = lines[index + 2]
+                    if (
+                        _SERVING_SIZE_WITHOUT_GRAMS.fullmatch(joined.text)
+                        and _ONLY_SERVING_GRAMS.fullmatch(following.text)
+                    ):
+                        prepared.append(_merge_lines(joined, following))
+                        index += 3
+                        continue
+                prepared.append(joined)
+                index += 2
+                continue
+            if (
+                _SERVING_SIZE_WITHOUT_GRAMS.fullmatch(current.text)
+                and _ONLY_SERVING_GRAMS.fullmatch(next_line.text)
+            ):
+                prepared.append(_merge_lines(current, next_line))
+                index += 2
+                continue
             if _CALORIES_LABEL.fullmatch(
                 current.text
             ) and _ONLY_CALORIE_AMOUNT.fullmatch(next_line.text):
@@ -226,8 +265,8 @@ def _parse_serving(
         display_field = _field(display, size_line, status="parsed", confidence=size_line.confidence)
         grams = re.search(r"\(\s*(?P<grams>\d+(?:[.,]\d+)?)\s*g\s*\)", display, re.IGNORECASE)
         household = re.match(
-            r"(?P<quantity>\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)\s*(?P<unit>[^()\d]+?)"
-            r"(?:\s*\(|$)",
+            r"(?P<quantity>\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:[.,]\d+)?)"
+            r"\s*(?P<unit>[^()\d]+?)(?:\s*\(|$)",
             display,
         )
         if household:

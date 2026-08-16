@@ -39,6 +39,9 @@ const COUNT_PLURALS: Record<string, string> = {
   package: "packages",
 };
 const DECIMAL_SCALE = 1_000_000_000n;
+const QUANTITY_SCALE = 1_000_000_000;
+const COMMON_FRACTION_DENOMINATORS = [2, 3, 4, 5, 8] as const;
+const COMMON_FRACTION_TOLERANCE = 0.001;
 
 export function normalizedAmountUnit(rawUnit: string): string | null {
   const normalized = rawUnit.trim().toLowerCase().replace(/\s+/g, " ");
@@ -97,6 +100,74 @@ export function generatedAmountLabel(quantity: string, rawUnit: string): string 
       ? pluralizedCustomUnit(unit)
       : DISPLAY_UNITS[unit] ?? unit;
   return `${quantity.trim()} ${displayUnit}`;
+}
+
+export function normalizeServingQuantityInput(rawQuantity: string): string | null {
+  const value = rawQuantity.trim().replace(/\s+/g, " ");
+  const mixed = value.match(/^(\d+) (\d+)\/(\d+)$/);
+  if (mixed) {
+    const whole = Number(mixed[1]);
+    const numerator = Number(mixed[2]);
+    const denominator = Number(mixed[3]);
+    if (denominator <= 0) return null;
+    return normalizedPositiveNumber(whole + numerator / denominator);
+  }
+
+  const fraction = value.match(/^(\d+)\/(\d+)$/);
+  if (fraction) {
+    const numerator = Number(fraction[1]);
+    const denominator = Number(fraction[2]);
+    if (denominator <= 0) return null;
+    return normalizedPositiveNumber(numerator / denominator);
+  }
+
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) return null;
+  return normalizedPositiveNumber(Number(value));
+}
+
+export function formatServingQuantityForDisplay(quantity: string): string {
+  const normalized = normalizeServingQuantityInput(quantity);
+  if (!normalized) return quantity.trim();
+  const numeric = Number(normalized);
+  const whole = Math.floor(numeric);
+  const fractional = numeric - whole;
+  if (fractional <= COMMON_FRACTION_TOLERANCE) return String(whole);
+
+  let best: { numerator: number; denominator: number; error: number } | null = null;
+  for (const denominator of COMMON_FRACTION_DENOMINATORS) {
+    for (let numerator = 1; numerator < denominator; numerator += 1) {
+      const error = Math.abs(fractional - numerator / denominator);
+      if (!best || error < best.error) best = { numerator, denominator, error };
+    }
+  }
+  if (best && best.error <= COMMON_FRACTION_TOLERANCE) {
+    const divisor = greatestCommonDivisor(best.numerator, best.denominator);
+    const fraction = `${best.numerator / divisor}/${best.denominator / divisor}`;
+    return whole > 0 ? `${whole} ${fraction}` : fraction;
+  }
+
+  return String(Math.round(numeric * 1000) / 1000);
+}
+
+export function formatServingGramForDisplay(value: string): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return value.trim();
+  return String(Math.round(numeric * 10) / 10);
+}
+
+export function generatedAmountDisplayLabel(quantity: string, rawUnit: string): string {
+  const canonicalLabel = generatedAmountLabel(quantity, rawUnit);
+  if (!canonicalLabel) return canonicalLabel;
+  const separator = canonicalLabel.indexOf(" ");
+  if (separator < 0) return canonicalLabel;
+  return `${formatServingQuantityForDisplay(quantity)}${canonicalLabel.slice(separator)}`;
+}
+
+export function formatServingLabelForDisplay(label: string): string {
+  const trimmed = label.trim();
+  const match = trimmed.match(/^((?:\d+(?:\.\d*)?|\.\d+))\s+(.+)$/);
+  if (!match) return trimmed;
+  return `${formatServingQuantityForDisplay(match[1])} ${match[2]}`;
 }
 
 function pluralizedCustomUnit(unit: string): string {
@@ -167,6 +238,23 @@ function formatScaledDecimal(value: bigint, maxFractionDigits = 6): string {
   const fraction = (roundedValue % DECIMAL_SCALE).toString().padStart(9, "0").slice(0, maxFractionDigits);
   const trimmed = fraction.replace(/0+$/, "");
   return trimmed ? `${whole}.${trimmed}` : whole.toString();
+}
+
+function normalizedPositiveNumber(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const rounded = Math.round(value * QUANTITY_SCALE) / QUANTITY_SCALE;
+  return rounded.toFixed(9).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function greatestCommonDivisor(left: number, right: number): number {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
 }
 
 export function isCanonicalBaseAmount(serving: Pick<ServingDefinitionInput, "quantity" | "unit" | "gram_weight">): boolean {

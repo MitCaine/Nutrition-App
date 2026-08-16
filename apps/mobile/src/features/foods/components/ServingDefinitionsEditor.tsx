@@ -11,7 +11,9 @@ import {
   amountUnitCategory,
   DEFAULT_AMOUNT_WEIGHT_MESSAGE,
   divideAmountValues,
-  generatedAmountLabel,
+  formatServingGramForDisplay,
+  formatServingLabelForDisplay,
+  generatedAmountDisplayLabel,
   massGramEquivalent,
   multiplyAmountValues,
 } from "../utils/amountForm";
@@ -128,8 +130,10 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
 
       {portions.map((serving) => {
         const expanded = serving.key === expandedKey;
-        const automaticLabel = generatedAmountLabel(serving.quantity, serving.unit);
-        const displayLabel = serving.labelMode === "manual" ? serving.label.trim() || automaticLabel : automaticLabel;
+        const automaticLabel = generatedAmountDisplayLabel(serving.quantity, serving.unit);
+        const displayLabel = serving.labelMode === "manual"
+          ? formatServingLabelForDisplay(serving.label.trim() || automaticLabel)
+          : automaticLabel;
         const perUnit = gramWeightPerUnitDrafts[serving.key] ?? gramWeightPerUnit(serving);
         const weightReadOnly = amountUnitCategory(serving.unit) === "weight";
         const preview = servingPreview(serving, displayLabel);
@@ -187,7 +191,7 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                   label={gramWeightFieldLabel(serving.unit)}
                   validationTarget={`serving.${serving.key}.gramWeight`}
                   {...focusProps(servingFocusKey(serving.key, "gramWeight"))}
-                  value={perUnit}
+                  value={weightReadOnly ? formatServingGramForDisplay(perUnit) : perUnit}
                   onChangeText={(value) => updateGramWeightPerUnit(serving, value)}
                   readOnly={weightReadOnly}
                   keyboardType="decimal-pad"
@@ -285,27 +289,29 @@ function gramWeightFieldLabel(unit: string): string {
 }
 
 function servingUnitDisplay(unit: string): string {
-  const oneUnit = generatedAmountLabel("1", unit).trim();
+  const oneUnit = generatedAmountDisplayLabel("1", unit).trim();
   return oneUnit.startsWith("1 ") ? oneUnit.slice(2) : unit.trim();
 }
 
 function servingPreview(serving: ServingFormValue, displayLabel: string): string {
   if (!displayLabel) return "Enter a quantity and unit to preview this serving size.";
   if (!amountHasKnownGramWeight(serving)) return displayLabel;
-  return `${displayLabel} (${serving.gram_weight} g)`;
+  return `${displayLabel} (${formatServingGramForDisplay(serving.gram_weight ?? "")} g)`;
 }
 
 function servingWeightSummary(serving: ServingFormValue): string {
   if (!amountHasKnownGramWeight(serving)) return "Gram weight not set";
-  if (amountUnitCategory(serving.unit) === "weight") return `${serving.gram_weight} g total`;
+  const displayTotal = formatServingGramForDisplay(serving.gram_weight ?? "");
+  if (amountUnitCategory(serving.unit) === "weight") return `${displayTotal} g total`;
   const perUnit = divideAmountValues(serving.gram_weight ?? "", serving.quantity);
   const unit = servingUnitDisplay(serving.unit);
   if (perUnit && unit) {
+    const displayPerUnit = formatServingGramForDisplay(perUnit);
     return Number(serving.quantity) === 1
-      ? `${perUnit} g per ${unit}`
-      : `${perUnit} g per ${unit} · ${serving.gram_weight} g total`;
+      ? `${displayPerUnit} g per ${unit}`
+      : `${displayPerUnit} g per ${unit} · ${displayTotal} g total`;
   }
-  return `${serving.gram_weight} g total`;
+  return `${displayTotal} g total`;
 }
 
 function DefaultServingControl({ accessibilityLabel, disabled, isDefault, onPress, styles }: {
