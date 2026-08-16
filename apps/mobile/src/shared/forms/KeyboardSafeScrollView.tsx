@@ -1,9 +1,9 @@
 import { forwardRef, type ReactNode, useCallback, useEffect, useImperativeHandle, useRef } from "react";
-import { Keyboard, ScrollView, TextInput, type KeyboardEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewProps } from "react-native";
+import { Keyboard, ScrollView, TextInput, type KeyboardEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewProps, type View } from "react-native";
 import { focusAccessibilityElement, type CancelAccessibilityFocus } from "../accessibility/focus";
 import { createFocusTargetRegistry } from "./focusTargets";
 
-export type FocusTargetRegistration = { ref: (input: TextInput | null) => void; onFocus: () => void };
+export type FocusTargetRegistration = { ref: (input: TextInput | View | null) => void; onFocus: () => void };
 
 type Props = Omit<ScrollViewProps, "children"> & {
   children: (registerFocusTarget: (key: string) => FocusTargetRegistration) => ReactNode;
@@ -18,7 +18,7 @@ export const KeyboardSafeScrollView = forwardRef<KeyboardSafeScrollViewHandle, P
   ref,
 ) {
   const scrollRef = useRef<ScrollView>(null);
-  const targets = useRef(createFocusTargetRegistry<TextInput>());
+  const targets = useRef(createFocusTargetRegistry<TextInput | View>());
   const pendingAccessibilityFocus = useRef<CancelAccessibilityFocus | null>(null);
   const keyboardTop = useRef<number | null>(null);
   const scrollOffset = useRef(0);
@@ -69,7 +69,7 @@ export const KeyboardSafeScrollView = forwardRef<KeyboardSafeScrollViewHandle, P
 
   function registerFocusTarget(key: string) {
     return {
-      ref: (input: TextInput | null) => {
+      ref: (input: TextInput | View | null) => {
         targets.current.assign(key, input);
       },
       onFocus: () => {

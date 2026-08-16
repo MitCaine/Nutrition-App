@@ -15,6 +15,7 @@ import {
   massGramEquivalent,
   multiplyAmountValues,
 } from "../utils/amountForm";
+import { ServingUnitPicker } from "./ServingUnitPicker";
 
 type Props = {
   servings: ServingFormValue[];
@@ -132,6 +133,7 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
         const perUnit = gramWeightPerUnitDrafts[serving.key] ?? gramWeightPerUnit(serving);
         const weightReadOnly = amountUnitCategory(serving.unit) === "weight";
         const preview = servingPreview(serving, displayLabel);
+        const unitFocus = focusProps(servingFocusKey(serving.key, "unit"));
         return (
           <View key={serving.key} style={styles.portionCard}>
             <View style={styles.summaryRow}>
@@ -169,18 +171,15 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                     placeholderTextColor={theme.colors.placeholder}
                     inputStyle={styles.input}
                   />
-                  <LabeledField
-                    containerStyle={styles.flex}
-                    label="Unit"
-                    validationTarget={`serving.${serving.key}.unit`}
-                    {...focusProps(servingFocusKey(serving.key, "unit"))}
+                  <ServingUnitPicker
+                    value={serving.unit}
+                    onChange={(unit) => updateUnit(serving, unit)}
+                    contextLabel={displayLabel || "serving size"}
                     invalid={validationTarget === `serving.${serving.key}.unit`}
                     error={validationTarget === `serving.${serving.key}.unit` ? validationError : null}
-                    value={serving.unit}
-                    onChangeText={(unit) => updateUnit(serving, unit)}
-                    placeholder="e.g. slice"
-                    placeholderTextColor={theme.colors.placeholder}
-                    inputStyle={styles.input}
+                    containerStyle={styles.flex}
+                    focusRef={unitFocus.ref}
+                    onFocus={unitFocus.onFocus}
                   />
                 </View>
 
