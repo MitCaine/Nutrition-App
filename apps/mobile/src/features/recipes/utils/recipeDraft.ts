@@ -3,7 +3,13 @@ import { defaultServing } from "../../foods/utils/foodDisplay";
 import { generatedAmountLabel, normalizedAmountUnit } from "../../foods/utils/amountForm";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
 import type { Recipe, RecipeIngredientInput, RecipeMutationInput } from "../api/types";
-import { formatMassAmount, massToGrams, normalizeDecimalInput, type MassUnit } from "./massUnits";
+import {
+  formatMassAmount,
+  massToGrams,
+  multiplyDecimalInputs,
+  normalizeDecimalInput,
+  type MassUnit,
+} from "./massUnits";
 
 export type DraftIngredient = {
   localId: string;
@@ -38,7 +44,7 @@ export type RecipeDraftInitResult =
 export type CustomServingDraft = {
   quantity: string;
   unit: string;
-  gramWeight: string;
+  gramWeightPerUnit: string;
   customLabel: string;
   useCustomLabel: boolean;
 };
@@ -203,8 +209,15 @@ export function formatLegacyCookedWeight(value: LegacyCookedWeight): string {
 export function buildCustomServingDefinition(draft: CustomServingDraft): ServingDefinitionInput | null {
   const quantity = draft.quantity.trim();
   const rawUnit = draft.unit.trim();
-  const gramWeight = draft.gramWeight.trim();
-  if (!(Number(quantity) > 0) || !rawUnit || !(Number(gramWeight) > 0)) {
+  const gramWeightPerUnit = draft.gramWeightPerUnit.trim();
+  const gramWeight = multiplyDecimalInputs(quantity, gramWeightPerUnit);
+  if (
+    !(Number(quantity) > 0)
+    || !rawUnit
+    || !(Number(gramWeightPerUnit) > 0)
+    || gramWeight === null
+    || !(Number(gramWeight) > 0)
+  ) {
     return null;
   }
   const unit = normalizedAmountUnit(rawUnit) ?? rawUnit.toLowerCase().replace(/\s+/g, " ");
