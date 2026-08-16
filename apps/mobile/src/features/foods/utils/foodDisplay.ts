@@ -1,5 +1,6 @@
 import type { Food, FoodNutrient, ResolvedFoodAmount, ResolvedFoodNutrient, ServingDefinition } from "../api/types";
-import { formatAmountWithUnit, formatDisplayNumber, formatNutrientLabel } from "../../../shared/nutrition/display";
+import { formatAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
+import { formatServingGramForDisplay, formatServingLabelForDisplay } from "./amountForm";
 
 export function defaultServing(servings: ServingDefinition[]): ServingDefinition | undefined {
   return servings.find((serving) => serving.is_default) ?? servings[0];
@@ -39,13 +40,14 @@ export function collapsedResolvedFoodAmounts(
 }
 
 export function formatResolvedFoodAmount(amount: ResolvedFoodAmount): string {
+  const displayLabel = formatServingLabelForDisplay(amount.display_label);
   if (!amount.resolved_grams) {
-    return amount.display_label;
+    return displayLabel;
   }
-  const formattedGrams = `${formatDisplayNumber(amount.resolved_grams)} g`;
-  return amount.display_label.trim().toLowerCase().replace(/\s+/g, "") === formattedGrams.toLowerCase().replace(/\s+/g, "")
-    ? amount.display_label
-    : `${amount.display_label} (${formattedGrams})`;
+  const formattedGrams = `${formatServingGramForDisplay(amount.resolved_grams)} g`;
+  return displayLabel.trim().toLowerCase().replace(/\s+/g, "") === formattedGrams.toLowerCase().replace(/\s+/g, "")
+    ? displayLabel
+    : `${displayLabel} (${formattedGrams})`;
 }
 
 export function formatResolvedFoodNutrient(nutrient: ResolvedFoodNutrient): string {
@@ -60,5 +62,6 @@ export function formatFoodNutrientLabel(nutrient: Pick<FoodNutrient, "nutrient_i
 }
 
 export function primaryServingLabel(food: Food): string | undefined {
-  return defaultServing(food.serving_definitions)?.label;
+  const label = defaultServing(food.serving_definitions)?.label;
+  return label ? formatServingLabelForDisplay(label) : undefined;
 }
