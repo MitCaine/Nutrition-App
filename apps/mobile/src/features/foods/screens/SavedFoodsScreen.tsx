@@ -4,11 +4,12 @@ import { isRuntimeError } from "../../../runtime/RuntimeError";
 
 import { useFavoriteFoods, useRecentFoods, useSavedFoods } from "../hooks/useFoods";
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
-import { formatUsdaNutrientPreview, usdaResultMeta } from "../../usda/utils/usdaDisplay";
+import { formatUsdaNutrientPreview, usdaResultMeta, usdaSearchMessage } from "../../usda/utils/usdaDisplay";
 import { unifiedFoodSearchSections } from "../utils/unifiedFoodSearch";
 import { isCurrentSearchQuery } from "../utils/unifiedFoodSearch";
 import { useDebouncedSearchQuery } from "../hooks/useDebouncedSearchQuery";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { foodAccessibilityLabel, formatRecentUse, recentFoodsInOrder, visibleDiscoveryRows } from "../utils/foodDiscovery";
@@ -42,6 +43,14 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
   const usda = useUsdaSearch(searchQuery);
   const resultsRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);
+  const usdaErrorCode = isRuntimeError(usda.error) ? usda.error.code ?? null : null;
+  const usdaMessage = usdaSearchMessage({
+    query: searchQuery,
+    isLoading: usda.isLoading,
+    isError: usda.isError,
+    errorCode: usdaErrorCode,
+    resultCount: usda.data?.foods.length,
+  });
   const sections = unifiedFoodSearchSections({
     query,
     savedCount: foods.data?.length ?? 0,
@@ -112,14 +121,29 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
             <Text style={styles.foodMeta}>{food.brand ? `${food.brand} · ${food.source_label}` : food.source_label}{food.is_favorite ? " · Favorite" : ""}</Text>
           </Pressable>
         )) : null}
-        {isCurrent && foods.isLoading ? <Text style={styles.foodMeta}>Loading saved foods…</Text> : null}
-        {isCurrent && foods.isError ? <Text style={styles.error}>Saved foods are unavailable right now.</Text> : null}
+        {isCurrent && foods.isLoading ? <AccessibilityStatus kind="loading" message="Loading saved foods…" /> : null}
+        {isCurrent && foods.isError ? <AccessibilityStatus kind="retryable-failure" message="Saved foods are unavailable right now." retryContext="saved foods" onRetry={() => { void foods.refetch(); }} messageStyle={styles.error} /> : null}
 
         {sections.showUsdaSection ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>USDA Results</Text>
-            {usda.isLoading ? <Text style={styles.foodMeta}>Searching USDA foods…</Text> : null}
-            {usda.isError ? (<Text style={styles.error}>USDA search failed: {isRuntimeError(usda.error) ? usda.error.code ?? usda.error.kind : "unknown"}</Text>) : null}
+            <Text accessibilityRole="header" style={styles.sectionTitle}>USDA Results</Text>
+            {usda.isLoading ? <AccessibilityStatus kind="loading" message="Searching USDA foods…" /> : null}
+            {usda.isError ? (
+              <>
+                <AccessibilityStatus
+                  kind={usdaErrorCode === "usda_credentials_unconfigured" ? "unavailable" : "retryable-failure"}
+                  message={usdaMessage ?? "USDA search is unavailable right now."}
+                  retryContext="USDA search"
+                  onRetry={usdaErrorCode === "usda_credentials_unconfigured" ? undefined : () => { void usda.refetch(); }}
+                  messageStyle={styles.error}
+                />
+                {usdaErrorCode === "usda_credentials_unconfigured" ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel="Open Settings for USDA API key" onPress={onOpenSettings}>
+                    <Text style={styles.retry}>Open Settings</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : null}
             {usda.data?.foods.map((food) => {
               const nutrientPreview = formatUsdaNutrientPreview(food.nutrient_preview);
               return (

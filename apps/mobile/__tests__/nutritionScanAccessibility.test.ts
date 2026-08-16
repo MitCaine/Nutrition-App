@@ -1,5 +1,6 @@
 import React from "react";
-import { Pressable } from "react-native";
+import { Linking, Pressable } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import TestRenderer, { act } from "react-test-renderer";
 
 jest.mock("expo-file-system", () => ({ deleteAsync: jest.fn() }));
@@ -35,4 +36,37 @@ test("iOS label acquisition exposes a focused heading and contextual camera acti
   expect(camera.props.accessibilityHint).toContain("iOS camera");
   expect(actions.find((node) => node.props.accessibilityLabel === "Cancel label scan")).toBeDefined();
   await act(async () => renderer.unmount());
+});
+
+test("permission denial offers a direct route to app settings", async () => {
+  const openSettings = jest.spyOn(Linking, "openSettings").mockResolvedValue();
+  (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: false });
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(NutritionScanScreen, {
+      onCancel: jest.fn(),
+      onReady: jest.fn(),
+    })));
+  });
+
+  const camera = renderer.root.findAllByType(Pressable)
+    .find((node) => node.props.accessibilityLabel === "Take nutrition label photo")!;
+
+  await act(async () => {
+    await camera.props.onPress();
+  });
+
+  const settings = renderer.root.findAllByType(Pressable)
+    .find((node) => node.props.accessibilityLabel === "Open app settings")!;
+  expect(settings).toBeDefined();
+  expect(settings.props.accessibilityHint).toContain("camera or photo access");
+
+  await act(async () => {
+    settings.props.onPress();
+  });
+  expect(openSettings).toHaveBeenCalledTimes(1);
+
+  await act(async () => renderer.unmount());
+  openSettings.mockRestore();
 });

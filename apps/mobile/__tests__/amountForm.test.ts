@@ -6,9 +6,11 @@ import {
   canonicalBaseAmount,
   createUnitPickerDraftState,
   DEFAULT_AMOUNT_WEIGHT_MESSAGE,
+  divideAmountValues,
   generatedAmountLabel,
   isCanonicalBaseAmount,
   massGramEquivalent,
+  multiplyAmountValues,
   normalizedAmountUnit,
   parseSimpleAmountLabel,
   repairLegacyStructuredAmount,
@@ -48,6 +50,20 @@ test.each([
   expect(massGramEquivalent(quantity, unit)).toBe(grams);
 });
 
+test("serving per-unit weight arithmetic is deterministic", () => {
+  expect(multiplyAmountValues("2", "28")).toBe("56");
+  expect(multiplyAmountValues("3", "28")).toBe("84");
+  expect(multiplyAmountValues("1.5", "28.35")).toBe("42.525");
+  expect(divideAmountValues("56", "2")).toBe("28");
+  expect(divideAmountValues("42.525", "1.5")).toBe("28.35");
+});
+
+test("serving per-unit weight arithmetic rejects empty and non-positive values", () => {
+  expect(multiplyAmountValues("", "28")).toBeNull();
+  expect(multiplyAmountValues("2", "0")).toBeNull();
+  expect(divideAmountValues("56", "0")).toBeNull();
+});
+
 test.each(["tsp", "tbsp", "cup", "serving", "piece", "scoop"])("%s does not fabricate a gram conversion", (unit) => {
   expect(massGramEquivalent("2", unit)).toBeNull();
 });
@@ -55,6 +71,9 @@ test.each(["tsp", "tbsp", "cup", "serving", "piece", "scoop"])("%s does not fabr
 test("recognized units generate labels while uncommon units remain valid raw text", () => {
   expect(generatedAmountLabel("2", "tbsp")).toBe("2 Tbsp");
   expect(generatedAmountLabel("1", "slice")).toBe("1 slice");
+  expect(generatedAmountLabel("2", "slice")).toBe("2 slices");
+  expect(generatedAmountLabel("2", "slices")).toBe("2 slices");
+  expect(normalizedAmountUnit("slices")).toBe("slice");
   expect(normalizedAmountUnit("scoop")).toBeNull();
   expect(generatedAmountLabel("1", "scoop")).toBe("1 scoop");
 });
@@ -68,6 +87,7 @@ test.each([
   ["1 cup", { quantity: "1", unit: "cup" }],
   ["1 serving", { quantity: "1", unit: "serving" }],
   ["1 slice", { quantity: "1", unit: "slice" }],
+  ["2 slices", { quantity: "2", unit: "slice" }],
 ])("simple label %s parses conservatively", (label, expected) => {
   expect(parseSimpleAmountLabel(label)).toEqual(expected);
 });

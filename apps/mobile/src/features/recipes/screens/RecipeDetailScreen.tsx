@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { formatDisplayNumber } from "../../../shared/nutrition/display";
 import { isUnknownOnlyAggregatedTotal } from "../../../shared/nutrition/display";
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
@@ -92,36 +93,63 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
     }
   }
 
+  function confirmDeleteRecipe() {
+    if (mutations.deleteRecipe.isPending) {
+      return;
+    }
+    Alert.alert(
+      "Delete Recipe?",
+      `Delete ${recipe.name}? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => { void deleteRecipe(false); } },
+      ],
+    );
+  }
+
   const foodsById = new Map(ingredientFoods.map((food) => [food.id, food]));
+  const publishPending = mutations.publishRecipe.isPending;
+  const publishDisabled = !canPublish || publishPending;
+  const publishRequirementMessage = !canPublish
+    ? recipe.needs_republish
+      ? "Recipe changed since publishing. Enter the number of servings, then republish to update its published nutrition."
+      : "Enter the number of servings before publishing."
+    : null;
+  const republishMessage = recipe.needs_republish && canPublish
+    ? "Recipe changed since publishing. Republish to update its published nutrition."
+    : null;
+  const publishedStatusMessage = recipe.needs_republish
+    ? "Previously published nutrition is still available."
+    : "Published nutrition is available.";
 
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={onBack}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back from Recipe details" onPress={onBack}>
           <Text style={styles.text}>Back</Text>
         </Pressable>
-        <Pressable onPress={onEdit} disabled={Boolean(editBlockedMessage)}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Edit Recipe" accessibilityState={{ disabled: Boolean(editBlockedMessage) }} onPress={onEdit} disabled={Boolean(editBlockedMessage)}>
           <Text style={styles.text}>Edit</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
-        <Text style={styles.title}>{recipe.name}</Text>
+        <Text accessibilityRole="header" style={styles.title}>{recipe.name}</Text>
         {recipe.notes ? <Text style={styles.meta}>{recipe.notes}</Text> : null}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Yield</Text>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Yield</Text>
           <Text style={styles.meta}>
-            Servings: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Draft"}
+            Servings: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Not set"}
           </Text>
         </View>
         {legacyCookedWeight ? (
           <View style={styles.legacyCompatibility}>
-            <Text style={styles.sectionTitle}>Legacy cooked weight</Text>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>Legacy cooked weight</Text>
             <Text style={styles.text}>{formatLegacyCookedWeight(legacyCookedWeight)}</Text>
             <Text style={styles.meta}>Stored for compatibility with existing recipe data.</Text>
           </View>
         ) : null}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Ingredients</Text>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>Ingredients</Text>
           {recipe.ingredients.map((ingredient) => (
             <View key={ingredient.id} style={styles.ingredientLine}>
               <Text style={styles.meta}>
@@ -140,14 +168,18 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
         <NutritionSection title="Per Serving" totals={nutritionPreview?.perServing ?? undefined} />
         <NutritionSection title="Per 100 g" totals={nutritionPreview?.per100g ?? undefined} />
         {nutrition.isError ? (
-          <Text style={styles.error}>
-            {recipeNutritionErrorMessage(nutrition.error, "Could not load nutrition preview.")}
-          </Text>
+          <AccessibilityStatus
+            kind="retryable-failure"
+            message={recipeNutritionErrorMessage(nutrition.error, "Could not load nutrition preview.")}
+            retryContext="recipe nutrition"
+            onRetry={() => { void nutrition.refetch(); }}
+            messageStyle={styles.error}
+          />
         ) : null}
-        {editBlockedMessage ? <Text style={styles.error}>{editBlockedMessage}</Text> : null}
-        {!canPublish ? <Text style={styles.error}>Add servings or cooked weight before publishing.</Text> : null}
+        {editBlockedMessage ? <Text accessibilityRole="alert" style={styles.error}>{editBlockedMessage}</Text> : null}
+        {publishRequirementMessage ? <Text style={styles.error}>{publishRequirementMessage}</Text> : null}
         {mutations.publishRecipe.isError ? (
-          <Text style={styles.error}>
+          <Text accessibilityRole="alert" style={styles.error}>
             {recipeNutritionErrorMessage(
               mutations.publishRecipe.error,
               "Could not publish recipe.",
@@ -156,7 +188,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
         ) : null}
         {recipe.published_food_item_id ? (
           <>
-            <Text style={styles.success}>Published nutrition is available.</Text>
+            <Text style={styles.success}>{publishedStatusMessage}</Text>
             <View style={styles.publishedActions}>
               <Pressable
                 accessibilityRole="button"
@@ -177,18 +209,28 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
             </View>
           </>
         ) : null}
-        {recipe.needs_republish ? <Text style={styles.warning}>Recipe changed since publishing. Republish to update its published nutrition.</Text> : null}
+        {republishMessage ? <Text style={styles.warning}>{republishMessage}</Text> : null}
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={recipe.published_food_item_id ? "Republish Recipe food" : "Publish Recipe as food"}
+          accessibilityState={{ disabled: publishDisabled, busy: publishPending }}
           onPress={publish}
-          disabled={!canPublish || mutations.publishRecipe.isPending}
-          style={[styles.primaryButton, !canPublish && styles.disabledButton]}
+          disabled={publishDisabled}
+          style={[styles.primaryButton, publishDisabled && styles.disabledButton]}
         >
           <Text style={styles.primaryText}>
-            {recipe.published_food_item_id ? "Republish Food" : "Publish as Food"}
+            {publishPending ? "Publishing…" : recipe.published_food_item_id ? "Republish Food" : "Publish as Food"}
           </Text>
         </Pressable>
-        {deleteError ? <Text style={styles.error}>{deleteError}</Text> : null}
-        <Pressable onPress={() => deleteRecipe(false)} disabled={mutations.deleteRecipe.isPending} style={styles.deleteButton}>
+        {deleteError ? <Text accessibilityRole="alert" style={styles.error}>{deleteError}</Text> : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Delete Recipe"
+          accessibilityState={{ disabled: mutations.deleteRecipe.isPending, busy: mutations.deleteRecipe.isPending }}
+          onPress={confirmDeleteRecipe}
+          disabled={mutations.deleteRecipe.isPending}
+          style={styles.deleteButton}
+        >
           <Text style={styles.deleteText}>{mutations.deleteRecipe.isPending ? "Deleting..." : "Delete Recipe"}</Text>
         </Pressable>
       </ScrollView>
@@ -248,12 +290,12 @@ function RecipeDeleteDependencyModal({
             ))}
           </ScrollView>
           {publishedWarning ? <Text style={styles.warning}>{publishedWarning}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <View style={styles.modalActions}>
-            <Pressable onPress={onCancel} disabled={isDeleting} style={styles.secondaryButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Cancel Recipe deletion" onPress={onCancel} disabled={isDeleting} style={styles.secondaryButton}>
               <Text style={styles.text}>Cancel</Text>
             </Pressable>
-            <Pressable onPress={onConfirm} disabled={isDeleting} style={styles.destructiveButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Remove Recipe from dependencies and delete" accessibilityState={{ disabled: isDeleting, busy: isDeleting }} onPress={onConfirm} disabled={isDeleting} style={styles.destructiveButton}>
               <Text style={styles.destructiveText}>
                 {isDeleting ? "Deleting..." : "Remove and Delete"}
               </Text>
@@ -272,7 +314,7 @@ function NutritionSection({ title, totals }: { title: string; totals?: Aggregate
   }
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
       {totals.length === 0 ? <Text style={styles.meta}>No nutrients yet.</Text> : null}
       {sortNutrientsByDisplayOrder(
         totals,

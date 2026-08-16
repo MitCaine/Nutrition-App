@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { sortNutrientsByDisplayOrder } from "../../../shared/nutrition/order";
@@ -81,6 +81,20 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
           setError(apiErrorMessage(deleteError, "Could not delete food"));
         },
       },
+    );
+  };
+
+  const confirmDelete = () => {
+    if (deletePending || !food.data) {
+      return;
+    }
+    Alert.alert(
+      "Delete Food?",
+      `Delete ${food.data.name}? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => requestDelete(false) },
+      ],
     );
   };
 
@@ -248,7 +262,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         </Pressable>
         {food.data.can_favorite ? <Pressable accessibilityRole="button" accessibilityLabel={food.data.is_favorite ? "Unfavorite food" : "Favorite food"} accessibilityState={{ selected: food.data.is_favorite, disabled: favoritePending, busy: favoritePending }} disabled={favoritePending} onPress={toggleFavorite} style={styles.secondaryButton}><Text style={styles.text}>{favoritePending ? "Updating…" : food.data.is_favorite ? "Unfavorite" : "Favorite"}</Text></Pressable> : null}
         {actions.canDelete ? (
-          <Pressable onPress={() => requestDelete(false)} style={styles.deleteButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Delete food" accessibilityState={{ disabled: deletePending, busy: deletePending }} disabled={deletePending} onPress={confirmDelete} style={styles.deleteButton}>
             <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
           </Pressable>
         ) : null}

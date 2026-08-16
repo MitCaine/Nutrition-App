@@ -1,8 +1,15 @@
-import type { Food } from "../../foods/api/types";
+import type { Food, ServingDefinitionInput } from "../../foods/api/types";
 import { defaultServing } from "../../foods/utils/foodDisplay";
+import { generatedAmountLabel, normalizedAmountUnit } from "../../foods/utils/amountForm";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
 import type { Recipe, RecipeIngredientInput, RecipeMutationInput } from "../api/types";
-import { formatMassAmount, massToGrams, normalizeDecimalInput, type MassUnit } from "./massUnits";
+import {
+  formatMassAmount,
+  massToGrams,
+  multiplyDecimalInputs,
+  normalizeDecimalInput,
+  type MassUnit,
+} from "./massUnits";
 
 export type DraftIngredient = {
   localId: string;
@@ -33,6 +40,14 @@ export type RecipeDraft = {
 export type RecipeDraftInitResult =
   | { ok: true; draft: RecipeDraft }
   | { ok: false; missingFoodItemIds: string[] };
+
+export type CustomServingDraft = {
+  quantity: string;
+  unit: string;
+  gramWeightPerUnit: string;
+  customLabel: string;
+  useCustomLabel: boolean;
+};
 
 export function emptyRecipeDraft(): RecipeDraft {
   return {
@@ -191,6 +206,42 @@ export function formatLegacyCookedWeight(value: LegacyCookedWeight): string {
   return `${formatDisplayNumber(value.normalizedGrams)} g`;
 }
 
+export function buildCustomServingDefinition(draft: CustomServingDraft): ServingDefinitionInput | null {
+  const quantity = draft.quantity.trim();
+  const rawUnit = draft.unit.trim();
+  const gramWeightPerUnit = draft.gramWeightPerUnit.trim();
+  // The Recipe form asks for one unit's weight, while the persisted serving
+  // definition keeps the total weight of the full structured serving.
+  const gramWeight = multiplyDecimalInputs(quantity, gramWeightPerUnit);
+  if (
+    !(Number(quantity) > 0)
+    || !rawUnit
+    || !(Number(gramWeightPerUnit) > 0)
+    || gramWeight === null
+    || !(Number(gramWeight) > 0)
+  ) {
+    return null;
+  }
+  const unit = normalizedAmountUnit(rawUnit) ?? rawUnit.toLowerCase().replace(/\s+/g, " ");
+  const automaticLabel = generatedAmountLabel(quantity, unit);
+  const label = draft.useCustomLabel ? draft.customLabel.trim() : automaticLabel;
+  if (!label) {
+    return null;
+  }
+  return {
+    label,
+    quantity,
+    unit,
+    gram_weight: gramWeight,
+    is_default: false,
+  };
+}
+
+export function formatServingMultiplier(quantity: string, servingLabel: string): string {
+  const displayQuantity = formatDisplayNumber(quantity);
+  return Number(quantity) === 1 ? servingLabel : `${displayQuantity} × ${servingLabel}`;
+}
+
 export function formatIngredientAmount(ingredient: DraftIngredient): string {
   if (ingredient.amountUnit === "g") {
     return formatMassAmount(ingredient.amountQuantity, ingredient.massUnit);
@@ -198,11 +249,22 @@ export function formatIngredientAmount(ingredient: DraftIngredient): string {
   const serving = ingredient.food.serving_definitions.find(
     (item) => item.id === ingredient.servingDefinitionId,
   );
-  return `${formatDisplayNumber(ingredient.amountQuantity)} ${serving?.label ?? "serving"}`;
+  return formatServingMultiplier(ingredient.amountQuantity, serving?.label ?? "serving");
 }
 
 export function formatServingChoiceLabel(serving: { label: string; gram_weight?: string | null }): string {
-  return serving.gram_weight ? `${serving.label} (${formatAmountWithUnit(serving.gram_weight, "g")})` : serving.label;
+  if (!serving.gram_weight || servingLabelAlreadyIncludesGramWeight(serving.label, serving.gram_weight)) {
+    return serving.label;
+  }
+  return `${serving.label} (${formatAmountWithUnit(serving.gram_weight, "g")})`;
+}
+
+function servingLabelAlreadyIncludesGramWeight(label: string, gramWeight: string): boolean {
+  const match = label.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:g|gram|grams)$/i);
+  if (!match) {
+    return false;
+  }
+  return Number(match[1]) === Number(gramWeight);
 }
 
 export function usefulServingDefinitions<T extends { label: string; gram_weight?: string | null }>(servings: T[]): T[] {
@@ -274,6 +336,6 @@ export function formatRecipeIngredientDetail(params: {
     return `${foodName} - ${formatMassAmount(params.amountQuantity, params.massUnit ?? "g")}`;
   }
   const serving = params.food?.serving_definitions.find((item) => item.id === params.servingDefinitionId);
-  const amount = `${formatDisplayNumber(params.amountQuantity)} ${serving?.label ?? "serving"}`;
+  const amount = formatServingMultiplier(params.amountQuantity, serving?.label ?? "serving");
   return `${foodName} - ${amount}`;
 }

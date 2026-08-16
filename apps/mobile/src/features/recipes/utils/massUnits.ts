@@ -34,6 +34,16 @@ function formatScaledDecimal(value: bigint, maxFractionDigits = 6): string {
   return trimmed ? `${whole}.${trimmed}` : whole.toString();
 }
 
+export function multiplyDecimalInputs(left: string, right: string): string | null {
+  const scaledLeft = parseScaledDecimal(left);
+  const scaledRight = parseScaledDecimal(right);
+  if (scaledLeft === null || scaledRight === null) {
+    return null;
+  }
+  const product = (scaledLeft * scaledRight + SCALE / 2n) / SCALE;
+  return formatScaledDecimal(product);
+}
+
 export function massToGrams(amount: string, unit: MassUnit): string | null {
   const scaledAmount = parseScaledDecimal(amount);
   if (scaledAmount === null) {

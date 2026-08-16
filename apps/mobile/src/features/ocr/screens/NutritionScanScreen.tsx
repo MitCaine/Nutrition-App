@@ -1,7 +1,7 @@
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Linking, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { recognizeTextFromImage } from "../../../native/ocr/NutritionOcr";
@@ -23,6 +23,7 @@ export function NutritionScanScreen({ onCancel, onReady }: {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [status, setStatus] = useState<"idle" | "acquiring" | "recognizing" | "parsing" | "failure">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const mounted = useRef(true);
   const requestId = useRef(0);
   const inFlight = useRef(false);
@@ -53,7 +54,7 @@ export function NutritionScanScreen({ onCancel, onReady }: {
     if (inFlight.current) return;
     inFlight.current = true;
     const current = ++requestId.current;
-    setStatus("acquiring"); setMessage(null);
+    setStatus("acquiring"); setMessage(null); setPermissionDenied(false);
     const outcome = await acquireOcrImage(source, source === "camera" ? {
       requestPermission: ImagePicker.requestCameraPermissionsAsync,
       launch: () => ImagePicker.launchCameraAsync({ mediaTypes: ["images"], allowsEditing: false, quality: 1 }),
@@ -69,6 +70,7 @@ export function NutritionScanScreen({ onCancel, onReady }: {
     if (outcome.kind !== "selected") {
       inFlight.current = false;
       setStatus(outcome.kind === "cancelled" ? "idle" : "failure");
+      setPermissionDenied(outcome.kind === "permissionDenied");
       if (outcome.kind === "permissionDenied") setMessage(source === "camera" ? "Camera access is required to take a label photo." : "Photo access is required to choose a label image.");
       if (outcome.kind === "failed") setMessage("The image could not be acquired. Try again.");
       return;
@@ -85,6 +87,7 @@ export function NutritionScanScreen({ onCancel, onReady }: {
     } catch {
       if (mounted.current && current === requestId.current) {
         setStatus("failure");
+        setPermissionDenied(false);
         setMessage("The nutrition label could not be recognized or parsed. Try a clearer image.");
       }
     } finally {
@@ -102,6 +105,7 @@ export function NutritionScanScreen({ onCancel, onReady }: {
     <AccessiblePressable accessibilityLabel="Take nutrition label photo" accessibilityHint="Opens the iOS camera" disabled={busy} onPress={() => acquire("camera")} style={styles.button}><Text style={styles.buttonText}>Take photo</Text></AccessiblePressable>
     {busy ? <View style={styles.progress}><ActivityIndicator accessibilityLabel="Label scan in progress"/><AccessibilityStatus kind="busy" message={status === "acquiring" ? "Opening image source…" : status === "recognizing" ? "Recognizing label text…" : "Parsing nutrition values…"} /></View> : null}
     {message ? <Text ref={errorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{message}</Text> : null}
+    {permissionDenied ? <AccessiblePressable accessibilityLabel="Open app settings" accessibilityHint="Opens iOS Settings so camera or photo access can be changed" onPress={() => { void Linking.openSettings(); }} style={styles.settingsButton}><Text style={styles.settingsButtonText}>Open Settings</Text></AccessiblePressable> : null}
   </View>;
 }
 
@@ -114,5 +118,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   link: { color: theme.colors.accent, fontSize: 16 },
   progress: { alignItems: "center", flexDirection: "row", gap: 10 },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 16, padding: 16 },
+  settingsButton: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, minHeight: 44, justifyContent: "center", paddingHorizontal: 12 },
+  settingsButtonText: { color: theme.colors.accent, fontWeight: "700" },
   title: { color: theme.colors.text, fontSize: 26, fontWeight: "800" },
 }); }

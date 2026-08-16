@@ -24,11 +24,27 @@ export const AMOUNT_UNIT_GROUPS: ReadonlyArray<{
 
 const MASS_GRAMS: Record<string, number> = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 };
 const DISPLAY_UNITS: Record<string, string> = { tbsp: "Tbsp", ml: "mL", l: "L" };
+const UNIT_ALIASES: Record<string, string> = {
+  servings: "serving",
+  pieces: "piece",
+  slices: "slice",
+  containers: "container",
+  packages: "package",
+};
+const COUNT_PLURALS: Record<string, string> = {
+  serving: "servings",
+  piece: "pieces",
+  slice: "slices",
+  container: "containers",
+  package: "packages",
+};
+const DECIMAL_SCALE = 1_000_000_000n;
 
 export function normalizedAmountUnit(rawUnit: string): string | null {
   const normalized = rawUnit.trim().toLowerCase().replace(/\s+/g, " ");
-  return AMOUNT_UNIT_GROUPS.flatMap((group) => group.units).some((unit) => unit.value === normalized)
-    ? normalized
+  const canonical = UNIT_ALIASES[normalized] ?? normalized;
+  return AMOUNT_UNIT_GROUPS.flatMap((group) => group.units).some((unit) => unit.value === canonical)
+    ? canonical
     : null;
 }
 
@@ -70,9 +86,14 @@ export function revealCustomUnit(state: UnitPickerDraftState): UnitPickerDraftSt
 }
 
 export function generatedAmountLabel(quantity: string, rawUnit: string): string {
-  const unit = normalizedAmountUnit(rawUnit) ?? rawUnit.trim();
+  const normalized = normalizedAmountUnit(rawUnit);
+  const unit = normalized ?? rawUnit.trim();
   if (!quantity.trim() || !unit) return "";
-  return `${quantity.trim()} ${DISPLAY_UNITS[unit] ?? unit}`;
+  const numericQuantity = Number(quantity);
+  const displayUnit = normalized && COUNT_PLURALS[normalized] && Number.isFinite(numericQuantity) && numericQuantity !== 1
+    ? COUNT_PLURALS[normalized]
+    : DISPLAY_UNITS[unit] ?? unit;
+  return `${quantity.trim()} ${displayUnit}`;
 }
 
 export function parseSimpleAmountLabel(label: string): { quantity: string; unit: string } | null {
@@ -108,6 +129,37 @@ export function massGramEquivalent(quantity: string, rawUnit: string): string | 
   const numericQuantity = Number(quantity);
   if (!unit || MASS_GRAMS[unit] === undefined || !Number.isFinite(numericQuantity) || numericQuantity <= 0) return null;
   return String(Number((numericQuantity * MASS_GRAMS[unit]).toFixed(6)));
+}
+
+export function multiplyAmountValues(left: string, right: string): string | null {
+  const scaledLeft = parseScaledDecimal(left);
+  const scaledRight = parseScaledDecimal(right);
+  if (scaledLeft === null || scaledRight === null || scaledLeft <= 0n || scaledRight <= 0n) return null;
+  return formatScaledDecimal((scaledLeft * scaledRight + DECIMAL_SCALE / 2n) / DECIMAL_SCALE);
+}
+
+export function divideAmountValues(total: string, quantity: string): string | null {
+  const scaledTotal = parseScaledDecimal(total);
+  const scaledQuantity = parseScaledDecimal(quantity);
+  if (scaledTotal === null || scaledQuantity === null || scaledTotal <= 0n || scaledQuantity <= 0n) return null;
+  return formatScaledDecimal((scaledTotal * DECIMAL_SCALE + scaledQuantity / 2n) / scaledQuantity);
+}
+
+function parseScaledDecimal(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(trimmed)) return null;
+  const [whole, fraction = ""] = trimmed.split(".");
+  const padded = `${fraction}000000000`.slice(0, 9);
+  return BigInt(whole) * DECIMAL_SCALE + BigInt(padded);
+}
+
+function formatScaledDecimal(value: bigint, maxFractionDigits = 6): string {
+  const displayScale = 10n ** BigInt(9 - maxFractionDigits);
+  const roundedValue = ((value + displayScale / 2n) / displayScale) * displayScale;
+  const whole = roundedValue / DECIMAL_SCALE;
+  const fraction = (roundedValue % DECIMAL_SCALE).toString().padStart(9, "0").slice(0, maxFractionDigits);
+  const trimmed = fraction.replace(/0+$/, "");
+  return trimmed ? `${whole}.${trimmed}` : whole.toString();
 }
 
 export function isCanonicalBaseAmount(serving: Pick<ServingDefinitionInput, "quantity" | "unit" | "gram_weight">): boolean {

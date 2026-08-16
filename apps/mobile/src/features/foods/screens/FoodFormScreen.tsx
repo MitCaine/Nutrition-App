@@ -19,12 +19,25 @@ import { apiErrorMessage } from "../utils/foodDelete";
 import { createClientRequestId } from "../../logging/utils/clientRequestId";
 import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
 import { foodValidationTargetFocusKey } from "../validation/foodValidation";
+import { isRuntimeError } from "../../../runtime/RuntimeError";
 
 type Props = {
   food?: Food;
   onSaved: (foodId: string) => void;
   onCancel: () => void;
 };
+
+function servingConflictMessage(details: unknown): string {
+  const affectedRecipes = details && typeof details === "object" && Array.isArray((details as { affected_recipes?: unknown }).affected_recipes)
+    ? (details as { affected_recipes: unknown[] }).affected_recipes
+    : [];
+  const usage = affectedRecipes.length === 1
+    ? "an active Recipe uses that serving"
+    : affectedRecipes.length > 1
+      ? `${affectedRecipes.length} active Recipes use one or more of those servings`
+      : "an active Recipe uses one or more of those servings";
+  return `Serving-size changes were not saved because ${usage}. The saved serving sizes have been restored. Update the Recipe ingredients before changing those serving sizes.`;
+}
 
 export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
@@ -79,6 +92,16 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
       }
       onSaved(saved.id);
     } catch (error) {
+      if (
+        food
+        && isRuntimeError(error)
+        && error.code === "food_update_recipe_serving_conflict"
+        && error.mutationOutcome === "confirmed_non_commit"
+      ) {
+        form.restoreServings();
+        setSaveError(servingConflictMessage(error.details));
+        return;
+      }
       setSaveError(apiErrorMessage(error, "Could not save food"));
     }
   }
@@ -91,7 +114,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             <View style={styles.header}>
               <Text ref={headingRef} accessibilityRole="header" style={styles.title}>{food ? "Edit Food" : "New Food"}</Text>
               <AccessiblePressable accessibilityLabel={food ? "Cancel editing food" : "Cancel creating food"} disabled={saving} onPress={onCancel}>
-                <Text style={styles.text}>Cancel</Text>
+                <Text style={styles.cancelText}>Cancel</Text>
               </AccessiblePressable>
             </View>
 
@@ -103,7 +126,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             {form.error && form.validationIssue?.target !== "food.name" && !form.validationIssue?.target.startsWith("serving.") && !form.validationIssue?.target.startsWith("nutrient.") ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
             {saveError ? <Text ref={saveErrorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
 
-            <Text accessibilityRole="header" style={styles.sectionTitle}>Amounts</Text>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>Serving sizes</Text>
             <ServingDefinitionsEditor
               servings={form.servings}
               updateServing={form.updateServing}
@@ -134,6 +157,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
+  cancelText: { color: theme.colors.accent, fontWeight: "700" },
   content: { padding: 16, paddingBottom: 16 },
   error: { color: theme.colors.errorText, marginTop: 12 }, flex: { backgroundColor: theme.colors.background, flex: 1 },
   header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
