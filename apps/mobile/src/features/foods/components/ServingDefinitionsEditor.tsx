@@ -16,6 +16,9 @@ import {
   generatedAmountDisplayLabel,
   massGramEquivalent,
   multiplyAmountValues,
+  transitionServingUnit,
+  UNCONVERTED_SERVING_UNIT_WARNING,
+  type PreservedVolumeServing,
 } from "../utils/amountForm";
 import { ServingUnitPicker } from "./ServingUnitPicker";
 
@@ -38,6 +41,7 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
   const portions = servings.filter((serving) => !serving.isBaseAmount);
   const [expandedKey, setExpandedKey] = useState<string | null>(() => portions.find((serving) => serving.consistencyWarning)?.key ?? null);
   const [gramWeightPerUnitDrafts, setGramWeightPerUnitDrafts] = useState<Record<string, string>>({});
+  const [preservedVolumes, setPreservedVolumes] = useState<Record<string, PreservedVolumeServing | null>>({});
 
   useEffect(() => {
     if (invalidServingKey && !servings.find((serving) => serving.key === invalidServingKey)?.isBaseAmount) {
@@ -63,6 +67,9 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
   }
 
   function updateQuantity(serving: ServingFormValue, quantity: string) {
+    // A manual quantity edit replaces the represented amount, so any preserved volume
+    // representation of the previous amount is no longer authoritative.
+    setPreservedVolumes((current) => (current[serving.key] ? { ...current, [serving.key]: null } : current));
     if (amountUnitCategory(serving.unit) === "weight") {
       updateServing(serving.key, { quantity, consistencyWarning: undefined });
       return;
@@ -77,27 +84,23 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
   }
 
   function updateUnit(serving: ServingFormValue, unit: string) {
-    const previousCategory = amountUnitCategory(serving.unit);
-    const nextCategory = amountUnitCategory(unit);
-    if (nextCategory === "weight") {
-      setGramWeightPerUnitDrafts((current) => ({
-        ...current,
-        [serving.key]: massGramEquivalent("1", unit) ?? "",
-      }));
-      updateServing(serving.key, { unit, consistencyWarning: undefined });
-      return;
-    }
-    if (previousCategory === "weight") {
-      setGramWeightPerUnitDrafts((current) => ({ ...current, [serving.key]: "" }));
-      updateServing(serving.key, { unit, consistencyWarning: undefined });
-      return;
-    }
-    const perUnit = gramWeightPerUnitDrafts[serving.key] ?? gramWeightPerUnit(serving);
-    const total = multiplyAmountValues(serving.quantity, perUnit);
+    const transition = transitionServingUnit(
+      {
+        quantity: serving.quantity,
+        unit: serving.unit,
+        gramWeight: serving.gram_weight ?? "",
+        preservedVolume: preservedVolumes[serving.key] ?? null,
+      },
+      unit,
+    );
+    setGramWeightPerUnitDrafts((current) => ({ ...current, [serving.key]: transition.perUnit }));
+    setPreservedVolumes((current) => ({ ...current, [serving.key]: transition.preservedVolume }));
     updateServing(serving.key, {
       unit,
-      consistencyWarning: undefined,
-      ...(total !== null ? { gram_weight: total } : {}),
+      ...(transition.quantity !== serving.quantity ? { quantity: transition.quantity } : {}),
+      // Always explicit: applyAmountPatch must not re-derive grams from an unconverted quantity.
+      gram_weight: transition.gramWeight,
+      consistencyWarning: transition.reviewWarning ?? undefined,
     });
   }
 
@@ -303,6 +306,9 @@ function servingWeightSummary(serving: ServingFormValue): string {
   if (!amountHasKnownGramWeight(serving)) return "Gram weight not set";
   const displayTotal = formatServingGramForDisplay(serving.gram_weight ?? "");
   if (amountUnitCategory(serving.unit) === "weight") return `${displayTotal} g total`;
+  // After a refused unit transition the retained quantity was never expressed in the new
+  // unit, so grams-per-unit derived from that pairing would fabricate a relationship.
+  if (serving.consistencyWarning === UNCONVERTED_SERVING_UNIT_WARNING) return `${displayTotal} g total`;
   const perUnit = divideAmountValues(serving.gram_weight ?? "", serving.quantity);
   const unit = servingUnitDisplay(serving.unit);
   if (perUnit && unit) {

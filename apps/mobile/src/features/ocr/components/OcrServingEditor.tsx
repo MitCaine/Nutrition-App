@@ -15,7 +15,9 @@ import {
   massGramEquivalent,
   multiplyAmountValues,
   normalizeServingQuantityInput,
+  transitionServingUnit,
   type AmountLabelMode,
+  type PreservedVolumeServing,
 } from "../../foods/utils/amountForm";
 import type { NutritionConfirmationDraft } from "../api/types";
 
@@ -61,6 +63,13 @@ export function OcrServingEditor({
     { ...value, servingUnit: initialUnit, gramWeight: initialGramWeight },
     normalizeServingQuantityInput(formatServingQuantityForDisplay(initialQuantity)) ?? initialQuantity,
   ));
+  const [preservedVolume, setPreservedVolume] = useState<PreservedVolumeServing | null>(null);
+  // A refused transition into a weight unit keeps the quantity unconverted; deriving grams
+  // from that quantity would fabricate exactly the conversion that was refused.
+  const suppressWeightDerivationRef = useRef(false);
+  // Editor-local review presentation for refused unit transitions; never persisted and
+  // never part of the OCR confirmation payload.
+  const [unitReviewWarning, setUnitReviewWarning] = useState<string | null>(null);
   const [labelMode, setLabelMode] = useState<AmountLabelMode>(() =>
     value.servingDisplay.trim() ? "manual" : "automatic",
   );
@@ -96,6 +105,7 @@ export function OcrServingEditor({
   }, [onChange, quantityDraft, recoveryPending, value.servingQuantity]);
 
   useEffect(() => {
+    if (suppressWeightDerivationRef.current) return;
     if (value.gramWeight.trim() || !weightReadOnly) return;
     const normalizedQuantity = normalizeServingQuantityInput(quantityDraft) ?? value.servingQuantity;
     const resolvedWeight = massGramEquivalent(normalizedQuantity, value.servingUnit);
@@ -103,6 +113,13 @@ export function OcrServingEditor({
   }, [onChange, quantityDraft, value.gramWeight, value.servingQuantity, value.servingUnit, weightReadOnly]);
 
   function updateQuantity(rawQuantity: string) {
+    // A manual quantity edit replaces the represented amount, so any preserved volume
+    // representation of the previous amount is no longer authoritative, an unresolved
+    // unit-transition review is resolved by the explicit correction, and weight-unit
+    // gram derivation may resume for the newly authored amount.
+    setPreservedVolume(null);
+    setUnitReviewWarning(null);
+    suppressWeightDerivationRef.current = false;
     setQuantityDraft(rawQuantity);
     const servingQuantity = normalizeServingQuantityInput(rawQuantity);
     if (!servingQuantity) {
@@ -117,26 +134,25 @@ export function OcrServingEditor({
   }
 
   function updateUnit(servingUnit: string) {
-    const previousCategory = amountUnitCategory(value.servingUnit);
-    const nextCategory = amountUnitCategory(servingUnit);
     const servingQuantity = normalizeServingQuantityInput(quantityDraft) ?? value.servingQuantity;
-    if (nextCategory === "weight") {
-      const nextPerUnit = massGramEquivalent("1", servingUnit) ?? "";
-      setGramWeightPerUnit(nextPerUnit);
-      onChange({
-        servingUnit,
-        gramWeight: massGramEquivalent(servingQuantity, servingUnit) ?? "",
-      });
-      return;
-    }
-    if (previousCategory === "weight") {
-      setGramWeightPerUnit("");
-      onChange({ servingUnit, gramWeight: "" });
-      return;
-    }
+    const transition = transitionServingUnit(
+      {
+        quantity: servingQuantity,
+        unit: value.servingUnit,
+        gramWeight: value.gramWeight,
+        preservedVolume,
+      },
+      servingUnit,
+    );
+    setQuantityDraft(transition.quantity);
+    setGramWeightPerUnit(transition.perUnit);
+    setPreservedVolume(transition.preservedVolume);
+    setUnitReviewWarning(transition.reviewWarning);
+    suppressWeightDerivationRef.current = !transition.converted && amountUnitCategory(servingUnit) === "weight";
     onChange({
       servingUnit,
-      gramWeight: multiplyAmountValues(servingQuantity, gramWeightPerUnit) ?? "",
+      servingQuantity: transition.quantity,
+      gramWeight: transition.gramWeight,
     });
   }
 
@@ -221,6 +237,8 @@ export function OcrServingEditor({
           <Text style={styles.meta}>{servingWeightSummary(value, quantityDraft, gramWeightPerUnit)}</Text>
         ) : null}
       </View>
+
+      {unitReviewWarning ? <Text style={styles.warning}>{unitReviewWarning}</Text> : null}
 
       {labelMode === "manual" ? (
         <View style={styles.labelEditor}>
@@ -338,6 +356,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     meta: { color: theme.colors.secondaryText, fontSize: 13 },
     previewCard: { backgroundColor: theme.colors.secondarySurface, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, padding: 10 },
     previewText: { color: theme.colors.text, fontSize: 16, fontWeight: "700" },
+    warning: { color: theme.colors.warningText, fontSize: 13 },
     twoColumn: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   });
 }

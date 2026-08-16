@@ -5,6 +5,7 @@ import TestRenderer, { act } from "react-test-renderer";
 import type { NutritionConfirmationDraft, ParsedField } from "../src/features/ocr/api/types";
 import { OcrServingEditor } from "../src/features/ocr/components/OcrServingEditor";
 import { confirmationPayload } from "../src/features/ocr/confirmation/confirmationModel";
+import { UNCONVERTED_SERVING_UNIT_WARNING } from "../src/features/foods/utils/amountForm";
 
 const focusProps = () => ({ ref: () => undefined, onFocus: () => undefined });
 
@@ -120,7 +121,7 @@ test("OCR serving editor recovers structured values from a clear serving display
   await act(async () => renderer.unmount());
 });
 
-test("OCR serving editor uses deterministic weight conversion and supports custom units", async () => {
+test("OCR serving editor preserves the physical serving across unit changes and supports custom units", async () => {
   const onPatch = jest.fn();
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -132,22 +133,58 @@ test("OCR serving editor uses deterministic weight conversion and supports custo
 
   await act(async () => action(renderer.root, "Serving unit").props.onPress());
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "oz" }).props.onPress());
-  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "oz", gramWeight: "56.699046" });
-  expect(input(renderer.root, "Serving grams").props.value).toBe("56.699046");
+  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "oz", servingQuantity: "1.058219", gramWeight: "30" });
+  expect(input(renderer.root, "Serving grams").props.value).toBe("30");
   expect(input(renderer.root, "Serving grams").props.editable).toBe(false);
-  expect(visibleText(renderer.root)).toContain("56.7 g total");
+  expect(visibleText(renderer.root)).toContain("30 g total");
+
+  await act(async () => action(renderer.root, "Serving unit").props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "cup" }).props.onPress());
+  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "cup", servingQuantity: "2", gramWeight: "30" });
+  expect(visibleText(renderer.root)).toContain("15 g per cup · 30 g total");
 
   await act(async () => action(renderer.root, "Serving unit").props.onPress());
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "Custom unit" }).props.onPress());
   await act(async () => input(renderer.root, "Custom unit name").props.onChangeText("scoop"));
   await act(async () => action(renderer.root, "Use custom unit scoop").props.onPress());
-  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "scoop", gramWeight: "" });
+  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "scoop", servingQuantity: "2", gramWeight: "30" });
   expect(input(renderer.root, "Serving grams").props.editable).toBe(true);
 
   await act(async () => input(renderer.root, "Serving grams").props.onChangeText("30"));
   expect(onPatch).toHaveBeenLastCalledWith({ gramWeight: "30" });
   expect(visibleText(renderer.root)).toContain("15 g per scoop · 30 g total");
   expect(visibleText(renderer.root)).toContain("2 scoops (30 g)");
+  await act(async () => renderer.unmount());
+});
+
+test("OCR serving editor presents refused unit transitions for review and clears them on correction or conversion", async () => {
+  const onPatch = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(Harness, {
+      initial: { servingDisplay: "", servingQuantity: "2", servingUnit: "cup", gramWeight: "30" },
+      onPatch,
+    }));
+  });
+
+  await act(async () => action(renderer.root, "Serving unit").props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Custom unit" }).props.onPress());
+  await act(async () => input(renderer.root, "Custom unit name").props.onChangeText("scoop"));
+  await act(async () => action(renderer.root, "Use custom unit scoop").props.onPress());
+  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "scoop", servingQuantity: "2", gramWeight: "30" });
+  expect(visibleText(renderer.root)).toContain(UNCONVERTED_SERVING_UNIT_WARNING);
+  expect(visibleText(renderer.root)).toContain("30 g total");
+  expect(visibleText(renderer.root)).not.toContain("g per scoop");
+
+  await act(async () => input(renderer.root, "Serving quantity").props.onChangeText("1"));
+  expect(onPatch).toHaveBeenLastCalledWith(expect.objectContaining({ servingQuantity: "1" }));
+  expect(visibleText(renderer.root)).not.toContain(UNCONVERTED_SERVING_UNIT_WARNING);
+  expect(input(renderer.root, "Serving grams").props.value).toBe("30");
+
+  await act(async () => action(renderer.root, "Serving unit").props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: "oz" }).props.onPress());
+  expect(onPatch).toHaveBeenLastCalledWith({ servingUnit: "oz", servingQuantity: "1.058219", gramWeight: "30" });
+  expect(visibleText(renderer.root)).not.toContain(UNCONVERTED_SERVING_UNIT_WARNING);
   await act(async () => renderer.unmount());
 });
 

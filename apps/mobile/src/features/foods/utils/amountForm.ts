@@ -23,6 +23,14 @@ export const AMOUNT_UNIT_GROUPS: ReadonlyArray<{
 ];
 
 const MASS_GRAMS: Record<string, number> = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 };
+const UNIT_MILLILITERS: Record<string, string> = {
+  tsp: "4.92892159375",
+  tbsp: "14.78676478125",
+  "fl oz": "29.5735295625",
+  cup: "236.5882365",
+  ml: "1",
+  l: "1000",
+};
 const DISPLAY_UNITS: Record<string, string> = { tbsp: "Tbsp", ml: "mL", l: "L" };
 const UNIT_ALIASES: Record<string, string> = {
   servings: "serving",
@@ -209,6 +217,121 @@ export function massGramEquivalent(quantity: string, rawUnit: string): string | 
   return String(Number((numericQuantity * MASS_GRAMS[unit]).toFixed(6)));
 }
 
+export type PreservedVolumeServing = { quantity: string; unit: string };
+
+export type ServingUnitTransition = {
+  quantity: string;
+  unit: string;
+  gramWeight: string;
+  perUnit: string;
+  preservedVolume: PreservedVolumeServing | null;
+  reviewWarning: string | null;
+  converted: boolean;
+};
+
+export const UNCONVERTED_SERVING_UNIT_WARNING =
+  "The unit changed without a defensible conversion. Review the quantity for the new unit.";
+
+/**
+ * Unit selection changes representation, never the physical serving.
+ *
+ * The known total gram weight is the conversion anchor wherever one is needed: weight-unit
+ * quantities are derived from it, never by reinterpreting the previous numeric quantity, and it
+ * survives transitions into units with no defensible conversion. Volume representations are
+ * preserved transiently (editor state, not persistence) so a detour through another unit family
+ * can restore the previously known volume. Conversions use the exact scaled-decimal helpers;
+ * display formatting stays the separate #96 concern.
+ */
+export function transitionServingUnit(
+  current: { quantity: string; unit: string; gramWeight?: string | null; preservedVolume?: PreservedVolumeServing | null },
+  nextUnit: string,
+): ServingUnitTransition {
+  const quantity = current.quantity.trim();
+  const gramWeight = amountHasKnownGramWeight({ gram_weight: current.gramWeight ?? null }) ? (current.gramWeight ?? "").trim() : "";
+  const fromCategory = amountUnitCategory(current.unit);
+  const toCategory = amountUnitCategory(nextUnit);
+
+  if (nextUnit === current.unit) {
+    return { quantity, unit: nextUnit, gramWeight, perUnit: derivedPerUnit(quantity, current.unit, gramWeight), preservedVolume: current.preservedVolume ?? null, reviewWarning: null, converted: false };
+  }
+  const preservedOnLeavingVolume = fromCategory === "volume" && quantity && amountUnitCategory(nextUnit) !== "volume"
+    ? { quantity, unit: current.unit }
+    : null;
+  const carryPreservedVolume = preservedOnLeavingVolume ?? (toCategory === "volume" ? null : current.preservedVolume ?? null);
+
+  if (toCategory === "weight") {
+    const unitGrams = String(MASS_GRAMS[nextUnit]);
+    const anchorGrams = gramWeight || (fromCategory === "weight" ? massGramEquivalent(quantity, current.unit) : null);
+    const nextQuantity = anchorGrams ? divideAmountValues(anchorGrams, unitGrams) : null;
+    if (nextQuantity) {
+      return {
+        quantity: nextQuantity,
+        unit: nextUnit,
+        gramWeight: gramWeight || massGramEquivalent(nextQuantity, nextUnit) || "",
+        perUnit: unitGrams,
+        preservedVolume: carryPreservedVolume,
+        reviewWarning: null,
+        converted: true,
+      };
+    }
+    return unconvertedTransition(quantity, nextUnit, gramWeight, carryPreservedVolume);
+  }
+
+  if (toCategory === "volume") {
+    const nextQuantity = fromCategory === "volume"
+      ? convertVolumeQuantity(quantity, current.unit, nextUnit)
+      : restoreVolumeQuantity(current.preservedVolume ?? null, nextUnit);
+    if (nextQuantity) {
+      return {
+        quantity: nextQuantity,
+        unit: nextUnit,
+        gramWeight,
+        perUnit: gramWeight ? divideAmountValues(gramWeight, nextQuantity) ?? "" : "",
+        preservedVolume: null,
+        reviewWarning: null,
+        converted: true,
+      };
+    }
+    return unconvertedTransition(quantity, nextUnit, gramWeight, carryPreservedVolume);
+  }
+
+  // Count/custom targets never have a defensible numeric conversion, including between
+  // distinct count/custom units: only the exact same unit is a true no-op, and a different
+  // unit is an unresolved rename that must be reviewed rather than an equivalence.
+  return unconvertedTransition(quantity, nextUnit, gramWeight, carryPreservedVolume);
+}
+
+function unconvertedTransition(quantity: string, unit: string, gramWeight: string, preservedVolume: PreservedVolumeServing | null): ServingUnitTransition {
+  return {
+    quantity,
+    unit,
+    gramWeight,
+    perUnit: "",
+    preservedVolume,
+    reviewWarning: quantity ? UNCONVERTED_SERVING_UNIT_WARNING : null,
+    converted: false,
+  };
+}
+
+function derivedPerUnit(quantity: string, unit: string, gramWeight: string): string {
+  if (amountUnitCategory(unit) === "weight") return String(MASS_GRAMS[unit]);
+  return gramWeight && quantity ? divideAmountValues(gramWeight, quantity) ?? "" : "";
+}
+
+function convertVolumeQuantity(quantity: string, fromUnit: string, toUnit: string): string | null {
+  const fromMilliliters = UNIT_MILLILITERS[fromUnit];
+  const toMilliliters = UNIT_MILLILITERS[toUnit];
+  if (!fromMilliliters || !toMilliliters) return null;
+  const inMilliliters = multiplyAmountValues(quantity, fromMilliliters);
+  return inMilliliters ? divideAmountValues(inMilliliters, toMilliliters) : null;
+}
+
+function restoreVolumeQuantity(preserved: PreservedVolumeServing | null, nextUnit: string): string | null {
+  if (!preserved || amountUnitCategory(preserved.unit) !== "volume") return null;
+  if (preserved.unit === nextUnit) return preserved.quantity.trim() || null;
+  return convertVolumeQuantity(preserved.quantity, preserved.unit, nextUnit);
+}
+
 export function multiplyAmountValues(left: string, right: string): string | null {
   const scaledLeft = parseScaledDecimal(left);
   const scaledRight = parseScaledDecimal(right);
@@ -296,9 +419,13 @@ export function applyAmountPatch(amount: AmountFormValue, patch: Partial<AmountF
     next.label = generatedAmountLabel(next.quantity, next.unit);
   }
   if (patch.quantity !== undefined || patch.unit !== undefined) {
-    const converted = massGramEquivalent(next.quantity, next.unit);
-    if (converted !== null) next.gram_weight = converted;
-    else if (patch.unit !== undefined && amountUnitCategory(amount.unit) === "weight") next.gram_weight = "";
+    // An explicit gram_weight (serving-unit transitions) is authoritative; re-derivation
+    // from the new quantity/unit is only for direct quantity/unit edits.
+    if (patch.gram_weight === undefined) {
+      const converted = massGramEquivalent(next.quantity, next.unit);
+      if (converted !== null) next.gram_weight = converted;
+      else if (patch.unit !== undefined && amountUnitCategory(amount.unit) === "weight") next.gram_weight = "";
+    }
   }
   return next;
 }
