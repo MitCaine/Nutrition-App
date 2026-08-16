@@ -38,6 +38,7 @@ const COUNT_PLURALS: Record<string, string> = {
   container: "containers",
   package: "packages",
 };
+const DECIMAL_SCALE = 1_000_000_000n;
 
 export function normalizedAmountUnit(rawUnit: string): string | null {
   const normalized = rawUnit.trim().toLowerCase().replace(/\s+/g, " ");
@@ -128,6 +129,37 @@ export function massGramEquivalent(quantity: string, rawUnit: string): string | 
   const numericQuantity = Number(quantity);
   if (!unit || MASS_GRAMS[unit] === undefined || !Number.isFinite(numericQuantity) || numericQuantity <= 0) return null;
   return String(Number((numericQuantity * MASS_GRAMS[unit]).toFixed(6)));
+}
+
+export function multiplyAmountValues(left: string, right: string): string | null {
+  const scaledLeft = parseScaledDecimal(left);
+  const scaledRight = parseScaledDecimal(right);
+  if (scaledLeft === null || scaledRight === null || scaledLeft <= 0n || scaledRight <= 0n) return null;
+  return formatScaledDecimal((scaledLeft * scaledRight + DECIMAL_SCALE / 2n) / DECIMAL_SCALE);
+}
+
+export function divideAmountValues(total: string, quantity: string): string | null {
+  const scaledTotal = parseScaledDecimal(total);
+  const scaledQuantity = parseScaledDecimal(quantity);
+  if (scaledTotal === null || scaledQuantity === null || scaledTotal <= 0n || scaledQuantity <= 0n) return null;
+  return formatScaledDecimal((scaledTotal * DECIMAL_SCALE + scaledQuantity / 2n) / scaledQuantity);
+}
+
+function parseScaledDecimal(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(trimmed)) return null;
+  const [whole, fraction = ""] = trimmed.split(".");
+  const padded = `${fraction}000000000`.slice(0, 9);
+  return BigInt(whole) * DECIMAL_SCALE + BigInt(padded);
+}
+
+function formatScaledDecimal(value: bigint, maxFractionDigits = 6): string {
+  const displayScale = 10n ** BigInt(9 - maxFractionDigits);
+  const roundedValue = ((value + displayScale / 2n) / displayScale) * displayScale;
+  const whole = roundedValue / DECIMAL_SCALE;
+  const fraction = (roundedValue % DECIMAL_SCALE).toString().padStart(9, "0").slice(0, maxFractionDigits);
+  const trimmed = fraction.replace(/0+$/, "");
+  return trimmed ? `${whole}.${trimmed}` : whole.toString();
 }
 
 export function isCanonicalBaseAmount(serving: Pick<ServingDefinitionInput, "quantity" | "unit" | "gram_weight">): boolean {
