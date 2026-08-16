@@ -24,14 +24,7 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  function handleChange(event: DateTimePickerEvent, selectedDate?: Date) {
-    if (event.type === "dismissed") {
-      onCancel();
-      return;
-    }
-    if (!selectedDate) {
-      return;
-    }
+  function handleValueChange(_event: DateTimePickerEvent, selectedDate: Date) {
     if (Platform.OS === "android") {
       onChange(selectedDate);
       onConfirm(selectedDate);
@@ -42,7 +35,15 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
 
   if (Platform.OS === "android") {
     return visible ? (
-      <DateTimePicker accessibilityLabel="Select date" value={date} mode="date" display="default" maximumDate={maximumDate} onChange={handleChange} />
+      <DateTimePicker
+        accessibilityLabel="Select date"
+        value={date}
+        mode="date"
+        display="default"
+        maximumDate={maximumDate}
+        onValueChange={handleValueChange}
+        onDismiss={onCancel}
+      />
     ) : null;
   }
 
@@ -65,7 +66,8 @@ export function DatePickerModal({ date, visible, onChange, onCancel, onConfirm, 
             mode="date"
             display="spinner"
             maximumDate={maximumDate}
-            onChange={handleChange}
+            onValueChange={handleValueChange}
+            onDismiss={onCancel}
             themeVariant={theme.mode}
           />
           <View style={styles.modalActions}>
