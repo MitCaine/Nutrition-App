@@ -24,10 +24,10 @@ from sqlalchemy.pool import NullPool
 from app.catalog.nutrients import nutrient_seed_rows
 from app.core.database_identity import database_connect_args
 from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
-from app.migrations.immutable_provenance_0025_contracts import (
-    EXPECTED_0025_ACTIVATION_V4_EXECUTE_ACL,
-    EXPECTED_0025_RUNTIME_EXECUTE_ROUTINES,
-    EXPECTED_0025_RUNTIME_RELATION_PRIVILEGES,
+from app.migrations.immutable_provenance_0026_contracts import (
+    EXPECTED_0026_ACTIVATION_V4_EXECUTE_ACL,
+    EXPECTED_0026_RUNTIME_EXECUTE_ROUTINES,
+    EXPECTED_0026_RUNTIME_RELATION_PRIVILEGES,
 )
 from app.nutrition.aggregation import aggregate_snapshots
 from app.operators.immutable_provenance_qualification import (
@@ -97,6 +97,15 @@ EXPECTED_CLONE_MARKER_PROTECTIONS = (
     ),
 )
 _POSTGRES_DIALECT = postgresql.dialect()
+CURRENT_EXPORT_SOURCE_REVISION = "0026_food_nutrient_integrity"
+EXPECTED_0026_FOOD_NUTRIENT_CHECK = {
+    "expression": "amount IS NULL OR amount >= 0::numeric",
+    "name": "ck_food_nutrients_amount_nonnegative",
+}
+EXPECTED_0026_FOOD_NUTRIENT_UNIQUE = {
+    "columns": ["food_item_id", "nutrient_id", "basis"],
+    "name": "uq_food_nutrients_food_nutrient_basis",
+}
 
 
 def canonical_owner_id(value: str) -> str:
@@ -350,6 +359,60 @@ def observe_source_schema(connection: Connection) -> dict[str, Any]:
     return {**SOURCE_SCHEMA, "tables": tables}
 
 
+def project_current_source_tables_to_frozen_contract(
+    actual: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Qualify 0026-only constraints, then project back to frozen pg-0025."""
+
+    current_food = actual.get("food_nutrients")
+    if not isinstance(current_food, Mapping):
+        raise _fail(
+            "source_schema_invalid",
+            "PostgreSQL current Food nutrient schema is unavailable.",
+        )
+
+    frozen_food = SOURCE_SCHEMA["tables"]["food_nutrients"]
+
+    current_checks = list(current_food.get("checks", []))
+    current_uniques = list(current_food.get("unique_constraints", []))
+    frozen_checks = list(frozen_food["checks"])
+    frozen_uniques = list(frozen_food["unique_constraints"])
+
+    missing_checks = [
+        item for item in frozen_checks if item not in current_checks
+    ]
+    missing_uniques = [
+        item for item in frozen_uniques if item not in current_uniques
+    ]
+    extra_checks = [
+        item for item in current_checks if item not in frozen_checks
+    ]
+    extra_uniques = [
+        item for item in current_uniques if item not in frozen_uniques
+    ]
+
+    if (
+        missing_checks
+        or missing_uniques
+        or extra_checks != [EXPECTED_0026_FOOD_NUTRIENT_CHECK]
+        or extra_uniques != [EXPECTED_0026_FOOD_NUTRIENT_UNIQUE]
+    ):
+        raise _fail(
+            "source_schema_invalid",
+            "PostgreSQL 0026 Food nutrient integrity extension is invalid.",
+        )
+
+    projected = {
+        name: dict(table)
+        for name, table in actual.items()
+    }
+    projected_food = dict(current_food)
+    projected_food["checks"] = frozen_checks
+    projected_food["unique_constraints"] = frozen_uniques
+    projected["food_nutrients"] = projected_food
+    return projected
+
+
 def validate_source_schema_tables(actual: Mapping[str, Any]) -> bool:
     required = SOURCE_SCHEMA["tables"]
     optional = SOURCE_SCHEMA["optional_tables"]
@@ -438,12 +501,21 @@ def qualify_optional_clone_marker(connection: Connection) -> dict[str, Any]:
 
 def qualify_source_schema(connection: Connection) -> None:
     revisions = list(connection.scalars(text("SELECT version_num::text FROM public.alembic_version ORDER BY version_num")))
-    if revisions != [CONTRACT["source"]["alembic_revision"]]:
-        raise _fail("source_schema_invalid", "PostgreSQL migration head is unsupported.")
+    if revisions != [CURRENT_EXPORT_SOURCE_REVISION]:
+        raise _fail(
+            "source_schema_invalid",
+            "PostgreSQL migration head is unsupported.",
+        )
     observed = observe_source_schema(connection)
     if canonical_digest(SOURCE_SCHEMA) != SCHEMA_CONTRACT_DIGEST:
-        raise _fail("source_schema_invalid", "Installed pg-0025 schema contract is invalid.")
-    marker_present = validate_source_schema_tables(observed["tables"])
+        raise _fail(
+            "source_schema_invalid",
+            "Installed pg-0025 schema contract is invalid.",
+        )
+    projected_tables = project_current_source_tables_to_frozen_contract(
+        observed["tables"]
+    )
+    marker_present = validate_source_schema_tables(projected_tables)
     if marker_present:
         qualify_optional_clone_marker(connection)
     try:
@@ -545,9 +617,9 @@ def qualify_current_validator_inputs(connection: Connection) -> None:
         )
     ).one_or_none()
     if (
-        relation_manifest != EXPECTED_0025_RUNTIME_RELATION_PRIVILEGES
-        or execute_manifest != EXPECTED_0025_RUNTIME_EXECUTE_ROUTINES
-        or activation_v4_acl != EXPECTED_0025_ACTIVATION_V4_EXECUTE_ACL
+        relation_manifest != EXPECTED_0026_RUNTIME_RELATION_PRIVILEGES
+        or execute_manifest != EXPECTED_0026_RUNTIME_EXECUTE_ROUTINES
+        or activation_v4_acl != EXPECTED_0026_ACTIVATION_V4_EXECUTE_ACL
         or role is None
         or any(bool(value) for value in role)
     ):

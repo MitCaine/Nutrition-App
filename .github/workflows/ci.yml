@@ -90,13 +90,15 @@ jobs:
           tests/test_postgres_test_support.py
           tests/test_log_concurrency_postgres.py
           tests/test_graph_restart_idempotency_postgres.py
+          tests/test_food_nutrient_integrity_postgres.py
+          tests/test_food_nutrient_integrity_migration_postgres.py
       - name: Verify isolated schema cleanup
         if: ${{ always() && steps.install.outcome == 'success' }}
         run: >-
           python -c "from sqlalchemy import create_engine, text; import os;
           engine = create_engine(os.environ['NUTRITION_TEST_POSTGRES_URL']);
           connection = engine.connect();
-          residual = connection.execute(text(\"SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'test_pg_support_%' OR schema_name LIKE 'test_phase3n_%' OR schema_name LIKE 'test_graph_restart_idem_%'\")).scalars().all();
+          residual = connection.execute(text(\"SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'test_pg_support_%' OR schema_name LIKE 'test_phase3n_%' OR schema_name LIKE 'test_graph_restart_idem_%' OR schema_name LIKE 'test_food_nutrient_integrity_%'\")).scalars().all();
           connection.close(); engine.dispose();
           assert not residual, f'residual PostgreSQL test schemas: {residual}'"
 

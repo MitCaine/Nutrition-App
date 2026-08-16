@@ -38,8 +38,9 @@ validator-owned protection or runtime-authority predicate. Migration 0024
 replaced the Daily Log guard and rebuilt the historical validator around the
 new guard hash, but retained the stale 0020 head and runtime execution set.
 
-Migration `0025_immutable_validator_head` is therefore a current-state
-validator repair discovered during E2-15 qualification. Its sole database
+Migration `0025_immutable_validator_head` was therefore the current-state
+validator repair at E2-15 qualification and remains the frozen E2-15 source
+contract baseline. Its sole database
 mutation is `CREATE OR REPLACE FUNCTION` for
 `public.phase0020_immutable_provenance_integrity_valid()`. It changes no table,
 trigger, guard, role, grant, application row, or transfer state. The repaired

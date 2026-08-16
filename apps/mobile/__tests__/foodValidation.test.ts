@@ -127,3 +127,61 @@ test("food validation returns a stable logical target that maps to the registere
   }));
   expect(foodValidationTargetFocusKey(issue.target)).toBe("food:name");
 });
+
+
+test("manual food validation rejects duplicate nutrient identities within one basis", () => {
+  const result = foodMutationSchema.safeParse({
+    ...validFood,
+    nutrients: [
+      { ...validFood.nutrients[0], basis: "per_100g" },
+      {
+        ...validFood.nutrients[0],
+        basis: "per_100g",
+        amount: "20",
+      },
+    ],
+  });
+
+  expect(result.success).toBe(false);
+  if (!result.success) {
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message:
+            "Foods cannot contain duplicate nutrient identities for the same basis.",
+          path: ["nutrients", 1, "nutrient_id"],
+        }),
+      ]),
+    );
+  }
+});
+
+test("manual food validation allows one nutrient at distinct bases", () => {
+  const result = foodMutationSchema.safeParse({
+    ...validFood,
+    nutrients: [
+      { ...validFood.nutrients[0], basis: "per_100g" },
+      {
+        ...validFood.nutrients[0],
+        basis: "per_serving",
+        amount: "20",
+      },
+    ],
+  });
+
+  expect(result.success).toBe(true);
+});
+
+test("manual food validation rejects negative nutrient amounts", () => {
+  const result = foodMutationSchema.safeParse({
+    ...validFood,
+    nutrients: [
+      {
+        ...validFood.nutrients[0],
+        amount: "-0.000001",
+      },
+    ],
+  });
+
+  expect(result.success).toBe(false);
+});

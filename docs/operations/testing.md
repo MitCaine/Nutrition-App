@@ -93,7 +93,7 @@ migration invariant.
 
 Use the Issue 17 workflow when accessibility qualification needs an application
 database that has traversed the historical Phase 5C conversion path through
-`0025_immutable_validator_head`:
+`0026_food_nutrient_integrity`:
 
 ```bash
 ./scripts/run-issue17-phase5c-clone.sh
@@ -126,7 +126,7 @@ For physical-device E1-17 testing, retain and open the disposable target with:
 ./scripts/run-issue17-phase5c-clone.sh --manual-test
 ```
 
-After the real `alembic upgrade head` reaches `0025_immutable_validator_head`, manual-test mode uses the
+After the real `alembic upgrade head` reaches `0026_food_nutrient_integrity`, manual-test mode uses the
 installed schema-0021 test activation surface and explicit synthetic bindings
 to open only this disposable target. It prints a `nutrition_runtime` loopback
 database URL, an exact backend startup command that listens on `0.0.0.0:8000`,

@@ -17,6 +17,13 @@ from app.migrations.immutable_provenance_0025_contracts import (
     EXPECTED_0025_RUNTIME_RELATION_PRIVILEGES,
     immutable_validator_0025_sql,
 )
+from app.migrations.immutable_provenance_0026_contracts import (
+    EXACT_0026_FUNCTION_DEFINITION_SHA256,
+    EXPECTED_0026_APPLICATION_HEAD,
+    EXPECTED_0026_RUNTIME_EXECUTE_ROUTINES,
+    EXPECTED_0026_RUNTIME_RELATION_PRIVILEGES,
+    immutable_validator_0026_sql,
+)
 from app.operators import immutable_provenance_contracts as current_contracts
 from app.operators.immutable_provenance_contracts import (
     DAILY_LOG_GUARD_FUNCTION,
@@ -42,9 +49,12 @@ POST_0024_IMMUTABLE_VALIDATOR_SHA256 = (
 POST_0025_IMMUTABLE_VALIDATOR_SHA256 = (
     "59a0bc3d25b6bb99f01bd3629edac86a50c7ec0c216337ea02ea5622be2746bb"
 )
+POST_0026_IMMUTABLE_VALIDATOR_SHA256 = (
+    "46c775ac4a829612ac5870b15939b5ee87354d173a63cc2b0d024864d860ef02"
+)
 
 
-def test_exact_0020_exact_0024_exact_0025_and_current_evidence_are_explicit() -> None:
+def test_exact_0020_exact_0024_exact_0025_exact_0026_and_current_evidence_are_explicit() -> None:
     assert set(EXACT_0020_FUNCTION_DEFINITION_SHA256) == set(
         EXACT_0024_FUNCTION_DEFINITION_SHA256
     )
@@ -81,7 +91,26 @@ def test_exact_0020_exact_0024_exact_0025_and_current_evidence_are_explicit() ->
         ]
         == POST_0025_IMMUTABLE_VALIDATOR_SHA256
     )
-    assert FUNCTION_DEFINITION_SHA256 == EXACT_0025_FUNCTION_DEFINITION_SHA256
+    assert set(EXACT_0025_FUNCTION_DEFINITION_SHA256) == set(
+        EXACT_0026_FUNCTION_DEFINITION_SHA256
+    )
+    assert {
+        name
+        for name in EXACT_0026_FUNCTION_DEFINITION_SHA256
+        if EXACT_0026_FUNCTION_DEFINITION_SHA256[name]
+        != EXACT_0025_FUNCTION_DEFINITION_SHA256[name]
+    } == {IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION}
+    assert (
+        EXACT_0026_FUNCTION_DEFINITION_SHA256[DAILY_LOG_GUARD_FUNCTION]
+        == POST_0024_DAILY_LOG_GUARD_SHA256
+    )
+    assert (
+        EXACT_0026_FUNCTION_DEFINITION_SHA256[
+            IMMUTABLE_PROVENANCE_VALIDATOR_FUNCTION
+        ]
+        == POST_0026_IMMUTABLE_VALIDATOR_SHA256
+    )
+    assert FUNCTION_DEFINITION_SHA256 == EXACT_0026_FUNCTION_DEFINITION_SHA256
 
 
 def test_exact_0020_validator_and_snapshot_installer_are_revision_scoped() -> None:
@@ -215,3 +244,232 @@ def test_0025_is_forward_only() -> None:
         assert "forward-only" in str(error)
     else:  # pragma: no cover - explicit fail branch
         raise AssertionError("0025 downgrade must fail closed")
+
+
+def test_0026_revision_contract_rebases_only_the_current_validator_head() -> None:
+    rendered = immutable_validator_0026_sql()
+
+    assert f"version_num = '{EXPECTED_0026_APPLICATION_HEAD}'" in rendered
+    assert "version_num = '0025_immutable_validator_head'" not in rendered
+    assert (
+        EXPECTED_0026_RUNTIME_RELATION_PRIVILEGES
+        == EXPECTED_0025_RUNTIME_RELATION_PRIVILEGES
+    )
+    assert (
+        EXPECTED_0026_RUNTIME_EXECUTE_ROUTINES
+        == EXPECTED_0025_RUNTIME_EXECUTE_ROUTINES
+    )
+    assert (
+        set(EXACT_0026_FUNCTION_DEFINITION_SHA256)
+        == set(EXACT_0025_FUNCTION_DEFINITION_SHA256)
+    )
+
+
+def test_0026_installs_constraints_after_preflight_and_rebases_validator(
+    monkeypatch,
+) -> None:
+    migration = import_module(
+        "app.migrations.versions.0026_food_nutrient_integrity"
+    )
+
+    queries: list[str] = []
+    executed: list[str] = []
+    checks: list[tuple] = []
+    uniques: list[tuple] = []
+    preconditions: list[bool] = []
+
+    class _Dialect:
+        name = "postgresql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+        def __init__(self) -> None:
+            self.results = iter((False, False))
+
+        def scalar(self, statement):
+            queries.append(str(statement))
+            return next(self.results)
+
+    bind = _Bind()
+
+    monkeypatch.setattr(migration.op, "get_bind", lambda: bind)
+    monkeypatch.setattr(
+        migration,
+        "_require_closed_fence_and_drained_runtime",
+        lambda: preconditions.append(True),
+    )
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "create_check_constraint",
+        lambda *args, **kwargs: checks.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "create_unique_constraint",
+        lambda *args, **kwargs: uniques.append((args, kwargs)),
+    )
+
+    migration.upgrade()
+
+    assert migration.revision == EXPECTED_0026_APPLICATION_HEAD
+    assert migration.down_revision == "0025_immutable_validator_head"
+    assert preconditions == [True]
+
+    assert len(queries) == 2
+    assert "amount < 0" in queries[0]
+    assert "HAVING count(*) > 1" in queries[1]
+
+    assert len(executed) == 2
+    assert executed[0] == (
+        "LOCK TABLE public.food_nutrients "
+        "IN SHARE ROW EXCLUSIVE MODE"
+    )
+    assert "CREATE OR REPLACE FUNCTION" in executed[1]
+    assert (
+        f"version_num = '{EXPECTED_0026_APPLICATION_HEAD}'"
+        in executed[1]
+    )
+
+    assert checks == [
+        (
+            (
+                "ck_food_nutrients_amount_nonnegative",
+                "food_nutrients",
+                "amount IS NULL OR amount >= 0",
+            ),
+            {"schema": "public"},
+        )
+    ]
+    assert uniques == [
+        (
+            (
+                "uq_food_nutrients_food_nutrient_basis",
+                "food_nutrients",
+                ["food_item_id", "nutrient_id", "basis"],
+            ),
+            {"schema": "public"},
+        )
+    ]
+
+
+def test_0026_negative_legacy_state_fails_before_constraint_ddl(
+    monkeypatch,
+) -> None:
+    migration = import_module(
+        "app.migrations.versions.0026_food_nutrient_integrity"
+    )
+
+    executed: list[str] = []
+    constraints: list[str] = []
+
+    class _Dialect:
+        name = "postgresql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+        @staticmethod
+        def scalar(_statement):
+            return True
+
+    monkeypatch.setattr(migration.op, "get_bind", lambda: _Bind())
+    monkeypatch.setattr(
+        migration,
+        "_require_closed_fence_and_drained_runtime",
+        lambda: None,
+    )
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "create_check_constraint",
+        lambda *args, **kwargs: constraints.append("check"),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "create_unique_constraint",
+        lambda *args, **kwargs: constraints.append("unique"),
+    )
+
+    try:
+        migration.upgrade()
+    except RuntimeError as error:
+        assert "negative_legacy_state" in str(error)
+    else:  # pragma: no cover
+        raise AssertionError("negative legacy state must fail closed")
+
+    assert executed == [
+        "LOCK TABLE public.food_nutrients "
+        "IN SHARE ROW EXCLUSIVE MODE"
+    ]
+    assert constraints == []
+
+
+def test_0026_duplicate_legacy_state_fails_before_constraint_ddl(
+    monkeypatch,
+) -> None:
+    migration = import_module(
+        "app.migrations.versions.0026_food_nutrient_integrity"
+    )
+
+    executed: list[str] = []
+    constraints: list[str] = []
+
+    class _Dialect:
+        name = "postgresql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+        def __init__(self) -> None:
+            self.results = iter((False, True))
+
+        def scalar(self, _statement):
+            return next(self.results)
+
+    bind = _Bind()
+
+    monkeypatch.setattr(migration.op, "get_bind", lambda: bind)
+    monkeypatch.setattr(
+        migration,
+        "_require_closed_fence_and_drained_runtime",
+        lambda: None,
+    )
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "create_check_constraint",
+        lambda *args, **kwargs: constraints.append("check"),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "create_unique_constraint",
+        lambda *args, **kwargs: constraints.append("unique"),
+    )
+
+    try:
+        migration.upgrade()
+    except RuntimeError as error:
+        assert "duplicate_legacy_state" in str(error)
+    else:  # pragma: no cover
+        raise AssertionError("duplicate legacy state must fail closed")
+
+    assert executed == [
+        "LOCK TABLE public.food_nutrients "
+        "IN SHARE ROW EXCLUSIVE MODE"
+    ]
+    assert constraints == []
+
+
+def test_0026_is_forward_only() -> None:
+    migration = import_module(
+        "app.migrations.versions.0026_food_nutrient_integrity"
+    )
+
+    try:
+        migration.downgrade()
+    except RuntimeError as error:
+        assert "forward-only" in str(error)
+    else:  # pragma: no cover
+        raise AssertionError("0026 downgrade must fail closed")

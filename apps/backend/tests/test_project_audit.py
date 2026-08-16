@@ -44,7 +44,7 @@ def test_session_json_reports_current_migration_heads() -> None:
     result = _run("session", "--json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["migration_heads"]["application"] == ["0025_immutable_validator_head"]
+    assert payload["migration_heads"]["application"] == ["0026_food_nutrient_integrity"]
     assert payload["migration_heads"]["control"] == [
         "ops_0011_phase5c4_recovery_audit"
     ]
@@ -60,7 +60,7 @@ def test_inventory_is_deterministic() -> None:
     assert second.returncode == 0, second.stderr
     assert first.stdout == second.stdout
     payload = json.loads(first.stdout)
-    assert payload["application_heads"] == ["0025_immutable_validator_head"]
+    assert payload["application_heads"] == ["0026_food_nutrient_integrity"]
     assert payload["control_heads"] == ["ops_0011_phase5c4_recovery_audit"]
     assert len(payload["inventory_sha256"]) == 64
 

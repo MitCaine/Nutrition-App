@@ -20,6 +20,20 @@ VALID_NUTRIENT_IDS = {nutrient.id for nutrient in NUTRIENT_CATALOG}
 NUTRIENTS_BY_ID = {nutrient.id: nutrient for nutrient in NUTRIENT_CATALOG}
 
 
+def _validate_unique_nutrient_identities(
+    nutrients: list[FoodNutrientInput],
+) -> None:
+    identities = [
+        (nutrient.nutrient_id, nutrient.basis.value)
+        for nutrient in nutrients
+    ]
+    if len(set(identities)) != len(identities):
+        raise ValueError(
+            "foods cannot contain duplicate nutrient identities for the same basis"
+        )
+
+
+
 class OriginalNutrientValueSchema(BaseModel):
     amount: DecimalInput = None
     unit: str | None = None
@@ -47,6 +61,9 @@ class FoodNutrientInput(BaseModel):
         nutrient = NUTRIENTS_BY_ID[self.nutrient_id]
         if not nutrient_unit_is_compatible(nutrient.default_unit, self.unit):
             raise ValueError(f"Unit {self.unit} is not compatible with nutrient {self.nutrient_id}")
+
+        if self.amount is not None and self.amount < 0:
+            raise ValueError("nutrient amounts must be non-negative")
 
         if self.data_status in {NutrientDataStatus.KNOWN, NutrientDataStatus.ESTIMATED}:
             if self.amount is None:
@@ -96,6 +113,7 @@ class FoodCreateRequest(BaseModel):
         default_count = sum(1 for serving in self.serving_definitions if serving.is_default)
         if default_count != 1:
             raise ValueError("foods with serving definitions must have exactly one default serving")
+        _validate_unique_nutrient_identities(self.nutrients)
         return self
 
 
@@ -118,6 +136,8 @@ class FoodUpdateRequest(BaseModel):
                 raise ValueError(
                     "foods with serving definitions must have exactly one default serving"
                 )
+        if self.nutrients is not None:
+            _validate_unique_nutrient_identities(self.nutrients)
         return self
 
 
