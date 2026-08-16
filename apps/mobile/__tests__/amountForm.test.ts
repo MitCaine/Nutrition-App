@@ -7,10 +7,15 @@ import {
   createUnitPickerDraftState,
   DEFAULT_AMOUNT_WEIGHT_MESSAGE,
   divideAmountValues,
+  formatServingGramForDisplay,
+  formatServingLabelForDisplay,
+  formatServingQuantityForDisplay,
+  generatedAmountDisplayLabel,
   generatedAmountLabel,
   isCanonicalBaseAmount,
   massGramEquivalent,
   multiplyAmountValues,
+  normalizeServingQuantityInput,
   normalizedAmountUnit,
   parseSimpleAmountLabel,
   repairLegacyStructuredAmount,
@@ -79,6 +84,19 @@ test("recognized and custom units generate deterministic singular/plural labels"
   expect(generatedAmountLabel("2", "scoop")).toBe("2 scoops");
   expect(generatedAmountLabel("2", "Scoop")).toBe("2 Scoops");
   expect(generatedAmountLabel("2", "scoops")).toBe("2 scoops");
+});
+
+test("serving display formatting hides canonical precision without changing canonical arithmetic", () => {
+  expect(normalizeServingQuantityInput("2/3")).toBe("0.666666667");
+  expect(formatServingQuantityForDisplay("0.666666667")).toBe("2/3");
+  expect(formatServingQuantityForDisplay(".667")).toBe("2/3");
+  expect(formatServingQuantityForDisplay("1.5")).toBe("1 1/2");
+  expect(formatServingQuantityForDisplay("0.67")).toBe("0.67");
+  expect(formatServingGramForDisplay("82.089552")).toBe("82.1");
+  expect(formatServingGramForDisplay("55")).toBe("55");
+  expect(generatedAmountDisplayLabel("0.666666667", "cup")).toBe("2/3 cup");
+  expect(formatServingLabelForDisplay("0.666666667 cup")).toBe("2/3 cup");
+  expect(formatServingLabelForDisplay("1 cup, chopped")).toBe("1 cup, chopped");
 });
 
 test.each([
