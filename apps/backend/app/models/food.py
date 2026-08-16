@@ -191,6 +191,15 @@ class FoodNutrient(Base):
             "nutrient_id",
             name="uq_food_nutrients_identity_food_nutrient",
         ),
+        UniqueConstraint(
+            "food_item_id",
+            "nutrient_id",
+            name="uq_food_nutrients_food_nutrient",
+        ),
+        CheckConstraint(
+            "amount IS NULL OR amount >= 0",
+            name="ck_food_nutrients_amount_nonnegative",
+        ),
         Index("ix_food_nutrients_food_item_id", "food_item_id"),
     )
 
