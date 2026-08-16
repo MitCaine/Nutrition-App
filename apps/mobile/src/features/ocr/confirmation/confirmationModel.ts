@@ -1,4 +1,5 @@
 import type { FoodMutationInput, NutrientDefinition } from "../../foods/api/types";
+import { generatedAmountLabel } from "../../foods/utils/amountForm";
 import type { NutrientUnit } from "../../../shared/nutrition/types";
 import type {
   ConfirmationField, NutritionConfirmationDraft, OcrConfirmationInput,
@@ -276,7 +277,7 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
   const fields = [draft.calories, ...draft.nutrients];
   const nutrients = fields.map(retainedNutrient).filter((value): value is NonNullable<typeof value> => Boolean(value));
   const grams = draft.gramWeight;
-  const servingLabel = draft.servingDisplay || `${draft.servingQuantity} ${draft.servingUnit}`;
+  const servingLabel = draft.servingDisplay.trim() || generatedAmountLabel(draft.servingQuantity, draft.servingUnit);
   const food: FoodMutationInput = {
     name: draft.name.trim(), brand: draft.brand.trim() || null, notes: draft.notes.trim() || null,
     serving_definitions: [
