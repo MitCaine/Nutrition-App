@@ -4,7 +4,6 @@ import {
   SQLITE_BASELINE_SCHEMA_STATEMENTS,
   SQLITE_DATABASE_NAME,
   SQLITE_MIGRATION_LEDGER_TABLE,
-  SQLITE_SCHEMA_VERSION,
   SQLITE_SEMANTIC_TABLES,
   SQLITE_SNAPSHOT_SCOPE_TABLE,
   SQLITE_NUTRIENT_SEED_ROWS,
@@ -120,7 +119,7 @@ const MIGRATION_LEDGER_INSERT = `INSERT INTO "${SQLITE_MIGRATION_LEDGER_TABLE}"
       substr(strftime('%f','now'),4,3) || '000Z' END)`;
 
 export const SQLITE_BASELINE_MIGRATION: SQLiteMigration = {
-  version: SQLITE_SCHEMA_VERSION,
+  version: 1,
   id: "001_initial_runtime_schema",
   async up(database) {
     for (const statement of SQLITE_BASELINE_SCHEMA_STATEMENTS) {
@@ -138,8 +137,54 @@ export const SQLITE_BASELINE_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION: SQLiteMigration = {
+  version: 2,
+  id: "002_food_nutrient_integrity",
+  async up(database) {
+    const negative = await database.getFirstAsync<{ id: string }>(
+      `SELECT "id" FROM "food_nutrients"
+       WHERE "amount" IS NOT NULL AND substr("amount", 1, 1) = '-'
+       LIMIT 1`,
+    );
+    if (negative) {
+      throw new SQLiteMigrationError(
+        "SQLite Food nutrient integrity migration found a negative authoritative nutrient amount.",
+      );
+    }
+    const duplicate = await database.getFirstAsync<{ food_item_id: string; nutrient_id: string }>(
+      `SELECT "food_item_id", "nutrient_id"
+       FROM "food_nutrients"
+       GROUP BY "food_item_id", "nutrient_id"
+       HAVING COUNT(*) > 1
+       LIMIT 1`,
+    );
+    if (duplicate) {
+      throw new SQLiteMigrationError(
+        "SQLite Food nutrient integrity migration found duplicate nutrient identities for one Food.",
+      );
+    }
+    await database.execAsync(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "uq_food_nutrients_food_nutrient"
+        ON "food_nutrients" ("food_item_id", "nutrient_id");
+      CREATE TRIGGER IF NOT EXISTS "trg_food_nutrients_nonnegative_insert"
+      BEFORE INSERT ON "food_nutrients"
+      WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = '-'
+      BEGIN
+        SELECT RAISE(ABORT, 'constraint_failed: Food nutrient amount must be non-negative');
+      END;
+      CREATE TRIGGER IF NOT EXISTS "trg_food_nutrients_nonnegative_update"
+      BEFORE UPDATE OF "amount" ON "food_nutrients"
+      WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = '-'
+      BEGIN
+        SELECT RAISE(ABORT, 'constraint_failed: Food nutrient amount must be non-negative');
+      END;
+    `);
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
+  SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {
