@@ -48,9 +48,10 @@ Normal development uses one application URL for runtime and Alembic. A qualified
 role profile runs migrations separately as `nutrition_migrator` and the API as
 `nutrition_runtime`. The root `scripts/start-backend.sh` implements only that qualified runtime
 launch: it verifies the exact runtime database role and deliberately does not run Alembic.
-The repository application migration head is `0021_target_activation_execution`. Revision 0021 is
-an authenticated target-activation operation, not an ordinary development upgrade. Install it only
-through the [Phase 5C4.7b runbook](../operations/runbooks/target-activation.md).
+The repository application migration head is `0026_food_nutrient_integrity`. Revision
+`0021_target_activation_execution` remains an authenticated target-activation operation, not an
+ordinary development upgrade. Install it only through the
+[Phase 5C4.7b runbook](../operations/runbooks/target-activation.md).
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
 Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented
@@ -105,8 +106,8 @@ Begin with:
 6. `apps/mobile/src/features/foods`
 
 Check effects on dependent Recipes and mutable-Food Log snapshot locking. Relevant application
-migrations include 0001–0003, 0012–0014. Run Food, serving-integrity, ownership, idempotency,
-nutrition-resolution, and affected mobile tests.
+migrations include 0001–0003, 0012–0014, and `0026_food_nutrient_integrity`. Run Food,
+serving-integrity, ownership, idempotency, nutrition-resolution, and affected mobile tests.
 
 ## If you need to modify Recipes
 

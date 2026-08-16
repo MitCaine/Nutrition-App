@@ -150,14 +150,16 @@ Search presentation and network behavior are documented in
 Targets are deliberately outside historical nutrition data. The effective target order is:
 
 1. explicit user override;
-2. optional calculated maintenance-calorie estimate;
+2. personalized calculated estimate, where the required profile inputs are available;
 3. versioned FDA Daily Value fallback;
 4. unavailable.
 
-Mifflin–St Jeor supplies an optional general calorie estimate from profile inputs. Protein,
-carbohydrate, and fat personal targets remain manual. Daily comparison reads the same
-snapshot-derived daily summary as the rest of the app, so changing a profile or target never changes
-historical Logs.
+Calculated estimates cover the Mifflin–St Jeor general calorie estimate plus personalized
+general-adult recommendations for protein, carbohydrate, total fat, saturated fat, iron, calcium,
+vitamin D, potassium, magnesium, and fiber. Profiles outside the general-adult model retain manual
+targets, FDA reference values, or explicit unavailable states rather than silent defaults. Daily
+comparison reads the same snapshot-derived daily summary as the rest of the app, so changing a
+profile or target never changes historical Logs.
 
 ## Ownership and retry behavior
 

@@ -1,8 +1,10 @@
 # Version 1.1 product roadmap
 
-> **Document role: Current Guide.** This is the authoritative parent document for Version 1.1
-> product scope. It defines intended user-visible outcomes and sequencing, not implementation
-> design, feature requirements, or tasks.
+> **Document role: Completed Program Record.** This was the authoritative parent document for
+> Version 1.1 product scope, defining intended user-visible outcomes and sequencing rather than
+> implementation design, feature requirements, or tasks. The Version 1.1 program is complete; this
+> roadmap is retained as historical planning evidence, not current planning state. See
+> [Current State](../current-state.md) for the current product line.
 
 Version 1.1 is an evolutionary release built on the completed Version 1.0 baseline. Every Epic
 below is subordinate to the [Project Constitution](../constitution.md),
@@ -17,8 +19,14 @@ in the [E2-16 closure and evidence record](epic-2/e2-16-closure-evidence.md); re
 mixed-authority qualification is complete; and the final totals, limitations, transfer-skip
 disposition, traceability, and closure sequence are recorded in the
 [E2-18 release qualification record](epic-2/e2-18-closure-evidence.md). This technical result does
-not reorder or authorize the product Epics below. GitHub #64 and Epic #46 remain administratively
-open until the durable record is committed and pushed.
+not reorder or authorize the product Epics below. GitHub #64 and Epic #46 are closed; the durable
+record is committed and the Epic 2 program is complete.
+
+The implemented Version 1.1 program comprised Epic 1 (Daily Logging Flow) and the technical
+Epic 2 (Local-First SQLite Runtime) documented in this directory. The remaining product Epics
+recommended below — Nutrition History and Trends, Recipe Reuse and Discovery, and Nutrition Label
+Capture Confidence — were not implemented as Version 1.1 program epics; parts of their scope were
+taken up later as ordinary post-program issues.
 
 ## Assessment of Version 1.0
 
@@ -121,9 +129,10 @@ history views.
 ownership, and idempotency concepts already exist. The Epic should extend the user workflow without
 changing historical authority or redesigning persistence.
 
-**Workflow status:** Grill is complete. The accepted scope and resolved decisions are recorded in
-the [Epic 1 Daily Logging Flow Grill record](epic-1/grill.md). No
-Feature PRD, architecture review, task breakdown, or implementation has begun.
+**Workflow status:** Complete. After the accepted scope and resolved decisions were recorded in
+the [Epic 1 Daily Logging Flow Grill record](epic-1/grill.md), the Feature PRD, architecture
+review, implementation backlog, and implementation issues (E1-08 through E1-18) were completed and
+closed with the [Epic 1 release qualification](epic-1/release-qualification.md).
 
 ### Epic 2 — Nutrition History and Trends
 

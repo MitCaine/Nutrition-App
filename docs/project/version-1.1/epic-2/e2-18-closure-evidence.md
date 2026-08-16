@@ -13,9 +13,9 @@ Qualified repository HEAD:
 
 The fresh E2-18 automated packet, accepted E2-16/E2-17 evidence, current backlog, live issue
 state, and repository diff history are mutually consistent. No preserved invariant, single-authority
-rule, or self-contained-runtime goal requires architectural change. GitHub #64 and Epic #46 remain
-administratively open until this record is committed and pushed; neither open state changes this
-technical PASS into a missing-evidence result.
+rule, or self-contained-runtime goal requires architectural change. GitHub #64 and Epic #46 were
+subsequently closed after this record was committed and pushed; their formerly open administrative
+state never changed this technical PASS into a missing-evidence result.
 
 ## Evidence freshness
 
@@ -141,7 +141,7 @@ semantic, lifecycle, integrity, and self-contained-runtime contracts available i
 | #61 / E2-15 | One-time PostgreSQL-to-SQLite transfer complete; fixture skip disposition above. |
 | #62 / E2-16 | Closed within retained native/accessibility scope and limitations. |
 | #63 / E2-17 | Closed after remote/PostgreSQL regression and mixed-authority prohibition audit. |
-| #64 / E2-18 | Architecture/release gate PASS at qualified HEAD; administrative closure awaits this record's commit/push. |
+| #64 / E2-18 | Architecture/release gate PASS at qualified HEAD; closed 2026-08-13 after this record was committed and pushed. |
 
 ## Preserved-invariant matrix
 
@@ -188,11 +188,16 @@ write, dual write, shared live database, or speculative sync infrastructure was 
 
 ## Closure sequence
 
-1. Commit and push this record and the bounded planning updates.
-2. Close GitHub #64 as completed with a link to this record and qualified HEAD.
-3. Re-run the repository issue reconciler so Epic #46 shows 18/18 top-level issues complete.
-4. Close Epic #46 only after confirming the pushed record, #64 closure, generated checklist, and
-   clean repository state.
+The administrative closure sequence completed on 2026-08-13:
 
-Until those administrative steps complete, #64 and #46 remain open. The technical architecture
-decision remains **PASS**.
+1. This record and the bounded planning updates were committed and pushed
+   ([`ec56bb1`](https://github.com/MitCaine/Nutrition-App/commit/ec56bb14dfc5f3b2ff73e6c13fdeb66bffa4b4ab)
+   followed by the issue-state reconciliation
+   [`d0a3e37`](https://github.com/MitCaine/Nutrition-App/commit/d0a3e37d5c7354633e50367de45a4c34b3340c42)).
+2. GitHub #64 was closed as completed with a link to this record and qualified HEAD
+   (2026-08-13T21:14:07Z).
+3. The repository issue reconciler was re-run so Epic #46 shows 18/18 top-level issues complete.
+4. Epic #46 was closed after the pushed record, #64 closure, generated checklist, and clean
+   repository state were confirmed (2026-08-13T21:14:49Z).
+
+GitHub #64 and Epic #46 are closed. The technical architecture decision remains **PASS**.

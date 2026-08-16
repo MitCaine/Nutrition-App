@@ -1553,9 +1553,9 @@ E2-18 has an architecture-gate **PASS** at qualified HEAD
 The [E2-18 release qualification record](e2-18-closure-evidence.md) preserves the exact fresh
 automated totals, accepted E2-16/E2-17 evidence, E2-15 fixture-skip disposition, exclusive #64 and
 Epic 2 traceability, invariant matrix, authority-isolation result, retained native limitations,
-and removed manual accessibility/Android/TalkBack scope. GitHub #64 and Epic #46 remain
-administratively open until that record and these bounded planning updates are committed and
-pushed; no product or migration behavior is changed by this reconciliation.
+and removed manual accessibility/Android/TalkBack scope. GitHub #64 and Epic #46 are closed after
+that record and the bounded planning updates were committed and pushed; no product or migration
+behavior is changed by this reconciliation.
 
 ### Estimated implementation size
 

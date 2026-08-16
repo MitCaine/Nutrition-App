@@ -128,9 +128,10 @@ is operations-only. Local SQLite is not a cache of remote PostgreSQL, and the Po
 history is not mechanically replayed into SQLite.
 
 Current PostgreSQL heads remain canonical in [Current State](current-state.md). For repository
-orientation, the remote application lineage includes the specially authorized
-`0021_target_activation_execution` activation revision, while the current control migration head
-is `ops_0011_phase5c4_recovery_audit`.
+orientation, the remote application lineage runs through the specially authorized
+`0021_target_activation_execution` activation revision and currently ends at
+`0026_food_nutrient_integrity`, while the current control migration head is
+`ops_0011_phase5c4_recovery_audit`.
 
 ### Authority-first rule
 

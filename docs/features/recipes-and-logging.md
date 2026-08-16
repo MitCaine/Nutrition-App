@@ -160,8 +160,8 @@ Deletion services lock and inspect active dependencies. Removing edges cannot cr
 but adding or remapping edges follows the stricter graph-lock protocol.
 
 Publication revisions and their amount/nutrient children are retained as immutable history.
-`scripts/audit_recipe_retention.py` classifies retained revisions, projections, and references
-without making repair decisions.
+`apps/backend/scripts/audit_recipe_retention.py` classifies retained revisions, projections, and
+references without making repair decisions.
 
 ## Where to look
 

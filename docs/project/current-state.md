@@ -6,7 +6,7 @@
 
 Version 1.2 is the current product line.
 
-Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the local-first SQLite runtime, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 closure. The current main branch has moved beyond that program and includes subsequent personalized general-adult nutrition targets and UI refinements.
+Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the local-first SQLite runtime, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 closure. The current main branch has moved beyond that program and includes subsequent personalized general-adult nutrition targets and UI refinements. Ongoing Version 1.2 refinement work is tracked through open GitHub issues in this repository rather than a versioned planning program.
 
 The Version 1.1 roadmap, PRDs, architecture reviews, implementation backlogs, and closure records are retained as historical implementation evidence. They are not the current planning state. New scope should be documented deliberately rather than inferred from those completed planning artifacts.
 
