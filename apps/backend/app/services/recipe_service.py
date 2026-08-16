@@ -567,6 +567,7 @@ class RecipeService:
             # serving generation; the publication transaction remains atomic.
             for serving in projection.serving_definitions:
                 serving.is_default = False
+            projection.nutrients.clear()
             self.db.flush()
             apply_revision_to_projection(
                 projection,

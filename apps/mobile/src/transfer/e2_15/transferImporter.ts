@@ -12,7 +12,10 @@ import {
   SQLITE_SEMANTIC_TABLES,
   SQLITE_SNAPSHOT_SCOPE_TABLE,
 } from "../../storage/sqlite/schema";
-import { withExclusiveSQLiteTransaction } from "../../storage/sqlite/migrations";
+import {
+  SQLITE_MIGRATIONS,
+  withExclusiveSQLiteTransaction,
+} from "../../storage/sqlite/migrations";
 import {
   buildTransferSection,
   canonicalTransferJson,
@@ -38,6 +41,47 @@ type Contract = Readonly<{
 }>;
 const CONTRACT = contractJson as unknown as Contract;
 const SECTION_CONTRACTS = new Map(CONTRACT.sections.map((section) => [section.name, section]));
+
+const E2_15_RUNTIME_SCHEMA_EXTENSION_OBJECTS = [
+  {
+    type: "index",
+    name: "uq_food_nutrients_food_nutrient_basis",
+    tbl_name: "food_nutrients",
+    sql:
+      'CREATE UNIQUE INDEX "uq_food_nutrients_food_nutrient_basis"' +
+      '\n        ON "food_nutrients" ("food_item_id", "nutrient_id", "basis")',
+  },
+  {
+    type: "trigger",
+    name: "trg_food_nutrients_nonnegative_insert",
+    tbl_name: "food_nutrients",
+    sql:
+      'CREATE TRIGGER "trg_food_nutrients_nonnegative_insert"' +
+      '\n      BEFORE INSERT ON "food_nutrients"' +
+      '\n      WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = \'-\'' +
+      '\n      BEGIN' +
+      "\n        SELECT RAISE(ABORT, 'constraint_failed: Food nutrient amount must be non-negative');" +
+      '\n      END',
+  },
+  {
+    type: "trigger",
+    name: "trg_food_nutrients_nonnegative_update",
+    tbl_name: "food_nutrients",
+    sql:
+      'CREATE TRIGGER "trg_food_nutrients_nonnegative_update"' +
+      '\n      BEFORE UPDATE OF "amount" ON "food_nutrients"' +
+      '\n      WHEN NEW."amount" IS NOT NULL AND substr(NEW."amount", 1, 1) = \'-\'' +
+      '\n      BEGIN' +
+      "\n        SELECT RAISE(ABORT, 'constraint_failed: Food nutrient amount must be non-negative');" +
+      '\n      END',
+  },
+] as const;
+
+const E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES = new Set(
+  E2_15_RUNTIME_SCHEMA_EXTENSION_OBJECTS.map(
+    (row) => `${row.type}:${row.name}`,
+  ),
+);
 
 export type TransferImportCheckpoint =
   | "owner_profile"
@@ -98,6 +142,9 @@ function expectedSchemaObjects(): Set<string> {
     const match = expression.exec(statement.trim());
     if (match) names.add(`${match[1].toLowerCase()}:${match[2]}`);
   }
+  for (const row of E2_15_RUNTIME_SCHEMA_EXTENSION_OBJECTS) {
+    names.add(`${row.type}:${row.name}`);
+  }
   return names;
 }
 
@@ -110,9 +157,13 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   const ledger = await database.getAllAsync<{ version: number; migration_id: string }>(
     `SELECT "version", "migration_id" FROM "${SQLITE_MIGRATION_LEDGER_TABLE}" ORDER BY "version"`,
   );
-  if (canonicalTransferJson(ledger) !== canonicalTransferJson([
-    { version: 1, migration_id: "001_initial_runtime_schema" },
-  ])) invalid("target_schema_invalid", "SQLite migration ledger is unsupported.");
+  const expectedLedger = SQLITE_MIGRATIONS.map((migration) => ({
+    version: migration.version,
+    migration_id: migration.id,
+  }));
+  if (canonicalTransferJson(ledger) !== canonicalTransferJson(expectedLedger)) {
+    invalid("target_schema_invalid", "SQLite migration ledger is unsupported.");
+  }
 
   const objects = await database.getAllAsync<{ type: string; name: string }>(
     `SELECT "type", "name" FROM "sqlite_master"
@@ -138,6 +189,23 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
         AND "name" NOT LIKE 'sqlite_autoindex_%'
         AND "name" NOT LIKE 'sqlite_%'
       ORDER BY "type", "name"`,
+  );
+
+  const actualExtensionObjects = descriptorObjects.filter((row) =>
+    E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES.has(`${row.type}:${row.name}`),
+  );
+  if (
+    canonicalTransferJson(actualExtensionObjects)
+    !== canonicalTransferJson(E2_15_RUNTIME_SCHEMA_EXTENSION_OBJECTS)
+  ) {
+    invalid(
+      "target_schema_invalid",
+      "SQLite Food nutrient integrity guards differ from the qualified runtime.",
+    );
+  }
+
+  const transferDescriptorObjects = descriptorObjects.filter((row) =>
+    !E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES.has(`${row.type}:${row.name}`),
   );
 
   const tableColumns = new Map<string, readonly string[]>([
@@ -183,7 +251,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   const descriptor = {
     descriptor_version: "e2-15.sqlite-v1.schema.v1",
     user_version: 1,
-    objects: descriptorObjects,
+    objects: transferDescriptorObjects,
     tables: descriptorTables,
   };
   if (

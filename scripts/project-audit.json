@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0025_immutable_validator_head"
+    "0026_food_nutrient_integrity"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"

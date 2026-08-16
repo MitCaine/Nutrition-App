@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import json
 from pathlib import Path
 
@@ -10,7 +12,6 @@ from app.operators.immutable_provenance_qualification import (
     ImmutableProvenanceQualificationError,
 )
 from app.transfer.e2_15 import (
-    CONTRACT,
     SECTION_NAMES,
     SOURCE_SCHEMA,
     TransferPackageError,
@@ -77,9 +78,39 @@ def test_postgresql_reflection_defaults_are_normalized_without_hiding_changes() 
     ) == "deleted_at IS NOT NULL"
 
 
+def _current_source_schema() -> dict:
+    observed = deepcopy(SOURCE_SCHEMA)
+    food = observed["tables"]["food_nutrients"]
+
+    food["checks"].append(
+        deepcopy(
+            e2_15_exporter.EXPECTED_0026_FOOD_NUTRIENT_CHECK
+        )
+    )
+    food["unique_constraints"].append(
+        deepcopy(
+            e2_15_exporter.EXPECTED_0026_FOOD_NUTRIENT_UNIQUE
+        )
+    )
+
+    food["checks"].sort(
+        key=lambda item: (
+            item["name"] or "",
+            item["expression"],
+        )
+    )
+    food["unique_constraints"].sort(
+        key=lambda item: (
+            item["name"] or "",
+            item["columns"],
+        )
+    )
+    return observed
+
+
 class _SchemaQualificationConnection:
     def scalars(self, _statement):
-        return [CONTRACT["source"]["alembic_revision"]]
+        return [e2_15_exporter.CURRENT_EXPORT_SOURCE_REVISION]
 
 
 def test_source_schema_requires_exact_current_validator_inputs(
@@ -87,7 +118,7 @@ def test_source_schema_requires_exact_current_validator_inputs(
 ) -> None:
     connection = _SchemaQualificationConnection()
     manifest_calls: list[object] = []
-    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: SOURCE_SCHEMA)
+    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: _current_source_schema())
     monkeypatch.setattr(
         e2_15_exporter,
         "qualify_immutable_provenance_manifest",
@@ -187,7 +218,7 @@ def test_source_schema_requires_manifest_and_current_validator_inputs(
     connection = _SchemaQualificationConnection()
     manifest_calls: list[object] = []
     authority_calls: list[object] = []
-    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: SOURCE_SCHEMA)
+    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: _current_source_schema())
     monkeypatch.setattr(
         e2_15_exporter,
         "qualify_immutable_provenance_manifest",
@@ -209,7 +240,7 @@ def test_source_schema_fails_closed_when_current_validator_input_read_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _SchemaQualificationConnection()
-    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: SOURCE_SCHEMA)
+    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: _current_source_schema())
     monkeypatch.setattr(e2_15_exporter, "qualify_immutable_provenance_manifest", lambda _value: None)
     monkeypatch.setattr(
         e2_15_exporter,
@@ -227,7 +258,7 @@ def test_source_schema_still_requires_manifest_qualification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _SchemaQualificationConnection()
-    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: SOURCE_SCHEMA)
+    monkeypatch.setattr(e2_15_exporter, "observe_source_schema", lambda _connection: _current_source_schema())
 
     def fail_manifest(_connection) -> None:
         raise ImmutableProvenanceQualificationError("manifest mismatch")

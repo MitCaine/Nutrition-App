@@ -23,6 +23,9 @@ from app.migrations.immutable_provenance_0020_contracts import (
 from app.migrations.immutable_provenance_0025_contracts import (
     EXACT_0025_FUNCTION_DEFINITION_SHA256,
 )
+from app.migrations.immutable_provenance_0026_contracts import (
+    EXACT_0026_FUNCTION_DEFINITION_SHA256,
+)
 from app.operators.historical_recipe_performance_fixtures import (
     INTERNAL_REDUCED_TIER,
     build_performance_fixture_blueprint,
@@ -66,7 +69,8 @@ ACTIVATION_REVISION = "0021_target_activation_execution"
 TIME_ZONE_REVISION = "0022_authoritative_user_timezone"
 CALENDAR_REVISION = "0023_calendar_revision"
 PRE_VALIDATOR_REPAIR_REVISION = "0024_recipe_log_current_provenance"
-CURRENT_HEAD = "0025_immutable_validator_head"
+VALIDATOR_REPAIR_REVISION = "0025_immutable_validator_head"
+CURRENT_HEAD = "0026_food_nutrient_integrity"
 ARCHIVE_SCHEMA = "nutrition_phase5c_archive"
 FIXTURE_SEED = 17
 
@@ -1629,7 +1633,7 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
     migrate(
         "clone_migration_0025",
         migrator_url,
-        CURRENT_HEAD,
+        VALIDATOR_REPAIR_REVISION,
         extra_environment=activation_environment,
     )
     installed_0025_validator_hash = _postgres_function_definition_sha256(
@@ -1644,7 +1648,7 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
     publish(
         "phase5c-immutable-validator-hash-0025.json",
         {
-            "alembic_revision": CURRENT_HEAD,
+            "alembic_revision": VALIDATOR_REPAIR_REVISION,
             "postgres_major": 16,
             "validator_definition_sha256": installed_0025_validator_hash,
         },
@@ -1653,7 +1657,7 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
         validator_after = _collect_validator_repair_observation(
             qualifier_url,
             admin_url=clone_admin_url,
-            expected_revision=CURRENT_HEAD,
+            expected_revision=VALIDATOR_REPAIR_REVISION,
             function_definition_sha256=EXACT_0025_FUNCTION_DEFINITION_SHA256,
         )
     except Issue17WorkflowError:
@@ -1674,6 +1678,31 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
         "phase5c-immutable-validator-repair-0025.json",
         validator_repair,
     )
+
+    migrate(
+        "clone_migration_0026",
+        migrator_url,
+        CURRENT_HEAD,
+        extra_environment=activation_environment,
+    )
+    installed_0026_validator_hash = _postgres_function_definition_sha256(
+        clone_admin_url,
+        "phase0020_immutable_provenance_integrity_valid",
+    )
+    expected_0026_validator_hash = EXACT_0026_FUNCTION_DEFINITION_SHA256[
+        "phase0020_immutable_provenance_integrity_valid"
+    ]
+    if installed_0026_validator_hash != expected_0026_validator_hash:
+        raise Issue17WorkflowError("issue17_validator_0026_hash_invalid")
+    publish(
+        "phase5c-immutable-validator-hash-0026.json",
+        {
+            "alembic_revision": CURRENT_HEAD,
+            "postgres_major": 16,
+            "validator_definition_sha256": installed_0026_validator_hash,
+        },
+    )
+
     manual_activation: dict[str, Any] | None = None
     validator_perturbations: dict[str, Any] | None = None
     if arguments.manual_test:
@@ -1683,7 +1712,7 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
             clone_admin_url
         )
         publish(
-            "phase5c-immutable-validator-perturbations-0025.json",
+            "phase5c-immutable-validator-perturbations-0026.json",
             validator_perturbations,
         )
     post_head = _post_head_observation(
@@ -1728,7 +1757,7 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
             ),
             **(
                 {
-                    "validator_perturbations_0025": canonical_digest(
+                    "validator_perturbations_0026": canonical_digest(
                         validator_perturbations
                     )
                 }

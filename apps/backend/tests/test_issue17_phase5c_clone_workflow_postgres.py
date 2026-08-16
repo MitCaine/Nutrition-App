@@ -42,7 +42,7 @@ def _require_opt_in() -> None:
         pytest.skip(f"set {OPT_IN}=1 to run the disposable Issue 17 workflow")
 
 
-def test_issue17_workflow_reaches_0025_and_retains_redacted_evidence(
+def test_issue17_workflow_reaches_0026_and_retains_redacted_evidence(
     tmp_path: Path,
 ) -> None:
     _require_opt_in()
@@ -69,10 +69,10 @@ def test_issue17_workflow_reaches_0025_and_retains_redacted_evidence(
     assert manifest["workflow_version"] == "issue17_phase5c_clone_workflow_v1"
     assert manifest["source_database"] != manifest["clone_database"]
     assert manifest["source_identity_digest"] != manifest["clone_identity_digest"]
-    assert manifest["current_head"] == "0025_immutable_validator_head"
+    assert manifest["current_head"] == "0026_food_nutrient_integrity"
     assert manifest["test_only_activation_bindings"] is True
     final = manifest["final_observation"]
-    assert final["alembic_revision"] == "0025_immutable_validator_head"
+    assert final["alembic_revision"] == "0026_food_nutrient_integrity"
     assert final["immutable_provenance_qualification_revision"] == (
         "0020_immutable_provenance_enforcement"
     )
@@ -103,6 +103,7 @@ def test_issue17_workflow_reaches_0025_and_retains_redacted_evidence(
         "phase5c-immutable-validator-evolution-0020-0024.json",
         "phase5c-immutable-validator-hash-0025.json",
         "phase5c-immutable-validator-repair-0025.json",
+        "phase5c-immutable-validator-hash-0026.json",
         "phase5c-post-head-observation.json",
         "phase5c-workflow-manifest.json",
     }
@@ -183,7 +184,7 @@ def test_issue17_manual_mode_opens_runtime_and_retains_container(
         )
         assert manifest["manual_test_runtime_open"] is True
         assert manifest["final_observation"]["alembic_revision"] == (
-            "0025_immutable_validator_head"
+            "0026_food_nutrient_integrity"
         )
         assert manifest["final_observation"]["fence_mode"] == "open_production"
         assert manifest["final_observation"]["immutable_validator_result"] is True
@@ -192,7 +193,7 @@ def test_issue17_manual_mode_opens_runtime_and_retains_container(
         ]
         perturbations = json.loads(
             (
-                output / "phase5c-immutable-validator-perturbations-0025.json"
+                output / "phase5c-immutable-validator-perturbations-0026.json"
             ).read_text()
         )
         assert perturbations["baseline_validator_result"] is True

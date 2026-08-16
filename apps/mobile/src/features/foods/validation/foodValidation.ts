@@ -67,6 +67,21 @@ export const foodMutationSchema = z
     nutrients: z.array(foodNutrientSchema),
   })
   .superRefine((food, ctx) => {
+    const nutrientIdentities = new Set<string>();
+    food.nutrients.forEach((nutrient, index) => {
+      const identity = JSON.stringify([
+        nutrient.nutrient_id,
+        nutrient.basis,
+      ]);
+      if (nutrientIdentities.has(identity)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["nutrients", index, "nutrient_id"],
+          message: "Foods cannot contain duplicate nutrient identities for the same basis.",
+        });
+      }
+      nutrientIdentities.add(identity);
+    });
     const defaultCount = food.serving_definitions.filter((serving) => serving.is_default).length;
     if (defaultCount !== 1) {
       ctx.addIssue({ code: "custom", message: "Choose exactly one default serving" });

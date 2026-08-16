@@ -39,7 +39,7 @@ These heads describe the preserved PostgreSQL/control-plane streams. They do not
 
 | Authority | Current head |
 | --- | --- |
-| Remote application PostgreSQL migration | `0025_immutable_validator_head` |
+| Remote application PostgreSQL migration | `0026_food_nutrient_integrity` |
 | Control PostgreSQL migration | `ops_0011_phase5c4_recovery_audit` |
 
 Revision `0021_target_activation_execution` remains an authorized target-activation migration, not an ordinary development upgrade. Use the applicable runbook rather than advancing to it through a convenience startup path.
