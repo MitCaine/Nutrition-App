@@ -103,7 +103,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             {form.error && form.validationIssue?.target !== "food.name" && !form.validationIssue?.target.startsWith("serving.") && !form.validationIssue?.target.startsWith("nutrient.") ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
             {saveError ? <Text ref={saveErrorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
 
-            <Text accessibilityRole="header" style={styles.sectionTitle}>Amounts</Text>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>Serving sizes</Text>
             <ServingDefinitionsEditor
               servings={form.servings}
               updateServing={form.updateServing}
