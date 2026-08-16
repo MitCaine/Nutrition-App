@@ -46,10 +46,20 @@ export function OcrServingEditor({
 }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [quantityDraft, setQuantityDraft] = useState(() => formatServingQuantityForDisplay(value.servingQuantity));
+  const recoveredServing = recoverServingDisplay(value.servingDisplay);
+  const initialQuantity = shouldRecoverQuantity(value.servingQuantity, recoveredServing?.quantity)
+    ? recoveredServing!.quantity
+    : value.servingQuantity;
+  const initialUnit = shouldRecoverUnit(value.servingUnit, recoveredServing?.unit)
+    ? recoveredServing!.unit
+    : value.servingUnit;
+  const initialGramWeight = !value.gramWeight.trim() && recoveredServing?.gramWeight
+    ? recoveredServing.gramWeight
+    : value.gramWeight;
+  const [quantityDraft, setQuantityDraft] = useState(() => formatServingQuantityForDisplay(initialQuantity));
   const [gramWeightPerUnit, setGramWeightPerUnit] = useState(() => initialGramWeightPerUnit(
-    value,
-    normalizeServingQuantityInput(formatServingQuantityForDisplay(value.servingQuantity)) ?? value.servingQuantity,
+    { ...value, servingUnit: initialUnit, gramWeight: initialGramWeight },
+    normalizeServingQuantityInput(formatServingQuantityForDisplay(initialQuantity)) ?? initialQuantity,
   ));
   const [labelMode, setLabelMode] = useState<AmountLabelMode>(() =>
     value.servingDisplay.trim() ? "manual" : "automatic",
@@ -61,6 +71,16 @@ export function OcrServingEditor({
     : automaticLabel;
   const weightReadOnly = amountUnitCategory(value.servingUnit) === "weight";
   const unitFocus = focusProps("ocr.servingUnit");
+
+  useEffect(() => {
+    const recovered = recoverServingDisplay(value.servingDisplay);
+    if (!recovered) return;
+    const patch: ServingPatch = {};
+    if (shouldRecoverQuantity(value.servingQuantity, recovered.quantity)) patch.servingQuantity = recovered.quantity;
+    if (shouldRecoverUnit(value.servingUnit, recovered.unit)) patch.servingUnit = recovered.unit;
+    if (!value.gramWeight.trim() && recovered.gramWeight) patch.gramWeight = recovered.gramWeight;
+    if (Object.keys(patch).length > 0) onChange(patch);
+  }, [onChange, value.gramWeight, value.servingDisplay, value.servingQuantity, value.servingUnit]);
 
   useEffect(() => {
     const normalizedQuantity = normalizeServingQuantityInput(quantityDraft);
@@ -263,6 +283,28 @@ function servingWeightSummary(value: ServingValue, quantityDraft: string, gramWe
       : `${displayPerUnit} g per ${unit} · ${displayTotal} g total`;
   }
   return `${displayTotal} g total`;
+}
+
+function recoverServingDisplay(display: string): { quantity: string; unit: string; gramWeight: string | null } | null {
+  const match = display.trim().match(/^(\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s+([^()]+?)(?:\s*\(\s*(\d+(?:[.,]\d+)?)\s*g\s*\))?$/i);
+  if (!match) return null;
+  const quantity = normalizeServingQuantityInput(match[1].replace(/\s+/g, ""));
+  const unit = match[2].trim().replace(/\s+/g, " ").toLowerCase();
+  if (!quantity || !unit) return null;
+  const gramWeight = match[3]?.replace(",", ".") ?? null;
+  return { quantity, unit, gramWeight };
+}
+
+function shouldRecoverQuantity(current: string, recovered: string | undefined): boolean {
+  if (!recovered) return false;
+  const currentNormalized = normalizeServingQuantityInput(current);
+  return !currentNormalized || (currentNormalized === "1" && recovered !== "1");
+}
+
+function shouldRecoverUnit(current: string, recovered: string | undefined): boolean {
+  if (!recovered) return false;
+  const normalized = current.trim().toLowerCase();
+  return !normalized || (normalized === "serving" && recovered !== "serving");
 }
 
 function labelIncludesGramWeight(label: string): boolean {
