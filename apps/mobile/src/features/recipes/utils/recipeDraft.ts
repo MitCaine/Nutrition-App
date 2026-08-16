@@ -210,6 +210,8 @@ export function buildCustomServingDefinition(draft: CustomServingDraft): Serving
   const quantity = draft.quantity.trim();
   const rawUnit = draft.unit.trim();
   const gramWeightPerUnit = draft.gramWeightPerUnit.trim();
+  // The Recipe form asks for one unit's weight, while the persisted serving
+  // definition keeps the total weight of the full structured serving.
   const gramWeight = multiplyDecimalInputs(quantity, gramWeightPerUnit);
   if (
     !(Number(quantity) > 0)
