@@ -4,6 +4,8 @@ import { useAppTheme } from "../../../app/theme/AppTheme";
 
 import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScrollView";
 import { recipeFocusKey } from "../../../shared/forms/focusTargets";
+import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { useRecipeMutations } from "../hooks/useRecipes";
 import type { ServingDefinition, ServingDefinitionInput } from "../../foods/api/types";
 import { ServingUnitPicker } from "../../foods/components/ServingUnitPicker";
@@ -37,9 +39,10 @@ type Props = {
   onCancel: () => void;
   onSaved: (recipeId: string) => void;
   onAddIngredient: () => void;
+  onManageServingSizes?: (ingredient: DraftIngredient) => void;
 };
 
-export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngredient }: Props) {
+export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngredient, onManageServingSizes }: Props) {
   const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -49,6 +52,10 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
   const [expandedCustomServingForms, setExpandedCustomServingForms] =
     useState<CustomServingExpansionState>({});
   const isSaving = mutations.createRecipe.isPending || mutations.updateRecipe.isPending;
+  const finishedWeight = draft.finishedWeight ?? {
+    quantity: "",
+    unit: "g" as MassUnit,
+  };
   const createIntentRef = useRef<CreateIntent | null>(null);
   const servingIntentRefs = useRef<Record<string, CreateIntent>>({});
 
@@ -147,10 +154,6 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
               <Text style={styles.formLabel}>Recipe name</Text>
               <TextInput accessibilityLabel="Recipe name" editable={!isSaving} {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
             </View>
-            <View style={styles.topField}>
-              <Text style={styles.formLabel}>Notes</Text>
-              <TextInput accessibilityLabel="Recipe notes" editable={!isSaving} {...focusProps(recipeFocusKey("notes"))} value={draft.notes} onChangeText={(notes) => setDraft({ ...draft, notes })} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} style={styles.input} />
-            </View>
             <View style={styles.sectionHeader}>
               <Text accessibilityRole="header" style={styles.sectionTitle}>Ingredients</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="Add ingredient" accessibilityState={{ disabled: isSaving }} disabled={isSaving} onPress={onAddIngredient} style={isSaving && styles.disabledButton}>
@@ -200,29 +203,57 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
                   </>
                 ) : (
                   <>
-                    <Text style={styles.formLabel}>Number of servings</Text>
-                    <TextInput accessibilityLabel={`${ingredient.food.name} number of servings`} editable={!isSaving} value={ingredient.amountQuantity} onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })} placeholder="e.g. 1" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-                    <Text style={styles.formLabel}>Serving size</Text>
-                    <View accessibilityRole="radiogroup" accessibilityLabel={`${ingredient.food.name} serving size`} style={styles.servings}>
-                      {usefulServingDefinitions(ingredient.food.serving_definitions).map((serving) => (
-                        <Pressable accessibilityRole="radio" accessibilityLabel={formatServingChoiceLabel(serving)} accessibilityState={{ checked: ingredient.servingDefinitionId === serving.id, disabled: isSaving }} disabled={isSaving} key={serving.id} onPress={() => updateIngredient(ingredient.localId, { servingDefinitionId: serving.id })} style={[styles.servingChoice, ingredient.servingDefinitionId === serving.id && styles.segmentActive, isSaving && styles.disabledButton]}>
-                          <Text style={styles.text}>{formatServingChoiceLabel(serving)}</Text>
-                        </Pressable>
-                      ))}
+                    <Text style={styles.formLabel}>Amount</Text>
+                    <View style={styles.servingAmountRow}>
+                      <TextInput
+                        accessibilityLabel={`${ingredient.food.name} number of servings`}
+                        editable={!isSaving}
+                        value={ingredient.amountQuantity}
+                        onChangeText={(amountQuantity) => updateIngredient(ingredient.localId, { amountQuantity })}
+                        placeholder="1"
+                        placeholderTextColor={theme.colors.placeholder}
+                        keyboardType="decimal-pad"
+                        style={[styles.input, styles.servingCountInput]}
+                      />
+                      <Text accessibilityElementsHidden style={styles.servingMultiplier}>×</Text>
+                      <RecipeServingPicker
+                        disabled={isSaving}
+                        foodName={ingredient.food.name}
+                        servings={usefulServingDefinitions(ingredient.food.serving_definitions)}
+                        value={ingredient.servingDefinitionId}
+                        onChange={(servingDefinitionId) =>
+                          updateIngredient(ingredient.localId, { servingDefinitionId })
+                        }
+                      />
                     </View>
-                    <CustomServingEditor
-                      disabled={isSaving}
-                      foodName={ingredient.food.name}
-                      expanded={isCustomServingExpanded(expandedCustomServingForms, ingredient.localId)}
-                      value={customServingForms[ingredient.localId] ?? emptyCustomServingForm()}
-                      onExpand={() => setExpandedCustomServingForms((current) => expandCustomServing(current, ingredient.localId))}
-                      onCancel={() => {
-                        setExpandedCustomServingForms((current) => collapseCustomServing(current, ingredient.localId));
-                        setCustomServingForms((current) => ({ ...current, [ingredient.localId]: emptyCustomServingForm() }));
-                      }}
-                      onChange={(value) => setCustomServingForms((current) => ({ ...current, [ingredient.localId]: value }))}
-                      onAdd={() => addCustomServing(ingredient)}
-                    />
+
+                    {onManageServingSizes ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Manage ${ingredient.food.name} serving sizes`}
+                        accessibilityHint="View, edit, remove, or create saved serving sizes"
+                        accessibilityState={{ disabled: isSaving }}
+                        disabled={isSaving}
+                        onPress={() => onManageServingSizes(ingredient)}
+                        style={[styles.addServingButton, isSaving && styles.disabledButton]}
+                      >
+                        <Text style={styles.link}>Manage serving sizes</Text>
+                      </Pressable>
+                    ) : (
+                      <CustomServingEditor
+                        disabled={isSaving}
+                        foodName={ingredient.food.name}
+                        expanded={isCustomServingExpanded(expandedCustomServingForms, ingredient.localId)}
+                        value={customServingForms[ingredient.localId] ?? emptyCustomServingForm()}
+                        onExpand={() => setExpandedCustomServingForms((current) => expandCustomServing(current, ingredient.localId))}
+                        onCancel={() => {
+                          setExpandedCustomServingForms((current) => collapseCustomServing(current, ingredient.localId));
+                          setCustomServingForms((current) => ({ ...current, [ingredient.localId]: emptyCustomServingForm() }));
+                        }}
+                        onChange={(value) => setCustomServingForms((current) => ({ ...current, [ingredient.localId]: value }))}
+                        onAdd={() => addCustomServing(ingredient)}
+                      />
+                    )}
                   </>
                 )}
 
@@ -239,19 +270,80 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
             ))}
             <Text accessibilityRole="header" style={styles.optionalSectionTitle}>Yield</Text>
             <Text style={styles.meta}>
-              {draft.legacyCookedWeight
-                ? "This Recipe has a stored legacy cooked weight, so a serving count is optional for publishing."
-                : "Optional while drafting. Required before publishing."}
+              Add portions, finished weight, or both. At least one is required before publishing.
             </Text>
-            <Text style={styles.formLabel}>Number of servings</Text>
-            <TextInput accessibilityLabel="Recipe number of servings" editable={!isSaving} value={draft.servingCountYield} onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })} placeholder="e.g. 6" placeholderTextColor={theme.colors.placeholder} keyboardType="decimal-pad" style={styles.input} />
-            {draft.legacyCookedWeight ? (
-              <View style={styles.legacyCompatibility}>
-                <Text style={styles.formLabel}>Legacy cooked weight</Text>
-                <Text style={styles.text}>{formatLegacyCookedWeight(draft.legacyCookedWeight)}</Text>
-                <Text style={styles.meta}>Stored for compatibility with existing recipe data.</Text>
-              </View>
+
+            <Text style={styles.formLabel}>Portions</Text>
+            <TextInput
+              accessibilityLabel="Recipe portions"
+              editable={!isSaving}
+              {...focusProps(recipeFocusKey("servingCountYield"))}
+              value={draft.servingCountYield}
+              onChangeText={(servingCountYield) => setDraft({ ...draft, servingCountYield })}
+              placeholder="e.g. 6"
+              placeholderTextColor={theme.colors.placeholder}
+              keyboardType="decimal-pad"
+              style={styles.input}
+            />
+
+            <Text style={styles.formLabel}>Finished weight</Text>
+            <Text style={styles.meta}>
+              Weight of the usable finished batch after cooking or preparation.
+            </Text>
+            <View style={[styles.twoColumn, styles.finishedWeightRow]}>
+              <TextInput
+                accessibilityLabel="Recipe finished weight"
+                editable={!isSaving}
+                {...focusProps(recipeFocusKey("finishedWeight"))}
+                value={finishedWeight.quantity}
+                onChangeText={(quantity) =>
+                  setDraft({
+                    ...draft,
+                    finishedWeight: { ...finishedWeight, quantity },
+                  })
+                }
+                placeholder="e.g. 1200"
+                placeholderTextColor={theme.colors.placeholder}
+                keyboardType="decimal-pad"
+                style={[styles.input, styles.yieldWeightInput]}
+              />
+              <MassUnitSelector
+                disabled={isSaving}
+                foodName="Finished recipe"
+                value={finishedWeight.unit}
+                onChange={(unit) =>
+                  setDraft({
+                    ...draft,
+                    finishedWeight: { ...finishedWeight, unit },
+                  })
+                }
+              />
+            </View>
+
+            {convertedGramsPreview(finishedWeight.quantity, finishedWeight.unit) ? (
+              <Text style={styles.meta}>
+                {convertedGramsPreview(finishedWeight.quantity, finishedWeight.unit)}
+              </Text>
             ) : null}
+
+            {draft.servingCountYield.trim() && finishedWeight.quantity.trim() ? (
+              <Text style={styles.meta}>
+                Both portion and weight logging will be available after publishing.
+              </Text>
+            ) : null}
+
+            <Text accessibilityRole="header" style={styles.optionalSectionTitle}>Notes</Text>
+            <TextInput
+              accessibilityLabel="Recipe notes"
+              editable={!isSaving}
+              {...focusProps(recipeFocusKey("notes"))}
+              value={draft.notes}
+              onChangeText={(notes) => setDraft({ ...draft, notes })}
+              placeholder="Notes"
+              placeholderTextColor={theme.colors.placeholder}
+              style={styles.input}
+            />
+
             {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
             {mutations.createRecipe.isError || mutations.updateRecipe.isError ? <Text accessibilityRole="alert" style={styles.error}>{error ?? "Could not save recipe."}</Text> : null}
           </>
@@ -277,6 +369,132 @@ function isMatchingCreatedServing(serving: ServingDefinition, input: ServingDefi
     serving.label === input.label.trim() &&
     serving.quantity === Number(input.quantity).toFixed(6) &&
     serving.unit === input.unit.trim().toLowerCase()
+  );
+}
+
+
+function RecipeServingPicker({
+  disabled,
+  foodName,
+  servings,
+  value,
+  onChange,
+}: {
+  disabled: boolean;
+  foodName: string;
+  servings: ServingDefinition[];
+  value: string | null;
+  onChange: (servingDefinitionId: string) => void;
+}) {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const triggerRef = useRef<View>(null);
+  const [visible, setVisible] = useState(false);
+
+  const selected = servings.find((serving) => serving.id === value);
+  const selectedLabel = selected
+    ? formatServingChoiceLabel(selected)
+    : "Choose serving size";
+
+  return (
+    <>
+      <AccessiblePressable
+        ref={triggerRef}
+        accessibilityLabel={`Select saved serving for ${foodName}`}
+        accessibilityHint={
+          selected
+            ? `Current serving ${selectedLabel}. Opens saved serving choices.`
+            : "No serving selected. Opens saved serving choices."
+        }
+        accessibilityState={{ expanded: visible, disabled }}
+        disabled={disabled}
+        onPress={() => setVisible(true)}
+        style={[styles.servingPicker, disabled && styles.disabledButton]}
+      >
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          ellipsizeMode="tail"
+          numberOfLines={1}
+          style={styles.servingPickerText}
+        >
+          {selectedLabel}
+        </Text>
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.servingPickerChevron}
+        >
+          ⌄
+        </Text>
+      </AccessiblePressable>
+
+      {visible ? (
+        <AccessibleModal
+          title={`Choose serving size for ${foodName}`}
+          visible
+          onRequestClose={() => setVisible(false)}
+          dismissOnBackdropPress
+          returnFocusRef={triggerRef}
+          backdropStyle={styles.servingModalBackdrop}
+          contentStyle={styles.servingModalCard}
+          scrollContentStyle={styles.servingModalContent}
+          scrollable
+          headingStyle={styles.servingModalTitle}
+          headerAction={
+            <AccessiblePressable
+              accessibilityLabel={`Close serving size picker for ${foodName}`}
+              accessibilityHint="Closes without changing the selected serving"
+              onPress={() => setVisible(false)}
+              style={styles.servingModalCloseButton}
+            >
+              <Text
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={styles.servingModalCloseText}
+              >
+                ×
+              </Text>
+            </AccessiblePressable>
+          }
+        >
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel={`${foodName} saved servings`}
+            style={styles.servingModalChoices}
+          >
+            {servings.map((serving) => {
+              const checked = serving.id === value;
+              const label = formatServingChoiceLabel(serving);
+
+              return (
+                <AccessiblePressable
+                  key={serving.id}
+                  accessibilityLabel={label}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked, selected: checked }}
+                  onPress={() => {
+                    onChange(serving.id);
+                    setVisible(false);
+                  }}
+                  style={[
+                    styles.servingModalChoice,
+                    checked && styles.servingModalChoiceSelected,
+                  ]}
+                >
+                  <Text style={checked ? styles.servingModalSelectedText : styles.text}>
+                    {label}
+                  </Text>
+                  {checked ? (
+                    <Text style={styles.servingModalSelectedText}>✓</Text>
+                  ) : null}
+                </AccessiblePressable>
+              );
+            })}
+          </View>
+        </AccessibleModal>
+      ) : null}
+    </>
   );
 }
 
@@ -392,7 +610,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
     text: { color: theme.colors.text },
     content: { padding: 16, paddingBottom: 120 },
-    addServingButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, padding: 10 },
+    addServingButton: { alignItems: "center", borderColor: theme.colors.accent, borderRadius: 6, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 10, paddingVertical: 10 },
     compactButton: { alignSelf: "flex-start", paddingVertical: 4 },
     customServing: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 8, marginTop: 10, padding: 10 },
     disabledButton: { opacity: 0.55 },
@@ -423,12 +641,81 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     segmented: { flexDirection: "row", gap: 8 },
     segment: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, flex: 1, padding: 10 },
     segmentActive: { backgroundColor: theme.colors.activeBackground, borderColor: theme.colors.accent },
-    servingChoice: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 8 },
-    servings: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    servingAmountRow: { alignItems: "center", flexDirection: "row", gap: 8 },
+    servingCountInput: { marginBottom: 0, width: 88 },
+    servingMultiplier: { color: theme.colors.secondaryText, fontSize: 18, fontWeight: "700" },
+    servingPicker: {
+      alignItems: "center",
+      backgroundColor: theme.colors.input,
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      borderWidth: 1,
+      flex: 1,
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+      minHeight: 44,
+      minWidth: 0,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    servingPickerText: { color: theme.colors.text, flex: 1, fontSize: 16 },
+    servingPickerChevron: { color: theme.colors.secondaryText, fontSize: 18 },
+    servingModalBackdrop: {
+      alignItems: "center",
+      backgroundColor: theme.colors.modalBackdrop,
+      flex: 1,
+      justifyContent: "center",
+      padding: 18,
+    },
+    servingModalCard: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: 10,
+      maxHeight: "80%",
+      padding: 14,
+      width: "100%",
+    },
+    servingModalTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "700" },
+    servingModalContent: { gap: 8, paddingBottom: 8, paddingTop: 16 },
+    servingModalCloseButton: {
+      alignItems: "center",
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      borderWidth: 1,
+      height: 44,
+      justifyContent: "center",
+      width: 44,
+    },
+    servingModalCloseText: {
+      color: theme.colors.accent,
+      fontSize: 26,
+      fontWeight: "500",
+      lineHeight: 28,
+    },
+    servingModalChoices: { gap: 8 },
+    servingModalChoice: {
+      alignItems: "center",
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+      minHeight: 44,
+      paddingHorizontal: 13,
+      paddingVertical: 10,
+    },
+    servingModalChoiceSelected: {
+      backgroundColor: theme.colors.activeBackground,
+      borderColor: theme.colors.accent,
+    },
+    servingModalSelectedText: { color: theme.colors.accent, fontWeight: "700" },
     title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },
     topField: { marginBottom: 2 },
     twoColumn: { flexDirection: "row", gap: 10 },
     unitChoice: { alignItems: "center", borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, minWidth: 42, padding: 10 },
     unitSelector: { flexDirection: "row", gap: 6, marginBottom: 12 },
+    finishedWeightRow: { marginTop: 8 },
+    yieldWeightInput: { flex: 1 },
   });
 }

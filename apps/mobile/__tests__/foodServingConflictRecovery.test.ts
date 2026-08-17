@@ -89,3 +89,41 @@ test("rejected Recipe serving changes restore saved servings without discarding 
 
   await act(async () => renderer.unmount());
 });
+
+// E2_86_AUTHORITATIVE_RETURN_TEST
+
+test("successful Food serving management exposes the authoritative saved Food before navigation", async () => {
+  const authoritativeFood: Food = {
+    ...editableFood,
+    serving_definitions: editableFood.serving_definitions.map((serving, index) => ({
+      ...serving,
+      id: `replacement-${index}`,
+    })),
+  };
+  mockUpdateFood.mockResolvedValueOnce(authoritativeFood);
+
+  const onSaved = jest.fn();
+  const onSavedFood = jest.fn();
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(FoodFormScreen, {
+      food: editableFood,
+      onCancel: jest.fn(),
+      onSaved,
+      onSavedFood,
+    }));
+  });
+
+  await act(async () => {
+    renderer.root.findByProps({ accessibilityLabel: "Save food" }).props.onPress();
+  });
+
+  expect(onSavedFood).toHaveBeenCalledTimes(1);
+  expect(onSavedFood).toHaveBeenCalledWith(authoritativeFood);
+  expect(onSaved).toHaveBeenCalledWith(authoritativeFood.id);
+  expect(onSavedFood.mock.invocationCallOrder[0])
+    .toBeLessThan(onSaved.mock.invocationCallOrder[0]);
+
+  await act(async () => renderer.unmount());
+});

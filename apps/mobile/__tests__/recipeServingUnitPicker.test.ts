@@ -1,5 +1,5 @@
 import React from "react";
-import { TextInput } from "react-native";
+import { StyleSheet, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { Food } from "../src/features/foods/api/types";
@@ -82,6 +82,44 @@ test("Recipe custom serving creation uses the shared structured unit picker", as
   })).toBeDefined();
   expect(renderer.root.findAllByType(TextInput).find((node) => node.props.accessibilityLabel === "Unit")?.props.value).toBe("cup");
   expect(renderer.root.findAllByType(TextInput).find((node) => node.props.accessibilityLabel === "Oats grams per cup")).toBeDefined();
+
+  await act(async () => renderer.unmount());
+});
+
+// E2_86_MANAGEMENT_ENTRY_TEST
+
+test("Recipe serving ingredients can open authoritative saved-serving management", async () => {
+  const onManageServingSizes = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(RecipeFormScreen, {
+      draft,
+      setDraft: jest.fn(),
+      onCancel: jest.fn(),
+      onSaved: jest.fn(),
+      onAddIngredient: jest.fn(),
+      onManageServingSizes,
+    }));
+  });
+
+  const manage = renderer.root.findByProps({
+    accessibilityLabel: "Manage Oats serving sizes",
+  });
+
+  expect(manage.props.accessibilityState).toMatchObject({ disabled: false });
+  expect(StyleSheet.flatten(manage.props.style)).toMatchObject({
+    borderWidth: 1,
+    minHeight: 44,
+  });
+  expect(renderer.root.findAllByProps({
+    accessibilityLabel: "Create a new serving size for Oats",
+  })).toHaveLength(0);
+
+  await act(async () => manage.props.onPress());
+
+  expect(onManageServingSizes).toHaveBeenCalledTimes(1);
+  expect(onManageServingSizes).toHaveBeenCalledWith(draft.ingredients[0]);
 
   await act(async () => renderer.unmount());
 });

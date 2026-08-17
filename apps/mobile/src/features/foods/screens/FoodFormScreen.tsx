@@ -25,6 +25,8 @@ type Props = {
   food?: Food;
   onSaved: (foodId: string) => void;
   onCancel: () => void;
+  onSavedFood?: (food: Food) => void;
+  servingManagementOnly?: boolean;
 };
 
 function servingConflictMessage(details: unknown): string {
@@ -39,7 +41,13 @@ function servingConflictMessage(details: unknown): string {
   return `Serving-size changes were not saved because ${usage}. The saved serving sizes have been restored. Update the Recipe ingredients before changing those serving sizes.`;
 }
 
-export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
+export function FoodFormScreen({
+  food,
+  onSaved,
+  onCancel,
+  onSavedFood,
+  servingManagementOnly = false,
+}: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrientQuery = useNutrients();
   const mutations = useFoodMutations();
@@ -55,7 +63,15 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
   );
   const form = useFoodForm(food, nutrientDefinitions);
   const saving = Boolean(mutations.createFood.isPending || mutations.updateFood.isPending);
-  useAccessibilityScreenFocus({ active: true, routeKey: food ? `edit-food-${food.id}` : "new-food", targetRef: headingRef });
+  useAccessibilityScreenFocus({
+    active: true,
+    routeKey: servingManagementOnly && food
+      ? `manage-serving-sizes-${food.id}`
+      : food
+        ? `edit-food-${food.id}`
+        : "new-food",
+    targetRef: headingRef,
+  });
   useEffect(() => {
     if (!saveError) return;
     const cancelAnnouncement = announceValidation(saveError, { key: "food-save-error", kind: "error", priority: "assertive" });
@@ -90,6 +106,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
         });
         createIntentRef.current = null;
       }
+      onSavedFood?.(saved);
       onSaved(saved.id);
     } catch (error) {
       if (
@@ -112,16 +129,36 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
         {(focusProps) => (
           <>
             <View style={styles.header}>
-              <Text ref={headingRef} accessibilityRole="header" style={styles.title}>{food ? "Edit Food" : "New Food"}</Text>
-              <AccessiblePressable accessibilityLabel={food ? "Cancel editing food" : "Cancel creating food"} disabled={saving} onPress={onCancel}>
+              <Text ref={headingRef} accessibilityRole="header" style={styles.title}>
+                {servingManagementOnly ? "Manage serving sizes" : food ? "Edit Food" : "New Food"}
+              </Text>
+              <AccessiblePressable
+                accessibilityLabel={
+                  servingManagementOnly
+                    ? "Cancel serving management"
+                    : food
+                      ? "Cancel editing food"
+                      : "Cancel creating food"
+                }
+                disabled={saving}
+                onPress={onCancel}
+              >
                 <Text style={styles.cancelText}>Cancel</Text>
               </AccessiblePressable>
             </View>
 
-            <Text accessibilityRole="header" style={styles.sectionTitle}>Food</Text>
-            <LabeledField {...focusProps(foodFocusKey("name"))} label="Food name" labelStyle={styles.fieldLabel} validationTarget="food.name" required disabled={saving} invalid={form.validationIssue?.target === "food.name"} error={form.validationIssue?.target === "food.name" ? form.error : null} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
-            <LabeledField {...focusProps(foodFocusKey("brand"))} label="Brand" labelStyle={styles.fieldLabel} validationTarget="food.brand" disabled={saving} value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
-            <LabeledField {...focusProps(foodFocusKey("notes"))} label="Notes" labelStyle={styles.fieldLabel} validationTarget="food.notes" disabled={saving} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+            {servingManagementOnly && food ? (
+              <Text style={styles.managementContext}>{food.name}</Text>
+            ) : null}
+
+            {!servingManagementOnly ? (
+              <>
+                <Text accessibilityRole="header" style={styles.sectionTitle}>Food</Text>
+                <LabeledField {...focusProps(foodFocusKey("name"))} label="Food name" labelStyle={styles.fieldLabel} validationTarget="food.name" required disabled={saving} invalid={form.validationIssue?.target === "food.name"} error={form.validationIssue?.target === "food.name" ? form.error : null} value={form.fields.name} onChangeText={form.setters.setName} placeholder="Name" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+                <LabeledField {...focusProps(foodFocusKey("brand"))} label="Brand" labelStyle={styles.fieldLabel} validationTarget="food.brand" disabled={saving} value={form.fields.brand} onChangeText={form.setters.setBrand} placeholder="Brand" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+                <LabeledField {...focusProps(foodFocusKey("notes"))} label="Notes" labelStyle={styles.fieldLabel} validationTarget="food.notes" disabled={saving} value={form.fields.notes} onChangeText={form.setters.setNotes} placeholder="Notes" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input} />
+              </>
+            ) : null}
 
             {form.error && form.validationIssue?.target !== "food.name" && !form.validationIssue?.target.startsWith("serving.") && !form.validationIssue?.target.startsWith("nutrient.") ? <Text accessibilityRole="alert" style={styles.error}>{form.error}</Text> : null}
             {saveError ? <Text ref={saveErrorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
@@ -139,16 +176,50 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
               validationError={form.error}
             />
 
-            <Text accessibilityRole="header" style={styles.sectionTitle}>Nutrients</Text>
-            {nutrientQuery.isLoading ? <AccessibilityStatus kind="loading" message="Loading nutrient fields…" /> : null}
-            {nutrientQuery.isError ? <AccessibilityStatus kind="retryable-failure" message="Nutrient fields are unavailable." retryContext="nutrient fields" onRetry={() => { void nutrientQuery.refetch(); }} /> : null}
-            {!nutrientQuery.isLoading && !nutrientQuery.isError ? <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} disabled={saving} validationTarget={form.validationIssue?.target} validationError={form.error} hideUnknownByDefault={Boolean(food)} /> : null}
+            {!servingManagementOnly ? (
+              <>
+                <Text accessibilityRole="header" style={styles.sectionTitle}>Nutrients</Text>
+                {nutrientQuery.isLoading ? <AccessibilityStatus kind="loading" message="Loading nutrient fields…" /> : null}
+                {nutrientQuery.isError ? <AccessibilityStatus kind="retryable-failure" message="Nutrient fields are unavailable." retryContext="nutrient fields" onRetry={() => { void nutrientQuery.refetch(); }} /> : null}
+                {!nutrientQuery.isLoading && !nutrientQuery.isError ? <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} disabled={saving} validationTarget={form.validationIssue?.target} validationError={form.error} hideUnknownByDefault={Boolean(food)} /> : null}
+              </>
+            ) : null}
           </>
         )}
       </KeyboardSafeScrollView>
       <View style={styles.saveBar}>
-        <AccessiblePressable accessibilityLabel={saving ? "Saving food" : saveError ? "Retry saving food" : "Save food"} accessibilityHint="Creates the food, then opens logging confirmation when started from Add Food" busy={saving} onPress={save} style={styles.primaryButton}>
-          <Text style={styles.primaryText}>{saving ? "Saving…" : saveError ? "Try Again" : "Save"}</Text>
+        <AccessiblePressable
+          accessibilityLabel={
+            servingManagementOnly
+              ? saving
+                ? "Saving serving sizes"
+                : saveError
+                  ? "Retry saving serving sizes"
+                  : "Save serving sizes"
+              : saving
+                ? "Saving food"
+                : saveError
+                  ? "Retry saving food"
+                  : "Save food"
+          }
+          accessibilityHint={
+            servingManagementOnly
+              ? "Saves serving-size changes to this Food"
+              : "Creates the food, then opens logging confirmation when started from Add Food"
+          }
+          busy={saving}
+          onPress={save}
+          style={styles.primaryButton}
+        >
+          <Text style={styles.primaryText}>
+            {saving
+              ? "Saving…"
+              : saveError
+                ? "Try Again"
+                : servingManagementOnly
+                  ? "Save serving sizes"
+                  : "Save"}
+          </Text>
         </AccessiblePressable>
       </View>
     </KeyboardAvoidingView>
@@ -163,6 +234,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   fieldLabel: { color: theme.colors.text, fontSize: 14, fontWeight: "600" },
   input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, fontSize: 16, marginBottom: 12, padding: 12 },
+  managementContext: { color: theme.colors.secondaryText, fontSize: 16, fontWeight: "600", marginTop: 4 },
   primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 14 }, primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", marginBottom: 12, marginTop: 18 },

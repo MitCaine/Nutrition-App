@@ -20,6 +20,7 @@ test("main and nested routes select the correct bottom tab", () => {
   expect(mainTabForRoute("add-log-food")).toBe("daily-log");
   expect(mainTabForRoute("recipes")).toBe("recipes");
   expect(mainTabForRoute("recipe-detail")).toBe("recipes");
+  expect(mainTabForRoute("recipe-serving-management")).toBe("recipes");
 });
 
 test("selecting any tab navigates to that tab root, including the active tab", () => {

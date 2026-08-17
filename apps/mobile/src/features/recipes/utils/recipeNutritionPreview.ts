@@ -1,5 +1,7 @@
 import type { AppTheme } from "../../../app/theme/AppTheme";
 import { RuntimeError } from "../../../runtime/RuntimeError";
+import { isUnknownOnlyAggregatedTotal } from "../../../shared/nutrition/display";
+import type { AggregatedNutrientTotal } from "../../../shared/nutrition/types";
 import type { RecipeNutritionResponse } from "../api/types";
 
 export function recipeNutritionErrorMessage(error: unknown, fallback: string): string {
@@ -14,6 +16,12 @@ export function visibleRecipeNutrition(
   isError: boolean,
 ): RecipeNutritionResponse | undefined {
   return isError ? undefined : data;
+}
+
+export function visibleRecipeTotals(
+  totals: AggregatedNutrientTotal[],
+): AggregatedNutrientTotal[] {
+  return totals.filter((total) => !isUnknownOnlyAggregatedTotal(total));
 }
 
 export function recipeNutrientValueColor(theme: AppTheme): string {

@@ -27,6 +27,7 @@ const RECIPE_ROUTES = new Set([
   "ingredient-picker",
   "recipe-usda-search",
   "recipe-usda-preview",
+  "recipe-serving-management",
 ]);
 
 export function mainTabForRoute(routeName: string): MainTab {

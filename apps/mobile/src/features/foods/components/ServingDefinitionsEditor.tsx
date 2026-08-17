@@ -506,9 +506,14 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                   <ServingManagementAction accessibilityLabel={`Remove ${displayLabel || "serving size"}`} onPress={() => removeServingClean(serving.key)} styles={styles}>
                     <Text style={styles.removeText}>Remove</Text>
                   </ServingManagementAction>
-                  <AccessiblePressable accessibilityLabel={`Finish editing ${displayLabel || "serving size"}`} accessibilityState={{ expanded: true }} onPress={() => setExpandedKey(null)} style={styles.compactButton}>
+                  <ServingManagementAction
+                    accessibilityLabel={`Finish editing ${displayLabel || "serving size"}`}
+                    accessibilityState={{ expanded: true }}
+                    onPress={() => setExpandedKey(null)}
+                    styles={styles}
+                  >
                     <Text style={styles.link}>Done</Text>
-                  </AccessiblePressable>
+                  </ServingManagementAction>
                 </View>
               </View>
             ) : (

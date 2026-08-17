@@ -456,3 +456,116 @@ test("recipe preview formatting preserves known zero and unknown contributors", 
     }),
   ).toBe("24mg + unknown from 1 item");
 });
+
+// ISSUE_104_RECIPE_YIELD_TESTS
+
+test("Recipe yield supports finished weight without portions", () => {
+  const payload = buildRecipePayload({
+    ...emptyRecipeDraft(),
+    name: "Weighted batch",
+    finishedWeight: {
+      quantity: "2",
+      unit: "lb",
+    },
+    ingredients: [],
+  });
+
+  expect(payload).toEqual(expect.objectContaining({
+    serving_count_yield: null,
+    final_cooked_weight_grams: "907.18474",
+    final_cooked_weight_display_quantity: "2",
+    final_cooked_weight_display_unit: "lb",
+  }));
+});
+
+test("Recipe yield supports portions and finished weight together", () => {
+  const payload = buildRecipePayload({
+    ...emptyRecipeDraft(),
+    name: "Both yields",
+    servingCountYield: "6",
+    finishedWeight: {
+      quantity: "1200",
+      unit: "g",
+    },
+    ingredients: [],
+  });
+
+  expect(payload).toEqual(expect.objectContaining({
+    serving_count_yield: "6",
+    final_cooked_weight_grams: "1200",
+    final_cooked_weight_display_quantity: "1200",
+    final_cooked_weight_display_unit: "g",
+  }));
+});
+
+test("Recipe yield can intentionally clear an existing finished weight", () => {
+  const payload = buildRecipePayload({
+    ...emptyRecipeDraft(),
+    recipeId: "recipe-1",
+    name: "Clear weight",
+    finishedWeight: {
+      quantity: "",
+      unit: "oz",
+    },
+    ingredients: [],
+  });
+
+  expect(payload).toEqual(expect.objectContaining({
+    final_cooked_weight_grams: null,
+    final_cooked_weight_display_quantity: null,
+    final_cooked_weight_display_unit: null,
+  }));
+});
+
+test("Recipe yield validates authored finished weight independently of portions", () => {
+  expect(validateRecipeDraft({
+    ...emptyRecipeDraft(),
+    name: "Invalid finished weight",
+    servingCountYield: "4",
+    finishedWeight: {
+      quantity: "0",
+      unit: "g",
+    },
+  })).toBe("Finished weight must be a valid amount greater than zero.");
+
+  expect(validateRecipeDraft({
+    ...emptyRecipeDraft(),
+    name: "Valid finished weight",
+    finishedWeight: {
+      quantity: "1.5",
+      unit: "lb",
+    },
+  })).toBeNull();
+});
+
+test("stored finished-weight display metadata becomes editable yield state", () => {
+  const result = recipeToDraft(
+    {
+      id: "recipe-finished-weight",
+      user_id: "user-1",
+      name: "Finished batch",
+      final_cooked_weight_grams: "907.184740",
+      final_cooked_weight_display_quantity: "2.000000",
+      final_cooked_weight_display_unit: "lb",
+      created_at: "2026-07-10T00:00:00Z",
+      updated_at: "2026-07-10T00:00:00Z",
+      ingredients: [],
+    },
+    [],
+  );
+
+  expect(result.ok).toBe(true);
+
+  if (result.ok) {
+    expect(result.draft.finishedWeight).toEqual({
+      quantity: "2",
+      unit: "lb",
+    });
+
+    expect(buildRecipePayload(result.draft)).toEqual(expect.objectContaining({
+      final_cooked_weight_grams: "907.18474",
+      final_cooked_weight_display_quantity: "2",
+      final_cooked_weight_display_unit: "lb",
+    }));
+  }
+});

@@ -12,7 +12,9 @@ export function nutrientFocusKey(nutrientId: string): string {
   return `nutrient:${nutrientId}:amount`;
 }
 
-export function recipeFocusKey(field: "name" | "notes"): string {
+export function recipeFocusKey(
+  field: "name" | "notes" | "servingCountYield" | "finishedWeight",
+): string {
   return `recipe:${field}`;
 }
 

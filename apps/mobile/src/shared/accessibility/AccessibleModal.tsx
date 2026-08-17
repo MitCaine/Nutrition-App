@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -39,6 +40,8 @@ type Props = {
   scrollable?: boolean;
   headingStyle?: StyleProp<TextStyle>;
   testID?: string;
+  dismissOnBackdropPress?: boolean;
+  headerAction?: ReactNode;
 };
 
 /** Native modal semantics plus deterministic entry and return-focus behavior. */
@@ -61,6 +64,8 @@ export function AccessibleModal({
   scrollable = false,
   headingStyle,
   testID,
+  dismissOnBackdropPress = false,
+  headerAction,
 }: Props) {
   const headingRef = useRef<Text>(null);
   const visibleRef = useRef(visible);
@@ -151,19 +156,41 @@ export function AccessibleModal({
       statusBarTranslucent
     >
       <View style={[styles.backdrop, backdropStyle]} importantForAccessibility="yes">
+        {dismissOnBackdropPress ? (
+          <Pressable
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            accessibilityLabel="Dismiss modal"
+            onPress={onRequestClose}
+            style={styles.backdropDismissTarget}
+          />
+        ) : null}
         <View
           accessibilityViewIsModal
           importantForAccessibility="yes"
           style={[styles.content, contentStyle]}
           testID={testID}
         >
-          <Text
-            ref={headingRef}
-            accessibilityRole="header"
-            style={headingStyle}
-          >
-            {title}
-          </Text>
+          {headerAction ? (
+            <View style={styles.titleRow}>
+              <Text
+                ref={headingRef}
+                accessibilityRole="header"
+                style={[styles.titleText, headingStyle]}
+              >
+                {title}
+              </Text>
+              {headerAction}
+            </View>
+          ) : (
+            <Text
+              ref={headingRef}
+              accessibilityRole="header"
+              style={headingStyle}
+            >
+              {title}
+            </Text>
+          )}
           {scrollable ? (
             <ScrollView
               contentContainerStyle={[styles.scrollContent, scrollContentStyle]}
@@ -181,7 +208,18 @@ export function AccessibleModal({
 
 const styles = StyleSheet.create({
   backdrop: { alignItems: "center", flex: 1, justifyContent: "center" },
+  backdropDismissTarget: StyleSheet.absoluteFill,
   content: { maxHeight: "100%", width: "100%" },
   scrollBody: { flexShrink: 1 },
   scrollContent: { gap: 14, paddingBottom: 1 },
+  titleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  titleText: {
+    flex: 1,
+    minWidth: 0,
+  },
 });

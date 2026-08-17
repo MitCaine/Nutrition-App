@@ -3,6 +3,7 @@ import {
   recipeNutrientValueColor,
   recipeNutritionErrorMessage,
   visibleRecipeNutrition,
+  visibleRecipeTotals,
 } from "../src/features/recipes/utils/recipeNutritionPreview";
 import { ApiError } from "./runtimeErrorTestSupport";
 import type { RecipeNutritionResponse } from "../src/features/recipes/api/types";
@@ -86,4 +87,40 @@ test("nutrient values use each theme's primary foreground color", () => {
   expect(recipeNutrientValueColor(LIGHT_THEME)).toBe(LIGHT_THEME.colors.text);
   expect(recipeNutrientValueColor(DARK_THEME)).toBe(DARK_THEME.colors.text);
   expect(recipeNutrientValueColor(DARK_THEME)).not.toBe("#000000");
+});
+
+// RECIPE_UNKNOWN_NUTRIENT_VISIBILITY
+
+test("Recipe detail hides unknown-only nutrients but retains known zero and partial-known totals", () => {
+  const visible = visibleRecipeTotals([
+    {
+      nutrientId: "added_sugars",
+      amountKnown: "0",
+      amountEstimated: "0",
+      unit: "g",
+      hasUnknownContributors: true,
+      unknownContributorCount: 1,
+    },
+    {
+      nutrientId: "trans_fat",
+      amountKnown: "0",
+      amountEstimated: "0",
+      unit: "g",
+      hasUnknownContributors: false,
+      unknownContributorCount: 0,
+    },
+    {
+      nutrientId: "calcium",
+      amountKnown: "24",
+      amountEstimated: "0",
+      unit: "mg",
+      hasUnknownContributors: true,
+      unknownContributorCount: 1,
+    },
+  ]);
+
+  expect(visible.map((total) => total.nutrientId)).toEqual([
+    "trans_fat",
+    "calcium",
+  ]);
 });

@@ -26,6 +26,7 @@ import {
   emptyRecipeDraft,
   ingredientForFood,
   recipeToDraft,
+  reconcileRecipeDraftFoodAfterServingManagement,
 } from "../../features/recipes/utils/recipeDraft";
 import type { RecipeDraft } from "../../features/recipes/utils/recipeDraft";
 import { UsdaPreviewScreen } from "../../features/usda/screens/UsdaPreviewScreen";
@@ -77,6 +78,7 @@ type Route =
   | { name: "new-recipe" }
   | { name: "recipe-detail"; recipeId: string }
   | { name: "edit-recipe"; recipeId: string }
+  | { name: "recipe-serving-management"; foodId: string }
   | { name: "ingredient-picker" }
   | { name: "recipe-usda-search" }
   | { name: "recipe-usda-preview"; fdcId: number }
@@ -465,6 +467,10 @@ export function AppNavigator() {
         onCancel={() => setRoute({ name: "recipes" })}
         onSaved={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
         onAddIngredient={() => setRoute({ name: "ingredient-picker" })}
+        onManageServingSizes={(ingredient) => setRoute({
+          name: "recipe-serving-management",
+          foodId: ingredient.food.id,
+        })}
       />
     );
   } else if (route.name === "recipe-detail") {
@@ -498,6 +504,30 @@ export function AppNavigator() {
         onCancel={() => setRoute({ name: "recipe-detail", recipeId: route.recipeId })}
         onSaved={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
         onAddIngredient={() => setRoute({ name: "ingredient-picker" })}
+        onManageServingSizes={(ingredient) => setRoute({
+          name: "recipe-serving-management",
+          foodId: ingredient.food.id,
+        })}
+      />
+    );
+  } else if (route.name === "recipe-serving-management") {
+    const returnToRecipeEditor = () => {
+      setRoute(
+        recipeDraft.recipeId
+          ? { name: "edit-recipe", recipeId: recipeDraft.recipeId }
+          : { name: "new-recipe" },
+      );
+    };
+    content = (
+      <EditFoodRoute
+        foodId={route.foodId}
+        servingManagementOnly
+        onCancel={returnToRecipeEditor}
+        onSavedFood={(food) => {
+          setRecipeDraft((current) =>
+            reconcileRecipeDraftFoodAfterServingManagement(current, food));
+        }}
+        onSaved={() => returnToRecipeEditor()}
       />
     );
   } else if (route.name === "ingredient-picker") {
@@ -711,16 +741,28 @@ function EditFoodRoute({
   foodId,
   onCancel,
   onSaved,
+  onSavedFood,
+  servingManagementOnly = false,
 }: {
   foodId: string;
   onCancel: () => void;
   onSaved: (foodId: string) => void;
+  onSavedFood?: (food: Food) => void;
+  servingManagementOnly?: boolean;
 }) {
   const food = useFood(foodId);
   if (!food.data) {
     return <LoadingState />;
   }
-  return <FoodFormScreen food={food.data} onCancel={onCancel} onSaved={onSaved} />;
+  return (
+    <FoodFormScreen
+      food={food.data}
+      onCancel={onCancel}
+      onSaved={onSaved}
+      onSavedFood={onSavedFood}
+      servingManagementOnly={servingManagementOnly}
+    />
+  );
 }
 
 function LoadingState() {

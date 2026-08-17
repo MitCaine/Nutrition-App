@@ -1,4 +1,4 @@
-import type { Food, ServingDefinitionInput } from "../../foods/api/types";
+import type { Food, ServingDefinition, ServingDefinitionInput } from "../../foods/api/types";
 import { defaultServing } from "../../foods/utils/foodDisplay";
 import { generatedAmountLabel, normalizedAmountUnit } from "../../foods/utils/amountForm";
 import { formatAmountWithUnit, formatDisplayNumber } from "../../../shared/nutrition/display";
@@ -27,12 +27,23 @@ export type LegacyCookedWeight = {
   displayUnit?: string | null;
 };
 
+export type FinishedWeightDraft = {
+  quantity: string;
+  unit: MassUnit;
+};
+
 export type RecipeDraft = {
   recipeId?: string;
   publishedFoodItemId?: string | null;
   name: string;
   notes: string;
   servingCountYield: string;
+  /**
+   * Undefined means a new draft has never authored finished-weight state.
+   * Loaded Recipes always receive an explicit value so updates preserve or
+   * intentionally clear the existing finished-weight measurement.
+   */
+  finishedWeight?: FinishedWeightDraft;
   legacyCookedWeight: LegacyCookedWeight | null;
   ingredients: DraftIngredient[];
 };
@@ -78,6 +89,7 @@ export function recipeToDraft(recipe: Recipe, foods: Food[]): RecipeDraftInitRes
       name: recipe.name,
       notes: recipe.notes ?? "",
       servingCountYield: recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "",
+      finishedWeight: finishedWeightDraftForRecipe(recipe),
       legacyCookedWeight: legacyCookedWeightForRecipe(recipe),
       ingredients: sortedIngredients.map((ingredient) => ({
         localId: ingredient.id,
@@ -130,6 +142,9 @@ export function buildRecipePayload(draft: RecipeDraft): RecipeMutationInput | nu
     name: draft.name.trim(),
     notes: draft.notes.trim() || null,
     serving_count_yield: draft.servingCountYield.trim() || null,
+    ...(draft.finishedWeight !== undefined
+      ? buildFinishedWeightPayload(draft.finishedWeight)
+      : {}),
     ingredients: draft.ingredients.map<RecipeIngredientInput>((ingredient, position) => ({
       food_item_id: ingredient.food.id,
       position,
@@ -172,13 +187,93 @@ export function validateRecipeDraft(draft: RecipeDraft): string | null {
     }
   }
   if (draft.servingCountYield.trim() && !(Number(draft.servingCountYield) > 0)) {
-    return "Serving yield must be greater than zero.";
+    return "Portions must be greater than zero.";
   }
+
+  if (draft.finishedWeight?.quantity.trim()) {
+    const normalized = normalizeDecimalInput(draft.finishedWeight.quantity);
+    if (
+      normalized === null
+      || !(Number(normalized) > 0)
+      || massToGrams(normalized, draft.finishedWeight.unit) === null
+    ) {
+      return "Finished weight must be a valid amount greater than zero.";
+    }
+  }
+
   return null;
 }
 
 export function canPublishRecipe(draft: { servingCountYield: string; finalCookedWeightGrams: string }) {
   return Number(draft.servingCountYield) > 0 || Number(normalizeDecimalInput(draft.finalCookedWeightGrams)) > 0;
+}
+
+function buildFinishedWeightPayload(
+  finishedWeight: FinishedWeightDraft,
+): Pick<
+  RecipeMutationInput,
+  | "final_cooked_weight_grams"
+  | "final_cooked_weight_display_quantity"
+  | "final_cooked_weight_display_unit"
+> {
+  const normalizedQuantity = normalizeDecimalInput(finishedWeight.quantity);
+
+  if (!normalizedQuantity) {
+    return {
+      final_cooked_weight_grams: null,
+      final_cooked_weight_display_quantity: null,
+      final_cooked_weight_display_unit: null,
+    };
+  }
+
+  const normalizedGrams = massToGrams(normalizedQuantity, finishedWeight.unit);
+
+  if (!normalizedGrams) {
+    return {
+      final_cooked_weight_grams: null,
+      final_cooked_weight_display_quantity: null,
+      final_cooked_weight_display_unit: null,
+    };
+  }
+
+  return {
+    final_cooked_weight_grams: normalizedGrams,
+    final_cooked_weight_display_quantity: normalizedQuantity,
+    final_cooked_weight_display_unit: finishedWeight.unit,
+  };
+}
+
+export function finishedWeightDraftForRecipe(
+  recipe: Pick<
+    Recipe,
+    | "final_cooked_weight_grams"
+    | "final_cooked_weight_display_quantity"
+    | "final_cooked_weight_display_unit"
+  >,
+): FinishedWeightDraft {
+  const displayUnit = recipe.final_cooked_weight_display_unit?.trim().toLowerCase();
+
+  if (
+    recipe.final_cooked_weight_display_quantity
+    && (displayUnit === "g" || displayUnit === "oz" || displayUnit === "lb")
+  ) {
+    return {
+      quantity: formatDisplayNumber(recipe.final_cooked_weight_display_quantity),
+      unit: displayUnit,
+    };
+  }
+
+  if (recipe.final_cooked_weight_grams) {
+    return {
+      quantity: formatDisplayNumber(recipe.final_cooked_weight_grams),
+      unit: "g",
+    };
+  }
+
+  return {
+    quantity: "",
+    unit: "g",
+  };
 }
 
 export function legacyCookedWeightForRecipe(
@@ -282,6 +377,84 @@ function servingUsefulnessRank(label: string): number {
     return 1;
   }
   return 0;
+}
+
+
+function canonicalServingSemanticDecimal(value: string | null | undefined): string {
+  if (value == null) {
+    return "";
+  }
+  const normalized = normalizeDecimalInput(String(value));
+  if (normalized === null) {
+    return String(value).trim();
+  }
+  const [whole, fraction = ""] = normalized.split(".");
+  const canonicalWhole = whole.replace(/^0+(?=\d)/, "") || "0";
+  const canonicalFraction = fraction.replace(/0+$/, "");
+  return canonicalFraction ? `${canonicalWhole}.${canonicalFraction}` : canonicalWhole;
+}
+
+function servingSemanticKey(
+  serving: Pick<ServingDefinition, "quantity" | "unit" | "gram_weight">,
+): string {
+  return [
+    canonicalServingSemanticDecimal(serving.quantity),
+    serving.unit.trim().toLowerCase(),
+    canonicalServingSemanticDecimal(serving.gram_weight),
+  ].join("\u0000");
+}
+
+/**
+ * Food updates replace serving-definition rows, so Recipe drafts cannot retain
+ * the old serving IDs blindly. Mirror the authoritative Food mutation rule:
+ * preserve a serving selection only when exactly one replacement has the same
+ * quantity/unit/gram-weight semantics. Otherwise require explicit reselection.
+ */
+export function reconcileRecipeDraftFoodAfterServingManagement(
+  draft: RecipeDraft,
+  updatedFood: Food,
+): RecipeDraft {
+  let foundFood = false;
+
+  const ingredients = draft.ingredients.map((ingredient) => {
+    if (ingredient.food.id !== updatedFood.id) {
+      return ingredient;
+    }
+
+    foundFood = true;
+
+    if (
+      ingredient.amountUnit !== "serving"
+      || ingredient.servingDefinitionId === null
+    ) {
+      return { ...ingredient, food: updatedFood };
+    }
+
+    const previousServing = ingredient.food.serving_definitions.find(
+      (serving) => serving.id === ingredient.servingDefinitionId,
+    );
+
+    if (!previousServing) {
+      return {
+        ...ingredient,
+        food: updatedFood,
+        servingDefinitionId: null,
+      };
+    }
+
+    const semanticKey = servingSemanticKey(previousServing);
+    const successors = updatedFood.serving_definitions.filter(
+      (serving) => servingSemanticKey(serving) === semanticKey,
+    );
+
+    return {
+      ...ingredient,
+      food: updatedFood,
+      servingDefinitionId: successors.length === 1 ? successors[0]!.id : null,
+    };
+  });
+
+  return foundFood ? { ...draft, ingredients } : draft;
 }
 
 export function moveIngredient(

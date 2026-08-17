@@ -18,6 +18,7 @@ import {
   recipeNutrientValueColor,
   recipeNutritionErrorMessage,
   visibleRecipeNutrition,
+  visibleRecipeTotals,
 } from "../utils/recipeNutritionPreview";
 import type { Recipe } from "../api/types";
 import type { RecipeDeleteDependency } from "../api/types";
@@ -53,7 +54,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
     servingCountYield: recipe.serving_count_yield ?? "",
     finalCookedWeightGrams: recipe.final_cooked_weight_grams ?? "",
   });
-  const legacyCookedWeight = legacyCookedWeightForRecipe(recipe);
+  const finishedWeight = legacyCookedWeightForRecipe(recipe);
 
   async function publish() {
     if (!canPublish || mutations.publishRecipe.isPending) {
@@ -112,8 +113,8 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
   const publishDisabled = !canPublish || publishPending;
   const publishRequirementMessage = !canPublish
     ? recipe.needs_republish
-      ? "Recipe changed since publishing. Enter the number of servings, then republish to update its published nutrition."
-      : "Enter the number of servings before publishing."
+      ? "Recipe changed since publishing. Add portions or finished weight, then republish to update its published nutrition."
+      : "Add portions or finished weight before publishing."
     : null;
   const republishMessage = recipe.needs_republish && canPublish
     ? "Recipe changed since publishing. Republish to update its published nutrition."
@@ -138,16 +139,12 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
         <View style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>Yield</Text>
           <Text style={styles.meta}>
-            Servings: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Not set"}
+            Portions: {recipe.serving_count_yield ? formatDisplayNumber(recipe.serving_count_yield) : "Not set"}
+          </Text>
+          <Text style={styles.meta}>
+            Finished weight: {finishedWeight ? formatLegacyCookedWeight(finishedWeight) : "Not set"}
           </Text>
         </View>
-        {legacyCookedWeight ? (
-          <View style={styles.legacyCompatibility}>
-            <Text accessibilityRole="header" style={styles.sectionTitle}>Legacy cooked weight</Text>
-            <Text style={styles.text}>{formatLegacyCookedWeight(legacyCookedWeight)}</Text>
-            <Text style={styles.meta}>Stored for compatibility with existing recipe data.</Text>
-          </View>
-        ) : null}
         <View style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>Ingredients</Text>
           {recipe.ingredients.map((ingredient) => (
@@ -312,12 +309,13 @@ function NutritionSection({ title, totals }: { title: string; totals?: Aggregate
   if (!totals) {
     return null;
   }
+  const visibleTotals = visibleRecipeTotals(totals);
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
-      {totals.length === 0 ? <Text style={styles.meta}>No nutrients yet.</Text> : null}
+      {visibleTotals.length === 0 ? <Text style={styles.meta}>No nutrients yet.</Text> : null}
       {sortNutrientsByDisplayOrder(
-        totals,
+        visibleTotals,
         (total) => total.nutrientId,
         isUnknownOnlyAggregatedTotal,
       ).map((total) => (
@@ -336,7 +334,7 @@ function NutritionSection({ title, totals }: { title: string; totals?: Aggregate
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
-  content: { gap: 18, paddingBottom: 32, paddingRight: 28 },
+  content: { gap: 18, paddingBottom: 32, paddingHorizontal: 16 },
   dependencyName: { color: theme.colors.text, fontWeight: "700" },
   dependencyRow: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 3, paddingBottom: 8 },
   deleteButton: { alignItems: "center", borderColor: theme.colors.destructive, borderRadius: 6, borderWidth: 1, padding: 12 },
@@ -345,7 +343,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   destructiveText: { color: theme.colors.accentForeground, fontWeight: "700" },
   disabledButton: { opacity: 0.55 },
   error: { color: theme.colors.errorText },
-  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16 },
   ingredientLine: { gap: 3 },
   legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, padding: 12 },
   meta: { color: theme.colors.secondaryText },
@@ -360,7 +358,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   publishedAction: { alignItems: "center", flex: 1 },
   publishedActions: { flexDirection: "row", gap: 8 },
-  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
+  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, paddingVertical: 16 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, padding: 10 },
   section: { gap: 8 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
