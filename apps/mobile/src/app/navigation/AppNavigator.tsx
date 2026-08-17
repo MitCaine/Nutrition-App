@@ -27,6 +27,7 @@ import {
   ingredientForFood,
   recipeToDraft,
   reconcileRecipeDraftFoodAfterServingManagement,
+  recipeDraftSemanticallyEqual,
 } from "../../features/recipes/utils/recipeDraft";
 import type { RecipeDraft } from "../../features/recipes/utils/recipeDraft";
 import { UsdaPreviewScreen } from "../../features/usda/screens/UsdaPreviewScreen";
@@ -34,7 +35,7 @@ import { UsdaSearchScreen } from "../../features/usda/screens/UsdaSearchScreen";
 import { BottomNavigation } from "./BottomNavigation";
 import { useAppTheme } from "../theme/AppTheme";
 import { SettingsScreen } from "../settings/SettingsScreen";
-import { isMainTabRoot, mainTabForRoute, settingsOriginForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
+import { isMainTabRoot, isRecipeAuthoringRoute, mainTabForRoute, settingsOriginForRoute, swipeDestination, tabSelectionDestination, type MainTab } from "./mainTabs";
 import { logFoodRoute, type LogFoodRoute } from "./logFoodRoute";
 import { OcrDiagnosticsScreen } from "../../features/ocr/diagnostics/OcrDiagnosticsScreen";
 import { isOcrDiagnosticsEnabled } from "../../features/ocr/diagnostics/diagnosticsModel";
@@ -47,6 +48,13 @@ import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import { calendarMutationsEnabled, calendarToday } from "../../features/calendar/calendarModel";
 import { isSupportedMeal } from "../../features/logging/validation/logContracts";
 import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
+import {
+  CLEAN_DRAFT_STATUS,
+  draftExitDecision,
+  type DraftStatus,
+  type DraftStatusReporter,
+} from "../../shared/navigation/draftGuard";
+import { UnsavedDraftDialog } from "../../shared/navigation/UnsavedDraftDialog";
 
 type AddLogFoodWorkflow = {
   foodId: string;
@@ -89,6 +97,30 @@ type Route =
   | { name: "nutrition-scan"; autoAcquireCamera?: boolean }
   | { name: "nutrition-confirm"; draft: NutritionConfirmationDraft };
 
+function draftStateKeyForRoute(route: Route): string | null {
+  switch (route.name) {
+    case "new-food":
+      return "new-food";
+    case "edit-food":
+      return `edit-food:${route.foodId}`;
+    case "add-custom-food":
+      return "add-custom-food";
+    case "recipe-serving-management":
+      return `recipe-serving-management:${route.foodId}`;
+    case "new-recipe":
+    case "edit-recipe":
+      return "recipe-authoring";
+    case "nutrition-targets":
+      return `nutrition-targets:${route.origin}`;
+    case "nutrition-confirm":
+      return "nutrition-confirm";
+    case "add-ocr-confirm":
+      return "add-ocr-confirm";
+    default:
+      return null;
+  }
+}
+
 function routeForMainTab(tab: MainTab): Route {
   if (tab === "foods") {
     return { name: "foods" };
@@ -108,6 +140,10 @@ export function AppNavigator() {
   const [ingredientQuery, setIngredientQuery] = useState("");
   const [recipeUsdaQuery, setRecipeUsdaQuery] = useState("");
   const [recipeDraft, setRecipeDraft] = useState<RecipeDraft>(emptyRecipeDraft());
+  const [recipeDraftBaseline, setRecipeDraftBaseline] = useState<RecipeDraft>(emptyRecipeDraft());
+  const [screenDraftStates, setScreenDraftStates] = useState<Record<string, DraftStatus>>({});
+  const [discardDraftVisible, setDiscardDraftVisible] = useState(false);
+  const pendingDraftExitRef = useRef<(() => void) | null>(null);
   const [foodMessage, setFoodMessage] = useState<string | null>(null);
   const [recipeMessage, setRecipeMessage] = useState<string | null>(null);
   const [dailyLogMutationOutcome, setDailyLogMutationOutcome] = useState<{
@@ -128,6 +164,61 @@ export function AppNavigator() {
   const activeTab = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
   const navigationOverlayOpen = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics";
   const swipeEnabled = isMainTabRoot(route.name);
+  const activeDraftKey = draftStateKeyForRoute(route);
+  const activeScreenDraft = activeDraftKey
+    ? screenDraftStates[activeDraftKey] ?? CLEAN_DRAFT_STATUS
+    : CLEAN_DRAFT_STATUS;
+  const recipeDraftDirty = isRecipeAuthoringRoute(route.name)
+    && !recipeDraftSemanticallyEqual(recipeDraft, recipeDraftBaseline);
+
+  const reportDraftState = useCallback<DraftStatusReporter>((key, status) => {
+    setScreenDraftStates((current) => {
+      const previous = current[key];
+      if (previous?.dirty === status.dirty && previous.busy === status.busy) {
+        return current;
+      }
+      return { ...current, [key]: status };
+    });
+  }, []);
+
+  const requestDraftExit = (
+    action: () => void,
+    { includeRecipeDraft = false }: { includeRecipeDraft?: boolean } = {},
+  ): boolean => {
+    const decision = draftExitDecision([
+      activeScreenDraft,
+      includeRecipeDraft
+        ? { dirty: recipeDraftDirty, busy: false }
+        : CLEAN_DRAFT_STATUS,
+    ]);
+
+    if (decision === "blocked-busy") {
+      return false;
+    }
+
+    if (decision === "confirm-discard") {
+      if (!discardDraftVisible) {
+        pendingDraftExitRef.current = action;
+        setDiscardDraftVisible(true);
+      }
+      return false;
+    }
+
+    action();
+    return true;
+  };
+
+  const stayWithDraft = () => {
+    pendingDraftExitRef.current = null;
+    setDiscardDraftVisible(false);
+  };
+
+  const discardAndContinue = () => {
+    const pending = pendingDraftExitRef.current;
+    pendingDraftExitRef.current = null;
+    setDiscardDraftVisible(false);
+    pending?.();
+  };
 
   const openAddLogFood = useCallback((foodId: string, flow: AddFoodFlowState) => {
     const workflow = {
@@ -189,13 +280,16 @@ export function AppNavigator() {
     if (!destination) {
       return;
     }
-    setFoodMessage(null);
-    setRecipeMessage(null);
-    if (destination === "daily-log" && addLogFoodWorkflow) {
-      setRoute({ name: "add-log-food", ...addLogFoodWorkflow });
-    } else {
-      setRoute(routeForMainTab(destination));
-    }
+
+    requestDraftExit(() => {
+      setFoodMessage(null);
+      setRecipeMessage(null);
+      if (destination === "daily-log" && addLogFoodWorkflow) {
+        setRoute({ name: "add-log-food", ...addLogFoodWorkflow });
+      } else {
+        setRoute(routeForMainTab(destination));
+      }
+    }, { includeRecipeDraft: isRecipeAuthoringRoute(route.name) });
   };
 
   const mainSwipeResponder = useMemo(
@@ -228,7 +322,15 @@ export function AppNavigator() {
       onOpenOcrDiagnostics={ocrDiagnosticsEnabled ? () => setRoute({ name: "ocr-diagnostics", origin: route.origin }) : undefined}
     />;
   } else if (route.name === "nutrition-targets") {
-    content = <TargetSettingsScreen onBack={() => setRoute(route.returnDirect ? routeForMainTab(route.origin) : { name: "settings", origin: route.origin })} />;
+    content = <TargetSettingsScreen
+      draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+      onDraftStateChange={reportDraftState}
+      onBack={() => requestDraftExit(() =>
+        setRoute(route.returnDirect
+          ? routeForMainTab(route.origin)
+          : { name: "settings", origin: route.origin }))
+      }
+    />;
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
     content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
   } else if (route.name === "nutrition-scan" && Platform.OS === "ios") {
@@ -236,17 +338,23 @@ export function AppNavigator() {
   } else if (route.name === "nutrition-confirm" && Platform.OS === "ios") {
     content = <NutritionConfirmationScreen
       initialDraft={route.draft}
-      onCancel={() => setRoute({ name: "foods" })}
-      onRetake={() => setRoute({ name: "nutrition-scan", autoAcquireCamera: true })}
+      draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+      onDraftStateChange={reportDraftState}
+      onCancel={() => requestDraftExit(() => setRoute({ name: "foods" }))}
+      onRetake={() => requestDraftExit(() =>
+        setRoute({ name: "nutrition-scan", autoAcquireCamera: true }))
+      }
       onCreated={(foodId) => setRoute({ name: "food-detail", foodId })}
     />;
   } else if (route.name === "add-custom-food") {
     content = (
       <FoodFormScreen
-        onCancel={() => {
+        draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+        onDraftStateChange={reportDraftState}
+        onCancel={() => requestDraftExit(() => {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
-        }}
+        })}
         onSaved={(foodId) => openAddLogFood(foodId, route.flow)}
       />
     );
@@ -265,14 +373,16 @@ export function AppNavigator() {
     content = Platform.OS === "ios" ? (
       <NutritionConfirmationScreen
         initialDraft={route.draft}
-        onCancel={() => {
+        draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+        onDraftStateChange={reportDraftState}
+        onCancel={() => requestDraftExit(() => {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-scan", flow: route.flow });
-        }}
-        onRetake={() => {
+        })}
+        onRetake={() => requestDraftExit(() => {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-scan", flow: route.flow, autoAcquireCamera: true });
-        }}
+        })}
         onCreated={(foodId) => {
           setAddFoodFlow(route.flow);
           openAddLogFood(foodId, route.flow);
@@ -280,7 +390,12 @@ export function AppNavigator() {
       />
     ) : null;
   } else if (route.name === "new-food") {
-    content = <FoodFormScreen onCancel={() => setRoute({ name: "foods" })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
+    content = <FoodFormScreen
+      draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+      onDraftStateChange={reportDraftState}
+      onCancel={() => requestDraftExit(() => setRoute({ name: "foods" }))}
+      onSaved={(foodId) => setRoute({ name: "food-detail", foodId })}
+    />;
   } else if (route.name === "food-detail") {
     content = (
       <FoodDetailsScreen
@@ -297,7 +412,15 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "edit-food") {
-    content = <EditFoodRoute foodId={route.foodId} onCancel={() => setRoute({ name: "food-detail", foodId: route.foodId })} onSaved={(foodId) => setRoute({ name: "food-detail", foodId })} />;
+    content = <EditFoodRoute
+      foodId={route.foodId}
+      draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+      onDraftStateChange={reportDraftState}
+      onCancel={() => requestDraftExit(() =>
+        setRoute({ name: "food-detail", foodId: route.foodId }))
+      }
+      onSaved={(foodId) => setRoute({ name: "food-detail", foodId })}
+    />;
   } else if (route.name === "add-food" && addFoodFlow) {
     const flowMutationEnabled = calendarMutationsEnabled(calendar.data) && addFoodFlow.originatingDate <= calendarToday(calendar.data, deviceTimeZone());
     content = (
@@ -447,7 +570,9 @@ export function AppNavigator() {
         }}
         onCreate={() => {
           setRecipeMessage(null);
-          setRecipeDraft(emptyRecipeDraft());
+          const nextDraft = emptyRecipeDraft();
+          setRecipeDraft(nextDraft);
+          setRecipeDraftBaseline(nextDraft);
           setRoute({ name: "new-recipe" });
         }}
         onOpenRecipe={(recipeId) => {
@@ -463,9 +588,18 @@ export function AppNavigator() {
     content = (
       <RecipeFormScreen
         draft={recipeDraft}
+        draftBaseline={recipeDraftBaseline}
+        draftStateKey="recipe-authoring"
+        onDraftStateChange={reportDraftState}
         setDraft={setRecipeDraft}
-        onCancel={() => setRoute({ name: "recipes" })}
-        onSaved={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
+        onCancel={() => requestDraftExit(
+          () => setRoute({ name: "recipes" }),
+          { includeRecipeDraft: true },
+        )}
+        onSaved={(recipeId) => {
+          setRecipeDraftBaseline(recipeDraft);
+          setRoute({ name: "recipe-detail", recipeId });
+        }}
         onAddIngredient={() => setRoute({ name: "ingredient-picker" })}
         onManageServingSizes={(ingredient) => setRoute({
           name: "recipe-serving-management",
@@ -480,6 +614,7 @@ export function AppNavigator() {
         onBack={() => setRoute({ name: "recipes" })}
         onEdit={(draft) => {
           setRecipeDraft(draft);
+          setRecipeDraftBaseline(draft);
           setRoute({ name: "edit-recipe", recipeId: route.recipeId });
         }}
         onOpenFood={(foodId) => setRoute({ name: "food-detail", foodId })}
@@ -500,9 +635,18 @@ export function AppNavigator() {
     content = (
       <RecipeFormScreen
         draft={recipeDraft}
+        draftBaseline={recipeDraftBaseline}
+        draftStateKey="recipe-authoring"
+        onDraftStateChange={reportDraftState}
         setDraft={setRecipeDraft}
-        onCancel={() => setRoute({ name: "recipe-detail", recipeId: route.recipeId })}
-        onSaved={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
+        onCancel={() => requestDraftExit(
+          () => setRoute({ name: "recipe-detail", recipeId: route.recipeId }),
+          { includeRecipeDraft: true },
+        )}
+        onSaved={(recipeId) => {
+          setRecipeDraftBaseline(recipeDraft);
+          setRoute({ name: "recipe-detail", recipeId });
+        }}
         onAddIngredient={() => setRoute({ name: "ingredient-picker" })}
         onManageServingSizes={(ingredient) => setRoute({
           name: "recipe-serving-management",
@@ -522,7 +666,9 @@ export function AppNavigator() {
       <EditFoodRoute
         foodId={route.foodId}
         servingManagementOnly
-        onCancel={returnToRecipeEditor}
+        draftStateKey={draftStateKeyForRoute(route) ?? undefined}
+        onDraftStateChange={reportDraftState}
+        onCancel={() => requestDraftExit(returnToRecipeEditor)}
         onSavedFood={(food) => {
           setRecipeDraft((current) =>
             reconcileRecipeDraftFoodAfterServingManagement(current, food));
@@ -632,7 +778,16 @@ export function AppNavigator() {
   return (
     <View style={[styles.shell, { backgroundColor: theme.colors.background }]}>
       <View style={styles.content} {...(swipeEnabled ? mainSwipeResponder.panHandlers : {})}>{content}</View>
-      <BottomNavigation activeTab={activeTab} onSelect={selectMainTab} />
+      <BottomNavigation
+        activeTab={activeTab}
+        disabled={activeScreenDraft.busy || discardDraftVisible}
+        onSelect={selectMainTab}
+      />
+      <UnsavedDraftDialog
+        visible={discardDraftVisible}
+        onStay={stayWithDraft}
+        onDiscard={discardAndContinue}
+      />
     </View>
   );
 }
@@ -743,12 +898,16 @@ function EditFoodRoute({
   onSaved,
   onSavedFood,
   servingManagementOnly = false,
+  draftStateKey,
+  onDraftStateChange,
 }: {
   foodId: string;
   onCancel: () => void;
   onSaved: (foodId: string) => void;
   onSavedFood?: (food: Food) => void;
   servingManagementOnly?: boolean;
+  draftStateKey?: string;
+  onDraftStateChange?: DraftStatusReporter;
 }) {
   const food = useFood(foodId);
   if (!food.data) {
@@ -761,6 +920,8 @@ function EditFoodRoute({
       onSaved={onSaved}
       onSavedFood={onSavedFood}
       servingManagementOnly={servingManagementOnly}
+      draftStateKey={draftStateKey}
+      onDraftStateChange={onDraftStateChange}
     />
   );
 }

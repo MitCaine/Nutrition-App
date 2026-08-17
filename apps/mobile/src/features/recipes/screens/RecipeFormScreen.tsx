@@ -20,6 +20,7 @@ import {
   switchIngredientMode,
   usefulServingDefinitions,
   validateRecipeDraft,
+  recipeDraftSemanticallyEqual,
 } from "../utils/recipeDraft";
 import type { CustomServingDraft, DraftIngredient, RecipeDraft } from "../utils/recipeDraft";
 import { convertedGramsPreview, type MassUnit } from "../utils/massUnits";
@@ -32,6 +33,11 @@ import {
 } from "../utils/customServingState";
 import { createClientRequestId } from "../../logging/utils/clientRequestId";
 import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
+import {
+  CLEAN_DRAFT_STATUS,
+  useDraftStatusReporter,
+  type DraftStatusReporter,
+} from "../../../shared/navigation/draftGuard";
 
 type Props = {
   draft: RecipeDraft;
@@ -40,9 +46,22 @@ type Props = {
   onSaved: (recipeId: string) => void;
   onAddIngredient: () => void;
   onManageServingSizes?: (ingredient: DraftIngredient) => void;
+  draftBaseline?: RecipeDraft;
+  draftStateKey?: string;
+  onDraftStateChange?: DraftStatusReporter;
 };
 
-export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngredient, onManageServingSizes }: Props) {
+export function RecipeFormScreen({
+  draft,
+  setDraft,
+  onCancel,
+  onSaved,
+  onAddIngredient,
+  onManageServingSizes,
+  draftBaseline,
+  draftStateKey,
+  onDraftStateChange,
+}: Props) {
   const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -52,6 +71,17 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
   const [expandedCustomServingForms, setExpandedCustomServingForms] =
     useState<CustomServingExpansionState>({});
   const isSaving = mutations.createRecipe.isPending || mutations.updateRecipe.isPending;
+  const isDirty = draftBaseline
+    ? !recipeDraftSemanticallyEqual(draft, draftBaseline)
+    : false;
+
+  useDraftStatusReporter({
+    draftKey: draftStateKey,
+    dirty: isDirty,
+    busy: isSaving,
+    reporter: onDraftStateChange,
+  });
+
   const finishedWeight = draft.finishedWeight ?? {
     quantity: "",
     unit: "g" as MassUnit,
@@ -88,6 +118,9 @@ export function RecipeFormScreen({ draft, setDraft, onCancel, onSaved, onAddIngr
           client_request_id: createIntentRef.current.requestId,
         });
         createIntentRef.current = null;
+      }
+      if (draftStateKey && onDraftStateChange) {
+        onDraftStateChange(draftStateKey, CLEAN_DRAFT_STATUS);
       }
       onSaved(saved.id);
     } catch (exc) {

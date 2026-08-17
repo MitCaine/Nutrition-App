@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type {
   Food,
@@ -26,6 +26,42 @@ import {
 } from "../utils/amountForm";
 
 export type ServingFormValue = AmountFormValue;
+
+export function foodFormDirtyFingerprint({
+  fields,
+  servings,
+  nutrients,
+}: {
+  fields: { name: string; brand: string; notes: string };
+  servings: ServingFormValue[];
+  nutrients: FoodNutrientInput[];
+}): string {
+  return JSON.stringify({
+    fields,
+    servings: servings.map((serving) => ({
+      label: serving.label,
+      quantity: serving.quantity,
+      unit: serving.unit,
+      gram_weight: serving.gram_weight ?? null,
+      is_default: serving.is_default,
+      reference_quantity: serving.reference_quantity ?? null,
+      reference_unit: serving.reference_unit ?? null,
+      reference_gram_weight: serving.reference_gram_weight ?? null,
+      isBaseAmount: serving.isBaseAmount,
+      consistencyWarning: serving.consistencyWarning ?? null,
+    })),
+    nutrients: [...nutrients]
+      .map((nutrient) => ({
+        nutrient_id: nutrient.nutrient_id,
+        amount: nutrient.amount ?? null,
+        unit: nutrient.unit,
+        basis: nutrient.basis,
+        data_status: nutrient.data_status,
+      }))
+      .sort((left, right) => left.nutrient_id.localeCompare(right.nutrient_id)),
+  });
+}
+
 export type FoodPayloadValidationResult =
   | { input: FoodMutationInput; issue: null }
   | { input: null; issue: ValidationIssue<FoodValidationTarget> };
@@ -127,6 +163,14 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
       data_status: nutrient.data_status,
     }));
   });
+
+  const currentDirtyFingerprint = foodFormDirtyFingerprint({
+    fields: { name, brand, notes },
+    servings,
+    nutrients: values,
+  });
+  const initialDirtyFingerprintRef = useRef(currentDirtyFingerprint);
+  const isDirty = currentDirtyFingerprint !== initialDirtyFingerprintRef.current;
 
   const mergedValues = useMemo<FoodNutrientInput[]>(() => {
     const existing = new Map(values.map((value) => [value.nutrient_id, value]));
@@ -278,6 +322,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     validationIssue: currentValidationIssue,
     invalidServingKey,
     defaultAmountError,
+    isDirty,
     buildPayload,
   };
 }

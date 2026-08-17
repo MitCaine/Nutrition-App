@@ -20,6 +20,11 @@ import { createClientRequestId } from "../../logging/utils/clientRequestId";
 import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
 import { foodValidationTargetFocusKey } from "../validation/foodValidation";
 import { isRuntimeError } from "../../../runtime/RuntimeError";
+import {
+  CLEAN_DRAFT_STATUS,
+  useDraftStatusReporter,
+  type DraftStatusReporter,
+} from "../../../shared/navigation/draftGuard";
 
 type Props = {
   food?: Food;
@@ -27,6 +32,8 @@ type Props = {
   onCancel: () => void;
   onSavedFood?: (food: Food) => void;
   servingManagementOnly?: boolean;
+  draftStateKey?: string;
+  onDraftStateChange?: DraftStatusReporter;
 };
 
 function servingConflictMessage(details: unknown): string {
@@ -47,6 +54,8 @@ export function FoodFormScreen({
   onCancel,
   onSavedFood,
   servingManagementOnly = false,
+  draftStateKey,
+  onDraftStateChange,
 }: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrientQuery = useNutrients();
@@ -63,6 +72,14 @@ export function FoodFormScreen({
   );
   const form = useFoodForm(food, nutrientDefinitions);
   const saving = Boolean(mutations.createFood.isPending || mutations.updateFood.isPending);
+
+  useDraftStatusReporter({
+    draftKey: draftStateKey,
+    dirty: form.isDirty,
+    busy: saving,
+    reporter: onDraftStateChange,
+  });
+
   useAccessibilityScreenFocus({
     active: true,
     routeKey: servingManagementOnly && food
@@ -105,6 +122,9 @@ export function FoodFormScreen({
           client_request_id: createIntentRef.current.requestId,
         });
         createIntentRef.current = null;
+      }
+      if (draftStateKey && onDraftStateChange) {
+        onDraftStateChange(draftStateKey, CLEAN_DRAFT_STATUS);
       }
       onSavedFood?.(saved);
       onSaved(saved.id);

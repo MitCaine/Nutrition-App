@@ -30,6 +30,19 @@ const RECIPE_ROUTES = new Set([
   "recipe-serving-management",
 ]);
 
+const RECIPE_AUTHORING_ROUTES = new Set([
+  "new-recipe",
+  "edit-recipe",
+  "ingredient-picker",
+  "recipe-usda-search",
+  "recipe-usda-preview",
+  "recipe-serving-management",
+]);
+
+export function isRecipeAuthoringRoute(routeName: string): boolean {
+  return RECIPE_AUTHORING_ROUTES.has(routeName);
+}
+
 export function mainTabForRoute(routeName: string): MainTab {
   if (RECIPE_ROUTES.has(routeName)) {
     return "recipes";

@@ -23,6 +23,11 @@ import {
   targetUnavailableMessage,
 } from "./targetModel";
 import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
+import {
+  draftObjectsEqual,
+  useDraftStatusReporter,
+  type DraftStatusReporter,
+} from "../../shared/navigation/draftGuard";
 
 const ACTIVITY = [
   {
@@ -70,8 +75,12 @@ const authorityLabel = (authority: string) =>
 
 export function TargetSettingsScreen({
   onBack,
+  draftStateKey,
+  onDraftStateChange,
 }: {
   onBack: () => void;
+  draftStateKey?: string;
+  onDraftStateChange?: DraftStatusReporter;
 }) {
   const runtime = useNutritionRuntime();
   const theme = useAppTheme();
@@ -91,6 +100,16 @@ export function TargetSettingsScreen({
 
   const initialized = useRef(false);
   const submittingRef = useRef(false);
+
+  const persistedDraft = result ? targetDraft(result) : EMPTY_TARGET_DRAFT;
+  const isDirty = !draftObjectsEqual(draft, persistedDraft);
+
+  useDraftStatusReporter({
+    draftKey: draftStateKey,
+    dirty: isDirty,
+    busy: submitting,
+    reporter: onDraftStateChange,
+  });
 
   useEffect(() => {
     if (!query.data || initialized.current) {

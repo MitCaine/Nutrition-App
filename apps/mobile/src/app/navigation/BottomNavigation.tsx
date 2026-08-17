@@ -118,9 +118,11 @@ function buildDockGeometry(screenWidth: number, bottomSafeAreaInset: number) {
 export function BottomNavigation({
   activeTab,
   onSelect,
+  disabled = false,
 }: {
   activeTab: MainTab;
   onSelect: (tab: MainTab) => void;
+  disabled?: boolean;
 }) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -214,7 +216,11 @@ export function BottomNavigation({
               key={item.id}
               accessibilityRole="tab"
               accessibilityLabel={item.accessibilityLabel}
-              accessibilityState={{ selected }}
+              accessibilityState={{
+                selected,
+                ...(disabled ? { disabled: true } : {}),
+              }}
+              disabled={disabled}
               onPress={() => onSelect(item.id)}
               style={styles.tab}
             >

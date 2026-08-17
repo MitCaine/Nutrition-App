@@ -18,6 +18,12 @@ import { bindConfirmationIntent, type ConfirmationIntent } from "../confirmation
 import { confirmationErrorCode, confirmationErrorMessage } from "../confirmation/confirmationErrors";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import { NutrientAmountRow } from "../../../shared/nutrition/NutrientAmountRow";
+import {
+  CLEAN_DRAFT_STATUS,
+  draftObjectsEqual,
+  useDraftStatusReporter,
+  type DraftStatusReporter,
+} from "../../../shared/navigation/draftGuard";
 
 const FINGERPRINT_PLACEHOLDER_REQUEST_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -74,11 +80,20 @@ function nutrientCatalogSubmissionError({
   return null;
 }
 
-export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated, onRetake }: {
+export function NutritionConfirmationScreen({
+  initialDraft,
+  onCancel,
+  onCreated,
+  onRetake,
+  draftStateKey,
+  onDraftStateChange,
+}: {
   initialDraft: NutritionConfirmationDraft;
-  onCancel: () => void;
+  onCancel: () => boolean | void;
   onCreated: (foodId: string) => void;
-  onRetake: () => void;
+  onRetake: () => boolean | void;
+  draftStateKey?: string;
+  onDraftStateChange?: DraftStatusReporter;
 }) {
   const runtime = useNutritionRuntime();
   const nutrientQuery = useNutrients();
@@ -129,6 +144,15 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated,
   const availableNutrients = (nutrientQuery.data ?? []).filter(({ id }) => !presentNutrientIds.has(id));
   const availableDefinitionIds = new Set((nutrientQuery.data ?? []).map(({ id }) => id));
   const canonicalUnitsAvailable = fields.every(({ nutrientId }) => nutrientId === null || availableDefinitionIds.has(nutrientId));
+  const isDirty = !draftObjectsEqual(draft, initialDraft);
+
+  useDraftStatusReporter({
+    draftKey: draftStateKey,
+    dirty: isDirty,
+    busy: submitting,
+    reporter: onDraftStateChange,
+  });
+
   useAccessibilityScreenFocus({
     active: !initialReviewRequiresModalFocusRef.current,
     routeKey: "nutrition-confirmation",
@@ -204,14 +228,18 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated,
 
   const cancel = () => {
     if (submittingRef.current || navigationClaimedRef.current || successClaimedRef.current) return;
-    navigationClaimedRef.current = true;
-    onCancel();
+    const accepted = onCancel();
+    if (accepted !== false) {
+      navigationClaimedRef.current = true;
+    }
   };
 
   const retake = () => {
     if (submittingRef.current || navigationClaimedRef.current || successClaimedRef.current) return;
-    navigationClaimedRef.current = true;
-    onRetake();
+    const accepted = onRetake();
+    if (accepted !== false) {
+      navigationClaimedRef.current = true;
+    }
   };
 
   const submit = async () => {
@@ -247,6 +275,9 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated,
       await queryClient.invalidateQueries({ queryKey: ["foods"] });
       if (mountedRef.current && !successClaimedRef.current) {
         successClaimedRef.current = true;
+        if (draftStateKey && onDraftStateChange) {
+          onDraftStateChange(draftStateKey, CLEAN_DRAFT_STATUS);
+        }
         onCreated(response.food.id);
       }
     } catch (caught) {

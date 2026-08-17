@@ -1,5 +1,6 @@
 import {
   isMainTabRoot,
+  isRecipeAuthoringRoute,
   mainTabForRoute,
   MAIN_TAB_ACCESSIBILITY_LABELS,
   settingsOriginForRoute,
@@ -64,4 +65,16 @@ test("each tab has an explicit accessibility label", () => {
     "daily-log": "Daily Log tab",
     recipes: "Recipes tab",
   });
+});
+
+test("Recipe authoring routes remain one guarded draft flow", () => {
+  expect(isRecipeAuthoringRoute("new-recipe")).toBe(true);
+  expect(isRecipeAuthoringRoute("edit-recipe")).toBe(true);
+  expect(isRecipeAuthoringRoute("ingredient-picker")).toBe(true);
+  expect(isRecipeAuthoringRoute("recipe-usda-search")).toBe(true);
+  expect(isRecipeAuthoringRoute("recipe-usda-preview")).toBe(true);
+  expect(isRecipeAuthoringRoute("recipe-serving-management")).toBe(true);
+
+  expect(isRecipeAuthoringRoute("recipes")).toBe(false);
+  expect(isRecipeAuthoringRoute("recipe-detail")).toBe(false);
 });

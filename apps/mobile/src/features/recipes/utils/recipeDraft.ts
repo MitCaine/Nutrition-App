@@ -60,6 +60,35 @@ export type CustomServingDraft = {
   useCustomLabel: boolean;
 };
 
+export function recipeDraftDirtyFingerprint(draft: RecipeDraft): string {
+  return JSON.stringify({
+    name: draft.name.trim(),
+    notes: draft.notes.trim(),
+    servingCountYield: draft.servingCountYield.trim(),
+    finishedWeight: draft.finishedWeight === undefined
+      ? null
+      : {
+          quantity: draft.finishedWeight.quantity.trim(),
+          unit: draft.finishedWeight.unit,
+        },
+    ingredients: draft.ingredients.map((ingredient) => ({
+      foodId: ingredient.food.id,
+      amountQuantity: ingredient.amountQuantity.trim(),
+      amountUnit: ingredient.amountUnit,
+      massUnit: ingredient.massUnit,
+      servingDefinitionId: ingredient.servingDefinitionId,
+      preparationNote: ingredient.preparationNote.trim(),
+    })),
+  });
+}
+
+export function recipeDraftSemanticallyEqual(
+  left: RecipeDraft,
+  right: RecipeDraft,
+): boolean {
+  return recipeDraftDirtyFingerprint(left) === recipeDraftDirtyFingerprint(right);
+}
+
 export function emptyRecipeDraft(): RecipeDraft {
   return {
     name: "",
