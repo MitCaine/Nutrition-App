@@ -142,6 +142,9 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
         reference_quantity: newReference.quantity,
         reference_unit: newReference.unit,
         reference_gram_weight: newReference.gramWeight,
+        consistencyWarning: serving.consistencyWarning === UNCONVERTED_SERVING_UNIT_WARNING
+          ? undefined
+          : serving.consistencyWarning,
       });
       setReviewWarnings((current) => ({ ...current, [serving.key]: null }));
       return;

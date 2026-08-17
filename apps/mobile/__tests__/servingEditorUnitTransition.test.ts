@@ -212,6 +212,58 @@ test("unsupported units keep the reference visible and never fabricate a relatio
   await act(async () => renderer.unmount());
 });
 
+
+test("confirming a corrected count reference clears review when incompatible conversion left current quantity unestablished", async () => {
+  const renderer = await renderEditor([
+    baseServing,
+    portionServing("1", "cup", "100"),
+  ]);
+
+  await act(async () => press(renderer, "Edit 1 cup"));
+  await act(async () => openPicker(renderer, "Choose unit for 1 cup"));
+  await act(async () => chooseOption(renderer, "slice"));
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "",
+    unit: "slice",
+    gram_weight: "100",
+    consistencyWarning: UNCONVERTED_SERVING_UNIT_WARNING,
+  }));
+  expect(visibleText(renderer)).toContain(
+    servingConversionReviewMessage("slice", "100"),
+  );
+
+  // Resolve through the authoritative Reference measurement instead of
+  // entering the missing current Quantity.
+  await act(async () => press(renderer, "Edit reference measurement"));
+  await act(async () =>
+    inputByLabel(renderer, "Reference quantity").props.onChangeText("1")
+  );
+  await act(async () => press(renderer, "Reference unit"));
+  await act(async () => chooseOption(renderer, "slice"));
+  await act(async () =>
+    inputByLabel(renderer, "Reference grams").props.onChangeText("100")
+  );
+  await act(async () => press(renderer, "Confirm reference measurement"));
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "1",
+    unit: "slice",
+    gram_weight: "100",
+    reference_quantity: "1",
+    reference_unit: "slice",
+    reference_gram_weight: "100",
+  }));
+  expect(currentPortion().consistencyWarning).toBeUndefined();
+  expect(visibleText(renderer)).toContain("1 slice = 100 g");
+  expect(visibleText(renderer)).toContain("1 slice (100 g)");
+  expect(visibleText(renderer)).not.toContain(
+    UNCONVERTED_SERVING_UNIT_WARNING,
+  );
+
+  await act(async () => renderer.unmount());
+});
+
 test("a deliberate representation quantity edit scales exact grams and keeps the reference", async () => {
   const renderer = await renderEditor([baseServing, portionServing("1", "cup", "100")]);
   await act(async () => press(renderer, "Edit 1 cup"));
