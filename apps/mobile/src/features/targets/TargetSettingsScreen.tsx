@@ -14,6 +14,10 @@ import { BackButton } from "../../shared/components/BackButton";
 import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { formatDisplayNumber } from "../../shared/nutrition/display";
 import type { TargetConfiguration } from "./api/types";
+import {
+  targetBasisLabel,
+  targetSourceVersionLabel,
+} from "./targetReference";
 import { targetErrorMessage } from "./targetErrors";
 import {
   EMPTY_TARGET_DRAFT,
@@ -68,11 +72,6 @@ const PERSONAL_TARGETS = [
   ["totalCarbohydrate", "Carbohydrate", "g"],
   ["totalFat", "Fat", "g"],
 ] as const;
-
-const authorityLabel = (authority: string) =>
-  authority === "daily_value"
-    ? "FDA Daily Value"
-    : authority.replaceAll("_", " ");
 
 export function TargetSettingsScreen({
   onBack,
@@ -219,8 +218,10 @@ export function TargetSettingsScreen({
             </Text>
 
             <Text style={styles.notice}>
-              FDA Daily Values are regulatory references. Personal targets are
-              optional estimates or your manual overrides.
+              Dietary Reference Intakes use personalized RDA or AI
+              recommendations when your profile supports them. FDA Daily
+              Values remain regulatory fallback references, and manual targets
+              take precedence over both.
             </Text>
 
             <Text accessibilityRole="header" style={styles.section}>
@@ -430,8 +431,8 @@ export function TargetSettingsScreen({
 
             <Text style={styles.notice}>
               Manual targets take precedence and are never replaced when
-              profile inputs change. Leave blank to use an estimate or FDA Daily
-              Value when available.
+              profile inputs change. Leave blank to use a supported RDA or AI,
+              estimated calories, or an FDA Daily Value fallback when available.
             </Text>
 
             {PERSONAL_TARGETS.map(([key, label, unit]) => {
@@ -448,6 +449,17 @@ export function TargetSettingsScreen({
 
               const persistedOverride = persistedDraft[key];
               const draftOverride = draft[key];
+
+              const effectiveBasis = effective
+                ? targetBasisLabel(effective)
+                : "Unavailable";
+
+              const effectiveSource = effective
+                ? targetSourceVersionLabel(
+                    effective,
+                    result?.dailyValueCatalogVersion,
+                  )
+                : null;
               const hasManualOverride = Boolean(draftOverride);
               const resetPending =
                 Boolean(persistedOverride) && !draftOverride;
@@ -507,22 +519,30 @@ export function TargetSettingsScreen({
                   ) : null}
 
                   <Text
-                    accessibilityLabel={`${label} current saved effective target authority ${
-                      effective
-                        ? authorityLabel(effective.authority)
-                        : "unavailable"
-                    }`}
+                    accessibilityLabel={`${label} current saved effective target basis ${effectiveBasis}`}
                     style={styles.notice}
                   >
                     {effective?.amount
-                      ? `Current saved effective: ${formatDisplayNumber(effective.amount, { maxFractionDigits: 1 })} ${effective.unit}/day · ${authorityLabel(effective.authority)}`
+                      ? `Current saved effective: ${formatDisplayNumber(effective.amount, { maxFractionDigits: 1 })} ${effective.unit}/day · ${effectiveBasis}`
                       : "Current saved effective target unavailable"}
                   </Text>
+
+                  {effectiveSource ? (
+                    <Text
+                      accessibilityLabel={`${label} target source version ${effectiveSource}`}
+                      style={styles.notice}
+                    >
+                      {`Reference source: ${effectiveSource}`}
+                    </Text>
+                  ) : null}
                 </View>
               );
             })}
 
-            <Text style={styles.notice}>Micronutrient comparisons use FDA Daily Values.</Text>
+            <Text style={styles.notice}>
+              Nutrient comparisons use personalized RDA or AI recommendations
+              when supported, then FDA Daily Values as fallback references.
+            </Text>
 
             {error ? (
               <Text

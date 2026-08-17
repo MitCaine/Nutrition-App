@@ -15,6 +15,10 @@ class EffectiveTarget:
     direction: str
     reason_code: str | None = None
     note_code: str | None = None
+    reference_type: str | None = None
+    source_version: str | None = None
+    source_id: str | None = None
+    calculation_basis: str | None = None
 
 
 @dataclass(frozen=True)
@@ -30,6 +34,10 @@ class TargetComparison:
     reason_code: str | None
     note_code: str | None
     has_unknown_contributors: bool
+    reference_type: str | None = None
+    source_version: str | None = None
+    source_id: str | None = None
+    calculation_basis: str | None = None
 
 
 def compare_daily_totals(
@@ -53,6 +61,10 @@ def compare_daily_totals(
                     target.reason_code,
                     target.note_code,
                     bool(total and total.has_unknown_contributors),
+                    target.reference_type,
+                    target.source_version,
+                    target.source_id,
+                    target.calculation_basis,
                 )
             )
             continue
@@ -74,6 +86,10 @@ def compare_daily_totals(
                     "consumed_value_unavailable",
                     target.note_code,
                     bool(total and total.has_unknown_contributors),
+                    target.reference_type,
+                    target.source_version,
+                    target.source_id,
+                    target.calculation_basis,
                 )
             )
             continue
@@ -94,6 +110,10 @@ def compare_daily_totals(
                 None,
                 target.note_code,
                 total.has_unknown_contributors,
+                target.reference_type,
+                target.source_version,
+                target.source_id,
+                target.calculation_basis,
             )
         )
     return comparisons

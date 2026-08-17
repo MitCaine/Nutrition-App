@@ -7,6 +7,10 @@ import { AccessibilityStatus } from "../../shared/accessibility/AccessibilitySta
 import { userFacingEpicOneError } from "../../shared/errors/userFacingError";
 import { formatNutrientLabel } from "../../shared/nutrition/display";
 import type { DailyTargetComparison, DailyTargetComparisonItem } from "./api/types";
+import {
+  targetBasisLabel,
+  targetSourceVersionLabel,
+} from "./targetReference";
 import { targetProgressReadState, useDailyTargetComparison, type TargetProgressReadState } from "./hooks/useDailyTargetComparison";
 import {
   boundedProgressValue, formatTargetAmount, formatTargetPercentage,
@@ -45,7 +49,10 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
     : undefined;
   const hasPersonalizedTargets = Boolean(
     state.data?.comparisons.some(
-      (item) => item.authority === "calculated_estimate" || item.authority === "manual_override",
+      (item) =>
+        item.authority === "calculated_estimate"
+        || item.authority === "manual_override"
+        || item.authority === "dri",
     ),
   );
   const showOnboarding = (hasLoggedNutrition ?? inferredHasLoggedNutrition) === false;
@@ -65,20 +72,54 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
     </View>
     {showOnboarding ? <View style={styles.onboardingCopy}>
       <Text style={styles.sectionNote}>Log a food to start tracking your nutrition.</Text>
-      <Text accessibilityLabel="FDA Daily Values provide general reference targets where available." style={styles.sectionNote}>FDA Daily Values provide general reference targets where available.</Text>
-      {!hasPersonalizedTargets ? <Text style={styles.sectionNote}>Add your information in Nutrition Targets for personalized calorie and macro targets.</Text> : null}
-    </View> : <Text accessibilityLabel="Reference targets use FDA Daily Values where available until you set personal targets." style={styles.sectionNote}>Reference targets use FDA Daily Values where available until you set personal targets.</Text>}
+      <Text
+        accessibilityLabel="Personalized RDA or AI recommendations are used when your profile supports them. FDA Daily Values remain fallback references."
+        style={styles.sectionNote}
+      >
+        Personalized RDA or AI recommendations are used when your profile
+        supports them. FDA Daily Values remain fallback references.
+      </Text>
+      {!hasPersonalizedTargets ? (
+        <Text style={styles.sectionNote}>
+          Add your information in Nutrition Targets for personalized
+          calorie and nutrient targets.
+        </Text>
+      ) : null}
+    </View> : (
+      <Text
+        accessibilityLabel="Targets use personalized RDA or AI recommendations when supported, then FDA Daily Values as fallback references."
+        style={styles.sectionNote}
+      >
+        Targets use personalized RDA or AI recommendations when supported,
+        then FDA Daily Values as fallback references.
+      </Text>
+    )}
     {state.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading target comparisons…" messageStyle={styles.secondary} /> : null}
     {state.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message={initialFailure!.summary} onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
     {state.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Target progress is unavailable until Daily Log entries are available." onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
     {state.kind === "empty" ? <AccessibilityStatus kind="empty" message="No target comparisons are available for this date." messageStyle={styles.secondary} /> : null}
     {state.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing target comparisons…" messageStyle={styles.secondary} /> : null}
     {state.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Target comparisons could not be refreshed; showing the last confirmed progress." onRetry={state.retry} retryContext="target progress" messageStyle={styles.secondary} actionStyle={styles.statusAction} /> : null}
-    {state.data ? rows.map((item) => <ProgressRow key={item.nutrientId} item={item} />) : null}
+    {state.data ? rows.map((item) => (
+      <ProgressRow
+        key={item.nutrientId}
+        item={item}
+        dailyValueCatalogVersion={
+          state.data?.dailyValueCatalogVersion
+          ?? null
+        }
+      />
+    )) : null}
   </View>;
 }
 
-function ProgressRow({ item }: { item: DailyTargetComparisonItem }) {
+function ProgressRow({
+  item,
+  dailyValueCatalogVersion,
+}: {
+  item: DailyTargetComparisonItem;
+  dailyValueCatalogVersion: string | null;
+}) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const name = formatNutrientLabel(item.nutrientId);
@@ -88,10 +129,20 @@ function ProgressRow({ item }: { item: DailyTargetComparisonItem }) {
   const over = percentageAtOrAbove100(item.percentage);
   const limitAttention = item.direction === "limit" && boundedProgressValue(item.percentage) >= 80;
   const detail = target ? `${consumed} / ${target}` : consumed;
+  const basis = targetBasisLabel(item);
+  const sourceVersion = targetSourceVersionLabel(
+    item,
+    dailyValueCatalogVersion,
+  );
+  const referenceDetail = sourceVersion
+    ? `${basis} · ${sourceVersion}`
+    : basis;
+
   return <View style={[styles.row, limitAttention && styles.limitAttention]}>
-    <View style={styles.headingRow}><Text accessible accessibilityLabel={progressAccessibilityLabel(item, name)} style={styles.name}>{name}</Text>{item.hasUnknownContributors ? <Text style={styles.incomplete}>Incomplete data</Text> : null}</View>
+    <View style={styles.headingRow}><Text accessible accessibilityLabel={progressAccessibilityLabel(item, name, referenceDetail)} style={styles.name}>{name}</Text>{item.hasUnknownContributors ? <Text style={styles.incomplete}>Incomplete data</Text> : null}</View>
     <Text accessible={false} style={styles.value}>{detail}</Text>
     {percentage ? <Text accessible={false} style={styles.secondary}>{percentage}</Text> : null}
+    <Text accessible={false} style={styles.secondary}>{referenceDetail}</Text>
     {item.percentage !== null ? <View accessible={false} style={styles.track}><View style={[styles.fill, limitAttention && styles.limitFill, { width: `${boundedProgressValue(item.percentage)}%` }]} />{over ? <Text accessible={false} style={styles.overflow}>›</Text> : null}</View> : null}
   </View>;
 }

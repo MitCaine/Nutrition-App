@@ -19,11 +19,16 @@ function item(overrides: Partial<DailyTargetComparisonItem>): DailyTargetCompari
     percentage: "79.1304", authority: "calculated_estimate", direction: "target",
     status: "available", reasonCode: null, noteCode: null, hasUnknownContributors: false,
     ...overrides,
+    referenceType: overrides.referenceType ?? null,
+    sourceVersion: overrides.sourceVersion ?? null,
+    sourceId: overrides.sourceId ?? null,
+    calculationBasis: overrides.calculationBasis ?? null,
   };
 }
 
 const data: DailyTargetComparison = {
   date: "2026-07-14", dailyValueCatalogVersion: "fda_daily_values_2016_v1",
+  driDatasetVersion: "nasem_dri_adults_2026_v1",
   targetDirectionSemanticsVersion: "target_directions_2026_v1",
   comparisons: [
     item({ nutrientId: "calories" }),
@@ -32,7 +37,19 @@ const data: DailyTargetComparison = {
     item({ nutrientId: "total_fat", consumedAmount: "0", targetAmount: "78", unit: "g", percentage: "0", authority: "daily_value", direction: "reference" }),
     item({ nutrientId: "saturated_fat", consumedAmount: "24", targetAmount: "20", unit: "g", percentage: "120", authority: "daily_value", direction: "limit" }),
     item({ nutrientId: "sodium", consumedAmount: "2600", targetAmount: "2300", unit: "mg", percentage: "113.0435", authority: "daily_value", direction: "limit", hasUnknownContributors: true }),
-    item({ nutrientId: "dietary_fiber", consumedAmount: "14", targetAmount: "28", unit: "g", percentage: "50", authority: "daily_value", direction: "minimum" }),
+    item({
+      nutrientId: "dietary_fiber",
+      consumedAmount: "14",
+      targetAmount: "38",
+      unit: "g",
+      percentage: "36.8421",
+      authority: "dri",
+      direction: "target",
+      referenceType: "AI",
+      sourceVersion: "nasem_dri_adults_2026_v1",
+      sourceId: "macronutrients_2005",
+      calculationBasis: "fixed",
+    }),
     item({ nutrientId: "added_sugars", consumedAmount: "4", targetAmount: null, unit: "g", percentage: null, authority: "unavailable", direction: "unavailable", status: "target_unavailable", reasonCode: "daily_value_not_available" }),
   ],
 };
@@ -66,14 +83,31 @@ test("renders useful target values while preserving accessible source and direct
   expect(text).not.toContain("Neutral reference");
   expect(text).not.toContain("Limit reference");
   expect(text).not.toContain("Why this reference?");
-  expect(renderer.root.findAllByType(Text).filter((node) => textContent(node) === "Reference targets use FDA Daily Values where available until you set personal targets.")).toHaveLength(1);
+  expect(
+    renderer.root
+      .findAllByType(Text)
+      .filter(
+        (node) =>
+          textContent(node)
+          === "Targets use personalized RDA or AI recommendations when supported, then FDA Daily Values as fallback references.",
+      ),
+  ).toHaveLength(1);
   expect(text).toContain("0 g / 78 g");
+  expect(text).toContain(
+    "AI · NASEM DRI adults 2026 v1",
+  );
+  expect(text).toContain(
+    "FDA Daily Value · FDA Daily Values 2016 v1",
+  );
   expect(text).toContain("— / 275 g");
   expect(text).not.toContain("No comparison target");
   const saturated = renderer.root.findAllByType(Text).find((node) => String(node.props.accessibilityLabel).startsWith("Saturated Fat,"));
-  expect(saturated?.props.accessibilityLabel).toContain("120%, limit");
+  expect(saturated?.props.accessibilityLabel).toContain("120%");
+  expect(saturated?.props.accessibilityLabel).toContain(
+    "FDA Daily Value · FDA Daily Values 2016 v1",
+  );
+  expect(saturated?.props.accessibilityLabel).toContain("limit");
   expect(saturated?.props.accessibilityLabel).toContain("limit reached or exceeded");
-  expect(saturated?.props.accessibilityLabel).not.toContain("FDA Daily Value");
   expect(saturated?.props.accessibilityLabel).not.toContain("Limit reference");
   expect(saturated?.props.accessibilityLabel).toContain("grams");
   const bars = renderer.root.findAllByType(View).filter((node) => node.props.accessibilityRole === "progressbar");
@@ -103,7 +137,9 @@ test("empty Daily Log with personalized targets hides the setup action", async (
   const text = allText(renderer.root);
 
   expect(text).toContain("Log a food to start tracking your nutrition.");
-  expect(text).toContain("FDA Daily Values provide general reference targets where available.");
+  expect(text).toContain(
+    "Personalized RDA or AI recommendations are used when your profile supports them. FDA Daily Values remain fallback references.",
+  );
   expect(text).not.toContain("Add your information in Nutrition Targets");
   expect(
     renderer.root.findAllByType(Pressable).find(
@@ -130,8 +166,24 @@ test("empty Daily Log without personalized targets retains the setup action", as
             direction: "unavailable" as const,
             status: "target_unavailable" as const,
             reasonCode: "target_profile_incomplete",
+            referenceType: null,
+            sourceVersion: null,
+            sourceId: null,
+            calculationBasis: null,
           }
-        : {}),
+        : value.nutrientId === "dietary_fiber"
+          ? {
+              targetAmount: "28",
+              authority: "daily_value" as const,
+              direction: "minimum" as const,
+              status: "consumed_unavailable" as const,
+              reasonCode: "consumed_value_unavailable",
+              referenceType: null,
+              sourceVersion: null,
+              sourceId: null,
+              calculationBasis: null,
+            }
+          : {}),
     })),
   };
 
@@ -144,7 +196,9 @@ test("empty Daily Log without personalized targets retains the setup action", as
   const text = allText(renderer.root);
 
   expect(text).toContain("Log a food to start tracking your nutrition.");
-  expect(text).toContain("Add your information in Nutrition Targets for personalized calorie and macro targets.");
+  expect(text).toContain(
+    "Add your information in Nutrition Targets for personalized calorie and nutrient targets.",
+  );
 
   const action = renderer.root.findAllByType(Pressable).find(
     (node) => node.props.accessibilityLabel === "Set up nutrition targets",
@@ -164,7 +218,9 @@ test("logged nutrition removes onboarding and returns to the concise targets act
   const text = allText(renderer.root);
   expect(text).not.toContain("Log a food to start tracking your nutrition.");
   expect(text).not.toContain("Add your information in Nutrition Targets");
-  expect(text).toContain("Reference targets use FDA Daily Values where available until you set personal targets.");
+  expect(text).toContain(
+    "Targets use personalized RDA or AI recommendations when supported, then FDA Daily Values as fallback references.",
+  );
   const action = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Nutrition targets");
   expect(action).toBeDefined();
   expect(textContent(action!)).toBe("Nutrition targets");

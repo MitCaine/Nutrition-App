@@ -13,7 +13,7 @@ function createConfiguration(overrides: Partial<TargetConfiguration> = {}): Targ
     profile: null,
     estimatedMaintenanceCalories: { availability: "unavailable", amount: null, unit: "kcal", authority: "calculated_estimate", reasonCode: "target_profile_incomplete", equation: "mifflin_st_jeor_1990" },
     manualOverrides: [], effectiveTargets: [], dailyValueCatalogVersion: "fda_daily_values_2016_v1",
-    dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", targetDirectionSemanticsVersion: "target_directions_2026_v1", dailyValues: [], limitations: ["target_profile_incomplete"],
+    dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", driDatasetVersion: "nasem_dri_adults_2026_v1", targetDirectionSemanticsVersion: "target_directions_2026_v1", dailyValues: [], driRecommendations: [], limitations: ["target_profile_incomplete"],
     informationalNotice: "General informational estimate, not medical advice.",
     ...overrides,
   };
@@ -124,9 +124,10 @@ test("nutrition targets uses the shared Settings-style Back action", async () =>
 test("settings distinguishes FDA Daily Values from optional personal estimates and is accessible", async () => {
   const renderer = await render();
   const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
-  expect(text).toContain("FDA Daily Values are regulatory references");
+  expect(text).toContain("Dietary Reference Intakes use personalized RDA or AI");
+  expect(text).toContain("FDA Daily Values remain regulatory fallback references");
   expect(text).toContain("General informational estimate only—not medical advice");
-  expect(text).toContain("Micronutrient comparisons use FDA Daily Values.");
+  expect(text).toContain("Nutrient comparisons use personalized RDA or AI recommendations");
   expect(text).not.toContain("fda_daily_values_2016_v1");
   for (const label of ["Birth date", "Height in inches", "Weight in pounds", "Calories personal target", "Protein personal target"]) expect(input(renderer.root, label)).toBeDefined();
   expect(action(renderer.root, "Save nutrition targets").props.accessibilityState).toMatchObject({ disabled: false, busy: false });
@@ -293,15 +294,64 @@ test("sex controls share an equal-width row and female-only condition choices ar
 
 test("effective target copy remains sourced while FDA identifiers stay internal", async () => {
   mockConfiguration = createConfiguration({
-    effectiveTargets: [{ nutrientId: "protein", amount: "98.339200", unit: "g", authority: "daily_value", direction: "reference", reasonCode: null, noteCode: null }],
+    effectiveTargets: [{ nutrientId: "protein", amount: "98.339200", unit: "g", authority: "daily_value", direction: "reference", reasonCode: null, noteCode: null, referenceType: null, sourceVersion: null, sourceId: null, calculationBasis: null }],
   });
   const renderer = await render();
   const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
   expect(text).toContain("Current saved effective: 98.3 g/day · FDA Daily Value");
-  expect(text).toContain("Micronutrient comparisons use FDA Daily Values.");
+  expect(text).toContain("Nutrient comparisons use personalized RDA or AI recommendations");
+  expect(text).toContain("Reference source: FDA Daily Values 2016 v1");
   expect(text).not.toContain("fda_daily_values_2016_v1");
   await act(async () => renderer.unmount());
 });
+
+test("effective DRI target copy identifies RDA and its source version", async () => {
+  mockConfiguration = createConfiguration({
+    profile: {
+      birthDate: "1989-08-17",
+      sexForEquation: "male",
+      heightCm: "175.000",
+      weightKg: "70.000",
+      activityLevel: "active",
+      energyEstimationContext: "general_adult",
+    },
+    effectiveTargets: [{
+      nutrientId: "protein",
+      amount: "56.000000",
+      unit: "g",
+      authority: "dri",
+      direction: "target",
+      reasonCode: null,
+      noteCode: null,
+      referenceType: "RDA",
+      sourceVersion: "nasem_dri_adults_2026_v1",
+      sourceId: "macronutrients_2005",
+      calculationBasis: "per_kg",
+    }],
+  });
+
+  const renderer = await render();
+
+  const text = renderer.root
+    .findAllByType(Text)
+    .map(textContent)
+    .join(" ");
+
+  expect(text).toContain(
+    "Current saved effective: 56 g/day · RDA",
+  );
+
+  expect(text).toContain(
+    "Reference source: NASEM DRI adults 2026 v1",
+  );
+
+  expect(text).not.toContain(
+    "nasem_dri_adults_2026_v1",
+  );
+
+  await act(async () => renderer.unmount());
+});
+
 
 test("successful target update invalidates configuration and every dated comparison", async () => {
   mockUpdate.mockResolvedValue(mockConfiguration);

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date
+import json
+from pathlib import Path
 from decimal import Decimal
 from uuid import uuid4
 
@@ -227,6 +229,80 @@ def test_comparison_zero_missing_unavailable_above_100_and_precision():
     assert result["protein"].direction == "target"
 
 
+def test_dri_effective_target_contract_matches_shared_local_remote_parity_fixture(
+    client: TestClient,
+):
+    fixture_path = (
+        Path(__file__).resolve().parents[3]
+        / "engineering"
+        / "reference-data"
+        / "dri_target_parity_cases.json"
+    )
+    cases = json.loads(
+        fixture_path.read_text(encoding="utf-8")
+    )
+
+    for case in cases:
+        payload = {
+            "profile": case["profile"],
+            "manual_overrides": {
+                "calories": None,
+                "protein": None,
+                "total_carbohydrate": None,
+                "total_fat": None,
+            },
+        }
+
+        response = client.put(
+            "/api/v1/targets",
+            json=payload,
+        )
+        assert response.status_code == 200, (
+            case["name"],
+            response.text,
+        )
+
+        body = response.json()
+        effective = {
+            item["nutrient_id"]: item
+            for item in body["effective_targets"]
+        }
+
+        for expected in case["expected"]:
+            actual = effective[
+                expected["nutrient_id"]
+            ]
+
+            assert actual["amount"] == expected["amount"], (
+                case["name"],
+                expected["nutrient_id"],
+                actual,
+            )
+            assert (
+                actual["authority"]
+                == expected["authority"]
+            )
+            assert (
+                actual["direction"]
+                == expected["direction"]
+            )
+            assert (
+                actual["reference_type"]
+                == expected["reference_type"]
+            )
+
+            if expected["authority"] == "dri":
+                assert (
+                    actual["source_version"]
+                    == body["dri_dataset_version"]
+                )
+                assert actual["source_id"] is not None
+                assert actual["calculation_basis"] in {
+                    "fixed",
+                    "per_kg",
+                }
+
+
 def test_target_api_no_configuration_and_update_override_precedence(client: TestClient):
     empty = client.get("/api/v1/targets")
     assert empty.status_code == 200
@@ -243,8 +319,13 @@ def test_target_api_no_configuration_and_update_override_precedence(client: Test
     assert effective["calories"]["authority"] == "manual_override"
     assert effective["calories"]["direction"] == "target"
     assert effective["protein"]["authority"] == "manual_override"
-    assert effective["dietary_fiber"]["authority"] == "daily_value"
-    assert effective["dietary_fiber"]["direction"] == "minimum"
+    assert effective["dietary_fiber"]["authority"] == "dri"
+    assert effective["dietary_fiber"]["reference_type"] == "AI"
+    assert (
+        effective["dietary_fiber"]["source_version"]
+        == "nasem_dri_adults_2026_v1"
+    )
+    assert effective["dietary_fiber"]["direction"] == "target"
     assert (
         updated.json()["target_direction_semantics_version"] == TARGET_DIRECTION_SEMANTICS_VERSION
     )
@@ -268,6 +349,41 @@ def test_target_api_no_configuration_and_update_override_precedence(client: Test
     reset_effective = {item["nutrient_id"]: item for item in reset.json()["effective_targets"]}
     assert reset_effective["calories"]["authority"] == "calculated_estimate"
     assert reset_effective["calories"]["amount"] != "2400.000000"
+
+
+def test_manual_protein_override_reset_save_returns_to_profile_dri(
+    client: TestClient,
+):
+    manual = client.put(
+        "/api/v1/targets",
+        json=configuration_payload(protein="150"),
+    )
+    assert manual.status_code == 200
+
+    manual_protein = next(
+        item
+        for item in manual.json()["effective_targets"]
+        if item["nutrient_id"] == "protein"
+    )
+    assert manual_protein["amount"] == "150.000000"
+    assert manual_protein["authority"] == "manual_override"
+
+    reset_payload = configuration_payload(protein=None)
+    reset = client.put(
+        "/api/v1/targets",
+        json=reset_payload,
+    )
+    assert reset.status_code == 200
+
+    reset_protein = next(
+        item
+        for item in reset.json()["effective_targets"]
+        if item["nutrient_id"] == "protein"
+    )
+    assert reset_protein["amount"] == "56.000000"
+    assert reset_protein["authority"] == "dri"
+    assert reset_protein["reference_type"] == "RDA"
+    assert reset_protein["calculation_basis"] == "per_kg"
 
 
 @pytest.mark.parametrize("bad", ["-1", "1e3", "Infinity", "1,000", " 1000", "1.2.3", 2000])
@@ -335,8 +451,27 @@ def test_daily_comparison_uses_snapshots_and_target_changes_do_not_mutate_summar
     )
     assert Decimal(protein["percentage"]) > 100
 
-    client.put("/api/v1/targets", json=configuration_payload(protein="100"))
-    after = client.get("/api/v1/logs/daily-summary", params={"date": "2026-07-14"}).json()
+    changed_profile = configuration_payload()
+    changed_profile["profile"]["weight_kg"] = "80"
+
+    changed_response = client.put(
+        "/api/v1/targets",
+        json=changed_profile,
+    )
+    assert changed_response.status_code == 200
+
+    changed_targets = {
+        item["nutrient_id"]: item
+        for item in changed_response.json()["effective_targets"]
+    }
+    assert changed_targets["protein"]["amount"] == "64.000000"
+    assert changed_targets["protein"]["authority"] == "dri"
+    assert changed_targets["protein"]["reference_type"] == "RDA"
+
+    after = client.get(
+        "/api/v1/logs/daily-summary",
+        params={"date": "2026-07-14"},
+    ).json()
     assert after == before
 
 

@@ -83,6 +83,7 @@ function comparisonResponse() {
   return {
     date: "2026-08-13",
     daily_value_catalog_version: "2026-01",
+    dri_dataset_version: "nasem_dri_adults_2026_v1",
     target_direction_semantics_version: "v1",
     comparisons: [],
   };

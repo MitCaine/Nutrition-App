@@ -25,6 +25,8 @@ from app.targets.estimation import (
     height_to_cm,
     weight_to_kg,
 )
+from app.targets.dri import DriRecommendation, resolve_dri_recommendation
+from app.targets.dri_data import DRI_DATASET_VERSION
 
 INFORMATIONAL_NOTICE = (
     "Estimated maintenance calories are general informational estimates, not medical advice."
@@ -35,6 +37,8 @@ MANUAL_TARGET_UNITS = {
     "total_carbohydrate": "g",
     "total_fat": "g",
 }
+TARGET_AMOUNT_QUANTUM = Decimal("0.000001")
+
 VALUE_BOUNDS = {
     "calories": (Decimal("500"), Decimal("10000")),
     "protein": (Decimal("1"), Decimal("1000")),
@@ -233,14 +237,110 @@ class TargetService:
     def _after_target_reset_flush(self, _user_id: UUID, _nutrient_id: str) -> None:
         """Test seam after an override reset is flushed."""
 
-    def effective_targets(self, user_id: UUID, as_of: date) -> list[EffectiveTarget]:
-        overrides = {item.nutrient_id: item for item in self._overrides(user_id)}
-        estimate = self._estimate(self._profile(user_id), as_of)
-        daily_values = {item.nutrient_id: item for item in FDA_DAILY_VALUES}
-        result = []
+    def _dri_recommendations(
+        self,
+        profile: UserProfile | None,
+        as_of: date,
+    ) -> list[DriRecommendation]:
+        birth_date = None if profile is None else profile.birth_date
+        sex = (
+            None
+            if profile is None
+            else profile.biological_sex_for_reference_calculations
+        )
+        life_stage = (
+            "general_adult"
+            if profile is None
+            else profile.energy_estimation_context
+        )
+        weight_kg = None if profile is None else profile.weight_kg
+
+        return [
+            resolve_dri_recommendation(
+                nutrient.id,
+                birth_date=birth_date,
+                sex=sex,
+                life_stage=life_stage,
+                weight_kg=weight_kg,
+                as_of=as_of,
+            )
+            for nutrient in NUTRIENT_CATALOG
+        ]
+
+    @staticmethod
+    def _serialize_dri_recommendation(
+        recommendation: DriRecommendation,
+    ) -> dict:
+        upper_limit = recommendation.upper_limit
+
+        return {
+            "nutrient_id": recommendation.nutrient_id,
+            "availability": recommendation.availability,
+            "amount": (
+                None
+                if recommendation.amount is None
+                else recommendation.amount.quantize(
+                    TARGET_AMOUNT_QUANTUM
+                )
+            ),
+            "unit": recommendation.unit,
+            "reference_type": recommendation.reference_type,
+            "source_version": recommendation.source_version,
+            "source_id": recommendation.source_id,
+            "age": recommendation.age,
+            "sex": recommendation.sex,
+            "life_stage": recommendation.life_stage,
+            "calculation_basis": recommendation.calculation_basis,
+            "weight_kg": recommendation.weight_kg,
+            "upper_limit": (
+                None
+                if upper_limit is None
+                else {
+                    "amount": upper_limit.amount.quantize(
+                        TARGET_AMOUNT_QUANTUM
+                    ),
+                    "unit": upper_limit.unit,
+                    "source_version": upper_limit.source_version,
+                    "source_id": upper_limit.source_id,
+                    "scope": upper_limit.scope,
+                    "comparable_to_recommendation": (
+                        upper_limit.comparable_to_recommendation
+                    ),
+                }
+            ),
+            "reason_code": recommendation.reason_code,
+        }
+
+    def effective_targets(
+        self,
+        user_id: UUID,
+        as_of: date,
+    ) -> list[EffectiveTarget]:
+        profile = self._profile(user_id)
+        overrides = {
+            item.nutrient_id: item
+            for item in self._overrides(user_id)
+        }
+        estimate = self._estimate(profile, as_of)
+        daily_values = {
+            item.nutrient_id: item
+            for item in FDA_DAILY_VALUES
+        }
+        dri_values = {
+            item.nutrient_id: item
+            for item in self._dri_recommendations(
+                profile,
+                as_of,
+            )
+        }
+
+        result: list[EffectiveTarget] = []
+
         for nutrient in NUTRIENT_CATALOG:
             override = overrides.get(nutrient.id)
             daily_value = daily_values[nutrient.id]
+            dri = dri_values[nutrient.id]
+
             if override is not None:
                 result.append(
                     EffectiveTarget(
@@ -251,13 +351,48 @@ class TargetService:
                         "target",
                     )
                 )
-            elif nutrient.id == "calories" and estimate.available:
+                continue
+
+            if (
+                nutrient.id == "calories"
+                and estimate.available
+            ):
                 result.append(
                     EffectiveTarget(
-                        nutrient.id, estimate.amount, "kcal", "calculated_estimate", "target"
+                        nutrient.id,
+                        estimate.amount,
+                        "kcal",
+                        "calculated_estimate",
+                        "target",
                     )
                 )
-            elif daily_value.available:
+                continue
+
+            if dri.availability == "available":
+                result.append(
+                    EffectiveTarget(
+                        nutrient.id,
+                        (
+                            None
+                            if dri.amount is None
+                            else dri.amount.quantize(
+                                TARGET_AMOUNT_QUANTUM
+                            )
+                        ),
+                        dri.unit or nutrient.default_unit,
+                        "dri",
+                        "target",
+                        None,
+                        None,
+                        dri.reference_type,
+                        dri.source_version,
+                        dri.source_id,
+                        dri.calculation_basis,
+                    )
+                )
+                continue
+
+            if daily_value.available:
                 result.append(
                     EffectiveTarget(
                         nutrient.id,
@@ -269,42 +404,66 @@ class TargetService:
                         daily_value.note_code,
                     )
                 )
-            else:
-                reason = (
-                    estimate.reason_code if nutrient.id == "calories" else daily_value.note_code
+                continue
+
+            reason = (
+                estimate.reason_code
+                if nutrient.id == "calories"
+                else dri.reason_code or daily_value.note_code
+            )
+
+            result.append(
+                EffectiveTarget(
+                    nutrient.id,
+                    None,
+                    nutrient.default_unit,
+                    "unavailable",
+                    "unavailable",
+                    reason,
+                    daily_value.note_code,
                 )
-                result.append(
-                    EffectiveTarget(
-                        nutrient.id,
-                        None,
-                        nutrient.default_unit,
-                        "unavailable",
-                        "unavailable",
-                        reason,
-                        daily_value.note_code,
-                    )
-                )
+            )
+
         return result
 
-    def configuration(self, user_id: UUID, as_of: date) -> dict:
+    def configuration(
+        self,
+        user_id: UUID,
+        as_of: date,
+    ) -> dict:
         profile = self._profile(user_id)
         estimate = self._estimate(profile, as_of)
         overrides = self._overrides(user_id)
+        dri_recommendations = self._dri_recommendations(
+            profile,
+            as_of,
+        )
+
         return {
-            "profile": None
-            if not self._has_target_profile_values(profile)
-            else {
-                "birth_date": profile.birth_date,
-                "sex_for_equation": profile.biological_sex_for_reference_calculations,
-                "height_cm": profile.height_cm,
-                "height_unit": "cm",
-                "weight_kg": profile.weight_kg,
-                "weight_unit": "kg",
-                "activity_level": profile.activity_level,
-                "energy_estimation_context": profile.energy_estimation_context,
-            },
+            "profile": (
+                None
+                if not self._has_target_profile_values(profile)
+                else {
+                    "birth_date": profile.birth_date,
+                    "sex_for_equation": (
+                        profile.biological_sex_for_reference_calculations
+                    ),
+                    "height_cm": profile.height_cm,
+                    "height_unit": "cm",
+                    "weight_kg": profile.weight_kg,
+                    "weight_unit": "kg",
+                    "activity_level": profile.activity_level,
+                    "energy_estimation_context": (
+                        profile.energy_estimation_context
+                    ),
+                }
+            ),
             "estimated_maintenance_calories": {
-                "availability": "available" if estimate.available else "unavailable",
+                "availability": (
+                    "available"
+                    if estimate.available
+                    else "unavailable"
+                ),
                 "amount": estimate.amount,
                 "unit": estimate.unit,
                 "authority": estimate.authority,
@@ -320,34 +479,87 @@ class TargetService:
                     "direction": "target",
                     "reason_code": None,
                     "note_code": None,
+                    "reference_type": None,
+                    "source_version": None,
+                    "source_id": None,
+                    "calculation_basis": None,
                 }
                 for item in overrides
             ],
-            "effective_targets": [item.__dict__ for item in self.effective_targets(user_id, as_of)],
-            "daily_value_catalog_version": FDA_DAILY_VALUE_CATALOG_VERSION,
-            "daily_value_standard": FDA_DAILY_VALUE_STANDARD,
-            "target_direction_semantics_version": TARGET_DIRECTION_SEMANTICS_VERSION,
+            "effective_targets": [
+                item.__dict__
+                for item in self.effective_targets(
+                    user_id,
+                    as_of,
+                )
+            ],
+            "daily_value_catalog_version": (
+                FDA_DAILY_VALUE_CATALOG_VERSION
+            ),
+            "daily_value_standard": (
+                FDA_DAILY_VALUE_STANDARD
+            ),
+            "dri_dataset_version": DRI_DATASET_VERSION,
+            "target_direction_semantics_version": (
+                TARGET_DIRECTION_SEMANTICS_VERSION
+            ),
             "daily_values": [
                 {
                     "nutrient_id": item.nutrient_id,
                     "amount": item.amount,
                     "unit": item.unit,
-                    "availability": "available" if item.available else "unavailable",
+                    "availability": (
+                        "available"
+                        if item.available
+                        else "unavailable"
+                    ),
                     "direction": item.direction,
                     "note_code": item.note_code,
                 }
                 for item in FDA_DAILY_VALUES
             ],
-            "limitations": [] if estimate.available else [estimate.reason_code],
+            "dri_recommendations": [
+                self._serialize_dri_recommendation(
+                    recommendation
+                )
+                for recommendation in dri_recommendations
+            ],
+            "limitations": (
+                []
+                if estimate.available
+                else [estimate.reason_code]
+            ),
             "informational_notice": INFORMATIONAL_NOTICE,
         }
 
-    def daily_comparison(self, user_id: UUID, logged_date: date) -> dict:
-        totals = LogService(self.db).daily_summary(user_id, logged_date)
-        comparisons = compare_daily_totals(totals, self.effective_targets(user_id, logged_date))
+    def daily_comparison(
+        self,
+        user_id: UUID,
+        logged_date: date,
+    ) -> dict:
+        totals = LogService(self.db).daily_summary(
+            user_id,
+            logged_date,
+        )
+        comparisons = compare_daily_totals(
+            totals,
+            self.effective_targets(
+                user_id,
+                logged_date,
+            ),
+        )
+
         return {
             "date": logged_date,
-            "daily_value_catalog_version": FDA_DAILY_VALUE_CATALOG_VERSION,
-            "target_direction_semantics_version": TARGET_DIRECTION_SEMANTICS_VERSION,
-            "comparisons": [item.__dict__ for item in comparisons],
+            "daily_value_catalog_version": (
+                FDA_DAILY_VALUE_CATALOG_VERSION
+            ),
+            "dri_dataset_version": DRI_DATASET_VERSION,
+            "target_direction_semantics_version": (
+                TARGET_DIRECTION_SEMANTICS_VERSION
+            ),
+            "comparisons": [
+                item.__dict__
+                for item in comparisons
+            ],
         }

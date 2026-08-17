@@ -326,6 +326,7 @@ const total = {
 const targets: DailyTargetComparison = {
   date: "2026-07-13",
   dailyValueCatalogVersion: "test",
+  driDatasetVersion: "test",
   targetDirectionSemanticsVersion: "test",
   comparisons: [{
     nutrientId: "calories",
@@ -339,6 +340,10 @@ const targets: DailyTargetComparison = {
     reasonCode: null,
     noteCode: null,
     hasUnknownContributors: false,
+    referenceType: null,
+    sourceVersion: null,
+    sourceId: null,
+    calculationBasis: null,
   }],
 };
 

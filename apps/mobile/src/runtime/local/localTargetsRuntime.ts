@@ -9,18 +9,12 @@ import type {
   TargetProfile,
   TargetValue,
 } from "../../features/targets/api/types";
-import { generalAdultCalciumTarget } from "../../features/targets/calciumRecommendation";
 import {
-  generalAdultCarbohydrateTarget,
-  generalAdultFatTarget,
-} from "../../features/targets/macroRecommendation";
-import { generalAdultFiberTarget } from "../../features/targets/fiberRecommendation";
-import { generalAdultIronTarget } from "../../features/targets/ironRecommendation";
-import { generalAdultMagnesiumTarget } from "../../features/targets/magnesiumRecommendation";
-import { generalAdultPotassiumTarget } from "../../features/targets/potassiumRecommendation";
-import { generalAdultProteinTarget } from "../../features/targets/proteinRecommendation";
-import { generalAdultSaturatedFatLimit } from "../../features/targets/saturatedFatRecommendation";
-import { generalAdultVitaminDTarget } from "../../features/targets/vitaminDRecommendation";
+  resolveDriRecommendation,
+} from "../../shared/nutrition/dri";
+import {
+  DRI_DATASET_VERSION,
+} from "../../shared/nutrition/driData";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import {
   parseDateOnly,
@@ -591,6 +585,10 @@ function normalizedOverrides(rows: readonly TargetRow[]): Map<string, TargetValu
         direction: "target",
         reasonCode: null,
         noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
       });
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
@@ -606,247 +604,267 @@ async function buildConfiguration(
   profileRow: ProfileRow | null,
   asOf: string,
 ): Promise<TargetConfiguration> {
-  const profile = normalizeStoredProfile(profileRow);
-  const overrides = normalizedOverrides(await readTargetRows(database, ownerId));
-  const estimate = estimateMaintenanceCalories(profile, asOf);
+  const profile =
+    normalizeStoredProfile(profileRow);
+
+  const overrides =
+    normalizedOverrides(
+      await readTargetRows(
+        database,
+        ownerId,
+      ),
+    );
+
+  const estimate =
+    estimateMaintenanceCalories(
+      profile,
+      asOf,
+    );
+
   const values = dailyValues();
-  const dailyById = new Map(values.map((value) => [value.nutrientId, value]));
-  const profileAge = profile?.birthDate
-    ? ageOn(profile.birthDate, asOf)
-    : null;
-  const personalizedProtein =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-    && profileAge >= 19
-      ? generalAdultProteinTarget(profile.weightKg)
-      : null;
-  const personalizedCarbohydrate =
-    profile?.energyEstimationContext === "general_adult"
-    && estimate.availability === "available"
-      ? generalAdultCarbohydrateTarget(estimate.amount)
-      : null;
-  const personalizedFat =
-    profile?.energyEstimationContext === "general_adult"
-    && estimate.availability === "available"
-      ? generalAdultFatTarget(estimate.amount)
-      : null;
-  const personalizedSaturatedFat =
-    profile?.energyEstimationContext === "general_adult"
-    && estimate.availability === "available"
-      ? generalAdultSaturatedFatLimit(estimate.amount)
-      : null;
-  const personalizedIron =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-      ? generalAdultIronTarget(
-          profileAge,
-          profile.sexForEquation,
-        )
-      : null;
-  const personalizedPotassium =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-      ? generalAdultPotassiumTarget(
-          profileAge,
-          profile.sexForEquation,
-        )
-      : null;
-  const personalizedMagnesium =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-      ? generalAdultMagnesiumTarget(
-          profileAge,
-          profile.sexForEquation,
-        )
-      : null;
-  const personalizedFiber =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-      ? generalAdultFiberTarget(
-          profileAge,
-          profile.sexForEquation,
-        )
-      : null;
-  const personalizedCalcium =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-      ? generalAdultCalciumTarget(
-          profileAge,
-          profile.sexForEquation,
-        )
-      : null;
-  const personalizedVitaminD =
-    profile?.energyEstimationContext === "general_adult"
-    && profileAge !== null
-      ? generalAdultVitaminDTarget(profileAge)
-      : null;
-  const effectiveTargets: TargetValue[] = [];
-  for (const [nutrientId, , , defaultUnit] of SQLITE_NUTRIENT_SEED_ROWS) {
-    const override = overrides.get(nutrientId);
-    const dailyValue = dailyById.get(nutrientId);
-    if (!dailyValue) throw invalidStored();
+
+  const dailyById =
+    new Map(
+      values.map(
+        (value) => [
+          value.nutrientId,
+          value,
+        ],
+      ),
+    );
+
+  const driRecommendations =
+    SQLITE_NUTRIENT_SEED_ROWS.map(
+      ([nutrientId]) =>
+        resolveDriRecommendation(
+          nutrientId,
+          {
+            birthDate:
+              profile?.birthDate
+              ?? null,
+            sex:
+              profile?.sexForEquation
+              ?? null,
+            lifeStage:
+              profile
+                ?.energyEstimationContext
+              ?? "general_adult",
+            weightKg:
+              profile?.weightKg
+              ?? null,
+            asOf,
+          },
+        ),
+    );
+
+  const driById =
+    new Map(
+      driRecommendations.map(
+        (item) => [
+          item.nutrientId,
+          item,
+        ],
+      ),
+    );
+
+  const effectiveTargets:
+    TargetValue[] = [];
+
+  for (
+    const [
+      nutrientId,
+      ,
+      ,
+      defaultUnit,
+    ]
+    of SQLITE_NUTRIENT_SEED_ROWS
+  ) {
+    const override =
+      overrides.get(nutrientId);
+
+    const dailyValue =
+      dailyById.get(nutrientId);
+
+    const dri =
+      driById.get(nutrientId);
+
+    if (!dailyValue || !dri) {
+      throw invalidStored();
+    }
+
     if (override) {
-      effectiveTargets.push(override);
-    } else if (nutrientId === "calories" && estimate.availability === "available") {
+      effectiveTargets.push(
+        override,
+      );
+      continue;
+    }
+
+    if (
+      nutrientId === "calories"
+      && estimate.availability
+        === "available"
+    ) {
       effectiveTargets.push({
         nutrientId,
         amount: estimate.amount,
         unit: "kcal",
-        authority: "calculated_estimate",
+        authority:
+          "calculated_estimate",
         direction: "target",
         reasonCode: null,
         noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
       });
-    } else if (nutrientId === "protein" && personalizedProtein !== null) {
+      continue;
+    }
+
+    if (
+      dri.availability
+      === "available"
+    ) {
+      if (
+        dri.amount === null
+        || dri.unit === null
+        || dri.referenceType === null
+        || dri.calculationBasis === null
+      ) {
+        throw invalidStored();
+      }
+
       effectiveTargets.push({
         nutrientId,
-        amount: personalizedProtein,
-        unit: "g",
-        authority: "calculated_estimate",
+        amount: dri.amount,
+        unit: dri.unit,
+        authority: "dri",
         direction: "target",
         reasonCode: null,
         noteCode: null,
+        referenceType:
+          dri.referenceType,
+        sourceVersion:
+          dri.sourceVersion,
+        sourceId:
+          dri.sourceId,
+        calculationBasis:
+          dri.calculationBasis,
       });
-    } else if (nutrientId === "total_carbohydrate" && personalizedCarbohydrate !== null) {
+      continue;
+    }
+
+    if (
+      dailyValue.availability
+      === "available"
+    ) {
       effectiveTargets.push({
         nutrientId,
-        amount: personalizedCarbohydrate,
-        unit: "g",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "total_fat" && personalizedFat !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedFat,
-        unit: "g",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "saturated_fat" && personalizedSaturatedFat !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedSaturatedFat,
-        unit: "g",
-        authority: "calculated_estimate",
-        direction: "limit",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "iron" && personalizedIron !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedIron,
-        unit: "mg",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "calcium" && personalizedCalcium !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedCalcium,
-        unit: "mg",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "vitamin_d" && personalizedVitaminD !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedVitaminD,
-        unit: "mcg",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "potassium" && personalizedPotassium !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedPotassium,
-        unit: "mg",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "magnesium" && personalizedMagnesium !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedMagnesium,
-        unit: "mg",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (nutrientId === "dietary_fiber" && personalizedFiber !== null) {
-      effectiveTargets.push({
-        nutrientId,
-        amount: personalizedFiber,
-        unit: "g",
-        authority: "calculated_estimate",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-      });
-    } else if (dailyValue.availability === "available") {
-      effectiveTargets.push({
-        nutrientId,
-        amount: dailyValue.amount,
-        unit: dailyValue.unit,
+        amount:
+          dailyValue.amount,
+        unit:
+          dailyValue.unit,
         authority: "daily_value",
-        direction: dailyValue.direction,
+        direction:
+          dailyValue.direction,
         reasonCode: null,
-        noteCode: dailyValue.noteCode,
+        noteCode:
+          dailyValue.noteCode,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
       });
-    } else {
-      effectiveTargets.push({
-        nutrientId,
-        amount: null,
-        unit: dailyValue.unit ?? defaultUnit as NutrientUnit,
-        authority: "unavailable",
-        direction: "unavailable",
-        reasonCode: nutrientId === "calories" ? estimate.reasonCode : dailyValue.noteCode,
-        noteCode: dailyValue.noteCode,
-      });
+      continue;
     }
+
+    effectiveTargets.push({
+      nutrientId,
+      amount: null,
+      unit: (
+        dailyValue.unit
+        ?? defaultUnit
+      ) as NutrientUnit,
+      authority: "unavailable",
+      direction: "unavailable",
+      reasonCode:
+        nutrientId === "calories"
+          ? estimate.reasonCode
+          : dri.reasonCode
+            ?? dailyValue.noteCode,
+      noteCode:
+        dailyValue.noteCode,
+      referenceType: null,
+      sourceVersion: null,
+      sourceId: null,
+      calculationBasis: null,
+    });
   }
-  const targetProfile: TargetProfile | null = hasTargetProfileValues(profile)
-    ? {
-      birthDate: profile?.birthDate ?? null,
-      sexForEquation: profile?.sexForEquation ?? null,
-      heightCm: profile?.heightCm ?? null,
-      weightKg: profile?.weightKg ?? null,
-      activityLevel: profile?.activityLevel ?? null,
-      energyEstimationContext: profile?.energyEstimationContext ?? "general_adult",
-    }
-    : null;
+
+  const targetProfile:
+    TargetProfile | null =
+    hasTargetProfileValues(profile)
+      ? {
+          birthDate:
+            profile?.birthDate
+            ?? null,
+          sexForEquation:
+            profile?.sexForEquation
+            ?? null,
+          heightCm:
+            profile?.heightCm
+            ?? null,
+          weightKg:
+            profile?.weightKg
+            ?? null,
+          activityLevel:
+            profile?.activityLevel
+            ?? null,
+          energyEstimationContext:
+            profile
+              ?.energyEstimationContext
+            ?? "general_adult",
+        }
+      : null;
+
   return {
     profile: targetProfile,
     estimatedMaintenanceCalories: {
-      availability: estimate.availability,
-      amount: estimate.amount,
+      availability:
+        estimate.availability,
+      amount:
+        estimate.amount,
       unit: "kcal",
-      authority: "calculated_estimate",
-      reasonCode: estimate.reasonCode,
-      equation: "mifflin_st_jeor_1990",
+      authority:
+        "calculated_estimate",
+      reasonCode:
+        estimate.reasonCode,
+      equation:
+        "mifflin_st_jeor_1990",
     },
-    manualOverrides: [...overrides.values()],
+    manualOverrides:
+      [...overrides.values()],
     effectiveTargets,
-    dailyValueCatalogVersion: FDA_DAILY_VALUE_CATALOG_VERSION,
-    dailyValueStandard: FDA_DAILY_VALUE_STANDARD,
-    targetDirectionSemanticsVersion: TARGET_DIRECTION_SEMANTICS_VERSION,
-    dailyValues: values,
-    limitations: estimate.availability === "available" || estimate.reasonCode === null ? [] : [estimate.reasonCode],
-    informationalNotice: INFORMATIONAL_NOTICE,
+    dailyValueCatalogVersion:
+      FDA_DAILY_VALUE_CATALOG_VERSION,
+    dailyValueStandard:
+      FDA_DAILY_VALUE_STANDARD,
+    driDatasetVersion:
+      DRI_DATASET_VERSION,
+    targetDirectionSemanticsVersion:
+      TARGET_DIRECTION_SEMANTICS_VERSION,
+    dailyValues:
+      values,
+    driRecommendations,
+    limitations:
+      estimate.availability
+        === "available"
+        || estimate.reasonCode
+          === null
+        ? []
+        : [estimate.reasonCode],
+    informationalNotice:
+      INFORMATIONAL_NOTICE,
   };
 }
 
@@ -948,6 +966,10 @@ function compareTotals(
         reasonCode: target.reasonCode,
         noteCode: target.noteCode,
         hasUnknownContributors: Boolean(total?.unknown),
+        referenceType: target.referenceType,
+        sourceVersion: target.sourceVersion,
+        sourceId: target.sourceId,
+        calculationBasis: target.calculationBasis,
       };
     }
     if (!total || (total.unknown > 0 && isZeroResponse(total.known) && isZeroResponse(total.estimated))) {
@@ -963,6 +985,10 @@ function compareTotals(
         reasonCode: "consumed_value_unavailable",
         noteCode: target.noteCode,
         hasUnknownContributors: Boolean(total?.unknown),
+        referenceType: target.referenceType,
+        sourceVersion: target.sourceVersion,
+        sourceId: target.sourceId,
+        calculationBasis: target.calculationBasis,
       };
     }
     const percentage = roundResponseHalfUp(
@@ -985,11 +1011,16 @@ function compareTotals(
       reasonCode: null,
       noteCode: target.noteCode,
       hasUnknownContributors: total.unknown > 0,
+      referenceType: target.referenceType,
+      sourceVersion: target.sourceVersion,
+      sourceId: target.sourceId,
+      calculationBasis: target.calculationBasis,
     };
   });
   return {
     date,
     dailyValueCatalogVersion: configuration.dailyValueCatalogVersion,
+    driDatasetVersion: configuration.driDatasetVersion,
     targetDirectionSemanticsVersion: configuration.targetDirectionSemanticsVersion,
     comparisons,
   };

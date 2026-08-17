@@ -1,5 +1,8 @@
-const { mkdtempSync, rmSync } = require("fs") as {
+declare const __dirname: string;
+
+const { mkdtempSync, readFileSync, rmSync } = require("fs") as {
   mkdtempSync(prefix: string): string;
+  readFileSync(path: string, encoding: "utf8"): string;
   rmSync(path: string, options: { recursive: boolean; force: boolean }): void;
 };
 const { tmpdir } = require("os") as { tmpdir(): string };
@@ -122,9 +125,127 @@ async function seedFoodAndSnapshot(
   );
 }
 
+type DriParityProfile = {
+  birth_date: string;
+  sex_for_equation: "female" | "male";
+  height_cm: string;
+  height_unit: "cm";
+  weight_kg: string;
+  weight_unit: "kg";
+  activity_level:
+    | "sedentary"
+    | "lightly_active"
+    | "active"
+    | "very_active";
+  energy_estimation_context:
+    | "general_adult"
+    | "pregnant"
+    | "lactating"
+    | "specialized_medical";
+};
+
+type DriParityCase = {
+  name: string;
+  profile: DriParityProfile;
+  expected: Array<{
+    nutrient_id: string;
+    amount: string | null;
+    authority:
+      | "dri"
+      | "daily_value"
+      | "unavailable";
+    direction:
+      | "target"
+      | "limit"
+      | "minimum"
+      | "reference"
+      | "unavailable";
+    reference_type:
+      | "RDA"
+      | "AI"
+      | null;
+  }>;
+};
+
+const DRI_TARGET_PARITY_CASES =
+  JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        "../../../engineering/reference-data/dri_target_parity_cases.json",
+      ),
+      "utf8",
+    ),
+  ) as DriParityCase[];
+
+
 afterEach(() => {
   jest.restoreAllMocks();
 });
+
+test("DRI effective targets match the shared local/remote parity fixture", async () => {
+  const database = await fixtureDatabase();
+
+  try {
+    const targets = runtime(database);
+
+    for (
+      const testCase
+      of DRI_TARGET_PARITY_CASES
+    ) {
+      const configuration =
+        await targets.updateConfiguration({
+          profile: testCase.profile,
+          manual_overrides: {
+            calories: null,
+            protein: null,
+            total_carbohydrate: null,
+            total_fat: null,
+          },
+        });
+
+      for (
+        const expected
+        of testCase.expected
+      ) {
+        const actual = byId(
+          configuration.effectiveTargets,
+          expected.nutrient_id,
+        );
+
+        expect(actual).toMatchObject({
+          amount: expected.amount,
+          authority: expected.authority,
+          direction: expected.direction,
+          referenceType:
+            expected.reference_type,
+        });
+
+        if (
+          expected.authority === "dri"
+        ) {
+          expect(
+            actual.sourceVersion,
+          ).toBe(
+            configuration.driDatasetVersion,
+          );
+          expect(
+            actual.sourceId,
+          ).not.toBeNull();
+          expect([
+            "fixed",
+            "per_kg",
+          ]).toContain(
+            actual.calculationBasis,
+          );
+        }
+      }
+    }
+  } finally {
+    database.close();
+  }
+});
+
 
 test("daily values cover the canonical nutrient catalog without projection drift", async () => {
   const database = await fixtureDatabase();
@@ -204,16 +325,22 @@ test("local defaults, explicit overrides, precedence, and reset match remote Tar
 
     const changedProfile = await targets.updateConfiguration(targetInput({ calories: "2400", protein: null }));
     expect(byId(changedProfile.effectiveTargets, "calories")).toMatchObject({ amount: "2400.000000", authority: "manual_override" });
-    expect(byId(changedProfile.effectiveTargets, "protein")).toMatchObject({ amount: "56.000000", authority: "calculated_estimate" });
-    expect(byId(changedProfile.effectiveTargets, "total_carbohydrate")).toMatchObject({
-      amount: "317.350000",
-      authority: "calculated_estimate",
+    expect(byId(changedProfile.effectiveTargets, "protein")).toMatchObject({
+      amount: "56.000000",
+      authority: "dri",
       direction: "target",
+      referenceType: "RDA",
+    });
+    expect(byId(changedProfile.effectiveTargets, "total_carbohydrate")).toMatchObject({
+      amount: "130.000000",
+      authority: "dri",
+      direction: "target",
+      referenceType: "RDA",
     });
     expect(byId(changedProfile.effectiveTargets, "total_fat")).toMatchObject({
-      amount: "70.522222",
-      authority: "calculated_estimate",
-      direction: "target",
+      amount: "78",
+      authority: "daily_value",
+      direction: "reference",
     });
 
     const reset = await targets.resetOverride("calories");
@@ -239,7 +366,7 @@ test("personalized iron follows adult age and sex while retaining FDA fallback",
     const male = await targets.updateConfiguration(targetInput());
     expect(byId(male.effectiveTargets, "iron")).toMatchObject({
       amount: "8.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -252,7 +379,7 @@ test("personalized iron follows adult age and sex while retaining FDA fallback",
     });
     expect(byId(female.effectiveTargets, "iron")).toMatchObject({
       amount: "18.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -266,7 +393,7 @@ test("personalized iron follows adult age and sex while retaining FDA fallback",
     });
     expect(byId(femaleAge51.effectiveTargets, "iron")).toMatchObject({
       amount: "8.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
   } finally {
@@ -289,7 +416,7 @@ test("personalized calcium follows adult age and sex while retaining FDA fallbac
     const adult = await targets.updateConfiguration(targetInput());
     expect(byId(adult.effectiveTargets, "calcium")).toMatchObject({
       amount: "1000.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -303,7 +430,7 @@ test("personalized calcium follows adult age and sex while retaining FDA fallbac
     });
     expect(byId(femaleAge51.effectiveTargets, "calcium")).toMatchObject({
       amount: "1200.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -317,7 +444,7 @@ test("personalized calcium follows adult age and sex while retaining FDA fallbac
     });
     expect(byId(maleAge70.effectiveTargets, "calcium")).toMatchObject({
       amount: "1000.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -331,7 +458,7 @@ test("personalized calcium follows adult age and sex while retaining FDA fallbac
     });
     expect(byId(maleAge71.effectiveTargets, "calcium")).toMatchObject({
       amount: "1200.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
   } finally {
@@ -354,7 +481,7 @@ test("personalized vitamin D follows adult age while retaining FDA fallback", as
     const adult = await targets.updateConfiguration(targetInput());
     expect(byId(adult.effectiveTargets, "vitamin_d")).toMatchObject({
       amount: "15.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -367,7 +494,7 @@ test("personalized vitamin D follows adult age while retaining FDA fallback", as
     });
     expect(byId(age70.effectiveTargets, "vitamin_d")).toMatchObject({
       amount: "15.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -380,7 +507,7 @@ test("personalized vitamin D follows adult age while retaining FDA fallback", as
     });
     expect(byId(age71.effectiveTargets, "vitamin_d")).toMatchObject({
       amount: "20.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
   } finally {
@@ -403,7 +530,7 @@ test("personalized potassium follows adult sex while retaining FDA fallback", as
     const male = await targets.updateConfiguration(targetInput());
     expect(byId(male.effectiveTargets, "potassium")).toMatchObject({
       amount: "3400.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -416,7 +543,7 @@ test("personalized potassium follows adult sex while retaining FDA fallback", as
     });
     expect(byId(female.effectiveTargets, "potassium")).toMatchObject({
       amount: "2600.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
   } finally {
@@ -446,7 +573,7 @@ test("personalized magnesium follows adult age and sex while retaining FDA fallb
     });
     expect(byId(maleAge30.effectiveTargets, "magnesium")).toMatchObject({
       amount: "400.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -460,7 +587,7 @@ test("personalized magnesium follows adult age and sex while retaining FDA fallb
     });
     expect(byId(maleAge31.effectiveTargets, "magnesium")).toMatchObject({
       amount: "420.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -474,7 +601,7 @@ test("personalized magnesium follows adult age and sex while retaining FDA fallb
     });
     expect(byId(femaleAge30.effectiveTargets, "magnesium")).toMatchObject({
       amount: "310.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -488,7 +615,7 @@ test("personalized magnesium follows adult age and sex while retaining FDA fallb
     });
     expect(byId(femaleAge31.effectiveTargets, "magnesium")).toMatchObject({
       amount: "320.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
   } finally {
@@ -518,7 +645,7 @@ test("personalized fiber follows adult age and sex while retaining FDA fallback"
     });
     expect(byId(maleAge50.effectiveTargets, "dietary_fiber")).toMatchObject({
       amount: "38.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -532,7 +659,7 @@ test("personalized fiber follows adult age and sex while retaining FDA fallback"
     });
     expect(byId(maleAge51.effectiveTargets, "dietary_fiber")).toMatchObject({
       amount: "30.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -546,7 +673,7 @@ test("personalized fiber follows adult age and sex while retaining FDA fallback"
     });
     expect(byId(femaleAge50.effectiveTargets, "dietary_fiber")).toMatchObject({
       amount: "25.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
 
@@ -560,7 +687,7 @@ test("personalized fiber follows adult age and sex while retaining FDA fallback"
     });
     expect(byId(femaleAge51.effectiveTargets, "dietary_fiber")).toMatchObject({
       amount: "21.000000",
-      authority: "calculated_estimate",
+      authority: "dri",
       direction: "target",
     });
   } finally {
@@ -568,7 +695,7 @@ test("personalized fiber follows adult age and sex while retaining FDA fallback"
   }
 });
 
-test("personalized saturated fat uses ten percent of maintenance energy while retaining FDA fallback", async () => {
+test("saturated fat uses FDA fallback when no RDA or AI is established", async () => {
   const database = await fixtureDatabase();
   try {
     const targets = runtime(database);
@@ -583,8 +710,8 @@ test("personalized saturated fat uses ten percent of maintenance energy while re
     const personalized = await targets.updateConfiguration(targetInput());
     expect(personalized.estimatedMaintenanceCalories.amount).toBe("2308");
     expect(byId(personalized.effectiveTargets, "saturated_fat")).toMatchObject({
-      amount: "25.644444",
-      authority: "calculated_estimate",
+      amount: "20",
+      authority: "daily_value",
       direction: "limit",
     });
   } finally {
@@ -592,7 +719,7 @@ test("personalized saturated fat uses ten percent of maintenance energy while re
   }
 });
 
-test("sodium retains the FDA limit when general-adult personalization is available", async () => {
+test("sodium uses the adult AI when supported and FDA fallback without a profile", async () => {
   const database = await fixtureDatabase();
   try {
     const targets = runtime(database);
@@ -606,9 +733,10 @@ test("sodium retains the FDA limit when general-adult personalization is availab
 
     const personalized = await targets.updateConfiguration(targetInput());
     expect(byId(personalized.effectiveTargets, "sodium")).toMatchObject({
-      amount: "2300",
-      authority: "daily_value",
-      direction: "limit",
+      amount: "1500.000000",
+      authority: "dri",
+      direction: "target",
+      referenceType: "AI",
     });
   } finally {
     database.close();
@@ -852,7 +980,7 @@ test("daily comparison uses immutable snapshots, date isolation, unknown semanti
     expect(protein.hasUnknownContributors).toBe(false);
     expect(byId(comparison.comparisons, "sodium")).toMatchObject({
       consumedAmount: null,
-      targetAmount: "2300",
+      targetAmount: "1500.000000",
       percentage: null,
       status: "consumed_unavailable",
       reasonCode: "consumed_value_unavailable",
@@ -877,6 +1005,113 @@ test("daily comparison uses immutable snapshots, date isolation, unknown semanti
     database.close();
   }
 });
+
+test("profile DRI changes are prospective and do not rewrite Daily Log nutrient snapshots", async () => {
+  const database = await fixtureDatabase();
+
+  try {
+    const snapshotId =
+      "00000000-0000-4000-8000-000000000399";
+
+    await seedFoodAndSnapshot(
+      database,
+      {
+        ownerId: OWNER,
+        foodId:
+          "00000000-0000-4000-8000-000000000199",
+        logId:
+          "00000000-0000-4000-8000-000000000299",
+        snapshotId,
+        date: "2026-07-14",
+        nutrientId: "protein",
+        amount: "75.123456",
+      },
+    );
+
+    const before =
+      await database.getFirstAsync<{
+        amount: string | null;
+        unit: string;
+        data_status: string;
+      }>(
+        `SELECT "amount", "unit", "data_status"
+         FROM "daily_log_nutrient_snapshots"
+         WHERE "id" = ?`,
+        [snapshotId],
+      );
+
+    expect(before).not.toBeNull();
+
+    const targets = runtime(database);
+
+    const weight70 =
+      await targets.updateConfiguration(
+        targetInput(),
+      );
+
+    expect(
+      byId(
+        weight70.effectiveTargets,
+        "protein",
+      ),
+    ).toMatchObject({
+      amount: "56.000000",
+      authority: "dri",
+      referenceType: "RDA",
+      calculationBasis: "per_kg",
+    });
+
+    const weight80 =
+      await targets.updateConfiguration({
+        ...targetInput(),
+        profile: {
+          ...targetInput().profile,
+          weight_kg: "80",
+        },
+      });
+
+    expect(
+      byId(
+        weight80.effectiveTargets,
+        "protein",
+      ),
+    ).toMatchObject({
+      amount: "64.000000",
+      authority: "dri",
+      referenceType: "RDA",
+      calculationBasis: "per_kg",
+    });
+
+    expect(
+      byId(
+        weight80.effectiveTargets,
+        "vitamin_c",
+      ),
+    ).toMatchObject({
+      amount: "90.000000",
+      authority: "dri",
+      referenceType: "RDA",
+      calculationBasis: "fixed",
+    });
+
+    const after =
+      await database.getFirstAsync<{
+        amount: string | null;
+        unit: string;
+        data_status: string;
+      }>(
+        `SELECT "amount", "unit", "data_status"
+         FROM "daily_log_nutrient_snapshots"
+         WHERE "id" = ?`,
+        [snapshotId],
+      );
+
+    expect(after).toEqual(before);
+  } finally {
+    database.close();
+  }
+});
+
 
 test("target reads and mutations are owner-scoped and mutation failures roll back completely", async () => {
   const database = await fixtureDatabase();

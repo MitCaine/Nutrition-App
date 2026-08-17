@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from app.catalog.nutrients import (
-    FDA_DAILY_VALUE_CATALOG_VERSION,
-    FDA_DAILY_VALUE_STANDARD,
+    FDA_DAILY_VALUE_CATALOG_VERSION as FDA_DAILY_VALUE_CATALOG_VERSION,
+    FDA_DAILY_VALUE_STANDARD as FDA_DAILY_VALUE_STANDARD,
     NUTRIENT_CATALOG,
 )
 

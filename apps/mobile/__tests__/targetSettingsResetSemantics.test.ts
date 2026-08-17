@@ -84,6 +84,10 @@ function manualConfiguration(): TargetConfiguration {
         direction: "target",
         reasonCode: null,
         noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
       },
     ],
     effectiveTargets: [
@@ -95,13 +99,19 @@ function manualConfiguration(): TargetConfiguration {
         direction: "target",
         reasonCode: null,
         noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
       },
     ],
     dailyValueCatalogVersion: "fda_daily_values_2016_v1",
     dailyValueStandard:
       "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS",
+    driDatasetVersion: "nasem_dri_adults_2026_v1",
     targetDirectionSemanticsVersion: "target_directions_2026_v1",
     dailyValues: [],
+    driRecommendations: [],
     limitations: [],
     informationalNotice: "Estimate, not medical advice.",
   };
@@ -120,6 +130,10 @@ function automaticConfiguration(): TargetConfiguration {
         direction: "target",
         reasonCode: null,
         noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
       },
     ],
   };
@@ -220,7 +234,7 @@ test("Reset changes only the editable target draft until Save", async () => {
     "Reset pending · Save targets to apply.",
   );
   expect(visibleText(renderer)).toContain(
-    "Current saved effective: 90 g/day · manual override",
+    "Current saved effective: 90 g/day · Manual target",
   );
 
   expect(onDraftStateChange).toHaveBeenCalledWith(

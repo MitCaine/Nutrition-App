@@ -18,6 +18,15 @@ def _strict_decimal(value):
 
 TargetDecimal = Annotated[Decimal | None, BeforeValidator(_strict_decimal)]
 TargetDirection = Literal["target", "limit", "minimum", "reference", "unavailable"]
+TargetAuthority = Literal[
+    "manual_override",
+    "calculated_estimate",
+    "dri",
+    "daily_value",
+    "unavailable",
+]
+DriReferenceType = Literal["RDA", "AI"]
+DriCalculationBasis = Literal["fixed", "per_kg"]
 
 
 class TargetProfileInput(BaseModel):
@@ -60,6 +69,32 @@ class DailyValueResponse(BaseModel):
     note_code: str | None
 
 
+class DriUpperLimitResponse(BaseModel):
+    amount: Decimal
+    unit: str
+    source_version: str
+    source_id: str
+    scope: str
+    comparable_to_recommendation: bool
+
+
+class DriRecommendationResponse(BaseModel):
+    nutrient_id: str
+    availability: Literal["available", "unavailable"]
+    amount: Decimal | None
+    unit: str | None
+    reference_type: DriReferenceType | None
+    source_version: str
+    source_id: str | None
+    age: int | None
+    sex: Literal["female", "male"] | None
+    life_stage: Literal["general_adult", "pregnant", "lactating"] | None
+    calculation_basis: DriCalculationBasis | None
+    weight_kg: Decimal | None
+    upper_limit: DriUpperLimitResponse | None
+    reason_code: str | None
+
+
 class EnergyEstimateResponse(BaseModel):
     availability: Literal["available", "unavailable"]
     amount: Decimal | None
@@ -86,10 +121,14 @@ class TargetValueResponse(BaseModel):
     nutrient_id: str
     amount: Decimal | None
     unit: str
-    authority: Literal["manual_override", "calculated_estimate", "daily_value", "unavailable"]
+    authority: TargetAuthority
     direction: TargetDirection
     reason_code: str | None = None
     note_code: str | None = None
+    reference_type: DriReferenceType | None = None
+    source_version: str | None = None
+    source_id: str | None = None
+    calculation_basis: DriCalculationBasis | None = None
 
 
 class TargetConfigurationResponse(BaseModel):
@@ -99,8 +138,10 @@ class TargetConfigurationResponse(BaseModel):
     effective_targets: list[TargetValueResponse]
     daily_value_catalog_version: str
     daily_value_standard: str
+    dri_dataset_version: str
     target_direction_semantics_version: str
     daily_values: list[DailyValueResponse]
+    dri_recommendations: list[DriRecommendationResponse]
     limitations: list[str]
     informational_notice: str
 
@@ -111,17 +152,22 @@ class DailyTargetComparisonItemResponse(BaseModel):
     target_amount: Decimal | None
     unit: str
     percentage: Decimal | None
-    authority: Literal["manual_override", "calculated_estimate", "daily_value", "unavailable"]
+    authority: TargetAuthority
     direction: TargetDirection
     status: Literal["available", "target_unavailable", "consumed_unavailable"]
     reason_code: str | None
     note_code: str | None
     has_unknown_contributors: bool
+    reference_type: DriReferenceType | None = None
+    source_version: str | None = None
+    source_id: str | None = None
+    calculation_basis: DriCalculationBasis | None = None
 
 
 class DailyTargetComparisonResponse(BaseModel):
     date: date
     daily_value_catalog_version: str
+    dri_dataset_version: str
     target_direction_semantics_version: str
     comparisons: list[DailyTargetComparisonItemResponse]
 

@@ -8,6 +8,7 @@ export const PRIMARY_PROGRESS_NUTRIENTS = [
 export function targetAuthorityLabel(authority: TargetAuthority): string {
   if (authority === "manual_override") return "Personal target";
   if (authority === "calculated_estimate") return "Estimated personal target";
+  if (authority === "dri") return "DRI recommendation";
   if (authority === "daily_value") return "FDA Daily Value";
   return "No target";
 }
@@ -74,7 +75,11 @@ export function boundedProgressValue(value: string | null): number {
   return Math.max(0, Math.min(100, numeric));
 }
 
-export function progressAccessibilityLabel(item: DailyTargetComparisonItem, name: string): string {
+export function progressAccessibilityLabel(
+  item: DailyTargetComparisonItem,
+  name: string,
+  referenceDetail?: string,
+): string {
   const direction = item.direction === "unavailable" ? null : accessibleTargetDirectionLabel(item.direction);
   const unit = item.unit === "kcal" ? "kilocalories" : item.unit === "g" ? "grams" : item.unit === "mg" ? "milligrams" : item.unit === "mcg" ? "micrograms" : item.unit;
   const consumed = item.consumedAmount === null ? "no consumed amount" : `${formatTargetAmount(item.consumedAmount, item.unit)} ${unit} consumed`;
@@ -82,7 +87,14 @@ export function progressAccessibilityLabel(item: DailyTargetComparisonItem, name
   const percentage = item.percentage === null ? null : formatTargetPercentage(item.percentage);
   const numericState = item.direction === "limit" && percentageAtOrAbove100(item.percentage) ? ", limit reached or exceeded" : "";
   const state = [direction ? `${direction}${numericState}` : null, item.hasUnknownContributors ? "incomplete data" : null].filter(Boolean);
-  return [name, consumed, target, percentage, ...state].filter(Boolean).join(", ");
+  return [
+    name,
+    consumed,
+    target,
+    percentage,
+    referenceDetail,
+    ...state,
+  ].filter(Boolean).join(", ");
 }
 
 function accessibleTargetDirectionLabel(direction: TargetDirection): string {
