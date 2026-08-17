@@ -159,5 +159,462 @@
     "name":"nutrient_name_ambiguous_fragment_rejected",
     "request":{"full_text":"Nutrition Facts\nServing size 1 cup (100g)\nCalories 100\ntotal ca 8g","observations":[{"id":"ca1","text":"Nutrition Facts","confidence":0.99},{"id":"ca2","text":"Serving size 1 cup (100g)","confidence":0.98},{"id":"ca3","text":"Calories 100","confidence":0.98},{"id":"ca4","text":"total ca 8g","confidence":0.95}]},
     "expected":{"serving":{"count":null,"display":"1 cup (100g)","quantity":"1","unit":"cup","grams":"100","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[[null,"8","g",null,"parsed",null]],"warnings":["nutrient_name_unmatched"],"unparsed":[]}
+  },
+  {
+    "name": "supplement_facts_extended_two_column",
+    "request": {
+      "full_text": "Supplement Facts\nServing size 1 capsule\nCalories 0\nVitamin B1\n1.2mg 100%\nVitamin B2\n1.3mg 100%\nVitamin A\n900mcg 100%\nVitamin C\n90mg 100%\nVitamin E\n15mg 100%\nVitamin K\n120mcg 100%\nNiacin\n16mg 100%\nFolate\n400mcg DFE 100%\nVitamin B6\n1.7mg 100%\nVitamin B12\n2.4mcg 100%\nBiotin\n30mcg 100%\nPantothenic Acid\n5mg 100%\nCholine\n550mg 100%\nPhosphorus\n1250mg 100%\nIodine\n150mcg 100%\nMagnesium\n420mg 100%\nZinc\n11mg 100%\nSelenium\n55mcg 100%\nCopper\n0.9mg 100%\nManganese\n2.3mg 100%\nChromium\n35mcg 100%\nMolybdenum\n45mcg 100%\nChloride\n2300mg 100%",
+      "observations": [
+        {
+          "id": "sf-header",
+          "text": "Supplement Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "sf-serving",
+          "text": "Serving size 1 capsule",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-calories",
+          "text": "Calories 0",
+          "confidence": 0.99
+        },
+        {
+          "id": "sf-name-01",
+          "text": "Vitamin B1",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-01",
+          "text": "1.2mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-02",
+          "text": "Vitamin B2",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-02",
+          "text": "1.3mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-03",
+          "text": "Vitamin A",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-03",
+          "text": "900mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-04",
+          "text": "Vitamin C",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-04",
+          "text": "90mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-05",
+          "text": "Vitamin E",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-05",
+          "text": "15mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-06",
+          "text": "Vitamin K",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-06",
+          "text": "120mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-07",
+          "text": "Niacin",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-07",
+          "text": "16mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-08",
+          "text": "Folate",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-08",
+          "text": "400mcg DFE 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-09",
+          "text": "Vitamin B6",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-09",
+          "text": "1.7mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-10",
+          "text": "Vitamin B12",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-10",
+          "text": "2.4mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-11",
+          "text": "Biotin",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-11",
+          "text": "30mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-12",
+          "text": "Pantothenic Acid",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-12",
+          "text": "5mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-13",
+          "text": "Choline",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-13",
+          "text": "550mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-14",
+          "text": "Phosphorus",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-14",
+          "text": "1250mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-15",
+          "text": "Iodine",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-15",
+          "text": "150mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-16",
+          "text": "Magnesium",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-16",
+          "text": "420mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-17",
+          "text": "Zinc",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-17",
+          "text": "11mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-18",
+          "text": "Selenium",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-18",
+          "text": "55mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-19",
+          "text": "Copper",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-19",
+          "text": "0.9mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-20",
+          "text": "Manganese",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-20",
+          "text": "2.3mg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-21",
+          "text": "Chromium",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-21",
+          "text": "35mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-22",
+          "text": "Molybdenum",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-22",
+          "text": "45mcg 100%",
+          "confidence": 0.97
+        },
+        {
+          "id": "sf-name-23",
+          "text": "Chloride",
+          "confidence": 0.98
+        },
+        {
+          "id": "sf-value-23",
+          "text": "2300mg 100%",
+          "confidence": 0.97
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 capsule",
+        "quantity": "1",
+        "unit": "capsule",
+        "grams": null,
+        "approximate": false
+      },
+      "calories": {
+        "value": "0",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "thiamin",
+          "1.2",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "riboflavin",
+          "1.3",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "vitamin_a",
+          "900",
+          "mcg RAE",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "vitamin_c",
+          "90",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "vitamin_e",
+          "15",
+          "mg alpha-tocopherol",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "vitamin_k",
+          "120",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "niacin",
+          "16",
+          "mg NE",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "folate",
+          "400",
+          "mcg DFE",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "vitamin_b6",
+          "1.7",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "vitamin_b12",
+          "2.4",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "biotin",
+          "30",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "pantothenic_acid",
+          "5",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "choline",
+          "550",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "phosphorus",
+          "1250",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "iodine",
+          "150",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "magnesium",
+          "420",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "zinc",
+          "11",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "selenium",
+          "55",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "copper",
+          "0.9",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "manganese",
+          "2.3",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "chromium",
+          "35",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "molybdenum",
+          "45",
+          "mcg",
+          "100",
+          "parsed",
+          null
+        ],
+        [
+          "chloride",
+          "2300",
+          "mg",
+          "100",
+          "parsed",
+          null
+        ]
+      ],
+      "warnings": [
+        "serving_grams_missing"
+      ],
+      "unparsed": []
+    }
   }
 ]

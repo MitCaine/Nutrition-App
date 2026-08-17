@@ -166,6 +166,111 @@ describe("E2-06 local USDA gateway", () => {
     ]));
   });
 
+  test("maps extended FDC identities with semantic units without guessing equivalence", () => {
+    const preview = mapLocalUsdaFoodPreview({
+      fdcId: 990101,
+      description: "Extended nutrient fixture",
+      dataType: "Foundation",
+      foodNutrients: [
+        { nutrientId: 1091, nutrientNumber: "305", nutrientName: "Phosphorus, P", amount: 125, unitName: "MG" },
+        { nutrientId: 1095, nutrientNumber: "309", nutrientName: "Zinc, Zn", amount: 0, unitName: "MG" },
+        { nutrientId: 1096, nutrientNumber: "310", nutrientName: "Chromium, Cr", amount: 3, unitName: "UG" },
+        { nutrientId: 1098, nutrientNumber: "312", nutrientName: "Copper, Cu", amount: 0.4, unitName: "MG" },
+        { nutrientId: 1100, nutrientNumber: "314", nutrientName: "Iodine, I", amount: 20, unitName: "UG" },
+        { nutrientId: 1101, nutrientNumber: "315", nutrientName: "Manganese, Mn", amount: 0.7, unitName: "MG" },
+        { nutrientId: 1102, nutrientNumber: "316", nutrientName: "Molybdenum, Mo", amount: 6, unitName: "UG" },
+        { nutrientId: 1103, nutrientNumber: "317", nutrientName: "Selenium, Se", amount: null, unitName: "UG" },
+        { nutrientId: 1106, nutrientNumber: "320", nutrientName: "Vitamin A, RAE", amount: 90, unitName: "UG" },
+        { nutrientId: 1109, nutrientNumber: "323", nutrientName: "Vitamin E (alpha-tocopherol)", amount: 1.5, unitName: "MG" },
+        { nutrientId: 1162, nutrientNumber: "401", nutrientName: "Vitamin C, total ascorbic acid", amount: 12, unitName: "MG" },
+        { nutrientId: 1165, nutrientNumber: "404", nutrientName: "Thiamin", amount: 0.2, unitName: "MG" },
+        { nutrientId: 1166, nutrientNumber: "405", nutrientName: "Riboflavin", amount: 0.3, unitName: "MG" },
+        { nutrientId: 1169, nutrientNumber: "409", nutrientName: "Niacin equivalent N406 +N407", amount: 2.5, unitName: "MG" },
+        { nutrientId: 1170, nutrientNumber: "410", nutrientName: "Pantothenic acid", amount: 0.8, unitName: "MG" },
+        { nutrientId: 1175, nutrientNumber: "415", nutrientName: "Vitamin B-6", amount: 0.4, unitName: "MG" },
+        { nutrientId: 1176, nutrientNumber: "416", nutrientName: "Biotin", amount: 4, unitName: "UG" },
+        { nutrientId: 1178, nutrientNumber: "418", nutrientName: "Vitamin B-12", amount: 1.2, unitName: "UG" },
+        { nutrientId: 1180, nutrientNumber: "421", nutrientName: "Choline, total", amount: 25, unitName: "MG" },
+        { nutrientId: 1190, nutrientNumber: "435", nutrientName: "Folate, DFE", amount: 80, unitName: "UG" },
+        { nutrientId: 1272, nutrientNumber: "621", nutrientName: "PUFA 22:6 n-3 (DHA)", amount: 0.03, unitName: "G" },
+        { nutrientId: 1278, nutrientNumber: "629", nutrientName: "PUFA 20:5 n-3 (EPA)", amount: 0.02, unitName: "G" },
+        { nutrientId: 1316, nutrientNumber: "675", nutrientName: "PUFA 18:2 n-6 c,c", amount: 2.1, unitName: "G" },
+        { nutrientId: 1404, nutrientNumber: "851", nutrientName: "PUFA 18:3 n-3 c,c,c (ALA)", amount: 0.15, unitName: "G" },
+        { nutrientId: 1104, nutrientNumber: "318", nutrientName: "Vitamin A, IU", amount: 5000, unitName: "IU" },
+        { nutrientId: 1167, nutrientNumber: "406", nutrientName: "Niacin", amount: 99, unitName: "MG" },
+        { nutrientId: 1177, nutrientNumber: "417", nutrientName: "Folate, total", amount: 999, unitName: "UG" },
+        { nutrientId: 1185, nutrientNumber: "430", nutrientName: "Vitamin K (phylloquinone)", amount: 40, unitName: "UG" },
+      ],
+    });
+
+    const nutrients = new Map(
+      preview.nutrients.map((nutrient) => [nutrient.nutrient_id, nutrient]),
+    );
+
+    expect(preview.nutrients).toHaveLength(42);
+
+    expect(nutrients.get("phosphorus")).toMatchObject({ amount: "125.000000", unit: "mg" });
+    expect(nutrients.get("zinc")).toMatchObject({ amount: "0.000000", data_status: "zero" });
+    expect(nutrients.get("selenium")).toMatchObject({ amount: null, data_status: "unknown" });
+
+    expect(nutrients.get("vitamin_a")).toMatchObject({
+      amount: "90.000000",
+      unit: "mcg RAE",
+      original_unit: "UG",
+    });
+    expect(nutrients.get("vitamin_e")).toMatchObject({
+      amount: "1.500000",
+      unit: "mg alpha-tocopherol",
+    });
+    expect(nutrients.get("niacin")).toMatchObject({
+      amount: "2.500000",
+      unit: "mg NE",
+    });
+    expect(nutrients.get("folate")).toMatchObject({
+      amount: "80.000000",
+      unit: "mcg DFE",
+    });
+
+    expect(nutrients.get("dha")).toMatchObject({ amount: "30.000000", unit: "mg" });
+    expect(nutrients.get("epa")).toMatchObject({ amount: "20.000000", unit: "mg" });
+    expect(nutrients.get("linoleic_acid")).toMatchObject({ amount: "2.100000", unit: "g" });
+    expect(nutrients.get("alpha_linolenic_acid")).toMatchObject({ amount: "0.150000", unit: "g" });
+
+    expect(nutrients.get("vitamin_k")).toMatchObject({
+      amount: null,
+      data_status: "unknown",
+    });
+    expect(nutrients.get("chloride")).toMatchObject({
+      amount: null,
+      data_status: "unknown",
+    });
+  });
+
+  test("does not infer RAE, DFE, NE, or total Vitamin K from incompatible USDA identities", () => {
+    const preview = mapLocalUsdaFoodPreview({
+      fdcId: 990102,
+      description: "Equivalence guard fixture",
+      dataType: "Foundation",
+      foodNutrients: [
+        { nutrientId: 1104, nutrientNumber: "318", nutrientName: "Vitamin A, IU", amount: 5000, unitName: "IU" },
+        { nutrientId: 1167, nutrientNumber: "406", nutrientName: "Niacin", amount: 16, unitName: "MG" },
+        { nutrientId: 1177, nutrientNumber: "417", nutrientName: "Folate, total", amount: 400, unitName: "UG" },
+        { nutrientId: 1185, nutrientNumber: "430", nutrientName: "Vitamin K (phylloquinone)", amount: 120, unitName: "UG" },
+      ],
+    });
+
+    const nutrients = new Map(
+      preview.nutrients.map((nutrient) => [nutrient.nutrient_id, nutrient]),
+    );
+
+    for (const id of ["vitamin_a", "niacin", "folate", "vitamin_k"]) {
+      expect(nutrients.get(id)).toMatchObject({
+        amount: null,
+        data_status: "unknown",
+      });
+    }
+  });
+
   test("uses amount when present, even when null, and only falls back to value when absent", () => {
     const preview = mapLocalUsdaFoodPreview({
       ...USDA_PAYLOAD,

@@ -247,6 +247,115 @@ test("recovered nutrient identities participate deterministically in conflict ha
   expect(first.nutrients[1]?.warning_codes).toContain("conflicting_nutrient_values");
 });
 
+test.each([
+  ["Vitamin B1 1.2mg", "thiamin", "1.2", "mg", "parsed"],
+  ["Thiamine 1.2mg", "thiamin", "1.2", "mg", "parsed"],
+  ["Vitamin B2 1.3mg", "riboflavin", "1.3", "mg", "parsed"],
+  ["Vitamin B3 16mg", "niacin", "16", "mg NE", "parsed"],
+  ["Vitamin B5 5mg", "pantothenic_acid", "5", "mg", "parsed"],
+  ["Vitamin B6 1.7mg", "vitamin_b6", "1.7", "mg", "parsed"],
+  ["Vitamin B12 2.4mcg", "vitamin_b12", "2.4", "mcg", "parsed"],
+  ["Folate 400mcg DFE 100%", "folate", "400", "mcg DFE", "parsed"],
+  ["Folic Acid 400mcg", "folate", "400", null, "ambiguous"],
+  ["Vitamin A 900mcg", "vitamin_a", "900", "mcg RAE", "parsed"],
+  ["Vitamin A 900mcg RAE", "vitamin_a", "900", "mcg RAE", "parsed"],
+  ["Vitamin A 5000IU", "vitamin_a", "5000", null, "ambiguous"],
+  [
+    "Vitamin E 15mg",
+    "vitamin_e",
+    "15",
+    "mg alpha-tocopherol",
+    "parsed",
+  ],
+  [
+    "Vitamin E 15mg alpha-tocopherol",
+    "vitamin_e",
+    "15",
+    "mg alpha-tocopherol",
+    "parsed",
+  ],
+  ["Vitamin E 30IU", "vitamin_e", "30", null, "ambiguous"],
+  ["EPA 120mg", "epa", "120", "mg", "parsed"],
+  ["DHA 80mg", "dha", "80", "mg", "parsed"],
+  [
+    "Alpha-Linolenic Acid 1.3g",
+    "alpha_linolenic_acid",
+    "1.3",
+    "g",
+    "parsed",
+  ],
+  ["Linoleic Acid 12g", "linoleic_acid", "12", "g", "parsed"],
+] as const)(
+  "extended controlled OCR alias/equivalence contract: %s",
+  (line, nutrientId, amount, unit, status) => {
+    const result = parseLocalNutritionLabel({
+      full_text: "ignored",
+      observations: [
+        {
+          id: "header",
+          text: "Supplement Facts",
+          confidence: 0.99,
+        },
+        {
+          id: "nutrient",
+          text: line,
+          confidence: 0.98,
+        },
+      ],
+    });
+
+    expect(result.nutrients[0]).toMatchObject({
+      nutrient_id: nutrientId,
+      amount: { value: amount },
+      unit: { value: unit },
+      status,
+    });
+
+    expect(
+      result.warnings.map(({ code }) => code),
+    ).not.toContain("nutrition_header_not_found");
+
+    if (status === "ambiguous") {
+      expect(result.nutrients[0]?.warning_codes).toContain(
+        "nutrient_unit_unknown",
+      );
+    }
+  },
+);
+
+test.each([
+  "Vitamin B 5mg",
+  "Vitamin B11 5mg",
+  "Omega 3 5mg",
+  "Omega 6 5mg",
+  "Essential Fatty Acid 5mg",
+  "Vitamin Complex 5mg",
+] as const)(
+  "extended catalog does not introduce generic fuzzy OCR matching: %s",
+  (line) => {
+    const result = parseLocalNutritionLabel({
+      full_text: "ignored",
+      observations: [
+        {
+          id: "header",
+          text: "Supplement Facts",
+          confidence: 0.99,
+        },
+        {
+          id: "nutrient",
+          text: line,
+          confidence: 0.98,
+        },
+      ],
+    });
+
+    expect(result.nutrients[0]?.nutrient_id).toBeNull();
+    expect(result.nutrients[0]?.warning_codes).toContain(
+      "nutrient_name_unmatched",
+    );
+  },
+);
+
 test("omitted observations defaults to the same parser request as an empty list", () => {
   const omitted = parseLocalNutritionLabel({
     full_text: "Nutrition Facts\nCalories 100",

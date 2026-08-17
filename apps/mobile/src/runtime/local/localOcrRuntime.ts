@@ -172,6 +172,10 @@ function stringArray(
 function normalizeNutrientUnit(value: unknown): string {
   if (typeof value !== "string") throw invalidConfirmation("Nutrient unit must be text.", ["food", "nutrients"]);
   const normalized = value.trim().toLocaleLowerCase("en-US");
+  if (normalized === "mcg rae") return "mcg RAE";
+  if (normalized === "mcg dfe") return "mcg DFE";
+  if (normalized === "mg ne") return "mg NE";
+  if (normalized === "mg alpha-tocopherol") return "mg alpha-tocopherol";
   if (["microgram", "micrograms", "ug", "µg"].includes(normalized)) return "mcg";
   if (["gram", "grams"].includes(normalized)) return "g";
   if (["milligram", "milligrams"].includes(normalized)) return "mg";
@@ -224,7 +228,7 @@ function validateDecision(value: unknown, index: number): TraceFieldDecisionInpu
   const nutrientId = stringValue(decision.nutrient_id, { location: [...location, "nutrient_id"], nullable: true }) as string | null;
   const suggestedValue = stringValue(decision.suggested_value, { location: [...location, "suggested_value"], nullable: true, maximum: 256 });
   const confirmedValue = stringValue(decision.confirmed_value, { location: [...location, "confirmed_value"], nullable: true, maximum: 256 });
-  const unit = stringValue(decision.unit, { location: [...location, "unit"], nullable: true, maximum: 16 });
+  const unit = stringValue(decision.unit, { location: [...location, "unit"], nullable: true, maximum: 32 });
   if (typeof decision.decision !== "string" || !DECISIONS.has(decision.decision)) {
     throw invalidConfirmation("Decision is unsupported.", [...location, "decision"]);
   }
@@ -323,8 +327,8 @@ export function validatePersistedOcrTraceSnapshot(value: unknown): TraceSnapshot
   if (input.schema_version !== OCR_CONFIRMATION_TRACE_SCHEMA_VERSION) {
     throw invalidConfirmation("Trace schema version is unsupported.", ["schema_version"]);
   }
-  if (!Array.isArray(input.field_decisions) || input.field_decisions.length < 1 || input.field_decisions.length > 40) {
-    throw invalidConfirmation("Field decisions must contain 1-40 values.", ["field_decisions"]);
+  if (!Array.isArray(input.field_decisions) || input.field_decisions.length < 1 || input.field_decisions.length > 64) {
+    throw invalidConfirmation("Field decisions must contain 1-64 values.", ["field_decisions"]);
   }
   const decisions = input.field_decisions.map(validateDecision);
   const unknownNutrients = validateUnknownNutrients(input.unknown_nutrients);
@@ -485,8 +489,8 @@ async function validateConfirmation(value: unknown): Promise<ValidatedConfirmati
   } catch {
     throw invalidConfirmation("Client request ID must be a UUID.", ["client_request_id"]);
   }
-  if (!Array.isArray(input.field_decisions) || input.field_decisions.length < 1 || input.field_decisions.length > 40) {
-    throw invalidConfirmation("Field decisions must contain 1-40 values.", ["field_decisions"]);
+  if (!Array.isArray(input.field_decisions) || input.field_decisions.length < 1 || input.field_decisions.length > 64) {
+    throw invalidConfirmation("Field decisions must contain 1-64 values.", ["field_decisions"]);
   }
   const decisions = input.field_decisions.map(validateDecision);
   const unknownNutrients = validateUnknownNutrients(input.unknown_nutrients ?? []);

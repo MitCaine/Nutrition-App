@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select
+
+from app.catalog.nutrients import NUTRIENT_CATALOG
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -104,6 +106,64 @@ def test_confirmation_trace_limit_uses_ascii_escaped_json_bytes(
     else:
         with pytest.raises(ValueError, match="confirmation trace exceeds size limit"):
             OcrNutritionConfirmationRequest.model_validate(payload)
+
+
+def test_confirmation_accepts_full_extended_catalog_trace_and_semantic_units() -> None:
+    payload = confirmation_payload()
+
+    existing_ids = {
+        item["nutrient_id"]
+        for item in payload["field_decisions"]
+        if item["nutrient_id"] is not None
+    }
+
+    for nutrient in NUTRIENT_CATALOG:
+        if nutrient.id in existing_ids:
+            continue
+
+        payload["field_decisions"].append(
+            {
+                **decision(
+                    f"nutrient.{nutrient.id}",
+                    None,
+                    nutrient_id=nutrient.id,
+                    unit=nutrient.default_unit,
+                    status="missing",
+                ),
+                "decision": "omitted",
+                "suggested_value": None,
+            }
+        )
+
+    assert 40 < len(payload["field_decisions"]) <= 64
+
+    validated = OcrNutritionConfirmationRequest.model_validate(payload)
+
+    vitamin_a = next(
+        item
+        for item in validated.field_decisions
+        if item.nutrient_id == "vitamin_a"
+    )
+    vitamin_e = next(
+        item
+        for item in validated.field_decisions
+        if item.nutrient_id == "vitamin_e"
+    )
+    niacin = next(
+        item
+        for item in validated.field_decisions
+        if item.nutrient_id == "niacin"
+    )
+    folate = next(
+        item
+        for item in validated.field_decisions
+        if item.nutrient_id == "folate"
+    )
+
+    assert vitamin_a.unit == "mcg RAE"
+    assert vitamin_e.unit == "mg alpha-tocopherol"
+    assert niacin.unit == "mg NE"
+    assert folate.unit == "mcg DFE"
 
 
 def test_confirmation_creates_manual_food_and_bounded_trace_atomically(client, db_session):

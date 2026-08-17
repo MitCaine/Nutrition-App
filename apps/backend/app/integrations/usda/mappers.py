@@ -38,6 +38,30 @@ USDA_NUTRIENT_ID_MAP: dict[str, str] = {
     "1089": "iron",
     "1092": "potassium",
     "1090": "magnesium",
+    "1091": "phosphorus",
+    "1095": "zinc",
+    "1096": "chromium",
+    "1098": "copper",
+    "1100": "iodine",
+    "1101": "manganese",
+    "1102": "molybdenum",
+    "1103": "selenium",
+    "1106": "vitamin_a",
+    "1109": "vitamin_e",
+    "1162": "vitamin_c",
+    "1165": "thiamin",
+    "1166": "riboflavin",
+    "1169": "niacin",
+    "1170": "pantothenic_acid",
+    "1175": "vitamin_b6",
+    "1176": "biotin",
+    "1178": "vitamin_b12",
+    "1180": "choline",
+    "1190": "folate",
+    "1272": "dha",
+    "1278": "epa",
+    "1316": "linoleic_acid",
+    "1404": "alpha_linolenic_acid",
 }
 
 USDA_NUTRIENT_NUMBER_MAP: dict[str, str] = {
@@ -57,6 +81,30 @@ USDA_NUTRIENT_NUMBER_MAP: dict[str, str] = {
     "303": "iron",
     "306": "potassium",
     "304": "magnesium",
+    "305": "phosphorus",
+    "309": "zinc",
+    "310": "chromium",
+    "312": "copper",
+    "314": "iodine",
+    "315": "manganese",
+    "316": "molybdenum",
+    "317": "selenium",
+    "320": "vitamin_a",
+    "323": "vitamin_e",
+    "401": "vitamin_c",
+    "404": "thiamin",
+    "405": "riboflavin",
+    "409": "niacin",
+    "410": "pantothenic_acid",
+    "415": "vitamin_b6",
+    "416": "biotin",
+    "418": "vitamin_b12",
+    "421": "choline",
+    "435": "folate",
+    "621": "dha",
+    "629": "epa",
+    "675": "linoleic_acid",
+    "851": "alpha_linolenic_acid",
 }
 
 USDA_NAME_FALLBACK_MAP: dict[str, str] = {
@@ -76,6 +124,41 @@ USDA_NAME_FALLBACK_MAP: dict[str, str] = {
     "iron, fe": "iron",
     "potassium, k": "potassium",
     "magnesium, mg": "magnesium",
+    "phosphorus, p": "phosphorus",
+    "zinc, zn": "zinc",
+    "chromium, cr": "chromium",
+    "copper, cu": "copper",
+    "iodine, i": "iodine",
+    "manganese, mn": "manganese",
+    "molybdenum, mo": "molybdenum",
+    "selenium, se": "selenium",
+    "vitamin a, rae": "vitamin_a",
+    "vitamin e (alpha-tocopherol)": "vitamin_e",
+    "vitamin c, total ascorbic acid": "vitamin_c",
+    "thiamin": "thiamin",
+    "riboflavin": "riboflavin",
+    "niacin equivalent n406 +n407": "niacin",
+    "pantothenic acid": "pantothenic_acid",
+    "vitamin b-6": "vitamin_b6",
+    "biotin": "biotin",
+    "vitamin b-12": "vitamin_b12",
+    "choline, total": "choline",
+    "folate, dfe": "folate",
+    "pufa 22:6 n-3 (dha)": "dha",
+    "pufa 20:5 n-3 (epa)": "epa",
+    "pufa 18:2 n-6 c,c": "linoleic_acid",
+    "pufa 18:3 n-3 c,c,c (ala)": "alpha_linolenic_acid",
+}
+
+# These USDA nutrient identities already encode the biological-equivalence
+# semantics represented by the canonical unit. The numeric value is therefore
+# re-labeled from USDA's physical unit token without performing a mass or IU
+# conversion. No other USDA nutrient is allowed through this exception.
+USDA_SEMANTIC_UNIT_MAP: dict[str, tuple[str, str]] = {
+    "vitamin_a": ("mcg", "mcg RAE"),
+    "vitamin_e": ("mg", "mg alpha-tocopherol"),
+    "niacin": ("mg", "mg NE"),
+    "folate": ("mcg", "mcg DFE"),
 }
 
 
@@ -184,7 +267,15 @@ def _map_nutrient(raw: dict[str, Any], diagnostics: list[str]) -> tuple[UsdaNutr
         diagnostics.append(f"USDA nutrient {canonical_id} did not include a unit")
         return None
     unit = normalize_unit(original_unit)
-    if not nutrient_unit_is_compatible(definition.default_unit, unit):
+    semantic_unit = USDA_SEMANTIC_UNIT_MAP.get(canonical_id)
+    if semantic_unit is not None:
+        source_unit, canonical_unit = semantic_unit
+        if unit != source_unit or definition.default_unit != canonical_unit:
+            diagnostics.append(
+                f"USDA nutrient {canonical_id} uses unsupported unit {original_unit}"
+            )
+            return None
+    elif not nutrient_unit_is_compatible(definition.default_unit, unit):
         diagnostics.append(f"USDA nutrient {canonical_id} uses unsupported unit {original_unit}")
         return None
 
@@ -205,7 +296,11 @@ def _map_nutrient(raw: dict[str, Any], diagnostics: list[str]) -> tuple[UsdaNutr
             _nutrient_match_priority(external_id, external_number, external_name),
         )
 
-    amount = convert_nutrition_amount(original_amount, unit, definition.default_unit)
+    amount = (
+        original_amount
+        if semantic_unit is not None
+        else convert_nutrition_amount(original_amount, unit, definition.default_unit)
+    )
     status = NutrientDataStatus.ZERO if amount == 0 else NutrientDataStatus.KNOWN
     return (
         UsdaNutrientCandidate(

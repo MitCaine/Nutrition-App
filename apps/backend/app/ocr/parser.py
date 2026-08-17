@@ -26,7 +26,9 @@ NUTRITION_LABEL_PARSER_VERSION = "nutrition_label_v1"
 _EXPECTED_UNITS = {item.id: item.default_unit for item in NUTRIENT_CATALOG}
 _NUTRIENT_ROW = re.compile(
     r"^(?P<name>.+?)\s+(?P<amount><\s*\d[\d.,]*|\d[\d.,]*)\s*"
-    r"(?P<unit>mcg|mg|g|q|µg|ug)(?=\s|\d|%|$)"
+    r"(?P<unit>mcg|mg|g|q|µg|ug)"
+    r"(?:\s*(?P<unit_qualifier>rae|dfe|ne|(?:alpha|α)(?:-| )tocopherol))?"
+    r"(?=\s|\d|%|$)"
     r"(?:\s*(?P<dv>\d[\d.,]*)\s*%)?\s*$",
     re.IGNORECASE,
 )
@@ -37,7 +39,9 @@ _ADDED_SUGARS_ROW = re.compile(
     re.IGNORECASE,
 )
 _ONLY_AMOUNT = re.compile(
-    r"^(?:<\s*)?\d[\d.,]*\s*(?:mcg|mg|g|q|µg|ug)(?:\s*\d[\d.,]*\s*%)?$",
+    r"^(?:<\s*)?\d[\d.,]*\s*(?:mcg|mg|g|q|µg|ug)"
+    r"(?:\s*(?:rae|dfe|ne|(?:alpha|α)(?:-| )tocopherol))?"
+    r"(?:\s*\d[\d.,]*\s*%)?$",
     re.IGNORECASE,
 )
 _ONLY_DV = re.compile(r"^\d[\d.,]*\s*%$")
@@ -58,6 +62,82 @@ _ONLY_SERVING_GRAMS = re.compile(
     r"^\(\s*\d+(?:[.,]\d+)?\s*g\s*\)$",
     re.IGNORECASE,
 )
+
+_SEMANTIC_FACT_UNITS: dict[str, tuple[str, str, str, bool]] = {
+    "vitamin_a": ("mcg", "mcg RAE", "rae", False),
+    "vitamin_e": (
+        "mg",
+        "mg alpha-tocopherol",
+        "alpha-tocopherol",
+        False,
+    ),
+    "niacin": ("mg", "mg NE", "ne", False),
+    "folate": ("mcg", "mcg DFE", "dfe", True),
+}
+
+
+def _normalize_unit_qualifier(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.casefold().replace("α", "alpha")
+    normalized = re.sub(r"[^a-z]+", " ", normalized)
+    normalized = " ".join(normalized.split())
+
+    if normalized == "alpha tocopherol":
+        return "alpha-tocopherol"
+
+    return normalized
+
+
+def _normalize_fact_nutrient_unit(
+    raw_unit: str,
+    qualifier: str | None,
+    nutrient_id: str | None,
+) -> tuple[str | None, tuple[str, ...]]:
+    normalized_qualifier = _normalize_unit_qualifier(qualifier)
+    semantic = _SEMANTIC_FACT_UNITS.get(nutrient_id or "")
+
+    if semantic is not None:
+        (
+            source_unit,
+            canonical_unit,
+            expected_qualifier,
+            qualifier_required,
+        ) = semantic
+
+        base_unit, base_codes = normalize_mass_unit(raw_unit)
+
+        if base_unit != source_unit:
+            return None, ("nutrient_unit_unknown",)
+
+        if (
+            normalized_qualifier is not None
+            and normalized_qualifier != expected_qualifier
+        ):
+            return None, ("nutrient_unit_unknown",)
+
+        if (
+            qualifier_required
+            and normalized_qualifier != expected_qualifier
+        ):
+            return None, ("nutrient_unit_unknown",)
+
+        return canonical_unit, base_codes
+
+    if normalized_qualifier is not None:
+        return None, ("nutrient_unit_unknown",)
+
+    expected_unit = (
+        _EXPECTED_UNITS.get(nutrient_id)
+        if nutrient_id
+        else None
+    )
+
+    return normalize_mass_unit(
+        raw_unit,
+        expected_unit=expected_unit,
+    )
 
 
 @dataclass(frozen=True)
@@ -210,7 +290,7 @@ def _detect_nutrition_header(lines: list[SourceLine], warnings: WarningCollector
     consumed = {
         line.id
         for line in lines
-        if re.search(r"\bnutrition\s+facts\b", line.text, re.IGNORECASE)
+        if re.search(r"\b(?:nutrition|supplement)\s+facts\b", line.text, re.IGNORECASE)
     }
     if not consumed:
         warnings.add("nutrition_header_not_found", "Nutrition Facts header was not found.")
@@ -349,7 +429,11 @@ def _parse_nutrient_line(line: SourceLine, warnings: WarningCollector) -> Parsed
             return None
         match, _ = prefix
         numeric_match = re.search(
-            r"(?P<amount><\s*\d[\d.,]*|\d[\d.,]*)(?:\s*(?P<unit>[a-zµ]+))?"
+            r"(?P<amount><\s*\d[\d.,]*|\d[\d.,]*)"
+            r"(?:\s*(?P<unit>[a-zµα]+)"
+            r"(?:\s*(?P<unit_qualifier>"
+            r"rae|dfe|ne|(?:alpha|α)(?:-| )tocopherol))?"
+            r")?"
             r"(?:\s*(?P<dv>\d[\d.,]*)\s*%)?\s*$",
             line.text,
             re.IGNORECASE,
@@ -357,9 +441,10 @@ def _parse_nutrient_line(line: SourceLine, warnings: WarningCollector) -> Parsed
         if numeric_match:
             amount = parse_decimal_token(numeric_match.group("amount"))
             raw_unit = numeric_match.group("unit") or ""
-            unit, unit_codes = normalize_mass_unit(
+            unit, unit_codes = _normalize_fact_nutrient_unit(
                 raw_unit,
-                expected_unit=_EXPECTED_UNITS[match.nutrient_id],
+                numeric_match.group("unit_qualifier"),
+                match.nutrient_id,
             )
             codes = tuple(dict.fromkeys(unit_codes or ("nutrient_unit_unknown",)))
             warnings.add(
@@ -432,9 +517,12 @@ def _parse_nutrient_line(line: SourceLine, warnings: WarningCollector) -> Parsed
     )
     name_match = exact_name_match or recovered_name_match
     nutrient_id = name_match.nutrient_id if name_match else None
-    expected_unit = _EXPECTED_UNITS.get(nutrient_id) if nutrient_id else None
     amount_result = parse_decimal_token(row.group("amount"))
-    unit, unit_warnings = normalize_mass_unit(row.group("unit"), expected_unit=expected_unit)
+    unit, unit_warnings = _normalize_fact_nutrient_unit(
+        row.group("unit"),
+        row.groupdict().get("unit_qualifier"),
+        nutrient_id,
+    )
     codes = list(amount_result.warning_codes + unit_warnings)
     if unit_warnings:
         for code in unit_warnings:

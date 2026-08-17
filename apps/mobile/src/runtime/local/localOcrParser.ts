@@ -60,6 +60,39 @@ const NUTRIENT_VARIANTS: Readonly<Record<string, readonly string[]>> = Object.fr
   calcium: ["calcium"],
   iron: ["iron"],
   potassium: ["potassium"],
+  magnesium: ["magnesium"],
+  vitamin_a: ["vitamin a"],
+  vitamin_c: ["vitamin c", "ascorbic acid"],
+  vitamin_e: ["vitamin e"],
+  vitamin_k: ["vitamin k"],
+  thiamin: ["thiamin", "thiamine", "vitamin b1", "vitamin b 1"],
+  riboflavin: ["riboflavin", "vitamin b2", "vitamin b 2"],
+  niacin: ["niacin", "vitamin b3", "vitamin b 3"],
+  vitamin_b6: ["vitamin b6", "vitamin b 6"],
+  folate: ["folate", "folic acid", "folacin"],
+  vitamin_b12: ["vitamin b12", "vitamin b 12"],
+  biotin: ["biotin"],
+  pantothenic_acid: ["pantothenic acid", "vitamin b5", "vitamin b 5"],
+  choline: ["choline"],
+  phosphorus: ["phosphorus"],
+  iodine: ["iodine"],
+  zinc: ["zinc"],
+  selenium: ["selenium"],
+  copper: ["copper"],
+  manganese: ["manganese"],
+  chromium: ["chromium"],
+  molybdenum: ["molybdenum"],
+  chloride: ["chloride"],
+  alpha_linolenic_acid: [
+    "alpha linolenic acid",
+    "omega 3 alpha linolenic acid",
+  ],
+  epa: ["epa", "eicosapentaenoic acid"],
+  dha: ["dha", "docosahexaenoic acid"],
+  linoleic_acid: [
+    "linoleic acid",
+    "omega 6 linoleic acid",
+  ],
 });
 
 const CATALOG = new Map(
@@ -97,9 +130,9 @@ const SORTED_NUTRIENT_VARIANTS = [...NUTRIENT_LOOKUP.keys()].sort(
   (left, right) => right.length - left.length,
 );
 
-const NUTRIENT_ROW = /^(?<name>.+?)\s+(?<amount><\s*\d[\d.,]*|\d[\d.,]*)\s*(?<unit>mcg|mg|g|q|µg|ug)(?=\s|\d|%|$)(?:\s*(?<dv>\d[\d.,]*)\s*%)?\s*$/iu;
+const NUTRIENT_ROW = /^(?<name>.+?)\s+(?<amount><\s*\d[\d.,]*|\d[\d.,]*)\s*(?<unit>mcg|mg|g|q|µg|ug)(?:\s*(?<unitQualifier>rae|dfe|ne|(?:alpha|α)(?:-| )tocopherol))?(?=\s|\d|%|$)(?:\s*(?<dv>\d[\d.,]*)\s*%)?\s*$/iu;
 const ADDED_SUGARS_ROW = /^includes?\s+(?<amount><\s*\d[\d.,]*|\d[\d.,]*)\s*(?<unit>g|q)(?=\s)\s+added sugars?(?:\s*(?<dv>\d[\d.,]*)\s*%)?\s*$/iu;
-const ONLY_AMOUNT = /^(?:<\s*)?\d[\d.,]*\s*(?:mcg|mg|g|q|µg|ug)(?:\s*\d[\d.,]*\s*%)?$/iu;
+const ONLY_AMOUNT = /^(?:<\s*)?\d[\d.,]*\s*(?:mcg|mg|g|q|µg|ug)(?:\s*(?:rae|dfe|ne|(?:alpha|α)(?:-| )tocopherol))?(?:\s*\d[\d.,]*\s*%)?$/iu;
 const ONLY_DAILY_VALUE = /^\d[\d.,]*\s*%$/u;
 const ONLY_CALORIE_AMOUNT = /^\d[\d.,]*$/u;
 const CALORIES_LABEL = /^calories\s*:?$/iu;
@@ -277,6 +310,101 @@ function normalizeMassUnit(unit: string, expectedUnit: string | null): [string |
     return ["g", ["ocr_character_correction_applied"]];
   }
   return [null, ["nutrient_unit_unknown"]];
+}
+
+type SemanticFactUnit = Readonly<{
+  sourceUnit: string;
+  canonicalUnit: string;
+  qualifier: string;
+  qualifierRequired: boolean;
+}>;
+
+const SEMANTIC_FACT_UNITS: Readonly<Record<string, SemanticFactUnit>> = Object.freeze({
+  vitamin_a: {
+    sourceUnit: "mcg",
+    canonicalUnit: "mcg RAE",
+    qualifier: "rae",
+    qualifierRequired: false,
+  },
+  vitamin_e: {
+    sourceUnit: "mg",
+    canonicalUnit: "mg alpha-tocopherol",
+    qualifier: "alpha-tocopherol",
+    qualifierRequired: false,
+  },
+  niacin: {
+    sourceUnit: "mg",
+    canonicalUnit: "mg NE",
+    qualifier: "ne",
+    qualifierRequired: false,
+  },
+  folate: {
+    sourceUnit: "mcg",
+    canonicalUnit: "mcg DFE",
+    qualifier: "dfe",
+    qualifierRequired: true,
+  },
+});
+
+function normalizeUnitQualifier(value: string | undefined): string | null {
+  if (value === undefined) return null;
+
+  const normalized = value
+    .toLocaleLowerCase("en-US")
+    .replace(/α/gu, "alpha")
+    .replace(/[^a-z]+/gu, " ")
+    .trim()
+    .replace(/\s+/gu, " ");
+
+  return normalized === "alpha tocopherol"
+    ? "alpha-tocopherol"
+    : normalized;
+}
+
+function normalizeFactNutrientUnit(
+  rawUnit: string,
+  qualifier: string | undefined,
+  nutrientId: string | null,
+): [string | null, readonly string[]] {
+  const normalizedQualifier = normalizeUnitQualifier(qualifier);
+  const semantic = nutrientId
+    ? SEMANTIC_FACT_UNITS[nutrientId]
+    : undefined;
+
+  if (semantic) {
+    const [baseUnit, baseCodes] = normalizeMassUnit(rawUnit, null);
+
+    if (baseUnit !== semantic.sourceUnit) {
+      return [null, ["nutrient_unit_unknown"]];
+    }
+
+    if (
+      normalizedQualifier !== null
+      && normalizedQualifier !== semantic.qualifier
+    ) {
+      return [null, ["nutrient_unit_unknown"]];
+    }
+
+    if (
+      semantic.qualifierRequired
+      && normalizedQualifier !== semantic.qualifier
+    ) {
+      return [null, ["nutrient_unit_unknown"]];
+    }
+
+    return [semantic.canonicalUnit, baseCodes];
+  }
+
+  if (normalizedQualifier !== null) {
+    return [null, ["nutrient_unit_unknown"]];
+  }
+
+  return normalizeMassUnit(
+    rawUnit,
+    nutrientId
+      ? CATALOG.get(nutrientId)?.defaultUnit ?? null
+      : null,
+  );
 }
 
 function matchNutrientName(value: string): NutrientNameMatch | null {
@@ -486,7 +614,7 @@ function normalizeLines(input: LocalOcrParseInput): SourceLine[] {
 }
 
 function detectNutritionHeader(lines: readonly SourceLine[], warnings: WarningCollector): Set<string> {
-  const consumed = new Set(lines.filter((line) => /\bnutrition\s+facts\b/iu.test(line.text)).map(({ id }) => id));
+  const consumed = new Set(lines.filter((line) => /\b(?:nutrition|supplement)\s+facts\b/iu.test(line.text)).map(({ id }) => id));
   if (consumed.size === 0) warnings.add("nutrition_header_not_found", "Nutrition Facts header was not found.");
   return consumed;
 }
@@ -588,11 +716,14 @@ function parseNutrientLine(line: SourceLine, warnings: WarningCollector): Parsed
   if (!row) {
     const match = knownNutrientPrefix(line.text);
     if (!match) return null;
-    const numericMatch = /(?<amount><\s*\d[\d.,]*|\d[\d.,]*)(?:\s*(?<unit>[a-zµ]+))?(?:\s*(?<dv>\d[\d.,]*)\s*%)?\s*$/iu.exec(line.text);
+    const numericMatch = /(?<amount><\s*\d[\d.,]*|\d[\d.,]*)(?:\s*(?<unit>[a-zµα]+)(?:\s*(?<unitQualifier>rae|dfe|ne|(?:alpha|α)(?:-| )tocopherol))?)?(?:\s*(?<dv>\d[\d.,]*)\s*%)?\s*$/iu.exec(line.text);
     if (numericMatch) {
       const amount = parseDecimalToken(numericMatch.groups?.amount ?? "");
-      const expectedUnit = CATALOG.get(match.nutrientId)?.defaultUnit ?? null;
-      const [unit, unitCodes] = normalizeMassUnit(numericMatch.groups?.unit ?? "", expectedUnit);
+      const [unit, unitCodes] = normalizeFactNutrientUnit(
+        numericMatch.groups?.unit ?? "",
+        numericMatch.groups?.unitQualifier,
+        match.nutrientId,
+      );
       const codes = [...new Set(unitCodes.length > 0 ? unitCodes : ["nutrient_unit_unknown"])];
       warnings.add("nutrient_unit_unknown", `Unit was missing or unsupported for ${match.canonicalName}.`, line.sourceObservationIds);
       let dailyValue: ParsedField | null = null;
@@ -644,9 +775,12 @@ function parseNutrientLine(line: SourceLine, warnings: WarningCollector): Parsed
   const recoveredNameMatch = exactNameMatch ? null : recoverNutrientNameCharacterLoss(originalName);
   const nameMatch = exactNameMatch ?? recoveredNameMatch;
   const nutrientId = nameMatch?.nutrientId ?? null;
-  const expectedUnit = nutrientId ? CATALOG.get(nutrientId)?.defaultUnit ?? null : null;
   const amountResult = parseDecimalToken(row.groups?.amount ?? "");
-  const [unit, unitWarnings] = normalizeMassUnit(row.groups?.unit ?? "", expectedUnit);
+  const [unit, unitWarnings] = normalizeFactNutrientUnit(
+    row.groups?.unit ?? "",
+    row.groups?.unitQualifier,
+    nutrientId,
+  );
   const codes = [...amountResult.warningCodes, ...unitWarnings];
   for (const code of unitWarnings) {
     if (code !== "ocr_character_correction_applied") {

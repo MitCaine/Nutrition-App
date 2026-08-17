@@ -45,6 +45,168 @@ def test_nutrient_name_matching_is_controlled_and_punctuation_tolerant() -> None
 
 
 @pytest.mark.parametrize(
+    ("name", "nutrient_id"),
+    [
+        ("Vitamin B1", "thiamin"),
+        ("Thiamine", "thiamin"),
+        ("Vitamin B2", "riboflavin"),
+        ("Vitamin B3", "niacin"),
+        ("Vitamin B5", "pantothenic_acid"),
+        ("Vitamin B6", "vitamin_b6"),
+        ("Vitamin B12", "vitamin_b12"),
+        ("Folate", "folate"),
+        ("Folic Acid", "folate"),
+        ("Folacin", "folate"),
+        ("Ascorbic Acid", "vitamin_c"),
+        ("EPA", "epa"),
+        ("Eicosapentaenoic Acid", "epa"),
+        ("DHA", "dha"),
+        ("Docosahexaenoic Acid", "dha"),
+        ("Alpha-Linolenic Acid", "alpha_linolenic_acid"),
+        ("Linoleic Acid", "linoleic_acid"),
+    ],
+)
+def test_extended_nutrient_aliases_are_explicit_and_controlled(
+    name: str,
+    nutrient_id: str,
+) -> None:
+    match = match_nutrient_name(name)
+
+    assert match is not None
+    assert match.nutrient_id == nutrient_id
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Vitamin B",
+        "Vitamin B11",
+        "Omega 3",
+        "Omega 6",
+        "Essential Fatty Acid",
+        "Vitamin Complex",
+    ],
+)
+def test_extended_catalog_does_not_enable_generic_fuzzy_aliases(
+    name: str,
+) -> None:
+    assert match_nutrient_name(name) is None
+
+
+@pytest.mark.parametrize(
+    ("line", "nutrient_id", "amount", "unit", "status"),
+    [
+        (
+            "Vitamin A 900mcg 100%",
+            "vitamin_a",
+            Decimal("900"),
+            "mcg RAE",
+            "parsed",
+        ),
+        (
+            "Vitamin A 900mcg RAE 100%",
+            "vitamin_a",
+            Decimal("900"),
+            "mcg RAE",
+            "parsed",
+        ),
+        (
+            "Vitamin E 15mg 100%",
+            "vitamin_e",
+            Decimal("15"),
+            "mg alpha-tocopherol",
+            "parsed",
+        ),
+        (
+            "Vitamin E 15mg alpha-tocopherol 100%",
+            "vitamin_e",
+            Decimal("15"),
+            "mg alpha-tocopherol",
+            "parsed",
+        ),
+        (
+            "Niacin 16mg 100%",
+            "niacin",
+            Decimal("16"),
+            "mg NE",
+            "parsed",
+        ),
+        (
+            "Niacin 16mg NE 100%",
+            "niacin",
+            Decimal("16"),
+            "mg NE",
+            "parsed",
+        ),
+        (
+            "Folate 400mcg DFE 100%",
+            "folate",
+            Decimal("400"),
+            "mcg DFE",
+            "parsed",
+        ),
+        (
+            "Folic Acid 400mcg",
+            "folate",
+            Decimal("400"),
+            None,
+            "ambiguous",
+        ),
+        (
+            "Vitamin A 5000IU",
+            "vitamin_a",
+            Decimal("5000"),
+            None,
+            "ambiguous",
+        ),
+        (
+            "Vitamin E 30IU",
+            "vitamin_e",
+            Decimal("30"),
+            None,
+            "ambiguous",
+        ),
+    ],
+)
+def test_facts_equivalence_units_are_identity_scoped_without_numeric_guessing(
+    line: str,
+    nutrient_id: str,
+    amount: Decimal,
+    unit: str | None,
+    status: str,
+) -> None:
+    result = parse_lines("Supplement Facts", line)
+    nutrient = result.nutrients[0]
+
+    assert nutrient.nutrient_id == nutrient_id
+    assert nutrient.amount.value == amount
+    assert nutrient.unit.value == unit
+    assert nutrient.status == status
+
+    assert "nutrition_header_not_found" not in {
+        warning.code for warning in result.warnings
+    }
+
+    if status == "ambiguous":
+        assert "nutrient_unit_unknown" in nutrient.warning_codes
+
+
+def test_supplement_facts_header_is_recognized_as_label_header() -> None:
+    result = parse_lines(
+        "Supplement Facts",
+        "Vitamin B12 2.4mcg 100%",
+    )
+
+    assert result.nutrients[0].nutrient_id == "vitamin_b12"
+    assert result.nutrients[0].amount.value == Decimal("2.4")
+    assert result.nutrients[0].unit.value == "mcg"
+
+    assert "nutrition_header_not_found" not in {
+        warning.code for warning in result.warnings
+    }
+
+
+@pytest.mark.parametrize(
     ("line", "nutrient_id", "original_name"),
     [
         ("otal Fat 8g", "total_fat", "otal Fat"),

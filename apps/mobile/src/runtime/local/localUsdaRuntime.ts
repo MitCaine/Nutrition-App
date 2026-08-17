@@ -51,6 +51,30 @@ const USDA_NUTRIENT_ID_MAP: Readonly<Record<string, string>> = {
   "1089": "iron",
   "1092": "potassium",
   "1090": "magnesium",
+  "1091": "phosphorus",
+  "1095": "zinc",
+  "1096": "chromium",
+  "1098": "copper",
+  "1100": "iodine",
+  "1101": "manganese",
+  "1102": "molybdenum",
+  "1103": "selenium",
+  "1106": "vitamin_a",
+  "1109": "vitamin_e",
+  "1162": "vitamin_c",
+  "1165": "thiamin",
+  "1166": "riboflavin",
+  "1169": "niacin",
+  "1170": "pantothenic_acid",
+  "1175": "vitamin_b6",
+  "1176": "biotin",
+  "1178": "vitamin_b12",
+  "1180": "choline",
+  "1190": "folate",
+  "1272": "dha",
+  "1278": "epa",
+  "1316": "linoleic_acid",
+  "1404": "alpha_linolenic_acid",
 };
 const USDA_NUTRIENT_NUMBER_MAP: Readonly<Record<string, string>> = {
   "208": "calories",
@@ -69,6 +93,30 @@ const USDA_NUTRIENT_NUMBER_MAP: Readonly<Record<string, string>> = {
   "303": "iron",
   "306": "potassium",
   "304": "magnesium",
+  "305": "phosphorus",
+  "309": "zinc",
+  "310": "chromium",
+  "312": "copper",
+  "314": "iodine",
+  "315": "manganese",
+  "316": "molybdenum",
+  "317": "selenium",
+  "320": "vitamin_a",
+  "323": "vitamin_e",
+  "401": "vitamin_c",
+  "404": "thiamin",
+  "405": "riboflavin",
+  "409": "niacin",
+  "410": "pantothenic_acid",
+  "415": "vitamin_b6",
+  "416": "biotin",
+  "418": "vitamin_b12",
+  "421": "choline",
+  "435": "folate",
+  "621": "dha",
+  "629": "epa",
+  "675": "linoleic_acid",
+  "851": "alpha_linolenic_acid",
 };
 const USDA_NUTRIENT_NAME_MAP: Readonly<Record<string, string>> = {
   "energy": "calories",
@@ -87,7 +135,42 @@ const USDA_NUTRIENT_NAME_MAP: Readonly<Record<string, string>> = {
   "iron, fe": "iron",
   "potassium, k": "potassium",
   "magnesium, mg": "magnesium",
+  "phosphorus, p": "phosphorus",
+  "zinc, zn": "zinc",
+  "chromium, cr": "chromium",
+  "copper, cu": "copper",
+  "iodine, i": "iodine",
+  "manganese, mn": "manganese",
+  "molybdenum, mo": "molybdenum",
+  "selenium, se": "selenium",
+  "vitamin a, rae": "vitamin_a",
+  "vitamin e (alpha-tocopherol)": "vitamin_e",
+  "vitamin c, total ascorbic acid": "vitamin_c",
+  "thiamin": "thiamin",
+  "riboflavin": "riboflavin",
+  "niacin equivalent n406 +n407": "niacin",
+  "pantothenic acid": "pantothenic_acid",
+  "vitamin b-6": "vitamin_b6",
+  "biotin": "biotin",
+  "vitamin b-12": "vitamin_b12",
+  "choline, total": "choline",
+  "folate, dfe": "folate",
+  "pufa 22:6 n-3 (dha)": "dha",
+  "pufa 20:5 n-3 (epa)": "epa",
+  "pufa 18:2 n-6 c,c": "linoleic_acid",
+  "pufa 18:3 n-3 c,c,c (ala)": "alpha_linolenic_acid",
 };
+
+const USDA_SEMANTIC_UNIT_MAP: Readonly<Record<string, Readonly<{
+  sourceUnit: string;
+  canonicalUnit: NutrientUnit;
+}>>> = {
+  vitamin_a: { sourceUnit: "mcg", canonicalUnit: "mcg RAE" },
+  vitamin_e: { sourceUnit: "mg", canonicalUnit: "mg alpha-tocopherol" },
+  niacin: { sourceUnit: "mg", canonicalUnit: "mg NE" },
+  folate: { sourceUnit: "mcg", canonicalUnit: "mcg DFE" },
+};
+
 const NUTRIENT_DEFINITIONS = new Map(
   SQLITE_NUTRIENT_SEED_ROWS.map(([id, displayName, _kind, defaultUnit, _parent, displayOrder]) => [
     id,
@@ -272,7 +355,13 @@ function mapNutrient(raw: JsonObject, diagnostics: string[]): MappedNutrient | n
     return null;
   }
   const unit = normalizeUnit(originalUnit);
-  if (!compatibleUnit(definition.defaultUnit, unit)) {
+  const semanticUnit = USDA_SEMANTIC_UNIT_MAP[id];
+  if (semanticUnit) {
+    if (unit !== semanticUnit.sourceUnit || definition.defaultUnit !== semanticUnit.canonicalUnit) {
+      diagnostics.push(`USDA nutrient ${id} uses unsupported unit ${originalUnit}`);
+      return null;
+    }
+  } else if (!compatibleUnit(definition.defaultUnit, unit)) {
     diagnostics.push(`USDA nutrient ${id} uses unsupported unit ${originalUnit}`);
     return null;
   }
@@ -296,7 +385,9 @@ function mapNutrient(raw: JsonObject, diagnostics: string[]): MappedNutrient | n
       priority,
     };
   }
-  const amount = convertAmount(originalAmount, unit, definition.defaultUnit);
+  const amount = semanticUnit
+    ? parseDecimal(originalAmount, NUMERIC_14_6)
+    : convertAmount(originalAmount, unit, definition.defaultUnit);
   if (amount === null) {
     diagnostics.push(`USDA nutrient ${id} could not be converted exactly`);
     return null;

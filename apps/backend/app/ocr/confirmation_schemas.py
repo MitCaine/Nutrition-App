@@ -46,7 +46,7 @@ class TraceFieldDecision(BaseModel):
     nutrient_id: str | None = None
     suggested_value: str | None = Field(default=None, max_length=256)
     confirmed_value: str | None = Field(default=None, max_length=256)
-    unit: str | None = Field(default=None, max_length=16)
+    unit: str | None = Field(default=None, max_length=32)
     decision: Literal["accepted", "edited", "omitted"]
     parse_status: Literal["parsed", "ambiguous", "missing", "unsupported"]
     comparison: Literal["less_than"] | None = None
@@ -99,7 +99,7 @@ class PersistedOcrNutritionConfirmationTrace(BaseModel):
     """Intrinsic immutable E2-13 trace contract, independent of mutable Food state."""
 
     schema_version: Literal["ocr_nutrition_confirmation_v1"]
-    field_decisions: list[TraceFieldDecision] = Field(min_length=1, max_length=40)
+    field_decisions: list[TraceFieldDecision] = Field(min_length=1, max_length=64)
     unknown_nutrients: list[UnknownNutrientTrace] = Field(default_factory=list, max_length=30)
     parser_warning_codes: list[str] = Field(default_factory=list, max_length=50)
 
@@ -142,7 +142,7 @@ class OcrNutritionConfirmationRequest(BaseModel):
     image_source_type: Literal["camera", "photo_library"]
     client_request_id: UUID
     food: FoodCreateRequest
-    field_decisions: list[TraceFieldDecision] = Field(min_length=1, max_length=40)
+    field_decisions: list[TraceFieldDecision] = Field(min_length=1, max_length=64)
     unknown_nutrients: list[UnknownNutrientTrace] = Field(default_factory=list, max_length=30)
     parser_warning_codes: list[str] = Field(default_factory=list, max_length=50)
 

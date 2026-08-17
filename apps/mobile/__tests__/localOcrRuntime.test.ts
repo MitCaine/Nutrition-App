@@ -2,6 +2,7 @@ import * as Crypto from "expo-crypto";
 
 import type { OcrConfirmationInput } from "../src/features/ocr/api/types";
 import { ensureLocalNutrientCatalog } from "../src/runtime/local/localNutrientsRuntime";
+import { SQLITE_NUTRIENT_SEED_ROWS } from "../src/storage/sqlite/schema";
 import {
   createLocalOcrRuntime,
   type LocalOcrConfirmationStage,
@@ -177,6 +178,91 @@ async function count(value: LocalSQLiteTestDatabase, table: string): Promise<num
 beforeEach(() => {
   jest.clearAllMocks();
   deterministicIds();
+});
+
+test("local confirmation accepts the full extended trace and semantic units", async () => {
+  const value = await database();
+
+  try {
+    const runtime = createLocalOcrRuntime(
+      value.asExpoDatabase(),
+      OWNER,
+    );
+
+    const base = confirmation({
+      client_request_id:
+        "00000000-0000-4000-8000-000000000902",
+    });
+
+    const existing = new Set(
+      base.field_decisions
+        .map(({ nutrient_id }) => nutrient_id)
+        .filter((id): id is string => id !== null),
+    );
+
+    const extras = SQLITE_NUTRIENT_SEED_ROWS
+      .filter(([id]) => !existing.has(id))
+      .map(([id, _name, _kind, defaultUnit]) => ({
+        field_key: `nutrient.${id}`,
+        nutrient_id: id,
+        suggested_value: null,
+        confirmed_value: null,
+        unit: defaultUnit,
+        decision: "omitted" as const,
+        parse_status: "missing" as const,
+        comparison: null,
+        confidence: "0",
+        source_text: "",
+        source_observation_ids: [],
+        warning_codes: [],
+        resolution: null,
+      }));
+
+    const input: OcrConfirmationInput = {
+      ...base,
+      field_decisions: [
+        ...base.field_decisions,
+        ...extras,
+      ],
+    };
+
+    expect(input.field_decisions.length).toBeGreaterThan(40);
+    expect(input.field_decisions.length).toBeLessThanOrEqual(64);
+
+    expect(
+      input.field_decisions.find(
+        ({ nutrient_id }) => nutrient_id === "vitamin_a",
+      )?.unit,
+    ).toBe("mcg RAE");
+
+    expect(
+      input.field_decisions.find(
+        ({ nutrient_id }) => nutrient_id === "vitamin_e",
+      )?.unit,
+    ).toBe("mg alpha-tocopherol");
+
+    expect(
+      input.field_decisions.find(
+        ({ nutrient_id }) => nutrient_id === "niacin",
+      )?.unit,
+    ).toBe("mg NE");
+
+    expect(
+      input.field_decisions.find(
+        ({ nutrient_id }) => nutrient_id === "folate",
+      )?.unit,
+    ).toBe("mcg DFE");
+
+    await expect(
+      runtime.confirmNutritionLabel(input),
+    ).resolves.toMatchObject({
+      food: {
+        name: "Golden Cereal",
+      },
+    });
+  } finally {
+    value.close();
+  }
 });
 
 test("local iOS workflow parses and confirms with FastAPI unavailable", async () => {
