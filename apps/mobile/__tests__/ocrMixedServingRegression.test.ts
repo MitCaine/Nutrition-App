@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { TextInput } from "react-native";
+import { Text, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { NutritionConfirmationDraft } from "../src/features/ocr/api/types";
@@ -78,6 +78,22 @@ function RecoveryHarness({ onPatch }: { onPatch: jest.Mock }) {
     },
   });
 }
+
+test("serving preview does not repeat the derived grams-per-unit summary", async () => {
+  const onPatch = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(RecoveryHarness, { onPatch }));
+  });
+
+  const visible = renderer.root.findAllByType(Text)
+    .map((node) => Array.isArray(node.props.children) ? node.props.children.join("") : String(node.props.children ?? ""));
+  expect(visible.filter((value) => value === "138.7 g per cup")).toHaveLength(0);
+  expect(visible.filter((value) => value === "138.7 g per cup · 208 g total")).toHaveLength(1);
+
+  await act(async () => renderer.unmount());
+});
 
 test("OCR display recovery keeps a mixed fraction in quantity instead of creating a numeric custom unit", async () => {
   const onPatch = jest.fn();

@@ -57,6 +57,14 @@ export function formatResolvedFoodNutrient(nutrient: ResolvedFoodNutrient): stri
   return formatAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
 }
 
+/** Food summaries surface measured information only.
+ * Explicit zero is measured information; unknown is absence of information. */
+export function visibleResolvedFoodNutrients(
+  nutrients: readonly ResolvedFoodNutrient[],
+): ResolvedFoodNutrient[] {
+  return nutrients.filter((nutrient) => nutrient.data_status !== "unknown");
+}
+
 export function formatFoodNutrientLabel(nutrient: Pick<FoodNutrient, "nutrient_id">): string {
   return formatNutrientLabel(nutrient.nutrient_id);
 }

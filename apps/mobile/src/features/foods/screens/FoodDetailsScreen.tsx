@@ -11,6 +11,7 @@ import {
   formatResolvedFoodAmount,
   formatResolvedFoodNutrient,
   selectedResolvedFoodAmount,
+  visibleResolvedFoodNutrients,
 } from "../utils/foodDisplay";
 import {
   apiErrorMessage,
@@ -276,9 +277,9 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
         onConfirm={() => requestDelete(true)}
       />
       {sortNutrientsByDisplayOrder(
-        selectedAmount?.nutrients ?? [],
+        visibleResolvedFoodNutrients(selectedAmount?.nutrients ?? []),
         (nutrient) => nutrient.nutrient_id,
-        (nutrient) => nutrient.data_status === "unknown",
+        () => false,
       ).map((nutrient) => (
         <View key={nutrient.nutrient_id} style={styles.nutrientRow}>
           <Text style={styles.nutrientName}>{formatFoodNutrientLabel(nutrient)}</Text>

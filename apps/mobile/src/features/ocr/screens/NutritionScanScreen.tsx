@@ -11,10 +11,11 @@ import { acquireOcrImage, deleteCameraCapture, type OcrImageSelection, type OcrI
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
-import { focusAccessibilityElement, useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
+import { focusAccessibilityElement, useAccessibilityScreenFocus, type CancelAccessibilityFocus } from "../../../shared/accessibility/focus";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
-export function NutritionScanScreen({ onCancel, onReady }: {
+export function NutritionScanScreen({ autoAcquireCamera = false, onCancel, onReady }: {
+  autoAcquireCamera?: boolean;
   onCancel: () => void;
   onReady: (draft: NutritionConfirmationDraft) => void;
 }) {
@@ -27,7 +28,9 @@ export function NutritionScanScreen({ onCancel, onReady }: {
   const mounted = useRef(true);
   const requestId = useRef(0);
   const inFlight = useRef(false);
+  const automaticCameraStarted = useRef(false);
   const cameraSelection = useRef<OcrImageSelection | null>(null);
+  const retakeCancelFocusRef = useRef<CancelAccessibilityFocus | null>(null);
   const headingRef = useRef<Text>(null);
   const errorRef = useRef<Text>(null);
   const announce = useAccessibilityAnnouncement();
@@ -45,12 +48,14 @@ export function NutritionScanScreen({ onCancel, onReady }: {
     return () => {
       mounted.current = false;
       requestId.current += 1;
+      retakeCancelFocusRef.current?.();
+      retakeCancelFocusRef.current = null;
       void deleteCameraCapture(cameraSelection.current, (uri) => FileSystem.deleteAsync(uri, { idempotent: true }));
       cameraSelection.current = null;
     };
   }, []);
 
-  const acquire = async (source: OcrImageSource) => {
+  const acquire = async (source: OcrImageSource, automaticRetake = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     const current = ++requestId.current;
@@ -71,6 +76,17 @@ export function NutritionScanScreen({ onCancel, onReady }: {
       inFlight.current = false;
       setStatus(outcome.kind === "cancelled" ? "idle" : "failure");
       setPermissionDenied(outcome.kind === "permissionDenied");
+      if (outcome.kind === "cancelled" && automaticRetake) {
+        announce("Photo retake cancelled. Scan options are available.", {
+          key: "nutrition-retake-cancelled",
+          priority: "polite",
+        });
+        retakeCancelFocusRef.current?.();
+        retakeCancelFocusRef.current = focusAccessibilityElement(headingRef.current, {
+          delayMs: 60,
+          focusKeyboardTarget: false,
+        });
+      }
       if (outcome.kind === "permissionDenied") setMessage(source === "camera" ? "Camera access is required to take a label photo." : "Photo access is required to choose a label image.");
       if (outcome.kind === "failed") setMessage("The image could not be acquired. Try again.");
       return;
@@ -96,6 +112,12 @@ export function NutritionScanScreen({ onCancel, onReady }: {
       inFlight.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!autoAcquireCamera || automaticCameraStarted.current) return;
+    automaticCameraStarted.current = true;
+    void acquire("camera", true);
+  }, [autoAcquireCamera]);
 
   const busy = status === "acquiring" || status === "recognizing" || status === "parsing";
   return <View style={styles.screen}>

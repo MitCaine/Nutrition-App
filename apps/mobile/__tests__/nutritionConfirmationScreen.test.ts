@@ -94,22 +94,33 @@ function deferred<T>() {
 
 function foodResponse(id = "food-1") { return { food: { id }, trace_id: "trace-1" }; }
 
-function confirmationScreenElement(initialDraft: NutritionConfirmationDraft, onCreated = jest.fn()) {
+function confirmationScreenElement(
+  initialDraft: NutritionConfirmationDraft,
+  onCreated = jest.fn(),
+  onRetake = jest.fn(),
+  onCancel = jest.fn(),
+) {
   return withNutritionRuntime(React.createElement(NutritionConfirmationScreen, {
     initialDraft,
-    onCancel: jest.fn(),
+    onCancel,
     onCreated,
+    onRetake,
   }), testRuntime);
 }
 
-async function render(initialDraft = draft(), onCreated = jest.fn()) {
+async function render(
+  initialDraft = draft(),
+  onCreated = jest.fn(),
+  onRetake = jest.fn(),
+  onCancel = jest.fn(),
+) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    renderer = TestRenderer.create(confirmationScreenElement(initialDraft, onCreated), {
+    renderer = TestRenderer.create(confirmationScreenElement(initialDraft, onCreated, onRetake, onCancel), {
       createNodeMock: (element) => ({ ...(element.props as Record<string, unknown>), focus: jest.fn() }),
     });
   });
-  return { renderer, onCreated };
+  return { renderer, onCreated, onRetake, onCancel };
 }
 
 function action(root: TestRenderer.ReactTestInstance, label: string) {
@@ -188,6 +199,58 @@ beforeEach(() => {
   mockInvalidate.mockResolvedValue(undefined);
 });
 
+test("retake is a separate persistent island and Create Food keeps the full primary action", async () => {
+  const { renderer } = await render();
+  const actions = renderer.root.findByProps({ testID: "nutrition-confirmation-actions" });
+  const retake = actions.findByProps({ testID: "nutrition-confirmation-retake-island" });
+  const primary = actions.findByProps({ testID: "nutrition-confirmation-primary-action" });
+
+  expect(retake.props.accessibilityLabel).toBe("Retake nutrition label photo");
+  expect(primary.props.accessibilityLabel).toBe("Create Food");
+  expect(retake).not.toBe(primary);
+  await act(async () => renderer.unmount());
+});
+
+test("retake abandons the unsubmitted draft exactly once without binding or submitting an intent", async () => {
+  const onRetake = jest.fn();
+  const { renderer } = await render(draft(), jest.fn(), onRetake);
+
+  await act(async () => input(renderer.root, "Food name").props.onChangeText("Stale edited name"));
+  const retake = action(renderer.root, "Retake nutrition label photo");
+  expect(retake.props.accessibilityHint).toContain("replacement photo");
+  expect(retake.props.disabled).toBe(false);
+
+  await act(async () => {
+    retake.props.onPress();
+    retake.props.onPress();
+    action(renderer.root, "Create Food").props.onPress();
+  });
+
+  expect(onRetake).toHaveBeenCalledTimes(1);
+  expect(mockConfirm).not.toHaveBeenCalled();
+  expect(Crypto.randomUUID).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("directed review exposes the same accessible retake exit", async () => {
+  const initial = draft();
+  initial.nutrients = [
+    ...initial.nutrients,
+    unresolvedNutrient("potassium", "Potassium", "35", 0.35),
+  ];
+  const onRetake = jest.fn();
+  const { renderer } = await render(initial, jest.fn(), onRetake);
+
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  const retake = directedAction(renderer.root, "Retake nutrition label photo");
+  expect(retake.props.disabled).toBe(false);
+  await act(async () => retake.props.onPress());
+
+  expect(onRetake).toHaveBeenCalledTimes(1);
+  expect(mockConfirm).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
 test("unchanged failure retry reuses ID, while an edited retry rotates it and preserves the draft", async () => {
   (Crypto.randomUUID as jest.Mock).mockReturnValueOnce("00000000-0000-4000-8000-000000000001").mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
   mockConfirm.mockRejectedValue(new Error("offline"));
@@ -230,6 +293,7 @@ test("idempotency conflict retires the intent, preserves the draft, and guards t
   expect(mockConfirm.mock.calls[0][0].client_request_id).toBe("00000000-0000-4000-8000-000000000001");
   expect(mockConfirm.mock.calls[1][0].client_request_id).toBe("00000000-0000-4000-8000-000000000002");
   expect(action(renderer.root, "Cancel confirmation").props.disabled).toBe(true);
+  expect(action(renderer.root, "Retake nutrition label photo").props.disabled).toBe(true);
 
   await act(async () => retry.resolve(foodResponse()));
   await act(async () => renderer.unmount());

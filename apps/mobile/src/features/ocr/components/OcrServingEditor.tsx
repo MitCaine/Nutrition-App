@@ -10,7 +10,6 @@ import {
   amountHasKnownGramWeight,
   amountUnitCategory,
   compactExactDecimalForEditing,
-  derivedServingPerUnitText,
   divideAmountValues,
   exactCurrentGrams,
   recalculateCurrentForReferenceEdit,
@@ -322,10 +321,6 @@ export function OcrServingEditor({
   const draftGrams = draftGramsReadOnly
     ? massGramEquivalent(normalizeServingQuantityInput(draft.quantity) ?? draft.quantity, draft.unit) ?? ""
     : draft.gramWeight;
-  const derivedPerUnit = referenceConfirmed && !reviewWarning && amountHasKnownGramWeight({ gram_weight: value.gramWeight || null })
-    ? derivedServingPerUnitText(value.gramWeight, canonicalRepresentationQuantity, representation.unit)
-    : null;
-
   return (
     <View style={styles.card}>
       <Text style={styles.meta}>
@@ -470,7 +465,6 @@ export function OcrServingEditor({
             {servingWeightSummary(value, representation, reviewWarning) ? (
               <Text style={styles.meta}>{servingWeightSummary(value, representation, reviewWarning)}</Text>
             ) : null}
-            {derivedPerUnit ? <Text style={styles.meta}>{derivedPerUnit}</Text> : null}
           </View>
 
           {reviewWarning ? <Text style={styles.warning}>{servingConversionReviewMessage(representation.unit, value.gramWeight)}</Text> : null}

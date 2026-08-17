@@ -142,7 +142,7 @@ export function FoodFormScreen({ food, onSaved, onCancel }: Props) {
             <Text accessibilityRole="header" style={styles.sectionTitle}>Nutrients</Text>
             {nutrientQuery.isLoading ? <AccessibilityStatus kind="loading" message="Loading nutrient fields…" /> : null}
             {nutrientQuery.isError ? <AccessibilityStatus kind="retryable-failure" message="Nutrient fields are unavailable." retryContext="nutrient fields" onRetry={() => { void nutrientQuery.refetch(); }} /> : null}
-            {!nutrientQuery.isLoading && !nutrientQuery.isError ? <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} disabled={saving} validationTarget={form.validationIssue?.target} validationError={form.error} /> : null}
+            {!nutrientQuery.isLoading && !nutrientQuery.isError ? <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} disabled={saving} validationTarget={form.validationIssue?.target} validationError={form.error} hideUnknownByDefault={Boolean(food)} /> : null}
           </>
         )}
       </KeyboardSafeScrollView>

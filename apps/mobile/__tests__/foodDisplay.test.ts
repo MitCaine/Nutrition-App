@@ -8,6 +8,7 @@ import {
   formatResolvedFoodNutrient,
   primaryServingLabel,
   selectedResolvedFoodAmount,
+  visibleResolvedFoodNutrients,
 } from "../src/features/foods/utils/foodDisplay";
 import type { ResolvedFoodAmount } from "../src/features/foods/api/types";
 
@@ -125,6 +126,17 @@ test("food detail formats backend-resolved nutrients without scaling raw basis v
   expect(formatResolvedFoodAmount(resolvedAmounts[0])).toBe("1 bar (50 g)");
   expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[0])).toBe("150kcal");
   expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[1])).toBe("unknown");
+});
+
+test("food detail visibility hides unknown nutrients but preserves explicit zero", () => {
+  const visible = visibleResolvedFoodNutrients([
+    { nutrient_id: "protein", amount: "20.000000", unit: "g", data_status: "known", source_basis: "per_serving" },
+    { nutrient_id: "calcium", amount: "0.000000", unit: "mg", data_status: "zero", source_basis: "per_serving" },
+    { nutrient_id: "potassium", amount: null, unit: "mg", data_status: "unknown", source_basis: "per_serving" },
+  ]);
+
+  expect(visible.map(({ nutrient_id }) => nutrient_id)).toEqual(["protein", "calcium"]);
+  expect(visible.find(({ nutrient_id }) => nutrient_id === "calcium")?.data_status).toBe("zero");
 });
 
 test("food detail amount selection uses resolved options and keeps count-only servings", () => {

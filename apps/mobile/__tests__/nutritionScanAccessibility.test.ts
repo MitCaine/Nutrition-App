@@ -70,3 +70,40 @@ test("permission denial offers a direct route to app settings", async () => {
   await act(async () => renderer.unmount());
   openSettings.mockRestore();
 });
+
+test("retake mode opens the camera once and camera cancellation leaves scan controls recoverable", async () => {
+  jest.clearAllMocks();
+  (ImagePicker.requestCameraPermissionsAsync as jest.Mock).mockResolvedValue({ granted: true });
+  (ImagePicker.launchCameraAsync as jest.Mock).mockResolvedValue({ canceled: true, assets: null });
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(withNutritionRuntime(React.createElement(NutritionScanScreen, {
+      autoAcquireCamera: true,
+      onCancel: jest.fn(),
+      onReady: jest.fn(),
+    })));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(ImagePicker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
+  expect(ImagePicker.launchCameraAsync).toHaveBeenCalledTimes(1);
+
+  const actions = renderer.root.findAllByType(Pressable);
+  expect(actions.find((node) => node.props.accessibilityLabel === "Choose nutrition label photo")?.props.disabled).toBe(false);
+  expect(actions.find((node) => node.props.accessibilityLabel === "Take nutrition label photo")?.props.disabled).toBe(false);
+  expect(actions.find((node) => node.props.accessibilityLabel === "Cancel label scan")?.props.disabled).toBe(false);
+
+  await act(async () => {
+    renderer.update(withNutritionRuntime(React.createElement(NutritionScanScreen, {
+      autoAcquireCamera: true,
+      onCancel: jest.fn(),
+      onReady: jest.fn(),
+    })));
+    await Promise.resolve();
+  });
+  expect(ImagePicker.launchCameraAsync).toHaveBeenCalledTimes(1);
+
+  await act(async () => renderer.unmount());
+});

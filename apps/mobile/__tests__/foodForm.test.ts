@@ -9,9 +9,35 @@ import {
 } from "../src/features/foods/hooks/useFoodForm";
 import { createServingFormValues } from "../src/features/foods/hooks/useFoodForm";
 import { normalizeServingQuantityInput } from "../src/features/foods/utils/amountForm";
+import {
+  foodFormHiddenNutrients,
+  foodFormVisibleNutrients,
+} from "../src/features/foods/components/NutrientEntryList";
 import { foodMutationSchema, servingSchema } from "../src/features/foods/validation/foodValidation";
-import type { Food } from "../src/features/foods/api/types";
+import type { Food, FoodNutrientInput, NutrientDefinition } from "../src/features/foods/api/types";
 import { parseDecimal } from "../src/shared/exact/decimal";
+
+test("edit nutrient visibility hides unknown rows, preserves zero, and allows explicit reveal", () => {
+  const definitions: NutrientDefinition[] = [
+    { id: "protein", display_name: "Protein", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 10 },
+    { id: "calcium", display_name: "Calcium", default_unit: "mg", nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 20 },
+    { id: "potassium", display_name: "Potassium", default_unit: "mg", nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 30 },
+  ];
+  const values: FoodNutrientInput[] = [
+    { nutrient_id: "protein", amount: "20", unit: "g", basis: "per_serving" as const, data_status: "known" as const },
+    { nutrient_id: "calcium", amount: "0", unit: "mg", basis: "per_serving" as const, data_status: "zero" as const },
+    { nutrient_id: "potassium", amount: null, unit: "mg", basis: "per_serving" as const, data_status: "unknown" as const },
+  ];
+
+  expect(foodFormVisibleNutrients(definitions, values, new Set(), true).map(({ id }) => id))
+    .toEqual(["protein", "calcium"]);
+  expect(foodFormHiddenNutrients(definitions, values, new Set()).map(({ id }) => id))
+    .toEqual(["potassium"]);
+  expect(foodFormVisibleNutrients(definitions, values, new Set(["potassium"]), true).map(({ id }) => id))
+    .toEqual(["protein", "calcium", "potassium"]);
+  expect(foodFormVisibleNutrients(definitions, values, new Set(), false).map(({ id }) => id))
+    .toEqual(["protein", "calcium", "potassium"]);
+});
 
 test("serving form trims raw decimals for initial display", () => {
   expect(formatServingFormNumber("100.000000")).toBe("100");

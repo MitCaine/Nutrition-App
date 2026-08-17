@@ -298,6 +298,56 @@ test("confirmation requires the persisted serving reference to be all-or-none", 
   );
 });
 
+test("confirmation canonicalizes OCR fixed-scale serving quantities in both Food payload and trace", () => {
+  const input = parsed();
+  input.serving = {
+    ...input.serving!,
+    serving_size_display: field("1 1/2 cup (208 g)", "parsed", {
+      source_text: "Serving size 1 1/2 cup (208 g)",
+      source_observation_ids: ["serving-mixed"],
+    }),
+    serving_quantity: field("1.500000", "parsed", {
+      source_text: "Serving size 1 1/2 cup (208 g)",
+      source_observation_ids: ["serving-mixed"],
+    }),
+    serving_unit: field("cup", "parsed", {
+      source_text: "Serving size 1 1/2 cup (208 g)",
+      source_observation_ids: ["serving-mixed"],
+    }),
+    gram_weight: field("208.000000", "parsed", {
+      source_text: "Serving size 1 1/2 cup (208 g)",
+      source_observation_ids: ["serving-mixed"],
+    }),
+  };
+
+  let draft = draftFromParsedLabel(input, "camera");
+  draft = {
+    ...draft,
+    name: "Mixed fraction label",
+    calories: updateReview(draft.calories, "120", "accepted"),
+    nutrients: draft.nutrients.map((item) => omitReview(item)),
+    unknownNutrients: [],
+  };
+
+  const payload = confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")!;
+  const defaultServing = payload.food.serving_definitions.find(({ is_default }) => is_default)!;
+  const quantityTrace = payload.field_decisions.find(({ field_key }) => field_key === "serving.quantity")!;
+  const gramsTrace = payload.field_decisions.find(({ field_key }) => field_key === "serving.gram_weight")!;
+
+  expect(defaultServing.quantity).toBe("1.5");
+  expect(quantityTrace).toMatchObject({
+    suggested_value: "1.500000",
+    confirmed_value: "1.5",
+    decision: "accepted",
+  });
+  expect(defaultServing.gram_weight).toBe("208");
+  expect(gramsTrace).toMatchObject({
+    suggested_value: "208.000000",
+    confirmed_value: "208",
+    decision: "accepted",
+  });
+});
+
 test("confirmation blocks an unresolved serving-unit conversion until quantity review completes", () => {
   let draft = draftFromParsedLabel(parsed(), "camera");
   draft = {

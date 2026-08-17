@@ -66,7 +66,7 @@ type Route =
   | { name: "edit-food"; foodId: string }
   | { name: "add-food" }
   | { name: "add-custom-food"; flow: AddFoodFlowState }
-  | { name: "add-scan"; flow: AddFoodFlowState }
+  | { name: "add-scan"; flow: AddFoodFlowState; autoAcquireCamera?: boolean }
   | { name: "add-ocr-confirm"; draft: NutritionConfirmationDraft; flow: AddFoodFlowState }
   | { name: "add-usda-preview"; fdcId: number; flow: AddFoodFlowState }
   | ({ name: "add-log-food" } & AddLogFoodWorkflow)
@@ -84,7 +84,7 @@ type Route =
   | { name: "settings"; origin: MainTab }
   | { name: "nutrition-targets"; origin: MainTab; returnDirect?: boolean }
   | { name: "ocr-diagnostics"; origin: MainTab }
-  | { name: "nutrition-scan" }
+  | { name: "nutrition-scan"; autoAcquireCamera?: boolean }
   | { name: "nutrition-confirm"; draft: NutritionConfirmationDraft };
 
 function routeForMainTab(tab: MainTab): Route {
@@ -230,9 +230,14 @@ export function AppNavigator() {
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
     content = <OcrDiagnosticsScreen onBack={() => setRoute({ name: "settings", origin: route.origin })} />;
   } else if (route.name === "nutrition-scan" && Platform.OS === "ios") {
-    content = <NutritionScanScreen onCancel={() => setRoute({ name: "foods" })} onReady={(draft) => setRoute({ name: "nutrition-confirm", draft })} />;
+    content = <NutritionScanScreen autoAcquireCamera={route.autoAcquireCamera} onCancel={() => setRoute({ name: "foods" })} onReady={(draft) => setRoute({ name: "nutrition-confirm", draft })} />;
   } else if (route.name === "nutrition-confirm" && Platform.OS === "ios") {
-    content = <NutritionConfirmationScreen initialDraft={route.draft} onCancel={() => setRoute({ name: "foods" })} onCreated={(foodId) => setRoute({ name: "food-detail", foodId })} />;
+    content = <NutritionConfirmationScreen
+      initialDraft={route.draft}
+      onCancel={() => setRoute({ name: "foods" })}
+      onRetake={() => setRoute({ name: "nutrition-scan", autoAcquireCamera: true })}
+      onCreated={(foodId) => setRoute({ name: "food-detail", foodId })}
+    />;
   } else if (route.name === "add-custom-food") {
     content = (
       <FoodFormScreen
@@ -246,6 +251,7 @@ export function AppNavigator() {
   } else if (route.name === "add-scan") {
     content = Platform.OS === "ios" ? (
       <NutritionScanScreen
+        autoAcquireCamera={route.autoAcquireCamera}
         onCancel={() => {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-food" });
@@ -260,6 +266,10 @@ export function AppNavigator() {
         onCancel={() => {
           setAddFoodFlow(route.flow);
           setRoute({ name: "add-scan", flow: route.flow });
+        }}
+        onRetake={() => {
+          setAddFoodFlow(route.flow);
+          setRoute({ name: "add-scan", flow: route.flow, autoAcquireCamera: true });
         }}
         onCreated={(foodId) => {
           setAddFoodFlow(route.flow);

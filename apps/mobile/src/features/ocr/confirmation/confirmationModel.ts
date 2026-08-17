@@ -322,18 +322,32 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
     ],
     nutrients,
   };
-  const basicDecision = (fieldKey: string, confirmedValue: string | null, suggested: ParsedField | null, unit: string | null = null) => {
+  const basicDecision = (
+    fieldKey: string,
+    confirmedValue: string | null,
+    suggested: ParsedField | null,
+    unit: string | null = null,
+    valuesEquivalent?: (confirmed: string, suggested: string) => boolean,
+  ) => {
     const suggestedValue = suggested ? stringValue(suggested) || null : null;
     const omitted = confirmedValue === null || confirmedValue === "";
+    const accepted = !omitted
+      && suggestedValue !== null
+      && (confirmedValue === suggestedValue || valuesEquivalent?.(confirmedValue, suggestedValue) === true);
     return {
       field_key: fieldKey, nutrient_id: null, suggested_value: suggestedValue,
       confirmed_value: omitted ? null : confirmedValue, unit,
-      decision: omitted ? "omitted" as const : confirmedValue === suggestedValue ? "accepted" as const : "edited" as const,
+      decision: omitted ? "omitted" as const : accepted ? "accepted" as const : "edited" as const,
       parse_status: suggested?.status ?? "missing" as const, comparison: suggested?.comparison ?? null,
       confidence: String(suggested?.confidence ?? 0), source_text: suggested?.source_text ?? "",
       source_observation_ids: suggested?.source_observation_ids ?? [], warning_codes: suggested?.warning_codes ?? [],
       resolution: suggested?.status === "ambiguous" || suggested?.comparison ? "confirmed during review" : null,
     };
+  };
+  const servingDecimalEquivalent = (confirmed: string, suggested: string) => {
+    const confirmedNormalized = normalizeServingQuantityInput(confirmed);
+    const suggestedNormalized = normalizeServingQuantityInput(suggested);
+    return confirmedNormalized !== null && confirmedNormalized === suggestedNormalized;
   };
   return {
     parser_version: draft.parserVersion, image_source_type: draft.imageSourceType,
@@ -343,9 +357,9 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
       basicDecision("food.brand", draft.brand.trim() || null, null),
       basicDecision("food.notes", draft.notes.trim() || null, null),
       basicDecision("serving.display", servingLabel, draft.servingProvenance.display),
-      basicDecision("serving.quantity", draft.servingQuantity, draft.servingProvenance.quantity),
+      basicDecision("serving.quantity", currentQuantity, draft.servingProvenance.quantity, null, servingDecimalEquivalent),
       basicDecision("serving.unit", draft.servingUnit, draft.servingProvenance.unit),
-      basicDecision("serving.gram_weight", grams, draft.servingProvenance.gramWeight, "g"),
+      basicDecision("serving.gram_weight", grams, draft.servingProvenance.gramWeight, "g", servingDecimalEquivalent),
       ...fields.map((field) => ({
       field_key: field.fieldKey, nutrient_id: field.nutrientId,
       suggested_value: field.suggestedValue, confirmed_value: field.decision === "omitted" ? null : field.confirmedValue,

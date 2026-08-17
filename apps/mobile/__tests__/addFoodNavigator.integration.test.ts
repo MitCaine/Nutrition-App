@@ -20,6 +20,7 @@ let mockUsdaSearch: QueryState<UsdaSearchResponse>;
 let mockUsdaPreview: QueryState<UsdaFoodPreview>;
 let mockUsdaImport: { isPending: boolean; isError: boolean; mutate: jest.Mock };
 const mockAccessibilityAnnounce = jest.fn(() => jest.fn());
+let mockScanGeneration = 0;
 const activeRenderers = new Set<ReactTestRenderer>();
 
 type QueryState<T> = {
@@ -105,12 +106,21 @@ jest.mock("../src/features/foods/screens/SavedFoodsScreen", () => {
   const mockReact = require("react");
   const { Pressable: MockPressable, Text: MockText } = require("react-native");
   return {
-    SavedFoodsScreen: ({ onOpenFood, onOpenSettings }: { onOpenFood: (foodId: string) => void; onOpenSettings: () => void }) => mockReact.createElement(
+    SavedFoodsScreen: ({
+      onOpenFood,
+      onOpenSettings,
+      onScanNutritionLabel,
+    }: {
+      onOpenFood: (foodId: string) => void;
+      onOpenSettings: () => void;
+      onScanNutritionLabel?: () => void;
+    }) => mockReact.createElement(
       mockReact.Fragment,
       null,
       mockReact.createElement(MockText, null, "Saved Foods root"),
       mockReact.createElement(MockPressable, { accessibilityLabel: "Open Oatmeal detail", onPress: () => onOpenFood("food-oatmeal") }, mockReact.createElement(MockText, null, "Open Oatmeal detail")),
       mockReact.createElement(MockPressable, { accessibilityLabel: "Open Food settings", onPress: onOpenSettings }, mockReact.createElement(MockText, null, "Open Food settings")),
+      onScanNutritionLabel ? mockReact.createElement(MockPressable, { accessibilityLabel: "Scan nutrition label from Foods", onPress: onScanNutritionLabel }, mockReact.createElement(MockText, null, "Scan nutrition label from Foods")) : null,
     ),
   };
 });
@@ -124,11 +134,26 @@ jest.mock("../src/features/ocr/screens/NutritionScanScreen", () => {
   const mockReact = require("react");
   const { Pressable: MockPressable, Text: MockText } = require("react-native");
   return {
-    NutritionScanScreen: ({ onCancel, onReady }: { onCancel: () => void; onReady: (draft: unknown) => void }) => mockReact.createElement(
+    NutritionScanScreen: ({
+      autoAcquireCamera,
+      onCancel,
+      onReady,
+    }: {
+      autoAcquireCamera?: boolean;
+      onCancel: () => void;
+      onReady: (draft: unknown) => void;
+    }) => mockReact.createElement(
       mockReact.Fragment,
       null,
       mockReact.createElement(MockText, null, "Scan nutrition label"),
-      mockReact.createElement(MockPressable, { accessibilityLabel: "Finish label scan", onPress: () => onReady({}) }, mockReact.createElement(MockText, null, "Finish label scan")),
+      autoAcquireCamera ? mockReact.createElement(MockText, null, "Camera acquisition requested") : null,
+      mockReact.createElement(MockPressable, {
+        accessibilityLabel: "Finish label scan",
+        onPress: () => {
+          mockScanGeneration += 1;
+          onReady({ scanGeneration: mockScanGeneration });
+        },
+      }, mockReact.createElement(MockText, null, "Finish label scan")),
       mockReact.createElement(MockPressable, { accessibilityLabel: "Cancel label scan", onPress: onCancel }, mockReact.createElement(MockText, null, "Cancel label scan")),
     ),
   };
@@ -137,11 +162,22 @@ jest.mock("../src/features/ocr/screens/NutritionConfirmationScreen", () => {
   const mockReact = require("react");
   const { Pressable: MockPressable, Text: MockText } = require("react-native");
   return {
-    NutritionConfirmationScreen: ({ onCancel, onCreated }: { onCancel: () => void; onCreated: (foodId: string) => void }) => mockReact.createElement(
+    NutritionConfirmationScreen: ({
+      initialDraft,
+      onCancel,
+      onCreated,
+      onRetake,
+    }: {
+      initialDraft: { scanGeneration?: number };
+      onCancel: () => void;
+      onCreated: (foodId: string) => void;
+      onRetake: () => void;
+    }) => mockReact.createElement(
       mockReact.Fragment,
       null,
-      mockReact.createElement(MockText, null, "Review extracted nutrition"),
+      mockReact.createElement(MockText, null, `Review extracted nutrition ${initialDraft.scanGeneration ?? "unknown"}`),
       mockReact.createElement(MockPressable, { accessibilityLabel: "Create scanned food", onPress: () => onCreated("food-scanned") }, mockReact.createElement(MockText, null, "Create scanned food")),
+      mockReact.createElement(MockPressable, { accessibilityLabel: "Retake nutrition label photo", onPress: onRetake }, mockReact.createElement(MockText, null, "Retake photo")),
       mockReact.createElement(MockPressable, { accessibilityLabel: "Cancel nutrition review", onPress: onCancel }, mockReact.createElement(MockText, null, "Cancel nutrition review")),
     ),
   };
@@ -355,6 +391,7 @@ function resetState() {
   mockUsdaImport = { isPending: false, isError: false, mutate: mockUsdaImportMutation };
   mockCreateLog.mockClear();
   mockAccessibilityAnnounce.mockClear();
+  mockScanGeneration = 0;
 }
 
 async function renderNavigator(): Promise<ReactTestRenderer> {
@@ -581,6 +618,59 @@ test("supported Scan Label handoff reaches shared confirmation with the originat
     logged_date: "2026-07-13",
     meal_type: "dinner",
   }));
+  await act(async () => renderer.unmount());
+});
+
+test("Scan Label retake opens the camera directly, replaces the abandoned draft, and preserves Add Food context", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Dinner").props.onPress());
+  await act(async () => labeled(renderer.root, "Scan nutrition label").props.onPress());
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+  expect(screenText(renderer.root)).toContain("Review extracted nutrition 1");
+
+  await act(async () => labeled(renderer.root, "Retake nutrition label photo").props.onPress());
+  expect(screenText(renderer.root)).toContain("Camera acquisition requested");
+
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+  expect(screenText(renderer.root)).toContain("Review extracted nutrition 2");
+  expect(screenText(renderer.root)).not.toContain("Review extracted nutrition 1");
+
+  await act(async () => labeled(renderer.root, "Create scanned food").props.onPress());
+  expect(screenText(renderer.root)).toContain("Log Food");
+  expect(labeled(renderer.root, "Meal dinner").props.accessibilityState.checked).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
+test("cancelling the camera after an Add Food retake returns to the originating discovery flow", async () => {
+  const renderer = await renderNavigator();
+  await openDailyLog(renderer);
+  await act(async () => labeled(renderer.root, "Add Food to Snack").props.onPress());
+  await act(async () => labeled(renderer.root, "Scan nutrition label").props.onPress());
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+  await act(async () => labeled(renderer.root, "Retake nutrition label photo").props.onPress());
+  expect(screenText(renderer.root)).toContain("Camera acquisition requested");
+
+  await act(async () => labeled(renderer.root, "Cancel label scan").props.onPress());
+  expect(screenText(renderer.root)).toContain("Logging for 2026-07-13");
+  expect(screenText(renderer.root)).toContain("Initial meal: snack");
+  await act(async () => renderer.unmount());
+});
+
+test("standalone Food scan retake opens the camera directly and uses only the replacement draft", async () => {
+  const renderer = await renderNavigator();
+  await act(async () => labeled(renderer.root, "Scan nutrition label from Foods").props.onPress());
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+  expect(screenText(renderer.root)).toContain("Review extracted nutrition 1");
+
+  await act(async () => labeled(renderer.root, "Retake nutrition label photo").props.onPress());
+  expect(screenText(renderer.root)).toContain("Camera acquisition requested");
+  await act(async () => labeled(renderer.root, "Finish label scan").props.onPress());
+
+  expect(screenText(renderer.root)).toContain("Review extracted nutrition 2");
+  expect(screenText(renderer.root)).not.toContain("Review extracted nutrition 1");
+  await act(async () => labeled(renderer.root, "Create scanned food").props.onPress());
+  expect(screenText(renderer.root)).toContain("Food Detail food-scanned");
   await act(async () => renderer.unmount());
 });
 

@@ -74,10 +74,11 @@ function nutrientCatalogSubmissionError({
   return null;
 }
 
-export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated }: {
+export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated, onRetake }: {
   initialDraft: NutritionConfirmationDraft;
   onCancel: () => void;
   onCreated: (foodId: string) => void;
+  onRetake: () => void;
 }) {
   const runtime = useNutritionRuntime();
   const nutrientQuery = useNutrients();
@@ -91,7 +92,7 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
   const [directedReviewVisible, setDirectedReviewVisible] = useState(() => requiredReviewItems(initialDraft).length > 0);
   const submittingRef = useRef(false);
   const mountedRef = useRef(true);
-  const cancelClaimedRef = useRef(false);
+  const navigationClaimedRef = useRef(false);
   const successClaimedRef = useRef(false);
   const intentRef = useRef<ConfirmationIntent | null>(null);
   const scrollRef = useRef<KeyboardSafeScrollViewHandle>(null);
@@ -202,13 +203,19 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
   </>;
 
   const cancel = () => {
-    if (submittingRef.current || cancelClaimedRef.current) return;
-    cancelClaimedRef.current = true;
+    if (submittingRef.current || navigationClaimedRef.current || successClaimedRef.current) return;
+    navigationClaimedRef.current = true;
     onCancel();
   };
 
+  const retake = () => {
+    if (submittingRef.current || navigationClaimedRef.current || successClaimedRef.current) return;
+    navigationClaimedRef.current = true;
+    onRetake();
+  };
+
   const submit = async () => {
-    if (submittingRef.current || cancelClaimedRef.current || successClaimedRef.current) return;
+    if (submittingRef.current || navigationClaimedRef.current || successClaimedRef.current) return;
     if (reviewItems.length > 0) {
       setDirectedReviewVisible(true);
       return;
@@ -309,7 +316,25 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
       {draft.unknownNutrients.length ? <><Text accessibilityRole="header" style={styles.section}>Unknown rows</Text>{draft.unknownNutrients.map((item, index) => <View key={`${item.originalName}-${index}`} style={[styles.card, !item.dismissed && styles.flagged, item.dismissed && styles.omitted]}><Text accessible accessibilityLabel={`Unknown nutrient ${item.originalName}, ${item.dismissed ? "dismissed" : "unresolved"}`} style={styles.fieldLabel}>{item.originalName}</Text><AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${item.originalName}`} disabled={submitting || item.dismissed} onPress={() => dismissUnknown(index)}><Text style={styles.link}>{item.dismissed ? "Dismissed" : "Dismiss after review"}</Text></AccessiblePressable></View>)}</> : null}
       {displayedError ? <Text ref={errorRef} accessibilityLiveRegion="none" accessibilityRole="alert" style={styles.error}>{displayedError}</Text> : null}
     </>}</KeyboardSafeScrollView>
-      <View style={styles.saveBar}><AccessiblePressable ref={reviewTriggerRef} busy={submitting} accessibilityLabel={submitting ? "Creating Food" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"} accessibilityHint={reviewItems.length > 0 ? "Opens the focused review for unresolved nutrition items" : "Creates the food, then opens logging confirmation when started from Add Food"} onPress={reviewItems.length > 0 ? () => setDirectedReviewVisible(true) : submit} style={[styles.button, submitting && styles.disabled]}><Text style={styles.buttonText}>{submitting ? "Creating Food…" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"}</Text></AccessiblePressable></View>
+      <View testID="nutrition-confirmation-actions" style={styles.saveBar}>
+        <AccessiblePressable
+          testID="nutrition-confirmation-retake-island"
+          accessibilityLabel="Retake nutrition label photo"
+          accessibilityHint="Discards this unsubmitted review and opens the camera for a replacement photo"
+          disabled={submitting}
+          onPress={retake}
+          style={[styles.retakeIsland, submitting && styles.disabled]}
+        ><Text style={styles.retakeLabel}>Retake photo</Text></AccessiblePressable>
+        <AccessiblePressable
+          ref={reviewTriggerRef}
+          testID="nutrition-confirmation-primary-action"
+          busy={submitting}
+          accessibilityLabel={submitting ? "Creating Food" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"}
+          accessibilityHint={reviewItems.length > 0 ? "Opens the focused review for unresolved nutrition items" : "Creates the food, then opens logging confirmation when started from Add Food"}
+          onPress={reviewItems.length > 0 ? () => setDirectedReviewVisible(true) : submit}
+          style={[styles.button, submitting && styles.disabled]}
+        ><Text style={styles.buttonText}>{submitting ? "Creating Food…" : reviewItems.length > 0 ? directedReviewActionCopy(reviewItems.length) : "Create Food"}</Text></AccessiblePressable>
+      </View>
     </View>
     <AccessibleModal
       visible={reviewPresented}
@@ -351,21 +376,48 @@ export function NutritionConfirmationScreen({ initialDraft, onCancel, onCreated 
         <Text style={styles.reviewInstruction}>Dismiss this unrecognized nutrient before creating the Food.</Text>
         <AccessiblePressable accessibilityLabel={`Dismiss unknown nutrient ${currentReviewItem.label}`} disabled={submitting} onPress={() => dismissUnknown(currentReviewItem.index)}><Text style={styles.link}>Dismiss</Text></AccessiblePressable>
       </View> : null}
+      <AccessiblePressable
+        accessibilityLabel="Retake nutrition label photo"
+        accessibilityHint="Discards this unsubmitted review and opens the camera for a replacement photo"
+        disabled={submitting}
+        onPress={retake}
+        style={styles.reviewClose}
+      ><Text style={styles.link}>Retake photo</Text></AccessiblePressable>
       <AccessiblePressable accessibilityLabel="Close nutrition review" disabled={submitting} onPress={() => setDirectedReviewVisible(false)} style={styles.reviewClose}><Text style={styles.link}>Continue editing</Text></AccessiblePressable>
     </AccessibleModal>
   </View>;
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  button: { alignItems: "center", backgroundColor: theme.colors.primaryActionBackground, borderRadius: 8, minHeight: 48, justifyContent: "center" },
+  button: { alignItems: "center", backgroundColor: theme.colors.primaryActionBackground, borderRadius: 8, minHeight: 48, justifyContent: "center", width: "100%" },
   buttonText: { color: theme.colors.primaryActionForeground, fontSize: 16, fontWeight: "700" }, card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
-  content: { gap: 10, padding: 16, paddingBottom: 120 }, disabled: { opacity: 0.65 }, error: { color: theme.colors.errorText }, fieldLabel: { color: theme.colors.text, flex: 1, fontSize: 16, fontWeight: "700" }, flagged: { borderColor: theme.colors.warningText, borderWidth: 1 }, flex: { flex: 1 },
+  content: { gap: 10, padding: 16, paddingBottom: 184 }, disabled: { opacity: 0.65 }, error: { color: theme.colors.errorText }, fieldLabel: { color: theme.colors.text, flex: 1, fontSize: 16, fontWeight: "700" }, flagged: { borderColor: theme.colors.warningText, borderWidth: 1 }, flex: { flex: 1 },
   header: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }, input: { backgroundColor: theme.colors.input, borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, color: theme.colors.text, minHeight: 44, padding: 10 }, link: { color: theme.colors.accent, fontWeight: "600" }, meta: { color: theme.colors.secondaryText }, notice: { color: theme.colors.secondaryText }, row: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  reviewBackdrop: { backgroundColor: "rgba(0, 0, 0, 0.45)", padding: 16 }, reviewClose: { alignSelf: "flex-start" }, reviewContent: { padding: 16 }, reviewInstruction: { color: theme.colors.secondaryText }, reviewItemCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.warningText, borderRadius: 8, borderWidth: 1, gap: 10, padding: 14 }, reviewItemTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" }, reviewModal: { backgroundColor: theme.colors.background, borderRadius: 12, maxHeight: "88%" }, reviewProgress: { color: theme.colors.secondaryText }, reviewTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "800" }, saveBar: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, padding: 12 }, screen: { backgroundColor: theme.colors.background, flex: 1 }, screenContent: { flex: 1 }, section: { color: theme.colors.text, fontSize: 19, fontWeight: "800", marginTop: 8 }, title: { color: theme.colors.text, fontSize: 25, fontWeight: "800" },
+  reviewBackdrop: { backgroundColor: "rgba(0, 0, 0, 0.45)", padding: 16 }, reviewClose: { alignSelf: "flex-start" }, reviewContent: { padding: 16 }, reviewInstruction: { color: theme.colors.secondaryText }, reviewItemCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.warningText, borderRadius: 8, borderWidth: 1, gap: 10, padding: 14 }, reviewItemTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" }, reviewModal: { backgroundColor: theme.colors.background, borderRadius: 12, maxHeight: "88%" }, reviewProgress: { color: theme.colors.secondaryText }, reviewTitle: { color: theme.colors.text, fontSize: 20, fontWeight: "800" }, saveBar: { paddingBottom: 8, paddingHorizontal: 16, paddingTop: 10, position: "relative" }, screen: { backgroundColor: theme.colors.background, flex: 1 }, screenContent: { flex: 1 }, section: { color: theme.colors.text, fontSize: 19, fontWeight: "800", marginTop: 8 }, title: { color: theme.colors.text, fontSize: 25, fontWeight: "800" },
   omitted: { opacity: 0.7 },
   picker: { borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
   pickerOption: { justifyContent: "center", minHeight: 44 },
   secondaryButton: { alignItems: "flex-start", justifyContent: "center", minHeight: 44 },
+  retakeIsland: {
+    alignItems: "center",
+    backgroundColor: theme.colors.primaryActionBackground,
+    borderColor: theme.colors.primaryActionBorder,
+    borderRadius: 25,
+    borderWidth: 1,
+    bottom: 76,
+    elevation: 5,
+    justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: 18,
+    position: "absolute",
+    right: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    zIndex: 3,
+  },
+  retakeLabel: { color: theme.colors.primaryActionForeground, fontSize: 16, fontWeight: "700" },
 }); }
 
 function confirmationValidationFocusKey(fieldKey: string | null): string | null {
