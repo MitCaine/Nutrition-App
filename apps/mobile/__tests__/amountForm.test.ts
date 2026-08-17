@@ -228,10 +228,10 @@ test("manual display labels survive quantity and unit changes until reset", () =
   expect(applyAmountPatch(changed, { labelMode: "automatic" }).label).toBe("3 cups");
 });
 
-test("mass edits refresh generated label and gram equivalent", () => {
+test("quantity and unit edits refresh the label without changing explicit grams", () => {
   const changed = applyAmountPatch(portion, { quantity: "4", unit: "oz" });
   expect(changed.label).toBe("4 oz");
-  expect(changed.gram_weight).toBe("113.398093");
+  expect(changed.gram_weight).toBe("32");
 });
 
 test("unit choices are compactly grouped and expose an explicit selected state", () => {

@@ -407,7 +407,7 @@ test("transitionServingUnit never mutates its inputs", () => {
   expect(current).toEqual({ quantity: "1.5", unit: "cup", gramWeight: "208", preservedVolume: null });
 });
 
-test("applyAmountPatch keeps an explicit unit-transition gram weight authoritative", () => {
+test("applyAmountPatch keeps explicit grams authoritative across descriptive edits", () => {
   const serving: AmountFormValue = {
     key: "portion-1", label: "1.5 cup", quantity: "1.5", unit: "cup", gram_weight: "208",
     is_default: false, isBaseAmount: false, labelMode: "automatic",
@@ -418,7 +418,7 @@ test("applyAmountPatch keeps an explicit unit-transition gram weight authoritati
   expect(converted.label).toBe("7.336984 oz");
 
   const directEdit = applyAmountPatch(serving, { quantity: "4", unit: "oz" });
-  expect(directEdit.gram_weight).toBe("113.398093");
+  expect(directEdit.gram_weight).toBe("208");
 
   const manual = applyAmountPatch({ ...serving, label: "Morning bowl", labelMode: "manual" }, { quantity: "7.336984", unit: "oz", gram_weight: "208" });
   expect(manual.label).toBe("Morning bowl");

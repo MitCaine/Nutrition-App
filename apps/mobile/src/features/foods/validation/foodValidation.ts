@@ -19,7 +19,7 @@ export const servingSchema = z
     label: z.string().min(1),
     quantity: z.string().min(1),
     unit: z.string().min(1),
-    gram_weight: z.string().optional().nullable(),
+    gram_weight: z.string().min(1, "Gram weight is required."),
     reference_quantity: z.string().optional().nullable(),
     reference_unit: z.string().optional().nullable(),
     reference_gram_weight: z.string().optional().nullable(),
@@ -29,8 +29,12 @@ export const servingSchema = z
     if (!Number.isFinite(Number(serving.quantity)) || Number(serving.quantity) <= 0) {
       ctx.addIssue({ code: "custom", message: "Serving quantity must be a decimal greater than zero" });
     }
-    if (serving.gram_weight && (!Number.isFinite(Number(serving.gram_weight)) || Number(serving.gram_weight) <= 0)) {
-      ctx.addIssue({ code: "custom", message: "Gram weight must be greater than zero" });
+    if (!Number.isFinite(Number(serving.gram_weight)) || Number(serving.gram_weight) <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["gram_weight"],
+        message: "Gram weight must be greater than zero",
+      });
     }
     const referenceValues = [serving.reference_quantity, serving.reference_unit, serving.reference_gram_weight];
     const hasReference = referenceValues.some((value) => value != null);

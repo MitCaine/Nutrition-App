@@ -10,7 +10,10 @@ type ServingValue = Pick<
   "servingDisplay" | "servingQuantity" | "servingUnit" | "gramWeight"
 >;
 
-const focusProps = () => ({ ref: () => undefined, onFocus: () => undefined });
+const focusProps = () => ({
+  ref: () => undefined,
+  onFocus: () => undefined,
+});
 
 function Harness({ onPatch }: { onPatch: jest.Mock }) {
   const [value, setValue] = useState<ServingValue>({
@@ -19,6 +22,7 @@ function Harness({ onPatch }: { onPatch: jest.Mock }) {
     servingUnit: "serving",
     gramWeight: "",
   });
+
   return React.createElement(OcrServingEditor, {
     value,
     focusProps,
@@ -29,20 +33,34 @@ function Harness({ onPatch }: { onPatch: jest.Mock }) {
   });
 }
 
-function rootText(root: TestRenderer.ReactTestRenderer): string {
-  return root.root.findAllByType(Text).map((node) => (typeof node.props.children === "string" ? node.props.children : "")).join(" ");
+function rootText(renderer: TestRenderer.ReactTestRenderer): string {
+  return renderer.root
+    .findAllByType(Text)
+    .map((node) =>
+      typeof node.props.children === "string"
+        ? node.props.children
+        : "",
+    )
+    .join(" ");
 }
 
-function input(root: TestRenderer.ReactTestInstance, label: string) {
-  return root.findAllByType(TextInput).find((node) => node.props.accessibilityLabel === label)!;
+function input(
+  root: TestRenderer.ReactTestInstance,
+  label: string,
+) {
+  return root
+    .findAllByType(TextInput)
+    .find((node) => node.props.accessibilityLabel === label)!;
 }
 
-test("OCR serving recovery runs once, then user quantity edits own the draft", async () => {
+test("OCR serving recovery runs once, then user quantity edits leave recovered grams fixed", async () => {
   const onPatch = jest.fn();
   let renderer!: TestRenderer.ReactTestRenderer;
 
   await act(async () => {
-    renderer = TestRenderer.create(React.createElement(Harness, { onPatch }));
+    renderer = TestRenderer.create(
+      React.createElement(Harness, { onPatch }),
+    );
   });
 
   expect(onPatch).toHaveBeenCalledWith({
@@ -51,22 +69,40 @@ test("OCR serving recovery runs once, then user quantity edits own the draft", a
     gramWeight: "55",
     servingDisplay: "",
   });
-  expect(input(renderer.root, "Serving quantity").props.value).toBe("2/3");
+
+  expect(
+    input(renderer.root, "Serving quantity").props.value,
+  ).toBe("2/3");
+
+  expect(
+    input(renderer.root, "Serving grams").props.value,
+  ).toBe("55");
 
   onPatch.mockClear();
-  await act(async () => input(renderer.root, "Serving quantity").props.onChangeText("1"));
+
+  await act(async () =>
+    input(renderer.root, "Serving quantity").props.onChangeText("1"),
+  );
 
   expect(onPatch).toHaveBeenCalledTimes(1);
   expect(onPatch).toHaveBeenLastCalledWith({
     servingQuantity: "1",
-    gramWeight: "82.5",
-    servingReferenceQuantity: "0.666666667",
-    servingReferenceUnit: "cup",
-    servingReferenceGramWeight: "55",
+    servingConversionReviewRequired: false,
   });
-  expect(input(renderer.root, "Serving quantity").props.value).toBe("1");
-  expect(rootText(renderer)).toContain("Reference measurement 2/3 cup = 55 g");
-  expect(rootText(renderer)).toContain("Will appear as 1 cup (82.5 g)");
+
+  expect(
+    input(renderer.root, "Serving quantity").props.value,
+  ).toBe("1");
+
+  expect(
+    input(renderer.root, "Serving grams").props.value,
+  ).toBe("55");
+
+  expect(rootText(renderer)).not.toContain("Reference measurement");
+  expect(rootText(renderer)).toContain("1 cup = 55 g");
+  expect(rootText(renderer)).toContain(
+    "55 g per cup · 55 g total",
+  );
 
   await act(async () => renderer.unmount());
 });

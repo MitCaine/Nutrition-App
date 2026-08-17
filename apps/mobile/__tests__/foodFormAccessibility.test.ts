@@ -206,14 +206,18 @@ test("canonical and custom default controls share a trailing slot and retain low
   expect(StyleSheet.flatten(managementSurface(customDefaultControl).props.style)).toMatchObject({ minHeight: 36, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 });
   expect(StyleSheet.flatten(managementSurface(baseSetDefaultControl).props.style)).toMatchObject({ minHeight: 36, minWidth: 96, paddingHorizontal: 12, paddingVertical: 8 });
   await act(async () => renderer.root.findByProps({ accessibilityLabel: "Edit 1 scoop" }).props.onPress());
-  expect(StyleSheet.flatten(renderer.root.findByProps({ accessibilityLabel: "Quantity" }).props.style))
+  const servingQuantityInput = renderer.root.findAllByType(TextInput).find(
+    (node) => node.props.accessibilityLabel === "Serving quantity",
+  )!;
+  expect(StyleSheet.flatten(servingQuantityInput.props.style))
     .toMatchObject({ minHeight: 44, paddingHorizontal: 10, paddingVertical: 10 });
-  expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "Reference measurement")).toBe(true);
-  expect(renderer.root.findByProps({ accessibilityLabel: "Edit reference measurement" })).toBeDefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: "Serving grams" }).props.value).toBe("30");
+  expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "Reference measurement")).toBe(false);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: "Edit reference measurement" })).toHaveLength(0);
   await act(async () => renderer.unmount());
 });
 
-test("Food serving creation uses the same structured quantity, unit, and per-unit gram flow", async () => {
+test("Food serving creation uses the direct quantity, unit, and gram-anchor flow", async () => {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(FoodFormScreen, {
@@ -223,25 +227,64 @@ test("Food serving creation uses the same structured quantity, unit, and per-uni
   });
   activeRenderers.add(renderer);
 
-  expect(renderer.root.findAllByProps({ accessibilityLabel: "Edit 1 serving" })).toHaveLength(0);
-  const add = renderer.root.findByProps({ accessibilityLabel: "Add serving size" });
+  expect(
+    renderer.root.findAllByProps({
+      accessibilityLabel: "Edit 1 serving",
+    }),
+  ).toHaveLength(0);
+
+  const add = renderer.root.findByProps({
+    accessibilityLabel: "Add serving size",
+  });
   expect(add.props.accessibilityHint).toContain("expands");
+
   await act(async () => add.props.onPress());
 
-  const referenceQuantity = renderer.root.findByProps({ accessibilityLabel: "Reference quantity" });
-  const referenceUnit = renderer.root.findByProps({ accessibilityLabel: "Reference unit" });
-  expect(referenceQuantity.props.value).toBe("1");
-  expect(referenceUnit.props.value).toBe("");
+  const quantity = renderer.root.findByProps({
+    accessibilityLabel: "Serving quantity",
+  });
+  const grams = renderer.root.findByProps({
+    accessibilityLabel: "Serving grams",
+  });
 
-  const referenceUnitInput = renderer.root.findAllByProps({ accessibilityLabel: "Reference unit" })
-    .find((node) => typeof node.props.onChangeText === "function")!;
-  await act(async () => referenceUnitInput.props.onChangeText("slice"));
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Reference quantity" }).props.onChangeText("2"));
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Reference grams" }).props.onChangeText("56"));
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: "Confirm reference measurement" }).props.onPress());
-  expect(renderer.root.findAllByType(Text).some((node) => textContent(node) === "2 slices (56 g)")).toBe(true);
-  expect(renderer.root.findByProps({ accessibilityLabel: "Edit reference measurement" })).toBeDefined();
-  expect(renderer.root.findByProps({ accessibilityLabel: "Quantity" }).props.value).toBe("2");
+  expect(quantity.props.value).toBe("1");
+  expect(grams.props.value).toBe("");
+
+  const unitTrigger = renderer.root
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string"
+        && node.props.accessibilityLabel.startsWith("Choose unit for"),
+    )!;
+
+  await act(async () => unitTrigger.props.onPress());
+  await act(async () =>
+    renderer.root.findByProps({ accessibilityLabel: "slice" }).props.onPress()
+  );
+  await act(async () =>
+    renderer.root
+      .findByProps({ accessibilityLabel: "Serving quantity" })
+      .props.onChangeText("2")
+  );
+  await act(async () =>
+    renderer.root
+      .findByProps({ accessibilityLabel: "Serving grams" })
+      .props.onChangeText("56")
+  );
+
+  expect(
+    renderer.root
+      .findAllByType(Text)
+      .some((node) => textContent(node) === "2 slices = 56 g"),
+  ).toBe(true);
+
+  expect(
+    renderer.root
+      .findAllByType(Text)
+      .some((node) => textContent(node) === "Reference measurement"),
+  ).toBe(false);
+
   await act(async () => renderer.unmount());
 });
 

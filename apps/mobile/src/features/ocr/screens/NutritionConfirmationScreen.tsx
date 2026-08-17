@@ -321,6 +321,7 @@ export function NutritionConfirmationScreen({
         disabled={submitting}
         focusProps={focusProps}
         quantityError={issuesByField.get("serving.quantity")?.message ?? null}
+        unitError={issuesByField.get("serving.unit")?.message ?? null}
         gramWeightError={issuesByField.get("serving.gram_weight")?.message ?? null}
       />
       <Text accessibilityRole="header" style={styles.section}>Nutrition per label serving</Text>
@@ -454,6 +455,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
 function confirmationValidationFocusKey(fieldKey: string | null): string | null {
   if (fieldKey === "food.name") return "ocr.name";
   if (fieldKey === "serving.quantity") return "ocr.servingQuantity";
+  if (fieldKey === "serving.unit") return "ocr.servingUnit";
   if (fieldKey === "serving.gram_weight") return "ocr.gramWeight";
   return fieldKey?.startsWith("nutrient.") ? `ocr.field.${fieldKey}` : null;
 }

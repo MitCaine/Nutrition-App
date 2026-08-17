@@ -537,7 +537,7 @@ test("all blocking fields stay marked while resolving the first blocker", async 
   await act(async () => action(renderer.root, "Create Food").props.onPress());
 
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(true);
-  expect(input(renderer.root, "Reference grams").props["aria-invalid"]).toBe(true);
+  expect(input(renderer.root, "Serving grams").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Calories amount").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
   expect(validationMessages(renderer.root)).toEqual(expect.stringMatching(/Food name.*Serving grams.*Calories/s));
@@ -545,7 +545,7 @@ test("all blocking fields stay marked while resolving the first blocker", async 
   await act(async () => input(renderer.root, "Food name").props.onChangeText("Resolved name"));
 
   expect(input(renderer.root, "Food name").props["aria-invalid"]).toBe(false);
-  expect(input(renderer.root, "Reference grams").props["aria-invalid"]).toBe(true);
+  expect(input(renderer.root, "Serving grams").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Calories amount").props["aria-invalid"]).toBe(true);
   expect(input(renderer.root, "Potassium amount").props["aria-invalid"]).toBe(false);
   await act(async () => renderer.unmount());

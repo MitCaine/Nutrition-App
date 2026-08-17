@@ -217,29 +217,19 @@ export function confirmationValidationIssues(draft: NutritionConfirmationDraft):
   const issues: ConfirmationValidationIssue[] = [];
   if (!draft.name.trim()) issues.push({ message: "Food name is required.", fieldKey: "food.name" });
   if (!isPositiveDecimalString(draft.servingQuantity)) {
-    issues.push({ message: "Serving quantity must be a positive number.", fieldKey: "serving.quantity" });
+    issues.push({
+      message: "Serving quantity must be a positive number.",
+      fieldKey: "serving.quantity",
+    });
+  }
+  if (!draft.servingUnit.trim()) {
+    issues.push({
+      message: "Serving unit is required.",
+      fieldKey: "serving.unit",
+    });
   }
   if (!isPositiveDecimalString(draft.gramWeight)) {
     issues.push({ message: "Serving grams must be a positive number.", fieldKey: "serving.gram_weight" });
-  }
-  const referenceParts = [
-    draft.servingReferenceQuantity,
-    draft.servingReferenceUnit,
-    draft.servingReferenceGramWeight,
-  ];
-  const hasReference = referenceParts.some((value) => value != null);
-  const completeReference = referenceParts.every((value) => typeof value === "string" && value.trim().length > 0);
-  if (hasReference && !completeReference) {
-    issues.push({ message: "Reference measurement requires quantity, unit, and grams.", fieldKey: "serving.quantity" });
-  } else if (completeReference && (
-    !isPositiveDecimalString(draft.servingReferenceQuantity as string)
-    || !(draft.servingReferenceUnit as string).trim()
-    || !isPositiveDecimalString(draft.servingReferenceGramWeight as string)
-  )) {
-    issues.push({ message: "Reference measurement must use positive quantity and gram values.", fieldKey: "serving.quantity" });
-  }
-  if (draft.servingConversionReviewRequired) {
-    issues.push({ message: "Check the serving quantity before saving.", fieldKey: "serving.quantity" });
   }
   const fields = [draft.calories, ...draft.nutrients];
   for (const field of fields) {
@@ -297,14 +287,9 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
   const nutrients = fields.map(retainedNutrient).filter((value): value is NonNullable<typeof value> => Boolean(value));
   const currentQuantity = normalizeServingQuantityInput(draft.servingQuantity) ?? draft.servingQuantity;
   const grams = normalizeServingQuantityInput(draft.gramWeight) ?? draft.gramWeight;
-  const hasPersistedReference = draft.servingReferenceQuantity != null
-    && draft.servingReferenceUnit != null
-    && draft.servingReferenceGramWeight != null;
-  const rawReferenceQuantity = hasPersistedReference ? draft.servingReferenceQuantity as string : currentQuantity;
-  const rawReferenceGrams = hasPersistedReference ? draft.servingReferenceGramWeight as string : grams;
-  const referenceQuantity = normalizeServingQuantityInput(rawReferenceQuantity) ?? rawReferenceQuantity;
-  const referenceGrams = normalizeServingQuantityInput(rawReferenceGrams) ?? rawReferenceGrams;
-  const servingLabel = draft.servingDisplay.trim() || generatedAmountLabel(currentQuantity, draft.servingUnit);
+  const servingLabel =
+    draft.servingDisplay.trim()
+    || generatedAmountLabel(currentQuantity, draft.servingUnit);
   const food: FoodMutationInput = {
     name: draft.name.trim(), brand: draft.brand.trim() || null, notes: draft.notes.trim() || null,
     serving_definitions: [
@@ -315,9 +300,10 @@ export function confirmationPayload(draft: NutritionConfirmationDraft, clientReq
         unit: draft.servingUnit || "serving",
         gram_weight: grams,
         is_default: true,
-        reference_quantity: referenceQuantity || "1",
-        reference_unit: hasPersistedReference ? (draft.servingReferenceUnit as string) : (draft.servingUnit || "serving"),
-        reference_gram_weight: referenceGrams,
+        // Compatibility fields mirror the single gram-anchored serving.
+        reference_quantity: currentQuantity || "1",
+        reference_unit: draft.servingUnit || "serving",
+        reference_gram_weight: grams,
       },
     ],
     nutrients,

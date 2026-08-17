@@ -695,20 +695,34 @@ export function applyAmountPatch(amount: AmountFormValue, patch: Partial<AmountF
   if (amount.isBaseAmount) {
     return patch.is_default === true && !amount.is_default ? { ...amount, is_default: true } : amount;
   }
+
   const next = { ...amount, ...patch };
-  if (patch.label !== undefined && patch.labelMode === undefined) next.labelMode = "manual";
-  if (patch.labelMode === "automatic") next.label = generatedAmountLabel(next.quantity, next.unit);
-  if ((patch.quantity !== undefined || patch.unit !== undefined) && next.labelMode === "automatic") {
+
+  if (patch.label !== undefined && patch.labelMode === undefined) {
+    next.labelMode = "manual";
+  }
+
+  if (
+    patch.labelMode === "automatic"
+    || ((patch.quantity !== undefined || patch.unit !== undefined)
+      && next.labelMode === "automatic")
+  ) {
     next.label = generatedAmountLabel(next.quantity, next.unit);
   }
-  if (patch.quantity !== undefined || patch.unit !== undefined) {
-    // An explicit gram_weight (serving-unit transitions) is authoritative; re-derivation
-    // from the new quantity/unit is only for direct quantity/unit edits.
-    if (patch.gram_weight === undefined) {
-      const converted = massGramEquivalent(next.quantity, next.unit);
-      if (converted !== null) next.gram_weight = converted;
-      else if (patch.unit !== undefined && amountUnitCategory(amount.unit) === "weight") next.gram_weight = "";
+
+  // #107: grams are the physical authority. Editing the descriptive
+  // quantity/unit never recalculates grams, and editing grams never changes
+  // quantity/unit. Any old transient conversion-review state is obsolete once
+  // the user directly authors one of these fields.
+  if (
+    patch.quantity !== undefined
+    || patch.unit !== undefined
+    || patch.gram_weight !== undefined
+  ) {
+    if (next.consistencyWarning === UNCONVERTED_SERVING_UNIT_WARNING) {
+      next.consistencyWarning = undefined;
     }
   }
+
   return next;
 }

@@ -268,11 +268,11 @@ test("confirmation blocks name, unresolved less-than, and unknown rows", () => {
   expect(confirmationValidationError(draft)).toBeNull();
 });
 
-test("confirmation requires the persisted serving reference to be all-or-none", () => {
+test("legacy serving references no longer act as a second validation authority", () => {
   let draft = draftFromParsedLabel(parsed(), "camera");
   draft = {
     ...draft,
-    name: "Reference validation",
+    name: "Reference compatibility",
     calories: updateReview(draft.calories, "120", "accepted"),
     nutrients: draft.nutrients.map((item) => omitReview(item)),
     unknownNutrients: [],
@@ -281,21 +281,17 @@ test("confirmation requires the persisted serving reference to be all-or-none", 
     servingReferenceGramWeight: "30",
   };
 
-  expect(confirmationValidationIssues(draft)).toContainEqual({
-    message: "Reference measurement requires quantity, unit, and grams.",
-    fieldKey: "serving.quantity",
-  });
-  expect(confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")).toBeNull();
+  expect(confirmationValidationIssues(draft)).toEqual([]);
 
-  const complete = { ...draft, servingReferenceUnit: "cup" };
-  expect(confirmationValidationIssues(complete)).toEqual([]);
-  expect(confirmationPayload(complete, "00000000-0000-4000-8000-000000000001")?.food.serving_definitions[1]).toEqual(
-    expect.objectContaining({
-      reference_quantity: "1",
-      reference_unit: "cup",
-      reference_gram_weight: "30",
-    }),
-  );
+  const payload = confirmationPayload(
+    draft,
+    "00000000-0000-4000-8000-000000000001",
+  )!;
+
+  const serving = payload.food.serving_definitions[1]!;
+  expect(serving.reference_quantity).toBe(serving.quantity);
+  expect(serving.reference_unit).toBe(serving.unit);
+  expect(serving.reference_gram_weight).toBe(serving.gram_weight);
 });
 
 test("confirmation canonicalizes OCR fixed-scale serving quantities in both Food payload and trace", () => {
@@ -348,26 +344,33 @@ test("confirmation canonicalizes OCR fixed-scale serving quantities in both Food
   });
 });
 
-test("confirmation blocks an unresolved serving-unit conversion until quantity review completes", () => {
+test("legacy serving conversion-review state no longer blocks gram-anchored confirmation", () => {
   let draft = draftFromParsedLabel(parsed(), "camera");
   draft = {
     ...draft,
-    name: "Needs serving review",
+    name: "Gram anchored serving",
     calories: updateReview(draft.calories, "120", "accepted"),
     nutrients: draft.nutrients.map((item) => omitReview(item)),
     unknownNutrients: [],
     servingConversionReviewRequired: true,
   };
 
-  expect(confirmationValidationIssues(draft)).toContainEqual({
-    message: "Check the serving quantity before saving.",
-    fieldKey: "serving.quantity",
-  });
-  expect(confirmationPayload(draft, "00000000-0000-4000-8000-000000000001")).toBeNull();
+  expect(confirmationValidationIssues(draft)).toEqual([]);
 
-  const reviewed = { ...draft, servingConversionReviewRequired: false };
-  expect(confirmationValidationIssues(reviewed)).toEqual([]);
-  expect(confirmationPayload(reviewed, "00000000-0000-4000-8000-000000000001")).not.toBeNull();
+  const payload = confirmationPayload(
+    draft,
+    "00000000-0000-4000-8000-000000000001",
+  );
+
+  expect(payload).not.toBeNull();
+  expect(payload!.food.serving_definitions[1]).toEqual(
+    expect.objectContaining({
+      reference_quantity: payload!.food.serving_definitions[1]!.quantity,
+      reference_unit: payload!.food.serving_definitions[1]!.unit,
+      reference_gram_weight:
+        payload!.food.serving_definitions[1]!.gram_weight,
+    }),
+  );
 });
 
 test("low-confidence potassium can be explicitly omitted without fabricating a nutrient value", () => {

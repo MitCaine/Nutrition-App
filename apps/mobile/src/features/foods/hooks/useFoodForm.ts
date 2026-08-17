@@ -22,7 +22,6 @@ import {
   repairLegacyStructuredAmount,
   type AmountFormValue,
   DEFAULT_AMOUNT_WEIGHT_MESSAGE,
-  UNCONVERTED_SERVING_UNIT_WARNING,
 } from "../utils/amountForm";
 
 export type ServingFormValue = AmountFormValue;
@@ -231,21 +230,6 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
   }
 
   function buildPayload(): FoodPayloadValidationResult {
-    const unresolvedServing = servings.find((serving) => serving.consistencyWarning === UNCONVERTED_SERVING_UNIT_WARNING);
-    if (unresolvedServing) {
-      const issue: ValidationIssue<FoodValidationTarget> = {
-        code: "serving_conversion_review_required",
-        message: "Set the serving's equivalent measurement before saving.",
-        target: `serving.${unresolvedServing.key}.quantity`,
-        announce: true,
-        moveFocus: true,
-        valuesRemainValid: true,
-      };
-      setInvalidServingKey(unresolvedServing.key);
-      setError(issue.message);
-      setCurrentValidationIssue(issue);
-      return { input: null, issue };
-    }
     const input: FoodMutationInput = {
       name,
       brand: brand || null,
@@ -260,26 +244,31 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
         const canonicalGramWeight = payloadServing.gram_weight
           ? normalizeServingQuantityInput(payloadServing.gram_weight) ?? payloadServing.gram_weight
           : payloadServing.gram_weight;
-        const hasReference = payloadServing.reference_quantity != null
-          || payloadServing.reference_unit != null
-          || payloadServing.reference_gram_weight != null;
-        const canonicalReferenceQuantity = hasReference && payloadServing.reference_quantity
-          ? normalizeServingQuantityInput(payloadServing.reference_quantity) ?? payloadServing.reference_quantity
-          : payloadServing.reference_quantity ?? null;
-        const canonicalReferenceGramWeight = hasReference && payloadServing.reference_gram_weight
-          ? normalizeServingQuantityInput(payloadServing.reference_gram_weight) ?? payloadServing.reference_gram_weight
-          : payloadServing.reference_gram_weight ?? null;
+        const persistedQuantity =
+          originalQuantity
+            ? servingPayloadNumber(canonicalQuantity, originalQuantity)
+            : canonicalQuantity;
+        const persistedGramWeight =
+          originalGramWeight && canonicalGramWeight
+            ? servingPayloadNumber(canonicalGramWeight, originalGramWeight)
+            : canonicalGramWeight || null;
+
+        const hasCompleteGramAnchor = Boolean(
+          normalizeServingQuantityInput(canonicalQuantity)
+          && payloadServing.unit.trim()
+          && canonicalGramWeight
+          && Number(canonicalGramWeight) > 0,
+        );
+
         return {
           ...payloadServing,
-          quantity:
-            originalQuantity ? servingPayloadNumber(canonicalQuantity, originalQuantity) : canonicalQuantity,
-          gram_weight:
-            originalGramWeight && canonicalGramWeight
-              ? servingPayloadNumber(canonicalGramWeight, originalGramWeight)
-              : canonicalGramWeight || null,
-          reference_quantity: canonicalReferenceQuantity,
-          reference_unit: hasReference ? payloadServing.reference_unit?.trim() || null : null,
-          reference_gram_weight: canonicalReferenceGramWeight,
+          quantity: persistedQuantity,
+          gram_weight: persistedGramWeight,
+          // Compatibility only: there is no longer a second editable reference
+          // authority. A saved serving's reference mirrors the serving itself.
+          reference_quantity: hasCompleteGramAnchor ? persistedQuantity : null,
+          reference_unit: hasCompleteGramAnchor ? payloadServing.unit.trim() : null,
+          reference_gram_weight: hasCompleteGramAnchor ? persistedGramWeight : null,
         };
       }),
       nutrients: mergedValues.map((nutrient) => ({
