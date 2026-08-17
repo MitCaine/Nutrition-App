@@ -13,6 +13,7 @@ let mockSummary: Record<string, unknown>;
 let mockCalendar: Record<string, unknown>;
 let mockDeleteMutation: { mutateAsync: jest.Mock; isPending: boolean; projectDelete: jest.Mock; refreshDate: jest.Mock };
 let mockTargetProgressProps: Record<string, unknown> | null = null;
+let mockTargetConfiguration: Record<string, unknown>;
 const mockAccessibilityFocus = jest.fn((_target?: unknown, _options?: unknown) => jest.fn());
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
@@ -21,6 +22,10 @@ jest.mock("../src/shared/accessibility/focus", () => ({
   focusAccessibilityElement: (target: unknown, options: unknown) => mockAccessibilityFocus(target, options),
 }));
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: (props: Record<string, unknown>) => { mockTargetProgressProps = props; return null; } }));
+jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
+  useTargetConfiguration: () =>
+    mockTargetConfiguration,
+}));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
@@ -120,6 +125,14 @@ beforeEach(() => {
   mockSummary = { data: { totals: [] }, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
   mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
   mockTargetProgressProps = null;
+  mockTargetConfiguration = {
+    data: {
+      trackingPreferences: {},
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+  };
   mockAccessibilityFocus.mockClear();
 });
 
@@ -472,4 +485,109 @@ test("confirmed create or edit return focuses the projected entry summary", asyn
   expect(focusLabel(mockAccessibilityFocus.mock.calls.at(-1)?.[0])).toContain("Oatmeal, breakfast, 1 serving");
   expect(handled).toHaveBeenCalledTimes(1);
   await act(async () => rendered.renderer.unmount());
+});
+
+
+test("#103 Daily Log Totals omit ignored nutrients while keeping the totals read independent", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: [
+      log("breakfast"),
+    ],
+  };
+
+  mockSummary = {
+    ...mockSummary,
+    data: {
+      logged_date:
+        "2026-07-14",
+      totals: [
+        {
+          nutrientId:
+            "protein",
+          amountKnown:
+            "12.000000",
+          amountEstimated:
+            "0.000000",
+          unit: "g",
+          hasUnknownContributors:
+            false,
+          unknownContributorCount:
+            0,
+        },
+        {
+          nutrientId:
+            "total_fat",
+          amountKnown:
+            "7.000000",
+          amountEstimated:
+            "0.000000",
+          unit: "g",
+          hasUnknownContributors:
+            false,
+          unknownContributorCount:
+            0,
+        },
+      ],
+    },
+  };
+
+  mockTargetConfiguration = {
+    data: {
+      trackingPreferences: {
+        protein: "ignored",
+      },
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+  };
+
+  const rendered =
+    await render();
+
+  const text =
+    screenText(
+      rendered.renderer.root,
+    );
+
+  expect(text).not.toContain(
+    "Protein",
+  );
+  expect(text).toContain(
+    "Total Fat",
+  );
+  expect(text).toContain(
+    "7g",
+  );
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
+
+  // Target-preference reads remain operationally independent.
+  // If that read is unavailable and no cached preference exists,
+  // confirmed Daily Log totals are not discarded.
+  mockTargetConfiguration = {
+    data: undefined,
+    isLoading: false,
+    isFetching: false,
+    isError: true,
+    error: new Error(
+      "targets offline",
+    ),
+  };
+
+  const independent =
+    await render();
+
+  expect(
+    screenText(
+      independent.renderer.root,
+    ),
+  ).toContain("Protein");
+
+  await act(async () =>
+    independent.renderer.unmount(),
+  );
 });

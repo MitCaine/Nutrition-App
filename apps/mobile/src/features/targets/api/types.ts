@@ -24,6 +24,16 @@ export type TargetDirection =
   | "reference"
   | "unavailable";
 
+export type TrackingPreferenceMode =
+  | "amount_only"
+  | "ignored";
+
+export type TrackingMode =
+  | "recommended"
+  | "custom"
+  | "amount_only"
+  | "ignored";
+
 export type DriReferenceType =
   | "RDA"
   | "AI";
@@ -47,6 +57,7 @@ export type TargetValue = {
   unit: string;
   authority: TargetAuthority;
   direction: TargetDirection;
+  trackingMode: TrackingMode;
   reasonCode: string | null;
   noteCode: string | null;
   referenceType: DriReferenceType | null;
@@ -105,6 +116,10 @@ export type TargetConfiguration = {
     equation: string;
   };
   manualOverrides: TargetValue[];
+  trackingPreferences: Record<
+    string,
+    TrackingPreferenceMode
+  >;
   effectiveTargets: TargetValue[];
   dailyValueCatalogVersion: string;
   dailyValueStandard: string;
@@ -124,10 +139,12 @@ export type DailyTargetComparisonItem = {
   percentage: string | null;
   authority: TargetAuthority;
   direction: TargetDirection;
+  trackingMode: TrackingMode;
   status:
     | "available"
     | "target_unavailable"
-    | "consumed_unavailable";
+    | "consumed_unavailable"
+    | "amount_only";
   reasonCode: string | null;
   noteCode: string | null;
   hasUnknownContributors: boolean;
@@ -156,10 +173,16 @@ export type TargetConfigurationInput = {
     activity_level: ActivityLevel | null;
     energy_estimation_context: EstimationContext;
   };
-  manual_overrides: {
-    calories: string | null;
-    protein: string | null;
-    total_carbohydrate: string | null;
-    total_fat: string | null;
-  };
+  manual_overrides: Record<
+    string,
+    string | null
+  >;
+  /**
+   * Omitted means this client does not manage tracking preferences.
+   * An explicit {} restores all preferences to dynamic defaults.
+   */
+  tracking_preferences?: Record<
+    string,
+    TrackingPreferenceMode
+  >;
 };

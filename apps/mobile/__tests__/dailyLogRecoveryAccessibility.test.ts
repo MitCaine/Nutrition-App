@@ -32,6 +32,18 @@ const testRuntime = createNutritionTestRuntime({
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
+jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
+  ...jest.requireActual("../src/features/targets/hooks/useDailyTargetComparison"),
+  useTargetConfiguration: () => ({
+    data: {
+      trackingPreferences: {},
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+  }),
+}));
+
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/calendar/hooks/useCalendar", () => ({
   useCalendarState: () => ({ data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } }),

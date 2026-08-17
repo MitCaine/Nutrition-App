@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, RootModel
 
 
 def _strict_decimal(value):
@@ -25,6 +25,8 @@ TargetAuthority = Literal[
     "daily_value",
     "unavailable",
 ]
+TrackingPreferenceMode = Literal["amount_only", "ignored"]
+TrackingMode = Literal["recommended", "custom", "amount_only", "ignored"]
 DriReferenceType = Literal["RDA", "AI"]
 DriCalculationBasis = Literal["fixed", "per_kg"]
 
@@ -36,26 +38,41 @@ class TargetProfileInput(BaseModel):
     height_unit: Literal["cm", "in"] = "cm"
     weight_kg: TargetDecimal = None
     weight_unit: Literal["kg", "lb"] = "kg"
-    activity_level: Literal["sedentary", "lightly_active", "active", "very_active"] | None = None
+    activity_level: Literal[
+        "sedentary",
+        "lightly_active",
+        "active",
+        "very_active",
+    ] | None = None
     energy_estimation_context: Literal[
-        "general_adult", "pregnant", "lactating", "specialized_medical"
+        "general_adult",
+        "pregnant",
+        "lactating",
+        "specialized_medical",
     ] = "general_adult"
 
     model_config = ConfigDict(extra="forbid")
 
 
-class ManualTargetOverridesInput(BaseModel):
-    calories: TargetDecimal = None
-    protein: TargetDecimal = None
-    total_carbohydrate: TargetDecimal = None
-    total_fat: TargetDecimal = None
+class ManualTargetOverridesInput(
+    RootModel[dict[str, TargetDecimal]]
+):
+    pass
 
-    model_config = ConfigDict(extra="forbid")
+
+class TrackingPreferencesInput(
+    RootModel[dict[str, TrackingPreferenceMode]]
+):
+    pass
 
 
 class TargetConfigurationUpdate(BaseModel):
     profile: TargetProfileInput
     manual_overrides: ManualTargetOverridesInput
+    # None means an older client did not send preference state and therefore
+    # must not erase preferences it does not understand.  A supplied mapping,
+    # including {}, is the complete explicit preference set.
+    tracking_preferences: TrackingPreferencesInput | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -111,9 +128,17 @@ class TargetProfileResponse(BaseModel):
     height_unit: Literal["cm"]
     weight_kg: Decimal | None
     weight_unit: Literal["kg"]
-    activity_level: Literal["sedentary", "lightly_active", "active", "very_active"] | None
+    activity_level: Literal[
+        "sedentary",
+        "lightly_active",
+        "active",
+        "very_active",
+    ] | None
     energy_estimation_context: Literal[
-        "general_adult", "pregnant", "lactating", "specialized_medical"
+        "general_adult",
+        "pregnant",
+        "lactating",
+        "specialized_medical",
     ]
 
 
@@ -123,6 +148,7 @@ class TargetValueResponse(BaseModel):
     unit: str
     authority: TargetAuthority
     direction: TargetDirection
+    tracking_mode: TrackingMode
     reason_code: str | None = None
     note_code: str | None = None
     reference_type: DriReferenceType | None = None
@@ -135,6 +161,7 @@ class TargetConfigurationResponse(BaseModel):
     profile: TargetProfileResponse | None
     estimated_maintenance_calories: EnergyEstimateResponse
     manual_overrides: list[TargetValueResponse]
+    tracking_preferences: dict[str, TrackingPreferenceMode]
     effective_targets: list[TargetValueResponse]
     daily_value_catalog_version: str
     daily_value_standard: str
@@ -154,7 +181,13 @@ class DailyTargetComparisonItemResponse(BaseModel):
     percentage: Decimal | None
     authority: TargetAuthority
     direction: TargetDirection
-    status: Literal["available", "target_unavailable", "consumed_unavailable"]
+    tracking_mode: TrackingMode
+    status: Literal[
+        "available",
+        "target_unavailable",
+        "consumed_unavailable",
+        "amount_only",
+    ]
     reason_code: str | None
     note_code: str | None
     has_unknown_contributors: bool

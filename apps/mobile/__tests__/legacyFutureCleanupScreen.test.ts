@@ -13,6 +13,18 @@ let mockCalendar: Record<string, unknown>;
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
 jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
+jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
+  ...jest.requireActual("../src/features/targets/hooks/useDailyTargetComparison"),
+  useTargetConfiguration: () => ({
+    data: {
+      trackingPreferences: {},
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+  }),
+}));
+
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),

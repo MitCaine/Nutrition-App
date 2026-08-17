@@ -42,8 +42,58 @@ export function TargetProgressContent({ data, isLoading, isError, isFetching = f
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const state = readState ?? targetProgressReadState({ data, isLoading, isError, isFetching, isRefetchError, error, refetch: onRetry }, entriesKnown);
-  const byId = new Map((state.data?.comparisons ?? []).map((item) => [item.nutrientId, item]));
-  const rows = PRIMARY_PROGRESS_NUTRIENTS.map((id) => byId.get(id)).filter((item): item is DailyTargetComparisonItem => Boolean(item));
+  const comparisons =
+    state.data?.comparisons ?? [];
+
+  const byId = new Map(
+    comparisons.map(
+      (item) => [
+        item.nutrientId,
+        item,
+      ],
+    ),
+  );
+
+  const primaryIds =
+    new Set<string>(
+      PRIMARY_PROGRESS_NUTRIENTS,
+    );
+
+  const primaryRows =
+    PRIMARY_PROGRESS_NUTRIENTS
+      .map((id) => byId.get(id))
+      .filter(
+        (
+          item,
+        ): item is DailyTargetComparisonItem =>
+          Boolean(item),
+      );
+
+  // Keep the normal dashboard bounded, but surface secondary nutrients when
+  // the user has made an explicit choice that would otherwise have no visible
+  // Target Progress representation.
+  const explicitSecondaryRows =
+    comparisons.filter(
+      (item) =>
+        !primaryIds.has(
+          item.nutrientId,
+        )
+        && (
+          item.trackingMode
+            === "custom"
+          || (
+            item.trackingMode
+              === "amount_only"
+            && item.reasonCode
+              === "target_amount_only_preference"
+          )
+        ),
+    );
+
+  const rows = [
+    ...primaryRows,
+    ...explicitSecondaryRows,
+  ];
   const inferredHasLoggedNutrition = state.data
     ? rows.some((item) => item.consumedAmount !== null || item.hasUnknownContributors)
     : undefined;

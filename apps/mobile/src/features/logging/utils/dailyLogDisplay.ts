@@ -84,9 +84,20 @@ export function legacyNoteNotice(notes: string | null | undefined): string | nul
   return "Legacy note exceeds the current note limit; it remains readable.";
 }
 
-export function visibleDailyTotals(totals: AggregatedNutrientTotal[]): AggregatedNutrientTotal[] {
+export function visibleDailyTotals(
+  totals: AggregatedNutrientTotal[],
+  ignoredNutrientIds: ReadonlySet<string> = new Set(),
+): AggregatedNutrientTotal[] {
   return sortNutrientsByDisplayOrder(
-    totals.filter((total) => !isUnknownOnlyAggregatedTotal(total)),
+    totals.filter(
+      (total) =>
+        !ignoredNutrientIds.has(
+          total.nutrientId,
+        )
+        && !isUnknownOnlyAggregatedTotal(
+          total,
+        ),
+    ),
     (total) => total.nutrientId,
     isUnknownOnlyAggregatedTotal,
   );

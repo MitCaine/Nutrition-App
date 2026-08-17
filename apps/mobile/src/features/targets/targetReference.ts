@@ -9,14 +9,31 @@ type TargetReferenceLike = Pick<
   "authority"
   | "referenceType"
   | "sourceVersion"
+  | "trackingMode"
+  | "reasonCode"
 >;
 
 
 export function targetBasisLabel(
   target: TargetReferenceLike,
 ): string {
+  if (target.trackingMode === "ignored") {
+    return "Hidden";
+  }
+
+  if (target.trackingMode === "amount_only") {
+    if (
+      target.reasonCode
+      === "target_reference_not_established"
+    ) {
+      return "No established target";
+    }
+
+    return "Amount only";
+  }
+
   if (target.authority === "manual_override") {
-    return "Manual target";
+    return "Custom target";
   }
 
   if (target.authority === "calculated_estimate") {
@@ -30,6 +47,22 @@ export function targetBasisLabel(
 
   if (target.authority === "daily_value") {
     return "FDA Daily Value";
+  }
+
+  if (
+    target.reasonCode
+    === "target_profile_incomplete"
+  ) {
+    return "Profile incomplete";
+  }
+
+  if (
+    target.reasonCode
+      === "target_estimate_unsupported_age"
+    || target.reasonCode
+      === "target_estimate_unsupported_context"
+  ) {
+    return "Unavailable for profile";
   }
 
   return "Unavailable";

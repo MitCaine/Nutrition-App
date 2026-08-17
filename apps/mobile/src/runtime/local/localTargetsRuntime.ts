@@ -8,12 +8,14 @@ import type {
   TargetConfigurationInput,
   TargetProfile,
   TargetValue,
+  TrackingPreferenceMode,
 } from "../../features/targets/api/types";
 import {
   resolveDriRecommendation,
 } from "../../shared/nutrition/dri";
 import {
   DRI_DATASET_VERSION,
+  DRI_NO_GOAL,
 } from "../../shared/nutrition/driData";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import {
@@ -50,19 +52,32 @@ const TARGET_DIRECTION_SEMANTICS_VERSION = "target_directions_2026_v1";
 const INFORMATIONAL_NOTICE =
   "Estimated maintenance calories are general informational estimates, not medical advice.";
 
-const MANUAL_TARGET_UNITS: Readonly<Record<string, NutrientUnit>> = {
-  calories: "kcal",
-  protein: "g",
-  total_carbohydrate: "g",
-  total_fat: "g",
-};
+const NUTRIENT_BY_ID = new Map(
+  NUTRIENT_CATALOG.map((nutrient) => [
+    nutrient.id,
+    nutrient,
+  ] as const),
+);
 
-const TARGET_BOUNDS: Readonly<Record<string, readonly [string, string]>> = {
+const MANUAL_TARGET_UNITS:
+Readonly<Record<string, NutrientUnit>> =
+  Object.fromEntries(
+    NUTRIENT_CATALOG.map((nutrient) => [
+      nutrient.id,
+      nutrient.default_unit as NutrientUnit,
+    ]),
+  );
+
+const TARGET_BOUNDS:
+Readonly<Record<string, readonly [string, string]>> = {
   calories: ["500", "10000"],
   protein: ["1", "1000"],
   total_carbohydrate: ["1", "1500"],
   total_fat: ["1", "500"],
 };
+
+const GENERIC_TARGET_BOUNDS =
+  ["0.000001", "99999999.999999"] as const;
 
 const ACTIVITY_MULTIPLIERS: Readonly<Record<string, string>> = {
   sedentary: "1.4",
@@ -116,6 +131,7 @@ type TargetRow = Readonly<{
   unit: string;
   basis: string;
   source: string;
+  metadata: string | null;
 }>;
 
 type SnapshotRow = Readonly<{
@@ -142,10 +158,29 @@ type NormalizedTargetInput = Readonly<{
     heightCm: ExactDecimal | null;
     weightKg: ExactDecimal | null;
     sexForEquation: "female" | "male" | null;
-    activityLevel: "sedentary" | "lightly_active" | "active" | "very_active" | null;
-    energyEstimationContext: "general_adult" | "pregnant" | "lactating" | "specialized_medical";
+    activityLevel:
+      | "sedentary"
+      | "lightly_active"
+      | "active"
+      | "very_active"
+      | null;
+    energyEstimationContext:
+      | "general_adult"
+      | "pregnant"
+      | "lactating"
+      | "specialized_medical";
   }>;
-  overrides: Readonly<Record<"calories" | "protein" | "total_carbohydrate" | "total_fat", ExactDecimal | null>>;
+  overrides: Readonly<
+    Record<string, ExactDecimal | null>
+  >;
+  trackingPreferences:
+    | Readonly<
+        Record<
+          string,
+          TrackingPreferenceMode
+        >
+      >
+    | null;
 }>;
 
 type Aggregate = {
@@ -305,41 +340,205 @@ function parseProfileEnum<T extends string>(
   return value as T;
 }
 
-function normalizeInput(input: TargetConfigurationInput): NormalizedTargetInput {
-  if (!input || typeof input !== "object" || !input.profile || !input.manual_overrides) {
-    structuralValidationFailure("Review the target fields and try again.", "profile");
+function normalizeInput(
+  input: TargetConfigurationInput,
+): NormalizedTargetInput {
+  if (
+    !input
+    || typeof input !== "object"
+    || !input.profile
+    || !input.manual_overrides
+    || typeof input.manual_overrides !== "object"
+    || Array.isArray(input.manual_overrides)
+  ) {
+    structuralValidationFailure(
+      "Review the target fields and try again.",
+      "profile",
+    );
   }
+
   const profile = input.profile;
-  if (profile.height_unit !== undefined && profile.height_unit !== "cm") {
-    structuralValidationFailure("Target height uses an unsupported unit.", "profile.height_unit", "target_unit_invalid");
+
+  if (
+    profile.height_unit !== undefined
+    && profile.height_unit !== "cm"
+  ) {
+    structuralValidationFailure(
+      "Target height uses an unsupported unit.",
+      "profile.height_unit",
+      "target_unit_invalid",
+    );
   }
-  if (profile.weight_unit !== undefined && profile.weight_unit !== "kg") {
-    structuralValidationFailure("Target weight uses an unsupported unit.", "profile.weight_unit", "target_unit_invalid");
+
+  if (
+    profile.weight_unit !== undefined
+    && profile.weight_unit !== "kg"
+  ) {
+    structuralValidationFailure(
+      "Target weight uses an unsupported unit.",
+      "profile.weight_unit",
+      "target_unit_invalid",
+    );
   }
-  const birthDate = parseOptionalDate(profile.birth_date, "profile.birth_date");
-  const heightCm = parseTargetAmount(profile.height_cm, "profile.height_cm", ["100", "250"], NUMERIC_8_3);
-  const weightKg = parseTargetAmount(profile.weight_kg, "profile.weight_kg", ["30", "300"], NUMERIC_8_3);
-  const sexForEquation = parseProfileEnum(profile.sex_for_equation, ["female", "male"], "profile.sex_for_equation");
+
+  const birthDate = parseOptionalDate(
+    profile.birth_date,
+    "profile.birth_date",
+  );
+
+  const heightCm = parseTargetAmount(
+    profile.height_cm,
+    "profile.height_cm",
+    ["100", "250"],
+    NUMERIC_8_3,
+  );
+
+  const weightKg = parseTargetAmount(
+    profile.weight_kg,
+    "profile.weight_kg",
+    ["30", "300"],
+    NUMERIC_8_3,
+  );
+
+  const sexForEquation = parseProfileEnum(
+    profile.sex_for_equation,
+    ["female", "male"],
+    "profile.sex_for_equation",
+  );
+
   const activityLevel = parseProfileEnum(
     profile.activity_level,
-    ["sedentary", "lightly_active", "active", "very_active"],
+    [
+      "sedentary",
+      "lightly_active",
+      "active",
+      "very_active",
+    ],
     "profile.activity_level",
   );
+
   const energyEstimationContext = parseProfileEnum(
-    profile.energy_estimation_context ?? "general_adult",
-    ["general_adult", "pregnant", "lactating", "specialized_medical"],
+    profile.energy_estimation_context
+      ?? "general_adult",
+    [
+      "general_adult",
+      "pregnant",
+      "lactating",
+      "specialized_medical",
+    ],
     "profile.energy_estimation_context",
     false,
-  ) as NormalizedTargetInput["profile"]["energyEstimationContext"];
-  const overrides = input.manual_overrides;
+  ) as NormalizedTargetInput[
+    "profile"
+  ]["energyEstimationContext"];
+
+  const overrides:
+  Record<string, ExactDecimal | null> = {};
+
+  for (
+    const [nutrientId, value]
+    of Object.entries(
+      input.manual_overrides,
+    )
+  ) {
+    if (!NUTRIENT_BY_ID.has(nutrientId)) {
+      validationFailure(
+        "This nutrient is not part of the canonical nutrient catalog.",
+        `manual_overrides.${nutrientId}`,
+        "target_nutrient_invalid",
+      );
+    }
+
+    overrides[nutrientId] =
+      parseTargetAmount(
+        value,
+        `manual_overrides.${nutrientId}`,
+        TARGET_BOUNDS[nutrientId]
+          ?? GENERIC_TARGET_BOUNDS,
+      );
+  }
+
+  let trackingPreferences:
+    Record<
+      string,
+      TrackingPreferenceMode
+    >
+    | null = null;
+
+  if (
+    input.tracking_preferences
+    !== undefined
+  ) {
+    if (
+      input.tracking_preferences === null
+      || typeof input.tracking_preferences
+        !== "object"
+      || Array.isArray(
+        input.tracking_preferences,
+      )
+    ) {
+      structuralValidationFailure(
+        "Tracking preferences are invalid.",
+        "tracking_preferences",
+      );
+    }
+
+    trackingPreferences = {};
+
+    for (
+      const [nutrientId, mode]
+      of Object.entries(
+        input.tracking_preferences,
+      )
+    ) {
+      if (!NUTRIENT_BY_ID.has(nutrientId)) {
+        validationFailure(
+          "This nutrient is not part of the canonical nutrient catalog.",
+          `tracking_preferences.${nutrientId}`,
+          "target_nutrient_invalid",
+        );
+      }
+
+      if (
+        mode !== "amount_only"
+        && mode !== "ignored"
+      ) {
+        structuralValidationFailure(
+          "Tracking preference is invalid.",
+          `tracking_preferences.${nutrientId}`,
+        );
+      }
+
+      if (
+        overrides[nutrientId]
+        !== undefined
+        && overrides[nutrientId]
+        !== null
+      ) {
+        validationFailure(
+          "A nutrient cannot use a custom target and an amount-only or ignored preference at the same time.",
+          `tracking_preferences.${nutrientId}`,
+          "target_preference_conflict",
+        );
+      }
+
+      trackingPreferences[
+        nutrientId
+      ] = mode;
+    }
+  }
+
   return {
-    profile: { birthDate, heightCm, weightKg, sexForEquation, activityLevel, energyEstimationContext },
-    overrides: {
-      calories: parseTargetAmount(overrides.calories ?? null, "manual_overrides.calories", TARGET_BOUNDS.calories),
-      protein: parseTargetAmount(overrides.protein ?? null, "manual_overrides.protein", TARGET_BOUNDS.protein),
-      total_carbohydrate: parseTargetAmount(overrides.total_carbohydrate ?? null, "manual_overrides.total_carbohydrate", TARGET_BOUNDS.total_carbohydrate),
-      total_fat: parseTargetAmount(overrides.total_fat ?? null, "manual_overrides.total_fat", TARGET_BOUNDS.total_fat),
+    profile: {
+      birthDate,
+      heightCm,
+      weightKg,
+      sexForEquation,
+      activityLevel,
+      energyEstimationContext,
     },
+    overrides,
+    trackingPreferences,
   };
 }
 
@@ -549,52 +748,207 @@ async function assertOwner(
   if (!row) throw ownerNotFound(mutationOutcome);
 }
 
-async function readTargetRows(database: SQLiteDatabase, ownerId: string): Promise<TargetRow[]> {
+async function readTargetRows(
+  database: SQLiteDatabase,
+  ownerId: string,
+): Promise<TargetRow[]> {
   return database.getAllAsync<TargetRow>(
-    `SELECT "id", "user_id", "target_type", "nutrient_id", "target_amount", "unit", "basis", "source"
+    `SELECT "id", "user_id", "target_type", "nutrient_id",
+            "target_amount", "unit", "basis", "source", "metadata"
      FROM "nutrition_targets"
-     WHERE "user_id" = ? AND "target_type" = 'manual_override'
+     WHERE "user_id" = ?
+       AND "target_type" = 'manual_override'
      ORDER BY "nutrient_id"`,
     [ownerId],
   );
 }
 
-function normalizedOverrides(rows: readonly TargetRow[]): Map<string, TargetValue> {
-  const result = new Map<string, TargetValue>();
+async function readPreferenceRows(
+  database: SQLiteDatabase,
+  ownerId: string,
+): Promise<TargetRow[]> {
+  return database.getAllAsync<TargetRow>(
+    `SELECT "id", "user_id", "target_type", "nutrient_id",
+            "target_amount", "unit", "basis", "source", "metadata"
+     FROM "nutrition_targets"
+     WHERE "user_id" = ?
+       AND "target_type" = 'tracking_preference'
+     ORDER BY "nutrient_id"`,
+    [ownerId],
+  );
+}
+
+function normalizedOverrides(
+  rows: readonly TargetRow[],
+): Map<string, TargetValue> {
+  const result =
+    new Map<string, TargetValue>();
+
   for (const row of rows) {
-    const unit = MANUAL_TARGET_UNITS[row.nutrient_id];
-    if (!unit || row.target_amount === null || row.unit !== unit || row.basis !== "per_day" || row.source !== "user") {
+    const unit =
+      MANUAL_TARGET_UNITS[
+        row.nutrient_id
+      ];
+
+    if (
+      !unit
+      || row.target_amount === null
+      || row.unit !== unit
+      || row.basis !== "per_day"
+      || row.source !== "user"
+      || row.metadata !== null
+    ) {
       throw invalidStored();
     }
+
     try {
       parseUuid(row.id);
       parseUuid(row.user_id);
-      const amount = parseDecimal(row.target_amount, NUMERIC_14_6);
-      const bounds = TARGET_BOUNDS[row.nutrient_id];
+
+      const amount = parseDecimal(
+        row.target_amount,
+        NUMERIC_14_6,
+      );
+
+      const bounds =
+        TARGET_BOUNDS[row.nutrient_id]
+        ?? GENERIC_TARGET_BOUNDS;
+
       if (
-        !bounds
-        || compareDecimals(amount, parseDecimal(bounds[0], NUMERIC_14_6), NUMERIC_14_6) < 0
-        || compareDecimals(amount, parseDecimal(bounds[1], NUMERIC_14_6), NUMERIC_14_6) > 0
-      ) throw invalidStored();
-      if (result.has(row.nutrient_id)) throw invalidStored();
-      result.set(row.nutrient_id, {
-        nutrientId: row.nutrient_id,
-        amount,
-        unit,
-        authority: "manual_override",
-        direction: "target",
-        reasonCode: null,
-        noteCode: null,
-        referenceType: null,
-        sourceVersion: null,
-        sourceId: null,
-        calculationBasis: null,
-      });
+        compareDecimals(
+          amount,
+          parseDecimal(
+            bounds[0],
+            NUMERIC_14_6,
+          ),
+          NUMERIC_14_6,
+        ) < 0
+        || compareDecimals(
+          amount,
+          parseDecimal(
+            bounds[1],
+            NUMERIC_14_6,
+          ),
+          NUMERIC_14_6,
+        ) > 0
+      ) {
+        throw invalidStored();
+      }
+
+      if (result.has(row.nutrient_id)) {
+        throw invalidStored();
+      }
+
+      result.set(
+        row.nutrient_id,
+        {
+          nutrientId:
+            row.nutrient_id,
+          amount,
+          unit,
+          authority:
+            "manual_override",
+          direction: "target",
+          trackingMode: "custom",
+          reasonCode: null,
+          noteCode: null,
+          referenceType: null,
+          sourceVersion: null,
+          sourceId: null,
+          calculationBasis: null,
+        },
+      );
     } catch (error) {
-      if (error instanceof LocalRuntimeError) throw error;
+      if (
+        error
+        instanceof LocalRuntimeError
+      ) {
+        throw error;
+      }
+
       throw invalidStored();
     }
   }
+
+  return result;
+}
+
+function normalizedPreferences(
+  rows: readonly TargetRow[],
+): Map<
+  string,
+  TrackingPreferenceMode
+> {
+  const result =
+    new Map<
+      string,
+      TrackingPreferenceMode
+    >();
+
+  for (const row of rows) {
+    const unit =
+      MANUAL_TARGET_UNITS[
+        row.nutrient_id
+      ];
+
+    if (
+      !unit
+      || row.target_amount !== null
+      || row.unit !== unit
+      || row.basis !== "tracking"
+      || row.source !== "user"
+      || row.metadata === null
+    ) {
+      throw invalidStored();
+    }
+
+    try {
+      parseUuid(row.id);
+      parseUuid(row.user_id);
+
+      const metadata = (
+        JSON.parse(row.metadata) as unknown
+      );
+
+      if (
+        !metadata
+        || typeof metadata !== "object"
+        || Array.isArray(metadata)
+      ) {
+        throw invalidStored();
+      }
+
+      const mode = (
+        metadata as { mode?: unknown }
+      ).mode;
+
+      if (
+        mode !== "amount_only"
+        && mode !== "ignored"
+      ) {
+        throw invalidStored();
+      }
+
+      if (result.has(row.nutrient_id)) {
+        throw invalidStored();
+      }
+
+      result.set(
+        row.nutrient_id,
+        mode,
+      );
+    } catch (error) {
+      if (
+        error
+        instanceof LocalRuntimeError
+      ) {
+        throw error;
+      }
+
+      throw invalidStored();
+    }
+  }
+
   return result;
 }
 
@@ -610,6 +964,14 @@ async function buildConfiguration(
   const overrides =
     normalizedOverrides(
       await readTargetRows(
+        database,
+        ownerId,
+      ),
+    );
+
+  const preferences =
+    normalizedPreferences(
+      await readPreferenceRows(
         database,
         ownerId,
       ),
@@ -679,6 +1041,9 @@ async function buildConfiguration(
     ]
     of SQLITE_NUTRIENT_SEED_ROWS
   ) {
+    const preference =
+      preferences.get(nutrientId);
+
     const override =
       overrides.get(nutrientId);
 
@@ -690,6 +1055,48 @@ async function buildConfiguration(
 
     if (!dailyValue || !dri) {
       throw invalidStored();
+    }
+
+    if (preference === "ignored") {
+      effectiveTargets.push({
+        nutrientId,
+        amount: null,
+        unit:
+          (defaultUnit as NutrientUnit),
+        authority: "unavailable",
+        direction: "unavailable",
+        trackingMode: "ignored",
+        reasonCode:
+          "target_ignored_preference",
+        noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
+      });
+      continue;
+    }
+
+    if (
+      preference === "amount_only"
+    ) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: null,
+        unit:
+          (defaultUnit as NutrientUnit),
+        authority: "unavailable",
+        direction: "unavailable",
+        trackingMode: "amount_only",
+        reasonCode:
+          "target_amount_only_preference",
+        noteCode: null,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
+      });
+      continue;
     }
 
     if (override) {
@@ -711,6 +1118,7 @@ async function buildConfiguration(
         authority:
           "calculated_estimate",
         direction: "target",
+        trackingMode: "recommended",
         reasonCode: null,
         noteCode: null,
         referenceType: null,
@@ -740,6 +1148,8 @@ async function buildConfiguration(
         unit: dri.unit,
         authority: "dri",
         direction: "target",
+        trackingMode:
+          "recommended",
         reasonCode: null,
         noteCode: null,
         referenceType:
@@ -764,10 +1174,42 @@ async function buildConfiguration(
           dailyValue.amount,
         unit:
           dailyValue.unit,
-        authority: "daily_value",
+        authority:
+          "daily_value",
         direction:
           dailyValue.direction,
+        trackingMode:
+          "recommended",
         reasonCode: null,
+        noteCode:
+          dailyValue.noteCode,
+        referenceType: null,
+        sourceVersion: null,
+        sourceId: null,
+        calculationBasis: null,
+      });
+      continue;
+    }
+
+    if (
+      nutrientId !== "calories"
+      && Object.prototype
+        .hasOwnProperty.call(
+          DRI_NO_GOAL,
+          nutrientId,
+        )
+    ) {
+      effectiveTargets.push({
+        nutrientId,
+        amount: null,
+        unit:
+          (defaultUnit as NutrientUnit),
+        authority: "unavailable",
+        direction: "unavailable",
+        trackingMode:
+          "amount_only",
+        reasonCode:
+          "target_reference_not_established",
         noteCode:
           dailyValue.noteCode,
         referenceType: null,
@@ -781,12 +1223,15 @@ async function buildConfiguration(
     effectiveTargets.push({
       nutrientId,
       amount: null,
-      unit: (
-        dailyValue.unit
-        ?? defaultUnit
-      ) as NutrientUnit,
+      unit:
+        (
+          dailyValue.unit
+          ?? defaultUnit
+        ) as NutrientUnit,
       authority: "unavailable",
       direction: "unavailable",
+      trackingMode:
+        "recommended",
       reasonCode:
         nutrientId === "calories"
           ? estimate.reasonCode
@@ -844,6 +1289,10 @@ async function buildConfiguration(
     },
     manualOverrides:
       [...overrides.values()],
+    trackingPreferences:
+      Object.fromEntries(
+        preferences.entries(),
+      ),
     effectiveTargets,
     dailyValueCatalogVersion:
       FDA_DAILY_VALUE_CATALOG_VERSION,
@@ -950,78 +1399,218 @@ function compareTotals(
   totals: Map<string, Aggregate>,
   date: string,
 ): DailyTargetComparison {
-  const comparisons: DailyTargetComparisonItem[] = configuration.effectiveTargets.map((target) => {
-    const total = totals.get(target.nutrientId);
-    const consumed = total ? addResponseDecimals(total.known, total.estimated) : null;
+  const comparisons:
+    DailyTargetComparisonItem[] = [];
+
+  for (
+    const target
+    of configuration.effectiveTargets
+  ) {
+    if (
+      target.trackingMode
+      === "ignored"
+    ) {
+      continue;
+    }
+
+    const total =
+      totals.get(target.nutrientId);
+
+    const consumed =
+      total
+        ? addResponseDecimals(
+            total.known,
+            total.estimated,
+          )
+        : null;
+
+    if (
+      target.trackingMode
+      === "amount_only"
+    ) {
+      const amountOnlyConsumed =
+        !total
+        || (
+          total.unknown > 0
+          && isZeroResponse(
+            total.known,
+          )
+          && isZeroResponse(
+            total.estimated,
+          )
+        )
+          ? null
+          : consumed;
+
+      comparisons.push({
+        nutrientId:
+          target.nutrientId,
+        consumedAmount:
+          amountOnlyConsumed,
+        targetAmount: null,
+        unit: target.unit,
+        percentage: null,
+        authority:
+          target.authority,
+        direction: "unavailable",
+        trackingMode:
+          "amount_only",
+        status: "amount_only",
+        reasonCode:
+          target.reasonCode,
+        noteCode:
+          target.noteCode,
+        hasUnknownContributors:
+          Boolean(total?.unknown),
+        referenceType:
+          target.referenceType,
+        sourceVersion:
+          target.sourceVersion,
+        sourceId:
+          target.sourceId,
+        calculationBasis:
+          target.calculationBasis,
+      });
+
+      continue;
+    }
+
     if (target.amount === null) {
-      return {
-        nutrientId: target.nutrientId,
+      comparisons.push({
+        nutrientId:
+          target.nutrientId,
         consumedAmount: consumed,
         targetAmount: null,
         unit: target.unit,
         percentage: null,
         authority: "unavailable",
-        direction: target.direction,
-        status: "target_unavailable",
-        reasonCode: target.reasonCode,
-        noteCode: target.noteCode,
-        hasUnknownContributors: Boolean(total?.unknown),
-        referenceType: target.referenceType,
-        sourceVersion: target.sourceVersion,
-        sourceId: target.sourceId,
-        calculationBasis: target.calculationBasis,
-      };
+        direction:
+          target.direction,
+        trackingMode:
+          target.trackingMode,
+        status:
+          "target_unavailable",
+        reasonCode:
+          target.reasonCode,
+        noteCode:
+          target.noteCode,
+        hasUnknownContributors:
+          Boolean(total?.unknown),
+        referenceType:
+          target.referenceType,
+        sourceVersion:
+          target.sourceVersion,
+        sourceId:
+          target.sourceId,
+        calculationBasis:
+          target.calculationBasis,
+      });
+
+      continue;
     }
-    if (!total || (total.unknown > 0 && isZeroResponse(total.known) && isZeroResponse(total.estimated))) {
-      return {
-        nutrientId: target.nutrientId,
+
+    if (
+      !total
+      || (
+        total.unknown > 0
+        && isZeroResponse(
+          total.known,
+        )
+        && isZeroResponse(
+          total.estimated,
+        )
+      )
+    ) {
+      comparisons.push({
+        nutrientId:
+          target.nutrientId,
         consumedAmount: null,
-        targetAmount: target.amount,
+        targetAmount:
+          target.amount,
         unit: target.unit,
         percentage: null,
-        authority: target.authority,
-        direction: target.direction,
-        status: "consumed_unavailable",
-        reasonCode: "consumed_value_unavailable",
-        noteCode: target.noteCode,
-        hasUnknownContributors: Boolean(total?.unknown),
-        referenceType: target.referenceType,
-        sourceVersion: target.sourceVersion,
-        sourceId: target.sourceId,
-        calculationBasis: target.calculationBasis,
-      };
+        authority:
+          target.authority,
+        direction:
+          target.direction,
+        trackingMode:
+          target.trackingMode,
+        status:
+          "consumed_unavailable",
+        reasonCode:
+          "consumed_value_unavailable",
+        noteCode:
+          target.noteCode,
+        hasUnknownContributors:
+          Boolean(total?.unknown),
+        referenceType:
+          target.referenceType,
+        sourceVersion:
+          target.sourceVersion,
+        sourceId:
+          target.sourceId,
+        calculationBasis:
+          target.calculationBasis,
+      });
+
+      continue;
     }
-    const percentage = roundResponseHalfUp(
-      multiplyResponseDecimalsInContext(
-        divideResponseDecimals(consumed as ResponseDecimal, target.amount),
-        "100",
-      ),
-      4,
-      false,
-    );
-    return {
-      nutrientId: target.nutrientId,
+
+    const percentage =
+      roundResponseHalfUp(
+        multiplyResponseDecimalsInContext(
+          divideResponseDecimals(
+            (consumed as ResponseDecimal),
+            target.amount,
+          ),
+          "100",
+        ),
+        4,
+        false,
+      );
+
+    comparisons.push({
+      nutrientId:
+        target.nutrientId,
       consumedAmount: consumed,
-      targetAmount: target.amount,
+      targetAmount:
+        target.amount,
       unit: target.unit,
       percentage,
-      authority: target.authority,
-      direction: target.direction,
+      authority:
+        target.authority,
+      direction:
+        target.direction,
+      trackingMode:
+        target.trackingMode,
       status: "available",
       reasonCode: null,
-      noteCode: target.noteCode,
-      hasUnknownContributors: total.unknown > 0,
-      referenceType: target.referenceType,
-      sourceVersion: target.sourceVersion,
-      sourceId: target.sourceId,
-      calculationBasis: target.calculationBasis,
-    };
-  });
+      noteCode:
+        target.noteCode,
+      hasUnknownContributors:
+        total.unknown > 0,
+      referenceType:
+        target.referenceType,
+      sourceVersion:
+        target.sourceVersion,
+      sourceId:
+        target.sourceId,
+      calculationBasis:
+        target.calculationBasis,
+    });
+  }
+
   return {
     date,
-    dailyValueCatalogVersion: configuration.dailyValueCatalogVersion,
-    driDatasetVersion: configuration.driDatasetVersion,
-    targetDirectionSemanticsVersion: configuration.targetDirectionSemanticsVersion,
+    dailyValueCatalogVersion:
+      configuration
+        .dailyValueCatalogVersion,
+    driDatasetVersion:
+      configuration
+        .driDatasetVersion,
+    targetDirectionSemanticsVersion:
+      configuration
+        .targetDirectionSemanticsVersion,
     comparisons,
   };
 }
@@ -1097,38 +1686,285 @@ async function updateTargets(
       ownerId,
     ],
   );
-  const existing = new Map((await readTargetRows(database, ownerId)).map((row) => [row.nutrient_id, row]));
-  const reservedIds = new Set((await database.getAllAsync<{ id: string }>(
-    `SELECT "id" FROM "nutrition_targets"`,
-  )).map((row) => row.id));
-  for (const nutrientId of Object.keys(MANUAL_TARGET_UNITS)) {
-    const amount = normalized.overrides[nutrientId as keyof NormalizedTargetInput["overrides"]];
-    const row = existing.get(nutrientId);
+  const existing = new Map(
+    (
+      await readTargetRows(
+        database,
+        ownerId,
+      )
+    ).map(
+      (row) => [
+        row.nutrient_id,
+        row,
+      ],
+    ),
+  );
+
+  const existingPreferences =
+    new Map(
+      (
+        await readPreferenceRows(
+          database,
+          ownerId,
+        )
+      ).map(
+        (row) => [
+          row.nutrient_id,
+          row,
+        ],
+      ),
+    );
+
+  const reservedIds = new Set(
+    (
+      await database.getAllAsync<{
+        id: string;
+      }>(
+        `SELECT "id"
+         FROM "nutrition_targets"`,
+      )
+    ).map((row) => row.id),
+  );
+
+  for (
+    const [nutrientId, amount]
+    of Object.entries(
+      normalized.overrides,
+    )
+  ) {
+    const unit =
+      MANUAL_TARGET_UNITS[
+        nutrientId
+      ];
+
+    if (!unit) {
+      throw invalidStored();
+    }
+
+    const row =
+      existing.get(nutrientId);
+
     if (amount === null) {
       if (row) {
         await database.runAsync(
-          `DELETE FROM "nutrition_targets" WHERE "user_id" = ? AND "target_type" = 'manual_override' AND "nutrient_id" = ?`,
+          `DELETE FROM "nutrition_targets"
+           WHERE "user_id" = ?
+             AND "target_type" = 'manual_override'
+             AND "nutrient_id" = ?`,
           [ownerId, nutrientId],
         );
+
+        existing.delete(
+          nutrientId,
+        );
       }
+
       continue;
     }
+
+    const preferenceRow =
+      existingPreferences.get(
+        nutrientId,
+      );
+
+    if (preferenceRow) {
+      await database.runAsync(
+        `DELETE FROM "nutrition_targets"
+         WHERE "user_id" = ?
+           AND "target_type" = 'tracking_preference'
+           AND "nutrient_id" = ?`,
+        [ownerId, nutrientId],
+      );
+
+      existingPreferences.delete(
+        nutrientId,
+      );
+    }
+
     if (row) {
       await database.runAsync(
         `UPDATE "nutrition_targets"
-         SET "target_amount" = ?, "unit" = ?, "basis" = 'per_day', "source" = 'user', "updated_at" = ?
-         WHERE "user_id" = ? AND "target_type" = 'manual_override' AND "nutrient_id" = ?`,
-        [amount, MANUAL_TARGET_UNITS[nutrientId], updatedAt, ownerId, nutrientId],
+         SET "target_amount" = ?,
+             "unit" = ?,
+             "basis" = 'per_day',
+             "source" = 'user',
+             "metadata" = NULL,
+             "updated_at" = ?
+         WHERE "user_id" = ?
+           AND "target_type" = 'manual_override'
+           AND "nutrient_id" = ?`,
+        [
+          amount,
+          unit,
+          updatedAt,
+          ownerId,
+          nutrientId,
+        ],
       );
     } else {
+      const id =
+        await allocateTargetId(
+          reservedIds,
+        );
+
       await database.runAsync(
         `INSERT INTO "nutrition_targets"
-          ("id", "user_id", "target_type", "nutrient_id", "target_amount", "unit", "basis", "source")
-         VALUES (?, ?, 'manual_override', ?, ?, ?, 'per_day', 'user')`,
-        [await allocateTargetId(reservedIds), ownerId, nutrientId, amount, MANUAL_TARGET_UNITS[nutrientId]],
+          ("id", "user_id", "target_type",
+           "nutrient_id", "target_amount",
+           "unit", "basis", "source",
+           "metadata")
+         VALUES (
+           ?, ?, 'manual_override',
+           ?, ?, ?, 'per_day',
+           'user', NULL
+         )`,
+        [
+          id,
+          ownerId,
+          nutrientId,
+          amount,
+          unit,
+        ],
+      );
+
+      existing.set(
+        nutrientId,
+        {
+          id,
+          user_id: ownerId,
+          target_type:
+            "manual_override",
+          nutrient_id:
+            nutrientId,
+          target_amount: amount,
+          unit,
+          basis: "per_day",
+          source: "user",
+          metadata: null,
+        },
       );
     }
   }
+
+  if (
+    normalized.trackingPreferences
+    !== null
+  ) {
+    for (
+      const [nutrientId]
+      of existingPreferences
+    ) {
+      if (
+        !Object.prototype
+          .hasOwnProperty.call(
+            normalized
+              .trackingPreferences,
+            nutrientId,
+          )
+      ) {
+        await database.runAsync(
+          `DELETE FROM "nutrition_targets"
+           WHERE "user_id" = ?
+             AND "target_type" = 'tracking_preference'
+             AND "nutrient_id" = ?`,
+          [ownerId, nutrientId],
+        );
+
+        existingPreferences.delete(
+          nutrientId,
+        );
+      }
+    }
+
+    for (
+      const [nutrientId, mode]
+      of Object.entries(
+        normalized
+          .trackingPreferences,
+      )
+    ) {
+      const unit =
+        MANUAL_TARGET_UNITS[
+          nutrientId
+        ];
+
+      if (!unit) {
+        throw invalidStored();
+      }
+
+      const manualRow =
+        existing.get(nutrientId);
+
+      if (manualRow) {
+        await database.runAsync(
+          `DELETE FROM "nutrition_targets"
+           WHERE "user_id" = ?
+             AND "target_type" = 'manual_override'
+             AND "nutrient_id" = ?`,
+          [ownerId, nutrientId],
+        );
+
+        existing.delete(
+          nutrientId,
+        );
+      }
+
+      const metadata =
+        JSON.stringify({ mode });
+
+      const row =
+        existingPreferences.get(
+          nutrientId,
+        );
+
+      if (row) {
+        await database.runAsync(
+          `UPDATE "nutrition_targets"
+           SET "target_amount" = NULL,
+               "min_amount" = NULL,
+               "max_amount" = NULL,
+               "unit" = ?,
+               "basis" = 'tracking',
+               "source" = 'user',
+               "metadata" = ?,
+               "updated_at" = ?
+           WHERE "user_id" = ?
+             AND "target_type" = 'tracking_preference'
+             AND "nutrient_id" = ?`,
+          [
+            unit,
+            metadata,
+            updatedAt,
+            ownerId,
+            nutrientId,
+          ],
+        );
+      } else {
+        await database.runAsync(
+          `INSERT INTO "nutrition_targets"
+            ("id", "user_id", "target_type",
+             "nutrient_id", "target_amount",
+             "unit", "basis", "source",
+             "metadata")
+           VALUES (
+             ?, ?, 'tracking_preference',
+             ?, NULL, ?, 'tracking',
+             'user', ?
+           )`,
+          [
+            await allocateTargetId(
+              reservedIds,
+            ),
+            ownerId,
+            nutrientId,
+            unit,
+            metadata,
+          ],
+        );
+      }
+    }
+  }
+
   await onMutationStage?.("after_write");
   const profile = await readProfile(database, ownerId);
   const normalizedProfile = normalizeStoredProfile(profile);

@@ -19,6 +19,7 @@ function item(overrides: Partial<DailyTargetComparisonItem>): DailyTargetCompari
     percentage: "79.1304", authority: "calculated_estimate", direction: "target",
     status: "available", reasonCode: null, noteCode: null, hasUnknownContributors: false,
     ...overrides,
+    trackingMode: overrides.trackingMode ?? "recommended",
     referenceType: overrides.referenceType ?? null,
     sourceVersion: overrides.sourceVersion ?? null,
     sourceId: overrides.sourceId ?? null,
@@ -310,4 +311,230 @@ test("progress presentation renders in dark theme and decimal formatting avoids 
   expect(percentageAtOrAbove100("99.9999")).toBe(false);
   expect(dailyTargetComparisonQueryKey("2026-07-14")).toEqual(["target-comparison", "2026-07-14"]);
   await act(async () => renderer.unmount());
+});
+
+
+test("#103 amount-only progress shows consumed amount without a percentage or target bar", async () => {
+  const amountOnlyData: DailyTargetComparison = {
+    ...data,
+    comparisons: [
+      item({
+        nutrientId: "protein",
+        consumedAmount: "42.000000",
+        targetAmount: null,
+        unit: "g",
+        percentage: null,
+        authority: "unavailable",
+        direction: "unavailable",
+        trackingMode: "amount_only",
+        status: "amount_only",
+        reasonCode:
+          "target_amount_only_preference",
+      }),
+    ],
+  };
+
+  const renderer = await render({
+    data: amountOnlyData,
+    hasLoggedNutrition: true,
+  });
+
+  const text = allText(renderer.root);
+
+  expect(text).toContain("42 g");
+  expect(text).toContain("Amount only");
+  expect(text).not.toContain("%");
+
+  const proteinLabel =
+    renderer.root
+      .findAllByType(Text)
+      .find(
+        (node) =>
+          node.props.accessibilityLabel
+            ?.startsWith("Protein,"),
+      )
+      ?.props.accessibilityLabel;
+
+  expect(proteinLabel).toContain(
+    "Amount only",
+  );
+
+  expect(proteinLabel).not.toContain(
+    "target",
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 targetless amount-only progress identifies absence of an established target", async () => {
+  const targetlessData: DailyTargetComparison = {
+    ...data,
+    comparisons: [
+      item({
+        nutrientId: "protein",
+        consumedAmount: "12.000000",
+        targetAmount: null,
+        unit: "g",
+        percentage: null,
+        authority: "unavailable",
+        direction: "unavailable",
+        trackingMode: "amount_only",
+        status: "amount_only",
+        reasonCode:
+          "target_reference_not_established",
+      }),
+    ],
+  };
+
+  const renderer = await render({
+    data: targetlessData,
+    hasLoggedNutrition: true,
+  });
+
+  expect(
+    allText(renderer.root),
+  ).toContain(
+    "No established target",
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 explicitly configured secondary nutrients join progress without expanding catalog defaults", async () => {
+  const configuredData:
+    DailyTargetComparison = {
+      ...data,
+      comparisons: [
+        item({
+          nutrientId: "protein",
+          consumedAmount:
+            "42.000000",
+          targetAmount:
+            "56.000000",
+          unit: "g",
+          percentage:
+            "75.0000",
+          authority: "dri",
+          direction: "target",
+          trackingMode:
+            "recommended",
+          status: "available",
+          referenceType: "RDA",
+        }),
+        item({
+          nutrientId:
+            "vitamin_c",
+          consumedAmount:
+            "60.000000",
+          targetAmount:
+            "120.000000",
+          unit: "mg",
+          percentage:
+            "50.0000",
+          authority:
+            "manual_override",
+          direction: "target",
+          trackingMode: "custom",
+          status: "available",
+        }),
+        item({
+          nutrientId: "epa",
+          consumedAmount:
+            "350.000000",
+          targetAmount: null,
+          unit: "mg",
+          percentage: null,
+          authority:
+            "unavailable",
+          direction:
+            "unavailable",
+          trackingMode:
+            "amount_only",
+          status: "amount_only",
+          reasonCode:
+            "target_amount_only_preference",
+        }),
+        item({
+          nutrientId: "dha",
+          consumedAmount:
+            "250.000000",
+          targetAmount: null,
+          unit: "mg",
+          percentage: null,
+          authority:
+            "unavailable",
+          direction:
+            "unavailable",
+          trackingMode:
+            "amount_only",
+          status: "amount_only",
+          reasonCode:
+            "target_reference_not_established",
+        }),
+        item({
+          nutrientId:
+            "vitamin_d",
+          consumedAmount:
+            "10.000000",
+          targetAmount:
+            "15.000000",
+          unit: "mcg",
+          percentage:
+            "66.6667",
+          authority: "dri",
+          direction: "target",
+          trackingMode:
+            "recommended",
+          status: "available",
+          referenceType: "RDA",
+        }),
+      ],
+    };
+
+  const renderer = await render({
+    data: configuredData,
+    hasLoggedNutrition: true,
+  });
+
+  const text =
+    allText(renderer.root);
+
+  // Existing normal progress stays present.
+  expect(text).toContain(
+    "Protein",
+  );
+
+  // Explicit non-primary choices become useful in daily progress.
+  expect(text).toContain(
+    "Vitamin C",
+  );
+  expect(text).toContain(
+    "50%",
+  );
+  expect(text).toContain(
+    "Custom target",
+  );
+
+  expect(text).toContain(
+    "Epa",
+  );
+  expect(text).toContain(
+    "Amount only",
+  );
+
+  // Neutral/default catalog states do not expand the dashboard.
+  expect(text).not.toContain(
+    "DHA",
+  );
+  expect(text).not.toContain(
+    "Vitamin D",
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

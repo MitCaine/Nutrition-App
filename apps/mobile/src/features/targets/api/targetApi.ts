@@ -32,12 +32,24 @@ const referenceType =
 const calculationBasis =
   z.enum(["fixed", "per_kg"]);
 
+const trackingPreferenceMode =
+  z.enum(["amount_only", "ignored"]);
+
+const trackingMode =
+  z.enum([
+    "recommended",
+    "custom",
+    "amount_only",
+    "ignored",
+  ]);
+
 const targetValue = z.object({
   nutrient_id: z.string(),
   amount: decimal.nullable(),
   unit: z.string(),
   authority,
   direction,
+  tracking_mode: trackingMode,
   reason_code: z.string().nullable(),
   note_code: z.string().nullable(),
   reference_type: referenceType.nullable(),
@@ -132,6 +144,8 @@ const configurationSchema = z.object({
     }).strict(),
   manual_overrides:
     z.array(targetValue),
+  tracking_preferences:
+    z.record(trackingPreferenceMode),
   effective_targets:
     z.array(targetValue),
   daily_value_catalog_version:
@@ -161,6 +175,7 @@ function mapTarget(
     unit: item.unit,
     authority: item.authority,
     direction: item.direction,
+    trackingMode: item.tracking_mode,
     reasonCode: item.reason_code,
     noteCode: item.note_code,
     referenceType: item.reference_type,
@@ -225,6 +240,8 @@ function mapConfiguration(
       value.manual_overrides.map(
         mapTarget,
       ),
+    trackingPreferences:
+      value.tracking_preferences,
     effectiveTargets:
       value.effective_targets.map(
         mapTarget,
@@ -341,7 +358,10 @@ const comparisonSchema = z.object({
           "available",
           "target_unavailable",
           "consumed_unavailable",
+          "amount_only",
         ]),
+      tracking_mode:
+        trackingMode,
       reason_code:
         z.string().nullable(),
       note_code:
@@ -400,6 +420,8 @@ export async function getDailyTargetComparison(
             item.direction,
           status:
             item.status,
+          trackingMode:
+            item.tracking_mode,
           reasonCode:
             item.reason_code,
           noteCode:

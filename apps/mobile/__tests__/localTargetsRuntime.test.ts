@@ -988,7 +988,9 @@ test("daily comparison uses immutable snapshots, date isolation, unknown semanti
     });
     expect(byId(comparison.comparisons, "total_sugars")).toMatchObject({
       targetAmount: null,
-      status: "target_unavailable",
+      percentage: null,
+      trackingMode: "amount_only",
+      status: "amount_only",
       authority: "unavailable",
     });
 
@@ -1261,3 +1263,512 @@ test("reset and update share the serialized local write coordinator", async () =
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// #103 per-nutrient tracking preference acceptance
+
+function trackingConfigurationInput(
+  trackingPreferences: Record<
+    string,
+    "amount_only" | "ignored"
+  > = {},
+  manualOverrides: Record<
+    string,
+    string | null
+  > = {},
+) {
+  const base = targetInput();
+
+  return {
+    ...base,
+    manual_overrides: {
+      ...base.manual_overrides,
+      ...manualOverrides,
+    },
+    tracking_preferences:
+      trackingPreferences,
+  };
+}
+
+test(
+  "#103 transitions recommended -> custom -> amount-only -> ignored -> restored",
+  async () => {
+    const database =
+      await fixtureDatabase();
+
+    try {
+      const targets =
+        runtime(database);
+
+      const recommended =
+        await targets.updateConfiguration(
+          trackingConfigurationInput(),
+        );
+
+      expect(
+        byId(
+          recommended.effectiveTargets,
+          "protein",
+        ),
+      ).toMatchObject({
+        amount: "56.000000",
+        authority: "dri",
+        referenceType: "RDA",
+        trackingMode: "recommended",
+      });
+
+      expect(
+        recommended.trackingPreferences,
+      ).toEqual({});
+
+      const custom =
+        await targets.updateConfiguration(
+          trackingConfigurationInput(
+            {},
+            {
+              protein: "90",
+            },
+          ),
+        );
+
+      expect(
+        byId(
+          custom.effectiveTargets,
+          "protein",
+        ),
+      ).toMatchObject({
+        amount: "90.000000",
+        authority:
+          "manual_override",
+        trackingMode: "custom",
+      });
+
+      const amountOnly =
+        await targets.updateConfiguration(
+          trackingConfigurationInput({
+            protein: "amount_only",
+          }),
+        );
+
+      expect(
+        byId(
+          amountOnly.effectiveTargets,
+          "protein",
+        ),
+      ).toMatchObject({
+        amount: null,
+        authority: "unavailable",
+        trackingMode: "amount_only",
+        reasonCode:
+          "target_amount_only_preference",
+      });
+
+      expect(
+        amountOnly.trackingPreferences,
+      ).toEqual({
+        protein: "amount_only",
+      });
+
+      expect(
+        amountOnly.manualOverrides,
+      ).toEqual([]);
+
+      const ignored =
+        await targets.updateConfiguration(
+          trackingConfigurationInput({
+            protein: "ignored",
+          }),
+        );
+
+      expect(
+        byId(
+          ignored.effectiveTargets,
+          "protein",
+        ),
+      ).toMatchObject({
+        amount: null,
+        authority: "unavailable",
+        trackingMode: "ignored",
+        reasonCode:
+          "target_ignored_preference",
+      });
+
+      expect(
+        ignored.trackingPreferences,
+      ).toEqual({
+        protein: "ignored",
+      });
+
+      const restored =
+        await targets.updateConfiguration(
+          trackingConfigurationInput(),
+        );
+
+      expect(
+        byId(
+          restored.effectiveTargets,
+          "protein",
+        ),
+      ).toMatchObject({
+        amount: "56.000000",
+        authority: "dri",
+        referenceType: "RDA",
+        trackingMode: "recommended",
+      });
+
+      expect(
+        restored.trackingPreferences,
+      ).toEqual({});
+
+      const persistedRows =
+        await database.getAllAsync<{
+          target_type: string;
+          nutrient_id: string;
+        }>(
+          `SELECT "target_type",
+                  "nutrient_id"
+           FROM "nutrition_targets"
+           WHERE "user_id" = ?
+           ORDER BY "target_type",
+                    "nutrient_id"`,
+          [OWNER],
+        );
+
+      expect(
+        persistedRows,
+      ).toEqual([]);
+    } finally {
+      database.close();
+    }
+  },
+);
+
+test(
+  "#103 supports a custom target for any canonical nutrient with its canonical unit",
+  async () => {
+    const database =
+      await fixtureDatabase();
+
+    try {
+      const targets =
+        runtime(database);
+
+      const configuration =
+        await targets.updateConfiguration(
+          trackingConfigurationInput(
+            {},
+            {
+              vitamin_c:
+                "123.456789",
+            },
+          ),
+        );
+
+      expect(
+        byId(
+          configuration.effectiveTargets,
+          "vitamin_c",
+        ),
+      ).toMatchObject({
+        amount: "123.456789",
+        unit: "mg",
+        authority:
+          "manual_override",
+        direction: "target",
+        trackingMode: "custom",
+      });
+
+      const stored =
+        await database.getFirstAsync<{
+          target_type: string;
+          nutrient_id: string;
+          target_amount: string | null;
+          unit: string;
+          basis: string;
+          source: string;
+          metadata: string | null;
+        }>(
+          `SELECT "target_type",
+                  "nutrient_id",
+                  "target_amount",
+                  "unit",
+                  "basis",
+                  "source",
+                  "metadata"
+           FROM "nutrition_targets"
+           WHERE "user_id" = ?
+             AND "nutrient_id" = ?
+             AND "target_type" =
+                 'manual_override'`,
+          [OWNER, "vitamin_c"],
+        );
+
+      expect(stored).toEqual({
+        target_type:
+          "manual_override",
+        nutrient_id:
+          "vitamin_c",
+        target_amount:
+          "123.456789",
+        unit: "mg",
+        basis: "per_day",
+        source: "user",
+        metadata: null,
+      });
+    } finally {
+      database.close();
+    }
+  },
+);
+
+test(
+  "#103 targetless nutrients default to neutral amount-only while ALA retains its AI",
+  async () => {
+    const database =
+      await fixtureDatabase();
+
+    try {
+      const configuration =
+        await runtime(
+          database,
+        ).updateConfiguration(
+          trackingConfigurationInput(),
+        );
+
+      for (
+        const nutrientId
+        of [
+          "total_sugars",
+          "epa",
+          "dha",
+        ]
+      ) {
+        expect(
+          byId(
+            configuration
+              .effectiveTargets,
+            nutrientId,
+          ),
+        ).toMatchObject({
+          amount: null,
+          authority: "unavailable",
+          trackingMode:
+            "amount_only",
+          reasonCode:
+            "target_reference_not_established",
+        });
+      }
+
+      expect(
+        byId(
+          configuration
+            .effectiveTargets,
+          "alpha_linolenic_acid",
+        ),
+      ).toMatchObject({
+        authority: "dri",
+        referenceType: "AI",
+        trackingMode: "recommended",
+      });
+    } finally {
+      database.close();
+    }
+  },
+);
+
+test(
+  "#103 ignored and amount-only preferences never rewrite Daily Log nutrient snapshots",
+  async () => {
+    const database =
+      await fixtureDatabase();
+
+    const foodId =
+      "00000000-0000-4000-8000-000000000201";
+    const logId =
+      "00000000-0000-4000-8000-000000000301";
+    const snapshotId =
+      "00000000-0000-4000-8000-000000000401";
+
+    try {
+      await seedFoodAndSnapshot(
+        database,
+        {
+          ownerId: OWNER,
+          foodId,
+          logId,
+          snapshotId,
+          date: "2026-07-14",
+          nutrientId: "protein",
+          amount: "12.500000",
+          unit: "g",
+          dataStatus: "known",
+        },
+      );
+
+      const targets =
+        runtime(database);
+
+      await targets.updateConfiguration(
+        trackingConfigurationInput(),
+      );
+
+      const before =
+        await database.getFirstAsync<{
+          id: string;
+          nutrient_id: string;
+          amount: string | null;
+          unit: string;
+          data_status: string;
+        }>(
+          `SELECT "id",
+                  "nutrient_id",
+                  "amount",
+                  "unit",
+                  "data_status"
+           FROM "daily_log_nutrient_snapshots"
+           WHERE "id" = ?`,
+          [snapshotId],
+        );
+
+      expect(before).toEqual({
+        id: snapshotId,
+        nutrient_id: "protein",
+        amount: "12.500000",
+        unit: "g",
+        data_status: "known",
+      });
+
+      const recommended =
+        await targets.getDailyComparison(
+          "2026-07-14",
+        );
+
+      expect(
+        byId(
+          recommended.comparisons,
+          "protein",
+        ),
+      ).toMatchObject({
+        consumedAmount:
+          "12.500000",
+        trackingMode:
+          "recommended",
+      });
+
+      await targets.updateConfiguration(
+        trackingConfigurationInput({
+          protein: "ignored",
+        }),
+      );
+
+      const ignored =
+        await targets.getDailyComparison(
+          "2026-07-14",
+        );
+
+      expect(
+        ignored.comparisons.some(
+          (item) =>
+            item.nutrientId
+            === "protein",
+        ),
+      ).toBe(false);
+
+      const afterIgnored =
+        await database.getFirstAsync<{
+          id: string;
+          nutrient_id: string;
+          amount: string | null;
+          unit: string;
+          data_status: string;
+        }>(
+          `SELECT "id",
+                  "nutrient_id",
+                  "amount",
+                  "unit",
+                  "data_status"
+           FROM "daily_log_nutrient_snapshots"
+           WHERE "id" = ?`,
+          [snapshotId],
+        );
+
+      expect(afterIgnored).toEqual(
+        before,
+      );
+
+      await targets.updateConfiguration(
+        trackingConfigurationInput({
+          protein: "amount_only",
+        }),
+      );
+
+      const amountOnly =
+        await targets.getDailyComparison(
+          "2026-07-14",
+        );
+
+      expect(
+        byId(
+          amountOnly.comparisons,
+          "protein",
+        ),
+      ).toMatchObject({
+        consumedAmount:
+          "12.500000",
+        targetAmount: null,
+        percentage: null,
+        status: "amount_only",
+        trackingMode:
+          "amount_only",
+      });
+
+      expect(
+        await database.getFirstAsync(
+          `SELECT "id",
+                  "nutrient_id",
+                  "amount",
+                  "unit",
+                  "data_status"
+           FROM "daily_log_nutrient_snapshots"
+           WHERE "id" = ?`,
+          [snapshotId],
+        ),
+      ).toEqual(before);
+
+      await targets.updateConfiguration(
+        trackingConfigurationInput(),
+      );
+
+      const restored =
+        await targets.getDailyComparison(
+          "2026-07-14",
+        );
+
+      expect(
+        byId(
+          restored.comparisons,
+          "protein",
+        ),
+      ).toMatchObject({
+        consumedAmount:
+          "12.500000",
+        trackingMode:
+          "recommended",
+      });
+
+      expect(
+        await database.getFirstAsync(
+          `SELECT "id",
+                  "nutrient_id",
+                  "amount",
+                  "unit",
+                  "data_status"
+           FROM "daily_log_nutrient_snapshots"
+           WHERE "id" = ?`,
+          [snapshotId],
+        ),
+      ).toEqual(before);
+    } finally {
+      database.close();
+    }
+  },
+);

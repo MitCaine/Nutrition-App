@@ -41,6 +41,7 @@ import {
   type CancelAccessibilityFocus,
 } from "../../../shared/accessibility/focus";
 import { TargetProgressSection } from "../../targets/TargetProgressSection";
+import { useTargetConfiguration } from "../../targets/hooks/useDailyTargetComparison";
 import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../../calendar/calendarModel";
 import { deviceTimeZone } from "../../calendar/deviceTimeZone";
 import { useCalendarState } from "../../calendar/hooks/useCalendar";
@@ -125,6 +126,32 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const futureQuery = useFutureLogs(date, legacyFuture);
   const futureLogs = dailyLogReadState(futureQuery);
   const summaryQuery = useDailySummary(date, !legacyFuture);
+  const targetConfigurationQuery =
+    useTargetConfiguration();
+
+  const ignoredNutrientIds = useMemo(
+    () =>
+      new Set(
+        Object.entries(
+          targetConfigurationQuery.data
+            ?.trackingPreferences
+          ?? {},
+        )
+          .filter(
+            ([, mode]) =>
+              mode === "ignored",
+          )
+          .map(
+            ([nutrientId]) =>
+              nutrientId,
+          ),
+      ),
+    [
+      targetConfigurationQuery.data
+        ?.trackingPreferences,
+    ],
+  );
+
   const entriesKnown = logs.kind === "empty" || logs.kind === "success" || logs.kind === "refreshing" || logs.kind === "refresh-failure";
   const hasLoggedNutrition = logs.data === null ? undefined : logs.data.length > 0;
   const totals = dailySummaryReadState(summaryQuery, entriesKnown);
@@ -657,7 +684,10 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       {totals.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Totals could not be refreshed; showing the last confirmed totals." onRetry={totals.retry} retryContext="totals" /> : null}
       {totals.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Totals are unavailable until Daily Log entries are available." onRetry={totals.retry} retryContext="totals" /> : null}
       {totals.kind === "empty" ? <AccessibilityStatus kind="empty" message="No nutrition totals for this date." /> : null}
-      {totals.data ? visibleDailyTotals(totals.data.totals).map((total) => (
+      {totals.data ? visibleDailyTotals(
+        totals.data.totals,
+        ignoredNutrientIds,
+      ).map((total) => (
         <View key={total.nutrientId} style={styles.totalRow}>
           <Text style={styles.text}>{formatNutrientLabel(total.nutrientId)}</Text>
           <Text style={styles.text}>{formatAggregatedTotal(total)}</Text>

@@ -19,6 +19,7 @@ class EffectiveTarget:
     source_version: str | None = None
     source_id: str | None = None
     calculation_basis: str | None = None
+    tracking_mode: str = "recommended"
 
 
 @dataclass(frozen=True)
@@ -38,20 +39,80 @@ class TargetComparison:
     source_version: str | None = None
     source_id: str | None = None
     calculation_basis: str | None = None
+    tracking_mode: str = "recommended"
 
 
 def compare_daily_totals(
-    totals: list[AggregatedNutrientTotal], targets: list[EffectiveTarget]
+    totals: list[AggregatedNutrientTotal],
+    targets: list[EffectiveTarget],
 ) -> list[TargetComparison]:
-    totals_by_id = {item.nutrient_id: item for item in totals}
+    totals_by_id = {
+        item.nutrient_id: item
+        for item in totals
+    }
     comparisons = []
+
     for target in targets:
-        total = totals_by_id.get(target.nutrient_id)
+        # Ignored affects presentation only.  The underlying Daily Log totals
+        # remain intact and are deliberately not read or rewritten here.
+        if target.tracking_mode == "ignored":
+            continue
+
+        total = totals_by_id.get(
+            target.nutrient_id
+        )
+
+        if target.tracking_mode == "amount_only":
+            consumed = (
+                None
+                if total is None
+                or (
+                    total.has_unknown_contributors
+                    and total.amount_known == 0
+                    and total.amount_estimated == 0
+                )
+                else (
+                    total.amount_known
+                    + total.amount_estimated
+                )
+            )
+            comparisons.append(
+                TargetComparison(
+                    target.nutrient_id,
+                    consumed,
+                    None,
+                    target.unit,
+                    None,
+                    target.authority,
+                    "unavailable",
+                    "amount_only",
+                    target.reason_code,
+                    target.note_code,
+                    bool(
+                        total
+                        and total.has_unknown_contributors
+                    ),
+                    target.reference_type,
+                    target.source_version,
+                    target.source_id,
+                    target.calculation_basis,
+                    "amount_only",
+                )
+            )
+            continue
+
         if target.amount is None:
             comparisons.append(
                 TargetComparison(
                     target.nutrient_id,
-                    None if total is None else total.amount_known + total.amount_estimated,
+                    (
+                        None
+                        if total is None
+                        else (
+                            total.amount_known
+                            + total.amount_estimated
+                        )
+                    ),
                     None,
                     target.unit,
                     None,
@@ -60,14 +121,19 @@ def compare_daily_totals(
                     "target_unavailable",
                     target.reason_code,
                     target.note_code,
-                    bool(total and total.has_unknown_contributors),
+                    bool(
+                        total
+                        and total.has_unknown_contributors
+                    ),
                     target.reference_type,
                     target.source_version,
                     target.source_id,
                     target.calculation_basis,
+                    target.tracking_mode,
                 )
             )
             continue
+
         if total is None or (
             total.has_unknown_contributors
             and total.amount_known == 0
@@ -85,17 +151,30 @@ def compare_daily_totals(
                     "consumed_unavailable",
                     "consumed_value_unavailable",
                     target.note_code,
-                    bool(total and total.has_unknown_contributors),
+                    bool(
+                        total
+                        and total.has_unknown_contributors
+                    ),
                     target.reference_type,
                     target.source_version,
                     target.source_id,
                     target.calculation_basis,
+                    target.tracking_mode,
                 )
             )
             continue
-        consumed = total.amount_known + total.amount_estimated
-        percentage = (consumed / target.amount * Decimal("100")).quantize(
-            Decimal("0.0001"), rounding=ROUND_HALF_UP
+
+        consumed = (
+            total.amount_known
+            + total.amount_estimated
+        )
+        percentage = (
+            consumed
+            / target.amount
+            * Decimal("100")
+        ).quantize(
+            Decimal("0.0001"),
+            rounding=ROUND_HALF_UP,
         )
         comparisons.append(
             TargetComparison(
@@ -114,6 +193,8 @@ def compare_daily_totals(
                 target.source_version,
                 target.source_id,
                 target.calculation_basis,
+                target.tracking_mode,
             )
         )
+
     return comparisons

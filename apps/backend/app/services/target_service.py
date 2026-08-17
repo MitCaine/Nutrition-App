@@ -26,18 +26,24 @@ from app.targets.estimation import (
     weight_to_kg,
 )
 from app.targets.dri import DriRecommendation, resolve_dri_recommendation
-from app.targets.dri_data import DRI_DATASET_VERSION
+from app.targets.dri_data import (
+    DRI_DATASET_VERSION,
+    DRI_NO_GOAL,
+)
 
 INFORMATIONAL_NOTICE = (
     "Estimated maintenance calories are general informational estimates, not medical advice."
 )
+NUTRIENT_BY_ID = {
+    nutrient.id: nutrient
+    for nutrient in NUTRIENT_CATALOG
+}
 MANUAL_TARGET_UNITS = {
-    "calories": "kcal",
-    "protein": "g",
-    "total_carbohydrate": "g",
-    "total_fat": "g",
+    nutrient.id: nutrient.default_unit
+    for nutrient in NUTRIENT_CATALOG
 }
 TARGET_AMOUNT_QUANTUM = Decimal("0.000001")
+GENERIC_TARGET_MAX = Decimal("99999999.999999")
 
 VALUE_BOUNDS = {
     "calories": (Decimal("500"), Decimal("10000")),
@@ -80,6 +86,63 @@ class TargetService:
                 .order_by(NutritionTarget.nutrient_id)
             )
         )
+
+    def _preference_rows(
+        self,
+        user_id: UUID,
+    ) -> list[NutritionTarget]:
+        return list(
+            self.db.scalars(
+                select(NutritionTarget)
+                .where(
+                    NutritionTarget.user_id == user_id,
+                    NutritionTarget.target_type
+                    == "tracking_preference",
+                )
+                .order_by(
+                    NutritionTarget.nutrient_id
+                )
+            )
+        )
+
+    def _tracking_preferences(
+        self,
+        user_id: UUID,
+    ) -> dict[str, str]:
+        result: dict[str, str] = {}
+
+        for row in self._preference_rows(
+            user_id
+        ):
+            nutrient = NUTRIENT_BY_ID.get(
+                row.nutrient_id
+            )
+            metadata = row.target_metadata
+
+            if (
+                nutrient is None
+                or row.target_amount is not None
+                or row.unit
+                != nutrient.default_unit
+                or row.basis != "tracking"
+                or row.source != "user"
+                or not isinstance(metadata, dict)
+                or metadata.get("mode")
+                not in {
+                    "amount_only",
+                    "ignored",
+                }
+            ):
+                raise RuntimeError(
+                    "Stored nutrient tracking "
+                    "preference is invalid."
+                )
+
+            result[row.nutrient_id] = (
+                metadata["mode"]
+            )
+
+        return result
 
     def _estimate(self, profile: UserProfile | None, as_of: date) -> EnergyEstimate:
         if profile is None:
@@ -137,16 +200,107 @@ class TargetService:
                     f"Value must be between {minimum} and {maximum}.",
                     field,
                 )
-        for nutrient_id, value in payload.manual_overrides.model_dump().items():
-            if value is None:
-                continue
-            minimum, maximum = VALUE_BOUNDS[nutrient_id]
-            if not minimum <= value <= maximum:
+        manual_values = (
+            payload.manual_overrides.model_dump()
+        )
+
+        for nutrient_id, value in (
+            manual_values.items()
+        ):
+            nutrient = NUTRIENT_BY_ID.get(
+                nutrient_id
+            )
+
+            if nutrient is None:
                 raise TargetDomainError(
-                    "target_value_out_of_range",
-                    f"Value must be between {minimum} and {maximum}.",
+                    "target_nutrient_invalid",
+                    "This nutrient is not part of "
+                    "the canonical nutrient catalog.",
                     f"manual_overrides.{nutrient_id}",
                 )
+
+            if value is None:
+                continue
+
+            if value.as_tuple().exponent < -6:
+                raise TargetDomainError(
+                    "target_value_out_of_range",
+                    "Custom targets support at most "
+                    "six decimal places.",
+                    f"manual_overrides.{nutrient_id}",
+                )
+
+            bounds = VALUE_BOUNDS.get(
+                nutrient_id
+            )
+
+            if bounds is not None:
+                minimum, maximum = bounds
+                valid = (
+                    minimum <= value <= maximum
+                )
+                message = (
+                    "Value must be between "
+                    f"{minimum} and {maximum}."
+                )
+            else:
+                valid = (
+                    value > 0
+                    and value <= GENERIC_TARGET_MAX
+                )
+                message = (
+                    "Value must be greater than zero "
+                    f"and no more than "
+                    f"{GENERIC_TARGET_MAX}."
+                )
+
+            if not valid:
+                raise TargetDomainError(
+                    "target_value_out_of_range",
+                    message,
+                    f"manual_overrides.{nutrient_id}",
+                )
+
+        preference_values = (
+            None
+            if payload.tracking_preferences
+            is None
+            else payload
+            .tracking_preferences
+            .model_dump()
+        )
+
+        if preference_values is not None:
+            for nutrient_id in (
+                preference_values
+            ):
+                if nutrient_id not in (
+                    NUTRIENT_BY_ID
+                ):
+                    raise TargetDomainError(
+                        "target_nutrient_invalid",
+                        "This nutrient is not part "
+                        "of the canonical nutrient "
+                        "catalog.",
+                        "tracking_preferences."
+                        f"{nutrient_id}",
+                    )
+
+                if (
+                    manual_values.get(
+                        nutrient_id
+                    )
+                    is not None
+                ):
+                    raise TargetDomainError(
+                        "target_preference_conflict",
+                        "A nutrient cannot use a "
+                        "custom target and an "
+                        "amount-only or ignored "
+                        "preference at the same time.",
+                        "tracking_preferences."
+                        f"{nutrient_id}",
+                    )
 
     def update(self, user_id: UUID, payload: TargetConfigurationUpdate, as_of: date):
         """Own one serialized Target update transaction for this user."""
@@ -164,24 +318,154 @@ class TargetService:
             profile.activity_level = payload.profile.activity_level
             profile.energy_estimation_context = payload.profile.energy_estimation_context
 
-            existing = {item.nutrient_id: item for item in self._overrides(user_id)}
-            for nutrient_id, amount in payload.manual_overrides.model_dump().items():
-                row = existing.get(nutrient_id)
+            existing = {
+                item.nutrient_id: item
+                for item in self._overrides(
+                    user_id
+                )
+            }
+            existing_preferences = {
+                item.nutrient_id: item
+                for item in self._preference_rows(
+                    user_id
+                )
+            }
+
+            manual_values = (
+                payload.manual_overrides
+                .model_dump()
+            )
+
+            preference_values = (
+                None
+                if payload.tracking_preferences
+                is None
+                else payload
+                .tracking_preferences
+                .model_dump()
+            )
+
+            # Manual overrides are patch-like for compatibility
+            # with clients that do not know every canonical
+            # nutrient.  Explicit null deletes that nutrient's
+            # override; an omitted key is left untouched.
+            for nutrient_id, amount in (
+                manual_values.items()
+            ):
+                row = existing.get(
+                    nutrient_id
+                )
+
                 if amount is None:
                     if row is not None:
                         self.db.delete(row)
                     continue
+
+                preference_row = (
+                    existing_preferences.get(
+                        nutrient_id
+                    )
+                )
+                if preference_row is not None:
+                    self.db.delete(
+                        preference_row
+                    )
+                    existing_preferences.pop(
+                        nutrient_id,
+                        None,
+                    )
+
                 if row is None:
                     row = NutritionTarget(
                         user_id=user_id,
-                        target_type="manual_override",
+                        target_type=(
+                            "manual_override"
+                        ),
                         nutrient_id=nutrient_id,
-                        unit=MANUAL_TARGET_UNITS[nutrient_id],
+                        unit=(
+                            MANUAL_TARGET_UNITS[
+                                nutrient_id
+                            ]
+                        ),
                         basis="per_day",
                         source="user",
                     )
                     self.db.add(row)
+
                 row.target_amount = amount
+                row.unit = (
+                    MANUAL_TARGET_UNITS[
+                        nutrient_id
+                    ]
+                )
+                row.basis = "per_day"
+                row.source = "user"
+                row.target_metadata = None
+
+            # Tracking preferences are replacement state only
+            # when the field is supplied.  This lets a new client
+            # send {} to restore all nutrients to dynamic defaults,
+            # while an older client that omits the field cannot
+            # erase preferences it does not understand.
+            if preference_values is not None:
+                for nutrient_id, row in list(
+                    existing_preferences.items()
+                ):
+                    if (
+                        nutrient_id
+                        not in preference_values
+                    ):
+                        self.db.delete(row)
+
+                for nutrient_id, mode in (
+                    preference_values.items()
+                ):
+                    manual_row = existing.get(
+                        nutrient_id
+                    )
+                    if manual_row is not None:
+                        self.db.delete(
+                            manual_row
+                        )
+
+                    row = (
+                        existing_preferences.get(
+                            nutrient_id
+                        )
+                    )
+                    if row is None:
+                        row = NutritionTarget(
+                            user_id=user_id,
+                            target_type=(
+                                "tracking_preference"
+                            ),
+                            nutrient_id=(
+                                nutrient_id
+                            ),
+                            unit=(
+                                MANUAL_TARGET_UNITS[
+                                    nutrient_id
+                                ]
+                            ),
+                            basis="tracking",
+                            source="user",
+                        )
+                        self.db.add(row)
+
+                    row.min_amount = None
+                    row.target_amount = None
+                    row.max_amount = None
+                    row.unit = (
+                        MANUAL_TARGET_UNITS[
+                            nutrient_id
+                        ]
+                    )
+                    row.basis = "tracking"
+                    row.source = "user"
+                    row.target_metadata = {
+                        "mode": mode
+                    }
+
             self.db.flush()
             self._after_target_update_flush(user_id)
             self.db.expire_all()
@@ -319,59 +603,119 @@ class TargetService:
         profile = self._profile(user_id)
         overrides = {
             item.nutrient_id: item
-            for item in self._overrides(user_id)
+            for item in self._overrides(
+                user_id
+            )
         }
-        estimate = self._estimate(profile, as_of)
+        preferences = (
+            self._tracking_preferences(
+                user_id
+            )
+        )
+        estimate = self._estimate(
+            profile,
+            as_of,
+        )
         daily_values = {
             item.nutrient_id: item
             for item in FDA_DAILY_VALUES
         }
         dri_values = {
             item.nutrient_id: item
-            for item in self._dri_recommendations(
-                profile,
-                as_of,
+            for item in (
+                self._dri_recommendations(
+                    profile,
+                    as_of,
+                )
             )
         }
 
-        result: list[EffectiveTarget] = []
+        result: list[
+            EffectiveTarget
+        ] = []
 
-        for nutrient in NUTRIENT_CATALOG:
-            override = overrides.get(nutrient.id)
-            daily_value = daily_values[nutrient.id]
-            dri = dri_values[nutrient.id]
+        for nutrient in (
+            NUTRIENT_CATALOG
+        ):
+            nutrient_id = nutrient.id
+            preference = preferences.get(
+                nutrient_id
+            )
+            override = overrides.get(
+                nutrient_id
+            )
+            daily_value = (
+                daily_values[nutrient_id]
+            )
+            dri = dri_values[nutrient_id]
+
+            if preference == "ignored":
+                result.append(
+                    EffectiveTarget(
+                        nutrient_id,
+                        None,
+                        nutrient.default_unit,
+                        "unavailable",
+                        "unavailable",
+                        "target_ignored_preference",
+                        tracking_mode="ignored",
+                    )
+                )
+                continue
+
+            if preference == "amount_only":
+                result.append(
+                    EffectiveTarget(
+                        nutrient_id,
+                        None,
+                        nutrient.default_unit,
+                        "unavailable",
+                        "unavailable",
+                        (
+                            "target_amount_only_"
+                            "preference"
+                        ),
+                        tracking_mode="amount_only",
+                    )
+                )
+                continue
 
             if override is not None:
                 result.append(
                     EffectiveTarget(
-                        nutrient.id,
+                        nutrient_id,
                         override.target_amount,
                         override.unit,
                         "manual_override",
                         "target",
+                        tracking_mode="custom",
                     )
                 )
                 continue
 
             if (
-                nutrient.id == "calories"
+                nutrient_id == "calories"
                 and estimate.available
             ):
                 result.append(
                     EffectiveTarget(
-                        nutrient.id,
+                        nutrient_id,
                         estimate.amount,
                         "kcal",
                         "calculated_estimate",
                         "target",
+                        tracking_mode="recommended",
                     )
                 )
                 continue
 
-            if dri.availability == "available":
+            if (
+                dri.availability
+                == "available"
+            ):
                 result.append(
                     EffectiveTarget(
-                        nutrient.id,
+                        nutrient_id,
                         (
                             None
                             if dri.amount is None
@@ -379,7 +723,10 @@ class TargetService:
                                 TARGET_AMOUNT_QUANTUM
                             )
                         ),
-                        dri.unit or nutrient.default_unit,
+                        (
+                            dri.unit
+                            or nutrient.default_unit
+                        ),
                         "dri",
                         "target",
                         None,
@@ -388,6 +735,7 @@ class TargetService:
                         dri.source_version,
                         dri.source_id,
                         dri.calculation_basis,
+                        "recommended",
                     )
                 )
                 continue
@@ -395,32 +743,65 @@ class TargetService:
             if daily_value.available:
                 result.append(
                     EffectiveTarget(
-                        nutrient.id,
+                        nutrient_id,
                         daily_value.amount,
                         daily_value.unit,
                         "daily_value",
                         daily_value.direction,
                         None,
                         daily_value.note_code,
+                        tracking_mode="recommended",
+                    )
+                )
+                continue
+
+            # A nutrient that truly has no established DRI
+            # recommendation and no FDA reference defaults to
+            # neutral amount-only presentation.  A potentially
+            # supported DRI that is merely missing profile inputs
+            # remains "recommended" but unavailable so the UI can
+            # explain that distinction.
+            if (
+                nutrient_id != "calories"
+                and nutrient_id
+                in DRI_NO_GOAL
+            ):
+                result.append(
+                    EffectiveTarget(
+                        nutrient_id,
+                        None,
+                        nutrient.default_unit,
+                        "unavailable",
+                        "unavailable",
+                        (
+                            "target_reference_"
+                            "not_established"
+                        ),
+                        daily_value.note_code,
+                        tracking_mode="amount_only",
                     )
                 )
                 continue
 
             reason = (
                 estimate.reason_code
-                if nutrient.id == "calories"
-                else dri.reason_code or daily_value.note_code
+                if nutrient_id == "calories"
+                else (
+                    dri.reason_code
+                    or daily_value.note_code
+                )
             )
 
             result.append(
                 EffectiveTarget(
-                    nutrient.id,
+                    nutrient_id,
                     None,
                     nutrient.default_unit,
                     "unavailable",
                     "unavailable",
                     reason,
                     daily_value.note_code,
+                    tracking_mode="recommended",
                 )
             )
 
@@ -434,6 +815,11 @@ class TargetService:
         profile = self._profile(user_id)
         estimate = self._estimate(profile, as_of)
         overrides = self._overrides(user_id)
+        tracking_preferences = (
+            self._tracking_preferences(
+                user_id
+            )
+        )
         dri_recommendations = self._dri_recommendations(
             profile,
             as_of,
@@ -483,9 +869,13 @@ class TargetService:
                     "source_version": None,
                     "source_id": None,
                     "calculation_basis": None,
+                    "tracking_mode": "custom",
                 }
                 for item in overrides
             ],
+            "tracking_preferences": (
+                tracking_preferences
+            ),
             "effective_targets": [
                 item.__dict__
                 for item in self.effective_targets(

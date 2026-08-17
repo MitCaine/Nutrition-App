@@ -2,9 +2,13 @@ import {
   EMPTY_TARGET_DRAFT,
   compactTargetDecimalForEditing,
   resetTargetDraftOverride,
+  setTargetDraftMode,
+  setTargetDraftOverride,
   targetDraft,
   targetDraftError,
   targetDraftKeyForNutrient,
+  targetDraftMode,
+  targetDraftOverrideValue,
   targetInput,
   targetUnavailableMessage,
 } from "../src/features/targets/targetModel";
@@ -22,7 +26,8 @@ function configuration(): TargetConfiguration {
   return {
     profile: { birthDate: "1990-01-01", sexForEquation: "female", heightCm: "165.000", weightKg: "60.000", activityLevel: "active", energyEstimationContext: "general_adult" },
     estimatedMaintenanceCalories: { availability: "available", amount: "2200", unit: "kcal", authority: "calculated_estimate", reasonCode: null, equation: "mifflin_st_jeor_1990" },
-    manualOverrides: [{ nutrientId: "protein", amount: "90", unit: "g", authority: "manual_override", direction: "target", reasonCode: null, noteCode: null, referenceType: null, sourceVersion: null, sourceId: null, calculationBasis: null }],
+    manualOverrides: [{ nutrientId: "protein", amount: "90", unit: "g", authority: "manual_override", direction: "target", trackingMode: "custom", reasonCode: null, noteCode: null, referenceType: null, sourceVersion: null, sourceId: null, calculationBasis: null }],
+    trackingPreferences: {},
     effectiveTargets: [], dailyValueCatalogVersion: "fda_daily_values_2016_v1", dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", driDatasetVersion: "nasem_dri_adults_2026_v1", targetDirectionSemanticsVersion: "target_directions_2026_v1", dailyValues: [], driRecommendations: [], limitations: [], informationalNotice: "Estimate, not medical advice.",
   };
 }
@@ -141,6 +146,7 @@ test("persisted fixed-scale target decimals are compacted only for editing", () 
       unit: "g",
       authority: "manual_override",
       direction: "target",
+      trackingMode: "custom",
       reasonCode: null,
       noteCode: null,
       referenceType: null,
@@ -151,4 +157,174 @@ test("persisted fixed-scale target decimals are compacted only for editing", () 
   ];
 
   expect(targetDraft(persisted).protein).toBe("90");
+});
+
+test("#103 draft preserves explicit preferences without persisting neutral amount-only defaults", () => {
+  const neutral = configuration();
+
+  neutral.trackingPreferences = {};
+  neutral.manualOverrides = [];
+  neutral.effectiveTargets = [
+    {
+      nutrientId: "epa",
+      amount: null,
+      unit: "mg",
+      authority: "unavailable",
+      direction: "unavailable",
+      trackingMode: "amount_only",
+      reasonCode: "target_reference_not_established",
+      noteCode: null,
+      referenceType: null,
+      sourceVersion: null,
+      sourceId: null,
+      calculationBasis: null,
+    },
+  ];
+
+  const neutralDraft = targetDraft(neutral);
+
+  expect(
+    targetDraftMode(
+      neutralDraft,
+      neutral,
+      "epa",
+    ),
+  ).toBe("amount_only");
+
+  expect(
+    targetInput(neutralDraft)
+      .tracking_preferences,
+  ).toEqual({});
+
+  const explicit = {
+    ...neutralDraft,
+    trackingPreferences: {
+      epa: "amount_only" as const,
+    },
+  };
+
+  expect(
+    targetInput(explicit)
+      .tracking_preferences,
+  ).toEqual({
+    epa: "amount_only",
+  });
+});
+
+test("#103 draft supports arbitrary canonical custom targets and tracking modes", () => {
+  const persisted = configuration();
+
+  persisted.trackingPreferences = {};
+
+  let draft = targetDraft(persisted);
+
+  draft = setTargetDraftMode(
+    draft,
+    persisted,
+    "vitamin_c",
+    "custom",
+  );
+
+  expect(
+    targetDraftError(draft),
+  ).toContain(
+    "Vitamin C custom target is required",
+  );
+
+  draft = setTargetDraftOverride(
+    draft,
+    "vitamin_c",
+    "123.456789",
+  );
+
+  expect(
+    targetDraftError(draft),
+  ).toBeNull();
+
+  expect(
+    targetInput(draft)
+      .manual_overrides
+      .vitamin_c,
+  ).toBe("123.456789");
+
+  draft = setTargetDraftMode(
+    draft,
+    persisted,
+    "vitamin_c",
+    "ignored",
+  );
+
+  expect(
+    targetInput(draft)
+      .manual_overrides
+      .vitamin_c,
+  ).toBeNull();
+
+  expect(
+    targetInput(draft)
+      .tracking_preferences,
+  ).toMatchObject({
+    vitamin_c: "ignored",
+  });
+
+  expect(
+    targetDraftOverrideValue(
+      draft,
+      "vitamin_c",
+    ),
+  ).toBe("");
+});
+
+
+test("#103 explicitly choosing a neutral amount-only default persists user intent", () => {
+  const persisted = configuration();
+
+  persisted.manualOverrides = [];
+  persisted.trackingPreferences = {};
+  persisted.effectiveTargets = [
+    {
+      nutrientId: "epa",
+      amount: null,
+      unit: "mg",
+      authority: "unavailable",
+      direction: "unavailable",
+      trackingMode: "amount_only",
+      reasonCode: "target_reference_not_established",
+      noteCode: null,
+      referenceType: null,
+      sourceVersion: null,
+      sourceId: null,
+      calculationBasis: null,
+    },
+  ];
+
+  const initial = targetDraft(
+    persisted,
+  );
+
+  expect(
+    targetInput(initial)
+      .tracking_preferences,
+  ).toEqual({});
+
+  const explicit =
+    setTargetDraftMode(
+      initial,
+      persisted,
+      "epa",
+      "amount_only",
+    );
+
+  expect(
+    explicit.trackingPreferences,
+  ).toEqual({
+    epa: "amount_only",
+  });
+
+  expect(
+    targetInput(explicit)
+      .tracking_preferences,
+  ).toEqual({
+    epa: "amount_only",
+  });
 });

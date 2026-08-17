@@ -16,6 +16,7 @@ function createConfiguration(overrides: Partial<TargetConfiguration> = {}): Targ
     dailyValueStandard: "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS", driDatasetVersion: "nasem_dri_adults_2026_v1", targetDirectionSemanticsVersion: "target_directions_2026_v1", dailyValues: [], driRecommendations: [], limitations: ["target_profile_incomplete"],
     informationalNotice: "General informational estimate, not medical advice.",
     ...overrides,
+    trackingPreferences: overrides.trackingPreferences ?? {},
   };
 }
 
@@ -294,7 +295,7 @@ test("sex controls share an equal-width row and female-only condition choices ar
 
 test("effective target copy remains sourced while FDA identifiers stay internal", async () => {
   mockConfiguration = createConfiguration({
-    effectiveTargets: [{ nutrientId: "protein", amount: "98.339200", unit: "g", authority: "daily_value", direction: "reference", reasonCode: null, noteCode: null, referenceType: null, sourceVersion: null, sourceId: null, calculationBasis: null }],
+    effectiveTargets: [{ nutrientId: "protein", amount: "98.339200", unit: "g", authority: "daily_value", direction: "reference", trackingMode: "recommended", reasonCode: null, noteCode: null, referenceType: null, sourceVersion: null, sourceId: null, calculationBasis: null }],
   });
   const renderer = await render();
   const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
@@ -321,6 +322,7 @@ test("effective DRI target copy identifies RDA and its source version", async ()
       unit: "g",
       authority: "dri",
       direction: "target",
+      trackingMode: "recommended",
       reasonCode: null,
       noteCode: null,
       referenceType: "RDA",
@@ -383,4 +385,411 @@ test("rapid save presses issue one request and expose busy state", async () => {
   expect(action(renderer.root, "Saving nutrition targets").props.accessibilityState).toMatchObject({ disabled: true, busy: true });
   await act(async () => resolve(mockConfiguration));
   await act(async () => renderer.unmount());
+});
+
+test("#103 secondary nutrient manager stays collapsed until requested and limits discovery through search", async () => {
+  const renderer = await render();
+
+  expect(
+    action(
+      renderer.root,
+      "Vitamin C tracking mode Recommended",
+    ),
+  ).toBeUndefined();
+
+  const toggle = action(
+    renderer.root,
+    "Show more nutrient controls",
+  );
+
+  expect(
+    toggle.props.accessibilityState.expanded,
+  ).toBe(false);
+
+  await act(async () =>
+    toggle.props.onPress(),
+  );
+
+  expect(
+    action(
+      renderer.root,
+      "Hide more nutrient controls",
+    ).props.accessibilityState.expanded,
+  ).toBe(true);
+
+  expect(
+    input(
+      renderer.root,
+      "Search nutrients to configure",
+    ),
+  ).toBeDefined();
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Search nutrients to configure",
+    ).props.onChangeText("Vitamin C"),
+  );
+
+  expect(
+    action(
+      renderer.root,
+      "Vitamin C tracking mode Recommended",
+    ),
+  ).toBeDefined();
+
+  expect(
+    action(
+      renderer.root,
+      "Vitamin C tracking mode Hidden",
+    ),
+  ).toBeDefined();
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 secondary nutrient can be hidden and saved without creating a custom target", async () => {
+  mockUpdate.mockResolvedValue(
+    mockConfiguration,
+  );
+
+  const renderer = await render();
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Show more nutrient controls",
+    ).props.onPress(),
+  );
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Search nutrients to configure",
+    ).props.onChangeText("Vitamin C"),
+  );
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Vitamin C tracking mode Hidden",
+    ).props.onPress(),
+  );
+
+  expect(
+    action(
+      renderer.root,
+      "Vitamin C tracking mode Hidden",
+    ).props.accessibilityState.checked,
+  ).toBe(true);
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      manual_overrides:
+        expect.objectContaining({
+          vitamin_c: null,
+        }),
+      tracking_preferences:
+        expect.objectContaining({
+          vitamin_c: "ignored",
+        }),
+    }),
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 secondary nutrient custom mode requires and saves its own canonical target", async () => {
+  mockUpdate.mockResolvedValue(
+    mockConfiguration,
+  );
+
+  const renderer = await render();
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Show more nutrient controls",
+    ).props.onPress(),
+  );
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Search nutrients to configure",
+    ).props.onChangeText("Vitamin C"),
+  );
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Vitamin C tracking mode Custom",
+    ).props.onPress(),
+  );
+
+  expect(
+    input(
+      renderer.root,
+      "Vitamin C custom target",
+    ),
+  ).toBeDefined();
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Vitamin C custom target",
+    ).props.onChangeText(
+      "123.456789",
+    ),
+  );
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      manual_overrides:
+        expect.objectContaining({
+          vitamin_c:
+            "123.456789",
+        }),
+      tracking_preferences:
+        expect.not.objectContaining({
+          vitamin_c:
+            expect.anything(),
+        }),
+    }),
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 no-reference nutrient distinguishes neutral amount-only default and explicit saved amount-only intent", async () => {
+  mockConfiguration =
+    createConfiguration({
+      effectiveTargets: [
+        {
+          nutrientId: "epa",
+          amount: null,
+          unit: "mg",
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode:
+            "amount_only",
+          reasonCode:
+            "target_reference_not_established",
+          noteCode: null,
+          referenceType: null,
+          sourceVersion: null,
+          sourceId: null,
+          calculationBasis: null,
+        },
+      ],
+      trackingPreferences: {},
+    });
+
+  mockUpdate.mockResolvedValue(
+    mockConfiguration,
+  );
+
+  const renderer = await render();
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Show more nutrient controls",
+    ).props.onPress(),
+  );
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Search nutrients to configure",
+    ).props.onChangeText("EPA"),
+  );
+
+  const visibleText =
+    renderer.root
+      .findAllByType(Text)
+      .map(textContent)
+      .join(" ");
+
+  expect(visibleText).toContain(
+    "No established target · Amount only by default",
+  );
+
+  expect(
+    action(
+      renderer.root,
+      "EPA tracking mode Amount only",
+    ).props.accessibilityState.checked,
+  ).toBe(true);
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "EPA tracking mode Amount only",
+    ).props.onPress(),
+  );
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      tracking_preferences:
+        expect.objectContaining({
+          epa: "amount_only",
+        }),
+    }),
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 primary recommended nutrient can be switched to hidden without deleting its target data", async () => {
+  mockConfiguration =
+    createConfiguration({
+      effectiveTargets: [
+        {
+          nutrientId: "protein",
+          amount: "56.000000",
+          unit: "g",
+          authority: "dri",
+          direction: "target",
+          trackingMode:
+            "recommended",
+          reasonCode: null,
+          noteCode: null,
+          referenceType: "RDA",
+          sourceVersion:
+            "nasem_dri_adults_2026_v1",
+          sourceId:
+            "macronutrients_2005",
+          calculationBasis:
+            "per_kg",
+        },
+      ],
+      trackingPreferences: {},
+    });
+
+  mockUpdate.mockResolvedValue(
+    mockConfiguration,
+  );
+
+  const renderer = await render();
+
+  expect(
+    action(
+      renderer.root,
+      "Protein tracking mode Recommended",
+    ).props.accessibilityState.checked,
+  ).toBe(true);
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Protein tracking mode Hidden",
+    ).props.onPress(),
+  );
+
+  expect(
+    action(
+      renderer.root,
+      "Protein tracking mode Hidden",
+    ).props.accessibilityState.checked,
+  ).toBe(true);
+
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      manual_overrides:
+        expect.objectContaining({
+          protein: null,
+        }),
+      tracking_preferences:
+        expect.objectContaining({
+          protein: "ignored",
+        }),
+    }),
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+
+test("#103 settings distinguishes profile-unavailable recommendation from amount-only and no-reference states", async () => {
+  mockConfiguration =
+    createConfiguration({
+      effectiveTargets: [
+        {
+          nutrientId: "protein",
+          amount: null,
+          unit: "g",
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode:
+            "recommended",
+          reasonCode:
+            "target_profile_incomplete",
+          noteCode: null,
+          referenceType: null,
+          sourceVersion: null,
+          sourceId: null,
+          calculationBasis: null,
+        },
+      ],
+      trackingPreferences: {},
+    });
+
+  const renderer = await render();
+
+  const text =
+    renderer.root
+      .findAllByType(Text)
+      .map(textContent)
+      .join(" ");
+
+  expect(text).toContain(
+    "Recommended target unavailable · Complete profile",
+  );
+
+  expect(text).not.toContain(
+    "No established target · Amount only by default",
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

@@ -13,6 +13,7 @@ import { KeyboardSafeScrollView } from "../../shared/forms/KeyboardSafeScrollVie
 import { BackButton } from "../../shared/components/BackButton";
 import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { formatDisplayNumber } from "../../shared/nutrition/display";
+import { NUTRIENT_CATALOG } from "../../shared/nutrition/catalog";
 import type { TargetConfiguration } from "./api/types";
 import {
   targetBasisLabel,
@@ -23,9 +24,13 @@ import {
   EMPTY_TARGET_DRAFT,
   targetDraft,
   targetDraftError,
+  targetDraftMode,
+  targetDraftOverrideValue,
   targetInput,
   targetUnavailableMessage,
   resetTargetDraftOverride,
+  setTargetDraftMode,
+  setTargetDraftOverride,
 } from "./targetModel";
 import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
 import {
@@ -73,6 +78,117 @@ const PERSONAL_TARGETS = [
   ["totalFat", "Fat", "g"],
 ] as const;
 
+
+const PRIMARY_NUTRIENT_IDS =
+  new Set([
+    "calories",
+    "protein",
+    "total_carbohydrate",
+    "total_fat",
+  ]);
+
+const SECONDARY_NUTRIENTS =
+  NUTRIENT_CATALOG.filter(
+    (nutrient) =>
+      !PRIMARY_NUTRIENT_IDS.has(
+        nutrient.id,
+      ),
+  );
+
+const TRACKING_MODES = [
+  {
+    value: "recommended",
+    label: "Recommended",
+  },
+  {
+    value: "custom",
+    label: "Custom",
+  },
+  {
+    value: "amount_only",
+    label: "Amount only",
+  },
+  {
+    value: "ignored",
+    label: "Hidden",
+  },
+] as const;
+
+function savedTargetSummary(
+  target:
+    | TargetConfiguration[
+        "effectiveTargets"
+      ][number]
+    | undefined,
+): string {
+  if (!target) {
+    return "No saved target information";
+  }
+
+  if (
+    target.trackingMode === "ignored"
+  ) {
+    return "Hidden";
+  }
+
+  if (
+    target.trackingMode
+      === "amount_only"
+    && target.reasonCode
+      === "target_reference_not_established"
+  ) {
+    return (
+      "No established target · "
+      + "Amount only by default"
+    );
+  }
+
+  if (
+    target.trackingMode
+      === "amount_only"
+  ) {
+    return "Amount only";
+  }
+
+  if (
+    target.reasonCode
+      === "target_profile_incomplete"
+  ) {
+    return (
+      "Recommended target unavailable"
+      + " · Complete profile"
+    );
+  }
+
+  if (
+    target.reasonCode
+      === "target_estimate_unsupported_age"
+    || target.reasonCode
+      === "target_estimate_unsupported_context"
+  ) {
+    return (
+      "Recommended target unavailable"
+      + " for this profile"
+    );
+  }
+
+  if (
+    target.amount === null
+  ) {
+    return "Recommended target unavailable";
+  }
+
+  return (
+    `${formatDisplayNumber(
+      target.amount,
+      {
+        maxFractionDigits: 1,
+      },
+    )} ${target.unit}/day`
+    + ` · ${targetBasisLabel(target)}`
+  );
+}
+
 export function TargetSettingsScreen({
   onBack,
   draftStateKey,
@@ -97,6 +213,14 @@ export function TargetSettingsScreen({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [
+    showMoreNutrients,
+    setShowMoreNutrients,
+  ] = useState(false);
+  const [
+    nutrientSearch,
+    setNutrientSearch,
+  ] = useState("");
 
   const initialized = useRef(false);
   const submittingRef = useRef(false);
@@ -191,7 +315,55 @@ export function TargetSettingsScreen({
     );
   }
 
-  const estimate = result?.estimatedMaintenanceCalories;
+  const estimate =
+    result?.estimatedMaintenanceCalories;
+
+  const configuredSecondary =
+    new Set([
+      ...Object.keys(
+        draft
+          .additionalManualOverrides,
+      ),
+      ...Object.keys(
+        draft.trackingPreferences,
+      ),
+      ...Object.keys(
+        draft.modeSelections,
+      ),
+    ]);
+
+  const normalizedSearch =
+    nutrientSearch
+      .trim()
+      .toLowerCase();
+
+  const secondaryCandidates =
+    normalizedSearch
+      ? SECONDARY_NUTRIENTS.filter(
+          (nutrient) =>
+            nutrient.display_name
+              .toLowerCase()
+              .includes(
+                normalizedSearch,
+              )
+            || nutrient.id
+              .toLowerCase()
+              .includes(
+                normalizedSearch,
+              ),
+        )
+      : SECONDARY_NUTRIENTS.filter(
+          (nutrient) =>
+            configuredSecondary.has(
+              nutrient.id,
+            ),
+        );
+
+  const visibleSecondaryNutrients =
+    secondaryCandidates.slice(0, 8);
+
+  const hasMoreSecondaryMatches =
+    secondaryCandidates.length > 8;
 
   return (
     <View style={styles.screen}>
@@ -443,48 +615,189 @@ export function TargetSettingsScreen({
                     ? "total_fat"
                     : key;
 
-              const effective = result?.effectiveTargets.find(
-                (item) => item.nutrientId === nutrientId,
-              );
+              const effective =
+                result?.effectiveTargets.find(
+                  (item) =>
+                    item.nutrientId
+                    === nutrientId,
+                );
 
-              const persistedOverride = persistedDraft[key];
-              const draftOverride = draft[key];
+              const persistedOverride =
+                persistedDraft[key];
 
-              const effectiveBasis = effective
-                ? targetBasisLabel(effective)
-                : "Unavailable";
+              const draftOverride =
+                targetDraftOverrideValue(
+                  draft,
+                  nutrientId,
+                );
 
-              const effectiveSource = effective
-                ? targetSourceVersionLabel(
-                    effective,
-                    result?.dailyValueCatalogVersion,
-                  )
-                : null;
-              const hasManualOverride = Boolean(draftOverride);
+              const mode =
+                result
+                  ? targetDraftMode(
+                      draft,
+                      result,
+                      nutrientId,
+                    )
+                  : "recommended";
+
+              const effectiveBasis =
+                effective
+                  ? targetBasisLabel(
+                      effective,
+                    )
+                  : "Unavailable";
+
+              const effectiveSource =
+                effective
+                  ? targetSourceVersionLabel(
+                      effective,
+                      result
+                        ?.dailyValueCatalogVersion,
+                    )
+                  : null;
+
+              const hasManualOverride =
+                Boolean(draftOverride);
+
               const resetPending =
-                Boolean(persistedOverride) && !draftOverride;
+                Boolean(
+                  persistedOverride,
+                )
+                && !draftOverride;
+
               const manualChangePending =
                 Boolean(draftOverride)
-                && draftOverride !== persistedOverride;
+                && draftOverride
+                  !== persistedOverride;
 
               return (
-                <View key={key} style={styles.targetField}>
-                  <View style={styles.targetInputContainer}>
+                <View
+                  key={key}
+                  style={styles.targetField}
+                >
+                  <Text
+                    style={styles.fieldLabel}
+                  >
+                    {label}
+                  </Text>
+
+                  <View
+                    accessibilityRole="radiogroup"
+                    accessibilityLabel={`${label} tracking mode ${TRACKING_MODES.find((option) => option.value === mode)?.label ?? mode}`}
+                    style={styles.modeRow}
+                  >
+                    {TRACKING_MODES.map(
+                      (option) => {
+                        const selected =
+                          mode
+                          === option.value;
+
+                        return (
+                          <Pressable
+                            key={
+                              option.value
+                            }
+                            accessibilityRole="radio"
+                            accessibilityLabel={`${label} tracking mode ${option.label}`}
+                            accessibilityState={{
+                              checked:
+                                selected,
+                              disabled:
+                                submitting,
+                            }}
+                            disabled={
+                              submitting
+                            }
+                            onPress={() =>
+                              result
+                                ? setDraft(
+                                    (
+                                      current,
+                                    ) =>
+                                      setTargetDraftMode(
+                                        current,
+                                        result,
+                                        nutrientId,
+                                        option.value,
+                                      ),
+                                  )
+                                : undefined
+                            }
+                            style={({
+                              pressed,
+                            }) => [
+                              styles
+                                .modeChoice,
+                              selected
+                                && styles
+                                  .modeChoiceSelected,
+                              pressed
+                                && styles
+                                  .choicePressed,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles
+                                  .modeChoiceText,
+                                selected
+                                  && styles
+                                    .choiceTextSelected,
+                              ]}
+                            >
+                              {
+                                option.label
+                              }
+                            </Text>
+                          </Pressable>
+                        );
+                      },
+                    )}
+                  </View>
+
+                  <View
+                    style={
+                      styles
+                        .targetInputContainer
+                    }
+                  >
                     <TextInput
-                      editable={!submitting}
+                      editable={
+                        !submitting
+                      }
                       accessibilityLabel={`${label} personal target`}
-                      accessibilityState={{ disabled: submitting }}
-                      value={draft[key]}
-                      onChangeText={(value) =>
-                        setDraft((current) => ({
-                          ...current,
-                          [key]: value,
-                        }))
+                      accessibilityState={{
+                        disabled:
+                          submitting,
+                      }}
+                      value={
+                        draftOverride
+                      }
+                      onChangeText={(
+                        value,
+                      ) =>
+                        setDraft(
+                          (
+                            current,
+                          ) =>
+                            setTargetDraftOverride(
+                              current,
+                              nutrientId,
+                              value,
+                            ),
+                        )
                       }
                       keyboardType="decimal-pad"
                       placeholder={`${label} (${unit}/day)`}
-                      placeholderTextColor={theme.colors.placeholder}
-                      style={[styles.input, styles.targetInput]}
+                      placeholderTextColor={
+                        theme.colors
+                          .placeholder
+                      }
+                      style={[
+                        styles.input,
+                        styles
+                          .targetInput,
+                      ]}
                     />
 
                     {hasManualOverride ? (
@@ -492,12 +805,30 @@ export function TargetSettingsScreen({
                         accessibilityRole="button"
                         accessibilityLabel={`Reset ${label} target`}
                         accessibilityHint="Clears this manual target in the draft. Choose Save targets to apply the reset."
-                        disabled={submitting}
-                        accessibilityState={{ disabled: submitting }}
-                        onPress={() => reset(nutrientId)}
-                        style={styles.resetAction}
+                        disabled={
+                          submitting
+                        }
+                        accessibilityState={{
+                          disabled:
+                            submitting,
+                        }}
+                        onPress={() =>
+                          reset(
+                            nutrientId,
+                          )
+                        }
+                        style={
+                          styles
+                            .resetAction
+                        }
                       >
-                        <Text style={styles.link}>Reset</Text>
+                        <Text
+                          style={
+                            styles.link
+                          }
+                        >
+                          Reset
+                        </Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -505,14 +836,20 @@ export function TargetSettingsScreen({
                   {resetPending ? (
                     <Text
                       accessibilityLabel={`${label} target reset pending save`}
-                      style={styles.pending}
+                      style={
+                        styles.pending
+                      }
                     >
-                      Reset pending · Save targets to apply.
+                      Reset pending ·
+                      Save targets to
+                      apply.
                     </Text>
                   ) : manualChangePending ? (
                     <Text
                       accessibilityLabel={`${label} manual target change pending save`}
-                      style={styles.pending}
+                      style={
+                        styles.pending
+                      }
                     >
                       {`Pending manual target: ${draftOverride} ${unit}/day · Save targets to apply.`}
                     </Text>
@@ -524,13 +861,15 @@ export function TargetSettingsScreen({
                   >
                     {effective?.amount
                       ? `Current saved effective: ${formatDisplayNumber(effective.amount, { maxFractionDigits: 1 })} ${effective.unit}/day · ${effectiveBasis}`
-                      : "Current saved effective target unavailable"}
+                      : `Current saved effective: ${savedTargetSummary(effective)}`}
                   </Text>
 
                   {effectiveSource ? (
                     <Text
                       accessibilityLabel={`${label} target source version ${effectiveSource}`}
-                      style={styles.notice}
+                      style={
+                        styles.notice
+                      }
                     >
                       {`Reference source: ${effectiveSource}`}
                     </Text>
@@ -538,6 +877,397 @@ export function TargetSettingsScreen({
                 </View>
               );
             })}
+
+            <View
+              style={
+                styles.managerSection
+              }
+            >
+              <View
+                style={
+                  styles.managerHeader
+                }
+              >
+                <View
+                  style={
+                    styles
+                      .managerHeaderCopy
+                  }
+                >
+                  <Text
+                    accessibilityRole="header"
+                    style={styles.section}
+                  >
+                    More nutrients
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.notice
+                    }
+                  >
+                    Configure vitamins,
+                    minerals, fatty
+                    acids, and other
+                    catalog nutrients
+                    without showing the
+                    full catalog at
+                    once.
+                  </Text>
+                </View>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    showMoreNutrients
+                      ? "Hide more nutrient controls"
+                      : "Show more nutrient controls"
+                  }
+                  accessibilityState={{
+                    expanded:
+                      showMoreNutrients,
+                    disabled:
+                      submitting,
+                  }}
+                  disabled={
+                    submitting
+                  }
+                  onPress={() =>
+                    setShowMoreNutrients(
+                      (shown) =>
+                        !shown,
+                    )
+                  }
+                  style={
+                    styles
+                      .managerToggle
+                  }
+                >
+                  <Text
+                    style={
+                      styles.link
+                    }
+                  >
+                    {showMoreNutrients
+                      ? "Hide"
+                      : "Manage"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {showMoreNutrients ? (
+                <>
+                  <TextInput
+                    editable={
+                      !submitting
+                    }
+                    accessibilityLabel="Search nutrients to configure"
+                    accessibilityState={{
+                      disabled:
+                        submitting,
+                    }}
+                    value={
+                      nutrientSearch
+                    }
+                    onChangeText={
+                      setNutrientSearch
+                    }
+                    placeholder="Search nutrients"
+                    placeholderTextColor={
+                      theme.colors
+                        .placeholder
+                    }
+                    style={
+                      styles.input
+                    }
+                  />
+
+                  {!normalizedSearch
+                    && visibleSecondaryNutrients
+                      .length === 0 ? (
+                    <Text
+                      style={
+                        styles.notice
+                      }
+                    >
+                      Search for a
+                      nutrient to
+                      configure it.
+                      Explicit custom,
+                      amount-only, or
+                      hidden choices
+                      will remain listed
+                      here.
+                    </Text>
+                  ) : null}
+
+                  {normalizedSearch
+                    && visibleSecondaryNutrients
+                      .length === 0 ? (
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      style={
+                        styles.notice
+                      }
+                    >
+                      No matching
+                      nutrients.
+                    </Text>
+                  ) : null}
+
+                  {visibleSecondaryNutrients.map(
+                    (nutrient) => {
+                      const effective =
+                        result
+                          ?.effectiveTargets
+                          .find(
+                            (item) =>
+                              item
+                                .nutrientId
+                              === nutrient
+                                .id,
+                          );
+
+                      const mode =
+                        result
+                          ? targetDraftMode(
+                              draft,
+                              result,
+                              nutrient
+                                .id,
+                            )
+                          : "recommended";
+
+                      const customValue =
+                        targetDraftOverrideValue(
+                          draft,
+                          nutrient.id,
+                        );
+
+                      const source =
+                        effective
+                          ? targetSourceVersionLabel(
+                              effective,
+                              result
+                                ?.dailyValueCatalogVersion,
+                            )
+                          : null;
+
+                      return (
+                        <View
+                          key={
+                            nutrient.id
+                          }
+                          style={
+                            styles
+                              .nutrientCard
+                          }
+                        >
+                          <View
+                            style={
+                              styles
+                                .nutrientHeading
+                            }
+                          >
+                            <Text
+                              style={
+                                styles
+                                  .fieldLabel
+                              }
+                            >
+                              {
+                                nutrient
+                                  .display_name
+                              }
+                            </Text>
+
+                            <Text
+                              accessibilityLabel={`${nutrient.display_name} current tracking state ${TRACKING_MODES.find((option) => option.value === mode)?.label ?? mode}`}
+                              style={
+                                styles
+                                  .stateLabel
+                              }
+                            >
+                              {
+                                TRACKING_MODES
+                                  .find(
+                                    (
+                                      option,
+                                    ) =>
+                                      option
+                                        .value
+                                      === mode,
+                                  )
+                                  ?.label
+                                ?? mode
+                              }
+                            </Text>
+                          </View>
+
+                          <Text
+                            style={
+                              styles
+                                .notice
+                            }
+                          >
+                            {savedTargetSummary(
+                              effective,
+                            )}
+                          </Text>
+
+                          {source ? (
+                            <Text
+                              style={
+                                styles
+                                  .notice
+                              }
+                            >
+                              {`Reference source: ${source}`}
+                            </Text>
+                          ) : null}
+
+                          <View
+                            accessibilityRole="radiogroup"
+                            accessibilityLabel={`${nutrient.display_name} tracking mode ${TRACKING_MODES.find((option) => option.value === mode)?.label ?? mode}`}
+                            style={
+                              styles
+                                .modeRow
+                            }
+                          >
+                            {TRACKING_MODES.map(
+                              (
+                                option,
+                              ) => {
+                                const selected =
+                                  mode
+                                  === option
+                                    .value;
+
+                                return (
+                                  <Pressable
+                                    key={
+                                      option
+                                        .value
+                                    }
+                                    accessibilityRole="radio"
+                                    accessibilityLabel={`${nutrient.display_name} tracking mode ${option.label}`}
+                                    accessibilityState={{
+                                      checked:
+                                        selected,
+                                      disabled:
+                                        submitting,
+                                    }}
+                                    disabled={
+                                      submitting
+                                    }
+                                    onPress={() =>
+                                      result
+                                        ? setDraft(
+                                            (
+                                              current,
+                                            ) =>
+                                              setTargetDraftMode(
+                                                current,
+                                                result,
+                                                nutrient.id,
+                                                option.value,
+                                              ),
+                                          )
+                                        : undefined
+                                    }
+                                    style={({
+                                      pressed,
+                                    }) => [
+                                      styles
+                                        .modeChoice,
+                                      selected
+                                        && styles
+                                          .modeChoiceSelected,
+                                      pressed
+                                        && styles
+                                          .choicePressed,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles
+                                          .modeChoiceText,
+                                        selected
+                                          && styles
+                                            .choiceTextSelected,
+                                      ]}
+                                    >
+                                      {
+                                        option
+                                          .label
+                                      }
+                                    </Text>
+                                  </Pressable>
+                                );
+                              },
+                            )}
+                          </View>
+
+                          {mode
+                            === "custom" ? (
+                            <TextInput
+                              editable={
+                                !submitting
+                              }
+                              accessibilityLabel={`${nutrient.display_name} custom target`}
+                              accessibilityState={{
+                                disabled:
+                                  submitting,
+                              }}
+                              value={
+                                customValue
+                              }
+                              onChangeText={(
+                                value,
+                              ) =>
+                                setDraft(
+                                  (
+                                    current,
+                                  ) =>
+                                    setTargetDraftOverride(
+                                      current,
+                                      nutrient.id,
+                                      value,
+                                    ),
+                                )
+                              }
+                              keyboardType="decimal-pad"
+                              placeholder={`${nutrient.display_name} (${nutrient.default_unit}/day)`}
+                              placeholderTextColor={
+                                theme
+                                  .colors
+                                  .placeholder
+                              }
+                              style={
+                                styles.input
+                              }
+                            />
+                          ) : null}
+                        </View>
+                      );
+                    },
+                  )}
+
+                  {hasMoreSecondaryMatches ? (
+                    <Text
+                      style={
+                        styles.notice
+                      }
+                    >
+                      More matches are
+                      available. Refine
+                      the search to
+                      narrow the list.
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+            </View>
 
             <Text style={styles.notice}>
               Nutrient comparisons use personalized RDA or AI recommendations
@@ -671,6 +1401,51 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontWeight: "600",
       padding: 10,
     },
+    managerHeader: {
+      alignItems: "flex-start",
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+    },
+    managerHeaderCopy: {
+      flex: 1,
+      gap: 4,
+    },
+    managerSection: {
+      gap: 8,
+    },
+    managerToggle: {
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 44,
+    },
+    modeChoice: {
+      alignItems: "center",
+      backgroundColor: theme.colors.surface,
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      borderWidth: 1,
+      flexBasis: 105,
+      flexGrow: 1,
+      justifyContent: "center",
+      minHeight: 40,
+      paddingHorizontal: 8,
+      paddingVertical: 7,
+    },
+    modeChoiceSelected: {
+      backgroundColor: theme.colors.selectedNavigationBackground,
+      borderColor: theme.colors.accent,
+    },
+    modeChoiceText: {
+      color: theme.colors.text,
+      fontSize: 13,
+      textAlign: "center",
+    },
+    modeRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
     notice: {
       color: theme.colors.secondaryText,
     },
@@ -710,6 +1485,20 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       flexWrap: "nowrap",
       gap: 8,
     },
+    nutrientCard: {
+      backgroundColor: theme.colors.surface,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      borderWidth: 1,
+      gap: 7,
+      padding: 10,
+    },
+    nutrientHeading: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 8,
+      justifyContent: "space-between",
+    },
     resetAction: {
       alignItems: "center",
       justifyContent: "center",
@@ -725,6 +1514,11 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       fontSize: 19,
       fontWeight: "800",
       marginTop: 8,
+    },
+    stateLabel: {
+      color: theme.colors.accent,
+      fontSize: 12,
+      fontWeight: "700",
     },
     targetField: {
       gap: 6,

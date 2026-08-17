@@ -59,6 +59,16 @@ export function targetProgressReadState(
   return { kind: "success", data: query.data, retry };
 }
 
+export function useTargetConfiguration() {
+  const runtime = useNutritionRuntime();
+
+  return useQuery({
+    queryKey: ["targets"] as const,
+    queryFn: () =>
+      runtime.targets.getConfiguration(),
+  });
+}
+
 export function useDailyTargetComparison(date: string) {
   const runtime = useNutritionRuntime();
   return useQuery({

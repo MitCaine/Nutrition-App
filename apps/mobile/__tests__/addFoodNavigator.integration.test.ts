@@ -197,6 +197,14 @@ jest.mock("../src/features/calendar/hooks/useCalendar", () => ({
 jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
   ...jest.requireActual("../src/features/targets/hooks/useDailyTargetComparison"),
   useDailyTargetComparison: () => mockTargets,
+  useTargetConfiguration: () => ({
+    data: {
+      trackingPreferences: {},
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+  }),
 }));
 
 jest.mock("../src/features/usda/hooks/useUsda", () => ({
@@ -336,6 +344,7 @@ const targets: DailyTargetComparison = {
     percentage: "12.5",
     authority: "manual_override",
     direction: "target",
+    trackingMode: "custom",
     status: "available",
     reasonCode: null,
     noteCode: null,

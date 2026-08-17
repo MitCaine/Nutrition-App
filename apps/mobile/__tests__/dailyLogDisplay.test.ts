@@ -178,3 +178,43 @@ test("named meal actions carry their group context and Unassigned has none", () 
   ]);
   expect(mealAddContext("unassigned")).toBeNull();
 });
+
+
+test("#103 Daily Log totals omit ignored nutrient identities without changing other totals", () => {
+  const visible = visibleDailyTotals(
+    [
+      total(
+        "protein",
+        "12.000000",
+      ),
+      total(
+        "total_sugars",
+        "7.000000",
+      ),
+      total(
+        "calories",
+        "250.000000",
+      ),
+    ],
+    new Set(["protein"]),
+  );
+
+  expect(
+    visible.map(
+      (item) => item.nutrientId,
+    ),
+  ).toEqual([
+    "calories",
+    "total_sugars",
+  ]);
+
+  // The projection is presentation-only.
+  // A non-ignored targetless/amount-only nutrient remains visible.
+  expect(
+    visible.find(
+      (item) =>
+        item.nutrientId
+        === "total_sugars",
+    )?.amountKnown,
+  ).toBe("7.000000");
+});

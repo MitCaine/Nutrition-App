@@ -75,6 +75,7 @@ function manualConfiguration(): TargetConfiguration {
       reasonCode: "target_profile_incomplete",
       equation: "mifflin_st_jeor_1990",
     },
+    trackingPreferences: {},
     manualOverrides: [
       {
         nutrientId: "protein",
@@ -82,6 +83,7 @@ function manualConfiguration(): TargetConfiguration {
         unit: "g",
         authority: "manual_override",
         direction: "target",
+        trackingMode: "custom",
         reasonCode: null,
         noteCode: null,
         referenceType: null,
@@ -97,6 +99,7 @@ function manualConfiguration(): TargetConfiguration {
         unit: "g",
         authority: "manual_override",
         direction: "target",
+        trackingMode: "custom",
         reasonCode: null,
         noteCode: null,
         referenceType: null,
@@ -128,6 +131,7 @@ function automaticConfiguration(): TargetConfiguration {
         unit: "g",
         authority: "daily_value",
         direction: "target",
+        trackingMode: "recommended",
         reasonCode: null,
         noteCode: null,
         referenceType: null,
@@ -234,7 +238,7 @@ test("Reset changes only the editable target draft until Save", async () => {
     "Reset pending · Save targets to apply.",
   );
   expect(visibleText(renderer)).toContain(
-    "Current saved effective: 90 g/day · Manual target",
+    "Current saved effective: 90 g/day · Custom target",
   );
 
   expect(onDraftStateChange).toHaveBeenCalledWith(
