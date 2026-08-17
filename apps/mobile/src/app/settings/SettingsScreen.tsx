@@ -18,6 +18,7 @@ import { BackButton } from "../../shared/components/BackButton";
 import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { UsdaCredentialSettings } from "./UsdaCredentialSettings";
+import { LocalBackupSettings } from "./LocalBackupSettings";
 import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import {
   useCalendarState,
@@ -270,6 +271,7 @@ export function SettingsScreen({
         ) : null}
       </View>
       <UsdaCredentialSettings />
+      <LocalBackupSettings />
       <Text accessibilityRole="header" style={styles.sectionTitle}>Nutrition</Text>
       <AccessiblePressable accessibilityLabel="Open nutrition targets" onPress={onOpenNutritionTargets} style={({ pressed }) => [styles.option, pressed && styles.pressed]}>
         <Text style={styles.optionText}>Nutrition targets</Text>

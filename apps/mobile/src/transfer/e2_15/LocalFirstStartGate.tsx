@@ -19,11 +19,26 @@ type CachedSelection = Readonly<{
 }>;
 
 type GateDependencies = Readonly<{
+  /**
+   * Runs before any local runtime/coordinator opens SQLite.
+   * A staged backup restore must be resolved at this boundary so the
+   * replacement can never overlap a live local authority.
+   */
+  activatePendingLocalRestore?(): Promise<void>;
   prepare(): Promise<LocalFirstStartCoordinator>;
   pickCachedTransfer(): Promise<CachedSelection | null>;
 }>;
 
 const defaultDependencies: GateDependencies = {
+  async activatePendingLocalRestore() {
+    // Load backup storage only after App.tsx has explicitly selected the
+    // local authority. Remote startup must never evaluate or touch it.
+    const { activatePendingLocalRestore } = require(
+      "../../storage/backup/localBackup"
+    ) as typeof import("../../storage/backup/localBackup");
+
+    await activatePendingLocalRestore();
+  },
   prepare: () => prepareLocalFirstStart(),
   async pickCachedTransfer() {
     const { getDocumentAsync } = require("expo-document-picker") as typeof import("expo-document-picker");
@@ -86,23 +101,46 @@ export function LocalFirstStartRuntimeBootstrap({
 
   useEffect(() => {
     let active = true;
-    void dependencies.prepare().then(async (prepared) => {
+
+    void (async () => {
+      // Restore activation owns the destructive pre-open maintenance boundary.
+      // It must complete before prepareLocalFirstStart can open SQLite.
+      await dependencies.activatePendingLocalRestore?.();
+
+      if (!active) {
+        return;
+      }
+
+      const prepared = await dependencies.prepare();
+
       if (!active) {
         await prepared.close();
         return;
       }
+
       coordinator.current = prepared;
+
       if (prepared.state === "existing_data") {
-      const handle = await prepared.continueExisting();
+        const handle = await prepared.continueExisting();
         runtimeHandle.current = handle;
-        if (active) setState({ kind: "ready", handle });
-        else await handle.close();
+
+        if (active) {
+          setState({ kind: "ready", handle });
+        } else {
+          await handle.close();
+        }
       } else {
-      setState({ kind: "choice", message: null });
+        setState({ kind: "choice", message: null });
       }
-    }).catch((error: unknown) => {
-      if (active) setState({ kind: "failure", message: message(error) });
+    })().catch((error: unknown) => {
+      if (active) {
+        setState({
+          kind: "failure",
+          message: message(error),
+        });
+      }
     });
+
     return () => {
       active = false;
       const handle = runtimeHandle.current;

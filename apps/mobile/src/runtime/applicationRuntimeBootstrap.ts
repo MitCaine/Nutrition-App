@@ -19,11 +19,22 @@ export type ApplicationRuntimeHandle = Readonly<{
 }>;
 
 export type ApplicationRuntimeBootstrapDependencies = Readonly<{
+  /**
+   * Optional pre-open maintenance boundary for the selected local authority.
+   * Restore activation runs here so it can never overlap a live local runtime.
+   */
+  activatePendingLocalRestore?(): Promise<void>;
   openLocalRuntime(): Promise<NutritionRuntime & Readonly<{ close(): Promise<void> }>>;
   loadRemoteRuntime(): Promise<NutritionRuntime>;
 }>;
 
 const defaultDependencies: ApplicationRuntimeBootstrapDependencies = {
+  async activatePendingLocalRestore() {
+    // Keep backup/native storage code outside the remote-authority module graph.
+    const { activatePendingLocalRestore } = require("../storage/backup/localBackup") as
+      typeof import("../storage/backup/localBackup");
+    await activatePendingLocalRestore();
+  },
   async openLocalRuntime() {
     // Expo/Jest share this lazy CommonJS boundary. The selected branch is the
     // only point at which either registry module is evaluated.
@@ -67,6 +78,7 @@ export async function bootstrapApplicationRuntime(
   dependencies: ApplicationRuntimeBootstrapDependencies = defaultDependencies,
 ): Promise<ApplicationRuntimeHandle> {
   if (configuration.dataAuthority === "local") {
+    await dependencies.activatePendingLocalRestore?.();
     const runtime = await dependencies.openLocalRuntime();
     try {
       assertCompleteRuntime(runtime, "local");

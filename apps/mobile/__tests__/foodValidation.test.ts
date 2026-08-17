@@ -92,18 +92,20 @@ test("manual food validation requires an immutable canonical 100 g amount", () =
   }).success).toBe(false);
 });
 
-test("manual food validation rejects an unknown-weight default amount with actionable guidance", () => {
+test("manual food validation rejects a custom serving without an explicit gram anchor", () => {
   const result = foodMutationSchema.safeParse({
     ...validFood,
     serving_definitions: validFood.serving_definitions.map((serving) =>
       serving.is_default ? { ...serving, gram_weight: null } : serving,
     ),
   });
+
   expect(result.success).toBe(false);
+
   if (!result.success) {
     expect(result.error.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        message: "Add an equivalent weight before setting this as the default amount.",
+        code: "invalid_type",
         path: ["serving_definitions", 1, "gram_weight"],
       }),
     ]));

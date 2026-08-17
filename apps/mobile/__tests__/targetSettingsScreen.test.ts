@@ -147,8 +147,7 @@ test("settings distinguishes FDA Daily Values from optional personal estimates a
   await act(async () => renderer.unmount());
 });
 
-test("manual override reset uses the explicit endpoint and updates the draft", async () => {
-  mockReset.mockResolvedValue(mockConfiguration);
+test("manual override reset changes only the draft until targets are saved", async () => {
   const renderer = await render();
   await act(async () => input(renderer.root, "Birth date").props.onChangeText("01-01-1990"));
   await act(async () => input(renderer.root, "Protein personal target").props.onChangeText("90"));
@@ -156,12 +155,16 @@ test("manual override reset uses the explicit endpoint and updates the draft", a
   const inputContainer = input(renderer.root, "Protein personal target").parent;
   expect(inputContainer?.findAllByType(TextInput)).toHaveLength(1);
   expect(inputContainer?.findAllByType(Pressable).some((item) => item.props.accessibilityLabel === "Reset Protein target")).toBe(true);
+
   await act(async () => action(renderer.root, "Reset Protein target").props.onPress());
-  expect(mockReset).toHaveBeenCalledWith("protein");
+
+  expect(mockReset).not.toHaveBeenCalled();
+  expect(mockUpdate).not.toHaveBeenCalled();
+  expect(mockInvalidate).not.toHaveBeenCalled();
   expect(input(renderer.root, "Protein personal target").props.value).toBe("");
   expect(input(renderer.root, "Birth date").props.value).toBe("01-01-1990");
-  expect(mockInvalidate).toHaveBeenCalledWith({ queryKey: ["target-comparison"] });
   expect(action(renderer.root, "Reset Protein target")).toBeUndefined();
+
   await act(async () => renderer.unmount());
 });
 
@@ -294,7 +297,7 @@ test("effective target copy remains sourced while FDA identifiers stay internal"
   });
   const renderer = await render();
   const text = renderer.root.findAllByType(Text).map(textContent).join(" ");
-  expect(text).toContain("Effective: 98.3 g/day · FDA Daily Value");
+  expect(text).toContain("Current saved effective: 98.3 g/day · FDA Daily Value");
   expect(text).toContain("Micronutrient comparisons use FDA Daily Values.");
   expect(text).not.toContain("fda_daily_values_2016_v1");
   await act(async () => renderer.unmount());

@@ -1,5 +1,6 @@
 const mockOpenLocalRuntimeFoundation = jest.fn();
 const mockGetStoredUsdaCredential = jest.fn();
+const mockActivatePendingLocalRestore = jest.fn();
 
 jest.mock("../src/runtime/local/localRuntimeFoundation", () => ({
   openLocalRuntimeFoundation: mockOpenLocalRuntimeFoundation,
@@ -7,6 +8,10 @@ jest.mock("../src/runtime/local/localRuntimeFoundation", () => ({
 
 jest.mock("../src/runtime/local/usdaCredentialStore", () => ({
   getStoredUsdaCredential: mockGetStoredUsdaCredential,
+}));
+
+jest.mock("../src/storage/backup/localBackup", () => ({
+  activatePendingLocalRestore: mockActivatePendingLocalRestore,
 }));
 
 import { bootstrapApplicationRuntime } from "../src/runtime/applicationRuntimeBootstrap";
@@ -29,6 +34,7 @@ function localRuntime() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockActivatePendingLocalRestore.mockResolvedValue(undefined);
 });
 
 test("default local bootstrap supplies the secure request-time USDA credential provider", async () => {
@@ -40,6 +46,7 @@ test("default local bootstrap supplies the secure request-time USDA credential p
     deploymentMode: "production",
   });
 
+  expect(mockActivatePendingLocalRestore).toHaveBeenCalledTimes(1);
   expect(mockOpenLocalRuntimeFoundation).toHaveBeenCalledTimes(1);
   expect(mockOpenLocalRuntimeFoundation).toHaveBeenCalledWith({
     usda: { credentialProvider: mockGetStoredUsdaCredential },

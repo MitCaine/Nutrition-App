@@ -147,3 +147,97 @@ test("explicit authority switching closes the old authority before constructing 
     "close:remote",
   ]);
 });
+
+
+test("pending local restore activation runs before opening the local authority", async () => {
+  const events: string[] = [];
+  const local = Object.assign(runtime("local"), {
+    close: jest.fn(async () => undefined),
+  });
+
+  const handle = await bootstrapApplicationRuntime(
+    LOCAL_CONFIG,
+    {
+      activatePendingLocalRestore: async () => {
+        events.push("restore");
+      },
+      openLocalRuntime: async () => {
+        events.push("open");
+        return local;
+      },
+      loadRemoteRuntime: jest.fn(async () => runtime("remote")),
+    },
+  );
+
+  expect(events).toEqual(["restore", "open"]);
+  await handle.close();
+});
+
+test("remote authority never activates or opens local restore storage", async () => {
+  const activatePendingLocalRestore = jest.fn(
+    async () => undefined,
+  );
+  const openLocalRuntime = jest.fn(
+    async () =>
+      Object.assign(runtime("local"), {
+        close: jest.fn(async () => undefined),
+      }),
+  );
+
+  const handle = await bootstrapApplicationRuntime(
+    REMOTE_CONFIG,
+    {
+      activatePendingLocalRestore,
+      openLocalRuntime,
+      loadRemoteRuntime: async () => runtime("remote"),
+    },
+  );
+
+  expect(activatePendingLocalRestore).not.toHaveBeenCalled();
+  expect(openLocalRuntime).not.toHaveBeenCalled();
+  expect(handle.runtime.authority.kind).toBe("remote");
+});
+
+test("local restore activation failure prevents the local authority from opening", async () => {
+  const activatePendingLocalRestore = jest.fn(
+    async () => {
+      throw new Error(
+        "restore activation failed",
+      );
+    },
+  );
+
+  const openLocalRuntime = jest.fn(
+    async () =>
+      Object.assign(runtime("local"), {
+        close: jest.fn(
+          async () => undefined,
+        ),
+      }),
+  );
+
+  await expect(
+    bootstrapApplicationRuntime(
+      LOCAL_CONFIG,
+      {
+        activatePendingLocalRestore,
+        openLocalRuntime,
+        loadRemoteRuntime:
+          jest.fn(
+            async () =>
+              runtime("remote"),
+          ),
+      },
+    ),
+  ).rejects.toThrow(
+    "restore activation failed",
+  );
+
+  expect(
+    activatePendingLocalRestore,
+  ).toHaveBeenCalledTimes(1);
+
+  expect(
+    openLocalRuntime,
+  ).not.toHaveBeenCalled();
+});

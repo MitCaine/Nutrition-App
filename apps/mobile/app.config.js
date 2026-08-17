@@ -8,6 +8,7 @@ module.exports = ({ config }) => {
     plugins: [
       ...(config.plugins || []),
       "expo-secure-store",
+      "expo-sharing",
     ],
     extra: {
       ...(config.extra || {}),

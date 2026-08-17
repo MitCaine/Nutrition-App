@@ -73,6 +73,9 @@ jest.mock("../src/features/calendar/deviceTimeZone", () => ({
   deviceTimeZone: () => "America/Los_Angeles",
 }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
+jest.mock("../src/app/settings/LocalBackupSettings", () => ({
+  LocalBackupSettings: () => null,
+}));
 
 import { SettingsScreen } from "../src/app/settings/SettingsScreen";
 import { AccessibilityStatus } from "../src/shared/accessibility/AccessibilityStatus";
