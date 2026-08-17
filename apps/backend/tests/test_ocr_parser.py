@@ -44,6 +44,83 @@ def test_nutrient_name_matching_is_controlled_and_punctuation_tolerant() -> None
     assert match_nutrient_name("Ironically") is None
 
 
+@pytest.mark.parametrize(
+    ("line", "nutrient_id", "original_name"),
+    [
+        ("otal Fat 8g", "total_fat", "otal Fat"),
+        ("ron 2mg", "iron", "ron"),
+    ],
+)
+def test_nutrient_name_character_loss_recovers_unique_catalog_matches(
+    line: str,
+    nutrient_id: str,
+    original_name: str,
+) -> None:
+    result = parse_lines("Nutrition Facts", line)
+    nutrient = result.nutrients[0]
+
+    assert nutrient.nutrient_id == nutrient_id
+    assert nutrient.original_name == original_name
+    assert nutrient.source_observation_ids == ["obs-2"]
+    assert nutrient.amount.source_text == line
+    assert nutrient.status == "parsed"
+    assert nutrient.confidence < 0.95
+    assert "nutrient_name_character_loss_recovered" in nutrient.warning_codes
+    assert "nutrient_name_unmatched" not in nutrient.warning_codes
+    assert any(
+        warning.code == "nutrient_name_character_loss_recovered"
+        and warning.source_observation_ids == ["obs-2"]
+        for warning in result.warnings
+    )
+
+
+@pytest.mark.parametrize(
+    ("line", "nutrient_id"),
+    [
+        ("Total Fat 8g", "total_fat"),
+        ("Iron 2mg", "iron"),
+        ("TOTAL CARB. 8g", "total_carbohydrate"),
+    ],
+)
+def test_exact_nutrient_names_do_not_emit_character_loss_recovery(
+    line: str,
+    nutrient_id: str,
+) -> None:
+    result = parse_lines("Nutrition Facts", line)
+    nutrient = result.nutrients[0]
+
+    assert nutrient.nutrient_id == nutrient_id
+    assert "nutrient_name_character_loss_recovered" not in nutrient.warning_codes
+
+
+@pytest.mark.parametrize("line", ["fat 8g", "total ca 8g"])
+def test_ambiguous_or_generic_nutrient_fragments_remain_unmatched(line: str) -> None:
+    result = parse_lines("Nutrition Facts", line)
+    nutrient = result.nutrients[0]
+
+    assert nutrient.nutrient_id is None
+    assert "nutrient_name_unmatched" in nutrient.warning_codes
+    assert "nutrient_name_character_loss_recovered" not in nutrient.warning_codes
+
+
+def test_recovered_nutrient_identity_participates_in_conflict_detection() -> None:
+    first = parse_lines("Nutrition Facts", "otal Fat 8g", "Total Fat 9g")
+    second = parse_lines("Nutrition Facts", "otal Fat 8g", "Total Fat 9g")
+
+    assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    assert [nutrient.nutrient_id for nutrient in first.nutrients] == [
+        "total_fat",
+        "total_fat",
+    ]
+    assert [nutrient.status for nutrient in first.nutrients] == [
+        "ambiguous",
+        "ambiguous",
+    ]
+    assert "nutrient_name_character_loss_recovered" in first.nutrients[0].warning_codes
+    assert "conflicting_nutrient_values" in first.nutrients[0].warning_codes
+    assert "conflicting_nutrient_values" in first.nutrients[1].warning_codes
+
+
 def test_serving_and_provenance_are_preserved() -> None:
     result = parse_lines(
         "Nutrition Facts",

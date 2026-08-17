@@ -283,6 +283,56 @@ function matchNutrientName(value: string): NutrientNameMatch | null {
   return NUTRIENT_LOOKUP.get(normalizeNutrientName(value)) ?? null;
 }
 
+function compactNutrientName(value: string): string {
+  return normalizeNutrientName(value).replace(/ /gu, "");
+}
+
+function nutrientNameEditDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current.push(Math.min(
+        current[column - 1]! + 1,
+        previous[column]! + 1,
+        previous[column - 1]! + (left[row - 1] === right[column - 1] ? 0 : 1),
+      ));
+    }
+    previous = current;
+  }
+  return previous[right.length]!;
+}
+
+function maximumNutrientRecoveryDistance(candidateLength: number): number {
+  if (candidateLength < 4) return 0;
+  return candidateLength < 8 ? 1 : 2;
+}
+
+function recoverNutrientNameCharacterLoss(value: string): NutrientNameMatch | null {
+  const observed = compactNutrientName(value);
+  if (observed.length < 3) return null;
+
+  const candidates: Array<Readonly<{ distance: number; match: NutrientNameMatch }>> = [];
+  for (const [variant, match] of NUTRIENT_LOOKUP.entries()) {
+    const candidate = variant.replace(/ /gu, "");
+    // This correction layer is for OCR character loss, not arbitrary
+    // same-length substitutions or extra-character fuzzy matching.
+    if (observed.length >= candidate.length) continue;
+    const distance = nutrientNameEditDistance(observed, candidate);
+    if (distance <= maximumNutrientRecoveryDistance(candidate.length)) {
+      candidates.push({ distance, match });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  const bestDistance = Math.min(...candidates.map(({ distance }) => distance));
+  const bestMatches = candidates
+    .filter(({ distance }) => distance === bestDistance)
+    .map(({ match }) => match);
+  if (new Set(bestMatches.map(({ nutrientId }) => nutrientId)).size !== 1) return null;
+  return bestMatches[0] ?? null;
+}
+
 function knownNutrientPrefix(value: string): NutrientNameMatch | null {
   const normalized = normalizeNutrientName(value);
   for (const variant of SORTED_NUTRIENT_VARIANTS) {
@@ -590,7 +640,9 @@ function parseNutrientLine(line: SourceLine, warnings: WarningCollector): Parsed
   }
 
   const originalName = forcedName ?? row.groups?.name?.trim() ?? "";
-  const nameMatch = matchNutrientName(originalName);
+  const exactNameMatch = matchNutrientName(originalName);
+  const recoveredNameMatch = exactNameMatch ? null : recoverNutrientNameCharacterLoss(originalName);
+  const nameMatch = exactNameMatch ?? recoveredNameMatch;
   const nutrientId = nameMatch?.nutrientId ?? null;
   const expectedUnit = nutrientId ? CATALOG.get(nutrientId)?.defaultUnit ?? null : null;
   const amountResult = parseDecimalToken(row.groups?.amount ?? "");
@@ -603,6 +655,14 @@ function parseNutrientLine(line: SourceLine, warnings: WarningCollector): Parsed
   }
   if (unitWarnings.includes("ocr_character_correction_applied")) {
     warnings.add("ocr_character_correction_applied", "OCR character q was interpreted as g from nutrient context.", line.sourceObservationIds);
+  }
+  if (recoveredNameMatch) {
+    codes.push("nutrient_name_character_loss_recovered");
+    warnings.add(
+      "nutrient_name_character_loss_recovered",
+      "Nutrient name was recovered from likely OCR character loss.",
+      line.sourceObservationIds,
+    );
   }
   if (!nameMatch) {
     codes.push("nutrient_name_unmatched");

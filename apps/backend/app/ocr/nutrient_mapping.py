@@ -56,6 +56,61 @@ def match_nutrient_name(value: str) -> NutrientNameMatch | None:
     return _LOOKUP.get(normalize_nutrient_name(value))
 
 
+def _compact_nutrient_name(value: str) -> str:
+    return normalize_nutrient_name(value).replace(" ", "")
+
+
+def _nutrient_name_edit_distance(left: str, right: str) -> int:
+    previous = list(range(len(right) + 1))
+    for row_index, left_character in enumerate(left, start=1):
+        current = [row_index]
+        for column_index, right_character in enumerate(right, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column_index] + 1,
+                    previous[column_index - 1]
+                    + (left_character != right_character),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def _maximum_recovery_distance(candidate_length: int) -> int:
+    if candidate_length < 4:
+        return 0
+    return 1 if candidate_length < 8 else 2
+
+
+def recover_nutrient_name_character_loss(value: str) -> NutrientNameMatch | None:
+    observed = _compact_nutrient_name(value)
+    if len(observed) < 3:
+        return None
+
+    candidates: list[tuple[int, NutrientNameMatch]] = []
+    for variant, match in _LOOKUP.items():
+        candidate = variant.replace(" ", "")
+        # This correction layer is for OCR character loss, not arbitrary
+        # same-length substitutions or extra-character fuzzy matching.
+        if len(observed) >= len(candidate):
+            continue
+        distance = _nutrient_name_edit_distance(observed, candidate)
+        if distance <= _maximum_recovery_distance(len(candidate)):
+            candidates.append((distance, match))
+
+    if not candidates:
+        return None
+
+    best_distance = min(distance for distance, _ in candidates)
+    best_matches = [
+        match for distance, match in candidates if distance == best_distance
+    ]
+    if len({match.nutrient_id for match in best_matches}) != 1:
+        return None
+    return best_matches[0]
+
+
 def known_nutrient_prefix(value: str) -> tuple[NutrientNameMatch, str] | None:
     normalized_value = normalize_nutrient_name(value)
     for variant in sorted(_LOOKUP, key=len, reverse=True):

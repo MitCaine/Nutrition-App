@@ -6,7 +6,11 @@ from decimal import Decimal
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.ocr.numeric import normalize_mass_unit, parse_decimal_token, parse_fraction_or_decimal
-from app.ocr.nutrient_mapping import known_nutrient_prefix, match_nutrient_name
+from app.ocr.nutrient_mapping import (
+    known_nutrient_prefix,
+    match_nutrient_name,
+    recover_nutrient_name_character_loss,
+)
 from app.ocr.schemas import (
     NutritionLabelParseInput,
     ParseWarning,
@@ -420,7 +424,13 @@ def _parse_nutrient_line(line: SourceLine, warnings: WarningCollector) -> Parsed
         )
 
     original_name = forced_name or row.group("name").strip()
-    name_match = match_nutrient_name(original_name)
+    exact_name_match = match_nutrient_name(original_name)
+    recovered_name_match = (
+        None
+        if exact_name_match is not None
+        else recover_nutrient_name_character_loss(original_name)
+    )
+    name_match = exact_name_match or recovered_name_match
     nutrient_id = name_match.nutrient_id if name_match else None
     expected_unit = _EXPECTED_UNITS.get(nutrient_id) if nutrient_id else None
     amount_result = parse_decimal_token(row.group("amount"))
@@ -438,6 +448,13 @@ def _parse_nutrient_line(line: SourceLine, warnings: WarningCollector) -> Parsed
         warnings.add(
             "ocr_character_correction_applied",
             "OCR character q was interpreted as g from nutrient context.",
+            line.source_observation_ids,
+        )
+    if recovered_name_match is not None:
+        codes.append("nutrient_name_character_loss_recovered")
+        warnings.add(
+            "nutrient_name_character_loss_recovered",
+            "Nutrient name was recovered from likely OCR character loss.",
             line.source_observation_ids,
         )
     if name_match is None:

@@ -152,6 +152,101 @@ test.each([
   }
 });
 
+test.each([
+  ["otal Fat 8g", "total_fat", "otal Fat"],
+  ["ron 2mg", "iron", "ron"],
+] as const)(
+  "recovers bounded OCR nutrient-name character loss: %s",
+  (line, nutrientId, originalName) => {
+    const result = parseLocalNutritionLabel({
+      full_text: "ignored",
+      observations: [
+        { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+        { id: "nutrient", text: line, confidence: 0.95 },
+      ],
+    });
+
+    expect(result.nutrients[0]).toMatchObject({
+      nutrient_id: nutrientId,
+      original_name: originalName,
+      source_observation_ids: ["nutrient"],
+      status: "parsed",
+      amount: {
+        source_text: line,
+        source_observation_ids: ["nutrient"],
+      },
+      warning_codes: expect.arrayContaining(["nutrient_name_character_loss_recovered"]),
+    });
+    expect(result.nutrients[0]?.warning_codes).not.toContain("nutrient_name_unmatched");
+    expect(result.nutrients[0]?.confidence).toBeLessThan(0.95);
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      code: "nutrient_name_character_loss_recovered",
+      source_observation_ids: ["nutrient"],
+    }));
+  },
+);
+
+test.each([
+  ["Total Fat 8g", "total_fat"],
+  ["Iron 2mg", "iron"],
+  ["TOTAL CARB. 8g", "total_carbohydrate"],
+] as const)("exact nutrient names do not emit recovery metadata: %s", (line, nutrientId) => {
+  const result = parseLocalNutritionLabel({
+    full_text: "ignored",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "nutrient", text: line, confidence: 0.95 },
+    ],
+  });
+
+  expect(result.nutrients[0]?.nutrient_id).toBe(nutrientId);
+  expect(result.nutrients[0]?.warning_codes).not.toContain("nutrient_name_character_loss_recovered");
+});
+
+test.each(["fat 8g", "total ca 8g"] as const)(
+  "leaves ambiguous or generic nutrient fragments unmatched: %s",
+  (line) => {
+    const result = parseLocalNutritionLabel({
+      full_text: "ignored",
+      observations: [
+        { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+        { id: "nutrient", text: line, confidence: 0.95 },
+      ],
+    });
+
+    expect(result.nutrients[0]?.nutrient_id).toBeNull();
+    expect(result.nutrients[0]?.warning_codes).toContain("nutrient_name_unmatched");
+    expect(result.nutrients[0]?.warning_codes).not.toContain("nutrient_name_character_loss_recovered");
+  },
+);
+
+test("recovered nutrient identities participate deterministically in conflict handling", () => {
+  const request: LocalOcrParseInput = {
+    full_text: "ignored",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "recovered-fat", text: "otal Fat 8g", confidence: 0.95 },
+      { id: "exact-fat", text: "Total Fat 9g", confidence: 0.95 },
+    ],
+  };
+
+  const first = parseLocalNutritionLabel(request);
+  expect(parseLocalNutritionLabel(request)).toEqual(first);
+  expect(first.nutrients.map(({ nutrient_id }) => nutrient_id)).toEqual([
+    "total_fat",
+    "total_fat",
+  ]);
+  expect(first.nutrients.map(({ status }) => status)).toEqual([
+    "ambiguous",
+    "ambiguous",
+  ]);
+  expect(first.nutrients[0]?.warning_codes).toEqual(expect.arrayContaining([
+    "nutrient_name_character_loss_recovered",
+    "conflicting_nutrient_values",
+  ]));
+  expect(first.nutrients[1]?.warning_codes).toContain("conflicting_nutrient_values");
+});
+
 test("omitted observations defaults to the same parser request as an empty list", () => {
   const omitted = parseLocalNutritionLabel({
     full_text: "Nutrition Facts\nCalories 100",

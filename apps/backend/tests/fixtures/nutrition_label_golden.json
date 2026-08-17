@@ -139,5 +139,25 @@
     "name":"malformed_decimal_punctuation",
     "request":{"full_text":"Nutrition Facts\nServing size 1 piece (20g)\nCalories 60\nTotal Fat 1..5g 2%","observations":[{"id":"p1","text":"Nutrition Facts","confidence":0.99},{"id":"p2","text":"Serving size 1 piece (20g)","confidence":0.97},{"id":"p3","text":"Calories 60","confidence":0.98},{"id":"p4","text":"Total Fat 1..5g 2%","confidence":0.71}]},
     "expected":{"serving":{"count":null,"display":"1 piece (20g)","quantity":"1","unit":"piece","grams":"20","approximate":false},"calories":{"value":"60","status":"parsed"},"nutrients":[["total_fat",null,"g","2","ambiguous",null]],"warnings":["nutrient_amount_ambiguous"],"unparsed":[]}
+  },
+  {
+    "name":"nutrient_name_leading_loss_total_fat",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cup (100g)\nCalories 100\notal Fat 8g","observations":[{"id":"cl1","text":"Nutrition Facts","confidence":0.99},{"id":"cl2","text":"Serving size 1 cup (100g)","confidence":0.98},{"id":"cl3","text":"Calories 100","confidence":0.98},{"id":"cl4","text":"otal Fat 8g","confidence":0.95}]},
+    "expected":{"serving":{"count":null,"display":"1 cup (100g)","quantity":"1","unit":"cup","grams":"100","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[["total_fat","8","g",null,"parsed",null]],"warnings":["nutrient_name_character_loss_recovered"],"unparsed":[]}
+  },
+  {
+    "name":"nutrient_name_leading_loss_iron",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cup (100g)\nCalories 100\nron 2mg","observations":[{"id":"ci1","text":"Nutrition Facts","confidence":0.99},{"id":"ci2","text":"Serving size 1 cup (100g)","confidence":0.98},{"id":"ci3","text":"Calories 100","confidence":0.98},{"id":"ci4","text":"ron 2mg","confidence":0.95}]},
+    "expected":{"serving":{"count":null,"display":"1 cup (100g)","quantity":"1","unit":"cup","grams":"100","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[["iron","2","mg",null,"parsed",null]],"warnings":["nutrient_name_character_loss_recovered"],"unparsed":[]}
+  },
+  {
+    "name":"nutrient_name_generic_fragment_rejected",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cup (100g)\nCalories 100\nfat 8g","observations":[{"id":"cg1","text":"Nutrition Facts","confidence":0.99},{"id":"cg2","text":"Serving size 1 cup (100g)","confidence":0.98},{"id":"cg3","text":"Calories 100","confidence":0.98},{"id":"cg4","text":"fat 8g","confidence":0.95}]},
+    "expected":{"serving":{"count":null,"display":"1 cup (100g)","quantity":"1","unit":"cup","grams":"100","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[[null,"8","g",null,"parsed",null]],"warnings":["nutrient_name_unmatched"],"unparsed":[]}
+  },
+  {
+    "name":"nutrient_name_ambiguous_fragment_rejected",
+    "request":{"full_text":"Nutrition Facts\nServing size 1 cup (100g)\nCalories 100\ntotal ca 8g","observations":[{"id":"ca1","text":"Nutrition Facts","confidence":0.99},{"id":"ca2","text":"Serving size 1 cup (100g)","confidence":0.98},{"id":"ca3","text":"Calories 100","confidence":0.98},{"id":"ca4","text":"total ca 8g","confidence":0.95}]},
+    "expected":{"serving":{"count":null,"display":"1 cup (100g)","quantity":"1","unit":"cup","grams":"100","approximate":false},"calories":{"value":"100","status":"parsed"},"nutrients":[[null,"8","g",null,"parsed",null]],"warnings":["nutrient_name_unmatched"],"unparsed":[]}
   }
 ]
