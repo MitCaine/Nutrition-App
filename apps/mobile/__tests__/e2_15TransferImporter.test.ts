@@ -126,7 +126,7 @@ test("imports a validated package in one exclusive transaction and rejects reimp
   }
 });
 
-test("imports a frozen v1 package into the v3 target with null serving references", async () => {
+test("imports a frozen v1 package into the current compatible target with null serving references", async () => {
   const database = await migratedDatabase();
   try {
     const result = await importPersonalTransfer(

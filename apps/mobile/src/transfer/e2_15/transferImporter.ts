@@ -178,7 +178,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   const actual = new Set(objects.map((row) => `${row.type}:${row.name}`));
   const expected = expectedSchemaObjects();
   if (actual.size !== expected.size || [...actual].some((name) => !expected.has(name))) {
-    invalid("target_schema_invalid", "SQLite schema objects differ from version 3.");
+    invalid("target_schema_invalid", "SQLite schema objects differ from the qualified runtime target.");
   }
 
   const descriptorObjects = await database.getAllAsync<{
@@ -222,7 +222,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   for (const [table, expectedColumns] of tableColumns) {
     const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info("${table}")`);
     if (canonicalTransferJson(columns.map((row) => row.name)) !== canonicalTransferJson(expectedColumns)) {
-      invalid("target_schema_invalid", `SQLite table ${table} columns differ from version 3.`);
+      invalid("target_schema_invalid", `SQLite table ${table} columns differ from the qualified runtime target.`);
     }
   }
 

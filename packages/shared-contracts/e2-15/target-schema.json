@@ -1,6 +1,6 @@
 {
-  "descriptor_version": "e2-15.sqlite-v3.schema.v2",
-  "user_version": 3,
+  "descriptor_version": "e2-15.sqlite-v4.schema.v3",
+  "user_version": 4,
   "objects": [
     {
       "type": "index",
@@ -18,7 +18,7 @@
       "type": "index",
       "name": "ix_food_items_active_source_identity",
       "tbl_name": "food_items",
-      "sql": "CREATE UNIQUE INDEX \"ix_food_items_active_source_identity\"\n    ON \"food_items\" (\"user_id\", \"source_type\", \"source_id\")\n    WHERE \"deleted_at\" IS NULL AND \"source_id\" IS NOT NULL"
+      "sql": "CREATE UNIQUE INDEX \"ix_food_items_active_source_identity\"\n        ON \"food_items\" (\"user_id\", \"source_type\", \"source_id\")\n        WHERE \"deleted_at\" IS NULL\n          AND \"source_id\" IS NOT NULL\n          AND \"source_type\" != 'manual'"
     },
     {
       "type": "index",

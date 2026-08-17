@@ -216,7 +216,7 @@ class FoodSQLiteFake {
         : source.includes("NULL, 0") ? null : String(params[4]);
       const sourceType = imported ? String(params[4]) : "manual";
       const notes = imported ? params[6] : source.includes("NULL, 0") ? params[4] : params[5];
-      if (sourceId && this.state.foods.some((row) => row.user_id === String(owner)
+      if (sourceId && sourceType !== "manual" && this.state.foods.some((row) => row.user_id === String(owner)
         && row.source_type === sourceType && row.source_id === sourceId && row.deleted_at === null)) {
         throw new Error("UNIQUE constraint failed: food_items.user_id, food_items.source_type, food_items.source_id");
       }
@@ -678,11 +678,72 @@ describe("E2-05 local Foods runtime", () => {
     await expect(otherRuntime.update(created.id, foodInput())).rejects.toMatchObject({ code: "food_not_found" });
 
     const duplicate = await ownerRuntime.duplicate({ foodId: created.id, clientRequestId: "00000000-0000-4000-8000-000000000103" });
-    expect(duplicate.source_id).toBe(created.id);
-    await expect(ownerRuntime.duplicate({ foodId: created.id, clientRequestId: "00000000-0000-4000-8000-000000000104" })).rejects.toMatchObject({
-      code: "food_source_conflict",
-      mutationOutcome: "confirmed_non_commit",
+    expect(duplicate).toMatchObject({
+      source_id: created.id,
+      source_kind: "duplicate",
+      name: `${created.name} Copy`,
     });
+    await expect(ownerRuntime.duplicate({
+      foodId: created.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000104",
+    })).resolves.toMatchObject({
+      source_id: created.id,
+      source_kind: "duplicate",
+      name: `${created.name} Copy 2`,
+    });
+  });
+
+  test("duplicate naming advances deterministically and reuses a soft-deleted gap", async () => {
+    const fake = new FoodSQLiteFake();
+    const runtime = createLocalFoodsRuntime(database(fake), OWNER);
+    const source = await runtime.create(foodInput({ name: "Oatmeal" }));
+
+    const first = await runtime.duplicate({
+      foodId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000401",
+    });
+    const second = await runtime.duplicate({
+      foodId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000402",
+    });
+    const third = await runtime.duplicate({
+      foodId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000403",
+    });
+
+    expect([first.name, second.name, third.name]).toEqual([
+      "Oatmeal Copy",
+      "Oatmeal Copy 2",
+      "Oatmeal Copy 3",
+    ]);
+    await expect(runtime.duplicate({
+      foodId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000402",
+    })).resolves.toEqual(second);
+
+    const chained = await runtime.duplicate({
+      foodId: first.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000404",
+    });
+    expect(chained).toMatchObject({
+      name: "Oatmeal Copy 4",
+      source_id: first.id,
+      source_kind: "duplicate",
+    });
+
+    await runtime.delete({ foodId: second.id });
+    const replacement = await runtime.duplicate({
+      foodId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000405",
+    });
+    expect(replacement.name).toBe("Oatmeal Copy 2");
+
+    const literal = await runtime.create(foodInput({ name: "Literal Copy" }));
+    const literalDuplicate = await runtime.duplicate({
+      foodId: literal.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000406",
+    });
+    expect(literalDuplicate.name).toBe("Literal Copy Copy");
   });
 
   test("distinguishes read and mutation certainty for foreign and deleted Foods", async () => {

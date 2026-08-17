@@ -14,6 +14,7 @@ from app.domain.recipe_projection import (
     classify_recipe_projection,
     projection_mutation_error,
 )
+from app.domain.food_duplicate_name import allocate_duplicate_food_name
 from app.domain.food_source import classify_food_source
 from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
 from app.models.recipe import Recipe, RecipeIngredient
@@ -21,6 +22,7 @@ from app.models.recipe_publication import (
     RecipePublicationAmountDefinition,
     RecipePublicationRevision,
 )
+from app.models.user import User
 from app.nutrition.resolution import (
     ResolvedNutrition,
     resolve_food_amount_definitions,
@@ -595,6 +597,16 @@ class FoodService:
                 return self._replay_food_response(user_id, receipt)
         duplicate_id = uuid4()
         try:
+            # Establish the owner serialization lock before reserving the
+            # idempotency receipt. The receipt has an FK to users, so flushing
+            # it first would acquire a parent-row lock and make concurrent
+            # duplicate operations attempt a lock upgrade in opposite order.
+            locked_owner = self.db.scalar(
+                select(User.id).where(User.id == user_id).with_for_update()
+            )
+            if locked_owner is None:
+                raise LookupError("User not found")
+
             receipt = None
             if client_request_id is not None:
                 receipt = self.create_idempotency.reserve(
@@ -604,11 +616,20 @@ class FoodService:
                     fingerprint,
                     duplicate_id,
                 )
+
             source = self.foods.get_required(food_id, user_id)
+            source_is_duplicate = source.id in self._valid_duplicate_source_ids(
+                user_id, [source]
+            )
+            duplicate_name = allocate_duplicate_food_name(
+                source.name,
+                self.foods.list_active_saved_names(user_id),
+                source_is_duplicate=source_is_duplicate,
+            )
             duplicate = FoodItem(
                 id=duplicate_id,
                 user_id=user_id,
-                name=f"{source.name} Copy",
+                name=duplicate_name,
                 brand=source.brand,
                 notes=source.notes,
                 source_type="manual",

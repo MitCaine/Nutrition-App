@@ -44,6 +44,7 @@ import {
   LocalRecipeRepository,
   type LocalDependentRecipe,
 } from "./localRecipeRepository";
+import { allocateDuplicateFoodName } from "../../features/foods/utils/foodDuplicateName";
 
 const SOURCE_LABELS = {
   manual: "Manual",
@@ -885,8 +886,30 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       if (source.projection !== "manual" && source.projection !== "managed") {
         throw projectionError("duplicate");
       }
+      const sourceIsDuplicate = source.projection === "manual"
+        && await this.sourceKind(transaction, source) === "duplicate";
+      const activeNames = await transaction.getAllAsync<{ name: string }>(
+        `SELECT "name"
+         FROM "food_items"
+         WHERE "user_id" = ?
+           AND "deleted_at" IS NULL
+           AND "is_recipe" = 0
+           AND "source_type" != 'recipe'
+           AND "recipe_publication_revision_id" IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM "recipes" AS "saved_recipe"
+             WHERE "saved_recipe"."published_food_item_id" = "food_items"."id"
+               AND "saved_recipe"."user_id" = "food_items"."user_id"
+           )
+         ORDER BY "name", "id"`,
+        [this.ownerId],
+      );
       const normalized: NormalizedFoodInput = {
-        name: `${source.row.name} Copy`,
+        name: allocateDuplicateFoodName(
+          source.row.name,
+          activeNames.map(({ name }) => name),
+          sourceIsDuplicate,
+        ),
         brand: source.row.brand,
         notes: source.row.notes,
         serving_definitions: source.servings.map((serving) => ({

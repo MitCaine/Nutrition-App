@@ -9,7 +9,7 @@
  * columns and their relational guards.
  */
 
-export const SQLITE_SCHEMA_VERSION = 3;
+export const SQLITE_SCHEMA_VERSION = 4;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";
@@ -505,7 +505,7 @@ export const SQLITE_BASELINE_SCHEMA_STATEMENTS: readonly string[] = [
     WHERE "recipe_publication_revision_id" IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "ix_food_items_active_source_identity"
     ON "food_items" ("user_id", "source_type", "source_id")
-    WHERE "deleted_at" IS NULL AND "source_id" IS NOT NULL`,
+    WHERE "deleted_at" IS NULL AND "source_id" IS NOT NULL AND "source_type" != 'manual'`,
   `CREATE INDEX IF NOT EXISTS "ix_food_items_source_identity_all"
     ON "food_items" ("user_id", "source_type", "source_id")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "uq_recipe_publication_amount_one_gram_mode"

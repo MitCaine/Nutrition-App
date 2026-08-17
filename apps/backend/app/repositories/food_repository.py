@@ -137,6 +137,20 @@ class FoodRepository:
             )
         return list(self.db.scalars(statement).all())
 
+    def list_active_saved_names(self, user_id: UUID) -> list[str]:
+        recipe_backlink = exists(
+            select(Recipe.id).where(
+                Recipe.published_food_item_id == FoodItem.id,
+                Recipe.user_id == user_id,
+            )
+        )
+        statement = (
+            select(FoodItem.name)
+            .where(*self._saved_predicates(user_id, recipe_backlink))
+            .order_by(FoodItem.name, FoodItem.id)
+        )
+        return list(self.db.scalars(statement).all())
+
     def get_saved(self, user_id: UUID, food_id: UUID) -> FoodItem | None:
         recipe_backlink = exists(
             select(Recipe.id).where(

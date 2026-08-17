@@ -197,10 +197,26 @@ export const SQLITE_SERVING_REFERENCE_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION: SQLiteMigration = {
+  version: 4,
+  id: "004_duplicate_food_source_identity",
+  async up(database) {
+    await database.execAsync(`
+      DROP INDEX IF EXISTS "ix_food_items_active_source_identity";
+      CREATE UNIQUE INDEX "ix_food_items_active_source_identity"
+        ON "food_items" ("user_id", "source_type", "source_id")
+        WHERE "deleted_at" IS NULL
+          AND "source_id" IS NOT NULL
+          AND "source_type" != 'manual';
+    `);
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
   SQLITE_SERVING_REFERENCE_MIGRATION,
+  SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {

@@ -105,6 +105,44 @@ def test_food_create_retrieve_search_update_duplicate_and_soft_delete(client: Te
     assert client.get(f"/api/v1/foods/{food['id']}").status_code == 404
 
 
+def test_duplicate_food_names_are_collision_aware_and_soft_deleted_gaps_are_reused(
+    client: TestClient,
+) -> None:
+    source = create_food(client, "Oatmeal")
+
+    first = client.post(f"/api/v1/foods/{source['id']}/duplicate")
+    second = client.post(f"/api/v1/foods/{source['id']}/duplicate")
+    third = client.post(f"/api/v1/foods/{source['id']}/duplicate")
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert third.status_code == 201, third.text
+    assert [first.json()["name"], second.json()["name"], third.json()["name"]] == [
+        "Oatmeal Copy",
+        "Oatmeal Copy 2",
+        "Oatmeal Copy 3",
+    ]
+    assert first.json()["source_id"] == source["id"]
+    assert second.json()["source_id"] == source["id"]
+    assert third.json()["source_id"] == source["id"]
+
+    chained = client.post(f"/api/v1/foods/{first.json()['id']}/duplicate")
+    assert chained.status_code == 201, chained.text
+    assert chained.json()["name"] == "Oatmeal Copy 4"
+    assert chained.json()["source_id"] == first.json()["id"]
+
+    deleted = client.delete(f"/api/v1/foods/{second.json()['id']}")
+    assert deleted.status_code == 200, deleted.text
+    replacement = client.post(f"/api/v1/foods/{source['id']}/duplicate")
+    assert replacement.status_code == 201, replacement.text
+    assert replacement.json()["name"] == "Oatmeal Copy 2"
+
+    literal = create_food(client, "Literal Copy")
+    literal_duplicate = client.post(f"/api/v1/foods/{literal['id']}/duplicate")
+    assert literal_duplicate.status_code == 201, literal_duplicate.text
+    assert literal_duplicate.json()["name"] == "Literal Copy Copy"
+
+
 def test_food_validation_rejects_invalid_nutrient_and_bad_status_amounts(client: TestClient) -> None:
     invalid = food_payload()
     invalid["nutrients"][0]["nutrient_id"] = "not_real"

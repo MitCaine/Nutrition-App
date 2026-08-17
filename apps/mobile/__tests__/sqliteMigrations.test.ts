@@ -20,6 +20,7 @@ import {
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
   SQLITE_SERVING_REFERENCE_MIGRATION,
+  SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -255,7 +256,7 @@ describe("E2-03 SQLite baseline schema", () => {
       "DEFERRABLE INITIALLY DEFERRED",
     );
     expect(SQLITE_BASELINE_SCHEMA_STATEMENTS.join("\n")).toContain(
-      'WHERE "deleted_at" IS NULL AND "source_id" IS NOT NULL',
+      'WHERE "deleted_at" IS NULL AND "source_id" IS NOT NULL AND "source_type" != \'manual\'',
     );
     expect(SQLITE_BASELINE_SCHEMA_STATEMENTS.join("\n")).toContain(
       "phase0020_snapshot_immutable_delete",
@@ -313,7 +314,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [1, 2, 3],
+      appliedVersions: [1, 2, 3, 4],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
@@ -321,6 +322,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
       { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
+      { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -334,7 +336,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(3);
+    expect(database.ledger).toHaveLength(4);
   });
 
   test("upgrades an existing v1 database to the Food nutrient integrity schema", async () => {
@@ -349,15 +351,16 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 1,
-      toVersion: 3,
-      appliedVersions: [2, 3],
+      toVersion: 4,
+      appliedVersions: [2, 3, 4],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(3);
+    expect(database.userVersion).toBe(4);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
       { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
+      { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
     ]);
     expect(database.servingReferenceColumns).toBe(true);
   });
@@ -372,8 +375,8 @@ describe("E2-03 SQLite baseline schema", () => {
     ];
 
     const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(first).toEqual({ fromVersion: 2, toVersion: 3, appliedVersions: [3], alreadyCurrent: false });
-    expect(database.userVersion).toBe(3);
+    expect(first).toEqual({ fromVersion: 2, toVersion: 4, appliedVersions: [3, 4], alreadyCurrent: false });
+    expect(database.userVersion).toBe(4);
     expect(database.servingReferenceColumns).toBe(true);
     expect(database.executed.join("\n")).toContain(
       'ALTER TABLE "serving_definitions" ADD COLUMN "reference_quantity" TEXT',
@@ -383,10 +386,42 @@ describe("E2-03 SQLite baseline schema", () => {
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length;
     const second = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(second).toEqual({ fromVersion: 3, toVersion: 3, appliedVersions: [], alreadyCurrent: true });
+    expect(second).toEqual({ fromVersion: 4, toVersion: 4, appliedVersions: [], alreadyCurrent: true });
     expect(database.executed.filter((statement) =>
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length).toBe(alterCount);
+  });
+
+  test("upgrades an existing v3 database to the duplicate source identity schema", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 3;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+      { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
+    ];
+    database.servingReferenceColumns = true;
+
+    const result = await migrateNutritionDatabase(asSQLiteDatabase(database));
+
+    expect(result).toEqual({
+      fromVersion: 3,
+      toVersion: 4,
+      appliedVersions: [4],
+      alreadyCurrent: false,
+    });
+    expect(database.userVersion).toBe(4);
+    expect(database.ledger.at(-1)).toEqual({
+      version: 4,
+      migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id,
+    });
+
+    const executed = database.executed.join("\n");
+    expect(executed).toContain(
+      'DROP INDEX IF EXISTS "ix_food_items_active_source_identity"',
+    );
+    expect(executed).toContain('"source_type" != \'manual\'');
   });
 
   test("fails closed when a v1 database contains a negative authoritative Food nutrient", async () => {

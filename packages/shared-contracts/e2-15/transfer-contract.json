@@ -5,7 +5,7 @@
   "codec_version": "e2-02.v1",
   "maximum_bytes": 67108864,
   "nutrient_catalog_digest": "3c9466c127f770a2cd6d97a0c8252d945e784b57cff8e20653116ef4f56080d7",
-  "target_schema_descriptor_digest": "2a05d071a4903d07e97b77bb1d683fc8b448c30ec2eef3c79e1687bcabd206c4",
+  "target_schema_descriptor_digest": "ba6e29449805c0aec203ad2204b30f34b8fbd2318acee0328dca7abcda50a080",
   "source": {
     "postgres_major": "16",
     "alembic_revision": "0027_serving_reference_measurement",

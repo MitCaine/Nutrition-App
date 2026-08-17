@@ -58,7 +58,9 @@ class FoodItem(Base):
             "source_type",
             "source_id",
             unique=True,
-            postgresql_where=text("deleted_at IS NULL AND source_id IS NOT NULL"),
+            postgresql_where=text(
+                "deleted_at IS NULL AND source_id IS NOT NULL AND source_type <> 'manual'"
+            ),
         ).ddl_if(dialect="postgresql"),
         Index(
             "ix_food_items_source_identity_all",
