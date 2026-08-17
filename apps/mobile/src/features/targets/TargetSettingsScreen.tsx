@@ -21,6 +21,7 @@ import {
   targetDraftError,
   targetInput,
   targetUnavailableMessage,
+  resetTargetDraftOverride,
 } from "./targetModel";
 import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
 import {
@@ -159,53 +160,16 @@ export function TargetSettingsScreen({
     }
   };
 
-  const reset = async (nutrientId: string) => {
+  const reset = (nutrientId: string) => {
     if (submittingRef.current) {
       return;
     }
 
-    submittingRef.current = true;
-    setSubmitting(true);
     setError(null);
     setSuccessMessage(null);
-
-
-    try {
-      const next = await runtime.targets.resetOverride(nutrientId);
-      const draftKey =
-        nutrientId === "total_carbohydrate"
-          ? "totalCarbohydrate"
-          : nutrientId === "total_fat"
-            ? "totalFat"
-            : nutrientId;
-      const nutrientLabel =
-          nutrientId === "total_carbohydrate"
-              ? "Carbohydrate"
-              : nutrientId === "total_fat"
-                  ? "Fat"
-                  : nutrientId === "calories"
-                      ? "Calories"
-                      : nutrientId === "protein"
-                          ? "Protein"
-                          : "Nutrition";
-
-      setResult(next);
-      setDraft((current) => ({
-        ...current,
-        [draftKey]: "",
-      }));
-
-      await queryClient.invalidateQueries({ queryKey: ["targets"] });
-      await queryClient.invalidateQueries({
-        queryKey: ["target-comparison"],
-      });
-      setSuccessMessage(`${nutrientLabel} target reset.`);
-    } catch (caught) {
-      setError(targetErrorMessage(caught));
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
+    setDraft((current) =>
+      resetTargetDraftOverride(current, nutrientId)
+    );
   };
 
   if (query.isLoading && !result) {
@@ -247,6 +211,12 @@ export function TargetSettingsScreen({
                 message={successMessage}
                 onExpired={() => setSuccessMessage(null)}
             />
+
+            <Text style={styles.notice}>
+              Changes on this screen remain drafts until you choose Save targets.
+              Reset clears a manual target only in this draft; it does not change
+              the saved target until you save.
+            </Text>
 
             <Text style={styles.notice}>
               FDA Daily Values are regulatory references. Personal targets are
@@ -476,7 +446,14 @@ export function TargetSettingsScreen({
                 (item) => item.nutrientId === nutrientId,
               );
 
-              const hasManualOverride = Boolean(draft[key]);
+              const persistedOverride = persistedDraft[key];
+              const draftOverride = draft[key];
+              const hasManualOverride = Boolean(draftOverride);
+              const resetPending =
+                Boolean(persistedOverride) && !draftOverride;
+              const manualChangePending =
+                Boolean(draftOverride)
+                && draftOverride !== persistedOverride;
 
               return (
                 <View key={key} style={styles.targetField}>
@@ -502,7 +479,7 @@ export function TargetSettingsScreen({
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`Reset ${label} target`}
-                        accessibilityHint="Clears the manual target override"
+                        accessibilityHint="Clears this manual target in the draft. Choose Save targets to apply the reset."
                         disabled={submitting}
                         accessibilityState={{ disabled: submitting }}
                         onPress={() => reset(nutrientId)}
@@ -513,8 +490,24 @@ export function TargetSettingsScreen({
                     ) : null}
                   </View>
 
+                  {resetPending ? (
+                    <Text
+                      accessibilityLabel={`${label} target reset pending save`}
+                      style={styles.pending}
+                    >
+                      Reset pending · Save targets to apply.
+                    </Text>
+                  ) : manualChangePending ? (
+                    <Text
+                      accessibilityLabel={`${label} manual target change pending save`}
+                      style={styles.pending}
+                    >
+                      {`Pending manual target: ${draftOverride} ${unit}/day · Save targets to apply.`}
+                    </Text>
+                  ) : null}
+
                   <Text
-                    accessibilityLabel={`${label} effective target authority ${
+                    accessibilityLabel={`${label} current saved effective target authority ${
                       effective
                         ? authorityLabel(effective.authority)
                         : "unavailable"
@@ -522,8 +515,8 @@ export function TargetSettingsScreen({
                     style={styles.notice}
                   >
                     {effective?.amount
-                      ? `Effective: ${formatDisplayNumber(effective.amount, { maxFractionDigits: 1 })} ${effective.unit}/day · ${authorityLabel(effective.authority)}`
-                      : "Effective target unavailable"}
+                      ? `Current saved effective: ${formatDisplayNumber(effective.amount, { maxFractionDigits: 1 })} ${effective.unit}/day · ${authorityLabel(effective.authority)}`
+                      : "Current saved effective target unavailable"}
                   </Text>
                 </View>
               );
@@ -663,6 +656,10 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     result: {
       color: theme.colors.text,
+      fontWeight: "700",
+    },
+    pending: {
+      color: theme.colors.warningText,
       fontWeight: "700",
     },
     profileField: {

@@ -21,8 +21,29 @@ export const EMPTY_TARGET_DRAFT: TargetDraft = {
   energyEstimationContext: "general_adult", calories: "", protein: "", totalCarbohydrate: "", totalFat: "",
 };
 
+export function compactTargetDecimalForEditing(
+  value: string | null | undefined,
+): string {
+  if (!value) return "";
+
+  if (!/^\d+(?:\.\d+)?$/.test(value)) {
+    return value;
+  }
+
+  if (!value.includes(".")) {
+    return value;
+  }
+
+  return value.replace(/0+$/, "").replace(/\.$/, "");
+}
+
 export function targetDraft(configuration: TargetConfiguration): TargetDraft {
-  const overrides = Object.fromEntries(configuration.manualOverrides.map((item) => [item.nutrientId, item.amount ?? ""]));
+  const overrides = Object.fromEntries(
+    configuration.manualOverrides.map((item) => [
+      item.nutrientId,
+      compactTargetDecimalForEditing(item.amount),
+    ]),
+  );
   const sexForEquation = configuration.profile?.sexForEquation ?? "";
   const energyEstimationContext = sexForEquation === "male"
     ? "general_adult"
@@ -36,6 +57,44 @@ export function targetDraft(configuration: TargetConfiguration): TargetDraft {
     energyEstimationContext,
     calories: overrides.calories ?? "", protein: overrides.protein ?? "",
     totalCarbohydrate: overrides.total_carbohydrate ?? "", totalFat: overrides.total_fat ?? "",
+  };
+}
+
+export type PersonalTargetDraftKey =
+  | "calories"
+  | "protein"
+  | "totalCarbohydrate"
+  | "totalFat";
+
+export function targetDraftKeyForNutrient(
+  nutrientId: string,
+): PersonalTargetDraftKey | null {
+  if (nutrientId === "calories") return "calories";
+  if (nutrientId === "protein") return "protein";
+  if (nutrientId === "total_carbohydrate") return "totalCarbohydrate";
+  if (nutrientId === "total_fat") return "totalFat";
+  return null;
+}
+
+/**
+ * #83: Reset is an editable-draft operation, not a persistence operation.
+ *
+ * Clearing an already-empty/default-only target is intentionally idempotent.
+ * Persistence occurs only through targetInput(draft) + updateConfiguration().
+ */
+export function resetTargetDraftOverride(
+  draft: TargetDraft,
+  nutrientId: string,
+): TargetDraft {
+  const key = targetDraftKeyForNutrient(nutrientId);
+
+  if (!key || draft[key] === "") {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    [key]: "",
   };
 }
 

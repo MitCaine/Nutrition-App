@@ -1,4 +1,13 @@
-import { EMPTY_TARGET_DRAFT, targetDraft, targetDraftError, targetInput, targetUnavailableMessage } from "../src/features/targets/targetModel";
+import {
+  EMPTY_TARGET_DRAFT,
+  compactTargetDecimalForEditing,
+  resetTargetDraftOverride,
+  targetDraft,
+  targetDraftError,
+  targetDraftKeyForNutrient,
+  targetInput,
+  targetUnavailableMessage,
+} from "../src/features/targets/targetModel";
 import type { TargetConfiguration } from "../src/features/targets/api/types";
 import {
   birthDateToCanonical,
@@ -66,4 +75,76 @@ test("mobile target validation enforces bounded values and real dates", () => {
   expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, heightIn: "38" })).toContain("between 39.37 and 98.43 inches");
   expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, calories: "10001" })).toContain("between 500 and 10000");
   expect(targetDraftError({ ...EMPTY_TARGET_DRAFT, birthDate: "02-30-2026" })).toContain("valid MM-DD-YYYY");
+});
+
+test("target reset is draft-only and idempotent for default-only targets", () => {
+  const persisted = targetDraft(configuration());
+
+  const resetProtein = resetTargetDraftOverride(persisted, "protein");
+  expect(resetProtein).toEqual({
+    ...persisted,
+    protein: "",
+  });
+
+  expect(targetInput(resetProtein).manual_overrides.protein).toBeNull();
+
+  const defaultOnly = {
+    ...EMPTY_TARGET_DRAFT,
+    protein: "",
+  };
+  expect(
+    resetTargetDraftOverride(defaultOnly, "protein"),
+  ).toBe(defaultOnly);
+});
+
+test("target reset maps supported nutrient identities without changing unrelated draft values", () => {
+  const draft = {
+    ...EMPTY_TARGET_DRAFT,
+    calories: "2000",
+    protein: "120",
+    totalCarbohydrate: "250",
+    totalFat: "70",
+  };
+
+  expect(targetDraftKeyForNutrient("calories")).toBe("calories");
+  expect(targetDraftKeyForNutrient("protein")).toBe("protein");
+  expect(targetDraftKeyForNutrient("total_carbohydrate")).toBe(
+    "totalCarbohydrate",
+  );
+  expect(targetDraftKeyForNutrient("total_fat")).toBe("totalFat");
+  expect(targetDraftKeyForNutrient("vitamin_d")).toBeNull();
+
+  expect(
+    resetTargetDraftOverride(draft, "total_carbohydrate"),
+  ).toEqual({
+    ...draft,
+    totalCarbohydrate: "",
+  });
+
+  expect(
+    resetTargetDraftOverride(draft, "vitamin_d"),
+  ).toBe(draft);
+});
+
+test("persisted fixed-scale target decimals are compacted only for editing", () => {
+  expect(compactTargetDecimalForEditing("90.000000")).toBe("90");
+  expect(compactTargetDecimalForEditing("90.120000")).toBe("90.12");
+  expect(compactTargetDecimalForEditing("0.000001")).toBe("0.000001");
+  expect(compactTargetDecimalForEditing("90")).toBe("90");
+  expect(compactTargetDecimalForEditing(null)).toBe("");
+
+  const persisted = configuration();
+  persisted.manualOverrides = [
+    {
+      nutrientId: "protein",
+      amount: "90.000000",
+      unit: "g",
+      authority: "manual_override",
+      direction: "target",
+      reasonCode: null,
+      noteCode: null,
+    },
+  ];
+
+  expect(targetDraft(persisted).protein).toBe("90");
 });
