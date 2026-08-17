@@ -10,6 +10,7 @@ import {
   type LocalTargetsRuntime,
 } from "../src/runtime/local/localTargetsRuntime";
 import { ensureLocalNutrientCatalog } from "../src/runtime/local/localNutrientsRuntime";
+import { NUTRIENT_CATALOG } from "../src/shared/nutrition/catalog";
 import {
   ExpoIsolatedSQLiteTestDatabase,
   LocalSQLiteTestDatabase,
@@ -123,6 +124,40 @@ async function seedFoodAndSnapshot(
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+test("daily values cover the canonical nutrient catalog without projection drift", async () => {
+  const database = await fixtureDatabase();
+  try {
+    const configuration = await runtime(database).getConfiguration();
+
+    expect(configuration.dailyValues).toHaveLength(NUTRIENT_CATALOG.length);
+    expect(configuration.dailyValues.map((value) => value.nutrientId)).toEqual(
+      NUTRIENT_CATALOG.map((nutrient) => nutrient.id),
+    );
+
+    for (const nutrient of NUTRIENT_CATALOG) {
+      const projected = byId(configuration.dailyValues, nutrient.id);
+      const dailyValue = nutrient.fda_daily_value;
+
+      if (dailyValue === null) {
+        expect(projected).toMatchObject({
+          amount: null,
+          unit: nutrient.default_unit,
+          availability: "unavailable",
+          direction: "unavailable",
+        });
+      } else {
+        expect(projected).toMatchObject({
+          amount: dailyValue.amount,
+          unit: dailyValue.unit,
+          availability: "available",
+        });
+      }
+    }
+  } finally {
+    database.close();
+  }
 });
 
 test("local defaults, explicit overrides, precedence, and reset match remote Target semantics", async () => {

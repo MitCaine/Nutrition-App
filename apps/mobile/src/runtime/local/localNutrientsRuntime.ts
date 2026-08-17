@@ -1,10 +1,11 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import type { NutrientDefinition } from "../../features/foods/api/types";
-import type { NutrientsRuntime } from "../NutritionRuntime";
+import { NUTRIENT_CATALOG_BY_ID } from "../../shared/nutrition/catalog";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
-import { withLocalWriteTransaction } from "./localWriteCoordinator";
+import type { NutrientsRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
+import { withLocalWriteTransaction } from "./localWriteCoordinator";
 
 type NutrientRow = Readonly<{
   id: string;
@@ -23,7 +24,10 @@ function catalogDrift(): LocalRuntimeError {
   });
 }
 
-function isExactSeedRow(row: NutrientRow | undefined, seed: (typeof SQLITE_NUTRIENT_SEED_ROWS)[number]): boolean {
+function isExactSeedRow(
+  row: NutrientRow | undefined,
+  seed: (typeof SQLITE_NUTRIENT_SEED_ROWS)[number],
+): boolean {
   return row != null
     && row.id === seed[0]
     && row.display_name === seed[1]
@@ -34,50 +38,79 @@ function isExactSeedRow(row: NutrientRow | undefined, seed: (typeof SQLITE_NUTRI
 }
 
 function toDefinition(row: NutrientRow): NutrientDefinition {
+  const canonical = NUTRIENT_CATALOG_BY_ID.get(row.id);
+
+  if (!canonical) {
+    throw catalogDrift();
+  }
+
   return {
     id: row.id,
     display_name: row.display_name,
-    default_unit: row.default_unit as NutrientDefinition["default_unit"],
+    default_unit: canonical.default_unit,
     nutrient_kind: row.nutrient_kind,
     parent_nutrient_id: row.parent_nutrient_id,
     display_order: row.display_order,
+    fda_daily_value: canonical.fda_daily_value,
+    dri_reference_kinds: canonical.dri_reference_kinds,
   };
 }
 
-async function readAndValidateCatalog(transaction: SQLiteDatabase): Promise<NutrientDefinition[]> {
+async function readAndValidateCatalog(
+  transaction: SQLiteDatabase,
+): Promise<NutrientDefinition[]> {
   const rows = await transaction.getAllAsync<NutrientRow>(
     `SELECT "id", "display_name", "nutrient_kind", "default_unit",
             "parent_nutrient_id", "display_order"
      FROM "nutrients"
      ORDER BY "display_order", "id"`,
   );
+
   if (
     rows.length !== SQLITE_NUTRIENT_SEED_ROWS.length
-    || rows.some((row, index) => !isExactSeedRow(row, SQLITE_NUTRIENT_SEED_ROWS[index]))
+    || rows.some(
+      (row, index) =>
+        !isExactSeedRow(row, SQLITE_NUTRIENT_SEED_ROWS[index]),
+    )
   ) {
     throw catalogDrift();
   }
+
   return rows.map(toDefinition);
 }
 
 /**
  * Idempotently fill missing canonical rows, then reject any incompatible
- * value, extra row, or ordering drift.  `INSERT OR IGNORE` is deliberately
- * not used to overwrite a conflicting existing row.
+ * value, extra row, or ordering drift. INSERT OR IGNORE deliberately does
+ * not overwrite a conflicting existing canonical identity.
  */
 export async function ensureLocalNutrientCatalog(
   database: SQLiteDatabase,
 ): Promise<NutrientDefinition[]> {
   return withLocalWriteTransaction(database, async (transaction) => {
-    for (const [id, displayName, nutrientKind, defaultUnit, parentNutrientId, displayOrder] of
-      SQLITE_NUTRIENT_SEED_ROWS) {
+    for (const [
+      id,
+      displayName,
+      nutrientKind,
+      defaultUnit,
+      parentNutrientId,
+      displayOrder,
+    ] of SQLITE_NUTRIENT_SEED_ROWS) {
       await transaction.runAsync(
         `INSERT OR IGNORE INTO "nutrients"
           ("id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order")
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, displayName, nutrientKind, defaultUnit, parentNutrientId, displayOrder],
+        [
+          id,
+          displayName,
+          nutrientKind,
+          defaultUnit,
+          parentNutrientId,
+          displayOrder,
+        ],
       );
     }
+
     return readAndValidateCatalog(transaction);
   });
 }
@@ -91,6 +124,8 @@ export class LocalNutrientsRuntime implements NutrientsRuntime {
   }
 }
 
-export function createLocalNutrientsRuntime(database: SQLiteDatabase): NutrientsRuntime {
+export function createLocalNutrientsRuntime(
+  database: SQLiteDatabase,
+): NutrientsRuntime {
   return new LocalNutrientsRuntime(database);
 }

@@ -21,6 +21,7 @@ import {
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
   SQLITE_SERVING_REFERENCE_MIGRATION,
   SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
+  SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -41,6 +42,14 @@ class RecordingSQLiteDatabase {
   foreignKeys = 1;
   ledgerTableExists = false;
   ledger: Array<{ version: number; migration_id: string }> = [];
+  nutrientRows: Array<{
+    id: string;
+    display_name: string;
+    nutrient_kind: string;
+    default_unit: string;
+    parent_nutrient_id: string | null;
+    display_order: number;
+  }> = [];
   executed: string[] = [];
   transactions = 0;
   transactionExecutions = 0;
@@ -148,6 +157,14 @@ class RecordingSQLiteDatabase {
         ? [{ name: "reference_quantity" }, { name: "reference_unit" }, { name: "reference_gram_weight" }]
         : []) as T[];
     }
+    if (source.includes('FROM "nutrients"')) {
+      return [...this.nutrientRows]
+        .sort(
+          (left, right) =>
+            left.display_order - right.display_order
+            || left.id.localeCompare(right.id),
+        ) as T[];
+    }
     if (source.includes(`FROM "${SQLITE_MIGRATION_LEDGER_TABLE}"`)) {
       if (!this.ledgerTableExists) {
         throw new Error("no such table: nutrition_schema_migrations");
@@ -159,6 +176,36 @@ class RecordingSQLiteDatabase {
 
   async runAsync(source: string, params: readonly unknown[]): Promise<void> {
     this.executed.push(source);
+
+    if (source.includes('INTO "nutrients"')) {
+      const [
+        id,
+        displayName,
+        nutrientKind,
+        defaultUnit,
+        parentNutrientId,
+        displayOrder,
+      ] = params;
+
+      const existing = this.nutrientRows.find(
+        (row) => row.id === String(id),
+      );
+
+      if (!existing) {
+        this.nutrientRows.push({
+          id: String(id),
+          display_name: String(displayName),
+          nutrient_kind: String(nutrientKind),
+          default_unit: String(defaultUnit),
+          parent_nutrient_id:
+            parentNutrientId === null ? null : String(parentNutrientId),
+          display_order: Number(displayOrder),
+        });
+      } else if (!source.includes("INSERT OR IGNORE")) {
+        throw new Error("UNIQUE constraint failed: nutrients.id");
+      }
+    }
+
     if (source.startsWith(`INSERT INTO "${SQLITE_MIGRATION_LEDGER_TABLE}"`)) {
       this.ledger.push({
         version: Number(params[0]),
@@ -195,6 +242,7 @@ class RecordingSQLiteDatabase {
       userVersion: this.userVersion,
       ledgerTableExists: this.ledgerTableExists,
       ledger: [...this.ledger],
+      nutrientRows: this.nutrientRows.map((row) => ({ ...row })),
       executedLength: this.executed.length,
       snapshotCount: this.snapshotCount,
       logPresent: this.logPresent,
@@ -225,6 +273,7 @@ class RecordingSQLiteDatabase {
       this.userVersion = snapshot.userVersion;
       this.ledgerTableExists = snapshot.ledgerTableExists;
       this.ledger = snapshot.ledger;
+      this.nutrientRows = snapshot.nutrientRows;
       this.executed.length = snapshot.executedLength;
       this.snapshotCount = snapshot.snapshotCount;
       this.logPresent = snapshot.logPresent;
@@ -248,7 +297,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(new Set(SQLITE_SEMANTIC_TABLES).size).toBe(18);
     expect(SQLITE_SEMANTIC_TABLES).not.toContain("phase5c4_control");
     expect(SQLITE_SEMANTIC_TABLES).not.toContain("ocr_scans");
-    expect(SQLITE_NUTRIENT_SEED_ROWS).toHaveLength(16);
+    expect(SQLITE_NUTRIENT_SEED_ROWS).toHaveLength(42);
     expect(SQLITE_BASELINE_SCHEMA_STATEMENTS.join("\n")).toContain(
       '"amount" TEXT',
     );
@@ -314,7 +363,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [1, 2, 3, 4],
+      appliedVersions: [1, 2, 3, 4, 5],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
@@ -323,6 +372,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
       { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
       { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
+      { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -336,7 +386,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(4);
+    expect(database.ledger).toHaveLength(5);
   });
 
   test("upgrades an existing v1 database to the Food nutrient integrity schema", async () => {
@@ -351,16 +401,17 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 1,
-      toVersion: 4,
-      appliedVersions: [2, 3, 4],
+      toVersion: 5,
+      appliedVersions: [2, 3, 4, 5],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(4);
+    expect(database.userVersion).toBe(5);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
       { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
       { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
+      { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
     ]);
     expect(database.servingReferenceColumns).toBe(true);
   });
@@ -375,8 +426,8 @@ describe("E2-03 SQLite baseline schema", () => {
     ];
 
     const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(first).toEqual({ fromVersion: 2, toVersion: 4, appliedVersions: [3, 4], alreadyCurrent: false });
-    expect(database.userVersion).toBe(4);
+    expect(first).toEqual({ fromVersion: 2, toVersion: 5, appliedVersions: [3, 4, 5], alreadyCurrent: false });
+    expect(database.userVersion).toBe(5);
     expect(database.servingReferenceColumns).toBe(true);
     expect(database.executed.join("\n")).toContain(
       'ALTER TABLE "serving_definitions" ADD COLUMN "reference_quantity" TEXT',
@@ -386,13 +437,13 @@ describe("E2-03 SQLite baseline schema", () => {
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length;
     const second = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(second).toEqual({ fromVersion: 4, toVersion: 4, appliedVersions: [], alreadyCurrent: true });
+    expect(second).toEqual({ fromVersion: 5, toVersion: 5, appliedVersions: [], alreadyCurrent: true });
     expect(database.executed.filter((statement) =>
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length).toBe(alterCount);
   });
 
-  test("upgrades an existing v3 database to the duplicate source identity schema", async () => {
+  test("upgrades an existing v3 database through duplicate identity and nutrient catalog migrations", async () => {
     const database = new RecordingSQLiteDatabase();
     database.userVersion = 3;
     database.ledgerTableExists = true;
@@ -407,14 +458,18 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 3,
-      toVersion: 4,
-      appliedVersions: [4],
+      toVersion: 5,
+      appliedVersions: [4, 5],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(4);
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.userVersion).toBe(5);
+    expect(database.ledger.at(-2)).toEqual({
       version: 4,
       migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id,
+    });
+    expect(database.ledger.at(-1)).toEqual({
+      version: 5,
+      migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
     });
 
     const executed = database.executed.join("\n");
@@ -422,6 +477,111 @@ describe("E2-03 SQLite baseline schema", () => {
       'DROP INDEX IF EXISTS "ix_food_items_active_source_identity"',
     );
     expect(executed).toContain('"source_type" != \'manual\'');
+  });
+
+  test("upgrades an existing v4 database from the legacy 16-row nutrient catalog", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 4;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+      { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
+      { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
+    ];
+    database.servingReferenceColumns = true;
+    database.nutrientRows = SQLITE_NUTRIENT_SEED_ROWS
+      .slice(0, 16)
+      .map(
+        ([
+          id,
+          displayName,
+          nutrientKind,
+          defaultUnit,
+          parentNutrientId,
+          displayOrder,
+        ]) => ({
+          id,
+          display_name: displayName,
+          nutrient_kind: nutrientKind,
+          default_unit: defaultUnit,
+          parent_nutrient_id: parentNutrientId,
+          display_order: displayOrder,
+        }),
+      );
+
+    const legacyRows = database.nutrientRows.map((row) => ({ ...row }));
+
+    const result = await migrateNutritionDatabase(
+      asSQLiteDatabase(database),
+    );
+
+    expect(result).toEqual({
+      fromVersion: 4,
+      toVersion: 5,
+      appliedVersions: [5],
+      alreadyCurrent: false,
+    });
+    expect(database.userVersion).toBe(5);
+    expect(database.ledger.at(-1)).toEqual({
+      version: 5,
+      migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
+    });
+    expect(database.nutrientRows).toHaveLength(42);
+    expect(
+      database.nutrientRows
+        .sort(
+          (left, right) =>
+            left.display_order - right.display_order
+            || left.id.localeCompare(right.id),
+        )
+        .slice(0, 16),
+    ).toEqual(legacyRows);
+  });
+
+  test("fails closed when migration 005 finds incompatible canonical nutrient data", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 4;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+      { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
+      { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
+    ];
+    database.nutrientRows = SQLITE_NUTRIENT_SEED_ROWS
+      .slice(0, 16)
+      .map(
+        ([
+          id,
+          displayName,
+          nutrientKind,
+          defaultUnit,
+          parentNutrientId,
+          displayOrder,
+        ]) => ({
+          id,
+          display_name:
+            id === "sodium" ? "Drifted Sodium" : displayName,
+          nutrient_kind: nutrientKind,
+          default_unit: defaultUnit,
+          parent_nutrient_id: parentNutrientId,
+          display_order: displayOrder,
+        }),
+      );
+
+    await expect(
+      migrateNutritionDatabase(asSQLiteDatabase(database)),
+    ).rejects.toThrow(
+      "SQLite nutrient catalog migration found incompatible canonical nutrient data.",
+    );
+
+    expect(database.userVersion).toBe(4);
+    expect(database.ledger).toHaveLength(4);
+    expect(
+      database.nutrientRows.find((row) => row.id === "sodium")
+        ?.display_name,
+    ).toBe("Drifted Sodium");
   });
 
   test("fails closed when a v1 database contains a negative authoritative Food nutrient", async () => {

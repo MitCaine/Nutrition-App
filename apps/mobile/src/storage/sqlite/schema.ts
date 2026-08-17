@@ -9,7 +9,9 @@
  * columns and their relational guards.
  */
 
-export const SQLITE_SCHEMA_VERSION = 4;
+import { NUTRIENT_RELATIONAL_SEED_ROWS } from "../../shared/nutrition/catalog";
+
+export const SQLITE_SCHEMA_VERSION = 5;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";
@@ -711,28 +713,5 @@ function immutableTriggerStatements(table: string, prefix: string): string[] {
   ];
 }
 
-export const SQLITE_NUTRIENT_SEED_ROWS: readonly [
-  id: string,
-  displayName: string,
-  nutrientKind: string,
-  defaultUnit: string,
-  parentNutrientId: string | null,
-  displayOrder: number,
-][] = [
-  ["calories", "Calories", "energy", "kcal", null, 10],
-  ["total_fat", "Total Fat", "macro", "g", null, 20],
-  ["saturated_fat", "Saturated Fat", "macro", "g", "total_fat", 21],
-  ["trans_fat", "Trans Fat", "macro", "g", "total_fat", 22],
-  ["cholesterol", "Cholesterol", "other", "mg", null, 30],
-  ["sodium", "Sodium", "mineral", "mg", null, 40],
-  ["total_carbohydrate", "Total Carbohydrate", "macro", "g", null, 50],
-  ["dietary_fiber", "Dietary Fiber", "macro", "g", "total_carbohydrate", 51],
-  ["total_sugars", "Total Sugars", "macro", "g", "total_carbohydrate", 52],
-  ["added_sugars", "Added Sugars", "macro", "g", "total_sugars", 53],
-  ["protein", "Protein", "macro", "g", null, 60],
-  ["vitamin_d", "Vitamin D", "vitamin", "mcg", null, 70],
-  ["calcium", "Calcium", "mineral", "mg", null, 80],
-  ["iron", "Iron", "mineral", "mg", null, 90],
-  ["potassium", "Potassium", "mineral", "mg", null, 100],
-  ["magnesium", "Magnesium", "mineral", "mg", null, 110],
-];
+export const SQLITE_NUTRIENT_SEED_ROWS =
+  NUTRIENT_RELATIONAL_SEED_ROWS;

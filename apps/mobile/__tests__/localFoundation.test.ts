@@ -208,8 +208,12 @@ describe("E2-04 local identity, calendar, and nutrient foundations", () => {
     const fake = new LocalSQLiteFake();
     const foundation = await bootstrapLocalRuntimeFoundation(database(fake));
     fake.state.nutrients = fake.state.nutrients.filter((row) => row.id !== "magnesium");
-    await expect(foundation.nutrients.list()).resolves.toHaveLength(16);
-    expect(fake.state.nutrients).toHaveLength(16);
+    await expect(foundation.nutrients.list()).resolves.toHaveLength(
+      SQLITE_NUTRIENT_SEED_ROWS.length,
+    );
+    expect(fake.state.nutrients).toHaveLength(
+      SQLITE_NUTRIENT_SEED_ROWS.length,
+    );
     expect(fake.state.nutrients.find((row) => row.id === "magnesium")).toEqual(
       expect.objectContaining({ display_name: "Magnesium", display_order: 110 }),
     );

@@ -212,11 +212,74 @@ export const SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION: SQLiteMigration = {
+  version: 5,
+  id: "005_expand_nutrient_catalog",
+  async up(database) {
+    for (const [
+      id,
+      displayName,
+      nutrientKind,
+      defaultUnit,
+      parentNutrientId,
+      displayOrder,
+    ] of SQLITE_NUTRIENT_SEED_ROWS) {
+      await database.runAsync(
+        `INSERT OR IGNORE INTO "nutrients"
+          ("id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order")
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          displayName,
+          nutrientKind,
+          defaultUnit,
+          parentNutrientId,
+          displayOrder,
+        ],
+      );
+    }
+
+    const rows = await database.getAllAsync<{
+      id: string;
+      display_name: string;
+      nutrient_kind: string;
+      default_unit: string;
+      parent_nutrient_id: string | null;
+      display_order: number;
+    }>(
+      `SELECT "id", "display_name", "nutrient_kind", "default_unit",
+              "parent_nutrient_id", "display_order"
+       FROM "nutrients"
+       ORDER BY "display_order", "id"`,
+    );
+
+    const matches =
+      rows.length === SQLITE_NUTRIENT_SEED_ROWS.length
+      && rows.every((row, index) => {
+        const expected = SQLITE_NUTRIENT_SEED_ROWS[index];
+        return expected !== undefined
+          && row.id === expected[0]
+          && row.display_name === expected[1]
+          && row.nutrient_kind === expected[2]
+          && row.default_unit === expected[3]
+          && row.parent_nutrient_id === expected[4]
+          && row.display_order === expected[5];
+      });
+
+    if (!matches) {
+      throw new SQLiteMigrationError(
+        "SQLite nutrient catalog migration found incompatible canonical nutrient data.",
+      );
+    }
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
   SQLITE_SERVING_REFERENCE_MIGRATION,
   SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
+  SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {

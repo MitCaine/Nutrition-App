@@ -1,6 +1,6 @@
 {
   "application_heads": [
-    "0028_duplicate_food_source_identity"
+    "0029_expand_nutrient_catalog"
   ],
   "authorization_contract_constants": [
     {
@@ -497,7 +497,7 @@
   "control_heads": [
     "ops_0011_phase5c4_recovery_audit"
   ],
-  "inventory_sha256": "89037a4963b488b11c21fe58a1d78f20e71af0e1fed42a3c04fa3f02e9eb95a2",
+  "inventory_sha256": "8a3094730c4c94164107468d574ce1f18570675763862ddc19c38abb67864d65",
   "roles": [
     "nutrition_canary",
     "nutrition_canary_read",

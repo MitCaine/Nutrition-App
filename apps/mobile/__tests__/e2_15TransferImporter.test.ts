@@ -11,6 +11,7 @@ const { join } = require("node:path") as { join(...paths: string[]): string };
 
 import { LocalSQLiteTestDatabase } from "./localSQLiteTestSupport";
 import { migrateNutritionDatabase } from "../src/storage/sqlite/migrations";
+import { SQLITE_NUTRIENT_SEED_ROWS } from "../src/storage/sqlite/schema";
 import { bootstrapLocalRuntimeFoundation } from "../src/runtime/local/localRuntimeFoundation";
 import {
   buildTransferSection,
@@ -269,7 +270,7 @@ test.each(CHECKPOINTS)("rolls back completely after injected %s failure", async 
     await expect(database.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS "count" FROM "users"`))
       .resolves.toEqual({ count: 0 });
     await expect(database.getFirstAsync<{ count: number }>(`SELECT COUNT(*) AS "count" FROM "nutrients"`))
-      .resolves.toEqual({ count: 16 });
+      .resolves.toEqual({ count: SQLITE_NUTRIENT_SEED_ROWS.length });
     await expect(database.getFirstAsync<{ count: number }>(
       `SELECT COUNT(*) AS "count" FROM "nutrition_daily_log_snapshot_replacement_scopes"`,
     )).resolves.toEqual({ count: 0 });

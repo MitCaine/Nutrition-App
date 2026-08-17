@@ -5,6 +5,7 @@ import {
 import {
   migrateNutritionDatabase,
 } from "../src/storage/sqlite/migrations";
+import { SQLITE_SCHEMA_VERSION } from "../src/storage/sqlite/schema";
 import {
   LocalSQLiteTestDatabase,
   seedLocalFood,
@@ -58,7 +59,7 @@ describe("local backup validation", () => {
         );
 
       expect(summary.formatVersion).toBe(1);
-      expect(summary.schemaVersion).toBe(4);
+      expect(summary.schemaVersion).toBe(SQLITE_SCHEMA_VERSION);
       expect(summary.ownerId).toBe(OWNER_ID);
       expect(summary.rowCounts.users).toBe(1);
       expect(summary.rowCounts.user_profiles).toBe(1);
@@ -93,7 +94,9 @@ describe("local backup validation", () => {
     const database = await createValidArtifact();
 
     try {
-      await database.execAsync("PRAGMA user_version = 5");
+      await database.execAsync(
+        `PRAGMA user_version = ${SQLITE_SCHEMA_VERSION + 1}`,
+      );
 
       await expect(
         validateLocalBackupDatabase(
@@ -111,7 +114,9 @@ describe("local backup validation", () => {
     const database = await createValidArtifact();
 
     try {
-      await database.execAsync("PRAGMA user_version = 3");
+      await database.execAsync(
+        `PRAGMA user_version = ${SQLITE_SCHEMA_VERSION - 1}`,
+      );
 
       await expect(
         validateLocalBackupDatabase(

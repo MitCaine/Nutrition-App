@@ -41,14 +41,17 @@ import {
   type ExactDecimal,
   type ResponseDecimal,
 } from "../../shared/exact/decimal";
+import {
+  FDA_DAILY_VALUE_CATALOG_VERSION,
+  FDA_DAILY_VALUE_STANDARD,
+  NUTRIENT_CATALOG,
+} from "../../shared/nutrition/catalog";
 import type { NutrientUnit, NutrientDataStatus } from "../../shared/nutrition/types";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { TargetsRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
 import { withLocalOrderedRead, withLocalWriteTransaction } from "./localWriteCoordinator";
 
-const FDA_DAILY_VALUE_CATALOG_VERSION = "fda_daily_values_2016_v1";
-const FDA_DAILY_VALUE_STANDARD = "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS";
 const TARGET_DIRECTION_SEMANTICS_VERSION = "target_directions_2026_v1";
 const INFORMATIONAL_NOTICE =
   "Estimated maintenance calories are general informational estimates, not medical advice.";
@@ -74,29 +77,23 @@ const ACTIVITY_MULTIPLIERS: Readonly<Record<string, string>> = {
   very_active: "2.0",
 };
 
-const DAILY_VALUE_DEFINITIONS: Readonly<Record<string, Readonly<{
-  amount: string | null;
-  unit: NutrientUnit;
-  availability: "available" | "unavailable";
-  direction: "target" | "limit" | "minimum" | "reference" | "unavailable";
-  noteCode: string | null;
-}>>> = {
-  total_fat: { amount: "78", unit: "g", availability: "available", direction: "reference", noteCode: null },
-  saturated_fat: { amount: "20", unit: "g", availability: "available", direction: "limit", noteCode: null },
-  cholesterol: { amount: "300", unit: "mg", availability: "available", direction: "limit", noteCode: null },
-  sodium: { amount: "2300", unit: "mg", availability: "available", direction: "limit", noteCode: null },
-  total_carbohydrate: { amount: "275", unit: "g", availability: "available", direction: "reference", noteCode: null },
-  dietary_fiber: { amount: "28", unit: "g", availability: "available", direction: "minimum", noteCode: null },
-  added_sugars: { amount: "50", unit: "g", availability: "available", direction: "limit", noteCode: null },
-  protein: { amount: "50", unit: "g", availability: "available", direction: "reference", noteCode: "protein_percent_dv_labeling_caveat" },
-  vitamin_d: { amount: "20", unit: "mcg", availability: "available", direction: "minimum", noteCode: null },
-  calcium: { amount: "1300", unit: "mg", availability: "available", direction: "minimum", noteCode: null },
-  iron: { amount: "18", unit: "mg", availability: "available", direction: "minimum", noteCode: null },
-  potassium: { amount: "4700", unit: "mg", availability: "available", direction: "minimum", noteCode: null },
-  magnesium: { amount: "420", unit: "mg", availability: "available", direction: "reference", noteCode: null },
-  calories: { amount: null, unit: "kcal", availability: "unavailable", direction: "unavailable", noteCode: "calories_are_not_daily_value" },
-  trans_fat: { amount: null, unit: "g", availability: "unavailable", direction: "unavailable", noteCode: "daily_value_not_established" },
-  total_sugars: { amount: null, unit: "g", availability: "unavailable", direction: "unavailable", noteCode: "daily_value_not_established" },
+const DAILY_VALUE_DIRECTION_OVERRIDES: Readonly<Record<
+  string,
+  "limit" | "minimum"
+>> = {
+  saturated_fat: "limit",
+  cholesterol: "limit",
+  sodium: "limit",
+  dietary_fiber: "minimum",
+  added_sugars: "limit",
+  vitamin_d: "minimum",
+  calcium: "minimum",
+  iron: "minimum",
+  potassium: "minimum",
+};
+
+const DAILY_VALUE_NOTE_CODES: Readonly<Record<string, string>> = {
+  protein: "protein_percent_dv_labeling_caveat",
 };
 
 const MASS_UNITS = new Set<NutrientUnit>(["g", "mg", "mcg"]);
@@ -509,16 +506,29 @@ function estimateMaintenanceCalories(
 }
 
 function dailyValues(): TargetConfiguration["dailyValues"] {
-  return SQLITE_NUTRIENT_SEED_ROWS.map(([nutrientId, , , defaultUnit]) => {
-    const definition = DAILY_VALUE_DEFINITIONS[nutrientId];
-    if (!definition) throw invalidStored();
+  return NUTRIENT_CATALOG.map((nutrient) => {
+    const dailyValue = nutrient.fda_daily_value;
+
+    if (dailyValue === null) {
+      return {
+        nutrientId: nutrient.id,
+        amount: null,
+        unit: nutrient.default_unit,
+        availability: "unavailable",
+        direction: "unavailable",
+        noteCode: nutrient.id === "calories"
+          ? "calories_are_not_daily_value"
+          : "daily_value_not_established",
+      };
+    }
+
     return {
-      nutrientId,
-      amount: definition.amount === null ? null : parseResponseDecimal(definition.amount),
-      unit: definition.unit ?? defaultUnit as NutrientUnit,
-      availability: definition.availability,
-      direction: definition.direction,
-      noteCode: definition.noteCode,
+      nutrientId: nutrient.id,
+      amount: parseResponseDecimal(dailyValue.amount),
+      unit: dailyValue.unit,
+      availability: "available",
+      direction: DAILY_VALUE_DIRECTION_OVERRIDES[nutrient.id] ?? "reference",
+      noteCode: DAILY_VALUE_NOTE_CODES[nutrient.id] ?? null,
     };
   });
 }

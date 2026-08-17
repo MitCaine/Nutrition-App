@@ -10,12 +10,13 @@ import {
   updateReview,
 } from "../src/features/ocr/confirmation/confirmationModel";
 import type { ParsedField, ParsedNutritionLabel } from "../src/features/ocr/api/types";
+import { NUTRIENT_CATALOG_BY_ID } from "../src/shared/nutrition/catalog";
 
 const nutrientDefinitions = [
-  { id: "calories", display_name: "Calories", default_unit: "kcal" as const, nutrient_kind: "energy", parent_nutrient_id: null, display_order: 10 },
-  { id: "total_fat", display_name: "Total Fat", default_unit: "g" as const, nutrient_kind: "macro", parent_nutrient_id: null, display_order: 20 },
-  { id: "sodium", display_name: "Sodium", default_unit: "mg" as const, nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 40 },
-  { id: "potassium", display_name: "Potassium", default_unit: "mg" as const, nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 100 },
+  NUTRIENT_CATALOG_BY_ID.get("calories")!,
+  NUTRIENT_CATALOG_BY_ID.get("total_fat")!,
+  NUTRIENT_CATALOG_BY_ID.get("sodium")!,
+  NUTRIENT_CATALOG_BY_ID.get("potassium")!,
 ];
 
 function field(value: string | boolean | null, status: ParsedField["status"] = "parsed", overrides: Partial<ParsedField> = {}): ParsedField {
@@ -516,10 +517,7 @@ test("a high-confidence nutrient remains editable and explicitly omittable", () 
 
 test("a manually added canonical nutrient is unique and has unambiguous provenance", () => {
   const base = { ...draftFromParsedLabel(parsed(), "camera"), nutrients: [] };
-  const iron = {
-    id: "iron", display_name: "Iron", default_unit: "mg" as const,
-    nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 90,
-  };
+  const iron = NUTRIENT_CATALOG_BY_ID.get("iron")!;
   const added = addManualNutrient(base, iron);
   const duplicate = addManualNutrient(added, iron);
   const reviewed = {
@@ -565,10 +563,7 @@ test("an omitted field remains excluded until a value is restored", () => {
 
 test("manual-add origin remains stable through omit and re-edit", () => {
   const base = { ...draftFromParsedLabel(parsed(), "camera"), nutrients: [] };
-  const iron = {
-    id: "iron", display_name: "Iron", default_unit: "mg" as const,
-    nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 90,
-  };
+  const iron = NUTRIENT_CATALOG_BY_ID.get("iron")!;
   const added = addManualNutrient(base, iron).nutrients[0]!;
   const firstEdit = updateReview(added, "4");
   const omitted = omitReview(firstEdit);

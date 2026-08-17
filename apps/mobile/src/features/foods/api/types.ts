@@ -99,8 +99,15 @@ export type NutrientDefinition = {
   display_name: string;
   default_unit: NutrientUnit;
   nutrient_kind: string;
-  parent_nutrient_id?: string | null;
+  parent_nutrient_id: string | null;
   display_order: number;
+  fda_daily_value: {
+    amount: string;
+    unit: NutrientUnit;
+    source_version: string;
+    standard: string;
+  } | null;
+  dri_reference_kinds: readonly string[];
 };
 
 export type FoodDeleteAffectedRecipe = {

@@ -6,14 +6,46 @@ MASS_TO_GRAMS = {
     "mcg": Decimal("0.000001"),
 }
 
-SUPPORTED_NUTRITION_UNITS = {"kcal", "g", "mg", "mcg"}
+SEMANTIC_NUTRITION_UNITS = {
+    "mcg RAE",
+    "mcg DFE",
+    "mg NE",
+    "mg alpha-tocopherol",
+}
+
+SUPPORTED_NUTRITION_UNITS = {
+    "kcal",
+    *MASS_TO_GRAMS,
+    *SEMANTIC_NUTRITION_UNITS,
+}
 SUPPORTED_AMOUNT_UNITS = {"serving", "g"}
 ENERGY_UNITS = {"kcal"}
 MASS_UNITS = set(MASS_TO_GRAMS)
 
+_SEMANTIC_UNIT_ALIASES = {
+    "mcg rae": "mcg RAE",
+    "ug rae": "mcg RAE",
+    "µg rae": "mcg RAE",
+    "microgram rae": "mcg RAE",
+    "micrograms rae": "mcg RAE",
+    "mcg dfe": "mcg DFE",
+    "ug dfe": "mcg DFE",
+    "µg dfe": "mcg DFE",
+    "microgram dfe": "mcg DFE",
+    "micrograms dfe": "mcg DFE",
+    "mg ne": "mg NE",
+    "milligram ne": "mg NE",
+    "milligrams ne": "mg NE",
+    "mg alpha-tocopherol": "mg alpha-tocopherol",
+    "mg alpha tocopherol": "mg alpha-tocopherol",
+}
+
 
 def normalize_unit(unit: str) -> str:
     normalized = unit.strip().lower()
+    semantic = _SEMANTIC_UNIT_ALIASES.get(normalized)
+    if semantic is not None:
+        return semantic
     if normalized in {"microgram", "micrograms", "ug", "µg"}:
         return "mcg"
     if normalized in {"gram", "grams"}:

@@ -62,24 +62,26 @@ def test_fda_daily_value_catalog_is_exact_versioned_and_canonical():
     assert FDA_DAILY_VALUE_CATALOG_VERSION == "fda_daily_values_2016_v1"
     assert FDA_DAILY_VALUE_STANDARD == "FDA_NUTRITION_FACTS_ADULTS_AND_CHILDREN_4_PLUS"
     assert set(values) == {item.id for item in NUTRIENT_CATALOG}
-    assert {key: (item.amount, item.unit) for key, item in values.items() if item.available} == {
-        "total_fat": (Decimal("78"), "g"),
-        "saturated_fat": (Decimal("20"), "g"),
-        "cholesterol": (Decimal("300"), "mg"),
-        "sodium": (Decimal("2300"), "mg"),
-        "total_carbohydrate": (Decimal("275"), "g"),
-        "dietary_fiber": (Decimal("28"), "g"),
-        "added_sugars": (Decimal("50"), "g"),
-        "protein": (Decimal("50"), "g"),
-        "vitamin_d": (Decimal("20"), "mcg"),
-        "calcium": (Decimal("1300"), "mg"),
-        "iron": (Decimal("18"), "mg"),
-        "potassium": (Decimal("4700"), "mg"),
-        "magnesium": (Decimal("420"), "mg"),
+    expected_available = {
+        nutrient.id: (
+            nutrient.fda_daily_value.amount,
+            nutrient.fda_daily_value.unit,
+        )
+        for nutrient in NUTRIENT_CATALOG
+        if nutrient.fda_daily_value is not None
     }
+    assert {
+        key: (item.amount, item.unit)
+        for key, item in values.items()
+        if item.available
+    } == expected_available
     assert values["calories"].amount is None
     assert values["trans_fat"].amount is None
     assert values["total_sugars"].amount is None
+    assert values["alpha_linolenic_acid"].amount is None
+    assert values["epa"].amount is None
+    assert values["dha"].amount is None
+    assert values["linoleic_acid"].amount is None
     assert values["protein"].note_code == "protein_percent_dv_labeling_caveat"
     assert TARGET_DIRECTION_SEMANTICS_VERSION == "target_directions_2026_v1"
     assert {item.direction for item in values.values()} <= {

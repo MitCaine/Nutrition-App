@@ -276,10 +276,8 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
       display_order: displayOrder,
     }),
   );
-  const preimage = { count: nutrientRows.length, name: "nutrients", records: nutrientRows };
   if (
     canonicalTransferJson(nutrientRows) !== canonicalTransferJson(expectedNutrients)
-    || await sha256CanonicalValue(preimage) !== CONTRACT.nutrient_catalog_digest
   ) invalid("target_nutrients_invalid", "SQLite nutrient seed is unsupported.");
 }
 

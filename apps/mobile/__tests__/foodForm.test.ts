@@ -16,12 +16,13 @@ import {
 import { foodMutationSchema, servingSchema } from "../src/features/foods/validation/foodValidation";
 import type { Food, FoodNutrientInput, NutrientDefinition } from "../src/features/foods/api/types";
 import { parseDecimal } from "../src/shared/exact/decimal";
+import { NUTRIENT_CATALOG_BY_ID } from "../src/shared/nutrition/catalog";
 
 test("edit nutrient visibility hides unknown rows, preserves zero, and allows explicit reveal", () => {
   const definitions: NutrientDefinition[] = [
-    { id: "protein", display_name: "Protein", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 10 },
-    { id: "calcium", display_name: "Calcium", default_unit: "mg", nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 20 },
-    { id: "potassium", display_name: "Potassium", default_unit: "mg", nutrient_kind: "mineral", parent_nutrient_id: null, display_order: 30 },
+    NUTRIENT_CATALOG_BY_ID.get("protein")!,
+    NUTRIENT_CATALOG_BY_ID.get("calcium")!,
+    NUTRIENT_CATALOG_BY_ID.get("potassium")!,
   ];
   const values: FoodNutrientInput[] = [
     { nutrient_id: "protein", amount: "20", unit: "g", basis: "per_serving" as const, data_status: "known" as const },
