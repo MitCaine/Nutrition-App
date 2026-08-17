@@ -456,31 +456,39 @@ export type ServingUnitTransition = {
   converted: boolean;
 };
 
+// Internal form-state sentinel for a serving whose selected unit needs an explicit
+// food-specific equivalence. This is intentionally not user-facing error copy.
 export const UNCONVERTED_SERVING_UNIT_WARNING =
   "We couldn't convert this amount automatically. Check the quantity.";
 
-/** User-facing recovery instruction for a refused unit conversion. The stable sentinel above
- * remains the form-state marker; this message tells the user exactly what relationship must
- * be supplied to resolve it. */
+/** User-facing guidance for a cross-dimension serving relationship.
+ *
+ * Compatible dimensions convert automatically. When the selected unit is not dimensionally
+ * convertible, the known physical amount remains intact and the user supplies the missing
+ * food-specific equivalence. This is normal authoring state, not an application error.
+ */
 export function servingConversionReviewMessage(rawUnit: string, gramWeight?: string | null): string {
   const unit = rawUnit.trim();
   const grams = amountHasKnownGramWeight({ gram_weight: gramWeight ?? null })
     ? `${formatServingGramForDisplay(gramWeight ?? "")} g`
     : null;
-  if (!unit) return "We couldn't convert this amount automatically. Enter the quantity for the new unit.";
+
+  if (!unit) {
+    return "Choose a serving unit and enter its equivalent amount. This relationship is specific to this Food.";
+  }
 
   const category = amountUnitCategory(unit);
   if (category === "count" || category === "custom") {
     const pluralLabel = generatedAmountDisplayLabel("2", unit).replace(/^2\s+/, "");
     return grams
-      ? `We couldn't convert this amount automatically. Enter how many ${pluralLabel} equal ${grams}.`
-      : `We couldn't convert this amount automatically. Enter how many ${pluralLabel} make up this serving.`;
+      ? `Enter how many ${pluralLabel} equal ${grams}. This relationship is specific to this Food.`
+      : `Enter how many ${pluralLabel} make up this serving. This relationship is specific to this Food.`;
   }
 
   const unitLabel = servingUnitDisplay(unit);
   return grams
-    ? `We couldn't convert this amount automatically. Enter the ${unitLabel} amount that equals ${grams}.`
-    : `We couldn't convert this amount automatically. Enter the amount for ${unitLabel}.`;
+    ? `Enter the ${unitLabel} amount that equals ${grams}. This relationship is specific to this Food.`
+    : `Enter the amount for ${unitLabel}. This relationship is specific to this Food.`;
 }
 
 /**

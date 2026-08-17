@@ -191,7 +191,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
     if (unresolvedServing) {
       const issue: ValidationIssue<FoodValidationTarget> = {
         code: "serving_conversion_review_required",
-        message: "Check the serving quantity before saving.",
+        message: "Set the serving's equivalent measurement before saving.",
         target: `serving.${unresolvedServing.key}.quantity`,
         announce: true,
         moveFocus: true,

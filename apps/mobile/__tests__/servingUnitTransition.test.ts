@@ -1,6 +1,7 @@
 import {
   applyAmountPatch,
   generatedAmountDisplayLabel,
+  servingConversionReviewMessage,
   transitionServingUnit,
   UNCONVERTED_SERVING_UNIT_WARNING,
   type AmountFormValue,
@@ -380,6 +381,23 @@ test("automatic volume conversions keep recognizable common fractions renderable
   // Non-fraction converted values stay capped at practical precision.
   const capped = transitionServingUnit({ quantity: "5.92", unit: "tbsp", gramWeight: "90" }, "cup");
   expect(capped.quantity).toBe("0.37");
+});
+
+// ISSUE_106_EQUIVALENCE_GUIDANCE
+
+test("cross-dimension guidance requests food-specific equivalence without presenting the unit as an error", () => {
+  const countGuidance = servingConversionReviewMessage("slice", "100");
+  expect(countGuidance).toBe(
+    "Enter how many slices equal 100 g. This relationship is specific to this Food.",
+  );
+  expect(countGuidance).not.toContain("couldn't convert");
+  expect(countGuidance).not.toContain("error");
+
+  const volumeGuidance = servingConversionReviewMessage("cup", "100");
+  expect(volumeGuidance).toBe(
+    "Enter the cup amount that equals 100 g. This relationship is specific to this Food.",
+  );
+  expect(volumeGuidance).not.toContain("couldn't convert");
 });
 
 test("transitionServingUnit never mutates its inputs", () => {

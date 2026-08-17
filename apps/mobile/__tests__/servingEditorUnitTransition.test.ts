@@ -195,46 +195,41 @@ test("editing the reference recalculates the current representation", async () =
   await act(async () => renderer.unmount());
 });
 
-test("unsupported units keep the reference visible and never fabricate a relationship", async () => {
+test("unsupported units keep the committed relationship intact while equivalence is drafted", async () => {
   const renderer = await renderEditor([baseServing, portionServing("1", "cup", "100")]);
   await act(async () => press(renderer, "Edit 1 cup"));
 
   await act(async () => openPicker(renderer, "Choose unit for 1 cup"));
   await act(async () => chooseOption(renderer, "piece"));
+
+  expect(visibleText(renderer)).toContain("Equivalent measurement needed");
   expect(visibleText(renderer)).toContain(servingConversionReviewMessage("piece", "100"));
-  expect(visibleText(renderer)).toContain("Enter how many pieces equal 100 g.");
   expect(visibleText(renderer)).toContain("1 cup = 100 g");
-  expect(visibleText(renderer)).toContain("100 g total");
   expect(visibleText(renderer)).not.toContain("g per piece");
-  expect(currentPortion().quantity).toBe("");
-  expect(currentPortion().gram_weight).toBe("100");
-  expect(currentPortion().consistencyWarning).toBe(UNCONVERTED_SERVING_UNIT_WARNING);
-  await act(async () => renderer.unmount());
-});
 
-
-test("confirming a corrected count reference clears review when incompatible conversion left current quantity unestablished", async () => {
-  const renderer = await renderEditor([
-    baseServing,
-    portionServing("1", "cup", "100"),
-  ]);
-
-  await act(async () => press(renderer, "Edit 1 cup"));
-  await act(async () => openPicker(renderer, "Choose unit for 1 cup"));
-  await act(async () => chooseOption(renderer, "slice"));
-
+  // Selecting an incompatible unit starts a draft. The authoritative/current
+  // physical serving is still the original cup relationship.
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "",
-    unit: "slice",
+    quantity: "1",
+    unit: "cup",
     gram_weight: "100",
     consistencyWarning: UNCONVERTED_SERVING_UNIT_WARNING,
   }));
-  expect(visibleText(renderer)).toContain(
-    servingConversionReviewMessage("slice", "100"),
-  );
 
-  // Resolve through the authoritative Reference measurement instead of
-  // entering the missing current Quantity.
+  await act(async () => renderer.unmount());
+});
+
+test("legacy unestablished review state can still be resolved through explicit reference editing", async () => {
+  const unresolved: ServingFormValue = {
+    ...portionServing("", "slice", "100"),
+    consistencyWarning: UNCONVERTED_SERVING_UNIT_WARNING,
+    reference_quantity: "1",
+    reference_unit: "cup",
+    reference_gram_weight: "100",
+  };
+
+  const renderer = await renderEditor([baseServing, unresolved]);
+
   await act(async () => press(renderer, "Edit reference measurement"));
   await act(async () =>
     inputByLabel(renderer, "Reference quantity").props.onChangeText("1")
@@ -256,7 +251,6 @@ test("confirming a corrected count reference clears review when incompatible con
   }));
   expect(currentPortion().consistencyWarning).toBeUndefined();
   expect(visibleText(renderer)).toContain("1 slice = 100 g");
-  expect(visibleText(renderer)).toContain("1 slice (100 g)");
   expect(visibleText(renderer)).not.toContain(
     UNCONVERTED_SERVING_UNIT_WARNING,
   );
@@ -306,159 +300,271 @@ test("a partial volume amount converts from its exact current physical anchor wi
   await act(async () => renderer.unmount());
 });
 
-test("an incompatible unit clears the source quantity before establishing the new reference", async () => {
-  const renderer = await renderEditor([baseServing, portionServing("1", "cup", "100")]);
-  await act(async () => press(renderer, "Edit 1 cup"));
-  await act(async () => openPicker(renderer, "Choose unit for 1 cup"));
-  await act(async () => chooseOption(renderer, "tbsp"));
-  expect(currentPortion()).toEqual(expect.objectContaining({ quantity: "16", unit: "tbsp", gram_weight: "100" }));
+test("cross-dimension keyboard intermediates remain draft-only until explicit confirmation", async () => {
+  const renderer = await renderEditor([
+    baseServing,
+    portionServing("1", "slice", "28"),
+  ]);
 
-  await act(async () => openPicker(renderer, "Choose unit for"));
-  await act(async () => chooseOption(renderer, "piece"));
+  await act(async () => press(renderer, "Edit 1 slice"));
+  await act(async () => openPicker(renderer, "Choose unit for 1 slice"));
+  await act(async () => chooseOption(renderer, "cup"));
 
-  // 16 belongs to Tbsp and must never be reinterpreted as 16 pieces. The known 100 g total
-  // remains while the user supplies the missing piece relationship.
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "", unit: "piece", gram_weight: "100",
-    reference_quantity: "1", reference_unit: "cup", reference_gram_weight: "100",
-  }));
-  expect(visibleText(renderer)).toContain("Enter how many pieces equal 100 g.");
-
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("1"));
-  expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "1", unit: "piece", gram_weight: "100",
-    reference_quantity: "1", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "1",
+    unit: "slice",
+    gram_weight: "28",
+    consistencyWarning: UNCONVERTED_SERVING_UNIT_WARNING,
   }));
 
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("2"));
+  // This is the exact iOS reproduction: ".2" is only an intermediate
+  // keyboard value on the way to ".25". It must not become authority.
+  await act(async () =>
+    inputByLabel(renderer, "Equivalent quantity").props.onChangeText(".2")
+  );
+
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "2", unit: "piece", gram_weight: "200",
-    reference_quantity: "1", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "1",
+    unit: "slice",
+    gram_weight: "28",
   }));
-  expect(visibleText(renderer)).toContain("2 pieces (200 g)");
-  expect(visibleText(renderer)).toContain("100 g per piece · 200 g total");
-  expect(visibleText(renderer)).toContain("Based on: 1 piece = 100 g");
+  expect(visibleText(renderer)).toContain("1/5 cup (28 g)");
+  expect(visibleText(renderer)).toContain("140 g per cup");
 
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("0.5"));
+  await act(async () =>
+    inputByLabel(renderer, "Equivalent quantity").props.onChangeText(".25")
+  );
+
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "0.5", unit: "piece", gram_weight: "50",
-    reference_quantity: "1", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "1",
+    unit: "slice",
+    gram_weight: "28",
   }));
-  expect(visibleText(renderer)).toContain("1/2 piece (50 g)");
-  expect(visibleText(renderer)).toContain("100 g per piece · 50 g total");
-  await act(async () => renderer.unmount());
-});
+  expect(visibleText(renderer)).toContain("1/4 cup (28 g)");
+  expect(visibleText(renderer)).toContain("112 g per cup");
 
-test("resolving an incompatible count/custom unit promotes that measured relationship to the reference", async () => {
-  const renderer = await renderEditor([baseServing, portionServing("1", "cup", "100")]);
-  await act(async () => press(renderer, "Edit 1 cup"));
-  await act(async () => openPicker(renderer, "Choose unit for 1 cup"));
-  await act(async () => chooseOption(renderer, "piece"));
-
-  expect(visibleText(renderer)).toContain(servingConversionReviewMessage("piece", "100"));
-  expect(visibleText(renderer)).toContain("1 cup = 100 g");
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("2"));
+  await act(async () => press(renderer, "Confirm equivalent measurement"));
 
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "2", unit: "piece", gram_weight: "100",
-    reference_quantity: "2", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "0.25",
+    unit: "cup",
+    gram_weight: "28",
+    reference_quantity: "0.25",
+    reference_unit: "cup",
+    reference_gram_weight: "28",
   }));
   expect(currentPortion().consistencyWarning).toBeUndefined();
-  expect(visibleText(renderer)).not.toContain(UNCONVERTED_SERVING_UNIT_WARNING);
-  expect(visibleText(renderer)).toContain("2 pieces (100 g)");
-  expect(visibleText(renderer)).toContain("2 pieces = 100 g");
-  expect(visibleText(renderer)).not.toContain("Based on: 1 cup = 100 g");
+  expect(visibleText(renderer)).toContain("1/4 cup = 28 g");
 
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("1"));
+  // Once explicitly confirmed, ordinary edits scale from the confirmed
+  // food-specific relationship.
+  await act(async () =>
+    inputByLabel(renderer, "Quantity").props.onChangeText("0.5")
+  );
+
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "1", unit: "piece", gram_weight: "50",
-    reference_quantity: "2", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "0.5",
+    unit: "cup",
+    gram_weight: "56",
+    reference_quantity: "0.25",
+    reference_unit: "cup",
+    reference_gram_weight: "28",
   }));
-  expect(visibleText(renderer)).toContain("1 piece (50 g)");
-  expect(visibleText(renderer)).toContain("Based on: 2 pieces = 100 g");
+
   await act(async () => renderer.unmount());
 });
 
-test("resolved count quantity survives real keyboard replacement intermediates without changing grams per piece", async () => {
+test("canceling a pending equivalence restores the pre-change serving exactly", async () => {
+  const renderer = await renderEditor([
+    baseServing,
+    portionServing("1", "cup", "100"),
+  ]);
+
+  await act(async () => press(renderer, "Edit 1 cup"));
+  await act(async () => openPicker(renderer, "Choose unit for 1 cup"));
+  await act(async () => chooseOption(renderer, "piece"));
+
+  await act(async () =>
+    inputByLabel(renderer, "Equivalent quantity").props.onChangeText("2")
+  );
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "1",
+    unit: "cup",
+    gram_weight: "100",
+    consistencyWarning: UNCONVERTED_SERVING_UNIT_WARNING,
+  }));
+
+  await act(async () => press(renderer, "Cancel equivalent measurement"));
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "1",
+    unit: "cup",
+    gram_weight: "100",
+  }));
+  expect(currentPortion().consistencyWarning).toBeUndefined();
+  expect(visibleText(renderer)).toContain("1 cup = 100 g");
+  expect(visibleText(renderer)).not.toContain("Equivalent measurement needed");
+
+  await act(async () => renderer.unmount());
+});
+
+test("real keyboard replacement intermediates never mutate committed authority before confirmation", async () => {
   const serving: ServingFormValue = {
     ...portionServing("8", "tbsp", "50"),
     reference_quantity: "1",
     reference_unit: "cup",
     reference_gram_weight: "100",
   };
+
   const renderer = await renderEditor([baseServing, serving]);
   await act(async () => press(renderer, "Edit 8 Tbsp"));
   await act(async () => openPicker(renderer, "Choose unit for 8 Tbsp"));
   await act(async () => chooseOption(renderer, "piece"));
 
-  expect(visibleText(renderer)).toContain("Enter how many pieces equal 50 g.");
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("2"));
-  expect(currentPortion()).toEqual(expect.objectContaining({ quantity: "2", unit: "piece", gram_weight: "50" }));
-  expect(visibleText(renderer)).toContain("25 g per piece · 50 g total");
-
-  // iOS replacement editing emits intermediate invalid values. None of them may overwrite
-  // the established 2 pieces = 50 g ratio used by the final valid quantity.
   for (const raw of ["", "0", "0.", "0.5"]) {
-    await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText(raw));
+    await act(async () =>
+      inputByLabel(renderer, "Equivalent quantity").props.onChangeText(raw)
+    );
+
+    expect(currentPortion()).toEqual(expect.objectContaining({
+      quantity: "8",
+      unit: "tbsp",
+      gram_weight: "50",
+      reference_quantity: "1",
+      reference_unit: "cup",
+      reference_gram_weight: "100",
+    }));
   }
 
+  expect(visibleText(renderer)).toContain("1/2 piece (50 g)");
+  expect(visibleText(renderer)).toContain("100 g per piece");
+
+  await act(async () => press(renderer, "Confirm equivalent measurement"));
+
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "0.5", unit: "piece", gram_weight: "12.5",
-    reference_quantity: "2", reference_unit: "piece", reference_gram_weight: "50",
+    quantity: "0.5",
+    unit: "piece",
+    gram_weight: "50",
+    reference_quantity: "0.5",
+    reference_unit: "piece",
+    reference_gram_weight: "50",
   }));
-  expect(visibleText(renderer)).toContain("1/2 piece (12.5 g)");
-  expect(visibleText(renderer)).toContain("25 g per piece · 12.5 g total");
-  expect(visibleText(renderer)).toContain("Based on: 2 pieces = 50 g");
+
+  await act(async () =>
+    inputByLabel(renderer, "Quantity").props.onChangeText("1")
+  );
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "1",
+    unit: "piece",
+    gram_weight: "100",
+    reference_quantity: "0.5",
+    reference_unit: "piece",
+    reference_gram_weight: "50",
+  }));
+
   await act(async () => renderer.unmount());
 });
 
-test("a reviewed volume representation with a non-volume reference scales later quantity edits from its established current ratio", async () => {
-  const renderer = await renderEditor([baseServing, portionServing("100", "g", "100")]);
+test("confirmed weight-to-volume equivalence becomes the stable volume reference", async () => {
+  const renderer = await renderEditor([
+    baseServing,
+    portionServing("100", "g", "100"),
+  ]);
+
   await act(async () => press(renderer, "Edit 100 g"));
   await act(async () => openPicker(renderer, "Choose unit for 100 g"));
   await act(async () => chooseOption(renderer, "cup"));
 
-  expect(visibleText(renderer)).toContain(servingConversionReviewMessage("cup", "100"));
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("2"));
+  await act(async () =>
+    inputByLabel(renderer, "Equivalent quantity").props.onChangeText("2")
+  );
+
+  // Still the original committed serving until confirmation.
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "2", unit: "cup", gram_weight: "100",
-    reference_quantity: "2", reference_unit: "cup", reference_gram_weight: "100",
+    quantity: "100",
+    unit: "g",
+    gram_weight: "100",
   }));
 
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("1"));
+  await act(async () => press(renderer, "Confirm equivalent measurement"));
+
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "1", unit: "cup", gram_weight: "50",
-    reference_quantity: "2", reference_unit: "cup", reference_gram_weight: "100",
+    quantity: "2",
+    unit: "cup",
+    gram_weight: "100",
+    reference_quantity: "2",
+    reference_unit: "cup",
+    reference_gram_weight: "100",
+  }));
+
+  await act(async () =>
+    inputByLabel(renderer, "Quantity").props.onChangeText("1")
+  );
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "1",
+    unit: "cup",
+    gram_weight: "50",
+    reference_quantity: "2",
+    reference_unit: "cup",
+    reference_gram_weight: "100",
   }));
   expect(visibleText(renderer)).toContain("1 cup (50 g)");
   expect(visibleText(renderer)).toContain("Based on: 2 cups = 100 g");
+
   await act(async () => renderer.unmount());
 });
 
-test("a resolved incompatible reference is promoted only once even if the parent warning is stale", async () => {
-  const renderer = await renderEditor([baseServing, portionServing("16", "tbsp", "100")], true);
+test("a confirmed equivalence remains authoritative even if the parent warning render is stale", async () => {
+  const renderer = await renderEditor(
+    [baseServing, portionServing("16", "tbsp", "100")],
+    true,
+  );
+
   await act(async () => press(renderer, "Edit 16 Tbsp"));
   await act(async () => openPicker(renderer, "Choose unit for"));
   await act(async () => chooseOption(renderer, "piece"));
 
-  expect(currentPortion()).toEqual(expect.objectContaining({ quantity: "", unit: "piece", gram_weight: "100" }));
+  await act(async () =>
+    inputByLabel(renderer, "Equivalent quantity").props.onChangeText("1")
+  );
 
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("1"));
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "1", unit: "piece", gram_weight: "100",
-    reference_quantity: "1", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "16",
+    unit: "tbsp",
+    gram_weight: "100",
   }));
 
-  // Simulate a parent render that still carries the old review sentinel. The local transition
-  // was already consumed, so this ordinary quantity edit must scale from 1 piece = 100 g,
-  // not promote 2 pieces = 100 g as a second reference.
-  await act(async () => inputByLabel(renderer, "Quantity").props.onChangeText("2"));
+  await act(async () => press(renderer, "Confirm equivalent measurement"));
+
   expect(currentPortion()).toEqual(expect.objectContaining({
-    quantity: "2", unit: "piece", gram_weight: "200",
-    reference_quantity: "1", reference_unit: "piece", reference_gram_weight: "100",
+    quantity: "1",
+    unit: "piece",
+    gram_weight: "100",
+    reference_quantity: "1",
+    reference_unit: "piece",
+    reference_gram_weight: "100",
+  }));
+
+  // The harness deliberately re-injects the stale parent sentinel.
+  // Local resolution authority must still prevent a second promotion.
+  await act(async () =>
+    inputByLabel(renderer, "Quantity").props.onChangeText("2")
+  );
+
+  expect(currentPortion()).toEqual(expect.objectContaining({
+    quantity: "2",
+    unit: "piece",
+    gram_weight: "200",
+    reference_quantity: "1",
+    reference_unit: "piece",
+    reference_gram_weight: "100",
   }));
   expect(visibleText(renderer)).toContain("2 pieces (200 g)");
   expect(visibleText(renderer)).toContain("Based on: 1 piece = 100 g");
+
   await act(async () => renderer.unmount());
 });
 

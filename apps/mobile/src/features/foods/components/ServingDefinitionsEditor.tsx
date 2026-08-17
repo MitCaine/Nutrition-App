@@ -43,6 +43,12 @@ type Props = {
 
 type ReferenceDraft = { quantity: string; unit: string; gramWeight: string };
 type CurrentScalingAnchor = { quantity: string; unit: string; gramWeight: string };
+type PendingEquivalenceDraft = {
+  targetUnit: string;
+  quantity: string;
+  gramWeight: string;
+  previousConsistencyWarning?: string;
+};
 
 /** The serving row persists the current representation. The optional reference_* triplet
  * separately persists the stable measurement the user established for conversion/scaling. */
@@ -64,6 +70,9 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
   );
   const [currentScalingAnchors, setCurrentScalingAnchors] = useState<Record<string, CurrentScalingAnchor | null>>({});
   const [referenceDrafts, setReferenceDrafts] = useState<Record<string, ReferenceDraft | undefined>>({});
+  const [pendingEquivalences, setPendingEquivalences] = useState<
+    Record<string, PendingEquivalenceDraft | undefined>
+  >({});
 
   useEffect(() => {
     if (invalidServingKey && !servings.find((serving) => serving.key === invalidServingKey)?.isBaseAmount) {
@@ -182,7 +191,145 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
     setReferenceDrafts((current) => ({ ...current, [serving.key]: undefined }));
   }
 
+  function beginPendingEquivalence(
+    serving: ServingFormValue,
+    targetUnit: string,
+    transitionGramWeight: string,
+  ) {
+    const existingDraft = pendingEquivalences[serving.key];
+    const reference = referenceOf(serving);
+
+    const authoritativeGrams = amountHasKnownGramWeight({
+      gram_weight: transitionGramWeight,
+    })
+      ? transitionGramWeight.trim()
+      : amountHasKnownGramWeight(serving)
+        ? (serving.gram_weight ?? "").trim()
+        : exactCurrentGrams(serving.quantity, serving.unit, reference)
+          ?? reference.gramWeight.trim();
+
+    const previousWarning =
+      existingDraft?.previousConsistencyWarning
+      ?? serving.consistencyWarning;
+
+    setPendingEquivalences((current) => ({
+      ...current,
+      [serving.key]: {
+        targetUnit,
+        quantity:
+          existingDraft?.targetUnit === targetUnit
+            ? existingDraft.quantity
+            : "",
+        gramWeight: authoritativeGrams,
+        previousConsistencyWarning:
+          previousWarning === UNCONVERTED_SERVING_UNIT_WARNING
+            ? undefined
+            : previousWarning,
+      },
+    }));
+
+    // The sentinel blocks Save while the local draft is unresolved, but
+    // quantity/unit/reference authority remains exactly as it was.
+    updateServing(serving.key, {
+      consistencyWarning: UNCONVERTED_SERVING_UNIT_WARNING,
+    });
+
+    setReferenceDrafts((current) => ({
+      ...current,
+      [serving.key]: undefined,
+    }));
+    setReviewWarnings((current) => ({
+      ...current,
+      [serving.key]: UNCONVERTED_SERVING_UNIT_WARNING,
+    }));
+    setPendingReferencePromotions((current) => ({
+      ...current,
+      [serving.key]: false,
+    }));
+  }
+
+  function cancelPendingEquivalence(serving: ServingFormValue) {
+    const pending = pendingEquivalences[serving.key];
+    if (!pending) return;
+
+    updateServing(serving.key, {
+      consistencyWarning: pending.previousConsistencyWarning,
+    });
+
+    setPendingEquivalences((current) => ({
+      ...current,
+      [serving.key]: undefined,
+    }));
+    setReviewWarnings((current) => ({
+      ...current,
+      [serving.key]: null,
+    }));
+    setPendingReferencePromotions((current) => ({
+      ...current,
+      [serving.key]: false,
+    }));
+  }
+
+  function confirmPendingEquivalence(serving: ServingFormValue) {
+    const pending = pendingEquivalences[serving.key];
+    if (!pending) return;
+
+    const quantity = normalizeServingQuantityInput(pending.quantity);
+    if (
+      !quantity
+      || !pending.targetUnit.trim()
+      || !amountHasKnownGramWeight({ gram_weight: pending.gramWeight })
+    ) {
+      return;
+    }
+
+    // This explicit confirmation is the authority boundary. Intermediate
+    // keyboard values never reach persisted/current serving state.
+    updateServing(serving.key, {
+      quantity,
+      unit: pending.targetUnit,
+      gram_weight: pending.gramWeight,
+      reference_quantity: quantity,
+      reference_unit: pending.targetUnit,
+      reference_gram_weight: pending.gramWeight,
+      consistencyWarning: pending.previousConsistencyWarning,
+    });
+
+    setPendingEquivalences((current) => ({
+      ...current,
+      [serving.key]: undefined,
+    }));
+    setReviewWarnings((current) => ({
+      ...current,
+      [serving.key]: null,
+    }));
+    setPendingReferencePromotions((current) => ({
+      ...current,
+      [serving.key]: false,
+    }));
+    setPreservedVolumes((current) => ({
+      ...current,
+      [serving.key]: null,
+    }));
+    setCurrentScalingAnchors((current) => ({
+      ...current,
+      [serving.key]: null,
+    }));
+  }
+
   function updateRepresentationQuantity(serving: ServingFormValue, rawQuantity: string) {
+    const pendingEquivalence = pendingEquivalences[serving.key];
+    if (pendingEquivalence) {
+      setPendingEquivalences((current) => ({
+        ...current,
+        [serving.key]: {
+          ...pendingEquivalence,
+          quantity: rawQuantity,
+        },
+      }));
+      return;
+    }
+
     const quantity = normalizeServingQuantityInput(rawQuantity);
     const reference = referenceOf(serving);
     const unresolved = Boolean(activeReviewWarning(serving));
@@ -267,24 +414,49 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
       },
       unit,
     );
+
+    if (transition.reviewWarning) {
+      beginPendingEquivalence(serving, unit, transition.gramWeight);
+      return;
+    }
+
+    // A defensible automatic conversion can commit immediately.
+    setPendingEquivalences((current) => ({
+      ...current,
+      [serving.key]: undefined,
+    }));
+
     updateServing(serving.key, {
       quantity: transition.quantity,
       unit,
       gram_weight: transition.gramWeight,
       ...commitReferenceFields(serving),
-      consistencyWarning: transition.reviewWarning
-        ?? (serving.consistencyWarning === UNCONVERTED_SERVING_UNIT_WARNING ? undefined : serving.consistencyWarning),
+      consistencyWarning:
+        serving.consistencyWarning === UNCONVERTED_SERVING_UNIT_WARNING
+          ? undefined
+          : serving.consistencyWarning,
     });
-    setPreservedVolumes((current) => ({ ...current, [serving.key]: transition.preservedVolume }));
-    setCurrentScalingAnchors((current) => ({ ...current, [serving.key]: null }));
-    setReviewWarnings((current) => ({ ...current, [serving.key]: transition.reviewWarning }));
+
+    setPreservedVolumes((current) => ({
+      ...current,
+      [serving.key]: transition.preservedVolume,
+    }));
+    setCurrentScalingAnchors((current) => ({
+      ...current,
+      [serving.key]: null,
+    }));
+    setReviewWarnings((current) => ({
+      ...current,
+      [serving.key]: null,
+    }));
     setPendingReferencePromotions((current) => ({
       ...current,
-      [serving.key]: Boolean(transition.reviewWarning),
+      [serving.key]: false,
     }));
   }
 
   function removeServingClean(key: string) {
+    setPendingEquivalences((current) => ({ ...current, [key]: undefined }));
     setPreservedVolumes((current) => ({ ...current, [key]: null }));
     setReviewWarnings((current) => ({ ...current, [key]: null }));
     setPendingReferencePromotions((current) => ({ ...current, [key]: false }));
@@ -326,12 +498,40 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
           : automaticLabel;
         const referenceLabel = referenceMeasurementLabel(reference);
         const showReferenceBasis = confirmed && !currentMatchesReference(serving, reference);
-        const preview = servingPreview(serving, displayLabel);
+        const pendingEquivalence = pendingEquivalences[serving.key];
         const reviewWarning = activeReviewWarning(serving);
-        const reviewMessage = reviewWarning ? servingConversionReviewMessage(serving.unit, serving.gram_weight) : null;
+        const preview = servingPreview(
+          serving,
+          displayLabel,
+          pendingEquivalence ? null : reviewWarning,
+        );
+        const reviewMessage = reviewWarning
+          ? servingConversionReviewMessage(
+              pendingEquivalence?.targetUnit ?? serving.unit,
+              pendingEquivalence?.gramWeight ?? serving.gram_weight,
+            )
+          : null;
         const derivedPerUnit = confirmed && !reviewWarning
           ? derivedServingPerUnitText(serving.gram_weight, serving.quantity, serving.unit)
           : null;
+        const pendingQuantity = pendingEquivalence
+          ? normalizeServingQuantityInput(pendingEquivalence.quantity)
+          : null;
+        const pendingDisplayLabel = pendingEquivalence && pendingQuantity
+          ? generatedAmountDisplayLabel(pendingQuantity, pendingEquivalence.targetUnit)
+          : "";
+        const representationPreview = pendingEquivalence
+          ? pendingDisplayLabel && amountHasKnownGramWeight({ gram_weight: pendingEquivalence.gramWeight })
+            ? `${pendingDisplayLabel} (${formatServingGramForDisplay(pendingEquivalence.gramWeight)} g)`
+            : "Enter the equivalent quantity to preview this serving size."
+          : preview;
+        const representationDerivedPerUnit = pendingEquivalence && pendingQuantity
+          ? derivedServingPerUnitText(
+              pendingEquivalence.gramWeight,
+              pendingQuantity,
+              pendingEquivalence.targetUnit,
+            )
+          : derivedPerUnit;
         const unitFocus = focusProps(servingFocusKey(serving.key, "unit"));
         return (
           <View key={serving.key} style={styles.portionCard}>
@@ -341,7 +541,7 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                 {showReferenceBasis ? (
                   <Text style={styles.meta}>{`Based on: ${referenceLabel}`}</Text>
                 ) : null}
-                <Text style={styles.meta}>{servingWeightSummary(serving, reviewWarning)}</Text>
+                <Text style={styles.meta}>{servingWeightSummary(serving, pendingEquivalence ? null : reviewWarning)}</Text>
               </View>
               <DefaultServingControl
                 accessibilityLabel={serving.is_default ? "Default amount" : `Set ${displayLabel || "serving size"} as default`}
@@ -352,17 +552,28 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
               />
             </View>
 
-            {serving.consistencyWarning && serving.consistencyWarning !== reviewWarning ? (
+            {serving.consistencyWarning
+              && serving.consistencyWarning !== UNCONVERTED_SERVING_UNIT_WARNING
+              && serving.consistencyWarning !== reviewWarning ? (
               <Text style={styles.warning}>{serving.consistencyWarning}</Text>
             ) : null}
-            {reviewMessage ? <Text style={styles.warning}>{reviewMessage}</Text> : null}
+            {reviewMessage ? (
+              <View
+                accessible
+                accessibilityLabel={`Equivalent measurement needed. ${reviewMessage}`}
+                style={styles.equivalenceNotice}
+              >
+                <Text style={styles.equivalenceTitle}>Equivalent measurement needed</Text>
+                <Text style={styles.meta}>{reviewMessage}</Text>
+              </View>
+            ) : null}
 
             {expanded ? (
               <View style={styles.editor}>
                 {referenceEditing && draft ? (
                   <View style={styles.referenceEditor}>
                     <Text accessibilityRole="header" style={styles.fieldLabel}>Reference measurement</Text>
-                    <Text style={styles.meta}>Enter the measured relationship, for example 1 cup = 100 g. Compatible current units are recalculated from it. If the existing current unit is incompatible, confirming this reference resets the serving to the new measurement.</Text>
+                    <Text style={styles.meta}>Enter a measured food-specific relationship, for example 1 cup = 100 g. Compatible units can then scale from this reference. If the current unit is from a different dimension, confirming the new reference makes that explicit relationship authoritative.</Text>
 
                     <View style={styles.twoColumn}>
                       <LabeledField
@@ -426,38 +637,50 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
                       <Text accessibilityRole="header" style={styles.fieldLabel}>Reference measurement</Text>
                       <Text style={styles.referenceValue}>{referenceLabel}</Text>
                     </View>
-                    <AccessiblePressable
-                      accessibilityLabel="Edit reference measurement"
-                      onPress={() => editReference(serving)}
-                      style={styles.compactButton}
-                    >
-                      <Text style={styles.link}>Edit</Text>
-                    </AccessiblePressable>
+                    {!pendingEquivalence ? (
+                      <AccessiblePressable
+                        accessibilityLabel="Edit reference measurement"
+                        onPress={() => editReference(serving)}
+                        style={styles.compactButton}
+                      >
+                        <Text style={styles.link}>Edit</Text>
+                      </AccessiblePressable>
+                    ) : null}
                   </View>
                 )}
 
                 {confirmed ? (
                   <View style={styles.representationEditor}>
-                    <Text style={styles.meta}>Change how this serving is shown. Compatible units keep the same reference. If a unit cannot be converted, entering its quantity makes that relationship the new reference.</Text>
+                    <Text style={styles.meta}>
+                      {pendingEquivalence
+                        ? "The current serving stays unchanged while you type. Confirm once the equivalent amount is complete, or cancel to keep the current relationship."
+                        : "Change how this serving is shown. Compatible units convert automatically. Different dimensions require an explicit food-specific equivalence."}
+                    </Text>
 
                     <View style={styles.twoColumn}>
                       <LabeledField
                         containerStyle={styles.flex}
-                        label="Quantity"
+                        label={pendingEquivalence ? "Equivalent quantity" : "Quantity"}
                         validationTarget={`serving.${serving.key}.quantity`}
                         {...focusProps(servingFocusKey(serving.key, "quantity"))}
-                        value={serving.quantity}
+                        value={pendingEquivalence?.quantity ?? serving.quantity}
                         onChangeText={(quantity) => updateRepresentationQuantity(serving, quantity)}
                         keyboardType="numbers-and-punctuation"
                         placeholder="e.g. 2"
                         placeholderTextColor={theme.colors.placeholder}
                         inputStyle={styles.input}
-                        hint="Editing the quantity authors a new amount for this serving."
+                        hint={pendingEquivalence
+                          ? `Enter the complete ${pendingEquivalence.targetUnit} amount. Typing does not change the current serving until you confirm.`
+                          : "Editing the quantity authors a new amount for this serving."}
                       />
                       <ServingUnitPicker
-                        value={serving.unit}
+                        value={pendingEquivalence?.targetUnit ?? serving.unit}
                         onChange={(unit) => updateRepresentationUnit(serving, unit)}
-                        contextLabel={displayLabel || "serving size"}
+                        contextLabel={
+                          pendingEquivalence
+                            ? `equivalent ${pendingEquivalence.targetUnit} measurement`
+                            : displayLabel || "serving size"
+                        }
                         containerStyle={styles.flex}
                         focusRef={unitFocus.ref}
                         onFocus={unitFocus.onFocus}
@@ -470,9 +693,46 @@ export function ServingDefinitionsEditor({ servings, updateServing, addServing, 
 
                     <View style={styles.previewCard}>
                       <Text style={styles.fieldLabel}>Will appear as</Text>
-                      <Text style={styles.previewText}>{preview}</Text>
-                      {derivedPerUnit ? <Text style={styles.meta}>{derivedPerUnit}</Text> : null}
+                      <Text style={styles.previewText}>{representationPreview}</Text>
+                      {representationDerivedPerUnit ? (
+                        <Text style={styles.meta}>{representationDerivedPerUnit}</Text>
+                      ) : null}
                     </View>
+
+                    {pendingEquivalence ? (
+                      <View style={styles.actions}>
+                        <AccessiblePressable
+                          accessibilityLabel="Cancel equivalent measurement"
+                          accessibilityHint="Discards this unit change and keeps the current serving relationship."
+                          onPress={() => cancelPendingEquivalence(serving)}
+                          style={styles.compactButton}
+                        >
+                          <Text style={styles.link}>Cancel</Text>
+                        </AccessiblePressable>
+
+                        <AccessiblePressable
+                          accessibilityLabel="Confirm equivalent measurement"
+                          accessibilityHint={`Confirms that ${pendingEquivalence.quantity || "this amount"} ${pendingEquivalence.targetUnit} equals ${formatServingGramForDisplay(pendingEquivalence.gramWeight)} grams for this Food.`}
+                          disabled={
+                            !pendingQuantity
+                            || !amountHasKnownGramWeight({
+                              gram_weight: pendingEquivalence.gramWeight,
+                            })
+                          }
+                          onPress={() => confirmPendingEquivalence(serving)}
+                          style={[
+                            styles.compactButton,
+                            (!pendingQuantity
+                              || !amountHasKnownGramWeight({
+                                gram_weight: pendingEquivalence.gramWeight,
+                              }))
+                              && styles.disabled,
+                          ]}
+                        >
+                          <Text style={styles.link}>Confirm</Text>
+                        </AccessiblePressable>
+                      </View>
+                    ) : null}
                   </View>
                 ) : null}
 
@@ -574,8 +834,16 @@ function referenceDraftValid(draft: ReferenceDraft): boolean {
   return Boolean(normalizeServingQuantityInput(draft.quantity)) && Boolean(draft.unit.trim()) && Number(draft.gramWeight) > 0 && Number.isFinite(Number(draft.gramWeight));
 }
 
-function servingPreview(serving: ServingFormValue, displayLabel: string): string {
-  if (!displayLabel) return "Enter a reference measurement to preview this serving size.";
+function servingPreview(
+  serving: ServingFormValue,
+  displayLabel: string,
+  reviewWarning: string | null,
+): string {
+  if (!displayLabel) {
+    return reviewWarning
+      ? "Enter the equivalent quantity to preview this serving size."
+      : "Enter a reference measurement to preview this serving size.";
+  }
   if (!amountHasKnownGramWeight(serving)) return displayLabel;
   return `${displayLabel} (${formatServingGramForDisplay(serving.gram_weight ?? "")} g)`;
 }
@@ -659,6 +927,15 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     defaultControlText: { color: theme.colors.text },
     disabled: { opacity: 0.55 },
     editor: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: 12, paddingTop: 12 },
+    equivalenceNotice: {
+      backgroundColor: theme.colors.secondarySurface,
+      borderColor: theme.colors.border,
+      borderRadius: 6,
+      borderWidth: 1,
+      gap: 4,
+      padding: 10,
+    },
+    equivalenceTitle: { color: theme.colors.text, fontSize: 13, fontWeight: "700" },
     eyebrow: { color: theme.colors.secondaryText, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
     fieldError: { color: theme.colors.errorText, fontSize: 13 },
     fieldLabel: { color: theme.colors.secondaryText, fontSize: 13, fontWeight: "700", marginBottom: 5 },
