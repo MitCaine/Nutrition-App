@@ -14,7 +14,8 @@ Phase 5C4.9 changes no application or control migration head. The authoritative
 heads remain:
 
 Subsequent active development now continues from application head
-`0028_duplicate_food_source_identity`; predecessor `0027_serving_reference_measurement`,
+`0029_expand_nutrient_catalog`; predecessor `0028_duplicate_food_source_identity`,
+`0027_serving_reference_measurement`,
 `0026_food_nutrient_integrity`, predecessor
 `0025_immutable_validator_head`, and migration `0024_recipe_log_current_provenance`
 remain part of the historical chain, and this release boundary remains frozen as

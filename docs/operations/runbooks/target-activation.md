@@ -30,7 +30,7 @@ and emergency-close policies, signer, nonce, and validity interval. Canonical
 bytes and digests are reconstructed independently; caller-projected values do
 not replace authoritative control rows.
 
-The current active application migration head is `0028_duplicate_food_source_identity`; the
+The current active application migration head is `0029_expand_nutrient_catalog`; the
 target-activation procedure remains pinned to its approved `0021_target_activation_execution`
 boundary.
 

@@ -5,7 +5,7 @@
 
 ## Release boundary
 
-The current active development head is `0028_duplicate_food_source_identity`; the Version 1.0
+The current active development head is `0029_expand_nutrient_catalog`; the Version 1.0
 release boundary below remains pinned to its historical application head.
 
 The application migration head is `0021_target_activation_execution`; the control migration head
