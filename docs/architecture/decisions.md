@@ -321,7 +321,7 @@ owners, grants, and projections, and tamper tests must make it fail.
 complete or unchanged. Qualification detects false-green manifests and authority drift.
 
 **Read more:** [Control Plane Guide](../operations/control-plane.md#qualification-and-migration-safety),
-[Testing Guide](../operations/testing.md#control-database-and-production-hardening-tests), and
+[Testing Guide](../operations/testing.md#control-database-qualification), and
 [Project Invariants](../project/invariants.md#why-qualification)
 
 ### Artifact-referenced admission pipeline
