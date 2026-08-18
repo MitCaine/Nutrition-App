@@ -47,7 +47,9 @@ Accepted semantics:
 - nutrition-affecting Log mutations clear Complete automatically without an extra confirmation prompt;
 - moving an entry clears Complete for both source and destination dates;
 - deleting the last entry clears Complete because the day becomes empty;
-- note-only and meal-label-only edits preserve Complete because they do not change nutrition; and
+- note-only and meal-label-only edits preserve Complete because they do not change nutrition;
+- later edits to the source Food or Recipe do not clear historical Complete state because historical Daily Log nutrition remains owned by the immutable stored snapshot;
+- a serving/amount edit that produces an exactly unchanged resulting nutrient snapshot preserves Complete, while any resulting nutrient-snapshot change clears it; and
 - an empty date never implies confirmed zero intake. A future fasting/no-intake concept would require separate semantics.
 
 ## Daily Nutrition
@@ -81,6 +83,10 @@ Unknown must never be auto-converted to zero merely to simplify the UI. Daily Lo
 
 Normal unknown contributors should usually remain visually quiet. The application preserves uncertainty internally so calculations cannot silently reinterpret unknown as zero or claim unsupported precision, but ordinary Daily Log/Daily Nutrition rows do not need warning coloring, `Incomplete data`, or text such as `1,400 mg + unknown from 1 food`.
 
+Estimated values remain distinct internally. Focused nutrient-history views may distinguish estimated contribution subtly when it materially helps interpret an exact daily value; the four-macro overview should not acquire routine estimation decoration unless the displayed value materially depends on estimation.
+
+Epic 4 does not add a dedicated data-quality screen. Preserve the metadata and surface it only where it changes an action or mathematical claim. A separate diagnostic surface can be reconsidered later if real use demonstrates value.
+
 OCR confirmation remains different: unresolved source-label information can remain actionable before Food creation. Once a Food is legitimately saved with unknown nutrient data, ordinary logging should not repeatedly nag the user about it.
 
 ## Manual Food nutrient authoring
@@ -88,6 +94,8 @@ OCR confirmation remains different: unresolved source-label information can rema
 New manual Foods should not expose the entire canonical nutrient catalog by default.
 
 The default set follows the familiar conventional U.S. Nutrition Facts information set: Calories and routinely required label nutrients. Additional canonical nutrients remain available through an `Add nutrient` / `More nutrients` interaction.
+
+`More nutrients` should use the same broad grouped vocabulary used elsewhere in the app rather than another giant flat list. Additional entry is organized into `Vitamins`, `Minerals`, and `Fatty Acids` groups while the ordinary Nutrition Facts fields remain immediately available on the main authoring surface.
 
 An explicit `0` on the source may be stored as `zero`. An unavailable or absent field remains `unknown`; absence is not auto-filled with zero. A regulatory `not a significant source` statement is not silently converted into literal zero.
 
@@ -111,16 +119,22 @@ Whole-period paging is accepted:
 
 History state should survive drill-down and return: selected range, selected 7/30 mode, denominator mode, detail-card state, expanded groups, scroll/focus position, and focused nutrient context where applicable.
 
+The denominator mode is global for the current History view. Switching between Complete days and Logged days recalculates the four overview cards, Nutrition Details card, and focused nutrient views together; different nutrients should not silently use different denominator modes.
+
+If a selected range contains no Logs at all, keep the period controls available but replace the four empty macro cards with a dedicated empty-period state such as `No food was logged during this period.`
+
+If the selected range contains Logs but no Complete days, hide the Complete/Logged selector and use `Logged-day average`. Once at least one Complete day is available, expose the selector and default to Complete days.
+
 ## History overview
 
-The primary History overview always contains four analytical cards:
+The primary History overview always contains four analytical cards when the selected period contains logged history:
 
 - Calories;
 - Protein;
 - Carbohydrate; and
 - Fat.
 
-Each card contains the period statistic and a small discrete daily bar chart. The four cards remain structurally present even when one has no usable data; use a neutral unavailable state rather than removing it.
+Each card contains the period statistic and a small discrete daily bar chart. The four cards remain structurally present even when one has no usable nutrient value; use a neutral unavailable state rather than removing it.
 
 History uses discrete bars, not connected lines. Daily intake is a discrete calendar observation and missing dates must remain gaps rather than zero-height intake bars.
 
@@ -171,12 +185,23 @@ Accepted interaction:
 - expanded/collapsed state persists while the user remains in History and when drilling into a nutrient and back;
 - the selected History period and denominator are inherited by the detail card;
 - each nutrient row remains present even when no usable value exists, using neutral `—` rather than disappearing;
+- rows stay compact and do not embed a chart for every nutrient;
 - rows show the relevant period value and current target/reference context where meaningful; and
 - selecting a nutrient opens its focused nutrient-history view.
+
+A compact row can therefore look conceptually like `Sodium 1,824 / 2,300 mg >`; the focused view owns the full chart rather than inflating the grouped card.
 
 Focused nutrient detail remains one nutrient at a time. It contains the period statistic, current reference context when applicable, daily bar chart, full date rows, and navigation to contributing Daily Log dates. Back returns to the Nutrition Details card at the prior scroll/expanded state; closing the card returns to the four-macro History overview at its prior state.
 
 Do not add swipe-left/right between nutrients in the initial Epic. If physical use later shows repeated Back navigation is inefficient, adjacent-nutrient navigation can be reconsidered deliberately.
+
+## Focused nutrient chart semantics
+
+Focused nutrient charts use a true zero baseline. The vertical scale should extend from zero through at least the greater of the highest displayed daily value or the current target/reference line. Do not truncate the axis merely to magnify ordinary day-to-day variation.
+
+When estimated contribution materially affects an exact daily value, the focused view may distinguish that state subtly. This must not turn estimates into warning-heavy presentation, and unknown contributors remain governed by the quiet-default policy above.
+
+A current target/reference line may be shown when meaningful, but it remains explicitly labeled as current context rather than historical goal state.
 
 ## History averages and denominator honesty
 
@@ -219,16 +244,15 @@ Chronology plus exact period statistics is sufficient for the initial History fe
 
 ## Remaining Grill/architecture questions
 
-The first three Grill batches have resolved the primary product shape. Remaining questions are narrower behavior and implementation-policy choices, including:
+The first four Grill batches have resolved the primary product shape and most history semantics. Remaining questions are narrower behavior and implementation-policy choices, including:
 
-- exact edge cases for mutations that invalidate Complete;
-- empty/partial-history presentation;
-- focused-chart scaling and reference-line behavior;
-- whether any explicit data-quality detail surface is useful;
-- Food-form extended-nutrient interaction details;
-- accessibility behavior for charts and expandable detail cards;
-- whether contributor ranking deserves later scope; and
-- performance/query boundaries for local and remote range reads.
+- exact chart accessibility and selection behavior;
+- target/limit overage presentation without behavioral judgment;
+- Daily Nutrition section persistence and navigation details;
+- precise Food-form extended-nutrient add/remove behavior;
+- whether contributor ranking deserves later scope;
+- loading/error/stale-state behavior for range reads; and
+- performance/query boundaries for local and remote History projections.
 
 ## Regulatory reference used for the default Nutrition Facts subset
 
