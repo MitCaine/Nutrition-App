@@ -17,6 +17,9 @@ the [Architecture Decision Index](../architecture/decisions.md) points to implem
 | Immutable Recipe revisions and retained history | Logs and nested Recipes keep exact published content. | Publication stores another graph and requires revision-resolution code. | Mutable authoring cannot safely serve as historical authority. |
 | Explicit publication workflow | Users can edit freely while “published” has one transactional meaning. | A Recipe may be stale and marked `needs_republish` until the user publishes again. | An explicit boundary is safer than silently changing every downstream consumer on save. |
 | Generated compatibility Food projection | Published Recipes reuse Food search, serving, ingredient, and logging paths. | Projection state must be regenerated and cannot be treated as historical authority. | Reuse is preferable to a parallel loggable-item hierarchy when the exact revision link remains authoritative. |
+| Explicit serving identity plus gram/reference authority | Serving labels and UI units can change while physical amount meaning remains stable. | Serving edits must carry complete reference metadata or require review instead of guessing. | Household labels are not universal mass conversions, and Recipe/log meaning must not drift with presentation. |
+| Reference-derived Targets outside history | Profiles, DRI/FDA references, and tracking preferences can evolve without changing past consumption. | Daily comparison must resolve current target policy separately from immutable Log snapshots. | Goals are interpretation/configuration, not historical nutrition facts. |
+| Validated local backup replacement | Local users can export/restore a coherent authority without a sync engine. | Restore requires validation, staging, restart-time activation, and rollback handling rather than simple file overwrite. | Recovery is needed, but merge/sync semantics would be a substantially different architecture. |
 | Service-first, selective repositories | Transaction and ownership authority stay visible while complex queries are reusable. | Persistence access is not mechanically uniform across every service. | A repository per table would add indirection without clarifying responsibility. |
 | No Repository Provider/Factory layer | Construction and transaction ownership remain direct and easy to trace. | Swapping an entire persistence backend is not a plug-in operation. | Each running context has one explicitly selected local or remote application-data authority; selective test seams provide enough substitution. |
 | Layered ownership enforcement | Friendly service errors and race-resistant database integrity reinforce each other. | Owner predicates and constraints appear at several layers and require coordinated tests. | One missed route check must not permit a cross-user relationship. |
@@ -51,6 +54,9 @@ daily totals aggregate those snapshots only.
 Editing a Log deliberately rebuilds that Log's snapshots because the user is changing the
 historical event. Editing the source Food alone does not.
 
+The repository currently retains this history for exact Daily Log and Recipe-revision behavior. A
+separate longitudinal trends/analytics product is not implied by the presence of historical rows.
+
 ## Why distinguish unknown from zero?
 
 “The label says 0 mg” and “the data source did not provide sodium” support different conclusions.
@@ -64,8 +70,15 @@ quantity/unit semantics and optional measured gram weight. Recipe ingredients re
 serving they reference, preventing a later default-serving change from silently altering the
 Recipe.
 
-Ambiguous serving remaps fail atomically because guessing would corrupt both authored Recipes and
-future publication revisions.
+Current serving authoring also permits a complete reference measurement: reference quantity,
+reference unit, and reference gram weight. That triple records the physical anchor behind a serving
+when the user changes how the serving is displayed. It is all-or-none because a partial reference
+would claim equivalence without enough information to prove it.
+
+Gram mass is the authority when crossing between mass and non-mass presentation. If an edit cannot
+preserve physical equivalence unambiguously, the correct behavior is explicit review or failure,
+not an inferred conversion. Active Recipe serving references likewise remap only to one successor
+with equivalent semantics.
 
 ## Why revision-backed logging?
 
@@ -73,6 +86,23 @@ The Recipe compatibility Food is useful for selection, but it can advance to a n
 The Daily Log therefore records both the immutable revision and its exact amount definition. That
 pair answers “which recipe state and which serving meaning did this log use?” even after another
 publication.
+
+## Why target configuration stays outside immutable nutrition history?
+
+A Daily Log answers what was consumed. A target answers how current configuration/reference data
+interprets that consumption. Combining the two would make a profile edit or reference-data update
+rewrite history.
+
+Targets therefore resolve separately from snapshot-derived daily totals. Per-nutrient tracking
+policy can mark a nutrient ignored or amount-only. Manual overrides take precedence over dynamic
+recommendations. Calories can use the bounded general-adult Mifflin–St Jeor estimate, while other
+nutrients can use the canonical DRI RDA/AI dataset and then FDA Daily Value reference where
+applicable. Some nutrients intentionally have no established target and remain amount-only; missing
+or unsupported profile/reference cases remain explicitly unavailable.
+
+The important invariant is not a fixed list of target numbers. It is that changing a profile,
+tracking preference, manual override, DRI dataset, FDA catalog, or target-resolution rule never
+changes previously stored Recipe revisions or Daily Log nutrient snapshots.
 
 ## Why bounded OCR correction provenance?
 
@@ -82,6 +112,10 @@ IDs, and confirmation actions makes a future parser regression explainable and t
 Storing the image or unbounded raw OCR response would increase privacy and retention risk without
 being necessary for nutrition resolution. The persisted trace is deliberately bounded,
 append-only, versioned, and separate from the Food's authoritative nutrients.
+
+Guided camera framing and image-quality inspection are acquisition aids. They may improve the input
+or warn the user about a weak capture, but neither becomes persisted nutrition authority and neither
+removes the need for explicit confirmation.
 
 ## Why ownership enforcement in several layers?
 
@@ -117,6 +151,23 @@ or data migration. TanStack Query may cache authority-scoped data in process, an
 replay an idempotent operation, but neither creates a second durable authority. On-device OCR is a
 privacy and platform choice; its bounded parser/confirmation provenance follows the selected
 runtime and is not an offline synchronization mechanism.
+
+## Why local backup is replacement, not synchronization?
+
+A coherent backup is a snapshot of one local SQLite authority. Restoring it means replacing the
+current local authority with that validated snapshot, not reconciling two independently changed
+histories.
+
+The implementation therefore validates an exported artifact, validates a selected candidate before
+staging, activates only at startup before a normal local connection opens, snapshots the existing
+database for rollback, validates the replacement again, and fails closed if rollback cannot be
+completed safely. Staging can be canceled before restart. Success/failure evidence is retained for
+user-visible recovery state.
+
+This is intentionally different from synchronization. There is no record-by-record merge,
+last-writer-wins rule, conflict graph, background replication, remote mirror, or automatic cloud
+retention. Adding any of those would require a new authority/conflict design rather than extending
+the current backup API casually.
 
 ## Why read-only offline snapshots for migration evidence?
 
@@ -196,9 +247,11 @@ PostgreSQL migration history or absorb Phase 5/control-plane infrastructure.
 | Concern | Needed to understand normal features? | Purpose |
 | --- | --- | --- |
 | Foods, servings, nutrients | Yes | Core nutrition definitions |
+| DRI/FDA reference data, tracking preferences, Targets | Yes for Target work | Current comparison/configuration without rewriting history |
 | Recipe revisions and Log snapshots | Yes | Correct application history |
-| Ownership and create idempotency | Yes | Correct API behavior and retry safety |
-| Apple Vision and parser provenance | Only for OCR work | Privacy-aware label capture |
+| Local backup/restore | Yes for local-data maintenance | Validated replacement/recovery of the local SQLite authority |
+| Ownership and create idempotency | Yes | Correct API/runtime behavior and retry safety |
+| Apple Vision, guided capture, image-quality hints, parser provenance | Only for OCR work | Privacy-aware label capture and explicit review |
 | Application migration 0018 local fence | Usually no | Production-like target prerequisite |
 | Historical Phase 5C conversion | No | Safe migration of populated legacy Recipe data |
 | Independent control database | No | Promotion evidence and workflow authority |
@@ -213,7 +266,7 @@ For the operational overview, continue with the [Control Plane Guide](../operati
 - Read the [Architecture Overview](../architecture/overview.md) to map these reasons to system responsibilities.
 - Choose a domain guide—[Foods](../features/foods-and-nutrition.md),
   [Recipes and Logs](../features/recipes-and-logging.md), or
-  [OCR, Search, and Offline](../features/ocr-search-and-offline.md)—for execution flows.
+  [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md)—for execution flows.
 
 ## See also
 

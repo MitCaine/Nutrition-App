@@ -17,28 +17,61 @@ duplicated, USDA-imported, OCR-confirmed, or a managed Recipe compatibility proj
 
 ### Saved Food
 
-A Food that has been explicitly persisted in the application for one owner. A USDA search result is
-not a Saved Food until import succeeds. See [Food sources](../features/foods-and-nutrition.md#food-sources).
+A Food explicitly persisted in the application for one owner. A USDA search result is not a Saved
+Food until import succeeds. See [Food sources](../features/foods-and-nutrition.md#food-sources).
 
 ### USDA Food and USDA import
 
-A **USDA Food** is an upstream FoodData Central search or preview result. **USDA import** is the
+A **USDA Food** is an upstream FoodData Central search/preview result. **USDA import** is the
 explicit selected-authority operation that normalizes it into a user-owned Saved Food with retained
 source identity: local mode imports into SQLite after a direct USDA request, while remote mode uses
 the FastAPI/PostgreSQL integration. See
 [USDA FoodData Central](../features/foods-and-nutrition.md#usda-fooddata-central).
 
+### Nutrient Catalog
+
+The canonical ordered set of nutrient identities, hierarchy, default units, and reference metadata
+used by Foods, USDA/OCR mapping, summaries, and Targets. It includes ordinary macro/micronutrients
+and current fatty-acid identities such as total Omega-3, ALA, EPA, DHA, and linoleic acid/Omega-6.
+The catalog is not a user-editable target table.
+
+### Qualified Nutrient Unit
+
+A canonical semantic nutrition unit whose qualifier changes biological meaning, such as
+`mcg RAE`, `mcg DFE`, `mg NE`, or `mg alpha-tocopherol`. These are not interchangeable with plain
+`mcg`/`mg` merely because the mass scale is similar. Ordinary `g`/`mg`/`mcg` can be mass-converted;
+a qualified semantic unit must match its canonical meaning.
+
+### Serving Definition
+
+A user/source-defined amount consisting of a label, quantity/unit, optional gram weight, source and
+confirmation metadata, and optionally one complete reference measurement. A Food with servings has
+exactly one default serving.
+
+### Serving Reference Measurement
+
+The optional all-or-none triple `reference_quantity`, `reference_unit`, and
+`reference_gram_weight`. It records the physical measurement behind a serving so changing the
+serving's displayed unit does not silently change the amount represented. See
+[Serving resolution](../features/foods-and-nutrition.md#serving-resolution).
+
+### Gram Authority
+
+The rule that explicit gram mass is the physical authority when relating a serving across mass and
+non-mass presentation. Household/display units do not imply a mass conversion by themselves. An
+edit that cannot preserve physical equivalence must be reviewed or rejected rather than guessed.
+
 ### Recipe
 
-The mutable, user-owned authoring graph: name, yield, ingredients, ordering, and preparation notes.
+The mutable, user-owned authoring graph: name, yields, ingredients, ordering, and preparation notes.
 Editing it does not modify an earlier publication revision. See
 [Authored Recipes](../features/recipes-and-logging.md#authored-recipes).
 
 ### Publication
 
 The explicit transaction that validates an authored Recipe, captures immutable revision content,
-updates its active publication pointer, and creates or updates its compatibility Food projection.
-See [Publication](../features/recipes-and-logging.md#publication).
+updates its active publication pointer, and creates/updates its compatibility Food projection. See
+[Publication](../features/recipes-and-logging.md#publication).
 
 ### Recipe Revision / Publication Revision / Published Revision
 
@@ -56,8 +89,8 @@ this row graph.
 ### Current Revision / Active Publication Revision
 
 The immutable revision currently selected by a mutable Recipe for new downstream use. “Active
-publication revision” is preferred because older revisions remain valid historical records; they
-are not obsolete data. See [Publication](../features/recipes-and-logging.md#publication).
+publication revision” is preferred because older revisions remain valid historical records. See
+[Publication](../features/recipes-and-logging.md#publication).
 
 ### Draft Revision
 
@@ -74,12 +107,12 @@ compatibility state, not historical authority. See
 
 ### Needs Republish (`needs_republish`)
 
-A mutable Recipe flag showing that authored content no longer matches the active publication. It
-clears only after a successful new publication; it does not mutate or invalidate prior revisions.
+A mutable Recipe flag showing authored content no longer matches the active publication. It clears
+only after a successful new publication; it does not mutate or invalidate prior revisions.
 
 ### Amount Definition
 
-The exact serving or gram-based quantity semantics attached to a published Recipe and referenced by
+The exact serving- or gram-based quantity semantics attached to a published Recipe and referenced by
 a Recipe-backed Log. It preserves what an amount meant even after another publication changes the
 Recipe. See [Logging a published Recipe](../features/recipes-and-logging.md#logging-a-published-recipe).
 
@@ -104,7 +137,44 @@ explicitly edited. Snapshot rows preserve history when a source Food changes or 
 
 Nutrition already committed to immutable publication revisions or Daily Log snapshots. It is read
 from retained historical facts rather than recomputed from the latest authored Recipe or Food.
-See [Why immutable nutrition history?](../project/invariants.md#why-immutable-nutrition-history).
+This term does not imply the application currently has a separate longitudinal trends/analytics
+subsystem. See [Why immutable nutrition history?](../project/invariants.md#why-immutable-nutrition-history).
+
+### DRI / Dietary Reference Intake
+
+The versioned canonical reference dataset used by Target resolution for nutrient recommendations
+and applicable upper limits. The app resolves established RDA or AI recommendations for supported
+adult reference profiles; it does not turn every DRI source fact into a target. Current supported
+life stages include general adults and bounded pregnancy/lactation profiles. See
+[Targets and comparisons](../features/foods-and-nutrition.md#targets-and-comparisons).
+
+### DRI Recommendation
+
+One resolved nutrient recommendation from the canonical DRI dataset. It can be an RDA or AI,
+fixed or per-kilogram, and may carry separate upper-limit metadata. A missing/unsupported DRI
+recommendation remains explicit rather than being fabricated.
+
+### FDA Daily Value
+
+Versioned regulatory reference data used as a Target fallback/reference where applicable. FDA
+Daily Values are not properties of a Food nutrient row and do not rewrite historical nutrition.
+
+### Target Tracking Mode
+
+The effective presentation/comparison mode returned for a nutrient:
+`recommended`, `custom`, `amount_only`, or `ignored`.
+
+- `recommended` means a dynamic current recommendation/reference is active or currently unavailable
+  under the recommendation policy.
+- `custom` means a manual override is the effective target.
+- `amount_only` tracks consumed amount without a goal/reference target.
+- `ignored` excludes the nutrient from comparison presentation.
+
+### Tracking Preference
+
+A persisted explicit user preference for a nutrient to be `amount_only` or `ignored`. Absence of a
+preference means dynamic default resolution applies. Preferences are configuration, not historical
+nutrition facts.
 
 ### OCR Provenance
 
@@ -112,6 +182,19 @@ The bounded, versioned, append-only structured trace connecting OCR suggestions,
 IDs, confirmation actions, and corrections. It excludes images and unbounded raw OCR and is not a
 nutrition resolver input. See
 [Confirmation and provenance](../features/ocr-search-and-offline.md#confirmation-and-provenance).
+
+### OCR Image-Quality Inspection
+
+Best-effort native pre-recognition analysis of a captured/selected local image. It can return
+bounded focus/luminance/text-region metrics used for conservative advisory warnings. It is not an
+authority that accepts/rejects nutrition facts, and its absence/failure does not automatically fail
+recognition.
+
+### Guided Nutrition Camera
+
+The app-owned `expo-camera` nutrition-label capture preview with back-camera lens selection,
+framing guidance, and accessible capture/cancel controls. Framing marks are guidance rather than a
+persisted crop or nutrition boundary.
 
 ### Ownership Enforcement
 
@@ -124,9 +207,10 @@ prevent a resource UUID from crossing user boundaries. See
 ### NutritionRuntime
 
 The mobile application's authority-neutral interface for Calendar, nutrients, Foods, Recipes,
-Daily Logs, Targets, OCR, and USDA. Startup selects exactly one implementation before
+Daily Logs, Targets, OCR, and USDA. Startup selects exactly one implementation before ordinary
 application-data use: local SQLite or remote FastAPI/PostgreSQL. Feature code should not bypass
-this boundary to mix authorities. See
+this boundary to mix authorities. Local backup activation is a bounded pre-runtime maintenance
+operation because it may replace the local database before this authority opens. See
 [Explicit mobile application-data authority](../architecture/decisions.md#explicit-mobile-application-data-authority).
 
 ### Local SQLite Authority / Local Mode
@@ -143,12 +227,32 @@ The preserved FastAPI/PostgreSQL application runtime selected with
 HTTP/authentication client. Remote mode does not receive durable local application-data writes as a
 fallback.
 
+### Local Backup Artifact
+
+A validated standalone SQLite snapshot created from the active local application database for
+explicit export. It contains application SQLite data but excludes separately stored secrets such as
+the personal USDA credential. It is not a sync package or a remote backup.
+
+### Pending / Staged Restore
+
+A selected backup that has been validated and copied into the pending-restore namespace without
+modifying the active database. It can be canceled before restart. Activation is attempted only at
+a subsequent local-runtime bootstrap.
+
+### Restore Activation
+
+The restart-time replacement of the local SQLite authority with a validated staged backup. When an
+active database exists, the app first creates a rollback snapshot. The replacement is validated
+again and a failed activation restores the prior authority where safe rollback is possible. An
+unrecoverable rollback failure prevents ambiguous local startup. See
+[Local backup and restore](../features/ocr-search-and-offline.md#local-backup-and-restore).
+
 ### Canonical Domain Model
 
-The shared semantic meaning that both runtime authorities must preserve: nutrition/status
-semantics, immutable Recipe revisions, Daily Log snapshots, owner scope, idempotency, provenance,
-and public response contracts. It is not one generated cross-platform class. See
-[System boundaries](../architecture/overview.md#system-boundaries).
+The shared semantic meaning both runtime authorities must preserve: nutrition/status semantics,
+serving/reference authority, immutable Recipe revisions, Daily Log snapshots, owner scope,
+idempotency, provenance, Target/reference behavior, and public response contracts. It is not one
+generated cross-platform class. See [System boundaries](../architecture/overview.md#system-boundaries).
 
 ### Runtime Adapter
 
@@ -167,8 +271,11 @@ SQLite persistence without reproducing the backend's class structure.
 
 The authority-specific durable implementation beneath `NutritionRuntime`.
 
-- Local mode: `apps/mobile/src/storage/sqlite` plus local runtime/repository code.
-- Remote mode: SQLAlchemy models/repositories plus application Alembic migrations in PostgreSQL.
+- Local application data: `apps/mobile/src/storage/sqlite` plus local runtime/repository code.
+- Local maintenance: `apps/mobile/src/storage/backup`, which validates/exports/replaces the local
+  SQLite authority but does not provide ordinary feature persistence.
+- Remote application data: SQLAlchemy models/repositories plus application Alembic migrations in
+  PostgreSQL.
 - Operations: independent control PostgreSQL, which is not an application-data authority.
 
 ### Repository Provider / Repository Factory
@@ -194,15 +301,24 @@ SQLite.
 ### Application Migration Stream
 
 The Alembic history under `apps/backend/app/migrations`, applied only to the **remote application
-PostgreSQL** database. It preserves the existing remote migration lineage, historical conversion
-metadata, and production prerequisites. It is not the local SQLite migration mechanism.
+PostgreSQL** database. The current head is `0030_total_omega_3_nutrient`. The stream preserves the
+remote migration lineage, historical conversion metadata, and production prerequisites. It is not
+the local SQLite migration mechanism.
 
 ### Control Migration Stream
 
 The independent Alembic history under `apps/backend/app/control_migrations`, applied only with the
-control migration configuration and credential. It owns promotion evidence and authority, never
-feature tables and never local SQLite. See
+control migration configuration and credential. It owns promotion evidence/authority, never
+feature tables and never local SQLite. Current head:
+`ops_0011_phase5c4_recovery_audit`. See
 [Qualification and migration safety](../operations/control-plane.md#qualification-and-migration-safety).
+
+### Epic 2 Shared Contract Fixture
+
+A retained machine-readable parity/transfer artifact under `packages/shared-contracts/e2-*` from
+the completed local-first program. These fixtures are versioned regression evidence, not a
+generated public API SDK and not an active Epic 2 backlog. E2-15 includes source schema, target
+schema, transfer contract, and representative package artifacts.
 
 ## Historical conversion and control operations
 
@@ -219,7 +335,7 @@ repairing the source. See [Production Hardening Phase 5B](../historical/producti
 
 The Phase 5C1 compatibility layer that preserves legacy Recipe facts in archive/bridge structures
 on an isolated clone so a deterministic conversion plan can be produced. “Historical bridge” is
-the canonical stage name; “archive bridge” refers to its retained archive metadata, not a separate
+the canonical stage name; “archive bridge” refers to retained archive metadata, not a separate
 runtime subsystem. See [Production Hardening Phase 5C1](../historical/production-hardening/production-hardening-phase5c1.md).
 
 ### Control Plane
@@ -248,16 +364,16 @@ an authoritative object must make qualification fail.
 
 ### Runtime Qualification
 
-Qualification evidence about whether a runtime or candidate database exposes the expected schema,
+Qualification evidence about whether a runtime/candidate database exposes the expected schema,
 roles, functions, and prerequisites. It is not permission to promote, and normal application
-runtime does not yet consume the independent control gate. See
+runtime does not consume the independent control gate. See
 [Current runtime boundary](../operations/control-plane.md#current-runtime-boundary).
 
 ### Migration Admission
 
-The fail-closed decision that a database and migration path satisfy the required identity, schema,
-role, evidence, and policy prerequisites before a high-risk transition proceeds. In Phase 5C4,
-admission authority belongs to control PostgreSQL, not to an executor exit code.
+The fail-closed decision that a database and migration path satisfy required identity, schema, role,
+evidence, and policy prerequisites before a high-risk transition proceeds. In Phase 5C4, admission
+authority belongs to control PostgreSQL, not to an executor exit code.
 
 ### Admission
 
@@ -273,7 +389,7 @@ authorization.
 
 ## Next reading
 
-- Read [Project Invariants](../project/invariants.md) for the rationale behind application invariants.
+- Read [Project Invariants](../project/invariants.md) for rationale behind application invariants.
 - Use the [Architecture Decision Index](../architecture/decisions.md) to locate a specific decision.
 - Return to the [Documentation Index](../README.md) to choose a domain or operations path.
 

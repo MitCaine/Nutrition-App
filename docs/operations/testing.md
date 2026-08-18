@@ -2,9 +2,11 @@
 
 > **Document role: Operational Reference.**
 
-The test strategy follows architectural claims. Fast unit tests explain behavior; native/file-backed
-SQLite qualification proves local storage/lifecycle claims; PostgreSQL suites prove remote
-locking, role, migration, and concurrency claims; MinIO suites prove object-retention behavior.
+The test strategy follows architectural claims. Fast unit tests explain behavior; Jest proves mobile
+models, local-runtime parity, and rendered flows; native/file-backed SQLite qualification proves
+local storage/lifecycle claims; native Swift tests prove Apple Vision/image-quality behavior;
+PostgreSQL suites prove remote locking, role, migration, and concurrency claims; MinIO suites prove
+object-retention behavior.
 
 ## Baseline validation
 
@@ -19,8 +21,9 @@ python -m compileall -q app tests scripts
 ```
 
 The default test configuration selects test deployment mode and in-memory SQLite where a test does
-not explicitly require PostgreSQL. This is appropriate for calculation, parser, schema, API, and
-most service behavior. It is not evidence for PostgreSQL locking or privilege claims.
+not explicitly require PostgreSQL. This is appropriate for calculations, DRI/reference data,
+parser, schema, API, and most service behavior. It is not evidence for PostgreSQL locking or
+privilege claims.
 
 The reproducible Python 3.12 development and CI environment is pinned in
 `requirements-dev.lock`. `pyproject.toml` remains the dependency declaration; use the regeneration
@@ -44,21 +47,44 @@ EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm run config:validate
 ```
 
-Jest covers pure feature models, authority routing, local-runtime parity, remote API mappings,
-cache/recovery scoping, and rendered flow behavior. Native/file-backed SQLite qualification is
-required for claims about `expo-sqlite` lifecycle, migrations, transaction visibility, termination,
-and restart semantics that mocks cannot establish. Native Apple Vision geometry/runtime tests live
-under `modules/nutrition-ocr/ios-tests` and must also run through the native iOS test target before
-an OCR release.
+Jest covers pure feature models, explicit authority routing, local-runtime parity, remote API
+mappings, cache/recovery scoping, DRI/Target parity, local backup policy/activation, draft guards,
+shared route chrome, OCR quality policy, and rendered flow behavior.
 
-## What each backend suite proves
+Native/file-backed SQLite qualification is required for claims about `expo-sqlite` lifecycle,
+migrations, transaction visibility, termination, backup/restore activation, and restart semantics
+that mocks cannot establish. Native Apple Vision geometry/recognition/image-quality tests live under
+`modules/nutrition-ocr/ios-tests` and must run through the native iOS test target before a release
+claim that depends on those native behaviors.
+
+## High-value current feature suites
+
+| Area | Representative proof |
+| --- | --- |
+| Nutrition units/catalog | `test_nutrient_catalog.py`, nutrition resolution/aggregation tests, `nutrientSections.test.ts` |
+| Food/serving semantics | `test_stage2_foods.py`, Food integrity tests, serving unit/reference transition tests, `foodForm*.test.ts` |
+| USDA expanded mapping | `test_stage3_usda_*`, `localUsdaRuntime.test.ts`, USDA mobile tests |
+| Recipe publication/history | `test_recipe_*`, publication/revision tests, Recipe serving/yield tests |
+| Daily Logs | stage-2 Log tests, revision Log tests, local Daily Log tests, logging integration/display tests |
+| DRI and target resolution | `test_dri_recommendations.py`, `test_targets.py`, `test_target_tracking_preferences.py`, `driRecommendations.test.ts`, `localTargetsRuntime.test.ts`, `target*.test.ts` |
+| OCR parser/confirmation | `test_ocr_parser.py`, golden fixtures, `test_ocr_confirmation.py`, local OCR parser/runtime tests, confirmation tests |
+| Guided OCR capture/quality | `nutritionScanAccessibility.test.ts`, `ocrImageQuality.test.ts`, native Swift image-quality tests |
+| Local backup/restore | `localBackupValidation.test.ts`, `localBackupActivation.test.ts`, `localBackupSettings.test.ts`, `localFirstStartRestoreGate.test.ts` |
+| Navigation/UI protections | `draftGuard.test.ts`, `fixedChromeDynamicType.test.ts`, route-header/detail layout tests, feature accessibility tests |
+| E2-15 transfer | backend exporter/package/schema tests, mobile importer/validator tests, versioned `packages/shared-contracts/e2-15` fixtures |
+
+These names are representative, not permission to skip affected neighboring tests. Use the complete
+backend/mobile baseline before declaring a cross-cutting feature change finished.
+
+## What each backend suite family proves
 
 | Suite family | Main claim |
 | --- | --- |
-| `test_nutrition_*`, `test_aggregation.py` | Decimal-safe resolution, unit rules, unknown/zero semantics |
+| `test_nutrition_*`, `test_aggregation.py`, `test_nutrient_catalog.py` | Decimal-safe resolution, qualified unit rules, catalog integrity, unknown/zero semantics |
+| `test_dri_recommendations.py`, `test_targets.py`, `test_target_tracking_preferences.py` | DRI selection/scope, calorie-estimate boundary, tracking modes, FDA fallback/reference behavior |
 | `test_stage2_*`, `test_stage3_*`, `test_stage4_*` | Feature/API contracts for Foods, Logs, USDA, and Recipes |
 | `test_recipe_*` | Publication immutability, nested graphs, projections, revision logging/editing |
-| `test_ocr_*` | Pure parsing, golden fixtures, bounded confirmation provenance, privacy |
+| `test_ocr_*` | Pure parsing, expanded nutrient mapping, golden fixtures, bounded confirmation provenance/privacy |
 | `test_create_operation_idempotency.py`, `test_log_idempotency.py` | Exact replay and payload conflict |
 | `test_cross_user_ownership.py`, saved-Food tests | User boundary and cross-owner denial |
 | `*_postgres.py` | Real PostgreSQL migrations, constraints, locks, races, and role behavior |
@@ -67,7 +93,7 @@ an OCR release.
 
 ## PostgreSQL concurrency and migration tests
 
-Start the repository PostgreSQL 16 service, then point only at a disposable test database/cluster:
+Start repository PostgreSQL 16, then point only at a disposable test database/cluster:
 
 ```bash
 docker compose up -d postgres
@@ -76,73 +102,67 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
   pytest -m postgres_concurrency
 ```
 
-These tests create and drop temporary databases and provision roles. Never supply a production or
+These tests may create/drop temporary databases and provision roles. Never supply a production or
 valuable development database URL. PostgreSQL suites prove:
 
 - Food/Recipe lock ordering and graph restart behavior;
 - Daily Log snapshot consistency under concurrent mutation;
-- migration upgrade/downgrade refusal and round trips;
+- Food source/name/integrity constraints under races;
+- migration upgrade/downgrade/refusal and current-head replay;
 - source/clone read-only and isolation contracts;
 - role topology, grants, SECURITY DEFINER boundaries, and write fencing;
 - control-plane replay, leases, immutable event/outbox behavior, and admission races.
 
-Run a focused file while developing, then the complete marker before claiming a concurrency or
-migration invariant.
+Run a focused file while developing, then the complete relevant marker/suite before claiming a
+PostgreSQL concurrency or migration invariant.
 
-### Issue 17 isolated Phase 5C clone
+## Native and local SQLite qualification
 
-Use the Issue 17 workflow when accessibility qualification needs an application
-database that has traversed the historical Phase 5C conversion path through
-`0026_food_nutrient_integrity`:
+Jest mocks and pure TypeScript tests are not sufficient evidence for claims about actual
+`expo-sqlite` connection lifecycle, WAL/foreign-key behavior, restart visibility, or native-module
+behavior. Use the repository's native qualification harnesses documented by the completed Epic 2
+records when the change crosses those boundaries.
+
+Epic 2 is complete; its E2-02 through E2-18 fixtures/harness records are retained as regression
+proof and parity contracts, not an active implementation backlog. A current change that affects a
+retained versioned fixture must update/version the fixture deliberately and rerun the corresponding
+local/native/remote parity proof.
+
+For local backup/restore specifically, run the focused Jest suites listed above and native/file-backed
+SQLite qualification when the change affects backup copy coherence, schema compatibility,
+replacement/rollback, or restart-time activation. A mocked filesystem/database test alone cannot
+prove safe replacement of the real local authority.
+
+For OCR native changes, run the Swift test target under `modules/nutrition-ocr/ios-tests` in addition
+to TypeScript OCR tests. Image-quality inspection is intentionally best-effort; tests must preserve
+the contract that an unavailable/failing inspector does not convert into a recognition failure.
+
+## Issue 17 isolated Phase 5C clone
+
+This retained workflow exists for historical/application-path qualification that specifically needs
+a disposable database traversing the Phase 5C conversion path. It is not needed for ordinary
+local-first feature work.
 
 ```bash
 ./scripts/run-issue17-phase5c-clone.sh
 ```
 
-The wrapper starts the repository-pinned PostgreSQL 16 image without a volume,
-publishes PostgreSQL only on a temporary loopback port, and creates unique
-historical source and conversion-clone databases. It refuses a cluster with an
-existing `nutrition_app` database, Phase 5C managed roles, or any unexpected
-non-template database. The normal workflow removes the exact disposable
-container on success, failure, interrupt, and termination. The existing local
-`nutrition_app` database is intentionally excluded: it is an application-head
-database, not a frozen-0003 conversion source, and must not be downgraded or
-used as conversion evidence.
+The wrapper starts a repository-pinned disposable PostgreSQL 16 container, creates isolated source
+and conversion-clone databases, refuses unsafe pre-existing cluster state, and removes the exact
+container on normal success/failure unless explicit manual-test retention is requested. It must not
+use or downgrade a valuable/current application-head database.
 
-The retained private JSON artifacts include source and clone identities,
-fixture seed metadata, inventory, planning and execution attestations, clone
-marker, bridge result, conversion plan and receipts, restart verification,
-0017/0018 qualifications, role qualification, promotion-target initialization,
-maintenance and write-fence transitions, exact-0020 immutable-provenance
-qualification, the post-head observation, and the final artifact/digest
-manifest. Artifacts are mode `0600`; database URLs, role passwords, and the
-container administrator credential are not written to them. Use `--output-dir`
-only with an empty, non-symlink directory when a known evidence location is
-needed.
-
-For physical-device E1-17 testing, retain and open the disposable target with:
+For the retained physical-device/manual path:
 
 ```bash
 ./scripts/run-issue17-phase5c-clone.sh --manual-test
 ```
 
-After the real `alembic upgrade head` reaches `0026_food_nutrient_integrity`, manual-test mode uses the
-installed schema-0021 test activation surface and explicit synthetic bindings
-to open only this disposable target. It prints a `nutrition_runtime` loopback
-database URL, an exact backend startup command that listens on `0.0.0.0:8000`,
-and an exact `docker rm -f ...` cleanup command. The container is retained only
-after complete success; any setup, conversion, migration, qualification, or
-activation failure still triggers automatic removal. Run the printed cleanup
-command after VoiceOver, Dynamic Type, and related device checks finish.
+The resulting test-only schema-0021 activation bindings are regression/manual-qualification
+authority only. They are not signed production authorization and must never be cited as production
+promotion/activation evidence.
 
-The test-only schema-0021 bindings and local runtime opening are regression and
-manual-qualification authority only. They are not signed production
-authorization, do not exercise the durable control-database authorization
-chain, and must never be cited as production promotion or activation evidence.
-Production activation continues to require the existing control-plane
-authorization and target-action workflow.
-
-The opt-in integration coverage is:
+Opt-in integration coverage:
 
 ```bash
 cd apps/backend
@@ -161,12 +181,14 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
   pytest -m phase5c_performance_t0
 ```
 
-Performance evidence does not replace correctness qualification. A scan or timing failure informs
-a separate optimization decision; it cannot waive conversion, lineage, or immutable-history rules.
+Performance evidence does not replace correctness qualification. A timing result cannot waive
+conversion, lineage, immutable-history, or authority rules.
 
-## Control-database qualification
+## Control database and production-hardening tests
 
-The complete control PostgreSQL suite through Phase 5C4.7b is:
+The control/Phase 5C4 suites are security/authority qualification. Use only disposable PostgreSQL
+and follow the [Control Plane Guide](control-plane.md) and exact runbook associated with the stage.
+Representative control PostgreSQL qualification through the implemented activation path is:
 
 ```bash
 NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app \
@@ -181,16 +203,11 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
     tests/test_phase5c4_target_activation_control_postgres.py
 ```
 
-It provisions an isolated control database and managed roles, migrates through ops revisions,
-executes routines through real credentials, tests concurrency/failure injection, tampers with
-qualified objects, and exercises empty-only downgrade/re-upgrade behavior.
+Qualification tests are security tests. When adding an authoritative control table, routine,
+trigger, constraint, grant, or registry row, add both a positive inventory assertion and a tamper
+case that makes qualification fail.
 
-Qualification tests are security tests. When adding an authoritative table, routine, trigger,
-constraint, grant, or registry row, add both a positive inventory assertion and a tamper case that
-makes qualification fail.
-
-Phase 5C4.7b also requires the application-migration, contract, signerless CLI,
-target-local CLI, and target concurrency boundary:
+Phase 5C4.7b also has application-migration/authorization/target-local boundaries:
 
 ```bash
 pytest -q \
@@ -202,12 +219,9 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
   pytest -q tests/test_phase5c4_target_activation_postgres.py
 ```
 
-The target PostgreSQL suite must use a disposable PostgreSQL 16 database. It
-proves authorized schema-0021 installation, the closed-after-migration
-boundary, exact target role admission, one-use activation, authoritative
-observation, emergency close, replay/conflict handling, and the forward-only
-application downgrade policy. A successful application or control migration
-alone is not evidence that these tests passed.
+The target PostgreSQL suite must use disposable PostgreSQL 16. A successful migration alone is not
+evidence that authorization, activation, replay/conflict, emergency close, or forward-only policy
+passed.
 
 ### Phase 5C4.8 bounded recovery qualification
 
@@ -217,22 +231,9 @@ The pure preactivation-cutback contract suite is:
 pytest -q tests/test_phase5c4_cutback.py
 ```
 
-It covers deterministic Ed25519 framing, canonical JSON, signature and key
-substitution, validity boundaries, exact authority bindings, and strict
-safety, route, and source-restoration observation shapes.
-
-`tests/test_phase5c4_recovery_qualification_control_postgres.py` proves the
-ops-0011 cumulative qualifier and audit-only recovery snapshot behavior against
-disposable PostgreSQL 16. `tests/test_phase5c4_recovery_qualification.py`
-proves the mutation-free postactivation PITR evidence contract.
-
-`tests/test_phase5c4_cutback_control_postgres.py` proves the executable ops-0011
-authority chain against disposable PostgreSQL 16: exact verifier grants,
-trusted admission, concurrent replay, one-use consumption, route failure and
-later authoritative success, source-restoration ambiguity and reconciliation,
-terminal convergence, immutability, and downgrade refusal.
-
-Run the destructive local infrastructure qualifier explicitly:
+The implemented ops-0011 recovery/control suites additionally cover cumulative qualification,
+audit snapshots, executable cutback authority, reconciliation, and PITR evidence. Run the
+destructive local infrastructure qualifier only with its explicit disposable confirmation:
 
 ```bash
 NUTRITION_PHASE5C4_QUALIFICATION_CONFIRM=phase5c4_infrastructure_destroy_disposable \
@@ -240,54 +241,20 @@ NUTRITION_PHASE5C4_QUALIFICATION_RETAIN_EVIDENCE=1 \
   ./scripts/qualify-phase5c4-infrastructure.sh
 ```
 
-Prerequisites are Docker with Compose, OpenSSL, the repository virtual
-environment, and unused loopback ports 59100–59104. The command generates all
-credentials and refuses caller-supplied qualification credentials. It removes
-the generated Compose project, including profile-scoped restored volumes, on
-success and failure. Retention preserves only the canonical summary and
-private restore intent/completion journals; it never preserves the generated
-TLS private key.
+Ordinary/session-end suites do not start this destructive topology. A qualified local summary is
+proof only of the bounded provider/PostgreSQL/pgBackRest/MinIO scenarios named by that qualifier; it
+is not production-vendor certification.
 
-The opt-in pytest wrapper is
-`tests/test_phase5c4_infrastructure_integration.py` under
-`phase5c4_docker_integration`; ordinary and session-end suites do not start
-Docker. A qualified summary proves the local provider, PostgreSQL/pgBackRest,
-MinIO, and selected control scenarios named in that summary. It explicitly
-skips schema-0021 application-domain restoration, one-saga binding between
-provider observations and control admission, and production-vendor
-certification, so it must not be cited as proof of those gates.
+### Phase 5C4.9 / Version 1.0 frozen release boundary
 
-### Phase 5C4.9 Version 1.0 release gate
+The preserved Version 1.0 release boundary remains application
+`0021_target_activation_execution` and control `ops_0011_phase5c4_recovery_audit`. Current remote
+application development has advanced to `0030_total_omega_3_nutrient`; this does not rewrite the
+historical release head.
 
-For the frozen Phase 5C4.9 release boundary, the application head recorded here is
-`0021_target_activation_execution` and the control head is
-`ops_0011_phase5c4_recovery_audit`. Active development now continues from
-`0027_serving_reference_measurement`; this historical release qualification does not rewrite its
-point-in-time application head.
-
-The single authoritative command manifest is
-[Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md). It combines
-the required fail-closed PostgreSQL suites and the separately retained infrastructure evidence
-gate. The focused commands below are developer conveniences and are not release qualification.
-
-Run the frozen-0001 replay comparison against disposable PostgreSQL 16:
-
-```bash
-REQUIRE_POSTGRES_TESTS=1 \
-  pytest -q tests/test_initial_migration_replay_postgres.py
-```
-
-Before creating final infrastructure evidence, commit the exact release source
-state and verify `git status --porcelain` is empty. Then run the destructive
-local infrastructure qualifier above with evidence retention enabled. Its
-canonical summary records the exact commit, clean/dirty state, control-plane
-inventory digest, Compose/pgBackRest/qualifier configuration digests,
-qualification result, RPO/RTO measurements, and individual scenario results.
-Evidence with `dirty_tree: true` is not Version 1.0 release evidence.
-
-Developer convenience commands elsewhere in this guide may skip when optional PostgreSQL, MinIO,
-Docker, provider, performance, or Apple infrastructure is unavailable. Such skips are acceptable
-for focused development feedback but are not a passing Version 1.0 release result.
+The authoritative frozen command/evidence manifest is
+[Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md). Developer
+convenience commands in this guide do not substitute for that release manifest.
 
 ## MinIO object-lock integration
 
@@ -309,19 +276,26 @@ NUTRITION_PHASE5C4_TEST_MINIO_ROOT_PASSWORD=stage5c4-disposable-secret \
 ```
 
 These tests may restart the named Compose service. They prove versioning, COMPLIANCE retention,
-exact version binding, replay, reconciliation, and restart persistence. They are not safe to point
-at a shared or production object store.
+exact version binding, replay, reconciliation, and restart persistence. Never point them at a
+shared or production object store.
 
 ## Test selection by change
 
 | Change | Minimum affected validation |
 | --- | --- |
 | Pure calculation/parser | Focused unit tests, full backend baseline, Ruff |
+| Nutrient catalog/qualified units | Nutrient catalog + resolution + Food validation + affected mobile nutrition tests |
+| DRI/Target/reference logic | Backend DRI/Target/tracking suites + local target/DRI parity + affected UI tests |
 | API/schema/service | Focused backend tests plus affected mobile mapping/flow tests |
 | Food/Recipe dependency locks | Focused unit/API tests plus PostgreSQL concurrency marker |
+| Serving/reference measurement | Backend serving/Food integrity + local serving transition/form tests + Recipe dependency tests |
 | Migration | Fresh upgrade, supported populated upgrade, downgrade policy, re-upgrade, schema authority |
-| Auth/config | Local and remote mobile runtime config, remote API authentication, release configuration, Compose validation |
-| Local SQLite persistence/runtime | Focused local runtime/Jest coverage plus native/file-backed SQLite qualification for lifecycle or transaction claims |
+| Auth/config | Local/remote mobile runtime config, remote API authentication, release configuration, Compose validation |
+| Local SQLite persistence/runtime | Focused local runtime/Jest plus native/file-backed SQLite qualification for lifecycle/transaction claims |
+| Local backup/restore | Backup validation/activation/settings/start gate + native/file-backed SQLite for actual replacement/restart claims |
+| OCR camera/quality | Scan/accessibility + quality policy + native Swift tests when native metrics/capture change |
+| Route header/draft guard/accessibility | Shared header/draft/Dynamic Type tests plus each affected screen flow |
+| E2 transfer contract | Backend/mobile E2-15 tests + versioned shared-contract fixtures |
 | Control contract | Python canonical/tamper tests and cross-language PostgreSQL parity |
 | Control routine/grant | Complete control PostgreSQL, role, qualification, replay, concurrency, downgrade suites |
 | MinIO behavior | Unit adapter tests plus disposable integration and restart persistence |
@@ -338,12 +312,12 @@ git diff --check
 ```
 
 GitHub Actions runs the fast backend, mobile, documentation, and shell baseline. PostgreSQL,
-control-database, MinIO, performance, and native iOS qualification remain manual or explicitly
-opt-in because their authority depends on disposable services or Apple tooling.
+control-database, MinIO, performance, destructive recovery, and native iOS qualification remain
+manual or explicitly opt-in because their authority depends on disposable services or Apple
+tooling.
 
-Validate the Phase 5C4 Compose file with explicit disposable MinIO credentials. Review `git status`
-so generated build output, `.env`, credentials, evidence, database dumps, or screenshots containing
-personal data are not included.
+Review `git status` before publishing so generated output, `.env`, credentials, evidence, database
+dumps, or screenshots containing personal data are not included.
 
 ## Next reading
 
@@ -354,6 +328,6 @@ personal data are not included.
 
 ## See also
 
-- [Architecture Overview](../architecture/overview.md#testing-architecture) for the testing layers
+- [Architecture Overview](../architecture/overview.md#testing-architecture) for testing layers
 - [Repository Tour](../project/repository-tour.md) for test locations
-- [Release Candidate QA](../historical/releases/rc1-qa.md) for manual device and release checks
+- [Release Candidate QA](../historical/releases/rc1-qa.md) for historical manual device/release evidence

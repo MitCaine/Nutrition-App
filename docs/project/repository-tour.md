@@ -2,8 +2,8 @@
 
 > **Document role: Current Guide.**
 
-This is the best first read after several months away. It describes the repository in the order a
-developer should explore it, rather than alphabetically.
+This is the best first read after time away from the project. It describes the repository in the
+order a developer should explore it rather than alphabetically.
 
 ## Start here
 
@@ -13,19 +13,21 @@ flowchart TD
     Mobile --> Runtime["NutritionRuntime"]
     Runtime -->|local| Local["src/runtime/local"]
     Local --> SQLite["src/storage/sqlite"]
+    SQLite -.-> Backup["src/storage/backup"]
     Runtime -->|remote| Remote["src/runtime/remote"]
     Remote --> Routers["Backend API routers"]
     Routers --> Services["Application services"]
-    Services --> Domain["Domain and nutrition rules"]
+    Services --> Domain["Domain, catalog, nutrition, targets"]
     Services --> Repositories["PostgreSQL repositories and models"]
     Repositories --> Migrations["Remote application Alembic migrations"]
-    Root --> Tests["Backend and mobile tests"]
-    Root -.->|only for operations work| Operators["Phase 5 operators and control migrations"]
+    Root --> Contracts["packages/shared-contracts"]
+    Root --> Tests["Backend, mobile, native tests"]
+    Root -.->|operations work only| Operators["Phase 5 operators and control migrations"]
 ```
 
 For a feature change, follow one real user action end to end:
 
-1. Find the screen under `apps/mobile/src/features/<feature>/screens`.
+1. Find the screen under `apps/mobile/src/features/<feature>`.
 2. Follow its hook/API contract into `NutritionRuntime`.
 3. Determine the selected implementation path: `src/runtime/local` + SQLite or
    `src/runtime/remote` + FastAPI.
@@ -34,31 +36,39 @@ For a feature change, follow one real user action end to end:
 5. For remote behavior, follow the router into its service/domain/repository as needed.
 6. Find the matching mobile tests plus local or remote qualification before changing the contract.
 
-Do not assume a mobile feature call necessarily crosses HTTP.
+Do not assume a mobile feature call crosses HTTP. Local mode is the normal application-data path.
 
 ## Top-level map
 
 ### `apps/mobile`
 
-The iOS-first Expo/React Native client. Feature code is grouped by user capability rather than by
-technical layer across the whole app.
+The iOS-first Expo/React Native client and primary local-first application runtime.
 
 ```text
-src/app/                  Navigation, providers, settings, and theme
-src/features/             Foods, Recipes, Logging, USDA, OCR, and Targets
+src/app/                  Navigation, providers, settings, theme
+src/features/             Foods, Recipes, Logging, USDA, OCR, Targets, Calendar-facing UI
 src/runtime/              NutritionRuntime plus local and remote authority adapters
-src/storage/sqlite/       Local semantic schema, schema-version migrations, and SQLite foundation
-src/shared/               Shared contracts, exact-value helpers, remote transport, forms, and display utilities
-src/native/ocr/           TypeScript boundary to the native OCR module
+src/storage/sqlite/       Local semantic schema, schema-version migrations, SQLite foundation
+src/storage/backup/       Validated local backup/export, staged restore, activation/rollback
+src/shared/nutrition/     Canonical nutrient presentation, qualified units, DRI/reference helpers
+src/shared/navigation/    Dirty/busy draft-exit policy
+src/shared/components/    Shared route/root chrome
+src/shared/accessibility/ Focus, status, accessible interaction primitives
+src/native/camera/        Nutrition-camera device/lens helpers
+src/native/ocr/           TypeScript boundary to native OCR and image-quality inspection
 modules/nutrition-ocr/    Swift Apple Vision Expo module and native tests
-__tests__/                Jest unit, runtime, component-model, and flow tests
+__tests__/                Jest unit, runtime, component, backup, and flow tests
 config/                   Runtime/deployment configuration validation
 ```
 
-Start with a feature's `screens/`, then `hooks/`, `api/`, and `utils/`. Follow the feature call
-through `NutritionRuntime` before choosing an implementation path. Local mode continues under
-`src/runtime/local` and `src/storage/sqlite`; remote mode continues through the remote adapter and
-shared API client. Base URL and authentication policy belong only to remote transport.
+Start with a feature's screen/component, then its hooks/API/utilities. Follow the feature call
+through `NutritionRuntime` before choosing an implementation path. Base URL and authentication
+policy belong only to remote transport.
+
+Two local boundaries intentionally sit outside ordinary feature calls. Local backup restore runs at
+startup before the SQLite authority opens because it may replace the database. Native camera/OCR
+acquisition produces input for the selected OCR runtime but does not itself become application-data
+authority.
 
 ### `apps/backend`
 
@@ -71,303 +81,188 @@ app/api/v1/routers/       HTTP translation and response status mapping
 app/services/             Transactional use cases and ownership boundaries
 app/repositories/         Reusable persistence queries
 app/domain/               Domain calculations and validation
+app/catalog/              Canonical nutrient identity, hierarchy, units/reference metadata
 app/nutrition/            Serving resolution, revision resolution, units, aggregation
+app/targets/              DRI data/resolution, FDA reference projection, calorie estimation, comparison
 app/models/               SQLAlchemy persistence model
 app/schemas/              Public request and response contracts
-app/integrations/usda/    FoodData Central HTTP and mapping boundary
+app/integrations/usda/    FoodData Central HTTP and expanded nutrient mapping
 app/ocr/                  Pure parser and confirmation persistence
-app/migrations/           Application-database Alembic stream
-app/operators/            Offline conversion, qualification, and control-plane clients
+app/migrations/           Application-database Alembic stream; current head 0030
+app/operators/            Offline conversion, qualification, control-plane clients
 app/control_migrations/   Independent control-database Alembic stream
-scripts/                  Explicit operator and audit entry points
-tests/                    Unit, API, PostgreSQL, migration, control, and integration tests
+scripts/                  Explicit operator, transfer, and audit entry points
+tests/                    Unit, API, PostgreSQL, migration, control, integration tests
 ```
 
 The backend is not a strict one-class-per-layer framework. Routers are thin, services own use-case
-transactions, repositories hold shared queries, and pure domain modules own calculations. Some
-small services query SQLAlchemy directly when a separate repository would not clarify ownership.
+transactions, repositories hold shared queries, and pure domain/reference modules own calculations.
+Some small services query SQLAlchemy directly when another repository would not clarify ownership.
 
 ### `packages/shared-contracts`
 
-This currently holds a small TypeScript nutrition type reference. It is not a generated API SDK and
-is not the source of truth for backend Pydantic schemas. Check actual imports before assuming a type
-here is wired into either application.
+This directory contains retained machine-readable cross-runtime/transfer contracts from completed
+Epic 2 plus a small nutrition type reference. It is not a generated API SDK and is not the source of
+truth for backend Pydantic schemas.
+
+Current retained contract areas include `e2-02`, `e2-05`, `e2-07`, `e2-08`, `e2-09`, and `e2-15`.
+The E2-15 directory contains versioned source-schema, target-schema, transfer-contract, and
+representative-package artifacts used by PostgreSQL-to-SQLite transfer qualification. Treat these
+as bounded regression/compatibility evidence. Do not reinterpret an existing version silently when
+a current schema changes.
+
+### `engineering`
+
+Current generated-reference-data inputs/tooling live here rather than in historical docs. The DRI
+reference dataset and parity cases under `engineering/reference-data` are source material for the
+checked-in backend/mobile DRI representations. `generate_dri_reference.py` owns deterministic
+regeneration.
 
 ### `docs`
 
 The [Documentation Index](../README.md) separates current project knowledge, architecture, feature
 guides, operations, reference material, and historical records. Ordinary implementation begins in
-`project/` and the affected feature guide. Phase, stage, release, and evidence chronology lives
-under `historical/` and stays outside the default context.
+`project/` and the affected feature guide. Version 1.1/Epic 2 planning and closure material remains
+under its versioned directory as completed evidence, not an active backlog.
 
 ### Root Compose and scripts
 
 - `docker-compose.yml` runs the normal local PostgreSQL 16 database.
 - `docker-compose.phase5c4.yml` runs disposable MinIO for control-plane qualification.
-- `docker-compose.phase5c4-qualification.yml` runs the opt-in, fully disposable local recovery
+- `docker-compose.phase5c4-qualification.yml` runs the opt-in disposable local recovery
   qualification topology; it is not an application development stack.
-- `scripts/start-backend.sh` starts only the qualified runtime process with the
+- `scripts/start-backend.sh` starts only the qualified remote runtime process with the
   `nutrition_runtime` database identity. Apply migrations separately as `nutrition_migrator`.
-- `scripts/session-start.sh` and `scripts/session-end.sh` report and validate the authoritative
-  repository state.
-- `scripts/zip-project.sh` creates a bounded review archive without local secrets or generated
-  output.
+- `scripts/session-start.sh` and `scripts/session-end.sh` report and validate repository state.
+- `scripts/zip-project.sh` creates a bounded review archive without local secrets/generated output.
 
-## The persistence map
+## Persistence map
 
-There are three distinct persistence domains:
+There are three distinct durable persistence domains plus one local replacement/backup mechanism:
 
-| Authority/domain | Evolution mechanism | Contains |
+| Authority/domain | Evolution or maintenance mechanism | Contains |
 | --- | --- | --- |
-| Local application SQLite | `apps/mobile/src/storage/sqlite` schema version + migrations | Local Users/profile, Foods, Recipes, immutable revisions, Logs/snapshots, OCR traces, Targets, favorites, idempotency, and local runtime state |
-| Remote application PostgreSQL | `apps/backend/app/migrations` Alembic stream | Preserved remote application data plus PostgreSQL-specific historical conversion and production prerequisites |
-| Control PostgreSQL | `apps/backend/app/control_migrations` Alembic stream | Immutable operational evidence, promotion workflow, leases/outbox, admission decisions, and typed evidence projections |
+| Local application SQLite | `apps/mobile/src/storage/sqlite` schema version + migrations | Local profile/User, Foods/servings/nutrients, Recipes/revisions, Logs/snapshots, OCR traces, Targets/tracking preferences, favorites, idempotency, runtime state |
+| Local SQLite backup artifact | `apps/mobile/src/storage/backup` validation/staging/bootstrap replacement | One coherent standalone snapshot of the local application database; no secrets, merge state, or sync ledger |
+| Remote application PostgreSQL | `apps/backend/app/migrations` Alembic stream | Preserved remote application data plus PostgreSQL-specific historical conversion/production prerequisites |
+| Control PostgreSQL | `apps/backend/app/control_migrations` Alembic stream | Immutable operational evidence, promotion workflow, leases/outbox, admission decisions, typed evidence projections |
 
 Only one **application-data** authority is selected for a running mobile context. Control PostgreSQL
-is operations-only. Local SQLite is not a cache of remote PostgreSQL, and the PostgreSQL Alembic
-history is not mechanically replayed into SQLite.
+is operations-only. A local backup is not a concurrent authority. Local SQLite is not a cache of
+remote PostgreSQL, and PostgreSQL Alembic history is not mechanically replayed into SQLite.
 
-Current PostgreSQL heads remain canonical in [Current State](current-state.md). For repository
-orientation, the remote application lineage runs through the specially authorized
-`0021_target_activation_execution` activation revision and currently ends at
-`0027_serving_reference_measurement`, while the current control migration head is
-`ops_0011_phase5c4_recovery_audit`.
+Current PostgreSQL heads are canonical in [Current State](current-state.md): remote application
+`0030_total_omega_3_nutrient` and control `ops_0011_phase5c4_recovery_audit`. The specially
+authorized `0021_target_activation_execution` boundary remains part of remote operational history;
+it is not the current feature-development head.
 
-### Authority-first rule
+## Authority-first rule
 
-Before following any feature walkthrough below, decide whether the change is:
+Before following any walkthrough, decide whether the change is:
 
 - authority-neutral contract/presentation work;
 - local SQLite runtime work;
-- remote FastAPI/PostgreSQL work; or
-- parity work that must preserve both.
+- remote FastAPI/PostgreSQL work;
+- local startup/backup maintenance work; or
+- parity work that must preserve both application authorities.
 
 That decision determines which implementation and tests are authoritative.
 
 ## Find your change
 
-### If you're working on Foods
+### Foods, nutrients, or servings
 
-Read [Foods and Nutrition Domain](../features/foods-and-nutrition.md), then start at
-`apps/mobile/src/features/foods` or `apps/backend/app/api/v1/routers/foods.py`. Follow the backend
-route into `food_service.py`, serving/nutrition utilities, repositories, and Food tests.
+Read [Foods and Nutrition Domain](../features/foods-and-nutrition.md). Start at
+`apps/mobile/src/features/foods`; then follow `NutritionRuntime.foods` into local Foods runtime or
+the remote Food router/service. Canonical nutrient identity begins at `app/catalog/nutrients.py`;
+serving/unit semantics begin in `app/nutrition` and the Food schemas. Check Recipes whenever a
+serving generation or Food nutrition changes.
 
-### If you're working on Recipes or Daily Logs
+### Recipes or Daily Logs
 
 Read [Recipes and Nutrition History](../features/recipes-and-logging.md). Recipe behavior begins in
 `apps/mobile/src/features/recipes` and `app/services/recipe_service.py`; Log behavior begins in
-`apps/mobile/src/features/logging` and `app/services/log_service.py`. Read publication and revision
-resolution code before changing historical behavior.
+`apps/mobile/src/features/logging` and `app/services/log_service.py`. Read publication/revision
+resolution before changing historical behavior. For navigation changes, also read the shared draft
+guard and route-header components.
 
-### If you're working on OCR
+### Targets and DRI/FDA references
 
-Read [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md). Start at
-`NutritionScanScreen.tsx` for the user flow, `modules/nutrition-ocr` for Apple Vision,
-`app/ocr/parser.py` for deterministic parsing, or `confirmation_service.py` for persistence.
+Read [Targets and comparisons](../features/foods-and-nutrition.md#targets-and-comparisons). Start at
+`NutritionRuntime.targets`, local `localTargetsRuntime.ts`, remote `target_service.py`, and
+`app/targets`. Reference-data work also involves `app/catalog/nutrients.py`, mobile
+`src/shared/nutrition`, and `engineering/reference-data`. Keep DRI scope separate from the narrower
+calorie-estimation scope.
 
-### If you're working on Search
+### OCR or camera capture
 
-Start with [Unified Food search](../features/ocr-search-and-offline.md#unified-food-search), then follow
-`SavedFoodsScreen.tsx`, `unifiedFoodSearch.ts`, the Food query hook, and the USDA query hook. Search
-is a client composition of two sources, not a standalone backend subsystem.
+Read [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md). Start
+at `NutritionScanScreen.tsx` for the user flow, `NutritionCameraCapture.tsx`/`src/native/camera` for
+guided acquisition, `modules/nutrition-ocr` for Apple Vision and image-quality metrics,
+`app/ocr/parser.py` for remote deterministic parsing, or confirmation services/runtimes for
+persistence.
 
-### If you're working on Phase 5
+### Local backup or restore
 
-Begin with the optional [Control Plane Guide](../operations/control-plane.md) and identify the exact stage before
-opening implementation files. Historical conversion lives in `app/operators/historical_*`;
-application prerequisites live in migration 0018 and role modules; independent authority lives in
-`app/control_migrations` and `phase5c4_*` operator modules.
+Start at `src/storage/backup`, then Settings and the application-runtime bootstrap. Restore is
+validated replacement before the local authority opens. It is not an ordinary feature mutation and
+must not be converted into a merge/synchronization flow implicitly.
 
-Feature developers generally do not need this path. Phase 5 is substantial production operations
-engineering around the primary Nutrition App, not a prerequisite for changing its feature domains.
+### Search
 
-## Typical Change Walkthroughs
+Start with [Unified Food search](../features/ocr-search-and-offline.md#unified-food-search), then
+follow the Saved Foods screen, unified-search/debounce utilities, Food query hook, and USDA query
+hook. Search is a client composition of two sources, not a standalone backend subsystem.
 
-These are navigation maps, not implementation recipes. Each starts at the layer that owns the
-decision and then identifies the contracts and proofs that normally move with it.
+### Epic 2 transfer or parity fixtures
 
-### Adding a new Food property
+Epic 2 is complete. Begin with the retained E2-15 architecture/runbook and the corresponding
+`packages/shared-contracts/e2-15` artifacts only when a current schema/transfer change crosses that
+compatibility boundary. Do not reopen completed Epic 2 planning merely because a regression fixture
+needs a new version.
 
-- **Begin:** Decide whether the property is authoritative Food data, source provenance, or derived
-  display state. Start with `app/models/food.py`, `app/schemas/food.py`, and
-  `app/services/food_service.py`; follow the value into the Food API and mobile Food types only if
-  it crosses those boundaries.
-- **Architecture and reading:** Read [Foods and Nutrition](../features/foods-and-nutrition.md),
-  [backend layers](../architecture/overview.md#backend-layers), and the
-  [Food change guide](development-guide.md#if-you-need-to-modify-foods-or-servings).
-- **Typical directories:** `apps/backend/app/models`, `schemas`, `services`, `repositories`, and
-  possibly `migrations`; `apps/mobile/src/features/foods` and `src/shared/nutrition` when visible.
-- **Expected tests:** Food API/service tests, nutrition and serving-resolution tests, ownership and
-  idempotency tests, plus affected mobile form, display, and API-mapping tests.
-- **Preserve:** Unknown-versus-zero semantics, source identity, owner scope, create replay, and the
-  rule that a source Food edit does not rewrite existing Log snapshots or publication revisions.
-- **Decisions:** [Unknown nutrients](../architecture/decisions.md#unknown-nutrients-are-not-zero),
-  [serving identities](../architecture/decisions.md#explicit-serving-identities-and-gram-weights), and
-  [ownership](../architecture/decisions.md#ownership-is-enforced-at-multiple-layers).
+### Phase 5 / control plane
 
-### Extending Recipe publication
+Begin with the optional [Control Plane Guide](../operations/control-plane.md) and identify the exact
+stage before opening implementation files. Historical conversion lives in `app/operators`; remote
+application prerequisites live in the applicable migration/role modules; independent authority
+lives in `app/control_migrations` and `phase5c4_*` operator modules.
 
-- **Begin:** Start with `app/services/recipe_service.py`, then the publication domain module and
-  `recipe_publication_repository.py`. Establish whether the change affects mutable authoring,
-  immutable captured content, the active-revision pointer, or the compatibility projection.
-- **Architecture and reading:** Read [Publication](../features/recipes-and-logging.md#publication), the
-  [Recipe change guide](development-guide.md#if-you-need-to-modify-recipes), and transaction
-  boundaries in the [Architecture Overview](../architecture/overview.md#persistence-and-transaction-boundaries).
-- **Typical directories:** `app/services`, `app/publication`, `app/domain`, `app/repositories`,
-  `app/models`, `app/schemas`, and `apps/mobile/src/features/recipes`.
-- **Expected tests:** Publication persistence, immutable revision capture, nested publication,
-  projection ownership, revision logging/editing, idempotency, and Recipe mobile contract tests.
-- **Preserve:** One transactional publication, insert-only revision history, exact ingredient and
-  amount identity, same-owner graphs, and `needs_republish` until a successful new publication.
-- **Decisions:** [Immutable Recipe revisions](../architecture/decisions.md#immutable-recipe-revisions),
-  [compatibility projections](../architecture/decisions.md#recipe-food-compatibility-projections), and
-  [revision-backed logging](../architecture/decisions.md#revision-backed-nutrition-logging).
+Feature developers generally do not need this path. Phase 5 is production operations engineering
+around the preserved remote authority, not a prerequisite for ordinary local-first feature work.
 
-### Modifying OCR processing
+## Cross-cutting mobile UI paths
 
-- **Begin:** Identify the boundary: Apple Vision recognition, TypeScript normalization, the pure
-  backend parser, or confirmation persistence. Start at that boundary instead of changing the
-  confirmed Food model first.
-- **Architecture and reading:** Follow the [OCR flow](../features/ocr-search-and-offline.md#nutrition-label-ocr-flow)
-  and the [OCR change guide](development-guide.md#if-you-need-to-modify-ocr).
-- **Typical directories:** `apps/mobile/modules/nutrition-ocr`, `src/native/ocr`,
-  `src/features/ocr`, `apps/backend/app/ocr`, and the OCR router.
-- **Expected tests:** Native fixture tests, TypeScript OCR/confirmation tests, parser unit and golden
-  fixtures, parser API tests, confirmation idempotency/ownership tests, and trace retention tests.
-- **Preserve:** On-device image handling, bounded structured provenance, stable observation IDs,
-  explicit confirmation, and the rule that provenance never becomes nutrition resolver input.
-- **Decisions:** [Bounded OCR correction provenance](../architecture/decisions.md#bounded-ocr-correction-provenance).
+Recent UI work deliberately centralizes repeated navigation/accessibility behavior:
 
-### Adding a Daily Log feature
+| Concern | Start here |
+| --- | --- |
+| Fixed/sticky detail and authoring headers | `src/shared/components/RouteScreenHeader.tsx` |
+| Dirty/busy draft-exit policy | `src/shared/navigation/draftGuard.ts`, `UnsavedDraftDialog.tsx` |
+| Focus restoration/status announcements | `src/shared/accessibility`, `src/shared/forms` |
+| Root tabs/settings routing | `src/app/navigation` |
+| Dynamic Type behavior of fixed chrome | shared header/navigation tests and `fixedChromeDynamicType.test.ts` |
 
-- **Begin:** Start with `app/services/log_service.py` and `app/repositories/log_repository.py`, then
-  trace revision or mutable-Food resolution before opening the mobile screen.
-- **Architecture and reading:** Read [Daily Log creation](../features/recipes-and-logging.md#daily-log-creation)
-  and the [Daily Log change guide](development-guide.md#if-you-need-to-modify-daily-logs).
-- **Typical directories:** Backend `services`, `repositories`, `nutrition`, `models`, and `schemas`;
-  mobile `src/features/logging`.
-- **Expected tests:** Log API/idempotency tests, aggregation, mutable-Food and Recipe-revision
-  resolution, PostgreSQL concurrency, Log editing, and mobile validation/retry/display tests.
-- **Preserve:** Totals derived only from snapshots, exact Recipe revision and amount bindings,
-  owner scope, deterministic locks, and atomic replacement of snapshots during an explicit edit.
-- **Decisions:** [Immutable Daily Log nutrition](../architecture/decisions.md#immutable-daily-log-nutrition)
-  and [revision-backed logging](../architecture/decisions.md#revision-backed-nutrition-logging).
+Keep these helpers as presentation/navigation policy. They do not own nutrition or persistence
+semantics.
 
-### Extending USDA import
+## Testing map
 
-- **Begin:** Separate upstream transport, response mapping, preview, and persistent import. Start at
-  `app/services/usda_service.py` and then open only the integration or mobile layer being changed.
-- **Architecture and reading:** Read [USDA FoodData Central](../features/foods-and-nutrition.md#usda-fooddata-central)
-  and the [USDA change guide](development-guide.md#if-you-need-to-modify-usda).
-- **Typical directories:** `app/integrations/usda`, the USDA router/service, Food persistence, and
-  `apps/mobile/src/features/usda` plus saved-Food discovery when presentation changes.
-- **Expected tests:** Client error/timeout tests, mapper fixtures, API authentication, import and
-  source-deduplication tests, and mobile search/preview/import tests.
-- **Preserve:** Backend-only API credentials, explicit import, per-100g normalization,
-  unknown-versus-zero, valid measured gram weights, source identity, and owner scope.
-- **Decisions:** [Saved and USDA Foods remain distinct](../architecture/decisions.md#saved-foods-and-usda-foods-remain-distinct)
-  and [search is composed](../architecture/decisions.md#search-is-composed-not-centralized).
+- Backend unit/API/reference behavior: `apps/backend/tests`.
+- Real remote PostgreSQL concurrency/migration/role claims: `*_postgres.py` and marked PostgreSQL
+  suites.
+- Mobile behavior/local parity/UI: `apps/mobile/__tests__`.
+- Native Apple Vision/image-quality behavior: `apps/mobile/modules/nutrition-ocr/ios-tests`.
+- Native/file-backed local SQLite lifecycle claims: the documented Expo/native SQLite qualification
+  harnesses.
+- Transfer contract parity: backend/mobile E2-15 tests plus `packages/shared-contracts/e2-15`.
+- Control/WORM/production hardening: Phase 5C4 PostgreSQL/MinIO/qualification suites.
 
-### Adding a repository method
-
-- **Begin:** Start from the owning service and prove that the query is reused, lock-sensitive, or
-  clearer as a persistence contract. Add it to the existing domain repository; do not create a
-  repository or provider layer solely to mirror a table.
-- **Architecture and reading:** Read [Repositories and models](../architecture/overview.md#repositories-and-models)
-  and the [service-first decision](../architecture/decisions.md#service-first-selective-repository-abstraction).
-- **Typical directories:** `apps/backend/app/repositories`, the owning service, models, and focused
-  backend tests. A schema migration is involved only when persistence itself changes.
-- **Expected tests:** Repository/service behavior and API regression; use PostgreSQL concurrency or
-  constraint tests when the method depends on row locks, isolation, or database error identity.
-- **Preserve:** Service-owned transaction boundaries, owner-scoped predicates, deterministic lock
-  ordering, explicit flush/commit ownership, and narrow integrity-error recovery.
-- **Decisions:** [Service-first, selective repository abstraction](../architecture/decisions.md#service-first-selective-repository-abstraction).
-
-### Adding a backend endpoint
-
-- **Begin:** Define the use case and public schema, then add a thin router that delegates to the
-  owning service. Reuse the central identity and database dependencies.
-- **Architecture and reading:** Read [API organization](../architecture/overview.md#api-organization), the
-  relevant domain guide, and [Development Guide](development-guide.md).
-- **Typical directories:** `app/api/v1/routers`, `app/schemas`, `app/services`, and only the domain,
-  repository, or model modules needed by the use case.
-- **Expected tests:** Request/response and error mapping, ownership, authentication, transaction
-  rollback, idempotency for retryable creates, and domain-specific service tests.
-- **Preserve:** No business authority in the router, no caller-selected owner, stable public error
-  semantics, one service-owned transaction, and payload-bound replay where applicable.
-- **Decisions:** [Ownership](../architecture/decisions.md#ownership-is-enforced-at-multiple-layers),
-  [payload-bound idempotency](../architecture/decisions.md#payload-bound-create-idempotency), and
-  [service-first structure](../architecture/decisions.md#service-first-selective-repository-abstraction).
-
-### Adding a mobile screen
-
-- **Begin:** Start in the owning feature's `screens` directory, then identify the hook/API contract
-  and whether navigation belongs in `src/app/navigation`.
-- **Architecture and reading:** Read [Mobile layers](../architecture/overview.md#mobile-layers), the relevant
-  domain guide, and [configuration and startup](development-guide.md#configuration-and-startup).
-- **Typical directories:** `apps/mobile/src/features/<feature>`, `src/app/navigation`, and shared
-  components only for behavior genuinely reused across features.
-- **Expected tests:** Screen/model state, validation, API mapping, loading/error/retry behavior,
-  navigation handoff, accessibility-sensitive layout, and affected integration flows.
-- **Preserve:** Explicit selected-runtime authority, remote transport centralization when remote,
-  safe retry IDs, stale-response suppression, and no implied success before the selected authority
-  commits.
-- **Decisions:** [Explicit mobile application-data authority](../architecture/decisions.md#explicit-mobile-application-data-authority)
-  and [fail-closed configuration](../architecture/decisions.md#fail-closed-deployment-configuration).
-
-### Changing local SQLite persistence
-
-Local SQLite persistence is implemented and authoritative in local mode; it is no longer a future
-offline-cache proposal.
-
-- **Begin:** Start at `NutritionRuntime`, the owning `src/runtime/local/*Runtime.ts` adapter, and
-  `src/storage/sqlite/schema.ts` / `migrations.ts`.
-- **Architecture and reading:** Read [Explicit mobile application-data authority](../architecture/decisions.md#explicit-mobile-application-data-authority),
-  [Offline and caching behavior](../features/ocr-search-and-offline.md#offline-and-caching-behavior),
-  and the persistence section of the [Architecture Overview](../architecture/overview.md#persistence-and-transaction-boundaries).
-- **Typical directories:** `apps/mobile/src/runtime/local`, `apps/mobile/src/storage/sqlite`,
-  authority bootstrap/recovery code, and focused mobile tests.
-- **Expected tests:** exact-value parity, schema creation/upgrade/rollback, file-backed transaction
-  visibility, write coordination, restart recovery, idempotency/reconciliation, immutable
-  Recipe/Log history, owner scoping, and affected UI/runtime contracts. Native SQLite evidence is
-  required for claims the JavaScript test double cannot establish.
-- **Preserve:** one selected authority, no sync/dual-write/fallback, immutable Daily Log history,
-  immutable Recipe revisions, OCR provenance, fixed source identity, exact decimals, rollback, and
-  confirmed-versus-unresolved mutation outcomes.
-- **Do not:** port Alembic revisions one-by-one, add Phase 5/control-plane tables, or introduce a
-  generic repository-provider abstraction merely because two authorities exist.
-
-Any future **synchronization** or multi-device merge remains a new architecture decision; local
-SQLite itself is already application-data behavior.
-
-## What to ignore
-
-When working on ordinary features, you can initially ignore:
-
-- `app/operators/phase5c*`
-- `app/control_migrations/`
-- `scripts/*phase5c*`
-- `docs/historical/`
-- `docker-compose.phase5c4.yml`
-
-Return to them if a change touches application migration 0018, database role topology, canary
-startup, historical conversion, immutable evidence, or promotion admission.
-
-`.DS_Store` files, build output, caches, virtual environments, generated native projects, and
-`node_modules/` are not architectural components and remain untracked.
+Use the [Testing Guide](../operations/testing.md) to choose the minimum proof for a change.
 
 ## Next reading
 
-- Continue with [Project Invariants](invariants.md) for the reasoning behind these boundaries.
-- Then read the [Architecture Overview](../architecture/overview.md) for layer responsibilities.
-- Choose [Foods and Nutrition](../features/foods-and-nutrition.md),
-  [Recipes and Nutrition History](../features/recipes-and-logging.md), or
-  [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md) for feature work.
-- Use the [Development Guide](development-guide.md) once you know the affected domain.
-
-## See also
-
-- [Architecture Decision Index](../architecture/decisions.md) for a quick rationale refresher
-- [Glossary](../reference/glossary.md) for project-specific terminology
-- [Documentation index](../README.md) for role-based reading paths
-- [Control Plane Guide](../operations/control-plane.md) for Phase 5 work only
+- Use the [Development Guide](development-guide.md) for a bounded modification checklist.
+- Use [Current State](current-state.md) for active heads and current limitations.
+- Use the relevant feature guide before changing user-visible semantics.
+- Open versioned/historical records only for provenance or a compatibility boundary they explicitly own.

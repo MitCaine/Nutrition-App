@@ -24,12 +24,14 @@ deployment-profile record remains decision provenance; the current boundary is m
 - [Recipe Food compatibility projections](#recipe-food-compatibility-projections)
 - [Revision-backed nutrition logging](#revision-backed-nutrition-logging)
 - [Unknown nutrients are not zero](#unknown-nutrients-are-not-zero)
-- [Explicit serving identities and gram weights](#explicit-serving-identities-and-gram-weights)
+- [Explicit serving identities, gram authority, and reference measurements](#explicit-serving-identities-gram-authority-and-reference-measurements)
+- [Reference-derived Targets stay outside nutrition history](#reference-derived-targets-stay-outside-nutrition-history)
 - [Bounded OCR correction provenance](#bounded-ocr-correction-provenance)
 - [Saved Foods and USDA Foods remain distinct](#saved-foods-and-usda-foods-remain-distinct)
 - [Search is composed, not centralized](#search-is-composed-not-centralized)
 - [Online-first mobile architecture](#online-first-mobile-architecture)
 - [Explicit mobile application-data authority](#explicit-mobile-application-data-authority)
+- [Local backup restore is validated replacement, not synchronization](#local-backup-restore-is-validated-replacement-not-synchronization)
 
 ### Application structure and authority
 
@@ -105,16 +107,36 @@ status through aggregation exposes incomplete contributors instead of creating f
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#canonical-nutrition-model) and
 [Project Invariants](../project/invariants.md#why-distinguish-unknown-from-zero)
 
-### Explicit serving identities and gram weights
+### Explicit serving identities, gram authority, and reference measurements
 
-**Decision:** Serving-mode Recipe ingredients retain an exact serving ID, and household measures
-imply mass only when an explicit gram weight exists.
+**Decision:** Serving-mode Recipe ingredients retain an exact serving ID. A household or display
+unit implies mass only when an explicit gram weight establishes physical equivalence. Serving
+records may additionally retain a complete reference quantity/unit/gram-weight triple so changing
+the displayed unit does not silently change the physical amount represented.
 
-**Consequence:** Defaults and display labels can change. Exact serving semantics prevent silent
-Recipe changes, while ambiguous remaps fail atomically instead of guessing.
+**Consequence:** Defaults, labels, and user-facing units can change without changing authored or
+logged meaning. Cross-dimension serving edits preserve gram authority or fail for explicit review;
+partial/ambiguous reference measurements are rejected instead of guessed. Active Recipe serving
+references remap only when one successor preserves the same serving semantics.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#serving-resolution) and
 [Project Invariants](../project/invariants.md#why-explicit-serving-identities-and-gram-weights)
+
+### Reference-derived Targets stay outside nutrition history
+
+**Decision:** Target presentation/configuration is resolved independently from immutable nutrition
+history. Per-nutrient tracking policy is applied first; manual overrides supersede dynamic
+recommendations; calories may use the bounded Mifflin–St Jeor estimate; nutrients may use an
+available DRI RDA/AI recommendation and then an FDA Daily Value reference. Nutrients without an
+established goal can remain amount-only, and unsupported cases remain explicitly unavailable.
+
+**Consequence:** Changing a profile, tracking preference, manual override, DRI dataset, or FDA
+reference changes what the app compares against, never what a historical Log contained. The app can
+represent `recommended`, `custom`, `amount_only`, and `ignored` tracking without inventing a target
+where reference science does not establish one.
+
+**Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#targets-and-comparisons) and
+[Project Invariants](../project/invariants.md#why-target-configuration-stays-outside-immutable-nutrition-history)
 
 ### Bounded OCR correction provenance
 
@@ -123,9 +145,10 @@ corrections, but not images, paths, complete raw OCR text, or unbounded parser r
 
 **Consequence:** Parser changes and corrections must remain explainable without making sensitive
 capture material part of the long-lived nutrition record. Provenance is append-only and is not a
-resolver input.
+resolver input. Guided camera framing and image-quality checks remain acquisition/review aids, not
+new persisted nutrition authority.
 
-**Read more:** [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md#confirmation-and-provenance)
+**Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#confirmation-and-provenance)
 and [Project Invariants](../project/invariants.md#why-bounded-ocr-correction-provenance)
 
 ### Saved Foods and USDA Foods remain distinct
@@ -138,7 +161,7 @@ Explicit import normalizes provenance, servings, nutrients, and deduplication be
 Logs can depend on the item.
 
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#usda-fooddata-central) and
-[OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md#unified-food-search)
+[OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#unified-food-search)
 
 ### Search is composed, not centralized
 
@@ -150,7 +173,7 @@ or ranking service.
 **Consequence:** The two sources have different identity and persistence semantics. Keeping them
 separate makes imports explicit and lets each failure or loading state remain visible.
 
-**Read more:** [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md#unified-food-search)
+**Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#unified-food-search)
 
 ### Online-first mobile architecture
 
@@ -162,10 +185,10 @@ the historical remote-mode and no-synchronization decision.
 nutrition cache, offline mutation queue, or synchronization engine.
 
 **Consequence:** Ownership, graph changes, immutable history, and authoritative calculations are
-server transactions. Safe retry is implemented without claiming that a local mutation was
-committed offline.
+server transactions in remote mode. Safe retry is implemented without claiming that a local
+mutation was committed offline.
 
-**Read more:** [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md#offline-and-caching-behavior)
+**Read more:** [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md#offline-and-caching-behavior)
 and [Project Invariants](../project/invariants.md#why-an-online-first-design)
 
 ### Explicit mobile application-data authority
@@ -179,7 +202,23 @@ mode preserves the existing API and authentication boundary. Selection never imp
 dual writes, synchronization, cache sharing, recovery sharing, or data migration. Local USDA is a
 separate direct external integration and is not an application-data authority.
 
-**Read more:** [Epic 2 implementation backlog](../project/version-1.1/epic-2/implementation-backlog.md#e2-14-enable-explicit-local-runtime-selection-and-serverless-operation)
+**Read more:** [Architecture Overview](overview.md#system-boundaries) and the completed
+[Epic 2 implementation backlog](../project/version-1.1/epic-2/implementation-backlog.md)
+
+### Local backup restore is validated replacement, not synchronization
+
+**Decision:** Local backup export creates a complete validated standalone SQLite snapshot. Restore
+first inspects and stages a validated copy without modifying the active database, then activates it
+only at a later local-runtime bootstrap. Existing local data is snapshotted for rollback before
+replacement, and an unrecoverable rollback failure prevents the local authority from opening.
+
+**Consequence:** The app has a safe explicit local recovery path without introducing merge,
+synchronization, replication, conflict-resolution, or cloud-backup semantics. Invalid candidates
+cannot become active through the normal flow, staging can be canceled before restart, and restore
+failure preserves the prior local authority whenever safe rollback is possible.
+
+**Read more:** [Local backup and restore](../features/ocr-search-and-offline.md#local-backup-and-restore) and
+[Project Invariants](../project/invariants.md#why-local-backup-is-replacement-not-synchronization)
 
 ## Application structure and authority decisions
 
@@ -282,7 +321,7 @@ owners, grants, and projections, and tamper tests must make it fail.
 complete or unchanged. Qualification detects false-green manifests and authority drift.
 
 **Read more:** [Control Plane Guide](../operations/control-plane.md#qualification-and-migration-safety),
-[Testing Guide](../operations/testing.md#control-database-qualification), and
+[Testing Guide](../operations/testing.md#control-database-and-production-hardening-tests), and
 [Project Invariants](../project/invariants.md#why-qualification)
 
 ### Artifact-referenced admission pipeline
@@ -312,7 +351,7 @@ authorship, migration authority, or an alternate path around write fencing and a
 - For system responsibilities, continue with the [Architecture Overview](overview.md).
 - For application behavior, choose [Foods and Nutrition](../features/foods-and-nutrition.md),
   [Recipes and Nutrition History](../features/recipes-and-logging.md), or
-  [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md).
+  [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md).
 - For operational authority, continue with the optional [Control Plane Guide](../operations/control-plane.md).
 
 ## See also

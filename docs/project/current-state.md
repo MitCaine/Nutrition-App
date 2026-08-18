@@ -6,7 +6,9 @@
 
 Version 1.2 is the current product line.
 
-Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the local-first SQLite runtime, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 closure. The current main branch has moved beyond that program and includes subsequent personalized general-adult nutrition targets and UI refinements. Ongoing Version 1.2 refinement work is tracked through open GitHub issues in this repository rather than a versioned planning program.
+Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
+
+At this repository state, the implementation issue/PR program is closed out: there is no remaining feature issue or pull-request backlog representing unfinished application work. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
 
 The Version 1.1 roadmap, PRDs, architecture reviews, implementation backlogs, and closure records are retained as historical implementation evidence. They are not the current planning state. New scope should be documented deliberately rather than inferred from those completed planning artifacts.
 
@@ -16,21 +18,26 @@ The primary application runtime is the iOS-first local authority selected throug
 
 The preserved FastAPI/PostgreSQL implementation remains available as an alternate remote/reference authority. Exactly one application-data authority is selected for a running context. There is no synchronization, fallback, dual write, background replication, automatic failover, or silent authority mixing.
 
+Local backup/restore is a replacement workflow for the selected SQLite authority, not synchronization. It exports a validated coherent SQLite snapshot and validates/stages a selected backup before activation on a later local-runtime bootstrap. It does not create a second live authority or a cloud replica.
+
 The separate control-plane/operations architecture is retained for remote/PostgreSQL migration, promotion, evidence, qualification, activation, and recovery work. It is not part of ordinary local application requests and is not a second application backend.
 
 The [Architecture Overview](../architecture/overview.md) owns the full current system/layer model; the [Architecture Decision Index](../architecture/decisions.md) owns accepted structural choices.
 
 ## Current user-facing capabilities
 
-- Personal Food creation, editing, duplication, favorites, search, serving definitions, and exact decimal nutrition handling.
-- Recipe authoring, nested published Recipe use, immutable publication revisions, and generated Food compatibility projections.
+- Personal Food creation, editing, collision-aware duplication, favorites, recents, search, serving definitions, and exact decimal nutrition handling.
+- Expanded canonical nutrient coverage spanning macros, vitamins, minerals, fatty acids, total Omega-3, ALA, EPA, DHA, and linoleic acid/Omega-6, including nutrient-specific canonical units where required.
+- Serving authoring with explicit gram authority and optional reference-measurement metadata so unit changes preserve physical equivalence rather than silently changing amount meaning.
+- Recipe authoring, nested published Recipe use, immutable publication revisions, generated Food compatibility projections, explicit serving/yield authoring, and draft-preserving navigation guards.
 - Daily Logs with immutable nutrient snapshots so later Food or Recipe edits cannot rewrite historical nutrition.
 - Local-first SQLite persistence for the normal personal workflow.
-- Native Apple Vision nutrition-label OCR on iOS, structured review/confirmation, and immutable bounded correction provenance.
-- Direct USDA FoodData Central search/import in local mode with secure on-device credential storage.
-- Daily target comparison with manual overrides, personalized general-adult targets where supported, FDA Daily Value fallbacks/references, and explicit unavailable states.
-- Personalized calories plus general-adult recommendations for protein, carbohydrate, total fat, saturated fat, iron, calcium, vitamin D, potassium, magnesium, and fiber where the required profile inputs are available.
-- Accessibility-focused navigation, focus restoration, mutation/recovery semantics, and light/dark presentation.
+- Validated local SQLite backup export plus staged restore with restart-time activation, rollback protection, and retained success/failure evidence.
+- Native Apple Vision nutrition-label OCR on iOS, app-owned guided camera capture, structured review/confirmation, conservative pre-recognition capture-quality warnings, and immutable bounded correction provenance.
+- Direct USDA FoodData Central search/import in local mode with secure request-time on-device credential handling and expanded nutrient mapping.
+- Daily target comparison with per-nutrient tracking preferences, manual overrides, DRI recommendations where supported, FDA Daily Value fallback/reference data, neutral amount-only tracking when no goal is established, and explicit unavailable states.
+- Personalized DRI recommendations for supported adult reference profiles, including supported pregnancy/lactation life stages; calorie estimation remains a separate general-adult Mifflin–St Jeor calculation.
+- Accessibility-focused navigation, shared fixed/sticky route headers, focus restoration, mutation/recovery semantics, unsaved-draft protection, and light/dark presentation.
 - One-time PostgreSQL-to-SQLite transfer tooling for installations migrating from the preserved remote authority.
 
 ## Remote/reference migration heads
@@ -71,11 +78,14 @@ The [Documentation Index](../README.md) remains the authoritative navigation map
 
 - Public multi-user production deployment is intentionally unsupported. There is no production identity provider or multi-tenant trust model; private single-user authentication in the remote path is not a scalable account system.
 - The selected mobile application-data authority is either local SQLite or remote FastAPI/PostgreSQL. There is no synchronization, fallback, dual write, background sync, or shared recovery/cache authority.
-- Native Apple Vision label recognition requires an iOS development or release build. Expo Go cannot load the native project module.
+- Local backup/restore covers the local SQLite application database. It is not automatic cloud backup, cross-device synchronization, remote PostgreSQL backup, or conflict reconciliation. USDA credentials and other secrets are not included in exported local backups.
+- Native Apple Vision label recognition and image-quality inspection require an iOS development or release build. Expo Go cannot load the native project module. Capture-quality checks are advisory/best-effort and do not replace user review of OCR results.
 - Local USDA search requires network access to FoodData Central and a configured personal credential stored through the app's secure credential path.
-- General-adult personalized nutrition targets intentionally do not silently cover pregnancy, lactation, pediatric profiles, specialized medical nutrition, or athletic-program targets. Unsupported cases retain appropriate FDA references or unavailable states.
-- The independent control gate is not consumed by ordinary local application requests. Provider routing, backup, restore, and readback remain bounded operator/provider responsibilities.
+- DRI recommendations support adults age 19 and older where the canonical dataset has an established recommendation and required profile inputs. Pregnancy/lactation are supported for female reference profiles age 19–50. Pediatric and specialized-medical target models remain unsupported. The Mifflin–St Jeor maintenance-calorie estimate is narrower: general-adult context, required profile inputs, and supported ages 19–78.
+- Some nutrients intentionally have no established DRI/FDA goal and therefore default to amount-only presentation instead of inventing a target. Per-nutrient preferences can also explicitly select amount-only or ignored tracking.
+- The independent control gate is not consumed by ordinary local application requests. Remote provider routing, infrastructure backup/restore, and readback remain bounded operator/provider responsibilities distinct from the local user backup feature.
 - Local infrastructure qualification proves only its documented disposable topology/provider stand-ins; it is not production-vendor certification.
+- Known dependency vulnerabilities that require versions outside the currently supported Expo compatibility envelope remain deferred until compatible upstream fixes are available; incompatible forced upgrades are not treated as a valid remediation.
 
 ## Authority and maintenance
 

@@ -6,6 +6,10 @@ Recipes connect mutable authoring with immutable use. An author can keep editing
 published revision preserves exactly what was available when someone logged it. Daily Logs then
 snapshot resolved nutrient amounts so later Food or Recipe changes cannot rewrite history.
 
+“Nutrition history” in this guide means retained immutable Recipe revisions and Daily Log nutrition
+snapshots. The current application does not implement a separate multi-day trends/analytics
+subsystem merely because historical nutrition is retained.
+
 ## Authored Recipes
 
 A Recipe is a mutable user-owned definition containing:
@@ -18,6 +22,16 @@ A Recipe is a mutable user-owned definition containing:
 An ingredient points to a Food. A published child Recipe appears as a managed Food projection, so
 the same ingredient representation supports nested Recipes without storing a second graph model.
 Ingredient amounts are either exact serving references or explicit mass quantities.
+
+The current mobile Recipe form treats serving count and cooked-weight yield as first-class authored
+values and keeps serving-unit choice explicit. Serving-based ingredients preserve the selected
+serving identity; gram-based ingredients preserve explicit mass. UI conversion/display helpers may
+make those values easier to enter, but they do not replace the underlying amount definition or gram
+authority.
+
+Unsaved Recipe authoring is one guarded navigation flow across the Recipe form, ingredient picker,
+USDA search/preview, and serving-management routes. Leaving a semantically changed draft requires an
+explicit discard decision; normal navigation does not silently throw away authored Recipe changes.
 
 ### Graph safety
 
@@ -139,6 +153,10 @@ Food edit. The service deletes and rebuilds only that Log's snapshots in the sam
 Deleting a Log removes that Log and its snapshots. It can affect recents because recents derive from
 actual log history; it does not delete the source Food or Recipe revision.
 
+Current mobile Log flows preserve authoritative amount/serving meaning while using human-oriented
+serving presentation. Mutation results are surfaced explicitly; success state is not inferred only
+from navigation or cache refresh.
+
 ## Daily summaries
 
 Daily summaries aggregate `daily_log_nutrient_snapshots` only. They never join current
@@ -150,8 +168,8 @@ Daily summaries aggregate `daily_log_nutrient_snapshots` only. They never join c
 - whether unknown contributors exist;
 - unknown-contributor count.
 
-Target comparison consumes this same summary, which keeps target/profile changes outside the
-historical record.
+Target comparison consumes this same summary, which keeps target/profile/tracking-preference changes
+outside the historical record.
 
 ## Deletion and retention
 
@@ -163,6 +181,20 @@ Publication revisions and their amount/nutrient children are retained as immutab
 `apps/backend/scripts/audit_recipe_retention.py` classifies retained revisions, projections, and
 references without making repair decisions.
 
+## Current mobile route behavior
+
+Cross-cutting UI work now applies to Recipe and Log routes as well as other feature screens:
+
+- detail/authoring routes use the shared fixed route-header pattern so Back/Cancel/title actions do
+  not scroll away with long content;
+- fixed navigation chrome caps visual text growth while preserving accessible content semantics;
+- unsaved draft guards block accidental exit from dirty Recipe authoring and other guarded forms;
+- busy mutation state prevents normal discard/navigation actions from racing an in-flight write;
+- recovery/success messaging is explicit and accessible rather than relying on visual-only state.
+
+These are presentation/navigation guarantees. They do not change Recipe revision authority or Log
+snapshot semantics.
+
 ## Where to look
 
 | Concern | Primary code | Tests |
@@ -171,8 +203,8 @@ references without making repair decisions.
 | Publication snapshots | `app/publication/recipe_revision.py`, publication repository/models | `test_recipe_publication_*`, `test_recipe_revision_publication.py` |
 | Projection integrity | `app/domain/recipe_projection.py`, Food/Recipe services | `test_recipe_projection_ownership.py`, `test_food_recipe_serving_integrity.py` |
 | Logging and editing | `app/services/log_service.py`, `app/nutrition/revision_resolution.py` | `test_stage2_logs.py`, `test_recipe_revision_logging.py`, `test_recipe_revision_log_editing.py` |
-| Mobile Recipe flow | `apps/mobile/src/features/recipes` | `recipe*.test.ts`, `ingredientPicker.test.ts` |
-| Mobile Log flow | `apps/mobile/src/features/logging` | `log*.test.ts`, logging integration tests |
+| Mobile Recipe/yield/serving flow | `apps/mobile/src/features/recipes`, `src/shared/navigation/draftGuard.ts` | `recipe*.test.ts`, `recipeServingChoice.test.ts`, `recipeServingUnitPicker.test.ts`, `draftGuard.test.ts` |
+| Mobile Log flow | `apps/mobile/src/features/logging` | `log*.test.ts`, `dailyLog*.test.ts`, logging integration tests |
 
 ## Next reading
 
@@ -187,4 +219,4 @@ references without making repair decisions.
 
 - [Architecture Decision Index](../architecture/decisions.md) for revision and projection decisions
 - [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for another immutable provenance flow
-- [Testing Guide](../operations/testing.md) for publication, logging, and PostgreSQL concurrency coverage
+- [Testing Guide](../operations/testing.md) for publication, logging, local parity, and PostgreSQL concurrency coverage

@@ -12,8 +12,8 @@ branches.
 
 A nutrient amount carries more meaning than a number:
 
-- a canonical nutrient identity such as calories, protein, or sodium;
-- an amount and compatible display unit;
+- a canonical nutrient identity such as calories, protein, sodium, vitamin A, or Omega-3;
+- an amount and compatible canonical/display unit;
 - a basis: per serving, per 100 grams, or per gram;
 - a status: known, estimated, explicit zero, or unknown;
 - source and optional confidence/provenance fields.
@@ -22,15 +22,19 @@ Unknown and zero are intentionally different. Zero contributes a known amount of
 means the source does not support a numeric contribution and must remain visible in aggregate
 quality information.
 
-Supported calculation units are `kcal`, `g`, `mg`, and `mcg`. Compatible mass units normalize
-before aggregation; incompatible units fail instead of being silently combined. Exact decimal
-semantics are preserved by both authorities: the remote backend uses Python `Decimal`, while the
-local runtime uses fixed-scale canonical decimal text and exact TypeScript helpers rather than
+The supported unit system includes `kcal`, ordinary mass units (`g`, `mg`, `mcg`), and canonical
+nutrient-specific semantic units such as `mcg RAE`, `mcg DFE`, `mg NE`, and
+`mg alpha-tocopherol`. Ordinary mass units can normalize across compatible scales. Semantic units
+are compatible only with the same canonical semantic unit; the application does not invent
+cross-unit nutrition conversions that require biological equivalence rules. Exact decimal semantics
+are preserved by both authorities: the remote backend uses Python `Decimal`, while the local
+runtime uses fixed-scale canonical decimal text and exact TypeScript helpers rather than
 floating-point persistence.
 
-The nutrient catalog defines stable identity and display ordering. FDA Daily Values live in a
-separate reference table because regulatory targets are versioned reference data, not properties
-of nutrient identity.
+The canonical nutrient catalog owns stable identity, hierarchy, default unit, display order, and
+reference metadata. Current coverage includes macronutrients, vitamins, minerals, fatty acids,
+`total_omega_3`, ALA, EPA, DHA, and linoleic acid/Omega-6. FDA Daily Values and the canonical DRI
+dataset are versioned reference data used by Targets; they are not mutable Food nutrient facts.
 
 ## Food lifecycle
 
@@ -55,9 +59,16 @@ A normal Food is a mutable definition. Its name, nutrient rows, and serving defi
 Deletion is soft so historical references remain understandable. Mutations are owner-scoped and
 must account for Recipes that currently depend on the Food.
 
-A Food may have several serving definitions but exactly one default. A serving records quantity,
-unit, optional gram weight, source, and confirmation metadata. Household labels do not imply a gram
-conversion unless a gram weight is explicitly present.
+A Food may have several serving definitions but exactly one default. A serving records a display
+label, quantity/unit, optional gram weight, source/confirmation metadata, and optional complete
+reference measurement (`reference_quantity`, `reference_unit`, `reference_gram_weight`). A
+reference measurement preserves the physical equivalence behind a serving when the displayed unit
+changes. Partial reference measurements are invalid.
+
+Household labels never imply a gram conversion on their own. Current authoring treats gram mass as
+the authority for cross-dimension equivalence: changing a serving between mass and non-mass units
+must preserve or explicitly establish a valid physical gram anchor rather than silently changing
+the amount represented.
 
 ### Serving resolution
 
@@ -68,9 +79,12 @@ The resolver supports:
 
 Recipe ingredients are stricter than general Food logging. A serving-mode ingredient stores its
 exact serving ID; a gram-mode ingredient stores no serving ID. When a Food's serving generation is
-replaced, the service remaps an active Recipe ingredient only when exactly one successor has the
-same normalized quantity, unit, and gram weight. Missing or ambiguous successors reject the Food
-update atomically.
+replaced, the service remaps an active Recipe ingredient only when exactly one successor preserves
+the same normalized serving meaning. Missing or ambiguous successors reject the Food update
+atomically.
+
+The mobile serving editor uses structured unit selection and human-oriented decimal presentation,
+but display rounding never becomes the persisted nutrition authority.
 
 ## Food sources
 
@@ -78,7 +92,11 @@ update atomically.
 
 Manual Food creation validates one coherent serving/nutrient definition and persists it in one
 transaction. Duplication produces a new user-owned Food and preserves bounded lineage without
-making the copy depend on later source edits.
+making the copy depend on later source edits. Duplicate naming is collision-aware: generated names
+advance through `Copy`, `Copy 2`, and later ordinals rather than creating an active-name collision.
+
+Food views omit unresolved/unknown nutrient rows from ordinary presentation where no meaningful
+amount is available while preserving explicit zero and other authoritative statuses in the model.
 
 ### USDA FoodData Central
 
@@ -114,8 +132,10 @@ Both paths normalize variable upstream payloads into the same stable nutrient/se
 semantics.
 
 The mapper prefers stable USDA nutrient IDs, then nutrient numbers, with narrow display-name
-fallbacks for upstream variation. USDA nutrient records are stored per 100 grams. Imported Foods
-always receive a `100 g` serving; branded/portion servings are added only with valid gram weights.
+fallbacks for upstream variation. Current mapping covers the expanded canonical micronutrient and
+fatty-acid catalog rather than only the original core label nutrients. USDA nutrient records are
+stored per 100 grams. Imported Foods always receive a `100 g` serving; branded/portion servings are
+added only with valid gram weights.
 
 Duplicate import is based on active `(owner, USDA source, FDC ID)` identity, not name. Repeated or
 concurrent imports follow the selected authority's established source-identity/idempotency contract
@@ -126,7 +146,8 @@ again when the established flow permits it.
 
 OCR confirmation creates an ordinary Manual Food plus a bounded append-only confirmation trace in
 the same transaction. The trace explains how parsed values were confirmed or corrected; it is not
-used by the nutrition resolver. See [OCR, Search, and Offline Behavior](ocr-search-and-offline.md).
+used by the nutrition resolver. Current OCR nutrient mapping follows the expanded canonical catalog.
+See [OCR, Search, and Offline Behavior](ocr-search-and-offline.md).
 
 ### Recipe compatibility Food
 
@@ -147,19 +168,40 @@ Search presentation and network behavior are documented in
 
 ## Targets and comparisons
 
-Targets are deliberately outside historical nutrition data. The effective target order is:
+Targets are presentation/configuration state, not historical nutrition data. Current target
+resolution is nutrient-specific and begins with the user's tracking policy:
 
-1. explicit user override;
-2. personalized calculated estimate, where the required profile inputs are available;
-3. versioned FDA Daily Value fallback;
-4. unavailable.
+1. an explicit `ignored` tracking preference removes the nutrient from target comparison;
+2. an explicit `amount_only` preference tracks consumption without a target/reference goal;
+3. a manual override becomes the effective custom target;
+4. calories use the calculated Mifflin–St Jeor maintenance estimate when its narrower profile scope
+   is satisfied;
+5. an available DRI RDA/AI recommendation is used where the canonical DRI dataset supports the
+   nutrient/profile;
+6. an available FDA Daily Value is used as the regulatory fallback/reference where applicable;
+7. nutrients for which the DRI dataset explicitly establishes no RDA/AI goal default to neutral
+   amount-only tracking rather than an invented target;
+8. otherwise the target remains explicitly unavailable, with a reason code describing missing or
+   unsupported profile/reference data.
 
-Calculated estimates cover the Mifflin–St Jeor general calorie estimate plus personalized
-general-adult recommendations for protein, carbohydrate, total fat, saturated fat, iron, calcium,
-vitamin D, potassium, magnesium, and fiber. Profiles outside the general-adult model retain manual
-targets, FDA reference values, or explicit unavailable states rather than silent defaults. Daily
-comparison reads the same snapshot-derived daily summary as the rest of the app, so changing a
-profile or target never changes historical Logs.
+Returned tracking modes are `recommended`, `custom`, `amount_only`, and `ignored`. Persisted
+tracking-preference rows are only the explicit departures from dynamic defaults (`amount_only` or
+`ignored`); a supplied empty preference map restores dynamic defaults. Manual overrides are
+patch-like: omitted nutrient overrides remain unchanged and an explicit null removes an override.
+
+The DRI resolver covers adults age 19 and older where a recommendation is established. It supports
+`general_adult`, and pregnancy/lactation for female reference profiles age 19–50. It can resolve
+fixed or per-kilogram recommendations and carries applicable DRI upper-limit metadata separately.
+Pediatric profiles and `specialized_medical` context remain unsupported by this general DRI model.
+
+The calorie estimate is intentionally narrower than DRI support. Mifflin–St Jeor maintenance
+calories require the `general_adult` context, birth date, equation sex, height, weight, activity
+level, and an age from 19 through 78. Pregnancy/lactation and specialized-medical contexts do not
+receive a calculated calorie estimate from this equation.
+
+Daily comparison reads the same snapshot-derived daily summary as the rest of the app, so changing
+a profile, tracking preference, DRI dataset, FDA reference, or manual target never rewrites
+historical Logs.
 
 ## Ownership and retry behavior
 
@@ -177,11 +219,11 @@ with `create_idempotency_result_unavailable` rather than creating a replacement.
 
 | Concern | Backend | Mobile | Tests |
 | --- | --- | --- | --- |
-| Food CRUD and serving rules | `app/services/food_service.py`, `app/nutrition/serving_resolution.py` | `src/features/foods` | `test_stage2_foods.py`, `foodForm.test.ts` |
-| Nutrient resolution and aggregation | `app/nutrition`, `app/domain/nutrition.py` | `src/shared/nutrition` | `test_nutrition_resolution.py`, `test_aggregation.py` |
-| USDA | `app/integrations/usda`, `app/services/usda_service.py` | `src/features/usda` | `test_stage3_usda_*`, `usda*.test.ts` |
-| Favorites and recents | `food_service.py`, Food/log repositories | `useFoods.ts`, `foodDiscovery.ts` | `test_food_discovery.py`, `foodDiscovery*.test.ts` |
-| Targets | `app/services/target_service.py`, `app/targets` | `src/features/targets` | `test_targets.py`, `target*.test.ts` |
+| Food CRUD and serving rules | `app/services/food_service.py`, `app/nutrition/serving_resolution.py`, `app/schemas/food.py` | `src/features/foods` | `test_stage2_foods.py`, `foodForm.test.ts`, serving transition tests |
+| Nutrient catalog, units, and aggregation | `app/catalog/nutrients.py`, `app/nutrition`, `app/domain/nutrition.py` | `src/shared/nutrition` | `test_nutrient_catalog.py`, `test_nutrition_resolution.py`, `test_aggregation.py`, `nutrientSections.test.ts` |
+| USDA | `app/integrations/usda`, `app/services/usda_service.py` | `src/features/usda`, `src/runtime/local/localUsdaRuntime.ts` | `test_stage3_usda_*`, `localUsdaRuntime.test.ts`, `usda*.test.ts` |
+| Favorites and recents | `food_service.py`, Food/log repositories | Food hooks/discovery utilities | Food discovery tests |
+| Targets and DRI | `app/services/target_service.py`, `app/targets` | `src/features/targets`, `src/runtime/local/localTargetsRuntime.ts`, `src/shared/nutrition/dri*` | `test_targets.py`, `test_dri_recommendations.py`, `test_target_tracking_preferences.py`, `driRecommendations.test.ts`, `target*.test.ts` |
 
 Use the [Development Guide](../project/development-guide.md) for exact router, schema, migration, and
 qualification checkpoints.
@@ -190,8 +232,8 @@ qualification checkpoints.
 
 - Continue with [Recipes and Nutrition History](recipes-and-logging.md) to see how Foods become
   ingredients, published revisions, and immutable Daily Log snapshots.
-- Read [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for scanned Food creation and
-  unified saved/USDA discovery.
+- Read [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for scanned Food creation,
+  local backup/restore, and unified saved/USDA discovery.
 - Use the [Development Guide](../project/development-guide.md#if-you-need-to-modify-foods-or-servings) before
   changing Food or serving behavior.
 
@@ -199,4 +241,4 @@ qualification checkpoints.
 
 - [Architecture Decision Index](../architecture/decisions.md) for the key Food and nutrition choices
 - [Architecture Overview](../architecture/overview.md) for layer ownership
-- [Testing Guide](../operations/testing.md) for Food, USDA, ownership, and concurrency coverage
+- [Testing Guide](../operations/testing.md) for Food, USDA, Targets, ownership, and concurrency coverage

@@ -44,14 +44,19 @@ alembic upgrade 0020_immutable_provenance_enforcement
 uvicorn app.main:app --reload
 ```
 
+The example intentionally stops at schema 0020 because `0021_target_activation_execution` is a
+separately authorized production-hardening transition, not an ordinary convenience upgrade. Use the
+[Phase 5C4.7b runbook](../operations/runbooks/target-activation.md) for that boundary.
+
 Normal development uses one application URL for runtime and Alembic. A qualified production-like
 role profile runs migrations separately as `nutrition_migrator` and the API as
 `nutrition_runtime`. The root `scripts/start-backend.sh` implements only that qualified runtime
 launch: it verifies the exact runtime database role and deliberately does not run Alembic.
-The repository application migration head is `0027_serving_reference_measurement`. Revision
-`0021_target_activation_execution` remains an authenticated target-activation operation, not an
-ordinary development upgrade. Install it only through the
-[Phase 5C4.7b runbook](../operations/runbooks/target-activation.md).
+
+The current remote application migration head is `0030_total_omega_3_nutrient`. Revisions after the
+special 0021 activation boundary include immutable provenance/integrity hardening, serving reference
+measurements, duplicate-source identity, the expanded nutrient catalog, and canonical total
+Omega-3. [Current State](current-state.md) owns the authoritative current head.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
 Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented
@@ -91,24 +96,40 @@ API URL fallback; use a LAN-reachable URL for a physical device. A private remot
 HTTPS and an injected private bearer credential. Never put a real credential in source or
 documentation.
 
+Apple Vision OCR, guided camera capture, and native image-quality inspection require an iOS native
+development/release build rather than Expo Go.
+
 For every feature change, determine whether the contract change is authority-neutral, local-only,
 remote-only, or a parity change before editing implementation.
 
-## If you need to modify Foods or servings
+## If you need to modify Foods, nutrients, or servings
 
-Begin with:
+Begin with the behavior being changed, not with a migration:
 
-1. `app/api/v1/routers/foods.py`
-2. `app/services/food_service.py`
-3. `app/repositories/food_repository.py`
-4. `app/nutrition/serving_resolution.py` and `resolution.py`
-5. `app/models/food.py` and `app/schemas/food.py`
-6. `apps/mobile/src/features/foods`
+1. `app/catalog/nutrients.py` for canonical nutrient identity/hierarchy/default units/reference metadata;
+2. `app/api/v1/routers/foods.py` and `app/services/food_service.py` for remote Food mutations;
+3. `app/repositories/food_repository.py` for reused/locking persistence queries;
+4. `app/nutrition/serving_resolution.py`, `resolution.py`, and `units.py` for serving/nutrient semantics;
+5. `app/models/food.py` and `app/schemas/food.py` for remote persistence/contracts;
+6. `apps/mobile/src/features/foods`, `src/shared/nutrition`, and `src/runtime/local/localFoodsRuntime.ts` for mobile/local behavior.
 
-Check effects on dependent Recipes and mutable-Food Log snapshot locking. Relevant application
-migrations include 0001–0003, 0012–0014, `0026_food_nutrient_integrity`, and
-`0027_serving_reference_measurement`. Run Food,
-serving-integrity, ownership, idempotency, nutrition-resolution, and affected mobile tests.
+Preserve unknown-versus-zero, nutrient-specific canonical units, one default serving, exact decimal
+semantics, and explicit physical amount authority. Serving reference measurements are all-or-none:
+`reference_quantity`, `reference_unit`, and `reference_gram_weight` must describe one complete
+physical anchor. Cross-dimension unit edits must preserve gram equivalence or require review rather
+than guess.
+
+Check effects on dependent Recipes and mutable-Food Log snapshot locking. Relevant late remote
+migrations are:
+
+- `0026_food_nutrient_integrity` — Food nutrient integrity hardening;
+- `0027_serving_reference_measurement` — serving physical reference metadata;
+- `0028_duplicate_food_source_identity` — duplicate Food source identity;
+- `0029_expand_nutrient_catalog` — expanded canonical nutrient catalog;
+- `0030_total_omega_3_nutrient` — source-reported total Omega-3 and hierarchy.
+
+Run Food, nutrient-catalog/unit, serving-transition/integrity, ownership, idempotency,
+nutrition-resolution, local-runtime parity, and affected mobile presentation tests.
 
 ## If you need to modify Recipes
 
@@ -117,15 +138,21 @@ Begin with `app/services/recipe_service.py`. Then read:
 - `app/domain/recipe_nutrition_validation.py` and `recipe_projection.py`;
 - `app/publication/recipe_revision.py`;
 - Recipe and publication repositories/models;
-- `apps/mobile/src/features/recipes`.
+- `apps/mobile/src/features/recipes`;
+- `apps/mobile/src/shared/navigation/draftGuard.ts` when navigation/discard semantics are involved.
 
 Ask whether the change affects only mutable authoring or also immutable publication. Never update a
 published revision to represent a new draft. Check nested graph ownership, cycle validation, parent
-serving remaps, `needs_republish`, compatibility projections, and Recipe-based Log editing.
+serving remaps, `needs_republish`, compatibility projections, Recipe-based Log editing, serving
+choice, and serving-count/cooked-weight yield semantics.
 
 Recipe foundations span migrations 0004–0008, with dependency and idempotency hardening in
 0013–0014. Historical conversion migrations 0015–0017 are not the place to add new Recipe feature
 schema.
+
+Unsaved Recipe authoring spans multiple routes. Changes to the form, ingredient picker, USDA
+preview/import, or serving management must preserve the shared draft guard so dirty state is not
+silently discarded and busy mutations cannot be abandoned through normal navigation.
 
 ## If you need to modify Daily Logs
 
@@ -139,62 +166,117 @@ Begin with:
 6. `apps/mobile/src/features/logging`
 
 Preserve the rule that summaries aggregate snapshot rows only. Decide explicitly whether an edit
-uses a mutable Food or immutable Recipe revision. Run standard Log tests plus PostgreSQL log
-concurrency and Recipe-revision editing tests when lock or snapshot behavior changes.
+uses a mutable Food or immutable Recipe revision. Target/profile changes must never alter snapshot
+rows. Run standard Log tests plus PostgreSQL log concurrency and Recipe-revision editing tests when
+lock or snapshot behavior changes, and local Daily Log parity/recovery tests for local changes.
 
 ## If you need to modify USDA
 
 Begin at `NutritionRuntime.usda`, then separate the selected authority:
 
-- local transport/mapping/import: `apps/mobile/src/runtime/local/localUsdaRuntime.ts`
-- local saved-Food authority: `localFoodsRuntime.ts` plus SQLite persistence
-- remote HTTP/key/timeouts/errors: `app/integrations/usda/client.py`
-- remote upstream-to-domain mapping: `app/integrations/usda/mappers.py`
-- remote service/API: `app/services/usda_service.py` and the USDA router
-- mobile query/preview/import presentation: `apps/mobile/src/features/usda`
+- local transport/mapping/import: `apps/mobile/src/runtime/local/localUsdaRuntime.ts`;
+- local saved-Food authority: `localFoodsRuntime.ts` plus SQLite persistence;
+- remote HTTP/key/timeouts/errors: `app/integrations/usda/client.py`;
+- remote upstream-to-domain mapping: `app/integrations/usda/mappers.py`;
+- remote service/API: `app/services/usda_service.py` and the USDA router;
+- mobile query/preview/import presentation: `apps/mobile/src/features/usda`.
 
 Local mode resolves a personal USDA credential at request time and must not persist or embed it.
 Remote mode retains backend-owned USDA credentials. Preserve per-100g semantics,
-unknown-versus-zero, valid gram weights, source-identity deduplication, and explicit import in both
-authorities. Use mocked transport/mapper tests for most changes; use live upstream checks only as
-explicit manual qualification.
+unknown-versus-zero, qualified nutrient units, valid gram weights, expanded nutrient mapping,
+source-identity deduplication, and explicit import in both authorities. Use mocked
+transport/mapper tests for most changes; use live upstream checks only as explicit manual
+qualification.
 
-## If you need to modify OCR
+## If you need to modify OCR, camera capture, or image-quality policy
 
-Follow the flow in [OCR, Search, and Offline Behavior](../features/ocr-search-and-offline.md).
+Follow the flow in [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md).
 
-- Native recognition: `apps/mobile/modules/nutrition-ocr`
-- TypeScript native boundary: `apps/mobile/src/native/ocr`
-- Capture/review: `apps/mobile/src/features/ocr`
-- Pure parser: `apps/backend/app/ocr/parser.py`
-- Confirmation transaction: `app/ocr/confirmation_service.py`
-- API: `app/api/v1/routers/ocr.py`
+- Guided camera capture and lens selection: `apps/mobile/src/features/ocr/components/NutritionCameraCapture.tsx`, `apps/mobile/src/native/camera`;
+- Native recognition and quality metrics: `apps/mobile/modules/nutrition-ocr`;
+- TypeScript native boundary: `apps/mobile/src/native/ocr`;
+- Quality-warning policy: `apps/mobile/src/features/ocr/quality`;
+- Scan/review/diagnostics: `apps/mobile/src/features/ocr`;
+- Pure parsers: `apps/backend/app/ocr/parser.py` and the local parser parity implementation;
+- Confirmation transaction: `app/ocr/confirmation_service.py` and the local OCR runtime;
+- Remote API: `app/api/v1/routers/ocr.py`.
 
-Parser changes require golden-fixture review. Confirmation changes require privacy, idempotency,
-ownership, and trace-lifecycle tests. Do not make persisted OCR traces resolver inputs.
+Parser or nutrient-mapping changes require golden-fixture and local/remote parity review.
+Confirmation changes require privacy, idempotency, ownership, and trace-lifecycle tests. Native
+image-quality changes require Swift native tests plus TypeScript policy tests. Quality inspection is
+best-effort/advisory: absence or failure of the inspector must not silently become a recognition
+failure. Do not make persisted OCR traces, framing guides, or quality metrics nutrition resolver
+inputs.
 
 ## If you need to modify Search or discovery
 
 There is no standalone search subsystem. Saved Food filtering begins at the selected runtime's
 `foods.list` implementation: local SQLite in local mode or the Food list endpoint/repository in
-remote mode. Unified presentation is in:
-
-- `SavedFoodsScreen.tsx`;
-- `useDebouncedSearchQuery.ts`;
-- `unifiedFoodSearch.ts`;
-- Food and USDA query hooks;
-- `foodDiscovery.ts` for favorites and recents.
+remote mode. Unified presentation is in the Saved Foods screen, debounced-query utilities,
+unified-search composition, Food/USDA hooks, and Food discovery helpers for favorites/recents.
 
 Preserve stale-query suppression, the USDA minimum query length, explicit source sections, and the
 difference between importing an upstream Food and selecting a saved Food.
 
-## If you need to modify Targets
+## If you need to modify Targets or nutrition references
 
-Begin at `NutritionRuntime.targets`. Local behavior is in
-`apps/mobile/src/runtime/local/localTargetsRuntime.ts`; remote behavior remains in
-`app/services/target_service.py` and `app/targets`. The mobile presentation is under
-`src/features/targets`. Target changes must not write Daily Logs or nutrient snapshots. Effective
-authority remains manual override, calculated calorie estimate, FDA reference, then unavailable.
+Begin at `NutritionRuntime.targets`, then separate shared reference semantics from persistence:
+
+- canonical backend target/reference logic: `app/services/target_service.py`, `app/targets`;
+- canonical nutrient definitions/reference metadata: `app/catalog/nutrients.py`;
+- local parity/runtime: `apps/mobile/src/runtime/local/localTargetsRuntime.ts`;
+- shared mobile DRI/catalog helpers: `apps/mobile/src/shared/nutrition`;
+- mobile configuration/presentation: `apps/mobile/src/features/targets`;
+- generated/source reference data: `engineering/reference-data`, `engineering/generate_dri_reference.py`.
+
+Target resolution is not the old manual/calorie/FDA-only model. Preserve the current policy:
+explicit `ignored`/`amount_only` tracking preferences first, then manual override, the bounded
+calorie estimate for calories, available DRI RDA/AI recommendation, FDA Daily Value fallback,
+neutral amount-only handling for nutrients with no established goal, then explicit unavailable
+state. Returned tracking modes are `recommended`, `custom`, `amount_only`, and `ignored`.
+
+DRI support and calorie-estimation support have different scopes. DRI resolution covers adults 19+
+where a recommendation exists and supports pregnancy/lactation for female reference profiles age
+19–50. The Mifflin–St Jeor calorie estimate remains general-adult-only and age 19–78 with complete
+profile inputs.
+
+Reference-data changes require deterministic regeneration/parity checks and provenance/version
+review. Target changes must never write Daily Logs, nutrient snapshots, or published Recipe
+nutrition.
+
+## If you need to modify local backup or restore
+
+Begin under `apps/mobile/src/storage/backup`, then follow the bootstrap/settings integration:
+
+- artifact creation, validation, staging, activation, rollback: `src/storage/backup/localBackup.ts` and `localBackupValidation.ts`;
+- user workflow: `src/app/settings/LocalBackupSettings.tsx`;
+- restart-time gate: `src/runtime/applicationRuntimeBootstrap.ts` and local-first startup/restore gate code;
+- SQLite authority/schema compatibility: `src/storage/sqlite`.
+
+Preserve the distinction between backup and synchronization. Export must produce one coherent
+standalone validated SQLite snapshot. Inspection/staging must not modify the active database.
+Activation happens before a normal local runtime opens, creates a rollback snapshot when prior data
+exists, validates the replacement, and fails closed if safe rollback cannot be completed. Secrets
+such as the USDA credential are outside the application SQLite artifact.
+
+Run `localBackupValidation`, `localBackupActivation`, `localBackupSettings`, and
+`localFirstStartRestoreGate` tests plus native/file-backed SQLite qualification when the claim
+depends on actual SQLite lifecycle or restart behavior.
+
+## If you need to modify navigation, route headers, or form-discard behavior
+
+Cross-cutting mobile navigation/UI policy lives in shared code rather than independently in every
+screen:
+
+- fixed detail/authoring chrome: `src/shared/components/RouteScreenHeader.tsx`;
+- dirty/busy exit policy: `src/shared/navigation/draftGuard.ts` and `UnsavedDraftDialog.tsx`;
+- focus/status primitives: `src/shared/accessibility` and `src/shared/forms`;
+- root/tab routing: `src/app/navigation`.
+
+Keep route headers outside scrolling form/detail bodies where the established shared pattern
+applies. Preserve accessible touch targets and bounded visual text growth for fixed chrome. A dirty
+form requires explicit discard; a busy mutation blocks normal exit. Add or update the relevant
+route-header, Dynamic Type, accessibility, and draft-guard tests when these patterns change.
 
 ## If you need to modify authentication or runtime configuration
 
@@ -210,9 +292,9 @@ production provider is an intentional fail-closed condition.
 
 Local persistence is owned by `apps/mobile/src/storage/sqlite/schema.ts` and `migrations.ts`.
 SQLite is a fresh semantic schema, not an Alembic replay. Preserve exact canonical value encodings,
-schema-version bookkeeping, migration rollback, foreign-key integrity, and native lifecycle
-qualification. Do not import Phase 5/control-plane tables, PostgreSQL roles/grants, or
-migration-by-migration historical machinery into SQLite.
+schema-version bookkeeping, migration rollback, foreign-key integrity, backup compatibility, and
+native lifecycle qualification. Do not import Phase 5/control-plane tables, PostgreSQL roles/grants,
+or migration-by-migration historical machinery into SQLite.
 
 ### Remote application migrations
 
@@ -237,37 +319,53 @@ tamper, downgrade, and re-upgrade review.
 
 Continue with the [Control Plane Guide](../operations/control-plane.md) before editing ops migrations.
 
+## If you need to modify Epic 2 transfer/parity contracts
+
+Epic 2 is complete. Its retained machine-readable fixtures under `packages/shared-contracts/e2-*`
+are regression/transfer evidence, not an active implementation backlog and not a generated public
+SDK. In particular, `e2-15` contains versioned source schema, target schema, transfer contract, and
+representative-package artifacts used by PostgreSQL-to-SQLite transfer qualification.
+
+If a current schema change affects transfer compatibility or a retained cross-runtime parity
+contract, update the implementation and the appropriate versioned fixture deliberately; do not
+silently reinterpret an existing versioned artifact. Use the completed Epic 2 records for the
+original acceptance boundary, then document new current behavior in current guides.
+
 ## If you need to modify the Control Plane
 
-Begin with [Control Plane Guide](../operations/control-plane.md), not the general FastAPI routers. Depending on the
-change, the authority may live in:
-
-- canonical contracts: `app/operators/phase5c4_contracts.py`, control/admission/performance
-  contract modules;
-- evidence collection and WORM registration: `phase5c4_control_evidence.py`, `phase5c4_minio.py`;
-- Python operator client: `phase5c4_control.py`;
-- PostgreSQL authority: `app/control_migrations/versions`;
-- role policy: `phase5c4_control_roles.py`;
-- tests: `test_phase5c4_*`.
+Begin with [Control Plane Guide](../operations/control-plane.md), not the general FastAPI routers.
+Depending on the change, the authority may live in canonical contracts, evidence collection/WORM
+registration, Python operator clients, PostgreSQL control migrations, role policy, or
+`test_phase5c4_*` suites.
 
 Trace the database routine and transaction, not just its Python wrapper. Verify exact role grants,
 server-time decisions, lock ordering, replay, immutable evidence, qualification coverage, and
 empty-only downgrade semantics.
 
+## Dependency and vulnerability maintenance
+
+Do not fix a package vulnerability by forcing a version outside Expo's supported compatibility
+range when that breaks the native stack. Dependabot is intentionally constrained for Expo-coupled
+packages. Apply compatible updates when available and keep the remaining vulnerability state
+visible rather than trading a known dependency issue for an unsupported mobile dependency graph.
+
 ## Change checklist
 
 Before finishing any feature change:
 
-- identify the authoritative layer;
+- identify the authoritative layer and selected runtime(s);
 - preserve owner scope and idempotency behavior;
 - determine whether historical snapshots or revisions are involved;
-- update backend and mobile contracts together where required;
+- distinguish target/reference configuration from historical nutrition;
+- preserve physical serving meaning when unit presentation changes;
+- update local and remote contracts together when the change is a parity contract;
 - add a migration only for persistent schema change;
+- update retained Epic 2 transfer/parity artifacts only when their bounded contract is actually affected;
 - test the smallest unit plus the cross-layer flow;
 - use native/file-backed SQLite qualification for claims about local SQLite lifecycle,
-  transactions, schema evolution, or restart behavior;
+  backup/restore, transactions, schema evolution, or restart behavior;
 - use PostgreSQL for remote row-lock, PostgreSQL constraint/grant, role, or multi-worker concurrency claims;
-- update the reader guide if responsibility or an invariant changed.
+- update the reader guide if responsibility, a current capability, or an invariant changed.
 
 ## Next reading
 
