@@ -35,5 +35,8 @@ coverage/
 
 .project-runtime/
 
+# Local GitHub issue-creator reconciliation state
+*.github-issues.json
+
 # Local personal-device installation helper
 /scripts/install-iphone.sh
