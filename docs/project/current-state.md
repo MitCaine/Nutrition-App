@@ -8,7 +8,7 @@ Version 1.2 is the current product line.
 
 Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
 
-At this repository state, there is no open feature issue or pull-request implementation backlog. Product planning nevertheless retains two future product Epics that have not yet entered a new implementation cycle. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
+At this repository state, there is no open feature implementation issue or pull request. Epic 4 now has a frozen Version 1.2 planning package—research/Grill, Feature PRD, architecture/data contracts, and a bounded implementation backlog—but application implementation has not started. The package remains gated on repository documentation validation and project audit before GitHub implementation issues or code changes are authorized. Epic 5 remains planned and requires re-scope. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
 
 The [Current Product Roadmap](product-roadmap.md) owns the canonical Epic numbering used going forward:
 
@@ -17,12 +17,12 @@ The [Current Product Roadmap](product-roadmap.md) owns the canonical Epic number
 | Epic 1 | Daily Logging Flow | Complete |
 | Epic 2 | Local-First SQLite Runtime | Complete |
 | Epic 3 | Nutrition Label Capture Confidence | Complete; absorbed by Epic 2 OCR and subsequent OCR/camera work |
-| Epic 4 | Nutrition History and Trends | Planned; not yet entered a new implementation cycle |
+| Epic 4 | Nutrition History and Trends | Planning package complete; validation gate pending; implementation not started |
 | Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope because substantial adjacent Recipe work already landed |
 
 The historical Version 1.1 product roadmap predates this canonical numbering. In that record, Nutrition History and Trends was product Epic 2, Recipe Reuse and Discovery was product Epic 3, and Nutrition Label Capture Confidence was product Epic 4. Current planning maps those product areas to Epics 4, 5, and 3 respectively. Historical documents retain their point-in-time numbering rather than being rewritten as if the current sequence had existed when they were authored.
 
-The Version 1.1 roadmap, PRDs, architecture reviews, implementation backlogs, and closure records are retained as historical implementation evidence. They are not the current planning state. New scope should be documented deliberately rather than inferred from those completed planning artifacts.
+The Version 1.1 roadmap, PRDs, architecture reviews, implementation backlogs, and closure records are retained as historical implementation evidence. They are not the current planning state. Current Version 1.2 Epic 4 planning is indexed separately and remains planning evidence until implementation/qualification promotes behavior into current feature and architecture guides.
 
 ## Current application architecture
 
@@ -52,6 +52,8 @@ The [Architecture Overview](../architecture/overview.md) owns the full current s
 - Accessibility-focused navigation, shared fixed/sticky route headers, focus restoration, mutation/recovery semantics, unsaved-draft protection, and light/dark presentation.
 - One-time PostgreSQL-to-SQLite transfer tooling for installations migrating from the preserved remote authority.
 
+Nutrition History and Trends is **not** listed above as a current capability because Epic 4 remains unimplemented. Its accepted planned behavior is documented in the [Version 1.2 Epic 4 planning package](version-1.2/epic-4/README.md).
+
 ## Remote/reference migration heads
 
 These heads describe the preserved PostgreSQL/control-plane streams. They do not govern the local SQLite schema-version migration engine.
@@ -75,6 +77,7 @@ Historical Version 1.0 and Version 1.1 release/closure evidence remains availabl
 | --- | --- |
 | Current product line and supported boundaries | This document |
 | Current product Epic numbering and planning status | [Current Product Roadmap](product-roadmap.md) |
+| Version 1.2 Epic 4 frozen planning package | [Epic 4 Planning Index](version-1.2/epic-4/README.md) |
 | Enduring purpose, scope, and priorities | [Project Constitution](constitution.md) |
 | Technical truths that changes must preserve | [Project Invariants](invariants.md) |
 | Minimum implementation or review context | [Project Onboarding](onboarding.md) |
@@ -108,5 +111,7 @@ When sources disagree, use this order:
 2. this Current State document and current architecture, feature, and operations guides;
 3. accepted architecture decisions and technical invariants; and
 4. completed versioned planning records, historical documents, and evidence records for provenance only.
+
+The Version 1.2 Epic 4 planning package governs only the planned Epic 4 scope until implementation is completed and reconciled into current guides.
 
 Report drift instead of silently reconciling contradictory documents in working memory. Keep this page concise by linking to canonical detail rather than copying every feature inventory, rationale, or runbook instruction.
