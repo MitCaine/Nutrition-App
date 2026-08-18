@@ -22,8 +22,17 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow Nutrition App to choose a nutrition-label image for on-device OCR diagnostics.",
-          "cameraPermission": "Allow Nutrition App to take a nutrition-label photo for on-device OCR diagnostics.",
+          "cameraPermission": "Allow Nutrition App to take a nutrition-label photo for on-device recognition.",
           "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Nutrition App to take a nutrition-label photo for on-device recognition.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": false
         }
       ]
     ]
