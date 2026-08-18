@@ -51,8 +51,12 @@ Accepted semantics:
 - deleting the last entry clears Complete because the day becomes empty;
 - note-only and meal-label-only edits preserve Complete because they do not change nutrition;
 - later edits to the source Food or Recipe do not clear historical Complete state because historical Daily Log nutrition remains owned by the immutable stored snapshot;
-- a serving/amount edit that produces an exactly unchanged resulting nutrient snapshot preserves Complete, while any resulting nutrient-snapshot change clears it; and
+- a serving/amount edit that produces an exactly unchanged resulting nutrient snapshot preserves Complete, while any resulting nutrient-snapshot change clears it;
+- existing historical Logs are **not** retroactively marked Complete when the feature is introduced; only explicit user assertions create Complete state;
+- Complete is durable Daily Log metadata and must survive supported backup/restore and one-time authority-transfer flows along with the authoritative Log history it describes; and
 - an empty date never implies confirmed zero intake. A future fasting/no-intake concept would require separate semantics.
+
+Manual retraction of an already asserted Complete state is not required in initial Epic 4. It is retained as a qualified future option rather than treated as a current product requirement.
 
 ## Daily Nutrition
 
@@ -140,6 +144,19 @@ If the selected range contains Logs but no Complete days, hide the Complete/Logg
 
 If Daily Log nutrition or Complete state changes while History remains in the navigation stack, returning to History refreshes/recalculates the affected data without resetting the user's analysis context. Preserve the selected period, 7/30-day mode, denominator, detail-card/section state, focused nutrient context, and scroll position where practical.
 
+Rapid period paging must not force the user to wait for every intermediate range request. The selected period may advance immediately, and late responses for superseded ranges must never overwrite the newest selected range.
+
+## History loading, cache, and refresh behavior
+
+History data must always correspond to the date range currently shown in the UI.
+
+- When paging to a different 7-day or 30-day range, do not leave the prior range's analytical values visible under the new date label while the requested range loads. Keep the navigation/range chrome visible and use a lightweight loading state for the analytical content.
+- If refreshing the **same** range fails but valid cached data exists for that exact range, keep the cached values visible and show a compact refresh-failure/retry indication rather than replacing useful data with a full error state.
+- Cached data from a different period must never be shown as though it belongs to the newly selected period.
+- Latest-request-wins semantics are required for rapid paging so out-of-order responses cannot roll the user back to stale History data.
+
+These rules apply regardless of whether the selected authority is local or remote; local SQLite may make loading states nearly imperceptible, but the data-identity rule remains the same.
+
 ## History overview
 
 The primary History overview always contains four analytical cards when the selected period contains logged history:
@@ -165,7 +182,9 @@ Dedicated accessibility-specific chart behavior and accessibility qualification 
 
 The original in-place expansion proposal was rejected because it would show duplicated macro information simultaneously and would make the History overview unnecessarily long.
 
-`Show more nutrition` instead opens a **distinct Nutrition Details card/surface** over/from History. While this detail card is active, the four overview macro charts are not simultaneously visible.
+`Show more nutrition` opens a **distinct Nutrition Details card/surface** over/from History. While this detail surface is active, the four overview macro charts are not simultaneously visible.
+
+On iPhone, the card should be allowed to present as an effectively full-height sheet/surface with its own header, Close control, and vertical scrolling rather than forcing dozens of nutrient rows into a cramped floating modal. The card terminology describes conceptual separation from the overview, not a requirement for a small visual rectangle.
 
 That separation allows the detail card to preserve a complete familiar Nutrition Facts hierarchy without visual redundancy.
 
@@ -210,7 +229,7 @@ Accepted interaction:
 
 A compact row can therefore look conceptually like `Sodium 1,824 / 2,300 mg >`; the focused view owns the full chart rather than inflating the grouped card.
 
-Focused nutrient detail remains one nutrient at a time. It contains the period statistic, current reference context when applicable, daily bar chart, full date rows, and navigation to contributing Daily Log dates. Back returns to the Nutrition Details card at the prior scroll/expanded state; closing the card returns to the four-macro History overview at its prior state.
+Focused nutrient detail remains one nutrient at a time. Tapping a nutrient replaces the detail sheet's content with that nutrient's focused History view rather than stacking another modal on top. Back returns to the Nutrition Details card at the prior scroll/expanded state; closing the card returns to the four-macro History overview at its prior state.
 
 Do not add swipe-left/right between nutrients in the initial Epic. If physical use later shows repeated Back navigation is inefficient, adjacent-nutrient navigation can be reconsidered deliberately.
 
@@ -246,6 +265,8 @@ History may show a current reference line/context when meaningful, but it must b
 - `Current Daily Value`; or
 - `Current limit`.
 
+Changing current Nutrition Targets immediately updates this current-reference lens in History while leaving historical intake snapshots, bars, and averages unchanged.
+
 Do not imply that the current reference was configured on each historical date. Historical target versioning is deferred unless a future product decision explicitly requires it.
 
 ## No automatic behavioral interpretation
@@ -256,23 +277,24 @@ Initial Epic 4 does not add:
 - `good week` / `bad week`;
 - `on track` / `off track`;
 - adherence scores;
-- streaks/rewards; or
-- automatic previous-period comparisons such as `+8% vs previous week`.
+- streaks/rewards;
+- automatic previous-period comparisons such as `+8% vs previous week`; or
+- period-level contributor/source ranking such as `top foods for sodium` or `percent of protein from a Food`.
 
-Chronology plus exact period statistics is sufficient for the initial History feature.
+Chronology plus exact period statistics is sufficient for the initial History feature. Contributor/source analysis can be reconsidered as a separate analytical feature if actual use demonstrates value.
 
 ## Remaining Grill/architecture questions
 
-The first five Grill batches have resolved the primary product shape and most History semantics. Accessibility-specific product behavior has been explicitly deferred rather than treated as an Epic 4 requirement.
+The first six Grill batches have resolved the primary product shape and most History semantics. Accessibility-specific product behavior has been explicitly deferred rather than treated as an Epic 4 requirement, and manual reversal of Complete is likewise not required in the initial Epic.
 
-Remaining questions are increasingly implementation-focused, including:
+Remaining questions are predominantly implementation and qualification policy, including:
 
-- loading/error/stale-state behavior for range reads;
-- performance/query boundaries for local and remote History projections;
-- exact cache invalidation around Log and Complete mutations;
-- exact card/modal presentation mechanics on iOS;
-- whether contributor/source breakdown deserves later scope; and
-- qualification boundaries for 7-day/30-day calculations and real-device chart readability.
+- exact persistence/schema shape for Complete state;
+- local/remote range-read contracts and exact-decimal aggregate semantics;
+- cache invalidation around Log/Complete/target mutations;
+- chart rendering boundaries and physical-device qualification;
+- sheet/navigation implementation details; and
+- qualification of loading, stale-response, transfer, backup, and restore behavior.
 
 ## Regulatory reference used for the default Nutrition Facts subset
 
