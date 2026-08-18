@@ -23,6 +23,7 @@ Working semantics for later Grill/architecture confirmation:
 - `Complete` is a user assertion about logging coverage, not a nutrient-data-quality claim.
 - The control does not lock the day or prevent later edits.
 - An unchecked day means **not confirmed complete**, not automatically `Incomplete`.
+- `Complete` may be asserted for Today as well as past dates when the user has finished logging.
 - A nutrition-affecting Log mutation should clear the completion assertion for every affected date so the user can reconfirm the changed day.
 - Moving an entry should clear completion for both source and destination dates.
 - A meal-label or note-only change does not inherently change nutritional completeness and should not clear completion solely for that reason.
@@ -37,10 +38,13 @@ The accepted direction is **logging first, analysis one interaction away**.
 The Daily Log should prioritize:
 
 1. sticky header with `Complete` state and Settings;
-2. date controls;
-3. a compact nutrition summary;
-4. `View Nutrition` and `History` actions; and
-5. meal entries with meal-level `Add Food` actions.
+2. date-navigation row with `Previous Day`, `History`, and `Next Day`;
+3. selected-date heading and direct date selection;
+4. a compact nutrition summary;
+5. a compact `View Nutrition` action; and
+6. meal entries with meal-level `Add Food` actions.
+
+`History` should occupy the currently unused center space between `Previous Day` and `Next Day` rather than consuming another row below the nutrition summary. This placement also matches its meaning: History is navigation across dates. `View Nutrition` stays with the compact nutrition summary because it opens deeper analysis of the currently selected date.
 
 The complete nutrient catalog should no longer sit between the selected date and the meal logging workflow.
 
@@ -96,6 +100,8 @@ The History overview should provide:
 5. one small daily bar chart for each of those four overview nutrients; and
 6. a `View Another Nutrient` action that opens the grouped canonical nutrient catalog.
 
+The four overview nutrient cards remain structurally present even when one nutrient lacks usable data for the selected denominator. Use a neutral unavailable state rather than removing cards and shifting the page structure.
+
 Selecting an overview nutrient or another nutrient should open a focused nutrient-history view containing:
 
 - nutrient name and canonical unit;
@@ -112,6 +118,8 @@ The chart remains supplementary. Exact textual values and accessible selection m
 The initial implementation should support `7 Days` and `30 Days` only.
 
 By default, History ends on yesterday rather than Today. For example, opening a 7-day History on August 18 shows August 11 through August 17. This prevents an unfinished current day from silently depressing a historical average and keeps the Daily Log responsible for the in-progress current date.
+
+Today is excluded from the initial Epic 4 History model rather than being an optional History endpoint. `Complete` may still be asserted on Today in the Daily Log; that state becomes relevant once the day is historical.
 
 A 90-day or arbitrary custom range is deferred until real use shows that the initial 7/30-day model is insufficient.
 
@@ -154,7 +162,7 @@ History must label what its average actually means.
 
 If no accepted Complete-day denominator is available, use language such as `Logged-day average` with the logged-day count. Do not call that value `average intake` because the app cannot know that partially logged days represent all intake.
 
-When Complete days exist, the preferred primary statistic is `Complete-day average` with the number of complete days shown. A lightweight control may allow switching between Complete days and all logged days rather than displaying competing averages simultaneously.
+When Complete days exist, the preferred primary statistic is `Complete-day average` with the number of complete days shown. A lightweight control should allow switching between Complete days and all logged days rather than displaying competing averages simultaneously. If no days are Complete, History automatically uses Logged days rather than presenting an empty Complete-day statistic.
 
 Do not impose an arbitrary minimum-day threshold before displaying a mathematically valid average. If only one Complete day is present, display the result with the denominator made explicit, for example `Complete-day average · 1 complete day`. The application should expose the evidence rather than decide that a small sample is meaningful or meaningless on the user's behalf.
 
@@ -226,11 +234,10 @@ For example, history can accurately describe a statistic as a `logged-day averag
 
 ## Remaining open Epic 4 choices
 
-The major product shape is now resolved. Remaining Grill/architecture choices are narrow implementation semantics rather than unresolved feature direction:
+The first Grill batch resolved the primary Daily Log/History behavior. Remaining Grill/architecture choices are narrower implementation semantics rather than unresolved feature direction:
 
 - exact sticky-header control styling and accessible state wording for `Complete`;
 - exact mutation classes that clear a Complete assertion, including edge cases around serving-equivalent edits;
-- whether Today should ever be explicitly includable in History or remain entirely outside the initial History range model;
 - exact 30-day chart sizing/label mechanics on narrow screens while preserving one-day-per-observation meaning;
 - whether a dedicated data-quality detail surface is useful after ordinary unknown warnings are removed;
 - exact Food-form grouping/order for the default Nutrition Facts subset and extended nutrient picker;
