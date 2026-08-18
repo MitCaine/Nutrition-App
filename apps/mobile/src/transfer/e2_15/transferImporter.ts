@@ -86,6 +86,10 @@ const E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES = new Set(
   ),
 );
 
+const E2_15_RUNTIME_ONLY_TRANSFER_OBJECT_NAMES = new Set([
+  "table:daily_log_day_completions",
+]);
+
 export type TransferImportCheckpoint =
   | "owner_profile"
   | "non_projection_food_items"
@@ -208,12 +212,14 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   }
 
   const transferDescriptorObjects = descriptorObjects.filter((row) =>
-    !E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES.has(`${row.type}:${row.name}`),
+    !E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES.has(`${row.type}:${row.name}`)
+    && !E2_15_RUNTIME_ONLY_TRANSFER_OBJECT_NAMES.has(`${row.type}:${row.name}`),
   );
 
   const tableColumns = new Map<string, readonly string[]>([
     ...CONTRACT.sections.map((section) => [section.name, section.columns.map(([name]) => name)] as const),
     ["nutrients", ["id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order"]],
+    ["daily_log_day_completions", ["logged_date", "completed_at"]],
     [SQLITE_SNAPSHOT_SCOPE_TABLE, [
       "user_id", "daily_log_id", "original_snapshot_count", "deleted_snapshot_count", "header_touched",
     ]],
@@ -227,7 +233,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   }
 
   const descriptorTables: Record<string, unknown> = {};
-  for (const row of descriptorObjects.filter((item) => item.type === "table")) {
+  for (const row of transferDescriptorObjects.filter((item) => item.type === "table")) {
     const columns = await database.getAllAsync<{
       cid: number;
       name: string;

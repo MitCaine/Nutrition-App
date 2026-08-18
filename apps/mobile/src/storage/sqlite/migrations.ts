@@ -429,6 +429,19 @@ export const SQLITE_TOTAL_OMEGA_3_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION: SQLiteMigration = {
+  version: 7,
+  id: "007_daily_log_complete_state",
+  async up(database) {
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS "daily_log_day_completions" (
+        "logged_date" TEXT PRIMARY KEY NOT NULL,
+        "completed_at" TEXT NOT NULL
+      );
+    `);
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
@@ -436,6 +449,7 @@ export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
   SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
   SQLITE_TOTAL_OMEGA_3_MIGRATION,
+  SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {

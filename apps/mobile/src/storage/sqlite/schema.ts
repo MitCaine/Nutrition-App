@@ -11,14 +11,14 @@
 
 import { NUTRIENT_RELATIONAL_SEED_ROWS } from "../../shared/nutrition/catalog";
 
-export const SQLITE_SCHEMA_VERSION = 6;
+export const SQLITE_SCHEMA_VERSION = 7;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";
 export const SQLITE_SNAPSHOT_SCOPE_TABLE =
   "nutrition_daily_log_snapshot_replacement_scopes";
 
-/** The eighteen semantic application tables owned by the local runtime. */
+/** The nineteen semantic application tables owned by the local runtime. */
 export const SQLITE_SEMANTIC_TABLES = [
   "users",
   "user_profiles",
@@ -34,6 +34,7 @@ export const SQLITE_SEMANTIC_TABLES = [
   "recipe_publication_nutrients",
   "daily_logs",
   "daily_log_nutrient_snapshots",
+  "daily_log_day_completions",
   "food_favorites",
   "ocr_nutrition_confirmation_traces",
   "nutrition_targets",
@@ -388,6 +389,11 @@ export const SQLITE_BASELINE_SCHEMA_STATEMENTS: readonly string[] = [
     FOREIGN KEY ("source_food_nutrient_id") REFERENCES "food_nutrients" ("id") ON DELETE SET NULL,
     FOREIGN KEY ("serving_definition_id") REFERENCES "serving_definitions" ("id") ON DELETE SET NULL,
     FOREIGN KEY ("nutrient_id") REFERENCES "nutrients" ("id")
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "daily_log_day_completions" (
+    "logged_date" TEXT PRIMARY KEY NOT NULL,
+    "completed_at" TEXT NOT NULL
   )`,
 
   `CREATE TABLE IF NOT EXISTS "food_favorites" (

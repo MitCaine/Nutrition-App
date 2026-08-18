@@ -1,6 +1,6 @@
 {
   "application_heads": [
-    "0030_total_omega_3_nutrient"
+    "0031_daily_log_complete_state"
   ],
   "authorization_contract_constants": [
     {
@@ -497,7 +497,7 @@
   "control_heads": [
     "ops_0011_phase5c4_recovery_audit"
   ],
-  "inventory_sha256": "d898de25bdfb841a86c2f4319a5cc2d8d8d5adcd0be49ead088ed49a89b34e36",
+  "inventory_sha256": "50cfdb383809c43a35c727f2db21b95743809028d4cbc7e02cdfeef2e23400a5",
   "roles": [
     "nutrition_canary",
     "nutrition_canary_read",

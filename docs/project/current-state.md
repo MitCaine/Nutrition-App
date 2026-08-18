@@ -8,7 +8,7 @@ Version 1.2 is the current product line.
 
 Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
 
-Epic 4 now has an active GitHub implementation backlog. Its Version 1.2 research/Grill, Feature PRD, architecture/data contracts, and bounded implementation backlog passed repository documentation validation, the pre-commit project audit, and the repository issue-creator dry run at commit `df66941`. GitHub Epic #113 and child issues #114–#130 are open. Application implementation has not yet landed, so current feature guides still describe the implemented pre-Epic-4 product. Epic 5 remains planned and requires re-scope. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
+Epic 4 has an active GitHub implementation backlog. Its Version 1.2 research/Grill, Feature PRD, architecture/data contracts, and bounded implementation backlog passed repository documentation validation, the pre-commit project audit, and the repository issue-creator dry run at commit `df66941`. GitHub Epic #113 and child issues #114–#130 are open. E4-01 is the active implementation task and adds only the internal date-owned Complete persistence substrate; the user-facing Epic 4 History experience has not landed. Epic 5 remains planned and requires re-scope. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
 
 The [Current Product Roadmap](product-roadmap.md) owns the canonical Epic numbering used going forward:
 
@@ -17,7 +17,7 @@ The [Current Product Roadmap](product-roadmap.md) owns the canonical Epic number
 | Epic 1 | Daily Logging Flow | Complete |
 | Epic 2 | Local-First SQLite Runtime | Complete |
 | Epic 3 | Nutrition Label Capture Confidence | Complete; absorbed by Epic 2 OCR and subsequent OCR/camera work |
-| Epic 4 | Nutrition History and Trends | Implementation authorized; GitHub Epic #113 and E4-01–E4-17 active; no implementation landed yet |
+| Epic 4 | Nutrition History and Trends | Implementation active; GitHub Epic #113 and E4-01–E4-17 active; E4-01 persistence substrate in progress |
 | Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope because substantial adjacent Recipe work already landed |
 
 The historical Version 1.1 product roadmap predates this canonical numbering. In that record, Nutrition History and Trends was product Epic 2, Recipe Reuse and Discovery was product Epic 3, and Nutrition Label Capture Confidence was product Epic 4. Current planning maps those product areas to Epics 4, 5, and 3 respectively. Historical documents retain their point-in-time numbering rather than being rewritten as if the current sequence had existed when they were authored.
@@ -52,7 +52,7 @@ The [Architecture Overview](../architecture/overview.md) owns the full current s
 - Accessibility-focused navigation, shared fixed/sticky route headers, focus restoration, mutation/recovery semantics, unsaved-draft protection, and light/dark presentation.
 - One-time PostgreSQL-to-SQLite transfer tooling for installations migrating from the preserved remote authority.
 
-Nutrition History and Trends is **not** listed above as a current capability because the authorized Epic 4 implementation has not landed yet. Its accepted behavior and implementation boundaries are documented in the [Version 1.2 Epic 4 planning package](version-1.2/epic-4/README.md), with delivery tracked by [GitHub Epic #113](https://github.com/MitCaine/Nutrition-App/issues/113).
+Nutrition History and Trends is **not** listed above as a current user-facing capability because the authorized Epic 4 experience has not landed yet. E4-01 introduces only internal persistence support for the later Complete assertion. Accepted Epic 4 behavior and implementation boundaries are documented in the [Version 1.2 Epic 4 planning package](version-1.2/epic-4/README.md), with delivery tracked by [GitHub Epic #113](https://github.com/MitCaine/Nutrition-App/issues/113).
 
 ## Remote/reference migration heads
 
@@ -60,7 +60,7 @@ These heads describe the preserved PostgreSQL/control-plane streams. They do not
 
 | Authority | Current head |
 | --- | --- |
-| Remote application PostgreSQL migration | `0030_total_omega_3_nutrient` |
+| Remote application PostgreSQL migration | `0031_daily_log_complete_state` |
 | Control PostgreSQL migration | `ops_0011_phase5c4_recovery_audit` |
 
 Revision `0021_target_activation_execution` remains an authorized target-activation migration, not an ordinary development upgrade. Use the applicable runbook rather than advancing to it through a convenience startup path.

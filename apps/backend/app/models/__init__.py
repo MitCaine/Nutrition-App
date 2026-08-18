@@ -7,7 +7,7 @@ from app.models.food import (
     ServingDefinition,
 )
 from app.models.create_idempotency import CreateOperationIdempotency
-from app.models.log import DailyLog, DailyLogNutrientSnapshot
+from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
 from app.models.nutrient import Nutrient
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import (
@@ -24,6 +24,7 @@ from app.operators import immutable_provenance_sqlite as _immutable_provenance_s
 
 __all__ = [
     "DailyLog",
+    "DailyLogDayCompletion",
     "CreateOperationIdempotency",
     "DailyLogNutrientSnapshot",
     "FoodItem",

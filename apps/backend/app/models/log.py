@@ -136,6 +136,24 @@ class DailyLog(Base):
         return None if self.is_editable else "source_food_deleted"
 
 
+class DailyLogDayCompletion(Base):
+    """Positive user assertion that one authoritative Daily Log date is complete."""
+
+    __tablename__ = "daily_log_day_completions"
+
+    user_id: Mapped[UUID] = mapped_column(
+        GUID(),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    logged_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class DailyLogNutrientSnapshot(Base):
     __tablename__ = "daily_log_nutrient_snapshots"
     __table_args__ = (

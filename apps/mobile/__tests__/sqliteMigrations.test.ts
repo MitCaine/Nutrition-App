@@ -23,6 +23,7 @@ import {
   SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
   SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
   SQLITE_TOTAL_OMEGA_3_MIGRATION,
+  SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -347,9 +348,10 @@ const asSQLiteDatabase = (database: RecordingSQLiteDatabase) =>
   database as unknown as SQLiteDatabase;
 
 describe("E2-03 SQLite baseline schema", () => {
-  test("defines the eighteen semantic tables and excludes operational history", () => {
-    expect(SQLITE_SEMANTIC_TABLES).toHaveLength(18);
-    expect(new Set(SQLITE_SEMANTIC_TABLES).size).toBe(18);
+  test("defines the nineteen semantic tables and excludes operational history", () => {
+    expect(SQLITE_SEMANTIC_TABLES).toHaveLength(19);
+    expect(new Set(SQLITE_SEMANTIC_TABLES).size).toBe(19);
+    expect(SQLITE_SEMANTIC_TABLES).toContain("daily_log_day_completions");
     expect(SQLITE_SEMANTIC_TABLES).not.toContain("phase5c4_control");
     expect(SQLITE_SEMANTIC_TABLES).not.toContain("ocr_scans");
     expect(SQLITE_NUTRIENT_SEED_ROWS).toHaveLength(43);
@@ -418,7 +420,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [1, 2, 3, 4, 5, 6],
+      appliedVersions: [1, 2, 3, 4, 5, 6, 7],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
@@ -429,6 +431,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
       { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
       { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
+      { version: 7, migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -442,10 +445,10 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(6);
+    expect(database.ledger).toHaveLength(7);
   });
 
-  test("upgrades an existing v1 database to the Food nutrient integrity schema", async () => {
+  test("upgrades an existing v1 database to the current schema", async () => {
     const database = new RecordingSQLiteDatabase();
     database.userVersion = 1;
     database.ledgerTableExists = true;
@@ -457,11 +460,11 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 1,
-      toVersion: 6,
-      appliedVersions: [2, 3, 4, 5, 6],
+      toVersion: 7,
+      appliedVersions: [2, 3, 4, 5, 6, 7],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(6);
+    expect(database.userVersion).toBe(7);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
@@ -469,6 +472,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
       { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
       { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
+      { version: 7, migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id },
     ]);
     expect(database.servingReferenceColumns).toBe(true);
   });
@@ -483,8 +487,8 @@ describe("E2-03 SQLite baseline schema", () => {
     ];
 
     const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(first).toEqual({ fromVersion: 2, toVersion: 6, appliedVersions: [3, 4, 5, 6], alreadyCurrent: false });
-    expect(database.userVersion).toBe(6);
+    expect(first).toEqual({ fromVersion: 2, toVersion: 7, appliedVersions: [3, 4, 5, 6, 7], alreadyCurrent: false });
+    expect(database.userVersion).toBe(7);
     expect(database.servingReferenceColumns).toBe(true);
     expect(database.executed.join("\n")).toContain(
       'ALTER TABLE "serving_definitions" ADD COLUMN "reference_quantity" TEXT',
@@ -494,13 +498,13 @@ describe("E2-03 SQLite baseline schema", () => {
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length;
     const second = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(second).toEqual({ fromVersion: 6, toVersion: 6, appliedVersions: [], alreadyCurrent: true });
+    expect(second).toEqual({ fromVersion: 7, toVersion: 7, appliedVersions: [], alreadyCurrent: true });
     expect(database.executed.filter((statement) =>
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length).toBe(alterCount);
   });
 
-  test("upgrades an existing v3 database through duplicate identity and nutrient catalog migrations", async () => {
+  test("upgrades an existing v3 database through the current migration stream", async () => {
     const database = new RecordingSQLiteDatabase();
     database.userVersion = 3;
     database.ledgerTableExists = true;
@@ -515,22 +519,26 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 3,
-      toVersion: 6,
-      appliedVersions: [4, 5, 6],
+      toVersion: 7,
+      appliedVersions: [4, 5, 6, 7],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(6);
-    expect(database.ledger.at(-3)).toEqual({
+    expect(database.userVersion).toBe(7);
+    expect(database.ledger.at(-4)).toEqual({
       version: 4,
       migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id,
     });
-    expect(database.ledger.at(-2)).toEqual({
+    expect(database.ledger.at(-3)).toEqual({
       version: 5,
       migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
     });
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.ledger.at(-2)).toEqual({
       version: 6,
       migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id,
+    });
+    expect(database.ledger.at(-1)).toEqual({
+      version: 7,
+      migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id,
     });
 
     const executed = database.executed.join("\n");
@@ -579,18 +587,22 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 4,
-      toVersion: 6,
-      appliedVersions: [5, 6],
+      toVersion: 7,
+      appliedVersions: [5, 6, 7],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(6);
-    expect(database.ledger.at(-2)).toEqual({
+    expect(database.userVersion).toBe(7);
+    expect(database.ledger.at(-3)).toEqual({
       version: 5,
       migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
     });
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.ledger.at(-2)).toEqual({
       version: 6,
       migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id,
+    });
+    expect(database.ledger.at(-1)).toEqual({
+      version: 7,
+      migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id,
     });
     expect(database.nutrientRows).toHaveLength(43);
     expect(
@@ -604,7 +616,7 @@ describe("E2-03 SQLite baseline schema", () => {
     ).toEqual(legacyRows);
   });
 
-  test("upgrades an existing v5 nutrient catalog to canonical total Omega-3", async () => {
+  test("upgrades an existing v5 nutrient catalog to canonical total Omega-3 and Complete state", async () => {
     const database =
       new RecordingSQLiteDatabase();
 
@@ -683,8 +695,8 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 5,
-      toVersion: 6,
-      appliedVersions: [6],
+      toVersion: 7,
+      appliedVersions: [6, 7],
       alreadyCurrent: false,
     });
 
@@ -722,6 +734,42 @@ describe("E2-03 SQLite baseline schema", () => {
           row.id === "linoleic_acid",
       )?.parent_nutrient_id,
     ).toBeNull();
+  });
+
+  test("upgrades an existing v6 database to Complete state without backfill or snapshot mutation", async () => {
+    const database = new RecordingSQLiteDatabase();
+    database.userVersion = 6;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
+      { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
+      { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
+      { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
+      { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
+      { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
+    ];
+    const snapshotCount = database.snapshotCount;
+
+    const result = await migrateNutritionDatabase(asSQLiteDatabase(database));
+
+    expect(result).toEqual({
+      fromVersion: 6,
+      toVersion: 7,
+      appliedVersions: [7],
+      alreadyCurrent: false,
+    });
+    expect(database.userVersion).toBe(7);
+    expect(database.snapshotCount).toBe(snapshotCount);
+    expect(database.ledger.at(-1)).toEqual({
+      version: 7,
+      migration_id: SQLITE_DAILY_LOG_COMPLETE_STATE_MIGRATION.id,
+    });
+    expect(database.executed.join("\n")).toContain(
+      'CREATE TABLE IF NOT EXISTS "daily_log_day_completions"',
+    );
+    expect(database.executed.join("\n")).not.toContain(
+      'INSERT INTO "daily_log_day_completions"',
+    );
   });
 
   test("fails closed when migration 005 finds incompatible canonical nutrient data", async () => {

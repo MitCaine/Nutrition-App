@@ -9,7 +9,7 @@ from sqlalchemy import and_, delete, inspect, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.food import FoodItem, ServingDefinition
-from app.models.log import DailyLog, DailyLogNutrientSnapshot
+from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
 from app.models.recipe import Recipe
 from app.operators.immutable_provenance_postgres import (
     POSTGRES_SCHEMA_SESSION_INFO_KEY,
@@ -125,6 +125,38 @@ class LogRepository:
             .order_by(DailyLog.created_at, DailyLog.id)
         )
         return list(self.db.scalars(statement).all())
+
+    def has_logs_for_date(self, user_id: UUID, logged_date: date) -> bool:
+        statement = (
+            select(DailyLog.id)
+            .where(DailyLog.user_id == user_id, DailyLog.logged_date == logged_date)
+            .limit(1)
+        )
+        return self.db.scalar(statement) is not None
+
+    def get_day_completion(
+        self,
+        user_id: UUID,
+        logged_date: date,
+    ) -> DailyLogDayCompletion | None:
+        return self.db.get(DailyLogDayCompletion, (user_id, logged_date))
+
+    def assert_day_completion(
+        self,
+        user_id: UUID,
+        logged_date: date,
+    ) -> DailyLogDayCompletion:
+        existing = self.get_day_completion(user_id, logged_date)
+        if existing is not None:
+            return existing
+        completion = DailyLogDayCompletion(
+            user_id=user_id,
+            logged_date=logged_date,
+        )
+        self.db.add(completion)
+        self.db.flush()
+        self.db.refresh(completion)
+        return completion
 
     def list_recent_entries(
         self,
