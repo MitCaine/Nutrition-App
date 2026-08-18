@@ -117,6 +117,18 @@ A 90-day or arbitrary custom range is deferred until real use shows that the ini
 
 Thirty-day presentation should retain daily observations rather than silently switching the statistic to weekly averages. Exact chart mechanics may adapt to available screen width, but the data meaning should remain one point/bar per calendar day unless a later explicit product decision introduces aggregation.
 
+### History period paging and navigation context
+
+The selected period should be pageable without requiring a custom date-range picker.
+
+- In `7 Days` mode, Previous and Next move the selected window by exactly seven calendar days.
+- In `30 Days` mode, Previous and Next move the selected window by exactly thirty calendar days.
+- Next never advances beyond the most recent supported History endpoint, which is yesterday in the initial model.
+- The selected range and 7/30-day mode should survive navigation into nutrient detail and back.
+- If the user opens a Daily Log from a History date and returns, History should restore the prior selected range, nutrient/detail context where practical, and scroll/focus position rather than resetting to the latest seven days.
+
+This keeps older history reachable through a predictable calendar model while avoiding a heavier custom-range interaction in the initial Epic.
+
 ### History chart type
 
 Discrete daily bars are accepted as the initial chart form rather than a connected line.
@@ -134,6 +146,8 @@ The chart model must preserve distinctions among:
 
 Missing dates should remain gaps rather than zero-height consumption bars.
 
+For 30-day mode, the working presentation should remain a static chart if thirty narrow daily bars are readable on physical devices. Do not introduce horizontal scrolling by default merely because there are thirty observations. Sparse date labels are acceptable. Horizontal chart scrolling or another interaction should be introduced only if real-device qualification demonstrates that the static chart is not usable or accessible.
+
 ### History averaging and Complete-day behavior
 
 History must label what its average actually means.
@@ -141,6 +155,10 @@ History must label what its average actually means.
 If no accepted Complete-day denominator is available, use language such as `Logged-day average` with the logged-day count. Do not call that value `average intake` because the app cannot know that partially logged days represent all intake.
 
 When Complete days exist, the preferred primary statistic is `Complete-day average` with the number of complete days shown. A lightweight control may allow switching between Complete days and all logged days rather than displaying competing averages simultaneously.
+
+Do not impose an arbitrary minimum-day threshold before displaying a mathematically valid average. If only one Complete day is present, display the result with the denominator made explicit, for example `Complete-day average · 1 complete day`. The application should expose the evidence rather than decide that a small sample is meaningful or meaningless on the user's behalf.
+
+Exact daily rows should make completion participation inspectable with a subtle state marker, such as a checkmark beside dates marked Complete. This should not become success coloring, streak framing, or visual reward. Overview charts do not need completion markers on every bar unless usability testing demonstrates that they materially help.
 
 Completion state is intended to improve denominator honesty, not to create an adherence score or reward/streak system.
 
@@ -152,11 +170,13 @@ The existing target configuration is mutable current state and is not an immutab
 
 Historical target versioning is deferred unless a later product decision explicitly needs `what was my target at the time?` semantics.
 
-### No automatic trend judgments in initial Epic 4
+### No automatic trend judgments or period comparison in initial Epic 4
 
 History should expose chronology and period statistics without labels such as `improving`, `worsening`, `good week`, `bad week`, `on track`, `off track`, or adherence scores.
 
 A chronological chart is itself a trend view. The application should not manufacture behavioral conclusions merely because the Epic is named Nutrition History and Trends.
+
+The initial Epic also should not add automatic comparisons such as `+8% vs previous week` or `142 kcal below previous 7 days`. Those comparisons are easy to calculate but introduce a second denominator/completeness problem and an additional interpretation layer. Previous-period comparison may be reconsidered later after the basic 7/30-day history model has been used and qualified.
 
 ### Unknown nutrient data is valid state, not an ordinary error
 
@@ -206,12 +226,12 @@ For example, history can accurately describe a statistic as a `logged-day averag
 
 ## Remaining open Epic 4 choices
 
-The major product shape is now resolved. Remaining Grill/architecture choices are narrower:
+The major product shape is now resolved. Remaining Grill/architecture choices are narrow implementation semantics rather than unresolved feature direction:
 
 - exact sticky-header control styling and accessible state wording for `Complete`;
 - exact mutation classes that clear a Complete assertion, including edge cases around serving-equivalent edits;
 - whether Today should ever be explicitly includable in History or remain entirely outside the initial History range model;
-- exact 30-day chart mechanics on narrow screens while preserving one-day-per-observation meaning;
+- exact 30-day chart sizing/label mechanics on narrow screens while preserving one-day-per-observation meaning;
 - whether a dedicated data-quality detail surface is useful after ordinary unknown warnings are removed;
 - exact Food-form grouping/order for the default Nutrition Facts subset and extended nutrient picker;
 - whether period contributor ranking is valuable enough for a later follow-up; and
