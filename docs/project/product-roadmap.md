@@ -9,7 +9,7 @@ Nutrition App now uses the following Epic sequence:
 | Epic 1 | Daily Logging Flow | Complete | Implemented and qualified as Version 1.1 Epic 1. |
 | Epic 2 | Local-First SQLite Runtime | Complete | Inserted as the technical/local-first Epic and implemented through the completed Epic 2 program. |
 | Epic 3 | Nutrition Label Capture Confidence | Complete | Originally planned as product Epic 4; later absorbed and completed through Epic 2 OCR work and post-Epic-2 OCR/camera issues and physical-device qualification. |
-| Epic 4 | Nutrition History and Trends | Planning package complete; validation gate pending | Originally planned as product Epic 2. Research/Grill, Feature PRD, architecture/data contracts, and implementation backlog are complete; implementation has not started. |
+| Epic 4 | Nutrition History and Trends | Implementation authorized; GitHub backlog active | Research/Grill, Feature PRD, architecture/data contracts, backlog, repository gates, and GitHub issue creation are complete; application implementation has not yet landed. |
 | Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope | Originally planned as product Epic 3. Considerable Recipe authoring, serving, publication, and navigation work already exists, but the remaining reuse/discovery outcome has not been completed as an Epic. |
 
 ## Epic 3 — Nutrition Label Capture Confidence
@@ -45,7 +45,7 @@ The accepted Epic 4 outcome is a user-facing multi-day interpretation layer with
 
 The frozen planning package is indexed in [Version 1.2 Epic 4](version-1.2/epic-4/README.md). It contains the research record, completed Grill decisions, Feature PRD, architecture/data contracts, and bounded implementation backlog.
 
-Epic 4 implementation has **not** started. Before GitHub implementation issues are created or application code changes begin, the finalized planning package must pass repository documentation validation and project audit. After those gates pass, implementation issues should be created from the frozen backlog rather than reopening product scope during delivery.
+The finalized package passed repository documentation validation, the pre-commit project audit, and the repository issue-creator dry run at commit `df66941`. GitHub Epic [#113](https://github.com/MitCaine/Nutrition-App/issues/113) now owns delivery through E4-01–E4-17 ([#114](https://github.com/MitCaine/Nutrition-App/issues/114) through [#130](https://github.com/MitCaine/Nutrition-App/issues/130)) across six milestones. Epic 4 implementation is therefore authorized. No Epic 4 application implementation has landed yet; delivery must follow those approved issue boundaries rather than reopening product scope during implementation.
 
 ## Epic 5 — Recipe Reuse and Discovery
 
@@ -74,4 +74,4 @@ This remapping is intentional. It reflects the completed insertion of SQLite as 
 
 Epic numbers in new issues, PRDs, architecture reviews, project boards, and conversation should use this current sequence. Historical records should not be rewritten to pretend this numbering existed when they were authored; where historical material is reused, translate through the mapping above.
 
-An Epic being listed here does not itself authorize implementation. Epic 4 now has a frozen planning package but remains blocked on repository validation/audit before issue creation or code work. Epic 5 remains planned and requires re-scope plus the normal Grill, PRD, architecture review, implementation backlog, and GitHub issue workflow before code changes begin.
+An Epic being listed here does not itself authorize implementation. Epic 4 is authorized because its frozen planning package passed the repository gates and was translated into the active GitHub delivery backlog #113–#130. Epic 5 remains planned and requires re-scope plus the normal Grill, PRD, architecture review, implementation backlog, validation, and GitHub issue workflow before code changes begin.
