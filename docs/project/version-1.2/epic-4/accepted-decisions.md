@@ -18,14 +18,17 @@ A lightweight user-confirmed `Complete` state is accepted as the preferred way t
 
 The `Complete` control should live in the sticky Daily Log header so that the state remains visible while scrolling without consuming additional vertical space in the meal flow.
 
-Working semantics for later Grill/architecture confirmation:
+Accepted semantics:
 
 - `Complete` is a user assertion about logging coverage, not a nutrient-data-quality claim.
+- The control is a compact labeled state such as `☐ Complete` / `✓ Complete`, not an ambiguous icon-only action. The implementation must retain an adequate accessible touch target and explicit checked/unchecked semantics.
 - The control does not lock the day or prevent later edits.
 - An unchecked day means **not confirmed complete**, not automatically `Incomplete`.
 - `Complete` may be asserted for Today as well as past dates when the user has finished logging.
-- A nutrition-affecting Log mutation should clear the completion assertion for every affected date so the user can reconfirm the changed day.
-- Moving an entry should clear completion for both source and destination dates.
+- Empty dates cannot be marked Complete. An empty date must not acquire an accidental zero-intake meaning.
+- A nutrition-affecting Log mutation automatically clears the completion assertion for every affected date without an extra confirmation prompt so the user can reconfirm the changed day.
+- Moving an entry clears completion for both source and destination dates.
+- Deleting the final entry from a Complete date clears completion automatically because the date is now empty.
 - A meal-label or note-only change does not inherently change nutritional completeness and should not clear completion solely for that reason.
 - Empty dates should not be treated as confirmed zero-consumption days merely because they contain no Logs. A future explicit fasting/no-intake concept would require separate semantics if ever needed.
 
@@ -48,16 +51,16 @@ The Daily Log should prioritize:
 
 The complete nutrient catalog should no longer sit between the selected date and the meal logging workflow.
 
-The compact nutrition summary is accepted as four fixed rows in the initial implementation:
+The compact nutrition summary is fixed in the initial implementation:
 
 - Calories;
 - Protein;
 - Carbohydrate; and
 - Fat.
 
-The compact summary should favor concise numeric presentation rather than progress bars. Where a target exists, the row may show `consumed / target`; if a value is amount-only, the row shows the consumed amount without inventing a denominator.
+Do not add arbitrary nutrient pinning/configuration to this summary. Its bounded composition protects the primary logging workflow as the canonical nutrient catalog grows.
 
-Do not add arbitrary nutrient pinning/configuration to the compact Daily Log summary in the initial Epic. The point of this surface is to remain bounded as the canonical catalog grows.
+The summary should favor concise numeric presentation rather than progress bars or percentages. Where a meaningful target exists, use compact `consumed / target` presentation, for example `Protein 128 / 145 g`. If a nutrient is amount-only, show only the consumed amount without inventing a denominator.
 
 ### Daily Nutrition becomes a deliberate detail surface
 
@@ -76,6 +79,12 @@ Daily Log
 
 Daily Nutrition should preserve the existing canonical nutrient grouping and hierarchy because this is the surface where exhaustive nutrient information is intentional rather than obstructive.
 
+Daily Nutrition does not need its own Previous/Next Day controls in the initial Epic. It describes the date selected by the Daily Log and provides a clear return path. History owns multi-date inspection.
+
+Nutrient sections in Daily Nutrition should be collapsible but expanded by default. The user deliberately opened the exhaustive daily-analysis surface, so information should initially be visible while still allowing repeated use to collapse sections.
+
+`Nutrition targets` configuration should move off the primary Daily Log and into Daily Nutrition as a secondary action near the detailed nutrition context. Target configuration should not compete with meal logging on the primary Daily Log screen.
+
 Working row semantics:
 
 - recommended/custom target available: show `consumed / target`, with percentage where useful;
@@ -87,9 +96,9 @@ Working row semantics:
 
 The current separate `Target Progress` and `Totals` blocks should not survive merely for backward visual compatibility if one coherent Daily Nutrition presentation can express both meanings without losing target authority or unknown-versus-zero semantics.
 
-### Nutrition History overview and nutrient detail
+### Nutrition History overview and expanded nutrient discovery
 
-The initial History information architecture is accepted as overview first, nutrient detail second.
+The initial History information architecture is overview first, grouped detail second, with focused per-nutrient drill-down available from the grouped detail.
 
 The History overview should provide:
 
@@ -98,11 +107,42 @@ The History overview should provide:
 3. logging-coverage/completion summary;
 4. Calories, Protein, Carbohydrate, and Fat period summaries;
 5. one small daily bar chart for each of those four overview nutrients; and
-6. a `View Another Nutrient` action that opens the grouped canonical nutrient catalog.
+6. a `Show more nutrition` action.
 
 The four overview nutrient cards remain structurally present even when one nutrient lacks usable data for the selected denominator. Use a neutral unavailable state rather than removing cards and shifting the page structure.
 
-Selecting an overview nutrient or another nutrient should open a focused nutrient-history view containing:
+`Show more nutrition` should expose grouped nutrient cards/sections instead of forcing the user through a one-at-a-time nutrient picker. The first group follows the familiar **Nutrition Facts information hierarchy and ordering** without attempting to visually reproduce a physical FDA label. Familiar grouping and indentation are the objective; the component still follows Nutrition App theme, spacing, typography, and accessibility conventions.
+
+The accepted grouped model is approximately:
+
+```text
+Nutrition Details
+
+▼ Nutrition Facts
+   Calories
+   Total Fat
+     Saturated Fat
+     Trans Fat
+   Cholesterol
+   Sodium
+   Total Carbohydrate
+     Fiber
+     Total Sugars
+       Added Sugars
+   Protein
+   Vitamin D
+   Calcium
+   Iron
+   Potassium
+
+▶ Vitamins
+▶ Minerals
+▶ Fatty Acids
+```
+
+`Nutrition Facts` is expanded when the additional detail is first shown. `Vitamins`, `Minerals`, and `Fatty Acids` start collapsed. These are expandable sections/cards rather than mutually exclusive swipe pages, because the sections have substantially different lengths and should remain discoverable without introducing another hidden navigation axis.
+
+Rows in these sections show the relevant period value and current target/reference context where meaningful. Selecting a nutrient row may open a focused nutrient-history view containing:
 
 - nutrient name and canonical unit;
 - period average with an explicit denominator/coverage meaning;
@@ -137,7 +177,7 @@ The selected period should be pageable without requiring a custom date-range pic
 
 This keeps older history reachable through a predictable calendar model while avoiding a heavier custom-range interaction in the initial Epic.
 
-### History chart type
+### History chart type and interaction
 
 Discrete daily bars are accepted as the initial chart form rather than a connected line.
 
@@ -154,6 +194,10 @@ The chart model must preserve distinctions among:
 
 Missing dates should remain gaps rather than zero-height consumption bars.
 
+Tapping/selecting a chart bar should reveal or highlight its exact date/value rather than immediately navigating away. This is especially important when 30 narrow bars are present. The corresponding textual daily row provides the deliberate action for opening that exact Daily Log.
+
+Nutrient-history daily rows should preserve the full calendar period: seven rows for seven-day mode and thirty rows for thirty-day mode. Dates with no logs remain visible as `No logs`/neutral unavailable rows rather than disappearing and visually compressing time.
+
 For 30-day mode, the working presentation should remain a static chart if thirty narrow daily bars are readable on physical devices. Do not introduce horizontal scrolling by default merely because there are thirty observations. Sparse date labels are acceptable. Horizontal chart scrolling or another interaction should be introduced only if real-device qualification demonstrates that the static chart is not usable or accessible.
 
 ### History averaging and Complete-day behavior
@@ -165,6 +209,8 @@ If no accepted Complete-day denominator is available, use language such as `Logg
 When Complete days exist, the preferred primary statistic is `Complete-day average` with the number of complete days shown. A lightweight control should allow switching between Complete days and all logged days rather than displaying competing averages simultaneously. If no days are Complete, History automatically uses Logged days rather than presenting an empty Complete-day statistic.
 
 Do not impose an arbitrary minimum-day threshold before displaying a mathematically valid average. If only one Complete day is present, display the result with the denominator made explicit, for example `Complete-day average · 1 complete day`. The application should expose the evidence rather than decide that a small sample is meaningful or meaningless on the user's behalf.
+
+Complete is logging-coverage state, not nutrient completeness. If a Complete day has no usable numerical value for the selected nutrient, that day does not participate in that nutrient's numeric average. The statistic should concisely disclose the numerical denominator, for example `Complete-day average · 4 days used`, rather than pretending unknown is zero or filling individual rows with warning text.
 
 Exact daily rows should make completion participation inspectable with a subtle state marker, such as a checkmark beside dates marked Complete. This should not become success coloring, streak framing, or visual reward. Overview charts do not need completion markers on every bar unless usability testing demonstrates that they materially help.
 
@@ -234,13 +280,14 @@ For example, history can accurately describe a statistic as a `logged-day averag
 
 ## Remaining open Epic 4 choices
 
-The first Grill batch resolved the primary Daily Log/History behavior. Remaining Grill/architecture choices are narrower implementation semantics rather than unresolved feature direction:
+The first two Grill batches resolved the primary Daily Log/History behavior and the grouped expanded-nutrition model. Remaining Grill/architecture choices are increasingly narrow:
 
-- exact sticky-header control styling and accessible state wording for `Complete`;
-- exact mutation classes that clear a Complete assertion, including edge cases around serving-equivalent edits;
+- exact edge cases for nutrition-affecting mutations that clear a Complete assertion, including serving-equivalent edits;
 - exact 30-day chart sizing/label mechanics on narrow screens while preserving one-day-per-observation meaning;
 - whether a dedicated data-quality detail surface is useful after ordinary unknown warnings are removed;
 - exact Food-form grouping/order for the default Nutrition Facts subset and extended nutrient picker;
+- exact interaction/persistence behavior of expanded History nutrition sections;
+- exact relationship between grouped History rows and focused nutrient-detail navigation;
 - whether period contributor ranking is valuable enough for a later follow-up; and
 - whether 90-day/custom ranges merit a later expansion after 7/30-day real-device use.
 
