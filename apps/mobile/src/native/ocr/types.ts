@@ -48,6 +48,17 @@ export type OcrRecognitionResult = {
   recognition: OcrRecognitionMetadata;
 };
 
+export type OcrImageQualityMetrics = {
+  width: number;
+  height: number;
+  meanLuminance: number;
+  darkPixelFraction: number;
+  brightPixelFraction: number;
+  focusVariance: number;
+  textRegionCount: number;
+  textRegionAreaFraction: number | null;
+};
+
 export const OCR_ERROR_CODES = [
   "ocr_not_supported",
   "ocr_invalid_image_uri",

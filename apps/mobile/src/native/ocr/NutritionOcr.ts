@@ -6,6 +6,7 @@ import {
   OCR_ERROR_CODES,
   type OcrErrorCode,
   type OcrErrorContext,
+  type OcrImageQualityMetrics,
   type OcrRecognitionOptions,
   type OcrRecognitionResult,
   type ResolvedOcrRecognitionOptions,
@@ -13,6 +14,7 @@ import {
 
 type NativeNutritionOcrModule = {
   isSupported(): boolean;
+  inspectImageQuality?(imageUri: string): Promise<unknown>;
   recognizeTextFromImage(
     imageUri: string,
     options: ResolvedOcrRecognitionOptions,
@@ -34,6 +36,17 @@ const observationSchema = z.object({
     width: z.number().min(0).max(1),
     height: z.number().min(0).max(1),
   }),
+});
+
+const imageQualityMetricsSchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  meanLuminance: z.number().min(0).max(1),
+  darkPixelFraction: z.number().min(0).max(1),
+  brightPixelFraction: z.number().min(0).max(1),
+  focusVariance: z.number().nonnegative(),
+  textRegionCount: z.number().int().nonnegative(),
+  textRegionAreaFraction: z.number().min(0).max(1).nullable(),
 });
 
 const resultSchema = z.object({
@@ -112,6 +125,35 @@ export function createOcrClient(dependencies: OcrClientDependencies) {
   const isOcrSupported = (): boolean =>
     dependencies.platform === "ios" && dependencies.nativeModule?.isSupported() === true;
 
+  const inspectImageQuality = async (
+    imageUri: string,
+  ): Promise<OcrImageQualityMetrics | null> => {
+    if (
+      dependencies.platform !== "ios" ||
+      !dependencies.nativeModule?.isSupported() ||
+      !dependencies.nativeModule.inspectImageQuality
+    ) {
+      return null;
+    }
+
+    if (typeof imageUri !== "string" || imageUri.trim().length === 0) {
+      return null;
+    }
+
+    try {
+      const rawResult =
+        await dependencies.nativeModule.inspectImageQuality(
+          imageUri.trim(),
+        );
+      const parsed = imageQualityMetricsSchema.safeParse(rawResult);
+      return parsed.success ? parsed.data : null;
+    } catch {
+      // Quality inspection is advisory. Recognition must remain available
+      // when native analysis is unsupported, uncertain, or fails.
+      return null;
+    }
+  };
+
   const recognizeTextFromImage = async (
     imageUri: string,
     options?: OcrRecognitionOptions,
@@ -138,19 +180,25 @@ export function createOcrClient(dependencies: OcrClientDependencies) {
     }
   };
 
-  return { isOcrSupported, recognizeTextFromImage };
+  return {
+    isOcrSupported,
+    inspectImageQuality,
+    recognizeTextFromImage,
+  };
 }
 
 const nativeModule = requireOptionalNativeModule<NativeNutritionOcrModule>("NutritionOcr");
 const client = createOcrClient({ platform: Platform.OS, nativeModule });
 
 export const isOcrSupported = client.isOcrSupported;
+export const inspectImageQuality = client.inspectImageQuality;
 export const recognizeTextFromImage = client.recognizeTextFromImage;
 
 export type {
   OcrBoundingBox,
   OcrErrorCode,
   OcrImageMetadata,
+  OcrImageQualityMetrics,
   OcrRecognitionMetadata,
   OcrRecognitionLevel,
   OcrRecognitionOptions,

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { getPreferredBackCameraLensName } from "../../../native/camera/NutritionCamera";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import {
@@ -25,6 +26,10 @@ export function NutritionCameraCapture({
 }) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const selectedLens = useMemo(
+    () => getPreferredBackCameraLensName(),
+    [],
+  );
   const cameraRef = useRef<CameraView>(null);
   const headingRef = useRef<Text>(null);
   const errorRef = useRef<Text>(null);
@@ -138,8 +143,10 @@ export function NutritionCameraCapture({
         <CameraView
           ref={cameraRef}
           active
+          autofocus="off"
           facing="back"
           mode="picture"
+          selectedLens={selectedLens}
           onCameraReady={() => {
             setReady(true);
             setCameraError(null);

@@ -5,7 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Linking, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
-import { recognizeTextFromImage } from "../../../native/ocr/NutritionOcr";
+import {
+  inspectImageQuality,
+  recognizeTextFromImage,
+} from "../../../native/ocr/NutritionOcr";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
@@ -27,11 +30,17 @@ import {
   type OcrImageSelection,
   type OcrImageSource,
 } from "../diagnostics/diagnosticsModel";
+import {
+  imageQualityWarnings,
+  type OcrImageQualityWarning,
+} from "../quality/imageQuality";
 
 type ScanStatus =
   | "idle"
   | "acquiring"
   | "camera"
+  | "inspecting"
+  | "quality_warning"
   | "recognizing"
   | "parsing"
   | "failure";
@@ -52,6 +61,9 @@ export function NutritionScanScreen({
   const [message, setMessage] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [focusAfterCameraCancel, setFocusAfterCameraCancel] = useState(false);
+  const [qualityWarnings, setQualityWarnings] = useState<
+    readonly OcrImageQualityWarning[]
+  >([]);
 
   const mounted = useRef(true);
   const requestId = useRef(0);
@@ -61,6 +73,7 @@ export function NutritionScanScreen({
   const cameraSelection = useRef<OcrImageSelection | null>(null);
   const retakeCancelFocusRef = useRef<CancelAccessibilityFocus | null>(null);
   const headingRef = useRef<Text>(null);
+  const qualityHeadingRef = useRef<Text>(null);
   const errorRef = useRef<Text>(null);
   const announce = useAccessibilityAnnouncement();
 
@@ -87,6 +100,35 @@ export function NutritionScanScreen({
       cancelFocus();
     };
   }, [announce, message]);
+
+  useEffect(() => {
+    if (status !== "quality_warning" || qualityWarnings.length === 0) {
+      return;
+    }
+
+    const summary = [
+      "Photo quality warning.",
+      ...qualityWarnings.map(({ message }) => message),
+      "You can retake the photo or use the original photo anyway.",
+    ].join(" ");
+
+    const cancelAnnouncement = announce(summary, {
+      key: "nutrition-image-quality-warning",
+      priority: "assertive",
+    });
+    const cancelFocus = focusAccessibilityElement(
+      qualityHeadingRef.current,
+      {
+        delayMs: 60,
+        focusKeyboardTarget: false,
+      },
+    );
+
+    return () => {
+      cancelAnnouncement();
+      cancelFocus();
+    };
+  }, [announce, qualityWarnings, status]);
 
   useEffect(() => {
     if (!focusAfterCameraCancel || status !== "idle") return;
@@ -156,6 +198,60 @@ export function NutritionScanScreen({
     }
   };
 
+  const inspectCameraSelection = async (
+    selection: OcrImageSelection,
+    current: number,
+  ) => {
+    cameraSelection.current = selection;
+    setStatus("inspecting");
+    setQualityWarnings([]);
+
+    let warnings: readonly OcrImageQualityWarning[] = [];
+
+    try {
+      const metrics = await inspectImageQuality(selection.uri);
+
+      if (!mounted.current || current !== requestId.current) {
+        await deleteCameraCapture(
+          selection,
+          (uri) => FileSystem.deleteAsync(uri, { idempotent: true }),
+        );
+        if (cameraSelection.current?.uri === selection.uri) {
+          cameraSelection.current = null;
+        }
+        inFlight.current = false;
+        return;
+      }
+
+      warnings = metrics ? imageQualityWarnings(metrics) : [];
+    } catch {
+      // Inspection is advisory. Any evaluator failure falls through to
+      // recognition with the original image.
+      warnings = [];
+    }
+
+    if (!mounted.current || current !== requestId.current) {
+      await deleteCameraCapture(
+        selection,
+        (uri) => FileSystem.deleteAsync(uri, { idempotent: true }),
+      );
+      if (cameraSelection.current?.uri === selection.uri) {
+        cameraSelection.current = null;
+      }
+      inFlight.current = false;
+      return;
+    }
+
+    if (warnings.length > 0) {
+      setQualityWarnings(warnings);
+      setStatus("quality_warning");
+      inFlight.current = false;
+      return;
+    }
+
+    await processSelection(selection, "camera", current);
+  };
+
   const acquirePhotoLibrary = async () => {
     if (inFlight.current) return;
 
@@ -165,6 +261,7 @@ export function NutritionScanScreen({
     setStatus("acquiring");
     setMessage(null);
     setPermissionDenied(false);
+    setQualityWarnings([]);
 
     const outcome = await acquireOcrImage("photo_library", {
       requestPermission: ImagePicker.requestMediaLibraryPermissionsAsync,
@@ -213,6 +310,7 @@ export function NutritionScanScreen({
     setStatus("acquiring");
     setMessage(null);
     setPermissionDenied(false);
+    setQualityWarnings([]);
 
     try {
       const permission = await Camera.requestCameraPermissionsAsync();
@@ -249,6 +347,7 @@ export function NutritionScanScreen({
     setStatus("idle");
     setMessage(null);
     setPermissionDenied(false);
+    setQualityWarnings([]);
     setFocusAfterCameraCancel(true);
 
     if (wasAutomaticRetake) {
@@ -257,6 +356,55 @@ export function NutritionScanScreen({
         priority: "polite",
       });
     }
+  };
+
+  const retakeQualityCapture = async () => {
+    if (inFlight.current) return;
+
+    const selection = cameraSelection.current;
+
+    inFlight.current = true;
+    requestId.current += 1;
+    setStatus("acquiring");
+    setQualityWarnings([]);
+    setMessage(null);
+    setPermissionDenied(false);
+
+    if (selection) {
+      await deleteCameraCapture(
+        selection,
+        (uri) => FileSystem.deleteAsync(uri, { idempotent: true }),
+      );
+
+      if (cameraSelection.current?.uri === selection.uri) {
+        cameraSelection.current = null;
+      }
+    }
+
+    if (!mounted.current) {
+      inFlight.current = false;
+      return;
+    }
+
+    inFlight.current = false;
+    await openCamera();
+  };
+
+  const useCameraPhotoAnyway = () => {
+    if (inFlight.current) return;
+
+    const selection = cameraSelection.current;
+    if (!selection) {
+      setQualityWarnings([]);
+      setStatus("idle");
+      return;
+    }
+
+    inFlight.current = true;
+    setQualityWarnings([]);
+    const current = ++requestId.current;
+
+    void processSelection(selection, "camera", current);
   };
 
   const handleCameraCaptured = (
@@ -281,7 +429,7 @@ export function NutritionScanScreen({
     cameraWasAutomaticRetake.current = false;
     const current = ++requestId.current;
 
-    void processSelection(selection, "camera", current);
+    void inspectCameraSelection(selection, current);
   };
 
   useEffect(() => {
@@ -300,8 +448,72 @@ export function NutritionScanScreen({
     );
   }
 
+  if (status === "quality_warning") {
+    return (
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <Text
+            ref={qualityHeadingRef}
+            accessibilityRole="header"
+            style={styles.title}
+          >
+            Check photo quality
+          </Text>
+
+          <AccessiblePressable
+            accessibilityLabel="Cancel label scan"
+            onPress={onCancel}
+          >
+            <Text style={styles.link}>Cancel</Text>
+          </AccessiblePressable>
+        </View>
+
+        <Text style={styles.body}>
+          We found possible image-quality problems before text recognition.
+          These checks are conservative, so you can still use the original
+          photo.
+        </Text>
+
+        <View
+          accessibilityLabel="Photo quality warnings"
+          style={styles.warningPanel}
+        >
+          {qualityWarnings.map((warning) => (
+            <Text
+              key={warning.code}
+              style={styles.warningText}
+            >
+              • {warning.message}
+            </Text>
+          ))}
+        </View>
+
+        <AccessiblePressable
+          accessibilityLabel="Retake photo"
+          accessibilityHint="Deletes this temporary photo and reopens the nutrition label camera"
+          onPress={() => {
+            void retakeQualityCapture();
+          }}
+          style={styles.button}
+        >
+          <Text style={styles.buttonText}>Retake photo</Text>
+        </AccessiblePressable>
+
+        <AccessiblePressable
+          accessibilityLabel="Use photo anyway"
+          accessibilityHint="Continues with on-device recognition using the original photo"
+          onPress={useCameraPhotoAnyway}
+          style={styles.secondaryButton}
+        >
+          <Text style={styles.secondaryButtonText}>Use photo anyway</Text>
+        </AccessiblePressable>
+      </View>
+    );
+  }
+
   const busy =
     status === "acquiring" ||
+    status === "inspecting" ||
     status === "recognizing" ||
     status === "parsing";
 
@@ -362,9 +574,11 @@ export function NutritionScanScreen({
             message={
               status === "acquiring"
                 ? "Opening image source…"
-                : status === "recognizing"
-                  ? "Recognizing label text…"
-                  : "Parsing nutrition values…"
+                : status === "inspecting"
+                  ? "Checking photo quality…"
+                  : status === "recognizing"
+                    ? "Recognizing label text…"
+                    : "Parsing nutrition values…"
             }
           />
         </View>
@@ -440,6 +654,19 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       gap: 16,
       padding: 16,
     },
+    secondaryButton: {
+      alignItems: "center",
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      borderWidth: 1,
+      minHeight: 48,
+      justifyContent: "center",
+    },
+    secondaryButtonText: {
+      color: theme.colors.text,
+      fontSize: 16,
+      fontWeight: "700",
+    },
     settingsButton: {
       alignItems: "center",
       borderColor: theme.colors.border,
@@ -452,6 +679,18 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     settingsButtonText: {
       color: theme.colors.accent,
       fontWeight: "700",
+    },
+    warningPanel: {
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      borderWidth: 1,
+      gap: 10,
+      padding: 12,
+    },
+    warningText: {
+      color: theme.colors.text,
+      fontSize: 15,
+      lineHeight: 21,
     },
     title: {
       color: theme.colors.text,

@@ -6,6 +6,17 @@ import {
   resolveOcrOptions,
 } from "../src/native/ocr/NutritionOcr";
 
+const validQualityMetrics = {
+  width: 3024,
+  height: 4032,
+  meanLuminance: 0.55,
+  darkPixelFraction: 0.08,
+  brightPixelFraction: 0.04,
+  focusVariance: 0.06,
+  textRegionCount: 12,
+  textRegionAreaFraction: 0.042,
+};
+
 const validResult = {
   observations: [{
     id: "observation-0001",
@@ -81,4 +92,83 @@ test("obvious invalid input is rejected before native invocation", async () => {
   });
   await expect(client.recognizeTextFromImage(" ")).rejects.toMatchObject({ code: "ocr_invalid_image_uri" });
   expect(recognizeTextFromImage).not.toHaveBeenCalled();
+});
+
+test("quality inspection validates the native metric contract", async () => {
+  const inspectImageQuality = jest.fn().mockResolvedValue(
+    validQualityMetrics,
+  );
+
+  const client = createOcrClient({
+    platform: "ios",
+    nativeModule: {
+      isSupported: () => true,
+      inspectImageQuality,
+      recognizeTextFromImage: jest.fn(),
+    },
+  });
+
+  await expect(
+    client.inspectImageQuality(" file:///quality.jpg "),
+  ).resolves.toEqual(validQualityMetrics);
+
+  expect(inspectImageQuality).toHaveBeenCalledWith(
+    "file:///quality.jpg",
+  );
+});
+
+test("quality inspection is best effort for unsupported or older native builds", async () => {
+  const unsupported = createOcrClient({
+    platform: "android",
+    nativeModule: null,
+  });
+
+  await expect(
+    unsupported.inspectImageQuality("file:///quality.jpg"),
+  ).resolves.toBeNull();
+
+  const olderBuild = createOcrClient({
+    platform: "ios",
+    nativeModule: {
+      isSupported: () => true,
+      recognizeTextFromImage: jest.fn(),
+    },
+  });
+
+  await expect(
+    olderBuild.inspectImageQuality("file:///quality.jpg"),
+  ).resolves.toBeNull();
+});
+
+test("quality inspection failure or malformed native metrics do not block recognition", async () => {
+  const throwing = createOcrClient({
+    platform: "ios",
+    nativeModule: {
+      isSupported: () => true,
+      inspectImageQuality: jest.fn().mockRejectedValue(
+        new Error("analysis failed"),
+      ),
+      recognizeTextFromImage: jest.fn(),
+    },
+  });
+
+  await expect(
+    throwing.inspectImageQuality("file:///quality.jpg"),
+  ).resolves.toBeNull();
+
+  const malformed = createOcrClient({
+    platform: "ios",
+    nativeModule: {
+      isSupported: () => true,
+      inspectImageQuality: jest.fn().mockResolvedValue({
+        ...validQualityMetrics,
+        meanLuminance: 4,
+      }),
+      recognizeTextFromImage: jest.fn(),
+    },
+  });
+
+  await expect(
+    malformed.inspectImageQuality("file:///quality.jpg"),
+  ).resolves.toBeNull();
 });

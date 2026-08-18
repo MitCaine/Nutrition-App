@@ -1,3 +1,4 @@
+import AVFoundation
 import ExpoModulesCore
 import Foundation
 import ImageIO
@@ -52,10 +53,59 @@ public final class NutritionOcrModule: Module {
       true
     }
 
+    Function("preferredBackCameraLensName") {
+      Self.preferredBackCameraLensName()
+    }
+
     AsyncFunction("recognizeTextFromImage") { (imageUri: String, options: OcrRecognitionOptions) throws -> [String: Any] in
       try Self.recognizeText(from: imageUri, options: options)
     }
     .runOnQueue(DispatchQueue.global(qos: .userInitiated))
+
+    AsyncFunction("inspectImageQuality") { (imageUri: String) throws -> [String: Any] in
+      try Self.inspectImageQuality(from: imageUri)
+    }
+    .runOnQueue(DispatchQueue.global(qos: .userInitiated))
+  }
+
+  private static func preferredBackCameraLensName() -> String? {
+    let preferredDeviceTypes: [AVCaptureDevice.DeviceType] = [
+      .builtInTripleCamera,
+      .builtInDualWideCamera,
+      .builtInDualCamera,
+      .builtInWideAngleCamera,
+    ]
+
+    for deviceType in preferredDeviceTypes {
+      if let device = AVCaptureDevice.default(
+        deviceType,
+        for: .video,
+        position: .back
+      ) {
+        return device.localizedName
+      }
+    }
+
+    return nil
+  }
+
+  private static func inspectImageQuality(from imageUri: String) throws -> [String: Any] {
+    guard let url = URL(string: imageUri), url.isFileURL else {
+      throw OcrFailure.invalidImageUri.exception
+    }
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      throw OcrFailure.imageNotFound.exception
+    }
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          CGImageSourceGetCount(source) > 0,
+          let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+      throw OcrFailure.imageDecodeFailed.exception
+    }
+
+    return try NutritionImageQuality.inspect(
+      cgImage,
+      orientation: imageOrientation(from: source)
+    )
   }
 
   private static func recognizeText(from imageUri: String, options: OcrRecognitionOptions) throws -> [String: Any] {
