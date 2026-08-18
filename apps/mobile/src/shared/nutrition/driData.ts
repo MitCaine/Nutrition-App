@@ -78,7 +78,7 @@ export const DRI_POPULATION_SCOPE =
   "Apparently healthy adults age 19 and older; pregnancy and lactation supported for female reference profiles age 19-50.";
 
 export const DRI_SOURCE_SHA256 =
-  "83eef1073510af5e82f3d6055208dce0f8e556943ffc7c9b9359c4ece6a161f9";
+  "8cc2bf5fa664c3b3c3ea57fee4a71370147232c87f1e7d911d3f753cf54e9739";
 
 export const DRI_SOURCE_DOCUMENTS =
 [
@@ -2754,6 +2754,10 @@ export const DRI_NO_GOAL =
     "source_id": "macronutrients_2005"
   },
   "added_sugars": {
+    "reason_code": "rda_or_ai_not_established",
+    "source_id": "macronutrients_2005"
+  },
+  "total_omega_3": {
     "reason_code": "rda_or_ai_not_established",
     "source_id": "macronutrients_2005"
   },

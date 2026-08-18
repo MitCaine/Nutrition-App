@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyTargetComparison, DailyTargetComparisonItem } from "../src/features/targets/api/types";
@@ -84,28 +84,24 @@ test("renders useful target values while preserving accessible source and direct
   expect(text).not.toContain("Neutral reference");
   expect(text).not.toContain("Limit reference");
   expect(text).not.toContain("Why this reference?");
-  expect(
-    renderer.root
-      .findAllByType(Text)
-      .filter(
-        (node) =>
-          textContent(node)
-          === "Targets use personalized RDA or AI recommendations when supported, then FDA Daily Values as fallback references.",
-      ),
-  ).toHaveLength(1);
-  expect(text).toContain("0 g / 78 g");
-  expect(text).toContain(
-    "AI · NASEM DRI adults 2026 v1",
+  expect(text).not.toContain(
+    "Targets use personalized RDA or AI recommendations when supported",
   );
-  expect(text).toContain(
-    "FDA Daily Value · FDA Daily Values 2016 v1",
+  expect(text).toContain("0 g / 78 g");
+  expect(text).not.toContain(
+    "NASEM DRI adults 2026 v1",
+  );
+  expect(text).not.toContain(
+    "FDA Daily Values 2016 v1",
   );
   expect(text).toContain("— / 275 g");
   expect(text).not.toContain("No comparison target");
   const saturated = renderer.root.findAllByType(Text).find((node) => String(node.props.accessibilityLabel).startsWith("Saturated Fat,"));
   expect(saturated?.props.accessibilityLabel).toContain("120%");
-  expect(saturated?.props.accessibilityLabel).toContain(
-    "FDA Daily Value · FDA Daily Values 2016 v1",
+  expect(
+    saturated?.props.accessibilityLabel,
+  ).not.toContain(
+    "FDA Daily Values 2016 v1",
   );
   expect(saturated?.props.accessibilityLabel).toContain("limit");
   expect(saturated?.props.accessibilityLabel).toContain("limit reached or exceeded");
@@ -138,8 +134,8 @@ test("empty Daily Log with personalized targets hides the setup action", async (
   const text = allText(renderer.root);
 
   expect(text).toContain("Log a food to start tracking your nutrition.");
-  expect(text).toContain(
-    "Personalized RDA or AI recommendations are used when your profile supports them. FDA Daily Values remain fallback references.",
+  expect(text).not.toContain(
+    "Personalized RDA or AI recommendations are used when your profile supports them",
   );
   expect(text).not.toContain("Add your information in Nutrition Targets");
   expect(
@@ -219,8 +215,8 @@ test("logged nutrition removes onboarding and returns to the concise targets act
   const text = allText(renderer.root);
   expect(text).not.toContain("Log a food to start tracking your nutrition.");
   expect(text).not.toContain("Add your information in Nutrition Targets");
-  expect(text).toContain(
-    "Targets use personalized RDA or AI recommendations when supported, then FDA Daily Values as fallback references.",
+  expect(text).not.toContain(
+    "Targets use personalized RDA or AI recommendations when supported",
   );
   const action = renderer.root.findAllByType(Pressable).find((node) => node.props.accessibilityLabel === "Nutrition targets");
   expect(action).toBeDefined();
@@ -342,7 +338,7 @@ test("#103 amount-only progress shows consumed amount without a percentage or ta
   const text = allText(renderer.root);
 
   expect(text).toContain("42 g");
-  expect(text).toContain("Amount only");
+  expect(text).toContain("Total consumed only");
   expect(text).not.toContain("%");
 
   const proteinLabel =
@@ -356,7 +352,7 @@ test("#103 amount-only progress shows consumed amount without a percentage or ta
       ?.props.accessibilityLabel;
 
   expect(proteinLabel).toContain(
-    "Amount only",
+    "Total consumed only",
   );
 
   expect(proteinLabel).not.toContain(
@@ -396,7 +392,7 @@ test("#103 targetless amount-only progress identifies absence of an established 
   expect(
     allText(renderer.root),
   ).toContain(
-    "No established target",
+    "No established daily goal",
   );
 
   await act(async () =>
@@ -404,91 +400,276 @@ test("#103 targetless amount-only progress identifies absence of an established 
   );
 });
 
-test("#103 explicitly configured secondary nutrients join progress without expanding catalog defaults", async () => {
-  const configuredData:
+test("Daily Log uses a Fatty Acids section with a real Omega-3 parent card", async () => {
+  const omegaData:
     DailyTargetComparison = {
       ...data,
       comparisons: [
         item({
-          nutrientId: "protein",
-          consumedAmount:
-            "42.000000",
-          targetAmount:
-            "56.000000",
-          unit: "g",
-          percentage:
-            "75.0000",
-          authority: "dri",
-          direction: "target",
-          trackingMode:
-            "recommended",
-          status: "available",
-          referenceType: "RDA",
-        }),
-        item({
           nutrientId:
-            "vitamin_c",
-          consumedAmount:
-            "60.000000",
-          targetAmount:
-            "120.000000",
-          unit: "mg",
-          percentage:
-            "50.0000",
-          authority:
-            "manual_override",
-          direction: "target",
-          trackingMode: "custom",
-          status: "available",
-        }),
-        item({
-          nutrientId: "epa",
-          consumedAmount:
-            "350.000000",
+            "total_omega_3",
+          consumedAmount: "1200",
           targetAmount: null,
           unit: "mg",
           percentage: null,
-          authority:
-            "unavailable",
-          direction:
-            "unavailable",
-          trackingMode:
-            "amount_only",
-          status: "amount_only",
-          reasonCode:
-            "target_amount_only_preference",
-        }),
-        item({
-          nutrientId: "dha",
-          consumedAmount:
-            "250.000000",
-          targetAmount: null,
-          unit: "mg",
-          percentage: null,
-          authority:
-            "unavailable",
-          direction:
-            "unavailable",
-          trackingMode:
-            "amount_only",
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode: "amount_only",
           status: "amount_only",
           reasonCode:
             "target_reference_not_established",
         }),
         item({
           nutrientId:
-            "vitamin_d",
-          consumedAmount:
-            "10.000000",
-          targetAmount:
-            "15.000000",
-          unit: "mcg",
-          percentage:
-            "66.6667",
+            "alpha_linolenic_acid",
+          consumedAmount: "1.2",
+          targetAmount: "1.6",
+          unit: "g",
+          percentage: "75",
           authority: "dri",
           direction: "target",
-          trackingMode:
-            "recommended",
+          trackingMode: "recommended",
+          status: "available",
+          referenceType: "AI",
+        }),
+        item({
+          nutrientId: "epa",
+          consumedAmount: "300",
+          targetAmount: null,
+          unit: "mg",
+          percentage: null,
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode: "amount_only",
+          status: "amount_only",
+          reasonCode:
+            "target_reference_not_established",
+        }),
+        item({
+          nutrientId: "dha",
+          consumedAmount: "200",
+          targetAmount: null,
+          unit: "mg",
+          percentage: null,
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode: "amount_only",
+          status: "amount_only",
+          reasonCode:
+            "target_reference_not_established",
+        }),
+        item({
+          nutrientId:
+            "linoleic_acid",
+          consumedAmount: "9",
+          targetAmount: "17",
+          unit: "g",
+          percentage: "52.9412",
+          authority: "dri",
+          direction: "target",
+          trackingMode: "recommended",
+          status: "available",
+          referenceType: "AI",
+        }),
+      ],
+    };
+
+  const renderer = await render({
+    data: omegaData,
+    hasLoggedNutrition: true,
+  });
+
+  const sectionHeading =
+    renderer.root
+      .findAllByType(Text)
+      .find(
+        (node) =>
+          textContent(node)
+            === "Fatty Acids"
+          && node.props
+            .accessibilityRole
+            === "header",
+      );
+
+  expect(
+    sectionHeading,
+  ).toBeDefined();
+
+  expect(
+    renderer.root
+      .findAllByType(Text)
+      .some(
+        (node) =>
+          textContent(node)
+          === "Omega-3 fatty acids",
+      ),
+  ).toBe(false);
+
+  function nutrientCard(
+    label: string,
+  ) {
+    const labelNode =
+      renderer.root
+        .findAllByType(Text)
+        .find(
+          (node) =>
+            textContent(node)
+            === label,
+        );
+
+    let current =
+      labelNode?.parent
+      ?? undefined;
+
+    while (current) {
+      const style =
+        StyleSheet.flatten(
+          current.props.style,
+        );
+
+      if (
+        style?.borderWidth === 1
+        && style.borderRadius === 8
+      ) {
+        return current;
+      }
+
+      current =
+        current.parent
+        ?? undefined;
+    }
+
+    return undefined;
+  }
+
+  const omega3Card =
+    nutrientCard("Omega-3");
+
+  expect(omega3Card).toBeDefined();
+
+  expect(
+    StyleSheet.flatten(
+      omega3Card?.props.style,
+    ).marginLeft ?? 0,
+  ).toBe(0);
+
+  for (const label of [
+    "Alpha-Linolenic Acid (ALA)",
+    "EPA",
+    "DHA",
+  ]) {
+    const card =
+      nutrientCard(label);
+
+    expect(card).toBeDefined();
+
+    expect(
+      StyleSheet.flatten(
+        card?.props.style,
+      ).marginLeft,
+    ).toBe(16);
+  }
+
+  const omega6Card =
+    nutrientCard(
+      "Linoleic Acid (Omega-6)",
+    );
+
+  expect(omega6Card).toBeDefined();
+
+  expect(
+    StyleSheet.flatten(
+      omega6Card?.props.style,
+    ).marginLeft ?? 0,
+  ).toBe(0);
+
+  const visibleText =
+    allText(renderer.root);
+
+  expect(visibleText).toContain(
+    "1,200 mg",
+  );
+
+  expect(visibleText).toContain(
+    "No established daily goal",
+  );
+
+  expect(visibleText).not.toContain(
+    "NASEM DRI adults 2026 v1",
+  );
+
+  expect(visibleText).not.toContain(
+    "FDA Daily Values 2016 v1",
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+test("#103 simplified progress shows recommended and targetless secondary nutrients by default", async () => {
+  const configuredData:
+    DailyTargetComparison = {
+      ...data,
+      comparisons: [
+        item({
+          nutrientId: "protein",
+          consumedAmount: "42.000000",
+          targetAmount: "56.000000",
+          unit: "g",
+          percentage: "75.0000",
+          authority: "dri",
+          direction: "target",
+          trackingMode: "recommended",
+          status: "available",
+          referenceType: "RDA",
+        }),
+        item({
+          nutrientId: "vitamin_c",
+          consumedAmount: "60.000000",
+          targetAmount: "120.000000",
+          unit: "mg",
+          percentage: "50.0000",
+          authority: "manual_override",
+          direction: "target",
+          trackingMode: "custom",
+          status: "available",
+        }),
+        item({
+          nutrientId: "epa",
+          consumedAmount: "350.000000",
+          targetAmount: null,
+          unit: "mg",
+          percentage: null,
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode: "amount_only",
+          status: "amount_only",
+          reasonCode:
+            "target_amount_only_preference",
+        }),
+        item({
+          nutrientId: "dha",
+          consumedAmount: "250.000000",
+          targetAmount: null,
+          unit: "mg",
+          percentage: null,
+          authority: "unavailable",
+          direction: "unavailable",
+          trackingMode: "amount_only",
+          status: "amount_only",
+          reasonCode:
+            "target_reference_not_established",
+        }),
+        item({
+          nutrientId: "vitamin_d",
+          consumedAmount: "10.000000",
+          targetAmount: "15.000000",
+          unit: "mcg",
+          percentage: "66.6667",
+          authority: "dri",
+          direction: "target",
+          trackingMode: "recommended",
           status: "available",
           referenceType: "RDA",
         }),
@@ -500,38 +681,23 @@ test("#103 explicitly configured secondary nutrients join progress without expan
     hasLoggedNutrition: true,
   });
 
-  const text =
-    allText(renderer.root);
+  const text = allText(renderer.root);
 
-  // Existing normal progress stays present.
-  expect(text).toContain(
-    "Protein",
-  );
+  expect(text).toContain("Protein");
+  expect(text).toContain("Vitamin C");
+  expect(text).toContain("EPA");
+  expect(text).toContain("DHA");
+  expect(text).toContain("Vitamin D");
 
-  // Explicit non-primary choices become useful in daily progress.
-  expect(text).toContain(
-    "Vitamin C",
-  );
-  expect(text).toContain(
-    "50%",
-  );
-  expect(text).toContain(
+  expect(text).toContain("50%");
+  expect(text).not.toContain(
     "Custom target",
   );
-
   expect(text).toContain(
-    "Epa",
+    "Total consumed only",
   );
   expect(text).toContain(
-    "Amount only",
-  );
-
-  // Neutral/default catalog states do not expand the dashboard.
-  expect(text).not.toContain(
-    "DHA",
-  );
-  expect(text).not.toContain(
-    "Vitamin D",
+    "No established daily goal",
   );
 
   await act(async () =>

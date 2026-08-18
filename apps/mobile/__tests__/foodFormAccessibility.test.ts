@@ -386,7 +386,7 @@ test("invalid manual nutrient text keeps the focused validation association", as
   await act(async () => renderer.unmount());
 });
 
-test("manual nutrient hierarchy uses one shared child indent and a normal terminal content gap", async () => {
+test("manual nutrient hierarchy preserves nested visible depth and a normal terminal content gap", async () => {
   mockNutrients = [
     { id: "total-fat", display_name: "Total Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 1 },
     { id: "saturated-fat", display_name: "Saturated Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total-fat", display_order: 2 },
@@ -428,8 +428,17 @@ test("manual nutrient hierarchy uses one shared child indent and a normal termin
     .map((label) => StyleSheet.flatten(nutrientRow(nutrientTitle(label))?.props.style));
   expect(parentRowStyle.paddingLeft ?? 0).toBe(0);
   expect(childRowStyles).toHaveLength(5);
-  expect(childRowStyles.every((style) => style.paddingLeft === 16)).toBe(true);
-  expect(childRowStyles.map((style) => style.paddingLeft)).toEqual([16, 16, 16, 16, 16]);
+  expect(
+    childRowStyles.map(
+      (style) => style.paddingLeft,
+    ),
+  ).toEqual([
+    16,
+    16,
+    16,
+    16,
+    32,
+  ]);
 
   for (const label of ["Saturated Fat", "Trans Fat", "Dietary Fiber", "Total Sugars", "Added Sugars"]) {
     const amount = renderer.root.findByProps({ accessibilityLabel: `${label} amount` });
@@ -450,6 +459,210 @@ test("manual nutrient hierarchy uses one shared child indent and a normal termin
   expect(scrollViews).toHaveLength(1);
   expect(StyleSheet.flatten(scrollViews[0].props.contentContainerStyle)).toMatchObject({ paddingBottom: 16 });
   await act(async () => renderer.unmount());
+});
+
+test("fatty-acid editor uses section headings and a real Omega-3 parent nutrient", async () => {
+  mockNutrients = [
+    {
+      id: "chloride",
+      display_name: "Chloride",
+      default_unit: "mg",
+      nutrient_kind: "mineral",
+      parent_nutrient_id: null,
+      display_order: 330,
+    },
+    {
+      id: "total_omega_3",
+      display_name: "Omega-3",
+      default_unit: "mg",
+      nutrient_kind: "fatty_acid",
+      parent_nutrient_id: null,
+      display_order: 390,
+    },
+    {
+      id: "alpha_linolenic_acid",
+      display_name:
+        "Alpha-Linolenic Acid (ALA)",
+      default_unit: "g",
+      nutrient_kind: "fatty_acid",
+      parent_nutrient_id:
+        "total_omega_3",
+      display_order: 400,
+    },
+    {
+      id: "epa",
+      display_name: "EPA",
+      default_unit: "mg",
+      nutrient_kind: "fatty_acid",
+      parent_nutrient_id:
+        "total_omega_3",
+      display_order: 410,
+    },
+    {
+      id: "dha",
+      display_name: "DHA",
+      default_unit: "mg",
+      nutrient_kind: "fatty_acid",
+      parent_nutrient_id:
+        "total_omega_3",
+      display_order: 420,
+    },
+    {
+      id: "linoleic_acid",
+      display_name:
+        "Linoleic Acid (Omega-6)",
+      default_unit: "g",
+      nutrient_kind: "fatty_acid",
+      parent_nutrient_id: null,
+      display_order: 430,
+    },
+  ];
+
+  let renderer!:
+    TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(
+        FoodFormScreen,
+        {
+          onCancel: jest.fn(),
+          onSaved: jest.fn(),
+        },
+      ),
+    );
+  });
+
+  activeRenderers.add(renderer);
+
+  const sectionHeadings =
+    renderer.root
+      .findAllByType(Text)
+      .filter(
+        (node) =>
+          node.props.accessibilityRole
+          === "header",
+      )
+      .map(textContent);
+
+  expect(sectionHeadings).toContain(
+    "Minerals",
+  );
+
+  expect(sectionHeadings).toContain(
+    "Fatty Acids",
+  );
+
+  expect(sectionHeadings).not.toContain(
+    "Omega-3 fatty acids",
+  );
+
+  function nutrientRow(
+    label: string,
+  ) {
+    const title =
+      renderer.root
+        .findAllByType(Text)
+        .find(
+          (node) =>
+            node.props.nativeID
+              ?.startsWith(
+                "nutrient-label-",
+              )
+            && textContent(node)
+              === label,
+        );
+
+    let current =
+      title?.parent ?? undefined;
+
+    while (current) {
+      const style =
+        StyleSheet.flatten(
+          current.props.style,
+        );
+
+      if (
+        style?.borderBottomWidth === 1
+        && style.paddingBottom === 8
+      ) {
+        return current;
+      }
+
+      current =
+        current.parent ?? undefined;
+    }
+
+    return undefined;
+  }
+
+  const omega3Row =
+    nutrientRow("Omega-3");
+
+  expect(omega3Row).toBeDefined();
+
+  expect(
+    StyleSheet.flatten(
+      omega3Row?.props.style,
+    ).paddingLeft ?? 0,
+  ).toBe(0);
+
+  for (const label of [
+    "Alpha-Linolenic Acid (ALA)",
+    "EPA",
+    "DHA",
+  ]) {
+    expect(
+      StyleSheet.flatten(
+        nutrientRow(label)?.props.style,
+      ).paddingLeft,
+    ).toBe(16);
+  }
+
+  expect(
+    StyleSheet.flatten(
+      nutrientRow(
+        "Linoleic Acid (Omega-6)",
+      )?.props.style,
+    ).paddingLeft ?? 0,
+  ).toBe(0);
+
+  expect(
+    StyleSheet.flatten(
+      nutrientRow(
+        "Chloride",
+      )?.props.style,
+    ).paddingLeft ?? 0,
+  ).toBe(0);
+
+  const visibleOrder =
+    renderer.root
+      .findAllByType(Text)
+      .map(textContent);
+
+  expect(
+    visibleOrder.indexOf(
+      "Fatty Acids",
+    ),
+  ).toBeLessThan(
+    visibleOrder.indexOf(
+      "Omega-3",
+    ),
+  );
+
+  expect(
+    visibleOrder.indexOf(
+      "Omega-3",
+    ),
+  ).toBeLessThan(
+    visibleOrder.indexOf(
+      "Alpha-Linolenic Acid (ALA)",
+    ),
+  );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });
 
 test("#108 Food Form keeps Cancel and route title outside keyboard-safe scrolling", async () => {

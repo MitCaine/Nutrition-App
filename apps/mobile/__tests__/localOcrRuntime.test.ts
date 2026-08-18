@@ -56,7 +56,7 @@ function confirmation(overrides: Partial<OcrConfirmationInput> = {}): OcrConfirm
     ],
   };
   return {
-    parser_version: "nutrition_label_v1",
+    parser_version: "nutrition_label_v2",
     image_source_type: "camera",
     client_request_id: REQUEST,
     food,
@@ -282,7 +282,7 @@ test("local iOS workflow parses and confirms with FastAPI unavailable", async ()
       image: { width: 1000, height: 1500, orientationApplied: true },
       recognition: { platform: "ios", recognitionLevel: "accurate", languages: ["en-US"], durationMs: 20 },
     });
-    expect(parsed).toMatchObject({ parser_version: "nutrition_label_v1", calories: { value: "120" } });
+    expect(parsed).toMatchObject({ parser_version: "nutrition_label_v2", calories: { value: "120" } });
 
     const created = await runtime.confirmNutritionLabel(confirmation());
     expect(global.fetch).not.toHaveBeenCalled();
@@ -308,7 +308,7 @@ test("local iOS workflow parses and confirms with FastAPI unavailable", async ()
        FROM "ocr_nutrition_confirmation_traces"`);
     expect(trace).toMatchObject({
       id: created.trace_id,
-      parser_version: "nutrition_label_v1",
+      parser_version: "nutrition_label_v2",
       schema_version: "ocr_nutrition_confirmation_v1",
       client_request_id: REQUEST,
     });

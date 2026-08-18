@@ -6,6 +6,10 @@ import { isZeroDecimalString } from "../../../shared/forms/decimalString";
 import { nutrientFocusKey } from "../../../shared/forms/focusTargets";
 import type { FocusTargetRegistration } from "../../../shared/forms/KeyboardSafeScrollView";
 import { NutrientAmountRow } from "../../../shared/nutrition/NutrientAmountRow";
+import {
+  groupCanonicalNutrientsBySection,
+  nutrientVisibleDepth,
+} from "../../../shared/nutrition/nutrientSections";
 
 import type { FoodNutrientInput, NutrientDefinition } from "../api/types";
 
@@ -70,6 +74,35 @@ export function NutrientEntryList({
     ? foodFormHiddenNutrients(nutrients, values, revealedUnknownIds)
     : [];
 
+  const visibleSections =
+    groupCanonicalNutrientsBySection(
+      visibleNutrients,
+      (nutrient) => nutrient.id,
+    );
+
+  const hiddenSections =
+    groupCanonicalNutrientsBySection(
+      hiddenNutrients,
+      (nutrient) => nutrient.id,
+    );
+
+  const visibleNutrientIds =
+    new Set(
+      visibleNutrients.map(
+        (nutrient) => nutrient.id,
+      ),
+    );
+
+  const nutrientParentById =
+    new Map(
+      nutrients.map(
+        (nutrient) => [
+          nutrient.id,
+          nutrient.parent_nutrient_id,
+        ] as const,
+      ),
+    );
+
   function update(nutrientId: string, patch: Partial<FoodNutrientInput>) {
     const current = byId.get(nutrientId);
     const definition = nutrients.find((nutrient) => nutrient.id === nutrientId);
@@ -117,45 +150,145 @@ export function NutrientEntryList({
 
   return (
     <View style={styles.container}>
-      {visibleNutrients.map((nutrient) => {
-        const value = byId.get(nutrient.id);
-        if (!value) {
-          return null;
-        }
-        const indent = nutrient.parent_nutrient_id ? styles.childRow : undefined;
-        const invalid = validationTarget === `nutrient.${nutrient.id}.amount`;
-        return (
-          <View key={nutrient.id} style={[styles.row, indent]}>
-            <NutrientAmountRow
-              {...(focusProps ? focusProps(nutrientFocusKey(nutrient.id)) : {})}
-              label={nutrient.display_name}
-              containerStyle={styles.amountRow}
-              inputStyle={styles.amountInput}
-              hitSlop={{ top: 2, bottom: 2, left: 0, right: 0 }}
-              validationTarget={`nutrient.${nutrient.id}.amount`}
-              unit={value.unit}
-              value={value.amount ?? ""}
-              onChangeText={(text) => update(nutrient.id, { amount: text })}
-              accessibilityState={{ disabled }}
-              editable={!disabled}
-              keyboardType="decimal-pad"
-              placeholderTextColor={theme.colors.placeholder}
-              invalid={invalid}
-              error={invalid ? validationError : null}
-              action={(
-                <AccessiblePressable
-                  accessibilityLabel={`Omit ${nutrient.display_name}`}
-                  accessibilityHint="Removes the amount and marks this nutrient as unknown"
-                  disabled={disabled}
-                  onPress={() => update(nutrient.id, { amount: null, data_status: "unknown" })}
-                >
-                  <Text style={styles.omitText}>Omit</Text>
-                </AccessiblePressable>
-              )}
-            />
-          </View>
-        );
-      })}
+      {visibleSections.map((section) => (
+        <View
+          key={section.id}
+          style={styles.nutrientSection}
+        >
+          {section.label ? (
+            <Text
+              accessibilityRole="header"
+              style={
+                styles.nutrientGroupHeading
+              }
+            >
+              {section.label}
+            </Text>
+          ) : null}
+
+          {section.items.map((nutrient) => {
+            const value =
+              byId.get(nutrient.id);
+
+            if (!value) {
+              return null;
+            }
+
+            const hierarchyDepth =
+              nutrientVisibleDepth(
+                nutrient.id,
+                visibleNutrientIds,
+                (nutrientId) =>
+                  nutrientParentById.get(
+                    nutrientId,
+                  ) ?? null,
+              );
+
+            const indent =
+              hierarchyDepth > 0
+                ? {
+                    paddingLeft:
+                      hierarchyDepth * 16,
+                  }
+                : undefined;
+
+            const invalid =
+              validationTarget
+              === `nutrient.${nutrient.id}.amount`;
+
+            return (
+              <View
+                key={nutrient.id}
+                style={[
+                  styles.row,
+                  indent,
+                ]}
+              >
+                <NutrientAmountRow
+                  {...(
+                    focusProps
+                      ? focusProps(
+                          nutrientFocusKey(
+                            nutrient.id,
+                          ),
+                        )
+                      : {}
+                  )}
+                  label={
+                    nutrient.display_name
+                  }
+                  containerStyle={
+                    styles.amountRow
+                  }
+                  inputStyle={
+                    styles.amountInput
+                  }
+                  hitSlop={{
+                    top: 2,
+                    bottom: 2,
+                    left: 0,
+                    right: 0,
+                  }}
+                  validationTarget={
+                    `nutrient.${nutrient.id}.amount`
+                  }
+                  unit={value.unit}
+                  value={
+                    value.amount ?? ""
+                  }
+                  onChangeText={(text) =>
+                    update(
+                      nutrient.id,
+                      { amount: text },
+                    )
+                  }
+                  accessibilityState={{
+                    disabled,
+                  }}
+                  editable={!disabled}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={
+                    theme.colors.placeholder
+                  }
+                  invalid={invalid}
+                  error={
+                    invalid
+                      ? validationError
+                      : null
+                  }
+                  action={(
+                    <AccessiblePressable
+                      accessibilityLabel={
+                        `Omit ${nutrient.display_name}`
+                      }
+                      accessibilityHint="Removes the amount and marks this nutrient as unknown"
+                      disabled={disabled}
+                      onPress={() =>
+                        update(
+                          nutrient.id,
+                          {
+                            amount: null,
+                            data_status:
+                              "unknown",
+                          },
+                        )
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.omitText
+                        }
+                      >
+                        Omit
+                      </Text>
+                    </AccessiblePressable>
+                  )}
+                />
+              </View>
+            );
+          })}
+        </View>
+      ))}
       {hideUnknownByDefault && hiddenNutrients.length > 0 ? (
         <AccessiblePressable
           accessibilityLabel="Add missing nutrient"
@@ -170,18 +303,55 @@ export function NutrientEntryList({
       {hideUnknownByDefault && showMissingNutrients ? (
         <View style={styles.picker}>
           <Text accessibilityRole="header" style={styles.pickerHeading}>Choose a nutrient</Text>
-          {hiddenNutrients.map((nutrient) => (
-            <AccessiblePressable
-              key={nutrient.id}
-              accessibilityLabel={`Add ${nutrient.display_name}`}
-              disabled={disabled}
-              onPress={() => revealNutrient(nutrient.id)}
-              style={styles.pickerOption}
+          {hiddenSections.map((section) => (
+            <View
+              key={section.id}
+              style={styles.pickerSection}
             >
-              <Text style={styles.addNutrientText}>
-                {nutrient.display_name} ({nutrient.default_unit})
-              </Text>
-            </AccessiblePressable>
+              {section.label ? (
+                <Text
+                  accessibilityRole="header"
+                  style={
+                    styles
+                      .pickerSectionHeading
+                  }
+                >
+                  {section.label}
+                </Text>
+              ) : null}
+
+              {section.items.map(
+                (nutrient) => (
+                  <AccessiblePressable
+                    key={nutrient.id}
+                    accessibilityLabel={
+                      `Add ${nutrient.display_name}`
+                    }
+                    disabled={disabled}
+                    onPress={() =>
+                      revealNutrient(
+                        nutrient.id,
+                      )
+                    }
+                    style={
+                      styles.pickerOption
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.addNutrientText
+                      }
+                    >
+                      {
+                        nutrient.display_name
+                      } ({
+                        nutrient.default_unit
+                      })
+                    </Text>
+                  </AccessiblePressable>
+                ),
+              )}
+            </View>
           ))}
         </View>
       ) : null}
@@ -190,9 +360,6 @@ export function NutrientEntryList({
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
-  childRow: {
-    paddingLeft: 16,
-  },
   container: {
     gap: 10,
   },
@@ -214,6 +381,21 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
     color: theme.colors.accent,
     fontWeight: "700",
   },
+  nutrientSection: {
+    gap: 10,
+  },
+  nutrientGroupHeading: {
+    borderBottomColor:
+      theme.colors.border,
+    borderBottomWidth: 2,
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    marginTop: 14,
+    paddingBottom: 6,
+    textTransform: "uppercase",
+  },
   row: {
     borderBottomColor: theme.colors.border,
     borderBottomWidth: 1,
@@ -234,6 +416,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   pickerHeading: {
     color: theme.colors.text,
     fontSize: 14,
+    fontWeight: "700",
+  },
+  pickerSection: {
+    gap: 6,
+  },
+  pickerSectionHeading: {
+    color: theme.colors.text,
+    fontSize: 13,
     fontWeight: "700",
   },
   pickerOption: {

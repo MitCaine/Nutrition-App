@@ -22,6 +22,7 @@ import {
   SQLITE_SERVING_REFERENCE_MIGRATION,
   SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
   SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
+  SQLITE_TOTAL_OMEGA_3_MIGRATION,
   SQLiteSnapshotReplacementError,
   SQLiteWriteBusyError,
   UnsupportedSQLiteSchemaVersionError,
@@ -78,6 +79,44 @@ class RecordingSQLiteDatabase {
     if (source.includes('ALTER TABLE "serving_definitions" ADD COLUMN "reference_')) {
       this.servingReferenceColumns = true;
     }
+    if (
+      source.includes(
+        `SET "parent_nutrient_id" = 'total_omega_3'`,
+      )
+    ) {
+      for (const row of this.nutrientRows) {
+        if (
+          row.id === "alpha_linolenic_acid"
+          || row.id === "epa"
+          || row.id === "dha"
+        ) {
+          row.parent_nutrient_id =
+            "total_omega_3";
+        }
+      }
+    }
+
+    if (
+      source.includes(
+        `SET "parent_nutrient_id" = NULL`,
+      )
+      && source.includes(
+        `"id" = 'linoleic_acid'`,
+      )
+    ) {
+      const linoleic =
+        this.nutrientRows.find(
+          (row) =>
+            row.id
+            === "linoleic_acid",
+        );
+
+      if (linoleic) {
+        linoleic.parent_nutrient_id =
+          null;
+      }
+    }
+
     const match = source.match(/^PRAGMA user_version = (\d+)$/);
     if (match) {
       this.userVersion = Number(match[1]);
@@ -158,7 +197,23 @@ class RecordingSQLiteDatabase {
         : []) as T[];
     }
     if (source.includes('FROM "nutrients"')) {
-      return [...this.nutrientRows]
+      const fattyAcidIds = new Set([
+        "total_omega_3",
+        "alpha_linolenic_acid",
+        "epa",
+        "dha",
+        "linoleic_acid",
+      ]);
+
+      const rows =
+        source.includes("'total_omega_3'")
+          ? this.nutrientRows.filter(
+              (row) =>
+                fattyAcidIds.has(row.id),
+            )
+          : this.nutrientRows;
+
+      return [...rows]
         .sort(
           (left, right) =>
             left.display_order - right.display_order
@@ -297,7 +352,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(new Set(SQLITE_SEMANTIC_TABLES).size).toBe(18);
     expect(SQLITE_SEMANTIC_TABLES).not.toContain("phase5c4_control");
     expect(SQLITE_SEMANTIC_TABLES).not.toContain("ocr_scans");
-    expect(SQLITE_NUTRIENT_SEED_ROWS).toHaveLength(42);
+    expect(SQLITE_NUTRIENT_SEED_ROWS).toHaveLength(43);
     expect(SQLITE_BASELINE_SCHEMA_STATEMENTS.join("\n")).toContain(
       '"amount" TEXT',
     );
@@ -363,7 +418,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(first).toEqual({
       fromVersion: 0,
       toVersion: SQLITE_SCHEMA_VERSION,
-      appliedVersions: [1, 2, 3, 4, 5],
+      appliedVersions: [1, 2, 3, 4, 5, 6],
       alreadyCurrent: false,
     });
     expect(database.userVersion).toBe(SQLITE_SCHEMA_VERSION);
@@ -373,6 +428,7 @@ describe("E2-03 SQLite baseline schema", () => {
       { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
       { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
       { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
+      { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
     ]);
     expect(database.transactions).toBe(1);
     expect(database.transactionExecutions).toBeGreaterThan(0);
@@ -386,7 +442,7 @@ describe("E2-03 SQLite baseline schema", () => {
     expect(second.alreadyCurrent).toBe(true);
     expect(second.appliedVersions).toEqual([]);
     expect(database.executed.length).toBe(executedBeforeRestart + SQLITE_CONNECTION_SETUP_STATEMENTS.length);
-    expect(database.ledger).toHaveLength(5);
+    expect(database.ledger).toHaveLength(6);
   });
 
   test("upgrades an existing v1 database to the Food nutrient integrity schema", async () => {
@@ -401,17 +457,18 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 1,
-      toVersion: 5,
-      appliedVersions: [2, 3, 4, 5],
+      toVersion: 6,
+      appliedVersions: [2, 3, 4, 5, 6],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(5);
+    expect(database.userVersion).toBe(6);
     expect(database.ledger).toEqual([
       { version: 1, migration_id: SQLITE_BASELINE_MIGRATION.id },
       { version: 2, migration_id: SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id },
       { version: 3, migration_id: SQLITE_SERVING_REFERENCE_MIGRATION.id },
       { version: 4, migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id },
       { version: 5, migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id },
+      { version: 6, migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id },
     ]);
     expect(database.servingReferenceColumns).toBe(true);
   });
@@ -426,8 +483,8 @@ describe("E2-03 SQLite baseline schema", () => {
     ];
 
     const first = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(first).toEqual({ fromVersion: 2, toVersion: 5, appliedVersions: [3, 4, 5], alreadyCurrent: false });
-    expect(database.userVersion).toBe(5);
+    expect(first).toEqual({ fromVersion: 2, toVersion: 6, appliedVersions: [3, 4, 5, 6], alreadyCurrent: false });
+    expect(database.userVersion).toBe(6);
     expect(database.servingReferenceColumns).toBe(true);
     expect(database.executed.join("\n")).toContain(
       'ALTER TABLE "serving_definitions" ADD COLUMN "reference_quantity" TEXT',
@@ -437,7 +494,7 @@ describe("E2-03 SQLite baseline schema", () => {
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length;
     const second = await migrateNutritionDatabase(asSQLiteDatabase(database));
-    expect(second).toEqual({ fromVersion: 5, toVersion: 5, appliedVersions: [], alreadyCurrent: true });
+    expect(second).toEqual({ fromVersion: 6, toVersion: 6, appliedVersions: [], alreadyCurrent: true });
     expect(database.executed.filter((statement) =>
       statement.includes('ALTER TABLE "serving_definitions" ADD COLUMN'),
     ).length).toBe(alterCount);
@@ -458,18 +515,22 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 3,
-      toVersion: 5,
-      appliedVersions: [4, 5],
+      toVersion: 6,
+      appliedVersions: [4, 5, 6],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(5);
-    expect(database.ledger.at(-2)).toEqual({
+    expect(database.userVersion).toBe(6);
+    expect(database.ledger.at(-3)).toEqual({
       version: 4,
       migration_id: SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id,
     });
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.ledger.at(-2)).toEqual({
       version: 5,
       migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
+    });
+    expect(database.ledger.at(-1)).toEqual({
+      version: 6,
+      migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id,
     });
 
     const executed = database.executed.join("\n");
@@ -518,16 +579,20 @@ describe("E2-03 SQLite baseline schema", () => {
 
     expect(result).toEqual({
       fromVersion: 4,
-      toVersion: 5,
-      appliedVersions: [5],
+      toVersion: 6,
+      appliedVersions: [5, 6],
       alreadyCurrent: false,
     });
-    expect(database.userVersion).toBe(5);
-    expect(database.ledger.at(-1)).toEqual({
+    expect(database.userVersion).toBe(6);
+    expect(database.ledger.at(-2)).toEqual({
       version: 5,
       migration_id: SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
     });
-    expect(database.nutrientRows).toHaveLength(42);
+    expect(database.ledger.at(-1)).toEqual({
+      version: 6,
+      migration_id: SQLITE_TOTAL_OMEGA_3_MIGRATION.id,
+    });
+    expect(database.nutrientRows).toHaveLength(43);
     expect(
       database.nutrientRows
         .sort(
@@ -537,6 +602,126 @@ describe("E2-03 SQLite baseline schema", () => {
         )
         .slice(0, 16),
     ).toEqual(legacyRows);
+  });
+
+  test("upgrades an existing v5 nutrient catalog to canonical total Omega-3", async () => {
+    const database =
+      new RecordingSQLiteDatabase();
+
+    database.userVersion = 5;
+    database.ledgerTableExists = true;
+    database.ledger = [
+      {
+        version: 1,
+        migration_id:
+          SQLITE_BASELINE_MIGRATION.id,
+      },
+      {
+        version: 2,
+        migration_id:
+          SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION.id,
+      },
+      {
+        version: 3,
+        migration_id:
+          SQLITE_SERVING_REFERENCE_MIGRATION.id,
+      },
+      {
+        version: 4,
+        migration_id:
+          SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION.id,
+      },
+      {
+        version: 5,
+        migration_id:
+          SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION.id,
+      },
+    ];
+
+    database.nutrientRows =
+      SQLITE_NUTRIENT_SEED_ROWS
+        .filter(
+          ([id]) =>
+            id !== "total_omega_3",
+        )
+        .map(
+          ([
+            id,
+            displayName,
+            nutrientKind,
+            defaultUnit,
+            parentNutrientId,
+            displayOrder,
+          ]) => ({
+            id,
+            display_name:
+              displayName,
+            nutrient_kind:
+              nutrientKind,
+            default_unit:
+              defaultUnit,
+            parent_nutrient_id:
+              (
+                id
+                  === "alpha_linolenic_acid"
+                || id === "epa"
+                || id === "dha"
+                || id
+                  === "linoleic_acid"
+              )
+                ? "total_fat"
+                : parentNutrientId,
+            display_order:
+              displayOrder,
+          }),
+        );
+
+    const result =
+      await migrateNutritionDatabase(
+        asSQLiteDatabase(database),
+      );
+
+    expect(result).toEqual({
+      fromVersion: 5,
+      toVersion: 6,
+      appliedVersions: [6],
+      alreadyCurrent: false,
+    });
+
+    expect(
+      database.nutrientRows,
+    ).toHaveLength(43);
+
+    expect(
+      database.nutrientRows.find(
+        (row) =>
+          row.id === "total_omega_3",
+      ),
+    ).toMatchObject({
+      display_name: "Omega-3",
+      default_unit: "mg",
+      parent_nutrient_id: null,
+      display_order: 390,
+    });
+
+    for (const id of [
+      "alpha_linolenic_acid",
+      "epa",
+      "dha",
+    ]) {
+      expect(
+        database.nutrientRows.find(
+          (row) => row.id === id,
+        )?.parent_nutrient_id,
+      ).toBe("total_omega_3");
+    }
+
+    expect(
+      database.nutrientRows.find(
+        (row) =>
+          row.id === "linoleic_acid",
+      )?.parent_nutrient_id,
+    ).toBeNull();
   });
 
   test("fails closed when migration 005 finds incompatible canonical nutrient data", async () => {

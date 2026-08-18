@@ -388,201 +388,7 @@ test("rapid save presses issue one request and expose busy state", async () => {
   await act(async () => renderer.unmount());
 });
 
-test("#103 secondary nutrient manager stays collapsed until requested and limits discovery through search", async () => {
-  const renderer = await render();
-
-  expect(
-    action(
-      renderer.root,
-      "Vitamin C tracking mode Recommended",
-    ),
-  ).toBeUndefined();
-
-  const toggle = action(
-    renderer.root,
-    "Show more nutrient controls",
-  );
-
-  expect(
-    toggle.props.accessibilityState.expanded,
-  ).toBe(false);
-
-  await act(async () =>
-    toggle.props.onPress(),
-  );
-
-  expect(
-    action(
-      renderer.root,
-      "Hide more nutrient controls",
-    ).props.accessibilityState.expanded,
-  ).toBe(true);
-
-  expect(
-    input(
-      renderer.root,
-      "Search nutrients to configure",
-    ),
-  ).toBeDefined();
-
-  await act(async () =>
-    input(
-      renderer.root,
-      "Search nutrients to configure",
-    ).props.onChangeText("Vitamin C"),
-  );
-
-  expect(
-    action(
-      renderer.root,
-      "Vitamin C tracking mode Recommended",
-    ),
-  ).toBeDefined();
-
-  expect(
-    action(
-      renderer.root,
-      "Vitamin C tracking mode Hidden",
-    ),
-  ).toBeDefined();
-
-  await act(async () =>
-    renderer.unmount(),
-  );
-});
-
-test("#103 secondary nutrient can be hidden and saved without creating a custom target", async () => {
-  mockUpdate.mockResolvedValue(
-    mockConfiguration,
-  );
-
-  const renderer = await render();
-
-  await act(async () =>
-    action(
-      renderer.root,
-      "Show more nutrient controls",
-    ).props.onPress(),
-  );
-
-  await act(async () =>
-    input(
-      renderer.root,
-      "Search nutrients to configure",
-    ).props.onChangeText("Vitamin C"),
-  );
-
-  await act(async () =>
-    action(
-      renderer.root,
-      "Vitamin C tracking mode Hidden",
-    ).props.onPress(),
-  );
-
-  expect(
-    action(
-      renderer.root,
-      "Vitamin C tracking mode Hidden",
-    ).props.accessibilityState.checked,
-  ).toBe(true);
-
-  await act(async () =>
-    action(
-      renderer.root,
-      "Save nutrition targets",
-    ).props.onPress(),
-  );
-
-  expect(mockUpdate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      manual_overrides:
-        expect.objectContaining({
-          vitamin_c: null,
-        }),
-      tracking_preferences:
-        expect.objectContaining({
-          vitamin_c: "ignored",
-        }),
-    }),
-  );
-
-  await act(async () =>
-    renderer.unmount(),
-  );
-});
-
-test("#103 secondary nutrient custom mode requires and saves its own canonical target", async () => {
-  mockUpdate.mockResolvedValue(
-    mockConfiguration,
-  );
-
-  const renderer = await render();
-
-  await act(async () =>
-    action(
-      renderer.root,
-      "Show more nutrient controls",
-    ).props.onPress(),
-  );
-
-  await act(async () =>
-    input(
-      renderer.root,
-      "Search nutrients to configure",
-    ).props.onChangeText("Vitamin C"),
-  );
-
-  await act(async () =>
-    action(
-      renderer.root,
-      "Vitamin C tracking mode Custom",
-    ).props.onPress(),
-  );
-
-  expect(
-    input(
-      renderer.root,
-      "Vitamin C custom target",
-    ),
-  ).toBeDefined();
-
-  await act(async () =>
-    input(
-      renderer.root,
-      "Vitamin C custom target",
-    ).props.onChangeText(
-      "123.456789",
-    ),
-  );
-
-  await act(async () =>
-    action(
-      renderer.root,
-      "Save nutrition targets",
-    ).props.onPress(),
-  );
-
-  expect(mockUpdate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      manual_overrides:
-        expect.objectContaining({
-          vitamin_c:
-            "123.456789",
-        }),
-      tracking_preferences:
-        expect.not.objectContaining({
-          vitamin_c:
-            expect.anything(),
-        }),
-    }),
-  );
-
-  await act(async () =>
-    renderer.unmount(),
-  );
-});
-
-test("#103 no-reference nutrient distinguishes neutral amount-only default and explicit saved amount-only intent", async () => {
+test("#103 simplified target settings shows the full nutrient catalog without advanced tracking controls", async () => {
   mockConfiguration =
     createConfiguration({
       effectiveTargets: [
@@ -592,8 +398,7 @@ test("#103 no-reference nutrient distinguishes neutral amount-only default and e
           unit: "mg",
           authority: "unavailable",
           direction: "unavailable",
-          trackingMode:
-            "amount_only",
+          trackingMode: "amount_only",
           reasonCode:
             "target_reference_not_established",
           noteCode: null,
@@ -606,123 +411,114 @@ test("#103 no-reference nutrient distinguishes neutral amount-only default and e
       trackingPreferences: {},
     });
 
-  mockUpdate.mockResolvedValue(
-    mockConfiguration,
-  );
-
   const renderer = await render();
 
-  await act(async () =>
-    action(
-      renderer.root,
-      "Show more nutrient controls",
-    ).props.onPress(),
-  );
-
-  await act(async () =>
-    input(
-      renderer.root,
-      "Search nutrients to configure",
-    ).props.onChangeText("EPA"),
-  );
-
-  const visibleText =
+  const text =
     renderer.root
       .findAllByType(Text)
       .map(textContent)
       .join(" ");
 
-  expect(visibleText).toContain(
-    "No established target · Amount only by default",
+  expect(text).toContain(
+    "Optional custom targets",
+  );
+  expect(text).toContain(
+    "Additional nutrients",
+  );
+
+  const sectionHeadings =
+    renderer.root
+      .findAllByType(Text)
+      .filter(
+        (node) =>
+          node.props.accessibilityRole
+          === "header",
+      )
+      .map(textContent);
+
+  for (const heading of [
+    "Vitamins",
+    "Minerals",
+    "Fatty Acids",
+    "Other",
+  ]) {
+    expect(
+      sectionHeadings,
+    ).toContain(heading);
+  }
+
+  expect(
+    sectionHeadings,
+  ).not.toContain("Macronutrients");
+
+  expect(text).toContain("Vitamin C");
+  expect(text).toContain("Omega-3");
+  expect(text).toContain("EPA");
+  expect(text).toContain("DHA");
+  expect(text).toContain(
+    "Linoleic Acid (Omega-6)",
+  );
+  expect(text).toContain(
+    "No established daily goal · total consumed is still tracked",
   );
 
   expect(
-    action(
-      renderer.root,
-      "EPA tracking mode Amount only",
-    ).props.accessibilityState.checked,
-  ).toBe(true);
+    renderer.root
+      .findAllByType(Pressable)
+      .some((item) =>
+        String(
+          item.props.accessibilityLabel
+          ?? "",
+        ).includes("tracking mode"),
+      ),
+  ).toBe(false);
 
-  await act(async () =>
-    action(
-      renderer.root,
-      "EPA tracking mode Amount only",
-    ).props.onPress(),
-  );
+  expect(
+    renderer.root
+      .findAllByType(TextInput)
+      .some(
+        (item) =>
+          item.props.accessibilityLabel
+          === "Search nutrients to configure",
+      ),
+  ).toBe(false);
 
-  await act(async () =>
-    action(
-      renderer.root,
-      "Save nutrition targets",
-    ).props.onPress(),
-  );
+  expect(
+    renderer.root
+      .findAllByType(TextInput)
+      .some((item) =>
+        String(
+          item.props.accessibilityLabel
+          ?? "",
+        ).endsWith(" custom target"),
+      ),
+  ).toBe(false);
 
-  expect(mockUpdate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      tracking_preferences:
-        expect.objectContaining({
-          epa: "amount_only",
-        }),
-    }),
-  );
+  expect(
+    input(
+      renderer.root,
+      "Protein personal target",
+    ),
+  ).toBeDefined();
 
   await act(async () =>
     renderer.unmount(),
   );
 });
 
-test("#103 primary recommended nutrient can be switched to hidden without deleting its target data", async () => {
-  mockConfiguration =
-    createConfiguration({
-      effectiveTargets: [
-        {
-          nutrientId: "protein",
-          amount: "56.000000",
-          unit: "g",
-          authority: "dri",
-          direction: "target",
-          trackingMode:
-            "recommended",
-          reasonCode: null,
-          noteCode: null,
-          referenceType: "RDA",
-          sourceVersion:
-            "nasem_dri_adults_2026_v1",
-          sourceId:
-            "macronutrients_2005",
-          calculationBasis:
-            "per_kg",
-        },
-      ],
-      trackingPreferences: {},
-    });
-
+test("#103 simplified primary custom target saves without creating a tracking preference", async () => {
   mockUpdate.mockResolvedValue(
     mockConfiguration,
   );
 
   const renderer = await render();
 
-  expect(
-    action(
-      renderer.root,
-      "Protein tracking mode Recommended",
-    ).props.accessibilityState.checked,
-  ).toBe(true);
-
   await act(async () =>
-    action(
+    input(
       renderer.root,
-      "Protein tracking mode Hidden",
-    ).props.onPress(),
+      "Protein personal target",
+    ).props.onChangeText("90"),
   );
-
-  expect(
-    action(
-      renderer.root,
-      "Protein tracking mode Hidden",
-    ).props.accessibilityState.checked,
-  ).toBe(true);
 
   await act(async () =>
     action(
@@ -735,20 +531,27 @@ test("#103 primary recommended nutrient can be switched to hidden without deleti
     expect.objectContaining({
       manual_overrides:
         expect.objectContaining({
-          protein: null,
+          protein: "90",
         }),
-      tracking_preferences:
-        expect.objectContaining({
-          protein: "ignored",
-        }),
+      tracking_preferences: {},
     }),
   );
+
+  expect(
+    renderer.root
+      .findAllByType(Pressable)
+      .some((item) =>
+        String(
+          item.props.accessibilityLabel
+          ?? "",
+        ).includes("tracking mode"),
+      ),
+  ).toBe(false);
 
   await act(async () =>
     renderer.unmount(),
   );
 });
-
 
 test("#103 settings distinguishes profile-unavailable recommendation from amount-only and no-reference states", async () => {
   mockConfiguration =

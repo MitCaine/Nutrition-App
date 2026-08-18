@@ -11,7 +11,7 @@ from __future__ import annotations
 
 DRI_DATASET_VERSION = 'nasem_dri_adults_2026_v1'
 DRI_POPULATION_SCOPE = 'Apparently healthy adults age 19 and older; pregnancy and lactation supported for female reference profiles age 19-50.'
-DRI_SOURCE_SHA256 = '83eef1073510af5e82f3d6055208dce0f8e556943ffc7c9b9359c4ece6a161f9'
+DRI_SOURCE_SHA256 = '8cc2bf5fa664c3b3c3ea57fee4a71370147232c87f1e7d911d3f753cf54e9739'
 
 DRI_SOURCE_DOCUMENTS = ({'id': 'macronutrients_2005',
   'title': 'Dietary Reference Intakes for Energy, Carbohydrate, Fiber, Fat, Fatty '
@@ -1864,6 +1864,8 @@ DRI_NO_GOAL = {'calories': {'reason_code': 'energy_target_uses_separate_estimati
                   'source_id': 'macronutrients_2005'},
  'added_sugars': {'reason_code': 'rda_or_ai_not_established',
                   'source_id': 'macronutrients_2005'},
+ 'total_omega_3': {'reason_code': 'rda_or_ai_not_established',
+                   'source_id': 'macronutrients_2005'},
  'epa': {'reason_code': 'rda_or_ai_not_established',
          'source_id': 'macronutrients_2005'},
  'dha': {'reason_code': 'rda_or_ai_not_established',

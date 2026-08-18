@@ -55,6 +55,12 @@ _VARIANTS: dict[str, tuple[str, ...]] = {
     "chromium": ("chromium",),
     "molybdenum": ("molybdenum",),
     "chloride": ("chloride",),
+    "total_omega_3": (
+        "omega 3",
+        "total omega 3",
+        "omega 3 fatty acids",
+        "total omega 3 fatty acids",
+    ),
     "alpha_linolenic_acid": (
         "alpha linolenic acid",
         "omega 3 alpha linolenic acid",

@@ -2668,6 +2668,10 @@
       "reason_code": "rda_or_ai_not_established",
       "source_id": "macronutrients_2005"
     },
+    "total_omega_3": {
+      "reason_code": "rda_or_ai_not_established",
+      "source_id": "macronutrients_2005"
+    },
     "epa": {
       "reason_code": "rda_or_ai_not_established",
       "source_id": "macronutrients_2005"

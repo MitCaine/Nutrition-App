@@ -20,7 +20,11 @@ import {
 } from "../../features/logging/validation/logContracts";
 import { todayInTimeZone } from "../../features/logging/utils/dailyLogDisplay";
 import type { NutrientBasis } from "../../features/foods/api/types";
-import type { NutrientDataStatus, NutrientUnit } from "../../shared/nutrition/types";
+import {
+  canonicalNutrientUnit,
+  type NutrientDataStatus,
+  type NutrientUnit,
+} from "../../shared/nutrition/types";
 import {
   canonicalJsonStringify,
   parseCanonicalJson,
@@ -535,17 +539,17 @@ function sameDecimal(left: string | null, right: string | null): boolean {
   }
 }
 
-function normalizeNutrientUnit(value: string): NutrientUnit {
-  const normalized = value.trim().toLowerCase();
-  if (["microgram", "micrograms", "ug", "µg"].includes(normalized)) return "mcg";
-  if (["gram", "grams"].includes(normalized)) return "g";
-  if (["milligram", "milligrams"].includes(normalized)) return "mg";
-  if (["calorie", "calories"].includes(normalized)) return "kcal";
-  if (normalized === "iu") return "IU";
-  if (!MASS_UNITS.has(normalized) && normalized !== "kcal") {
+function normalizeNutrientUnit(
+  value: string,
+): NutrientUnit {
+  const unit =
+    canonicalNutrientUnit(value);
+
+  if (unit === null) {
     throw invalidStored();
   }
-  return normalized as NutrientUnit;
+
+  return unit;
 }
 
 function validateNutrientRow(

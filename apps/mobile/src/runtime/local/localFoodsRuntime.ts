@@ -15,7 +15,11 @@ import type {
   ServingDefinition,
   ServingDefinitionCreateInput,
 } from "../../features/foods/api/types";
-import type { NutrientDataStatus, NutrientUnit } from "../../shared/nutrition/types";
+import {
+  canonicalNutrientUnit,
+  type NutrientDataStatus,
+  type NutrientUnit,
+} from "../../shared/nutrition/types";
 import {
   canonicalJsonStringify,
   parseCanonicalJson,
@@ -55,8 +59,8 @@ const SOURCE_LABELS = {
   legacy: "Other source",
 } as const;
 
-const MASS_UNITS = new Set(["g", "mg", "mcg"]);
-const NUTRIENT_UNITS = new Set(["kcal", "g", "mg", "mcg"]);
+const MASS_UNITS =
+  new Set(["g", "mg", "mcg"]);
 const NUTRIENT_BASES = new Set<NutrientBasis>(["per_serving", "per_100g", "per_gram"]);
 const NUTRIENT_STATUSES = new Set<NutrientDataStatus>([
   "known",
@@ -321,16 +325,6 @@ function isZeroOrOne(value: unknown): value is 0 | 1 {
   return value === 0 || value === 1;
 }
 
-function normalizeUnit(value: unknown): string {
-  if (typeof value !== "string") throw invalidFood("Nutrient units must be text.");
-  const normalized = value.trim().toLowerCase();
-  if (["microgram", "micrograms", "ug", "µg"].includes(normalized)) return "mcg";
-  if (["gram", "grams"].includes(normalized)) return "g";
-  if (["milligram", "milligrams"].includes(normalized)) return "mg";
-  if (["calorie", "calories"].includes(normalized)) return "kcal";
-  return normalized;
-}
-
 function nutrientUnitCompatible(defaultUnit: string, unit: string): boolean {
   if (defaultUnit === "kcal") return unit === "kcal";
   if (MASS_UNITS.has(defaultUnit)) return MASS_UNITS.has(unit);
@@ -447,9 +441,19 @@ function normalizeNutrient(value: unknown): NormalizedNutrient {
   if (typeof input.nutrient_id !== "string") throw invalidFood("Nutrient ID is required.");
   const seed = SQLITE_NUTRIENT_SEED_ROWS.find(([id]) => id === input.nutrient_id);
   if (!seed) throw invalidFood("The nutrient is not in the canonical local catalog.");
-  const unit = normalizeUnit(input.unit);
-  if (!NUTRIENT_UNITS.has(unit) || !nutrientUnitCompatible(seed[3], unit)) {
-    throw invalidFood("The nutrient unit is incompatible with the canonical nutrient.");
+  const unit =
+    canonicalNutrientUnit(input.unit);
+
+  if (
+    unit === null
+    || !nutrientUnitCompatible(
+      seed[3],
+      unit,
+    )
+  ) {
+    throw invalidFood(
+      "The nutrient unit is incompatible with the canonical nutrient.",
+    );
   }
   const basis = input.basis;
   const status = input.data_status;
@@ -474,7 +478,7 @@ function normalizeNutrient(value: unknown): NormalizedNutrient {
   return {
     nutrient_id: input.nutrient_id,
     amount,
-    unit: unit as NutrientUnit,
+    unit,
     basis: basis as NutrientBasis,
     data_status: status as NutrientDataStatus,
   };
@@ -1540,10 +1544,22 @@ export class LocalFoodsRuntime implements FoodsRuntime {
       parsePersistedBoolean(nutrient.is_user_confirmed, context);
       try {
         const seed = SQLITE_NUTRIENT_SEED_ROWS.find(([id]) => id === nutrient.nutrient_id);
-        if (!seed || normalizeUnit(nutrient.unit) !== nutrient.unit || !NUTRIENT_UNITS.has(nutrient.unit)
-          || !nutrientUnitCompatible(seed[3], nutrient.unit)
-          || !NUTRIENT_BASES.has(nutrient.basis as NutrientBasis)
-          || !NUTRIENT_STATUSES.has(nutrient.data_status as NutrientDataStatus)) {
+        if (
+          !seed
+          || canonicalNutrientUnit(
+            nutrient.unit,
+          ) !== nutrient.unit
+          || !nutrientUnitCompatible(
+            seed[3],
+            nutrient.unit,
+          )
+          || !NUTRIENT_BASES.has(
+            nutrient.basis as NutrientBasis,
+          )
+          || !NUTRIENT_STATUSES.has(
+            nutrient.data_status as NutrientDataStatus,
+          )
+        ) {
           throw new Error("invalid nutrient row");
         }
         const amount = parseStorageDecimal(nutrient.amount, true, context);
@@ -1727,9 +1743,17 @@ export class LocalFoodsRuntime implements FoodsRuntime {
     for (const nutrient of nutrients) {
       parsePersistedUuid(nutrient.id);
       parseStorageDecimal(nutrient.amount, true);
-      if (!NUTRIENT_BASES.has(nutrient.basis as NutrientBasis)
-        || !NUTRIENT_STATUSES.has(nutrient.data_status as NutrientDataStatus)
-        || !NUTRIENT_UNITS.has(nutrient.unit)) {
+      if (
+        !NUTRIENT_BASES.has(
+          nutrient.basis as NutrientBasis,
+        )
+        || !NUTRIENT_STATUSES.has(
+          nutrient.data_status as NutrientDataStatus,
+        )
+        || canonicalNutrientUnit(
+          nutrient.unit,
+        ) !== nutrient.unit
+      ) {
         throw invalidStoredFood();
       }
     }

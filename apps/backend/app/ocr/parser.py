@@ -21,7 +21,7 @@ from app.ocr.schemas import (
     ParsedSourceLine,
 )
 
-NUTRITION_LABEL_PARSER_VERSION = "nutrition_label_v1"
+NUTRITION_LABEL_PARSER_VERSION = "nutrition_label_v2"
 
 _EXPECTED_UNITS = {item.id: item.default_unit for item in NUTRIENT_CATALOG}
 _NUTRIENT_ROW = re.compile(

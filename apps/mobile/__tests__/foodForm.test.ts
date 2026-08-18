@@ -13,10 +13,17 @@ import {
   foodFormHiddenNutrients,
   foodFormVisibleNutrients,
 } from "../src/features/foods/components/NutrientEntryList";
-import { foodMutationSchema, servingSchema } from "../src/features/foods/validation/foodValidation";
+import {
+  foodMutationSchema,
+  foodNutrientSchema,
+  servingSchema,
+} from "../src/features/foods/validation/foodValidation";
 import type { Food, FoodNutrientInput, NutrientDefinition } from "../src/features/foods/api/types";
 import { parseDecimal } from "../src/shared/exact/decimal";
 import { NUTRIENT_CATALOG_BY_ID } from "../src/shared/nutrition/catalog";
+import {
+  canonicalNutrientUnit,
+} from "../src/shared/nutrition/types";
 
 test("edit nutrient visibility hides unknown rows, preserves zero, and allows explicit reveal", () => {
   const definitions: NutrientDefinition[] = [
@@ -39,6 +46,44 @@ test("edit nutrient visibility hides unknown rows, preserves zero, and allows ex
   expect(foodFormVisibleNutrients(definitions, values, new Set(), false).map(({ id }) => id))
     .toEqual(["protein", "calcium", "potassium"]);
 });
+
+test.each([
+  "mcg RAE",
+  "mcg DFE",
+  "mg NE",
+  "mg alpha-tocopherol",
+] as const)(
+  "Food validation accepts canonical qualified nutrient unit %s",
+  (unit) => {
+    expect(
+      foodNutrientSchema.parse({
+        nutrient_id: "test",
+        amount: "1",
+        unit,
+        basis: "per_serving",
+        data_status: "known",
+      }).unit,
+    ).toBe(unit);
+  },
+);
+
+test.each([
+  ["µg RAE", "mcg RAE"],
+  ["ug DFE", "mcg DFE"],
+  ["mg ne", "mg NE"],
+  [
+    "mg alpha tocopherol",
+    "mg alpha-tocopherol",
+  ],
+  ["iu", "IU"],
+] as const)(
+  "canonical nutrient unit normalizes %s to %s",
+  (input, expected) => {
+    expect(
+      canonicalNutrientUnit(input),
+    ).toBe(expected);
+  },
+);
 
 test("serving form trims raw decimals for initial display", () => {
   expect(formatServingFormNumber("100.000000")).toBe("100");

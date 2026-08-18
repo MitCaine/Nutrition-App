@@ -42,7 +42,11 @@ import {
   FDA_DAILY_VALUE_STANDARD,
   NUTRIENT_CATALOG,
 } from "../../shared/nutrition/catalog";
-import type { NutrientUnit, NutrientDataStatus } from "../../shared/nutrition/types";
+import {
+  canonicalNutrientUnit,
+  type NutrientDataStatus,
+  type NutrientUnit,
+} from "../../shared/nutrition/types";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { TargetsRuntime } from "../NutritionRuntime";
 import { LocalRuntimeError } from "./localErrors";
@@ -1321,15 +1325,17 @@ function sameUnitFamily(left: NutrientUnit, right: NutrientUnit): boolean {
   return left === right || (MASS_UNITS.has(left) && MASS_UNITS.has(right));
 }
 
-function normalizeNutrientUnit(value: string): NutrientUnit {
-  const normalized = value.trim().toLowerCase();
-  if (["microgram", "micrograms", "ug", "µg"].includes(normalized)) return "mcg";
-  if (["gram", "grams"].includes(normalized)) return "g";
-  if (["milligram", "milligrams"].includes(normalized)) return "mg";
-  if (["calorie", "calories"].includes(normalized)) return "kcal";
-  if (normalized === "iu") return "IU";
-  if (!MASS_UNITS.has(normalized as NutrientUnit) && normalized !== "kcal") throw invalidStored();
-  return normalized as NutrientUnit;
+function normalizeNutrientUnit(
+  value: string,
+): NutrientUnit {
+  const unit =
+    canonicalNutrientUnit(value);
+
+  if (unit === null) {
+    throw invalidStored();
+  }
+
+  return unit;
 }
 
 function convertNutritionAmount(amount: ExactDecimal, from: NutrientUnit, to: NutrientUnit): ResponseDecimal {

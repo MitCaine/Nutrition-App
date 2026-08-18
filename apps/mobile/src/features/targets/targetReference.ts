@@ -18,7 +18,7 @@ export function targetBasisLabel(
   target: TargetReferenceLike,
 ): string {
   if (target.trackingMode === "ignored") {
-    return "Hidden";
+    return "Not shown in daily tracking";
   }
 
   if (target.trackingMode === "amount_only") {
@@ -26,10 +26,10 @@ export function targetBasisLabel(
       target.reasonCode
       === "target_reference_not_established"
     ) {
-      return "No established target";
+      return "No established daily goal";
     }
 
-    return "Amount only";
+    return "Total consumed only";
   }
 
   if (target.authority === "manual_override") {

@@ -15,6 +15,11 @@ import { RouteScreenHeader } from "../../shared/components/RouteScreenHeader";
 import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { formatDisplayNumber } from "../../shared/nutrition/display";
 import { NUTRIENT_CATALOG } from "../../shared/nutrition/catalog";
+import {
+  canonicalNutrientParentId,
+  groupCanonicalNutrientsBySection,
+  nutrientVisibleDepth,
+} from "../../shared/nutrition/nutrientSections";
 import type { TargetConfiguration } from "./api/types";
 import {
   targetBasisLabel,
@@ -25,12 +30,10 @@ import {
   EMPTY_TARGET_DRAFT,
   targetDraft,
   targetDraftError,
-  targetDraftMode,
   targetDraftOverrideValue,
   targetInput,
   targetUnavailableMessage,
   resetTargetDraftOverride,
-  setTargetDraftMode,
   setTargetDraftOverride,
 } from "./targetModel";
 import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
@@ -88,32 +91,28 @@ const PRIMARY_NUTRIENT_IDS =
     "total_fat",
   ]);
 
-const SECONDARY_NUTRIENTS =
-  NUTRIENT_CATALOG.filter(
-    (nutrient) =>
-      !PRIMARY_NUTRIENT_IDS.has(
-        nutrient.id,
-      ),
+const SECONDARY_NUTRIENT_SECTIONS =
+  groupCanonicalNutrientsBySection(
+    NUTRIENT_CATALOG.filter(
+      (nutrient) =>
+        !PRIMARY_NUTRIENT_IDS.has(
+          nutrient.id,
+        ),
+    ),
+    (nutrient) => nutrient.id,
   );
 
-const TRACKING_MODES = [
-  {
-    value: "recommended",
-    label: "Recommended",
-  },
-  {
-    value: "custom",
-    label: "Custom",
-  },
-  {
-    value: "amount_only",
-    label: "Amount only",
-  },
-  {
-    value: "ignored",
-    label: "Hidden",
-  },
-] as const;
+const SECONDARY_NUTRIENT_IDS =
+  new Set(
+    SECONDARY_NUTRIENT_SECTIONS
+      .flatMap(
+        (section) =>
+          section.items.map(
+            (nutrient) =>
+              nutrient.id,
+          ),
+      ),
+  );
 
 function savedTargetSummary(
   target:
@@ -129,7 +128,7 @@ function savedTargetSummary(
   if (
     target.trackingMode === "ignored"
   ) {
-    return "Hidden";
+    return "Not shown in daily tracking";
   }
 
   if (
@@ -139,8 +138,8 @@ function savedTargetSummary(
       === "target_reference_not_established"
   ) {
     return (
-      "No established target · "
-      + "Amount only by default"
+      "No established daily goal · "
+      + "total consumed is still tracked"
     );
   }
 
@@ -148,7 +147,10 @@ function savedTargetSummary(
     target.trackingMode
       === "amount_only"
   ) {
-    return "Amount only";
+    return (
+      "No daily goal · "
+      + "total consumed is still tracked"
+    );
   }
 
   if (
@@ -214,15 +216,6 @@ export function TargetSettingsScreen({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [
-    showMoreNutrients,
-    setShowMoreNutrients,
-  ] = useState(false);
-  const [
-    nutrientSearch,
-    setNutrientSearch,
-  ] = useState("");
-
   const initialized = useRef(false);
   const submittingRef = useRef(false);
 
@@ -345,53 +338,6 @@ export function TargetSettingsScreen({
 
   const estimate =
     result?.estimatedMaintenanceCalories;
-
-  const configuredSecondary =
-    new Set([
-      ...Object.keys(
-        draft
-          .additionalManualOverrides,
-      ),
-      ...Object.keys(
-        draft.trackingPreferences,
-      ),
-      ...Object.keys(
-        draft.modeSelections,
-      ),
-    ]);
-
-  const normalizedSearch =
-    nutrientSearch
-      .trim()
-      .toLowerCase();
-
-  const secondaryCandidates =
-    normalizedSearch
-      ? SECONDARY_NUTRIENTS.filter(
-          (nutrient) =>
-            nutrient.display_name
-              .toLowerCase()
-              .includes(
-                normalizedSearch,
-              )
-            || nutrient.id
-              .toLowerCase()
-              .includes(
-                normalizedSearch,
-              ),
-        )
-      : SECONDARY_NUTRIENTS.filter(
-          (nutrient) =>
-            configuredSecondary.has(
-              nutrient.id,
-            ),
-        );
-
-  const visibleSecondaryNutrients =
-    secondaryCandidates.slice(0, 8);
-
-  const hasMoreSecondaryMatches =
-    secondaryCandidates.length > 8;
 
   return (
     <View style={styles.screen}>
@@ -630,13 +576,12 @@ export function TargetSettingsScreen({
             </Text>
 
             <Text accessibilityRole="header" style={styles.section}>
-              Optional personal targets
+              Optional custom targets
             </Text>
 
             <Text style={styles.notice}>
-              Manual targets take precedence and are never replaced when
-              profile inputs change. Leave blank to use a supported RDA or AI,
-              estimated calories, or an FDA Daily Value fallback when available.
+              Leave a field blank to use the recommended target. Enter a value
+              only when you want to override that recommendation.
             </Text>
 
             {PERSONAL_TARGETS.map(([key, label, unit]) => {
@@ -662,15 +607,6 @@ export function TargetSettingsScreen({
                   draft,
                   nutrientId,
                 );
-
-              const mode =
-                result
-                  ? targetDraftMode(
-                      draft,
-                      result,
-                      nutrientId,
-                    )
-                  : "recommended";
 
               const effectiveBasis =
                 effective
@@ -712,80 +648,6 @@ export function TargetSettingsScreen({
                   >
                     {label}
                   </Text>
-
-                  <View
-                    accessibilityRole="radiogroup"
-                    accessibilityLabel={`${label} tracking mode ${TRACKING_MODES.find((option) => option.value === mode)?.label ?? mode}`}
-                    style={styles.modeRow}
-                  >
-                    {TRACKING_MODES.map(
-                      (option) => {
-                        const selected =
-                          mode
-                          === option.value;
-
-                        return (
-                          <Pressable
-                            key={
-                              option.value
-                            }
-                            accessibilityRole="radio"
-                            accessibilityLabel={`${label} tracking mode ${option.label}`}
-                            accessibilityState={{
-                              checked:
-                                selected,
-                              disabled:
-                                submitting,
-                            }}
-                            disabled={
-                              submitting
-                            }
-                            onPress={() =>
-                              result
-                                ? setDraft(
-                                    (
-                                      current,
-                                    ) =>
-                                      setTargetDraftMode(
-                                        current,
-                                        result,
-                                        nutrientId,
-                                        option.value,
-                                      ),
-                                  )
-                                : undefined
-                            }
-                            style={({
-                              pressed,
-                            }) => [
-                              styles
-                                .modeChoice,
-                              selected
-                                && styles
-                                  .modeChoiceSelected,
-                              pressed
-                                && styles
-                                  .choicePressed,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles
-                                  .modeChoiceText,
-                                selected
-                                  && styles
-                                    .choiceTextSelected,
-                              ]}
-                            >
-                              {
-                                option.label
-                              }
-                            </Text>
-                          </Pressable>
-                        );
-                      },
-                    )}
-                  </View>
 
                   <View
                     style={
@@ -910,196 +772,85 @@ export function TargetSettingsScreen({
               );
             })}
 
-            <View
-              style={
-                styles.managerSection
-              }
-            >
-              <View
-                style={
-                  styles.managerHeader
-                }
+            <View style={styles.managerSection}>
+              <Text
+                accessibilityRole="header"
+                style={styles.section}
               >
-                <View
-                  style={
-                    styles
-                      .managerHeaderCopy
-                  }
-                >
-                  <Text
-                    accessibilityRole="header"
-                    style={styles.section}
-                  >
-                    More nutrients
-                  </Text>
+                Additional nutrients
+              </Text>
 
-                  <Text
-                    style={
-                      styles.notice
-                    }
-                  >
-                    Configure vitamins,
-                    minerals, fatty
-                    acids, and other
-                    catalog nutrients
-                    without showing the
-                    full catalog at
-                    once.
-                  </Text>
-                </View>
+              <Text style={styles.notice}>
+                By default, Daily Log shows the full supported nutrient
+                catalog. Recommended values are selected automatically when an
+                authoritative daily goal is available. Nutrients without an
+                established daily goal still show total consumed.
+              </Text>
 
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    showMoreNutrients
-                      ? "Hide more nutrient controls"
-                      : "Show more nutrient controls"
-                  }
-                  accessibilityState={{
-                    expanded:
-                      showMoreNutrients,
-                    disabled:
-                      submitting,
-                  }}
-                  disabled={
-                    submitting
-                  }
-                  onPress={() =>
-                    setShowMoreNutrients(
-                      (shown) =>
-                        !shown,
-                    )
-                  }
-                  style={
-                    styles
-                      .managerToggle
-                  }
-                >
-                  <Text
+              {SECONDARY_NUTRIENT_SECTIONS.map(
+                (section) => (
+                  <View
+                    key={section.id}
                     style={
-                      styles.link
+                      styles.nutrientSection
                     }
                   >
-                    {showMoreNutrients
-                      ? "Hide"
-                      : "Manage"}
-                  </Text>
-                </Pressable>
-              </View>
+                    {section.label ? (
+                      <Text
+                        accessibilityRole="header"
+                        style={
+                          styles
+                            .nutrientGroupHeading
+                        }
+                      >
+                        {section.label}
+                      </Text>
+                    ) : null}
 
-              {showMoreNutrients ? (
-                <>
-                  <TextInput
-                    editable={
-                      !submitting
-                    }
-                    accessibilityLabel="Search nutrients to configure"
-                    accessibilityState={{
-                      disabled:
-                        submitting,
-                    }}
-                    value={
-                      nutrientSearch
-                    }
-                    onChangeText={
-                      setNutrientSearch
-                    }
-                    placeholder="Search nutrients"
-                    placeholderTextColor={
-                      theme.colors
-                        .placeholder
-                    }
-                    style={
-                      styles.input
-                    }
-                  />
+                    {section.items.map(
+                      (nutrient) => {
+                        const effective =
+                          result
+                            ?.effectiveTargets
+                            .find(
+                              (item) =>
+                                item.nutrientId
+                                === nutrient.id,
+                            );
 
-                  {!normalizedSearch
-                    && visibleSecondaryNutrients
-                      .length === 0 ? (
-                    <Text
-                      style={
-                        styles.notice
-                      }
-                    >
-                      Search for a
-                      nutrient to
-                      configure it.
-                      Explicit custom,
-                      amount-only, or
-                      hidden choices
-                      will remain listed
-                      here.
-                    </Text>
-                  ) : null}
+                        const source =
+                          effective
+                            ? targetSourceVersionLabel(
+                                effective,
+                                result
+                                  ?.dailyValueCatalogVersion,
+                              )
+                            : null;
 
-                  {normalizedSearch
-                    && visibleSecondaryNutrients
-                      .length === 0 ? (
-                    <Text
-                      accessibilityLiveRegion="polite"
-                      style={
-                        styles.notice
-                      }
-                    >
-                      No matching
-                      nutrients.
-                    </Text>
-                  ) : null}
-
-                  {visibleSecondaryNutrients.map(
-                    (nutrient) => {
-                      const effective =
-                        result
-                          ?.effectiveTargets
-                          .find(
-                            (item) =>
-                              item
-                                .nutrientId
-                              === nutrient
-                                .id,
-                          );
-
-                      const mode =
-                        result
-                          ? targetDraftMode(
-                              draft,
-                              result,
-                              nutrient
-                                .id,
-                            )
-                          : "recommended";
-
-                      const customValue =
-                        targetDraftOverrideValue(
-                          draft,
-                          nutrient.id,
-                        );
-
-                      const source =
-                        effective
-                          ? targetSourceVersionLabel(
-                              effective,
-                              result
-                                ?.dailyValueCatalogVersion,
-                            )
-                          : null;
-
-                      return (
-                        <View
-                          key={
-                            nutrient.id
-                          }
-                          style={
-                            styles
-                              .nutrientCard
-                          }
-                        >
+                        return (
                           <View
-                            style={
-                              styles
-                                .nutrientHeading
+                            key={
+                              nutrient.id
                             }
+                            style={[
+                              styles
+                                .nutrientCard,
+                              (() => {
+                                const depth =
+                                  nutrientVisibleDepth(
+                                    nutrient.id,
+                                    SECONDARY_NUTRIENT_IDS,
+                                    canonicalNutrientParentId,
+                                  );
+
+                                return depth > 0
+                                  ? {
+                                      marginLeft:
+                                        depth * 16,
+                                    }
+                                  : undefined;
+                              })(),
+                            ]}
                           >
                             <Text
                               style={
@@ -1114,191 +865,35 @@ export function TargetSettingsScreen({
                             </Text>
 
                             <Text
-                              accessibilityLabel={`${nutrient.display_name} current tracking state ${TRACKING_MODES.find((option) => option.value === mode)?.label ?? mode}`}
+                              accessibilityLabel={`${nutrient.display_name} saved target summary`}
                               style={
-                                styles
-                                  .stateLabel
+                                styles.notice
                               }
                             >
-                              {
-                                TRACKING_MODES
-                                  .find(
-                                    (
-                                      option,
-                                    ) =>
-                                      option
-                                        .value
-                                      === mode,
-                                  )
-                                  ?.label
-                                ?? mode
-                              }
+                              {savedTargetSummary(
+                                effective,
+                              )}
                             </Text>
+
+                            {source ? (
+                              <Text
+                                style={
+                                  styles
+                                    .notice
+                                }
+                              >
+                                {
+                                  `Reference source: ${source}`
+                                }
+                              </Text>
+                            ) : null}
                           </View>
-
-                          <Text
-                            style={
-                              styles
-                                .notice
-                            }
-                          >
-                            {savedTargetSummary(
-                              effective,
-                            )}
-                          </Text>
-
-                          {source ? (
-                            <Text
-                              style={
-                                styles
-                                  .notice
-                              }
-                            >
-                              {`Reference source: ${source}`}
-                            </Text>
-                          ) : null}
-
-                          <View
-                            accessibilityRole="radiogroup"
-                            accessibilityLabel={`${nutrient.display_name} tracking mode ${TRACKING_MODES.find((option) => option.value === mode)?.label ?? mode}`}
-                            style={
-                              styles
-                                .modeRow
-                            }
-                          >
-                            {TRACKING_MODES.map(
-                              (
-                                option,
-                              ) => {
-                                const selected =
-                                  mode
-                                  === option
-                                    .value;
-
-                                return (
-                                  <Pressable
-                                    key={
-                                      option
-                                        .value
-                                    }
-                                    accessibilityRole="radio"
-                                    accessibilityLabel={`${nutrient.display_name} tracking mode ${option.label}`}
-                                    accessibilityState={{
-                                      checked:
-                                        selected,
-                                      disabled:
-                                        submitting,
-                                    }}
-                                    disabled={
-                                      submitting
-                                    }
-                                    onPress={() =>
-                                      result
-                                        ? setDraft(
-                                            (
-                                              current,
-                                            ) =>
-                                              setTargetDraftMode(
-                                                current,
-                                                result,
-                                                nutrient.id,
-                                                option.value,
-                                              ),
-                                          )
-                                        : undefined
-                                    }
-                                    style={({
-                                      pressed,
-                                    }) => [
-                                      styles
-                                        .modeChoice,
-                                      selected
-                                        && styles
-                                          .modeChoiceSelected,
-                                      pressed
-                                        && styles
-                                          .choicePressed,
-                                    ]}
-                                  >
-                                    <Text
-                                      style={[
-                                        styles
-                                          .modeChoiceText,
-                                        selected
-                                          && styles
-                                            .choiceTextSelected,
-                                      ]}
-                                    >
-                                      {
-                                        option
-                                          .label
-                                      }
-                                    </Text>
-                                  </Pressable>
-                                );
-                              },
-                            )}
-                          </View>
-
-                          {mode
-                            === "custom" ? (
-                            <TextInput
-                              editable={
-                                !submitting
-                              }
-                              accessibilityLabel={`${nutrient.display_name} custom target`}
-                              accessibilityState={{
-                                disabled:
-                                  submitting,
-                              }}
-                              value={
-                                customValue
-                              }
-                              onChangeText={(
-                                value,
-                              ) =>
-                                setDraft(
-                                  (
-                                    current,
-                                  ) =>
-                                    setTargetDraftOverride(
-                                      current,
-                                      nutrient.id,
-                                      value,
-                                    ),
-                                )
-                              }
-                              keyboardType="decimal-pad"
-                              placeholder={`${nutrient.display_name} (${nutrient.default_unit}/day)`}
-                              placeholderTextColor={
-                                theme
-                                  .colors
-                                  .placeholder
-                              }
-                              style={
-                                styles.input
-                              }
-                            />
-                          ) : null}
-                        </View>
-                      );
-                    },
-                  )}
-
-                  {hasMoreSecondaryMatches ? (
-                    <Text
-                      style={
-                        styles.notice
-                      }
-                    >
-                      More matches are
-                      available. Refine
-                      the search to
-                      narrow the list.
-                    </Text>
-                  ) : null}
-                </>
-              ) : null}
+                        );
+                      },
+                    )}
+                  </View>
+                ),
+              )}
             </View>
 
             <Text style={styles.notice}>
@@ -1518,6 +1113,21 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
       alignItems: "flex-start",
       flexDirection: "row",
       flexWrap: "nowrap",
+      gap: 8,
+    },
+    nutrientGroupHeading: {
+      borderBottomColor:
+        theme.colors.border,
+      borderBottomWidth: 2,
+      color: theme.colors.text,
+      fontSize: 16,
+      fontWeight: "800",
+      letterSpacing: 0.8,
+      marginTop: 14,
+      paddingBottom: 6,
+      textTransform: "uppercase",
+    },
+    nutrientSection: {
       gap: 8,
     },
     nutrientCard: {

@@ -118,6 +118,51 @@ const MIGRATION_LEDGER_INSERT = `INSERT INTO "${SQLITE_MIGRATION_LEDGER_TABLE}"
     ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' ||
       substr(strftime('%f','now'),4,3) || '000Z' END)`;
 
+const SQLITE_V1_NUTRIENT_SEED_ROWS =
+  SQLITE_NUTRIENT_SEED_ROWS.slice(0, 16);
+
+const SQLITE_V5_NUTRIENT_SEED_ROWS:
+  typeof SQLITE_NUTRIENT_SEED_ROWS =
+  SQLITE_NUTRIENT_SEED_ROWS
+    .filter(
+      ([id]) => id !== "total_omega_3",
+    )
+    .map((row) => {
+      const [
+        id,
+        displayName,
+        nutrientKind,
+        defaultUnit,
+        parentNutrientId,
+        displayOrder,
+      ] = row;
+
+      if (
+        id === "alpha_linolenic_acid"
+        || id === "epa"
+        || id === "dha"
+        || id === "linoleic_acid"
+      ) {
+        return [
+          id,
+          displayName,
+          nutrientKind,
+          defaultUnit,
+          "total_fat",
+          displayOrder,
+        ] as const;
+      }
+
+      return [
+        id,
+        displayName,
+        nutrientKind,
+        defaultUnit,
+        parentNutrientId,
+        displayOrder,
+      ] as const;
+    });
+
 export const SQLITE_BASELINE_MIGRATION: SQLiteMigration = {
   version: 1,
   id: "001_initial_runtime_schema",
@@ -126,7 +171,7 @@ export const SQLITE_BASELINE_MIGRATION: SQLiteMigration = {
       await database.execAsync(statement);
     }
     for (const [id, displayName, nutrientKind, defaultUnit, parentNutrientId, displayOrder] of
-      SQLITE_NUTRIENT_SEED_ROWS) {
+      SQLITE_V1_NUTRIENT_SEED_ROWS) {
       await database.runAsync(
         `INSERT INTO "nutrients"
           ("id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order")
@@ -223,7 +268,7 @@ export const SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION: SQLiteMigration = {
       defaultUnit,
       parentNutrientId,
       displayOrder,
-    ] of SQLITE_NUTRIENT_SEED_ROWS) {
+    ] of SQLITE_V5_NUTRIENT_SEED_ROWS) {
       await database.runAsync(
         `INSERT OR IGNORE INTO "nutrients"
           ("id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order")
@@ -254,9 +299,9 @@ export const SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION: SQLiteMigration = {
     );
 
     const matches =
-      rows.length === SQLITE_NUTRIENT_SEED_ROWS.length
+      rows.length === SQLITE_V5_NUTRIENT_SEED_ROWS.length
       && rows.every((row, index) => {
-        const expected = SQLITE_NUTRIENT_SEED_ROWS[index];
+        const expected = SQLITE_V5_NUTRIENT_SEED_ROWS[index];
         return expected !== undefined
           && row.id === expected[0]
           && row.display_name === expected[1]
@@ -274,12 +319,123 @@ export const SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION: SQLiteMigration = {
   },
 };
 
+export const SQLITE_TOTAL_OMEGA_3_MIGRATION: SQLiteMigration = {
+  version: 6,
+  id: "006_total_omega_3_nutrient",
+  async up(database) {
+    const totalOmega3 =
+      SQLITE_NUTRIENT_SEED_ROWS.find(
+        ([id]) => id === "total_omega_3",
+      );
+
+    if (!totalOmega3) {
+      throw new SQLiteMigrationError(
+        "SQLite total Omega-3 migration is missing the canonical nutrient definition.",
+      );
+    }
+
+    const [
+      id,
+      displayName,
+      nutrientKind,
+      defaultUnit,
+      parentNutrientId,
+      displayOrder,
+    ] = totalOmega3;
+
+    await database.runAsync(
+      `INSERT OR IGNORE INTO "nutrients"
+        ("id", "display_name", "nutrient_kind", "default_unit", "parent_nutrient_id", "display_order")
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        displayName,
+        nutrientKind,
+        defaultUnit,
+        parentNutrientId,
+        displayOrder,
+      ],
+    );
+
+    await database.execAsync(`
+      UPDATE "nutrients"
+      SET "parent_nutrient_id" = 'total_omega_3'
+      WHERE "id" IN (
+        'alpha_linolenic_acid',
+        'epa',
+        'dha'
+      );
+
+      UPDATE "nutrients"
+      SET "parent_nutrient_id" = NULL
+      WHERE "id" = 'linoleic_acid';
+    `);
+
+    const fattyAcidIds = new Set([
+      "total_omega_3",
+      "alpha_linolenic_acid",
+      "epa",
+      "dha",
+      "linoleic_acid",
+    ]);
+
+    const expected =
+      SQLITE_NUTRIENT_SEED_ROWS.filter(
+        ([nutrientId]) =>
+          fattyAcidIds.has(nutrientId),
+      );
+
+    const rows = await database.getAllAsync<{
+      id: string;
+      display_name: string;
+      nutrient_kind: string;
+      default_unit: string;
+      parent_nutrient_id: string | null;
+      display_order: number;
+    }>(
+      `SELECT "id", "display_name", "nutrient_kind",
+              "default_unit", "parent_nutrient_id",
+              "display_order"
+       FROM "nutrients"
+       WHERE "id" IN (
+         'total_omega_3',
+         'alpha_linolenic_acid',
+         'epa',
+         'dha',
+         'linoleic_acid'
+       )
+       ORDER BY "display_order", "id"`,
+    );
+
+    const matches =
+      rows.length === expected.length
+      && rows.every((row, index) => {
+        const item = expected[index];
+
+        return item !== undefined
+          && row.id === item[0]
+          && row.display_name === item[1]
+          && row.nutrient_kind === item[2]
+          && row.default_unit === item[3]
+          && row.parent_nutrient_id === item[4]
+          && row.display_order === item[5];
+      });
+
+    if (!matches) {
+      throw new SQLiteMigrationError(
+        "SQLite total Omega-3 migration found incompatible canonical nutrient data.",
+      );
+    }
+  },
+};
+
 export const SQLITE_MIGRATIONS: readonly SQLiteMigration[] = [
   SQLITE_BASELINE_MIGRATION,
   SQLITE_FOOD_NUTRIENT_INTEGRITY_MIGRATION,
   SQLITE_SERVING_REFERENCE_MIGRATION,
   SQLITE_DUPLICATE_SOURCE_IDENTITY_MIGRATION,
   SQLITE_EXPANDED_NUTRIENT_CATALOG_MIGRATION,
+  SQLITE_TOTAL_OMEGA_3_MIGRATION,
 ];
 
 function validateMigrationStream(migrations: readonly SQLiteMigration[]): void {

@@ -207,7 +207,15 @@ describe("E2-06 local USDA gateway", () => {
       preview.nutrients.map((nutrient) => [nutrient.nutrient_id, nutrient]),
     );
 
-    expect(preview.nutrients).toHaveLength(42);
+    expect(preview.nutrients).toHaveLength(43);
+
+    expect(
+      nutrients.get("total_omega_3"),
+    ).toMatchObject({
+      amount: null,
+      unit: "mg",
+      data_status: "unknown",
+    });
 
     expect(nutrients.get("phosphorus")).toMatchObject({ amount: "125.000000", unit: "mg" });
     expect(nutrients.get("zinc")).toMatchObject({ amount: "0.000000", data_status: "zero" });

@@ -324,9 +324,48 @@ test.each([
 );
 
 test.each([
+  ["Omega 3 500mg", "500"],
+  ["Total Omega 3 1000mg", "1000"],
+  ["Omega 3 Fatty Acids 1200mg", "1200"],
+] as const)(
+  "parses source-reported total Omega-3 without synthesizing components: %s",
+  (line, amount) => {
+    const result =
+      parseLocalNutritionLabel({
+        full_text: "ignored",
+        observations: [
+          {
+            id: "header",
+            text: "Supplement Facts",
+            confidence: 0.99,
+          },
+          {
+            id: "nutrient",
+            text: line,
+            confidence: 0.98,
+          },
+        ],
+      });
+
+    expect(
+      result.nutrients[0],
+    ).toMatchObject({
+      nutrient_id: "total_omega_3",
+      amount: {
+        value: amount,
+      },
+      unit: {
+        value: "mg",
+      },
+      status: "parsed",
+    });
+  },
+);
+
+test.each([
   "Vitamin B 5mg",
   "Vitamin B11 5mg",
-  "Omega 3 5mg",
+  "Omega Blend 5mg",
   "Omega 6 5mg",
   "Essential Fatty Acid 5mg",
   "Vitamin Complex 5mg",

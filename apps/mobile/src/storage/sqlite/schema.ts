@@ -11,7 +11,7 @@
 
 import { NUTRIENT_RELATIONAL_SEED_ROWS } from "../../shared/nutrition/catalog";
 
-export const SQLITE_SCHEMA_VERSION = 5;
+export const SQLITE_SCHEMA_VERSION = 6;
 export const SQLITE_DATABASE_NAME = "nutrition.db";
 
 export const SQLITE_MIGRATION_LEDGER_TABLE = "nutrition_schema_migrations";

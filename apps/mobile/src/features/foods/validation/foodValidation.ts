@@ -4,6 +4,7 @@ import { foodFocusKey, nutrientFocusKey, servingFocusKey, type ServingFocusField
 import { isZeroDecimalString } from "../../../shared/forms/decimalString";
 import { validationIssue, type ValidationIssue } from "../../../shared/forms/validation";
 import { nutrientAmountValidationMessage } from "../../../shared/nutrition/nutrientAmount";
+import { NUTRIENT_UNITS } from "../../../shared/nutrition/types";
 
 export type FoodValidationTarget =
   | "food.name"
@@ -55,7 +56,7 @@ export const foodNutrientSchema = z
   .object({
     nutrient_id: z.string(),
     amount: z.string().optional().nullable(),
-    unit: z.enum(["kcal", "g", "mg", "mcg", "IU"]),
+    unit: z.enum(NUTRIENT_UNITS),
     basis: z.enum(["per_serving", "per_100g", "per_gram"]),
     data_status: nutrientStatusSchema,
   })

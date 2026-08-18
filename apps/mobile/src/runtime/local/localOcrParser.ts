@@ -8,7 +8,7 @@ import type {
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import { LocalRuntimeError } from "./localErrors";
 
-export const NUTRITION_LABEL_PARSER_VERSION = "nutrition_label_v1";
+export const NUTRITION_LABEL_PARSER_VERSION = "nutrition_label_v2";
 
 export type LocalOcrParseInput = Readonly<{
   full_text: string;
@@ -83,6 +83,12 @@ const NUTRIENT_VARIANTS: Readonly<Record<string, readonly string[]>> = Object.fr
   chromium: ["chromium"],
   molybdenum: ["molybdenum"],
   chloride: ["chloride"],
+  total_omega_3: [
+    "omega 3",
+    "total omega 3",
+    "omega 3 fatty acids",
+    "total omega 3 fatty acids",
+  ],
   alpha_linolenic_acid: [
     "alpha linolenic acid",
     "omega 3 alpha linolenic acid",
