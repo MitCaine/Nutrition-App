@@ -19,6 +19,8 @@ Daily Log
 
 The design rule is **logging first, analysis one interaction away**. The expanded nutrient catalog must not again be allowed to bury the primary logging workflow.
 
+History is an analysis/navigation surface, not another editing surface. It may navigate to the authoritative Daily Log date, but initial Epic 4 does not edit meals, delete Logs, or assert Complete directly from History.
+
 ## Daily Log
 
 The accepted Daily Log hierarchy is:
@@ -43,18 +45,20 @@ On an empty Daily Log date, the compact summary may show `0` logged for Calories
 Accepted semantics:
 
 - Complete belongs to the authoritative Daily Log **calendar date**, not to an individual Log entry;
-- compact labeled sticky-header control such as `☐ Complete` / `✓ Complete`, with explicit checked state and adequate touch target;
-- available for Today and past dates containing at least one Log;
-- unavailable for empty dates;
+- the sticky-header control is compact and labeled, such as `☐ Complete` / `✓ Complete`, rather than an ambiguous icon-only action;
+- Complete is available for Today and past dates containing at least one Log and unavailable for empty dates;
 - unchecked means **not confirmed complete**, not `Incomplete`;
-- nutrition-affecting Log mutations clear Complete automatically without an extra confirmation prompt;
+- existing historical Logs are not retroactively marked Complete when the feature ships; only explicit user assertions create the state;
+- the control should only become visibly checked after the selected authority confirms the Complete write; while saving it may show a brief busy state, and a failed write leaves the date unchecked with retry/error handling rather than pretending persistence succeeded;
+- while a nutrition-changing mutation for the date is unresolved, Complete is temporarily unavailable so it cannot be asserted against stale nutrition state;
+- a nutrition-affecting Log mutation clears Complete automatically without an extra confirmation prompt;
+- the nutrition mutation and resulting Complete invalidation are one atomic authoritative operation: they must succeed or fail together;
 - moving an entry clears Complete for both source and destination dates;
-- deleting the last entry clears Complete because the day becomes empty;
+- deleting the final entry clears Complete because the day becomes empty;
 - note-only and meal-label-only edits preserve Complete because they do not change nutrition;
-- later edits to the source Food or Recipe do not clear historical Complete state because historical Daily Log nutrition remains owned by the immutable stored snapshot;
 - a serving/amount edit that produces an exactly unchanged resulting nutrient snapshot preserves Complete, while any resulting nutrient-snapshot change clears it;
-- existing historical Logs are **not** retroactively marked Complete when the feature is introduced; only explicit user assertions create Complete state;
-- Complete is durable Daily Log metadata and must survive supported backup/restore and one-time authority-transfer flows along with the authoritative Log history it describes;
+- later edits to the source Food or Recipe do not clear historical Complete state because historical Daily Log nutrition remains owned by the immutable stored snapshot;
+- Complete is durable Daily Log metadata and must survive supported backup/restore and one-time authority-transfer flows with the authoritative Log history it describes;
 - later timezone/calendar-setting changes do not migrate a historical Complete assertion to another date; it remains attached to the authoritative Daily Log date originally marked Complete; and
 - an empty date never implies confirmed zero intake. A future fasting/no-intake concept would require separate semantics.
 
@@ -110,7 +114,7 @@ The default set follows the familiar conventional U.S. Nutrition Facts informati
 
 The default field order follows the familiar Nutrition Facts hierarchy after serving information: Calories; Total Fat with Saturated Fat and Trans Fat; Cholesterol; Sodium; Total Carbohydrate with Fiber, Total Sugars, and Added Sugars; Protein; then Vitamin D, Calcium, Iron, and Potassium.
 
-`More nutrients` should use the same broad grouped vocabulary used elsewhere in the app rather than another giant flat list. Additional entry is organized into `Vitamins`, `Minerals`, and `Fatty Acids` groups while the ordinary Nutrition Facts fields remain immediately available on the main authoring surface.
+`More nutrients` uses the same broad grouped vocabulary used elsewhere in the app rather than another giant flat list. Additional entry is organized into `Vitamins`, `Minerals`, and `Fatty Acids` groups while the ordinary Nutrition Facts fields remain immediately available on the main authoring surface.
 
 A newly added extended nutrient begins as `unknown`, not zero. Choosing to expose Magnesium, Vitamin K, or another nutrient field means the user wants the opportunity to enter it; it does not assert that the Food contains none of that nutrient.
 
@@ -127,7 +131,7 @@ Initial History supports only:
 - `7 Days`; and
 - `30 Days`.
 
-These ranges are calendar-date ranges owned by the existing Daily Log calendar model. `7 Days` means seven authoritative Daily Log dates, not a rolling 168-hour interval; the same rule applies to 30-day History. DST and timezone boundaries therefore follow the same date semantics as the Daily Log rather than elapsed-hour windows.
+These are calendar-date ranges owned by the existing Daily Log calendar model. `7 Days` means seven authoritative Daily Log dates, not a rolling 168-hour interval; the same rule applies to 30-day History. DST and timezone boundaries therefore follow the Daily Log's date semantics rather than elapsed-hour windows.
 
 History ends on yesterday. Today remains the in-progress Daily Log/Daily Nutrition date even if Today has been marked Complete.
 
@@ -135,14 +139,18 @@ Whole-period paging is accepted:
 
 - Previous/Next moves exactly 7 calendar days in 7-day mode;
 - Previous/Next moves exactly 30 calendar days in 30-day mode;
-- Next never advances past the most recent period ending yesterday; and
+- Next never advances past the most recent period ending yesterday;
+- the earliest partial period containing the first logged date remains reachable, with earlier dates in that period represented as missing;
+- Previous is disabled once the next older period would be entirely before the first logged date, avoiding endless navigation through pre-history empty periods; and
 - 90-day/custom ranges are deferred until real use demonstrates a need.
 
-History state should survive drill-down and return: selected range, selected 7/30 mode, denominator mode, detail-card state, expanded groups, scroll/focus position, and focused nutrient context where applicable.
+History state survives drill-down and return: selected range, selected 7/30 mode, denominator mode, detail-card state, expanded groups, scroll/focus position, and focused nutrient context where applicable.
 
 A fresh app launch resets the selected History range to the most recent supported period ending yesterday rather than reopening an arbitrarily old date window. The app may preserve the user's preferred `7 Days` versus `30 Days` mode across launches.
 
 The denominator mode is global for the current History view. Switching between Complete days and Logged days recalculates the four overview cards, Nutrition Details card, and focused nutrient views together; different nutrients should not silently use different denominator modes.
+
+The Complete/Logged toggle is a local projection over the already loaded range payload. The payload must contain enough per-date information to calculate either denominator deterministically, so changing this lens should be immediate and should not issue another SQLite/network range read.
 
 If a selected range contains no Logs at all, keep the period controls available but replace the four empty macro cards with a dedicated empty-period state such as `No food was logged during this period.`
 
@@ -152,7 +160,7 @@ If Daily Log nutrition or Complete state changes while History remains in the na
 
 Rapid period paging must not force the user to wait for every intermediate range request. The selected period may advance immediately, and late responses for superseded ranges must never overwrite the newest selected range.
 
-If the user pages to another period from a focused nutrient view, remain on that same nutrient and show it for the newly selected 7-day or 30-day window rather than returning to the four-macro overview.
+Period paging remains available from the History overview, Nutrition Details surface, and focused nutrient view. Paging from detail preserves that detail context; paging from focused nutrient History keeps the user on the same nutrient for the newly selected period.
 
 ## History loading, cache, and refresh behavior
 
@@ -164,6 +172,20 @@ History data must always correspond to the date range currently shown in the UI.
 - Latest-request-wins semantics are required for rapid paging so out-of-order responses cannot roll the user back to stale History data.
 
 These rules apply regardless of whether the selected authority is local or remote; local SQLite may make loading states nearly imperceptible, but the data-identity rule remains the same.
+
+## Runtime and authority boundary
+
+Nutrition History remains part of the existing `Daily Logs` runtime capability. It is a projection over authoritative Daily Log snapshots and Complete metadata, not a ninth capability with an independent authority.
+
+The History read contract is a bounded date-range operation rather than 7 or 30 independent per-day reads. Conceptually, the Daily Logs capability should expose one range read such as `getHistoryRange(startDate, endDate)`:
+
+- local authority performs the bounded read from SQLite;
+- remote authority performs one bounded FastAPI/HTTP read rather than N daily requests;
+- local and remote implementations expose the same semantic contract for authoritative dates, exact-decimal nutrient values, missing dates, known/estimated/zero/unknown state, and Complete metadata;
+- selecting remote authority must not change the meaning of an average or chart;
+- no range may be assembled by mixing local and remote data;
+- no fallback, dual-read, or shadow authority is introduced by History; and
+- the returned per-date evidence is sufficient for both Complete-day and Logged-day denominator projections without rereading the authoritative store.
 
 ## History calculation semantics
 
@@ -200,7 +222,7 @@ The original in-place expansion proposal was rejected because it would show dupl
 
 `Show more nutrition` opens a **distinct Nutrition Details card/surface** over/from History. While this detail surface is active, the four overview macro charts are not simultaneously visible.
 
-On iPhone, the card should be allowed to present as an effectively full-height sheet/surface with its own header, Close control, and vertical scrolling rather than forcing dozens of nutrient rows into a cramped floating modal. The card terminology describes conceptual separation from the overview, not a requirement for a small visual rectangle.
+On iPhone, the card may present as an effectively full-height sheet/surface with its own header, Close control, and vertical scrolling rather than forcing dozens of nutrient rows into a cramped floating modal. The card terminology describes conceptual separation from the overview, not a requirement for a small visual rectangle.
 
 That separation allows the detail card to preserve a complete familiar Nutrition Facts hierarchy without visual redundancy.
 
@@ -251,7 +273,7 @@ Do not add swipe-left/right between nutrients in the initial Epic. If physical u
 
 ## Focused nutrient chart semantics
 
-Focused nutrient charts use a true zero baseline. The vertical scale should extend from zero through at least the greater of the highest displayed daily value or the current target/reference line. Do not truncate the axis merely to magnify ordinary day-to-day variation.
+Focused nutrient charts use a true zero baseline. The vertical scale extends from zero through at least the greater of the highest displayed daily value or the current target/reference line. Do not truncate the axis merely to magnify ordinary day-to-day variation.
 
 When estimated contribution materially affects an exact daily value, the focused view may distinguish that state subtly. This must not turn estimates into warning-heavy presentation, and unknown contributors remain governed by the quiet-default policy above.
 
@@ -309,16 +331,16 @@ Chronology plus exact period statistics is sufficient for the initial History fe
 
 ## Remaining Grill/architecture questions
 
-The first seven Grill batches have resolved the primary product shape, Complete semantics, range behavior, and core History calculation/display rules. Accessibility-specific product behavior has been explicitly deferred rather than treated as an Epic 4 requirement, and manual reversal of Complete is likewise not required in the initial Epic.
+The first eight Grill batches have resolved the primary product shape, Complete semantics, range behavior, core History calculation/display rules, and the runtime ownership boundary. Accessibility-specific product behavior has been explicitly deferred rather than treated as an Epic 4 requirement, and manual reversal of Complete is likewise not required in the initial Epic.
 
 Remaining questions are predominantly implementation and qualification policy, including:
 
-- exact persistence/schema shape for Complete state;
-- local/remote range-read contracts and cache invalidation;
-- exact error/retry behavior around mutations and Complete persistence;
-- chart rendering and physical-device qualification boundaries;
-- sheet/navigation implementation details; and
-- qualification of transfer, backup, restore, calendar, exact-decimal, and stale-response behavior.
+- cache invalidation granularity around Log, Complete, and target mutations;
+- exact range-response shape and whether aggregates are computed in the runtime or UI projection layer;
+- behavior when remote range reads fail without same-range cache;
+- physical-device qualification thresholds for 30-day chart readability;
+- migration/schema and transfer qualification for Complete metadata; and
+- final scope cuts before conversion into the formal PRD/architecture/backlog.
 
 ## Regulatory reference used for the default Nutrition Facts subset
 
