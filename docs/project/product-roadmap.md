@@ -9,7 +9,7 @@ Nutrition App now uses the following Epic sequence:
 | Epic 1 | Daily Logging Flow | Complete | Implemented and qualified as Version 1.1 Epic 1. |
 | Epic 2 | Local-First SQLite Runtime | Complete | Inserted as the technical/local-first Epic and implemented through the completed Epic 2 program. |
 | Epic 3 | Nutrition Label Capture Confidence | Complete | Originally planned as product Epic 4; later absorbed and completed through Epic 2 OCR work and post-Epic-2 OCR/camera issues and physical-device qualification. |
-| Epic 4 | Nutrition History and Trends | Planned | Originally planned as product Epic 2. Trustworthy immutable history exists, but the separate multi-day trends/history product surface is not implemented. |
+| Epic 4 | Nutrition History and Trends | Pre-Grill planning | Originally planned as product Epic 2. Trustworthy immutable history exists; current research is defining the separate multi-day trends/history product surface before Grill/PRD work. |
 | Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope | Originally planned as product Epic 3. Considerable Recipe authoring, serving, publication, and navigation work already exists, but the remaining reuse/discovery outcome has not been completed as an Epic. |
 
 ## Epic 3 — Nutrition Label Capture Confidence
@@ -43,7 +43,7 @@ The application already has the required trustworthy substrate: immutable Daily 
 
 The remaining Epic outcome is a user-facing multi-day interpretation layer, including useful recent time windows, trend views, completeness/unknown indicators, target/reference context, and navigation from a period result back to contributing Daily Log dates. It must continue to derive historical values only from immutable Daily Log snapshots and must not silently treat missing or partially logged periods as zero intake.
 
-Epic 4 has not yet entered a new Grill/PRD/architecture/backlog cycle under the current numbering.
+Pre-Grill research, competitor patterns, repository reuse opportunities, working product recommendations, architecture constraints, and unresolved choices are recorded in [Epic 4 planning](version-1.2/epic-4/planning.md). That planning record does not authorize implementation. Epic 4 still requires resolved Grill decisions, a Feature PRD, architecture review, implementation backlog, and GitHub implementation issues before code changes begin.
 
 ## Epic 5 — Recipe Reuse and Discovery
 
@@ -72,4 +72,4 @@ This remapping is intentional. It reflects the completed insertion of SQLite as 
 
 Epic numbers in new issues, PRDs, architecture reviews, project boards, and conversation should use this current sequence. Historical records should not be rewritten to pretend this numbering existed when they were authored; where historical material is reused, translate through the mapping above.
 
-An Epic being listed here does not itself authorize implementation. Planned Epic 4 or Epic 5 work still requires the normal Grill, PRD, architecture review, implementation backlog, and GitHub issue workflow before code changes begin.
+An Epic being listed here does not itself authorize implementation. Epic 4 is currently in pre-Grill research; Epic 5 remains planned and requires re-scope. Both still require the normal Grill, PRD, architecture review, implementation backlog, and GitHub issue workflow before code changes begin.
