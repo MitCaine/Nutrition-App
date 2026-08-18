@@ -62,9 +62,13 @@ Accepted semantics:
 - Later timezone/calendar-setting changes do not migrate a historical Complete assertion to another date; it remains attached to the authoritative Daily Log date originally marked Complete.
 - An empty date never implies confirmed zero intake. A future fasting/no-intake concept would require separate semantics.
 
-Complete should be persisted as date-owned state rather than redundantly on every Log entry. The architectural shape should be equivalent to a day-state record keyed by owner and authoritative calendar date.
+Complete is positive date-owned state rather than a persisted historical `false` classification for every date. Absence of an assertion means **not confirmed complete**. The architectural shape should be equivalent to a day-state record keyed by owner and authoritative calendar date rather than a redundant flag on every Log entry.
+
+An asserted state should retain internal persistence metadata such as `completed_at` for deterministic durability/transfer/recovery evidence. Initial Epic 4 does not expose that timestamp as a behavioral metric, streak, or timing feature.
 
 The migration introducing Complete state performs **no historical backfill**. New storage begins with no historical dates confirmed Complete.
+
+Remote Complete writes participate in the existing deterministic Daily Log mutation/recovery model. If connectivity is lost after submission, the application determines whether the assertion committed rather than guessing, blindly retrying, or introducing a weaker mutation-consistency path for Complete.
 
 Manual retraction of an already asserted Complete state is not required in initial Epic 4. It is retained as a qualified future option rather than treated as a current product requirement.
 
@@ -133,6 +137,8 @@ Initial History supports only:
 
 These are calendar-date ranges owned by the existing Daily Log calendar model. `7 Days` means seven authoritative Daily Log dates, not a rolling 168-hour interval; the same rule applies to 30-day History. DST and timezone boundaries therefore follow the Daily Log's date semantics rather than elapsed-hour windows.
 
+History is independent of Log creation timestamps and consumption-time interpretation. Multiple entries on one authoritative calendar date contribute to that date regardless of the times at which they were created. Time-of-day nutrition analytics remain separate future scope.
+
 History ends on yesterday. Today remains the in-progress Daily Log/Daily Nutrition date even if Today has been marked Complete.
 
 Whole-period paging is accepted:
@@ -144,7 +150,7 @@ Whole-period paging is accepted:
 - Previous is disabled once the next older period would be entirely before the first logged date; and
 - 90-day/custom ranges are deferred until real use demonstrates a need.
 
-The History range response should expose `firstLoggedDate`-equivalent bounds metadata so the client can determine the earliest useful period without probing progressively older empty windows.
+The History range response exposes `firstLoggedDate`-equivalent bounds metadata so the client can determine the earliest useful period without probing progressively older empty windows. If the selected authority contains no Logs at all, `firstLoggedDate` is `null`; do not substitute install date, account date, or Today.
 
 History state survives drill-down and return: selected range, selected 7/30 mode, denominator mode, detail-card state, expanded groups, scroll/focus position, and focused nutrient context where applicable.
 
@@ -169,7 +175,8 @@ Period paging remains available from the History overview, Nutrition Details sur
 History data must always correspond to the date range currently shown in the UI.
 
 - When paging to a different range, do not leave the prior range's analytical values visible under the new date label while the requested range loads. Keep the navigation/range chrome visible and use a lightweight loading state for analytical content.
-- If refreshing the **same** range fails but valid cached data exists for that exact range, keep the cached values visible and show a compact refresh-failure/retry indication.
+- If refreshing the **same** range fails but valid cached data exists for that exact range, keep the cached values visible and show a compact refresh-failure/retry indication such as `Couldn't refresh · Retry`. Do not silently present cached data as freshly confirmed.
+- A persistent `last updated` timestamp is not required in initial Epic 4 merely because same-range stale data can remain visible after refresh failure.
 - Cached data from a different period must never be shown as though it belongs to the newly selected period.
 - Latest-request-wins semantics are required for rapid paging so out-of-order responses cannot roll the user back to stale History data.
 - Cache identity includes the selected application-data authority plus the exact start and end dates. Local and remote cache entries are never interchangeable.
@@ -193,9 +200,11 @@ The History read contract is a bounded date-range operation rather than 7 or 30 
 - no fallback, dual-read, or shadow authority is introduced by History; and
 - the initial contract rejects ranges larger than 30 calendar dates. Expanding that bound for future 90-day/custom History requires an explicit later decision.
 
-The range payload is per-calendar-date evidence, not the entire individual Food/Log graph. Each returned date should contain the aggregate nutrient values/status metadata needed for History, whether the date contains Logs, Complete state, and other bounded metadata necessary to preserve missing/known/estimated/zero/unknown semantics.
+The range payload is per-calendar-date evidence, not the entire individual Food/Log graph. Each returned date contains the aggregate nutrient values/status metadata needed for History, whether the date contains Logs, Complete state, and other bounded metadata necessary to preserve missing/known/estimated/zero/unknown semantics.
 
-Local and remote authorities produce the same per-date semantic contract. Complete-day averages, Logged-day averages, usable-day counts, gaps, and related period projections should then be computed by one shared History calculation layer rather than independently reinvented in SQLite and FastAPI.
+One loaded 7/30-day payload includes all canonical nutrient totals needed by the Nutrition Details surface and focused nutrient drill-down, not only Calories/Protein/Carbohydrate/Fat. The user should not incur another authoritative range read merely by opening Vitamins, Minerals, Fatty Acids, or a focused nutrient view.
+
+Local and remote authorities produce the same per-date semantic contract. Complete-day averages, Logged-day averages, usable-day counts, gaps, and related period projections are computed by one shared History calculation layer rather than independently reinvented in SQLite and FastAPI.
 
 ## History calculation semantics
 
@@ -220,7 +229,7 @@ History uses discrete bars, not connected lines. Missing dates remain gaps rathe
 
 The four small overview charts omit target/reference lines to keep them visually sparse. Where current target/reference context is useful, present it numerically in the surrounding card. The focused nutrient view owns the explicit horizontal current-reference line.
 
-Thirty-day mode retains one observation per calendar day. Prefer a static 30-bar chart if physical-device testing shows it remains readable; do not add horizontal scrolling by default. Sparse date labels are acceptable. Change the interaction only if real-device qualification demonstrates that the static chart is unusable.
+Thirty-day mode retains one observation per calendar day. Start with a static 30-bar chart if physical-device testing shows it remains readable. If physical-device qualification demonstrates that thirty static bars cannot make individual days meaningfully readable/selectable, horizontal chart scrolling is permitted while preserving all thirty daily observations. Do not solve narrow-screen pressure by aggregating days into weeks, dropping observations, or changing the statistic's calendar-day meaning.
 
 Selecting a bar highlights/reveals its exact date and value rather than immediately navigating away. Textual daily rows provide deliberate navigation to the exact Daily Log date. Seven-day detail has seven rows; 30-day detail has thirty rows. Dates with no Logs remain visible as `No logs`/neutral unavailable rows.
 
@@ -333,14 +342,43 @@ The Complete-state migration and storage changes must explicitly qualify that:
 - local SQLite and remote PostgreSQL/FastAPI expose equivalent Complete semantics;
 - backup/restore retains asserted Complete state;
 - one-time authority transfer retains asserted Complete state without becoming synchronization;
-- nutrition-changing mutations and Complete invalidation remain atomic within the selected authority; and
+- nutrition-changing mutations and Complete invalidation remain atomic within the selected authority;
+- remote uncertain Complete writes resolve through deterministic mutation recovery; and
 - historical immutable nutrition remains unchanged by adding Complete metadata.
 
-## Remaining Grill/architecture questions
+## History qualification matrix
 
-The first nine Grill batches have resolved the primary product shape, Complete semantics, range behavior, History calculations, runtime ownership, cache identity/invalidation, range contract, and migration direction.
+Qualification must use deliberate parity fixtures and failure cases rather than only ordinary populated days. At minimum, coverage should prove:
 
-One final Grill batch should settle qualification and failure-policy edges before this Pre-Grill record is converted into the formal Feature PRD, architecture decision(s), and implementation backlog.
+- known nutrient values;
+- explicit zero;
+- estimated values;
+- unknown contributors without unknown-to-zero conversion;
+- dates with no Logs;
+- Complete and not-confirmed-complete dates;
+- a one-usable-day average;
+- mixed usable/unusable days for an individual nutrient;
+- Complete-day versus Logged-day denominator projections from the same loaded evidence;
+- exact-decimal aggregation before presentation rounding;
+- 7-day and 30-day calendar boundaries;
+- the earliest partial period and `firstLoggedDate = null` when no history exists;
+- DST/calendar-date boundaries;
+- current-target changes affecting only the comparison lens;
+- local/remote semantic parity;
+- migration with no historical Complete backfill;
+- backup/restore and one-time transfer of Complete metadata;
+- latest-request-wins behavior under stale/out-of-order remote responses;
+- same-range cache behavior on refresh failure;
+- no authority fallback on remote range-read failure; and
+- physical-device qualification of 30-day chart readability, with horizontal scrolling allowed only if static daily bars fail usability while retaining all thirty observations.
+
+## Grill complete and scope freeze
+
+The Epic 4 Grill is complete. The accepted product scope is now frozen for conversion into the formal Feature PRD, architecture decision/data-contract documents, and bounded implementation backlog.
+
+Implementation should not expand the product merely because another potentially useful idea appears during coding. New ideas go to `docs/project/future-product-and-scale.md` unless they are required to satisfy an already accepted Epic 4 invariant or qualification condition.
+
+Before implementation is authorized, the accumulated planning changes should be reconciled into the formal documents and the repository documentation validator/project audit should be run. Do not assume the current planning-document set passes those checks merely because individual decision-record writes succeeded.
 
 ## Regulatory reference used for the default Nutrition Facts subset
 
