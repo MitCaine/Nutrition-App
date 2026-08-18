@@ -18,6 +18,8 @@ import type {
 } from "../features/recipes/api/types";
 import type {
   DailyLog,
+  DailyLogCompleteInput,
+  DailyLogCompletion,
   DailyLogCreateInput,
   DailyLogDeleteInput,
   DailyLogEditContext,
@@ -87,6 +89,7 @@ export interface RecipesRuntime {
   publish(input: { recipeId: string; clientRequestId: string }): Promise<RecipePublishResponse>;
 }
 
+/** Existing Daily Log operations retained as the shared mutation/reconciliation substrate. */
 export interface DailyLogsRuntime {
   list(date: string): Promise<DailyLog[]>;
   listFuture(date: string): Promise<DailyLog[]>;
@@ -100,6 +103,11 @@ export interface DailyLogsRuntime {
     operation?: DailyLogMutationStatus["operation"],
   ): Promise<DailyLogMutationStatus>;
   getDailySummary(date: string): Promise<DailySummary>;
+}
+
+/** E4-02 extends the existing Daily Logs capability; it does not add a ninth capability. */
+export interface CompleteDailyLogsRuntime extends DailyLogsRuntime {
+  markDayComplete(input: DailyLogCompleteInput): Promise<DailyLogCompletion>;
 }
 
 export interface TargetsRuntime {
@@ -127,7 +135,7 @@ export interface NutritionRuntime {
   readonly nutrients: NutrientsRuntime;
   readonly foods: FoodsRuntime;
   readonly recipes: RecipesRuntime;
-  readonly dailyLogs: DailyLogsRuntime;
+  readonly dailyLogs: CompleteDailyLogsRuntime;
   readonly targets: TargetsRuntime;
   readonly ocr: OcrRuntime;
   readonly usda: UsdaRuntime;

@@ -6,6 +6,7 @@ import {
   createLogMutationRecoveryRecord,
   getRecoveryJournalState,
   loadLogMutationRecoveryJournal,
+  LOG_MUTATION_RECOVERY_VERSION,
   type LogMutationRecoveryRecord,
   type RecoveryJournalState,
   type RecoveryStorage,
@@ -90,7 +91,7 @@ function record(
   state: LogMutationRecoveryRecord["state"] = "submitted",
 ): LogMutationRecoveryRecord {
   return {
-    version: 2,
+    version: LOG_MUTATION_RECOVERY_VERSION,
     owner_scope: "owner",
     id,
     client_request_id: `request-${id}`,
@@ -195,7 +196,7 @@ test("malformed optional display context renders a generic fallback without expo
   const storage: RecoveryStorage = {
     getItem: jest.fn(async () => JSON.stringify({
       version: 2,
-      records: [{ ...authoritativeRecord, display_context: "invalid presentation metadata" }],
+      records: [{ ...authoritativeRecord, version: 2, display_context: "invalid presentation metadata" }],
     })),
     setItem: jest.fn(async () => undefined),
     removeItem: jest.fn(async () => undefined),

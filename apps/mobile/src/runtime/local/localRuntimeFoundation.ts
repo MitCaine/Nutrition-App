@@ -5,7 +5,13 @@ import {
   type NutritionDatabaseHandle,
   type OpenNutritionDatabaseOptions,
 } from "../../storage/sqlite/migrations";
-import type { DailyLogsRuntime, NutrientsRuntime, RecipesRuntime, TargetsRuntime, UsdaRuntime } from "../NutritionRuntime";
+import type {
+  CompleteDailyLogsRuntime,
+  NutrientsRuntime,
+  RecipesRuntime,
+  TargetsRuntime,
+  UsdaRuntime,
+} from "../NutritionRuntime";
 import {
   ensureLocalOwner,
   type LocalOwnerIdentity,
@@ -37,6 +43,10 @@ import {
   type LocalDailyLogsRuntimeOptions,
 } from "./localDailyLogsRuntime";
 import {
+  getLocalDailyLogCompleteMutationStatus,
+  markLocalDailyLogComplete,
+} from "./localDailyLogCompleteState";
+import {
   createLocalTargetsRuntime,
   type LocalTargetsRuntimeOptions,
 } from "./localTargetsRuntime";
@@ -54,7 +64,7 @@ export type LocalRuntimeFoundation = Readonly<{
   nutrients: NutrientsRuntime;
   foods: LocalFoodsRuntime;
   recipes: RecipesRuntime;
-  dailyLogs: DailyLogsRuntime;
+  dailyLogs: CompleteDailyLogsRuntime;
   targets: TargetsRuntime;
   ocr: LocalOcrRuntime;
   usda: UsdaRuntime;
@@ -69,6 +79,26 @@ export type OpenLocalRuntimeFoundationOptions = OpenNutritionDatabaseOptions & R
   ocr?: LocalOcrRuntimeOptions;
   usda?: LocalUsdaRuntimeOptions;
 }>;
+
+function createCompleteDailyLogsRuntime(
+  database: SQLiteDatabase,
+  ownerId: string,
+  options: LocalDailyLogsRuntimeOptions,
+): CompleteDailyLogsRuntime {
+  const base = createLocalDailyLogsRuntime(database, ownerId, options);
+  const baseGetMutationStatus = base.getMutationStatus.bind(base);
+  const now = options.now ?? (() => new Date());
+  return Object.assign(base, {
+    markDayComplete: (input: Parameters<CompleteDailyLogsRuntime["markDayComplete"]>[0]) =>
+      markLocalDailyLogComplete(database, ownerId, input, now),
+    getMutationStatus: (
+      clientRequestId: string,
+      operation?: Parameters<CompleteDailyLogsRuntime["getMutationStatus"]>[1],
+    ) => operation === "complete"
+      ? getLocalDailyLogCompleteMutationStatus(database, ownerId, clientRequestId)
+      : baseGetMutationStatus(clientRequestId, operation),
+  });
+}
 
 /** Bootstrap identity and catalog on an already migrated E2-03 database. */
 export async function bootstrapLocalRuntimeFoundation(
@@ -92,7 +122,7 @@ export async function bootstrapLocalRuntimeFoundation(
     nutrients: createLocalNutrientsRuntime(database),
     foods,
     recipes: createLocalRecipesRuntime(database, identity.ownerId, recipesOptions),
-    dailyLogs: createLocalDailyLogsRuntime(database, identity.ownerId, dailyLogsOptions),
+    dailyLogs: createCompleteDailyLogsRuntime(database, identity.ownerId, dailyLogsOptions),
     targets: createLocalTargetsRuntime(database, identity.ownerId, targetsOptions),
     ocr: createLocalOcrRuntime(database, identity.ownerId, foods, ocrOptions),
     usda: createLocalUsdaRuntime(foods, usdaOptions),

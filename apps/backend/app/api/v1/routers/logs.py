@@ -13,6 +13,8 @@ from app.domain.log_contracts import LogContractError
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.models.user import User
 from app.schemas.log import (
+    DailyLogCompleteRequest,
+    DailyLogCompleteResponse,
     DailyLogCreateRequest,
     DailyLogDeleteRequest,
     DailyLogEditContextResponse,
@@ -26,6 +28,12 @@ from app.schemas.log import (
 from app.services.calendar_service import (
     AuthoritativeTimeZoneRequiredError,
     CalendarDomainError,
+)
+from app.services.log_day_completion_service import (
+    CompleteMutationPayloadConflictError,
+    CompleteMutationResultUnavailableError,
+    EmptyDailyLogDateError,
+    LogDayCompletionService,
 )
 from app.services.log_service import (
     LogEditConflictError,
@@ -85,6 +93,10 @@ router = APIRouter(route_class=DailyLogValidationRoute)
 
 def _service(db: Session) -> LogService:
     return LogService(db)
+
+
+def _complete_service(db: Session) -> LogDayCompletionService:
+    return LogDayCompletionService(db)
 
 
 @router.post("", response_model=DailyLogResponse, status_code=status.HTTP_201_CREATED)
@@ -170,6 +182,36 @@ def daily_summary(
     return DailySummaryResponse(logged_date=date, totals=_service(db).daily_summary(user.id, date))
 
 
+@router.post("/complete", response_model=DailyLogCompleteResponse)
+def mark_day_complete(
+    payload: DailyLogCompleteRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DailyLogCompleteResponse:
+    try:
+        return _complete_service(db).mark_complete(user.id, payload)
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+    except CalendarDomainError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+    except EmptyDailyLogDateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except (CompleteMutationPayloadConflictError, CompleteMutationResultUnavailableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+
 @router.get(
     "/mutations/{client_request_id}",
     response_model=DailyLogMutationStatusResponse,
@@ -182,6 +224,8 @@ def mutation_status(
 ) -> DailyLogMutationStatusResponse:
     """Return an owner-scoped terminal or recoverable mutation outcome."""
 
+    if operation in {"complete", "log.complete"}:
+        return _complete_service(db).mutation_status(user.id, client_request_id)
     return _service(db).mutation_status(user.id, client_request_id, operation)
 
 

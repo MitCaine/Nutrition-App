@@ -8,6 +8,7 @@ import {
   getRecoveryJournalState,
   hasOverlappingRecovery,
   loadLogMutationRecoveryJournal,
+  LOG_MUTATION_RECOVERY_VERSION,
   removeLogMutationRecoveryRecord,
   startLogMutationRecovery,
   subscribeToLogMutationRecovery,
@@ -28,7 +29,9 @@ function deferred<T>() {
 }
 
 function memoryStorage(records: unknown[]): RecoveryStorage & { value: string | null } {
-  const state = { value: JSON.stringify({ version: 2, records }) as string | null };
+  const state = {
+    value: JSON.stringify({ version: LOG_MUTATION_RECOVERY_VERSION, records }) as string | null,
+  };
   return {
     get value() { return state.value; },
     set value(value: string | null) { state.value = value; },
@@ -69,7 +72,10 @@ test("remote state cannot appear while a newly selected local journal is pending
   const remote = remoteAuthorityIdentity("remote:test-owner");
   const local = localAuthorityIdentity("00000000-0000-4000-8000-000000000001");
   const remoteRecord = recoveryRecord(remote, "remote-pending-request");
-  const envelope = JSON.stringify({ version: 2, records: [remoteRecord] });
+  const envelope = JSON.stringify({
+    version: LOG_MUTATION_RECOVERY_VERSION,
+    records: [remoteRecord],
+  });
   const remoteStorage = {
     getItem: jest.fn(async () => envelope),
     setItem: jest.fn(async () => undefined),
@@ -106,7 +112,10 @@ test("local state cannot appear while a newly selected remote journal is pending
   const local = localAuthorityIdentity("00000000-0000-4000-8000-000000000002");
   const remote = remoteAuthorityIdentity("remote:second-test-owner");
   const localRecord = recoveryRecord(local, "local-pending-request");
-  const envelope = JSON.stringify({ version: 2, records: [localRecord] });
+  const envelope = JSON.stringify({
+    version: LOG_MUTATION_RECOVERY_VERSION,
+    records: [localRecord],
+  });
   await loadLogMutationRecoveryJournal(local, memoryStorage([localRecord]));
   expect(getRecoveryJournalState(local).records).toEqual([localRecord]);
 
@@ -170,7 +179,7 @@ test("updating one scope preserves the other scope in durable storage and memory
     version: number;
     records: LogMutationRecoveryRecord[];
   };
-  expect(durable.version).toBe(2);
+  expect(durable.version).toBe(LOG_MUTATION_RECOVERY_VERSION);
   expect(durable.records.map((record) => record.id)).toEqual([remoteRecord.id]);
   expect(getRecoveryJournalState(local).records).toEqual([]);
   expect(getRecoveryJournalState(remote).records).toEqual([remoteRecord]);

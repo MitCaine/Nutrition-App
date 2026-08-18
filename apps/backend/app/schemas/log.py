@@ -137,10 +137,25 @@ class DailyLogDeleteRequest(BaseModel):
     calendar_revision: int | None = Field(default=None, ge=0)
 
 
+class DailyLogCompleteRequest(BaseModel):
+    """Deterministic intent to assert one authoritative Daily Log date Complete."""
+
+    client_request_id: UUID
+    calendar_revision: int = Field(ge=0)
+    logged_date: date
+
+
+class DailyLogCompleteResponse(BaseModel):
+    logged_date: date
+    completed_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class DailyLogMutationStatusResponse(BaseModel):
     """Authoritative status of one owner-scoped Daily Log mutation intent."""
 
-    operation: Literal["create", "update", "delete"]
+    operation: Literal["create", "update", "delete", "complete"]
     client_request_id: UUID
     status: Literal[
         "confirmed_success",
@@ -152,6 +167,7 @@ class DailyLogMutationStatusResponse(BaseModel):
     source_logged_date: date | None = None
     destination_logged_date: date | None = None
     result: DailyLogResponse | None = None
+    completion: DailyLogCompleteResponse | None = None
 
 
 class DailyLogEditAmountResponse(BaseModel):

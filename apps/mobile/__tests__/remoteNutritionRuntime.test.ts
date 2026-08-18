@@ -35,6 +35,7 @@ jest.mock("../src/features/logging/api/logApi", () => ({
   updateLog: jest.fn(async () => ({ marker: "log-update" })),
   getLogEditContext: jest.fn(async () => ({ marker: "log-edit-context" })),
   deleteLog: jest.fn(async () => undefined),
+  markDayComplete: jest.fn(async () => ({ marker: "log-complete" })),
   getLogMutationStatus: jest.fn(async () => ({ marker: "log-status" })),
   getDailySummary: jest.fn(async () => ({ marker: "log-summary" })),
 }));
@@ -93,6 +94,7 @@ const mockCreateLog = logApi.createLog as jest.Mock;
 const mockUpdateLog = logApi.updateLog as jest.Mock;
 const mockGetLogEditContext = logApi.getLogEditContext as jest.Mock;
 const mockDeleteLog = logApi.deleteLog as jest.Mock;
+const mockMarkDayComplete = logApi.markDayComplete as jest.Mock;
 const mockGetLogMutationStatus = logApi.getLogMutationStatus as jest.Mock;
 const mockGetDailySummary = logApi.getDailySummary as jest.Mock;
 const mockGetTargets = targetApi.getTargets as jest.Mock;
@@ -138,7 +140,7 @@ test("one composed runtime exposes every approved feature interface", () => {
   ]);
   expect(Object.keys(remoteNutritionRuntime.dailyLogs)).toEqual([
     "list", "listFuture", "listRecentEntries", "create", "update",
-    "getEditContext", "delete", "getMutationStatus", "getDailySummary",
+    "getEditContext", "delete", "markDayComplete", "getMutationStatus", "getDailySummary",
   ]);
   expect(Object.keys(remoteNutritionRuntime.targets)).toEqual([
     "getConfiguration", "updateConfiguration", "resetOverride", "getDailyComparison",
@@ -202,6 +204,11 @@ test("every remote runtime operation delegates to its remote feature API exactly
   const logInput = { client_request_id: "request-1" } as never;
   const logUpdate = { client_request_id: "request-2" } as never;
   const logDelete = { client_request_id: "request-3" } as never;
+  const completeInput = {
+    client_request_id: "request-6",
+    calendar_revision: 4,
+    logged_date: "2026-08-13",
+  } as never;
   const targetInput = { profile: null } as never;
   const ocrInput = {} as never;
 
@@ -236,6 +243,7 @@ test("every remote runtime operation delegates to its remote feature API exactly
     remoteNutritionRuntime.dailyLogs.update("log-1", logUpdate),
     remoteNutritionRuntime.dailyLogs.getEditContext("log-1"),
     remoteNutritionRuntime.dailyLogs.delete("log-1", logDelete),
+    remoteNutritionRuntime.dailyLogs.markDayComplete(completeInput),
     remoteNutritionRuntime.dailyLogs.getMutationStatus("request-1", "create"),
     remoteNutritionRuntime.dailyLogs.getDailySummary("2026-08-13"),
     remoteNutritionRuntime.targets.getConfiguration(),
@@ -257,11 +265,11 @@ test("every remote runtime operation delegates to its remote feature API exactly
     mockListRecipes, mockGetRecipe, mockCreateRecipe, mockUpdateRecipe, mockDeleteRecipe,
     mockGetRecipeNutrition, mockPublishRecipe, mockListLogs, mockListFutureEntries,
     mockListRecentEntries, mockCreateLog, mockUpdateLog, mockGetLogEditContext, mockDeleteLog,
-    mockGetLogMutationStatus, mockGetDailySummary, mockGetTargets, mockUpdateTargets,
+    mockMarkDayComplete, mockGetLogMutationStatus, mockGetDailySummary, mockGetTargets, mockUpdateTargets,
     mockResetTargetOverride, mockGetDailyTargetComparison, mockParseNutritionLabel,
     mockConfirmNutritionLabel, mockSearchUsdaFoods, mockGetUsdaFoodPreview, mockImportUsdaFood,
   ];
-  expect(delegatedOperations).toHaveLength(41);
+  expect(delegatedOperations).toHaveLength(42);
   for (const operation of delegatedOperations) expect(operation).toHaveBeenCalledTimes(1);
 
   expect(mockEstablishCalendarTimeZone).toHaveBeenCalledWith("UTC");
@@ -288,6 +296,7 @@ test("every remote runtime operation delegates to its remote feature API exactly
   expect(mockUpdateLog).toHaveBeenCalledWith("log-1", logUpdate);
   expect(mockGetLogEditContext).toHaveBeenCalledWith("log-1");
   expect(mockDeleteLog).toHaveBeenCalledWith("log-1", logDelete);
+  expect(mockMarkDayComplete).toHaveBeenCalledWith(completeInput);
   expect(mockGetLogMutationStatus).toHaveBeenCalledWith("request-1", "create");
   expect(mockGetDailySummary).toHaveBeenCalledWith("2026-08-13");
   expect(mockUpdateTargets).toHaveBeenCalledWith(targetInput);

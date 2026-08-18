@@ -134,6 +134,23 @@ class LogRepository:
         )
         return self.db.scalar(statement) is not None
 
+    def lock_first_for_date(self, user_id: UUID, logged_date: date) -> DailyLog | None:
+        """Serialize date-owned mutations on one stable Daily Log row.
+
+        Complete is date-owned but intentionally has no second resource identity.
+        Locking the owner's first Log for the date both proves non-empty ownership
+        and provides an existing UUID anchor for the generic mutation receipt.
+        """
+
+        statement = (
+            select(DailyLog)
+            .where(DailyLog.user_id == user_id, DailyLog.logged_date == logged_date)
+            .order_by(DailyLog.id)
+            .limit(1)
+            .with_for_update(of=DailyLog)
+        )
+        return self.db.scalars(statement).first()
+
     def get_day_completion(
         self,
         user_id: UUID,

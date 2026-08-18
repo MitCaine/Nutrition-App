@@ -1,6 +1,8 @@
 import { apiRequest } from "../../../shared/api/client";
 import type {
   DailyLog,
+  DailyLogCompleteInput,
+  DailyLogCompletion,
   DailyLogCreateInput,
   DailyLogDeleteInput,
   DailyLogEditContext,
@@ -46,6 +48,13 @@ export function deleteLog(logId: string, input: DailyLogDeleteInput = {}): Promi
     options.body = JSON.stringify(input);
   }
   return apiRequest<void>(`/logs/${logId}`, options);
+}
+
+export function markDayComplete(input: DailyLogCompleteInput): Promise<DailyLogCompletion> {
+  return apiRequest<DailyLogCompletion>("/logs/complete", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getLogMutationStatus(

@@ -3,11 +3,16 @@ import { AppState, type AppStateStatus } from "react-native";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import type { DailyLogsRuntime } from "../../../runtime/NutritionRuntime";
+import type {
+  CompleteDailyLogsRuntime,
+  DailyLogsRuntime,
+} from "../../../runtime/NutritionRuntime";
 import type { RuntimeAuthorityIdentity } from "../../../runtime/authorityIdentity";
 import { RuntimeError } from "../../../runtime/RuntimeError";
 import type {
   DailyLog,
+  DailyLogCompleteInput,
+  DailyLogCompletion,
   DailyLogCreateInput,
   DailyLogDeleteInput,
   DailyLogMutationStatus,
@@ -21,15 +26,16 @@ import {
   projectConfirmedLog,
 } from "../hooks/useLogs";
 
+// Keep the established storage key so version-2 unresolved work can be
+// upgraded in place rather than becoming an orphaned parallel journal.
 export const LOG_MUTATION_RECOVERY_STORAGE_KEY = "nutrition.log-mutation-recovery.v2";
-// The exact-payload schema is a new durable shape. Older journals must remain
-// opaque and locked rather than being interpreted as unrestricted work.
-export const LOG_MUTATION_RECOVERY_VERSION = 2;
+export const LOG_MUTATION_RECOVERY_VERSION = 3;
+const PREVIOUS_LOG_MUTATION_RECOVERY_VERSION = 2;
 
 const INITIAL_RETRY_DELAY_MS = 2_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 
-export type LogMutationRecoveryMutation = "create" | "edit" | "move" | "delete";
+export type LogMutationRecoveryMutation = "create" | "edit" | "move" | "delete" | "complete";
 export type LogMutationRecoveryState =
   | "prepared"
   | "submitted"
@@ -42,7 +48,8 @@ export type LogMutationRecoveryActionableState = Exclude<LogMutationRecoveryStat
 export type RecoveryPayload =
   | { operation: "create"; input: DailyLogCreateInput }
   | { operation: "update"; log_id: string; input: Partial<DailyLogUpdateInput> }
-  | { operation: "delete"; log_id: string; input: DailyLogDeleteInput };
+  | { operation: "delete"; log_id: string; input: DailyLogDeleteInput }
+  | { operation: "complete"; input: DailyLogCompleteInput };
 
 /** Immutable, presentation-only identity captured when an intent is reviewed. */
 export type RecoveryDisplayContext = Readonly<{
@@ -81,7 +88,7 @@ export type LogMutationRecoveryDependencies = Readonly<{
   dailyLogs: Pick<
     DailyLogsRuntime,
     "getMutationStatus" | "create" | "update" | "delete"
-  >;
+  > & Partial<Pick<CompleteDailyLogsRuntime, "markDayComplete">>;
 }>;
 
 type StoredEnvelope = {
@@ -153,10 +160,13 @@ function notifyJournalChanged(recoveryScope: string): void {
   for (const listener of journalListenersByScope.get(recoveryScope) ?? []) listener();
 }
 
-function isPayload(value: unknown): value is RecoveryPayload {
+function isPayload(value: unknown, allowComplete: boolean): value is RecoveryPayload {
   if (typeof value !== "object" || value === null || !("operation" in value)) return false;
   const candidate = value as { operation?: unknown; input?: unknown; log_id?: unknown };
   if (candidate.operation === "create") return typeof candidate.input === "object" && candidate.input !== null;
+  if (allowComplete && candidate.operation === "complete") {
+    return typeof candidate.input === "object" && candidate.input !== null;
+  }
   return (
     (candidate.operation === "update" || candidate.operation === "delete")
     && typeof candidate.log_id === "string"
@@ -186,23 +196,31 @@ function normalizedDisplayContext(value: unknown): RecoveryDisplayContext {
   };
 }
 
-type StoredAuthoritativeRecoveryRecord = Omit<LogMutationRecoveryRecord, "display_context"> & {
+type StoredCompatibleRecoveryRecord = Omit<LogMutationRecoveryRecord, "version" | "display_context"> & {
+  version: number;
   display_context?: unknown;
 };
 
-function isAuthoritativeRecord(value: unknown): value is StoredAuthoritativeRecoveryRecord {
+function isAuthoritativeRecord(
+  value: unknown,
+  expectedVersion: number,
+): value is StoredCompatibleRecoveryRecord {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<StoredAuthoritativeRecoveryRecord>;
+  const candidate = value as Partial<StoredCompatibleRecoveryRecord>;
+  const currentVersion = expectedVersion === LOG_MUTATION_RECOVERY_VERSION;
+  const allowedMutations = currentVersion
+    ? ["create", "edit", "move", "delete", "complete"]
+    : ["create", "edit", "move", "delete"];
   return (
-    candidate.version === LOG_MUTATION_RECOVERY_VERSION
+    candidate.version === expectedVersion
     && typeof candidate.owner_scope === "string"
     && typeof candidate.id === "string"
     && typeof candidate.client_request_id === "string"
-    && ["create", "edit", "move", "delete"].includes(candidate.mutation_type as string)
+    && allowedMutations.includes(candidate.mutation_type as string)
     && (typeof candidate.target_id === "string" || candidate.target_id === null)
     && typeof candidate.source_date === "string"
     && (typeof candidate.destination_date === "string" || candidate.destination_date === null)
-    && isPayload(candidate.payload)
+    && isPayload(candidate.payload, currentVersion)
     && typeof candidate.created_at === "string"
     && (typeof candidate.last_reconciliation_attempt === "string" || candidate.last_reconciliation_attempt === null)
     && typeof candidate.reconciliation_attempts === "number"
@@ -212,11 +230,12 @@ function isAuthoritativeRecord(value: unknown): value is StoredAuthoritativeReco
   );
 }
 
-function normalizeStoredRecord(record: StoredAuthoritativeRecoveryRecord): LogMutationRecoveryRecord {
+function normalizeStoredRecord(record: StoredCompatibleRecoveryRecord): LogMutationRecoveryRecord {
   return {
     ...record,
+    version: LOG_MUTATION_RECOVERY_VERSION,
     display_context: normalizedDisplayContext(record.display_context),
-  };
+  } as LogMutationRecoveryRecord;
 }
 
 function stableRecords(records: LogMutationRecoveryRecord[]): LogMutationRecoveryRecord[] {
@@ -273,7 +292,10 @@ async function readStored(storage: RecoveryStorage, recoveryScope: string): Prom
       };
     }
     const envelope = parsed as StoredEnvelope;
-    if (envelope.version !== LOG_MUTATION_RECOVERY_VERSION) {
+    if (
+      envelope.version !== LOG_MUTATION_RECOVERY_VERSION
+      && envelope.version !== PREVIOUS_LOG_MUTATION_RECOVERY_VERSION
+    ) {
       return {
         envelope,
         records: [],
@@ -281,13 +303,12 @@ async function readStored(storage: RecoveryStorage, recoveryScope: string): Prom
         health: { ready: false, unknownVersion: true, malformedRecordCount: 0, storageError: false },
       };
     }
-    const valid = envelope.records.filter(isAuthoritativeRecord);
+    const valid = envelope.records.filter((record) => isAuthoritativeRecord(record, envelope.version));
+    const normalized = valid.map(normalizeStoredRecord);
     return {
       envelope,
-      records: stableRecords(valid
-        .filter((record) => record.owner_scope === recoveryScope)
-        .map(normalizeStoredRecord)),
-      opaqueRecords: envelope.records.filter((record) => !isAuthoritativeRecord(record)),
+      records: stableRecords(normalized.filter((record) => record.owner_scope === recoveryScope)),
+      opaqueRecords: envelope.records.filter((record) => !isAuthoritativeRecord(record, envelope.version)),
       health: {
         ready: envelope.records.length === valid.length,
         unknownVersion: false,
@@ -314,8 +335,11 @@ async function writeStored(
   if (existing.health.unknownVersion || existing.health.storageError) {
     throw new RecoveryStorageError("Recovery journal is not writable in its current state.");
   }
-  const otherOwnerRecords = (existing.envelope?.records ?? []).filter((record) =>
-    isAuthoritativeRecord(record) && record.owner_scope !== recoveryScope);
+  const sourceVersion = existing.envelope?.version ?? LOG_MUTATION_RECOVERY_VERSION;
+  const otherOwnerRecords = (existing.envelope?.records ?? [])
+    .filter((record) => isAuthoritativeRecord(record, sourceVersion))
+    .map((record) => normalizeStoredRecord(record as StoredCompatibleRecoveryRecord))
+    .filter((record) => record.owner_scope !== recoveryScope);
   const payload = {
     version: LOG_MUTATION_RECOVERY_VERSION,
     records: [...existing.opaqueRecords, ...otherOwnerRecords, ...stableRecords(records)],
@@ -514,7 +538,7 @@ export function createLogMutationRecoveryRecord(input: {
   clientRequestId: string;
   mutationType: LogMutationRecoveryMutation;
   targetId?: string | null;
-  /** Legacy construction alias retained for in-process callers during the bounded correction. */
+  /** Legacy construction alias retained for in-process callers during bounded evolution. */
   logId?: string | null;
   sourceDate: string;
   destinationDate?: string | null;
@@ -524,20 +548,26 @@ export function createLogMutationRecoveryRecord(input: {
 }): LogMutationRecoveryRecord {
   const createdAt = input.createdAt ?? new Date().toISOString();
   const targetId = input.targetId ?? input.logId ?? null;
-  const payload: RecoveryPayload = input.payload ?? (input.mutationType === "create"
-    ? {
-        operation: "create",
-        input: {
-          client_request_id: input.clientRequestId,
-          food_item_id: "",
-          logged_date: input.sourceDate,
-          amount_quantity: "1",
-          amount_unit: "g",
-        },
-      }
-    : input.mutationType === "delete"
-      ? { operation: "delete", log_id: targetId ?? "", input: { client_request_id: input.clientRequestId } }
-      : { operation: "update", log_id: targetId ?? "", input: { client_request_id: input.clientRequestId } });
+  let payload = input.payload;
+  if (!payload) {
+    if (input.mutationType === "complete") {
+      throw new RecoveryStorageError("Complete recovery requires the exact submitted payload.");
+    }
+    payload = input.mutationType === "create"
+      ? {
+          operation: "create",
+          input: {
+            client_request_id: input.clientRequestId,
+            food_item_id: "",
+            logged_date: input.sourceDate,
+            amount_quantity: "1",
+            amount_unit: "g",
+          },
+        }
+      : input.mutationType === "delete"
+        ? { operation: "delete", log_id: targetId ?? "", input: { client_request_id: input.clientRequestId } }
+        : { operation: "update", log_id: targetId ?? "", input: { client_request_id: input.clientRequestId } };
+  }
   return {
     version: LOG_MUTATION_RECOVERY_VERSION,
     owner_scope: input.authority.recoveryScope,
@@ -567,6 +597,7 @@ export function isUncertainLogMutationError(error: unknown): boolean {
 }
 
 function operationFor(record: LogMutationRecoveryRecord): DailyLogMutationStatus["operation"] {
+  if (record.payload.operation === "complete") return "complete";
   return record.payload.operation === "create"
     ? "create"
     : record.payload.operation === "delete"
@@ -581,6 +612,7 @@ function affectedDates(record: LogMutationRecoveryRecord, status?: DailyLogMutat
     status?.source_logged_date,
     status?.destination_logged_date,
     status?.result?.logged_date,
+    status?.completion?.logged_date,
   ].filter((value): value is string => Boolean(value))));
 }
 
@@ -602,7 +634,7 @@ function projectConfirmedRecovery(
   if (record.payload.operation === "delete") {
     const logId = status.log_id ?? record.target_id;
     if (logId) projectConfirmedDelete(queryClient, record.source_date, logId);
-  } else if (status.result) {
+  } else if (record.payload.operation !== "complete" && status.result) {
     projectConfirmedLog(queryClient, status.source_logged_date ?? record.source_date, status.result);
   }
   refreshAffectedDates(queryClient, record, status);
@@ -661,19 +693,24 @@ export async function retryLogMutationRecoveryRecord(
   await upsertLogMutationRecoveryRecord(submitted, storage);
   try {
     let result: DailyLog | undefined;
+    let completion: DailyLogCompletion | undefined;
     if (submitted.payload.operation === "create") {
       result = await dependencies.dailyLogs.create(submitted.payload.input);
     } else if (submitted.payload.operation === "update") {
       result = await dependencies.dailyLogs.update(submitted.payload.log_id, submitted.payload.input);
-    } else {
+    } else if (submitted.payload.operation === "delete") {
       await dependencies.dailyLogs.delete(submitted.payload.log_id, submitted.payload.input);
+    } else {
+      if (!dependencies.dailyLogs.markDayComplete) return "pending";
+      completion = await dependencies.dailyLogs.markDayComplete(submitted.payload.input);
     }
     const status: DailyLogMutationStatus = {
       operation: operationFor(submitted),
       client_request_id: submitted.client_request_id,
       status: "confirmed_success",
-      log_id: result?.id ?? submitted.target_id,
+      log_id: submitted.payload.operation === "complete" ? null : result?.id ?? submitted.target_id,
       result: result ?? null,
+      completion: completion ?? null,
       source_logged_date: submitted.source_date,
       destination_logged_date: result?.logged_date ?? submitted.destination_date,
     };
@@ -686,6 +723,32 @@ export async function retryLogMutationRecoveryRecord(
     await removeLogMutationRecoveryRecord(submitted, storage);
     return "discarded";
   }
+}
+
+function isNutritionChangingRecovery(record: LogMutationRecoveryRecord): boolean {
+  if (record.mutation_type === "complete") return false;
+  if (record.mutation_type === "create" || record.mutation_type === "move" || record.mutation_type === "delete") {
+    return true;
+  }
+  if (record.payload.operation !== "update") return false;
+  return ["amount_quantity", "amount_unit", "serving_definition_id"].some((field) =>
+    Object.prototype.hasOwnProperty.call(record.payload.input, field));
+}
+
+/** Pure workflow gate for E4-07: unresolved nutrition work blocks Complete on either affected date. */
+export function hasUnresolvedNutritionMutationForDate(
+  records: readonly LogMutationRecoveryRecord[],
+  loggedDate: string,
+): boolean {
+  return records.some((record) => {
+    const actionable = recoveryActionableState(record);
+    if (actionable === "confirmed_non_commit") return false;
+    if (actionable !== "prepared" && actionable !== "submitted" && actionable !== "reconciling") {
+      return false;
+    }
+    if (!isNutritionChangingRecovery(record)) return false;
+    return record.source_date === loggedDate || record.destination_date === loggedDate;
+  });
 }
 
 export function recoveryRecordsOverlap(

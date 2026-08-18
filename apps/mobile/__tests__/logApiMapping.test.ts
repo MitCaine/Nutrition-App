@@ -1,4 +1,4 @@
-import { deleteLog, getDailySummary, getLogEditContext, updateLog } from "../src/features/logging/api/logApi";
+import { deleteLog, getDailySummary, getLogEditContext, markDayComplete, updateLog } from "../src/features/logging/api/logApi";
 
 test("daily summary API mapping converts snake case totals to mobile shape", async () => {
   global.fetch = jest.fn().mockResolvedValue({
@@ -89,6 +89,29 @@ test("log delete API sends the replay and calendar context", async () => {
         calendar_revision: 4,
       }),
     }),
+  );
+});
+
+test("mark Complete API sends exact deterministic intent", async () => {
+  const result = {
+    logged_date: "2026-08-18",
+    completed_at: "2026-08-18T20:00:00.000000Z",
+  };
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => result,
+  });
+  const input = {
+    client_request_id: "22222222-2222-4222-8222-222222222222",
+    calendar_revision: 4,
+    logged_date: "2026-08-18",
+  };
+
+  await expect(markDayComplete(input)).resolves.toEqual(result);
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://localhost:8000/api/v1/logs/complete",
+    expect.objectContaining({ method: "POST", body: JSON.stringify(input) }),
   );
 });
 

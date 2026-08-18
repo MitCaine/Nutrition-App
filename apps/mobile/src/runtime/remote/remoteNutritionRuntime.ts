@@ -37,6 +37,7 @@ import {
   listFutureEntries,
   listLogs,
   listRecentEntries,
+  markDayComplete,
   updateLog,
 } from "../../features/logging/api/logApi";
 import {
@@ -106,6 +107,7 @@ const runtime: NutritionRuntime = {
     update: (logId, input) => mutate(() => updateLog(logId, input)),
     getEditContext: (logId) => read(() => getLogEditContext(logId)),
     delete: (logId, input) => mutate(() => deleteLog(logId, input)),
+    markDayComplete: (input) => mutate(() => markDayComplete(input)),
     getMutationStatus: (clientRequestId, operation) => read(
       () => getLogMutationStatus(clientRequestId, operation),
     ),

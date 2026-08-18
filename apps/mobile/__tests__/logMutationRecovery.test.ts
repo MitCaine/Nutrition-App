@@ -9,6 +9,7 @@ import {
   dismissLogMutationRecoveryRecord,
   getRecoveryJournalState,
   hasOverlappingRecovery,
+  LOG_MUTATION_RECOVERY_VERSION,
   removeLogMutationRecoveryRecord,
   recoveryActionableState,
   startLogMutationRecovery as startRecoveryWithDependencies,
@@ -134,7 +135,7 @@ test("journal persists only versioned recovery intent and preserves ordering", a
   const records = await loadLogMutationRecoveryJournal(storage);
   expect(records.map((record) => record.client_request_id)).toEqual(["earlier", "later"]);
   expect(JSON.parse(storage.value as string)).toEqual({
-    version: 2,
+    version: LOG_MUTATION_RECOVERY_VERSION,
     records: expect.arrayContaining([
       expect.objectContaining({ client_request_id: "earlier", mutation_type: "create" }),
       expect.objectContaining({ client_request_id: "later", mutation_type: "edit" }),
@@ -179,7 +180,8 @@ test("older version-2 records load with an identifier-free display fallback", as
     targetId: "opaque-log-id",
     sourceDate: "2026-07-14",
   });
-  const { display_context: _displayContext, ...olderV2Record } = current;
+  const { display_context: _displayContext, ...olderV2Fields } = current;
+  const olderV2Record = { ...olderV2Fields, version: 2 };
   const storage = memoryStorage(JSON.stringify({ version: 2, records: [olderV2Record] }));
 
   const stored = (await loadLogMutationRecoveryJournal(storage))[0];
@@ -189,6 +191,7 @@ test("older version-2 records load with an identifier-free display fallback", as
     amount_label: null,
     meal_label: null,
   });
+  expect(stored.version).toBe(LOG_MUTATION_RECOVERY_VERSION);
   expect(getRecoveryJournalState(TEST_AUTHORITY).ready).toBe(true);
 });
 
@@ -214,7 +217,7 @@ async function loadRecordWithRawDisplayContext(displayContext: unknown) {
   });
   const storage = memoryStorage(JSON.stringify({
     version: 2,
-    records: [{ ...authoritativeRecord, display_context: displayContext }],
+    records: [{ ...authoritativeRecord, version: 2, display_context: displayContext }],
   }));
   const [record] = await loadLogMutationRecoveryJournal(storage);
   return { authoritativeRecord, record, state: getRecoveryJournalState(TEST_AUTHORITY) };
@@ -288,7 +291,7 @@ test("malformed authoritative fields still activate the recovery safety lock", a
   });
   const storage = memoryStorage(JSON.stringify({
     version: 2,
-    records: [{ ...valid, client_request_id: 42, display_context: { item_name: "Oatmeal" } }],
+    records: [{ ...valid, version: 2, client_request_id: 42, display_context: { item_name: "Oatmeal" } }],
   }));
 
   expect(await loadLogMutationRecoveryJournal(storage)).toEqual([]);

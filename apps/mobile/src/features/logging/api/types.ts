@@ -29,6 +29,17 @@ export type DailyLogDeleteInput = {
   calendar_revision?: number;
 };
 
+export type DailyLogCompleteInput = {
+  client_request_id: string;
+  calendar_revision: number;
+  logged_date: string;
+};
+
+export type DailyLogCompletion = {
+  logged_date: string;
+  completed_at: string;
+};
+
 export type DailyLog = {
   id: string;
   food_item_id: string;
@@ -76,13 +87,14 @@ export type RecentEntry = {
 };
 
 export type DailyLogMutationStatus = {
-  operation: "create" | "update" | "delete";
+  operation: "create" | "update" | "delete" | "complete";
   client_request_id: string;
   status: "confirmed_success" | "confirmed_non_commit" | "conflict" | "unresolved";
   log_id: string | null;
   source_logged_date?: string | null;
   destination_logged_date?: string | null;
   result: DailyLog | null;
+  completion?: DailyLogCompletion | null;
 };
 
 export type DailyLogEditAmount = {
