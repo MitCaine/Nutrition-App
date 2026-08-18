@@ -8,7 +8,19 @@ Version 1.2 is the current product line.
 
 Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
 
-At this repository state, the implementation issue/PR program is closed out: there is no remaining feature issue or pull-request backlog representing unfinished application work. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
+At this repository state, there is no open feature issue or pull-request implementation backlog. Product planning nevertheless retains two future product Epics that have not yet entered a new implementation cycle. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
+
+The [Current Product Roadmap](product-roadmap.md) owns the canonical Epic numbering used going forward:
+
+| Epic | Product area | Status |
+| --- | --- | --- |
+| Epic 1 | Daily Logging Flow | Complete |
+| Epic 2 | Local-First SQLite Runtime | Complete |
+| Epic 3 | Nutrition Label Capture Confidence | Complete; absorbed by Epic 2 OCR and subsequent OCR/camera work |
+| Epic 4 | Nutrition History and Trends | Planned; not yet entered a new implementation cycle |
+| Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope because substantial adjacent Recipe work already landed |
+
+The historical Version 1.1 product roadmap predates this canonical numbering. In that record, Nutrition History and Trends was product Epic 2, Recipe Reuse and Discovery was product Epic 3, and Nutrition Label Capture Confidence was product Epic 4. Current planning maps those product areas to Epics 4, 5, and 3 respectively. Historical documents retain their point-in-time numbering rather than being rewritten as if the current sequence had existed when they were authored.
 
 The Version 1.1 roadmap, PRDs, architecture reviews, implementation backlogs, and closure records are retained as historical implementation evidence. They are not the current planning state. New scope should be documented deliberately rather than inferred from those completed planning artifacts.
 
@@ -62,6 +74,7 @@ Historical Version 1.0 and Version 1.1 release/closure evidence remains availabl
 | Need | Canonical document |
 | --- | --- |
 | Current product line and supported boundaries | This document |
+| Current product Epic numbering and planning status | [Current Product Roadmap](product-roadmap.md) |
 | Enduring purpose, scope, and priorities | [Project Constitution](constitution.md) |
 | Technical truths that changes must preserve | [Project Invariants](invariants.md) |
 | Minimum implementation or review context | [Project Onboarding](onboarding.md) |
