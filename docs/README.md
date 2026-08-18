@@ -20,6 +20,10 @@ For a new feature that has completed planning, follow the [GitHub Implementation
 to translate approved scope into implementation artifacts. Do not treat completed Version 1.1/Epic 2
 backlogs or closed issues as current work simply because their records remain in the repository.
 
+Epic 4 is currently a special pre-implementation case: its Version 1.2 planning package is frozen,
+but implementation remains blocked until repository documentation validation and project audit pass.
+Use the [Epic 4 Planning Index](project/version-1.2/epic-4/README.md) when working on that gate.
+
 Historical records are not part of the default implementation context. Open them only when a
 current guide links to a specific record or the task concerns provenance, migration history,
 compatibility evidence, or a past decision.
@@ -36,27 +40,31 @@ compatibility evidence, or a past decision.
 
 Start with [Onboarding](project/onboarding.md), then use the [Repository Tour](project/repository-tour.md).
 The current repository is beyond the completed Version 1.1/Epic 2 implementation program, so current
-guides—not old planning artifacts—are the source for present feature scope.
+guides—not old planning artifacts—are the source for implemented feature scope. Versioned Version 1.2
+planning may govern an explicitly active future Epic before its behavior is promoted into current guides.
 
 ## Documentation taxonomy
 
 | Area | Purpose | Included in ordinary implementation context? |
 | --- | --- | --- |
-| [`project/`](project/onboarding.md) | Current state, invariants, onboarding, repository navigation, development workflow | Yes |
+| [`project/`](project/onboarding.md) | Current state, invariants, onboarding, repository navigation, development workflow, and active versioned product planning | Yes |
 | [`architecture/`](architecture/overview.md) | Current system boundaries and accepted decision index | When the change crosses a boundary |
-| [`features/`](features/foods-and-nutrition.md) | Current domain and user-facing subsystem guides | Only the affected guide |
+| [`features/`](features/foods-and-nutrition.md) | Current implemented domain and user-facing subsystem guides | Only the affected guide |
 | [`operations/`](operations/README.md) | Testing, session validation, transfer qualification, preserved remote/PostgreSQL operations, control-plane operation, release qualification, runbooks | Only for validation or operational work |
 | [`reference/`](reference/glossary.md) | Stable lookup material | As needed |
 | [`historical/`](historical/README.md) | Stage chronology, production-hardening records, release evidence, learning routes | No, unless provenance is relevant |
-| [`project/version-1.1/`](project/version-1.1/version-1.1-roadmap.md) | Completed Version 1.1/Epic 1/Epic 2 planning, implementation, and closure records | No, unless reviewing that program or its retained compatibility evidence |
+| [`project/version-1.1/`](project/version-1.1/version-1.1-roadmap.md) | Completed Version 1.1/Epic 1/Epic 2 planning, implementation, and closure records | No, unless reviewing that program or retained compatibility evidence |
+| [`project/version-1.2/epic-4/`](project/version-1.2/epic-4/README.md) | Frozen Epic 4 planning package awaiting validation/audit before implementation | Only for Epic 4 planning/implementation work |
 
 ## Current canonical project knowledge
 
-- [Current State](project/current-state.md): current Version 1.2 product line, completed Epic 2,
+- [Current State](project/current-state.md): current Version 1.2 product line, completed Epics,
   local-first authority, preserved remote/reference runtime, current capabilities/limitations, and
   dependency-maintenance boundary.
 - [Current Product Roadmap](project/product-roadmap.md): canonical current Epic numbering, completion
-  status, planned product Epics, and the mapping from historical Version 1.1 product numbering.
+  and planning status, and the mapping from historical Version 1.1 product numbering.
+- [Epic 4 Planning Index](project/version-1.2/epic-4/README.md): frozen Nutrition History and Trends
+  research/Grill, Feature PRD, data/runtime contracts, architecture review, and implementation backlog.
 - [Project Constitution](project/constitution.md): enduring purpose, scope, non-goals, quality standards,
   deployment model, and priorities.
 - [Project Invariants](project/invariants.md): canonical cross-cutting technical invariants and rationale,
@@ -70,16 +78,18 @@ guides—not old planning artifacts—are the source for present feature scope.
   artifact responsibilities for future work.
 - [Implementation Lessons](project/implementation-lessons.md): retained engineering lessons from
   completed implementation work.
-
-- [Future Product and Scalability Options](project/future-product-and-scale.md): non-roadmap idea register for deliberately deferred product, platform, and scaling options.
+- [Future Product and Scalability Options](project/future-product-and-scale.md): non-roadmap idea register
+  for deliberately deferred product, platform, accessibility, and scaling options.
 
 ## Current repository status
 
-Version 1.1 and the technical Epic 2 program are complete. The subsequent implementation issue/PR
-work represented in the repository is also closed. The canonical current product sequence treats
-Nutrition Label Capture Confidence as completed Epic 3, Nutrition History and Trends as planned
-Epic 4, and Recipe Reuse and Discovery as planned Epic 5. Epics 4 and 5 have not entered a new
-implementation backlog yet.
+Version 1.1 and the technical Epic 2 program are complete. Subsequent implementation issue/PR work
+represented in the repository is also closed. Nutrition Label Capture Confidence is completed Epic 3.
+
+Epic 4 — Nutrition History and Trends now has a frozen Version 1.2 planning package and bounded
+implementation backlog, but it has no implementation issue/PR yet and no application code has been
+authorized. Repository documentation validation and project audit are the remaining planning gates.
+Epic 5 — Recipe Reuse and Discovery remains planned and requires re-scope.
 
 Current `main` includes substantial post-Epic-2 work: expanded nutrient coverage and qualified units,
 serving reference/gram-authority fixes, improved Recipe serving/yield UX, personalized DRI-based
@@ -90,6 +100,21 @@ sticky/fixed route headers, and related accessibility/refinement work.
 The remaining known maintenance constraint is dependency-security cleanup that requires
 Expo-compatible upstream fixes. Current documentation must not describe closed issues/PRs as the
 active implementation backlog.
+
+## Current Version 1.2 planning records
+
+Epic 4's frozen pre-implementation package is current planning evidence, not implemented feature guidance:
+
+- [Epic 4 Planning Index](project/version-1.2/epic-4/README.md).
+- [Epic 4 Research Record](project/version-1.2/epic-4/planning.md).
+- [Epic 4 Grill Decision Record](project/version-1.2/epic-4/accepted-decisions.md).
+- [Epic 4 Feature PRD](project/version-1.2/epic-4/feature-prd.md).
+- [Epic 4 Data and Runtime Contracts](project/version-1.2/epic-4/data-contracts.md).
+- [Epic 4 Architecture Review](project/version-1.2/epic-4/architecture-review.md).
+- [Epic 4 Implementation Backlog](project/version-1.2/epic-4/implementation-backlog.md).
+
+These artifacts govern planned Epic 4 scope only. Current feature guides remain authoritative for
+what the application actually does until implementation and qualification are complete.
 
 ## Completed planning and implementation records
 
@@ -117,16 +142,19 @@ plans do not mention it.
 
 ## Architecture
 
-- [Architecture Overview](architecture/overview.md): current system, layer, persistence, runtime,
-  local-backup/bootstrap, UI-infrastructure, and test boundaries.
-- [Architecture Decision Index](architecture/decisions.md): accepted decisions including explicit
-  application-data authority, serving/reference authority, reference-derived Targets, and validated
-  local backup replacement.
+- [Architecture Overview](architecture/overview.md): current implemented system, layer, persistence,
+  runtime, local-backup/bootstrap, UI-infrastructure, and test boundaries.
+- [Architecture Decision Index](architecture/decisions.md): accepted implemented decisions including
+  explicit application-data authority, serving/reference authority, reference-derived Targets, and
+  validated local backup replacement.
 
 The default application-data authority is local SQLite. FastAPI/PostgreSQL remains a preserved
 alternate/reference authority. The two application-data authorities do not synchronize, dual-write,
 fail over, or silently mix. A local backup is a validated replacement artifact, not a second live
 authority.
+
+Epic 4's pre-implementation architecture decision is versioned within its planning package and must
+not be mistaken for already-implemented current architecture.
 
 ## Feature guides
 
@@ -135,7 +163,7 @@ authority.
   policy.
 - [Recipes and Nutrition History](features/recipes-and-logging.md): authoring/yields/serving choices,
   immutable publication, revisions, projections, Daily Logs, and current guarded mobile authoring
-  behavior. “History” means retained exact nutrition/revisions, not a separate trends subsystem.
+  behavior. “History” currently means retained exact nutrition/revisions, not the unimplemented Epic 4 trends surface.
 - [OCR, Search, Offline Behavior, and Local Backup](features/ocr-search-and-offline.md): guided native
   camera capture, Apple Vision recognition, conservative quality hints, parsing/provenance, search
   composition, local/remote offline boundaries, and validated local SQLite backup/restore.
@@ -165,14 +193,16 @@ repository state.
 
 ## Canonicality rules
 
-- Implementation and migrations remain authoritative for behavior/state.
+- Implementation and migrations remain authoritative for implemented behavior/state.
 - [Project Constitution](project/constitution.md) owns enduring purpose, scope, non-goals, and engineering priorities.
 - [Current State](project/current-state.md) owns current release/product-line, runtime-authority,
   migration-head, completed-program, and deployment/maintenance-boundary summaries.
 - [Current Product Roadmap](project/product-roadmap.md) owns current Epic numbering and product-Epic status.
 - [Project Invariants](project/invariants.md) owns cross-cutting invariants and rationale.
-- Current architecture, feature, and operations guides own their respective working guidance.
-- Versioned planning directories and historical/evidence records preserve point-in-time context;
+- Current architecture, feature, and operations guides own their respective implemented guidance.
+- An explicitly active versioned planning package may own approved future scope before implementation;
+  it does not override current guides about what is already implemented.
+- Versioned completed planning directories and historical/evidence records preserve point-in-time context;
   correct present-day guidance in current docs rather than rewriting history.
 - A closed historical issue/roadmap entry is not current unfinished work merely because its document remains.
 - Prefer one canonical explanation and links from other documents.
