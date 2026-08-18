@@ -29,7 +29,7 @@ durable intent and proven by independent observations.
 
 Phase 5C4.8 starts from:
 
-The current active application migration head is now `0029_expand_nutrient_catalog`; the historical
+The current active application migration head is now `0030_total_omega_3_nutrient`; the historical
 cutback boundary below remains intentionally pinned to `0021_target_activation_execution`.
 
 - application schema `0021_target_activation_execution`;

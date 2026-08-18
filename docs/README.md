@@ -69,6 +69,7 @@ The Version 1.1 planning and local-first implementation program is complete. Its
 - [E2-15 Transfer Architecture and Runbook](project/version-1.1/epic-2/e2-15-transfer-architecture.md).
 - [E2-16 Closure Evidence](project/version-1.1/epic-2/e2-16-closure-evidence.md).
 - [E2-18 Release Qualification / Closure Evidence](project/version-1.1/epic-2/e2-18-closure-evidence.md).
+- [Issue #108 Sticky Navigation Header Inventory](project/version-1.1/issue-108-sticky-header-inventory.md).
 
 ## Architecture
 

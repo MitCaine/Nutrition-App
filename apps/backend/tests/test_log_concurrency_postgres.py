@@ -1787,7 +1787,7 @@ def _ocr_confirmation_request(request_id):
 
     return OcrNutritionConfirmationRequest.model_validate(
         {
-            "parser_version": "nutrition_label_v1",
+            "parser_version": "nutrition_label_v2",
             "image_source_type": "photo_library",
             "client_request_id": request_id,
             "food": {

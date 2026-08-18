@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0029_expand_nutrient_catalog"
+    "0030_total_omega_3_nutrient"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"

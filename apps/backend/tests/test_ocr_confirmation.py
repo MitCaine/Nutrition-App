@@ -46,7 +46,7 @@ def confirmation_payload():
         {**decision("nutrient.total_fat", None, nutrient_id="total_fat", unit="g", status="missing"), "decision": "omitted", "suggested_value": None},
     ]
     return {
-        "parser_version": "nutrition_label_v1",
+        "parser_version": "nutrition_label_v2",
         "image_source_type": "photo_library",
         "client_request_id": str(uuid4()),
         "food": {

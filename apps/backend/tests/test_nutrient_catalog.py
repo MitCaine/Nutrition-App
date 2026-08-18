@@ -88,10 +88,11 @@ def test_nutrient_catalog_identities_order_and_parentage_are_stable() -> None:
     assert parents_by_id["dietary_fiber"] == "total_carbohydrate"
     assert parents_by_id["total_sugars"] == "total_carbohydrate"
     assert parents_by_id["added_sugars"] == "total_sugars"
-    assert parents_by_id["alpha_linolenic_acid"] == "total_fat"
-    assert parents_by_id["epa"] == "total_fat"
-    assert parents_by_id["dha"] == "total_fat"
-    assert parents_by_id["linoleic_acid"] == "total_fat"
+    assert parents_by_id["total_omega_3"] is None
+    assert parents_by_id["alpha_linolenic_acid"] == "total_omega_3"
+    assert parents_by_id["epa"] == "total_omega_3"
+    assert parents_by_id["dha"] == "total_omega_3"
+    assert parents_by_id["linoleic_acid"] is None
 
     assert all(
         nutrient.parent_nutrient_id is None or nutrient.parent_nutrient_id in ids
@@ -128,6 +129,7 @@ def test_non_daily_value_nutrients_remain_first_class_catalog_entries() -> None:
     for nutrient_id in (
         "trans_fat",
         "total_sugars",
+        "total_omega_3",
         "alpha_linolenic_acid",
         "epa",
         "dha",
@@ -136,6 +138,7 @@ def test_non_daily_value_nutrients_remain_first_class_catalog_entries() -> None:
         assert nutrient_id in by_id
         assert by_id[nutrient_id].fda_daily_value is None
 
+    assert by_id["total_omega_3"].dri_reference_kinds == ()
     assert by_id["alpha_linolenic_acid"].dri_reference_kinds == ("ai", "amdr")
     assert by_id["linoleic_acid"].dri_reference_kinds == ("ai", "amdr")
     assert by_id["epa"].dri_reference_kinds == ()

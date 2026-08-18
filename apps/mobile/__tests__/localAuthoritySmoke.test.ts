@@ -55,7 +55,7 @@ function decision(
 
 function ocrConfirmation(): OcrConfirmationInput {
   return {
-    parser_version: "nutrition_label_v1",
+    parser_version: "nutrition_label_v2",
     image_source_type: "camera",
     client_request_id: "00000000-0000-4000-8000-000000000801",
     food: {
@@ -251,7 +251,7 @@ test("selected local authority completes core workflows with FastAPI and Postgre
         durationMs: 20,
       },
     });
-    expect(parsed.parser_version).toBe("nutrition_label_v1");
+    expect(parsed.parser_version).toBe("nutrition_label_v2");
     await expect(runtime.ocr.confirmNutritionLabel(ocrConfirmation())).resolves.toMatchObject({
       food: { name: "Scanned cereal", source_kind: "ocr_confirmed" },
     });

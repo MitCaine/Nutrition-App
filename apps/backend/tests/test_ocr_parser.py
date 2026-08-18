@@ -54,6 +54,9 @@ def test_nutrient_name_matching_is_controlled_and_punctuation_tolerant() -> None
         ("Vitamin B5", "pantothenic_acid"),
         ("Vitamin B6", "vitamin_b6"),
         ("Vitamin B12", "vitamin_b12"),
+        ("Omega 3", "total_omega_3"),
+        ("Total Omega 3", "total_omega_3"),
+        ("Omega 3 Fatty Acids", "total_omega_3"),
         ("Folate", "folate"),
         ("Folic Acid", "folate"),
         ("Folacin", "folate"),
@@ -81,7 +84,6 @@ def test_extended_nutrient_aliases_are_explicit_and_controlled(
     [
         "Vitamin B",
         "Vitamin B11",
-        "Omega 3",
         "Omega 6",
         "Essential Fatty Acid",
         "Vitamin Complex",

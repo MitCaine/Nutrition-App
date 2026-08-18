@@ -41,7 +41,7 @@ def test_parse_endpoint_returns_deterministic_non_persisted_draft(
 
     assert first.status_code == 200, first.text
     assert first.json() == second.json()
-    assert first.json()["parser_version"] == "nutrition_label_v1"
+    assert first.json()["parser_version"] == "nutrition_label_v2"
     assert first.json()["calories"]["value"] == "180"
     assert first.json()["nutrients"][0]["nutrient_id"] == "protein"
     assert db_session.scalar(select(func.count()).select_from(FoodItem)) == before_foods

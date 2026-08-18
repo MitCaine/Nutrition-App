@@ -141,7 +141,7 @@ def test_usda_extended_catalog_mapping_preserves_semantic_units_and_unknowns() -
     preview = map_food_preview(usda_extended_nutrient_payload())
     nutrients = {nutrient.nutrient_id: nutrient for nutrient in preview.nutrients}
 
-    assert len(nutrients) == 42
+    assert len(nutrients) == 43
 
     assert nutrients["phosphorus"].amount == 125
     assert nutrients["zinc"].amount == 0
@@ -175,6 +175,10 @@ def test_usda_extended_catalog_mapping_preserves_semantic_units_and_unknowns() -
     assert nutrients["biotin"].amount == 4
     assert nutrients["vitamin_b12"].amount == Decimal("1.2")
     assert nutrients["choline"].amount == 25
+
+    # USDA component fatty acids must not be synthesized into a total Omega-3 value.
+    assert nutrients["total_omega_3"].amount is None
+    assert nutrients["total_omega_3"].data_status == "unknown"
 
     assert nutrients["dha"].amount == Decimal("30")
     assert nutrients["epa"].amount == Decimal("20")
