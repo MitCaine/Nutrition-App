@@ -55,6 +55,8 @@ guides—not old planning artifacts—are the source for present feature scope.
 - [Current State](project/current-state.md): current Version 1.2 product line, completed Epic 2,
   local-first authority, preserved remote/reference runtime, current capabilities/limitations, and
   dependency-maintenance boundary.
+- [Current Product Roadmap](project/product-roadmap.md): canonical current Epic numbering, completion
+  status, planned product Epics, and the mapping from historical Version 1.1 product numbering.
 - [Project Constitution](project/constitution.md): enduring purpose, scope, non-goals, quality standards,
   deployment model, and priorities.
 - [Project Invariants](project/invariants.md): canonical cross-cutting technical invariants and rationale,
@@ -73,12 +75,17 @@ guides—not old planning artifacts—are the source for present feature scope.
 
 ## Current repository status
 
-Version 1.1 and Epic 2 are complete. The subsequent implementation issue/PR work represented in the
-repository is also closed. Current `main` includes substantial post-Epic-2 work: expanded nutrient
-coverage and qualified units, serving reference/gram-authority fixes, improved Recipe serving/yield
-UX, personalized DRI-based Targets and per-nutrient tracking preferences, safe local backup/restore,
-guided nutrition-label camera capture, conservative OCR image-quality warnings, unsaved-draft
-protection, standardized sticky/fixed route headers, and related accessibility/refinement work.
+Version 1.1 and the technical Epic 2 program are complete. The subsequent implementation issue/PR
+work represented in the repository is also closed. The canonical current product sequence treats
+Nutrition Label Capture Confidence as completed Epic 3, Nutrition History and Trends as planned
+Epic 4, and Recipe Reuse and Discovery as planned Epic 5. Epics 4 and 5 have not entered a new
+implementation backlog yet.
+
+Current `main` includes substantial post-Epic-2 work: expanded nutrient coverage and qualified units,
+serving reference/gram-authority fixes, improved Recipe serving/yield UX, personalized DRI-based
+Targets and per-nutrient tracking preferences, safe local backup/restore, guided nutrition-label
+camera capture, conservative OCR image-quality warnings, unsaved-draft protection, standardized
+sticky/fixed route headers, and related accessibility/refinement work.
 
 The remaining known maintenance constraint is dependency-security cleanup that requires
 Expo-compatible upstream fixes. Current documentation must not describe closed issues/PRs as the
@@ -162,6 +169,7 @@ repository state.
 - [Project Constitution](project/constitution.md) owns enduring purpose, scope, non-goals, and engineering priorities.
 - [Current State](project/current-state.md) owns current release/product-line, runtime-authority,
   migration-head, completed-program, and deployment/maintenance-boundary summaries.
+- [Current Product Roadmap](project/product-roadmap.md) owns current Epic numbering and product-Epic status.
 - [Project Invariants](project/invariants.md) owns cross-cutting invariants and rationale.
 - Current architecture, feature, and operations guides own their respective working guidance.
 - Versioned planning directories and historical/evidence records preserve point-in-time context;
