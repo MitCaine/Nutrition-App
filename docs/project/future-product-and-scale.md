@@ -101,6 +101,12 @@ The current application does protect unsaved in-memory authoring state when navi
 
 Future durable draft work should be introduced only when the product need justifies its persistence, lifecycle, recovery, and synchronization semantics.
 
+### Manual retraction of Daily Log completion
+
+Epic 4 introduces `Complete` as a positive user assertion that a day has finished logging, with automatic invalidation when nutrition changes. Initial Epic 4 does not require a second explicit interaction for manually retracting an already asserted Complete state.
+
+A future refinement may add manual un-completion/retraction if real use shows a meaningful need—for example, if the user marks a day Complete prematurely but wants to reopen its status before making any nutrition-affecting edit. That capability should remain lightweight and should not introduce locking, workflow states, or new nutritional meaning beyond retracting the user's prior assertion.
+
 ## Nutrition analytics and guidance
 
 The current target system provides informational nutrition targets and daily comparisons. It deliberately does not provide therapeutic recommendations, diagnosis, longitudinal analytics, or medical-condition-specific target prescription.
