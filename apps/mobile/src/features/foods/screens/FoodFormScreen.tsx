@@ -7,6 +7,10 @@ import { applyValidationIssue } from "../../../shared/forms/validation";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { focusAccessibilityElement, useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
 import type { Food } from "../api/types";
 import { NutrientEntryList } from "../components/NutrientEntryList";
@@ -145,28 +149,35 @@ export function FoodFormScreen({
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <RouteScreenHeader
+        title={
+          servingManagementOnly
+            ? "Manage serving sizes"
+            : food
+              ? "Edit Food"
+              : "New Food"
+        }
+        titleRef={headingRef}
+        titleStyle={styles.title}
+        trailing={(
+          <RouteHeaderAction
+            accessibilityLabel={
+              servingManagementOnly
+                ? "Cancel serving management"
+                : food
+                  ? "Cancel editing food"
+                  : "Cancel creating food"
+            }
+            disabled={saving}
+            label="Cancel"
+            onPress={onCancel}
+          />
+        )}
+      />
+
       <KeyboardSafeScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         {(focusProps) => (
           <>
-            <View style={styles.header}>
-              <Text ref={headingRef} accessibilityRole="header" style={styles.title}>
-                {servingManagementOnly ? "Manage serving sizes" : food ? "Edit Food" : "New Food"}
-              </Text>
-              <AccessiblePressable
-                accessibilityLabel={
-                  servingManagementOnly
-                    ? "Cancel serving management"
-                    : food
-                      ? "Cancel editing food"
-                      : "Cancel creating food"
-                }
-                disabled={saving}
-                onPress={onCancel}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </AccessiblePressable>
-            </View>
-
             {servingManagementOnly && food ? (
               <Text style={styles.managementContext}>{food.name}</Text>
             ) : null}

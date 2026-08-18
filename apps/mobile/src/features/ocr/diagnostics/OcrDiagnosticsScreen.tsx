@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { RouteScreenHeader } from "../../../shared/components/RouteScreenHeader";
 import {
   DEFAULT_OCR_OPTIONS,
   isOcrSupported,
@@ -197,15 +198,39 @@ export function OcrDiagnosticsScreen({ onBack }: { onBack: () => void }) {
     : { x: 0, y: 0, width: 0, height: 0 };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={onBack} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
-          <Ionicons name="chevron-back" size={24} color={theme.colors.accent} />
-          <Text style={styles.backText}>Settings</Text>
-        </Pressable>
-        <Text style={styles.title}>OCR Diagnostics</Text>
-        <Text style={styles.developmentBadge}>Development only</Text>
-      </View>
+    <View style={styles.screen}>
+      <RouteScreenHeader
+        title="OCR Diagnostics"
+        titleStyle={styles.title}
+        leading={(
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={onBack}
+            style={({ pressed }) => [
+              styles.back,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={24}
+              color={theme.colors.accent}
+            />
+            <Text
+              maxFontSizeMultiplier={1.5}
+              style={styles.backText}
+            >
+              Settings
+            </Text>
+          </Pressable>
+        )}
+      />
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.developmentBadge}>
+          Development only
+        </Text>
 
       <Text style={styles.body}>Camera captures, selected images, and recognized text stay on this device and are not saved to app data.</Text>
       {!supported && <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>OCR is unavailable. Use an iOS custom development build; Expo Go, Android, and web are unsupported.</Text>}
@@ -314,6 +339,7 @@ export function OcrDiagnosticsScreen({ onBack }: { onBack: () => void }) {
         ))}
       </View>
     </ScrollView>
+  </View>
   );
 }
 

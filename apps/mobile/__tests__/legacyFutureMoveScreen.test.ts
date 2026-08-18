@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text } from "react-native";
@@ -151,4 +152,24 @@ test("a future destination is rejected without submitting", async () => {
   expect(mockUpdateLog).not.toHaveBeenCalled();
   expect(screenText(renderer.root)).toContain("Choose Today or an earlier date for this move.");
   await act(async () => renderer.unmount());
+});
+
+test("#108 legacy move keeps Cancel and route title outside its scroller", async () => {
+  const { renderer } = await renderMove();
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "Move Legacy Entry",
+  );
+
+  expect(
+    header.findByProps({
+      accessibilityLabel:
+        "Cancel moving entry",
+    }),
+  ).toBeDefined();
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

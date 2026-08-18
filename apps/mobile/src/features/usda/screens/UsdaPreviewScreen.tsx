@@ -2,6 +2,10 @@ import { useMemo, useRef } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import { useAccessibilityScreenFocus } from "../../../shared/accessibility/focus";
@@ -35,17 +39,27 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
   if (!preview.data) {
     return (
       <View style={styles.screen}>
-        <AccessiblePressable accessibilityLabel="Back from USDA food details" onPress={onBack}>
-          <Text style={styles.text}>Back</Text>
-        </AccessiblePressable>
-        <Text ref={headingRef} accessibilityRole="header" style={styles.title}>USDA food details</Text>
-        <AccessibilityStatus
-          kind={preview.isError ? "retryable-failure" : "loading"}
-          message={previewMessage ?? "Loading USDA food…"}
-          retryContext={preview.isError ? "USDA food details" : undefined}
-          onRetry={preview.isError ? () => { void preview.refetch(); } : undefined}
-          messageStyle={preview.isError ? styles.error : styles.meta}
+        <RouteScreenHeader
+          title="USDA food details"
+          titleRef={headingRef}
+          titleStyle={styles.title}
+          leading={(
+            <RouteHeaderAction
+              accessibilityLabel="Back from USDA food details"
+              label="Back"
+              onPress={onBack}
+            />
+          )}
         />
+        <View style={styles.loadingContent}>
+          <AccessibilityStatus
+            kind={preview.isError ? "retryable-failure" : "loading"}
+            message={previewMessage ?? "Loading USDA food…"}
+            retryContext={preview.isError ? "USDA food details" : undefined}
+            onRetry={preview.isError ? () => { void preview.refetch(); } : undefined}
+            messageStyle={preview.isError ? styles.error : styles.meta}
+          />
+        </View>
       </View>
     );
   }
@@ -61,12 +75,26 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
 
   return (
     <View style={styles.screen}>
-      <AccessiblePressable accessibilityLabel="Back from USDA food details" busy={importer.isPending} onPress={onBack}>
-        <Text style={styles.text}>Back</Text>
-      </AccessiblePressable>
-      <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
+      <RouteScreenHeader
+        title={preview.data.name}
+        titleRef={headingRef}
+        titleStyle={styles.title}
+        leading={(
+          <RouteHeaderAction
+            accessibilityLabel="Back from USDA food details"
+            busy={importer.isPending}
+            disabled={importer.isPending}
+            label="Back"
+            onPress={onBack}
+          />
+        )}
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        scrollIndicatorInsets={{ right: 1 }}
+      >
         <View style={styles.header}>
-          <Text ref={headingRef} accessibilityRole="header" style={styles.title}>{preview.data.name}</Text>
           <Text style={styles.meta}>
             USDA {preview.data.data_type}
             {preview.data.brand ? ` - ${preview.data.brand}` : ""}
@@ -118,14 +146,25 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
-  content: { gap: 18, paddingBottom: 32, paddingRight: 28 },
+  content: {
+    gap: 18,
+    padding: 16,
+    paddingBottom: 32,
+    paddingRight: 28,
+  },
   error: { color: theme.colors.errorText },
   header: { gap: 6 },
+  loadingContent: {
+    padding: 16,
+  },
   meta: { color: theme.colors.secondaryText }, primaryButton: { alignItems: "center", backgroundColor: theme.colors.accent, borderRadius: 6, padding: 12 },
   primaryText: { color: theme.colors.accentForeground, fontWeight: "700" },
   row: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "space-between", paddingVertical: 10 },
   rowLabel: { color: theme.colors.text, flex: 1, paddingRight: 12 },
-  screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, padding: 16 },
+  screen: {
+    backgroundColor: theme.colors.background,
+    flex: 1,
+  },
   section: { gap: 4 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
   title: { color: theme.colors.text, fontSize: 24, fontWeight: "700" },

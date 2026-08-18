@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { Pressable, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -87,4 +88,51 @@ test("USDA preview exposes confirmation handoff and import busy state", async ()
   expect(action.props.accessibilityHint).toContain("logging confirmation");
   expect(renderer.root.findByProps({ accessibilityRole: "header", children: "Example Protein Bar" })).toBeDefined();
   await act(async () => renderer.unmount());
+});
+
+test("#108 USDA Preview keeps its busy Back action and title outside scrolling", async () => {
+  mockImporter = {
+    isPending: true,
+    isError: false,
+    mutate: jest.fn(),
+  };
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(
+        UsdaPreviewScreen,
+        {
+          fdcId: 555000,
+          onBack: jest.fn(),
+          onImported: jest.fn(),
+        },
+      ),
+    );
+  });
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "Example Protein Bar",
+  );
+
+  const back = header
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "Back from USDA food details",
+    )!;
+
+  expect(
+    back.props.accessibilityState,
+  ).toMatchObject({
+    busy: true,
+    disabled: true,
+  });
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

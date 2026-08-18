@@ -29,6 +29,11 @@ import {
   recipeDeleteErrorMessage,
 } from "../utils/recipeDelete";
 import { useAppTheme } from "../../../app/theme/AppTheme";
+import { BackButton } from "../../../shared/components/BackButton";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { createClientRequestId } from "../../logging/utils/clientRequestId";
 
 type Props = {
@@ -125,16 +130,29 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back from Recipe details" onPress={onBack}>
-          <Text style={styles.text}>Back</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Edit Recipe" accessibilityState={{ disabled: Boolean(editBlockedMessage) }} onPress={onEdit} disabled={Boolean(editBlockedMessage)}>
-          <Text style={styles.text}>Edit</Text>
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={styles.content} scrollIndicatorInsets={{ right: 1 }}>
-        <Text accessibilityRole="header" style={styles.title}>{recipe.name}</Text>
+      <RouteScreenHeader
+        title={recipe.name}
+        titleStyle={styles.title}
+        leading={(
+          <BackButton
+            accessibilityLabel="Back from Recipe details"
+            onPress={onBack}
+          />
+        )}
+        trailing={(
+          <RouteHeaderAction
+            accessibilityLabel="Edit Recipe"
+            disabled={Boolean(editBlockedMessage)}
+            label="Edit"
+            onPress={onEdit}
+          />
+        )}
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        scrollIndicatorInsets={{ right: 1 }}
+      >
         {recipe.notes ? <Text style={styles.meta}>{recipe.notes}</Text> : null}
         <View style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>Yield</Text>

@@ -23,6 +23,7 @@ import { foodDetailLoadState } from "../utils/foodDetailState";
 import { foodDetailActions, isRevisionBackedRecipeDetail } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { BackButton } from "../../../shared/components/BackButton";
+import { RouteScreenHeader } from "../../../shared/components/RouteScreenHeader";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import {
   foodDetailLogInitialAmount,
@@ -147,36 +148,64 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
 
   if (loadState.kind !== "ready" || !food.data) {
     return (
-      <View style={styles.screen}>
-        <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
-        <Text style={loadState.kind === "error" ? styles.error : styles.text}>
-          {loadState.kind === "unavailable" || loadState.kind === "error"
-            ? loadState.message
-            : "Loading..."}
-        </Text>
-        {loadState.kind === "error" ? (
-          <Pressable onPress={() => food.refetch()} style={styles.secondaryButton}>
-            <Text style={styles.text}>Retry</Text>
-          </Pressable>
-        ) : null}
+      <View style={styles.container}>
+        <RouteScreenHeader
+          title="Food details"
+          titleStyle={styles.title}
+          leading={(
+            <BackButton
+              accessibilityLabel="Back from food details"
+              onPress={onBack}
+            />
+          )}
+        />
+        <View style={styles.screen}>
+          <Text style={loadState.kind === "error" ? styles.error : styles.text}>
+            {loadState.kind === "unavailable" || loadState.kind === "error"
+              ? loadState.message
+              : "Loading..."}
+          </Text>
+          {loadState.kind === "error" ? (
+            <Pressable
+              onPress={() => food.refetch()}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.text}>Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     );
   }
 
   if (resolvedNutrition.isLoading || !resolvedNutrition.data) {
     return (
-      <View style={styles.screen}>
-        <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
-        <Text style={resolvedNutrition.isError ? styles.error : styles.text}>
-          {resolvedNutrition.isError
-            ? apiErrorMessage(resolvedNutrition.error, "Could not resolve nutrition for this food.")
-            : "Loading nutrition..."}
-        </Text>
-        {resolvedNutrition.isError ? (
-          <Pressable onPress={() => resolvedNutrition.refetch()} style={styles.secondaryButton}>
-            <Text style={styles.text}>Retry</Text>
-          </Pressable>
-        ) : null}
+      <View style={styles.container}>
+        <RouteScreenHeader
+          title={food.data.name}
+          titleStyle={styles.title}
+          leading={(
+            <BackButton
+              accessibilityLabel="Back from food details"
+              onPress={onBack}
+            />
+          )}
+        />
+        <View style={styles.screen}>
+          <Text style={resolvedNutrition.isError ? styles.error : styles.text}>
+            {resolvedNutrition.isError
+              ? apiErrorMessage(resolvedNutrition.error, "Could not resolve nutrition for this food.")
+              : "Loading nutrition..."}
+          </Text>
+          {resolvedNutrition.isError ? (
+            <Pressable
+              onPress={() => resolvedNutrition.refetch()}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.text}>Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     );
   }
@@ -191,10 +220,26 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   const brand = food.data.brand?.trim();
 
   return (
-    <ScrollView contentContainerStyle={styles.screen} scrollIndicatorInsets={{ right: 1 }}>
-      <BackButton accessibilityLabel="Back from food details" onPress={onBack} />
-      <TransientSuccessBanner message={successMessage} onExpired={clearSuccessMessage}/>
-      <Text style={styles.title}>{food.data.name}</Text>
+    <View style={styles.container}>
+      <RouteScreenHeader
+        title={food.data.name}
+        titleStyle={styles.title}
+        leading={(
+          <BackButton
+            accessibilityLabel="Back from food details"
+            onPress={onBack}
+          />
+        )}
+      />
+
+      <ScrollView
+        contentContainerStyle={styles.screen}
+        scrollIndicatorInsets={{ right: 1 }}
+      >
+        <TransientSuccessBanner
+          message={successMessage}
+          onExpired={clearSuccessMessage}
+        />
       {brand ? <Text style={styles.brand}>{brand}</Text> : null}
       {managedByRecipe ? (
         <Text style={styles.publishedContext}>Current published Recipe nutrition</Text>
@@ -286,7 +331,8 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
           <Text style={styles.nutrientValue}>{formatResolvedFoodNutrient(nutrient)}</Text>
         </View>
       ))}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -350,6 +396,10 @@ function FoodDeleteDependencyModal({
 function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet.create({
   text: { color: theme.colors.text },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  container: {
+    backgroundColor: theme.colors.background,
+    flex: 1,
+  },
   deleteButton: { borderColor: theme.colors.destructive, borderRadius: 6, borderWidth: 1, padding: 10 },
   deleteText: { color: theme.colors.destructive }, error: { color: theme.colors.errorText, fontWeight: "600" },
   destructiveAction: { backgroundColor: theme.colors.destructive }, destructiveActionText: { color: theme.colors.accentForeground, fontWeight: "700" },

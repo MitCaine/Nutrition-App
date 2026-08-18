@@ -15,6 +15,7 @@ import {
   type AccessibilityFocusRequester,
 } from "../../shared/accessibility/focus";
 import { BackButton } from "../../shared/components/BackButton";
+import { RouteScreenHeader } from "../../shared/components/RouteScreenHeader";
 import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { APPEARANCE_OPTIONS, appearanceOptionSelected } from "./settingsModel";
 import { UsdaCredentialSettings } from "./UsdaCredentialSettings";
@@ -131,12 +132,24 @@ export function SettingsScreen({
     });
   }
   return (
-    <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" style={styles.scroll}>
-      <View style={styles.header}>
-        <BackButton accessibilityLabel="Back from settings" onPress={onBack} />
-        <Text ref={settingsHeadingRef} accessibilityRole="header" style={styles.title}>Settings</Text>
-      </View>
+    <View style={styles.container}>
+      <RouteScreenHeader
+        title="Settings"
+        titleRef={settingsHeadingRef}
+        titleStyle={styles.title}
+        leading={(
+          <BackButton
+            accessibilityLabel="Back from settings"
+            onPress={onBack}
+          />
+        )}
+      />
 
+      <ScrollView
+        contentContainerStyle={styles.screen}
+        keyboardShouldPersistTaps="handled"
+        style={styles.scroll}
+      >
       <TransientSuccessBanner
           message={successMessage}
           onExpired={() => setSuccessMessage(null)}
@@ -290,12 +303,17 @@ export function SettingsScreen({
           </AccessiblePressable>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
+    container: {
+      backgroundColor: theme.colors.background,
+      flex: 1,
+    },
     header: { gap: 8 },
     option: { alignItems: "center", backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: "row", gap: 8, justifyContent: "space-between", minHeight: 52, paddingHorizontal: 14, paddingVertical: 8 },
     optionText: { color: theme.colors.text, flex: 1, fontSize: 17 },

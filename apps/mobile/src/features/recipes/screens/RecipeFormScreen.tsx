@@ -6,6 +6,10 @@ import { KeyboardSafeScrollView } from "../../../shared/forms/KeyboardSafeScroll
 import { recipeFocusKey } from "../../../shared/forms/focusTargets";
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { useRecipeMutations } from "../hooks/useRecipes";
 import type { ServingDefinition, ServingDefinitionInput } from "../../foods/api/types";
 import { ServingUnitPicker } from "../../foods/components/ServingUnitPicker";
@@ -174,15 +178,22 @@ export function RecipeFormScreen({
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <RouteScreenHeader
+        title={draft.recipeId ? "Edit Recipe" : "New Recipe"}
+        titleStyle={styles.title}
+        trailing={(
+          <RouteHeaderAction
+            accessibilityLabel="Cancel Recipe editing"
+            disabled={isSaving}
+            label="Cancel"
+            onPress={onCancel}
+          />
+        )}
+      />
+
       <KeyboardSafeScrollView contentContainerStyle={styles.content}>
         {(focusProps) => (
           <>
-            <View style={styles.header}>
-              <Text accessibilityRole="header" style={styles.title}>{draft.recipeId ? "Edit Recipe" : "New Recipe"}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Cancel Recipe editing" accessibilityState={{ disabled: isSaving }} disabled={isSaving} onPress={onCancel} style={isSaving && styles.disabledButton}>
-                <Text style={styles.text}>Cancel</Text>
-              </Pressable>
-            </View>
             <View style={styles.topField}>
               <Text style={styles.formLabel}>Recipe name</Text>
               <TextInput accessibilityLabel="Recipe name" editable={!isSaving} {...focusProps(recipeFocusKey("name"))} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Recipe name" placeholderTextColor={theme.colors.placeholder} style={styles.input} />

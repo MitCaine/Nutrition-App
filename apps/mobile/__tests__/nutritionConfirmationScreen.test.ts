@@ -1,5 +1,6 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
-import { Modal, Pressable, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 import * as Crypto from "expo-crypto";
 
@@ -1071,4 +1072,64 @@ test("an unresolved unknown row exposes state without swallowing its dismissal a
   await act(async () => directedAction(renderer.root, "Dismiss unknown nutrient Molybdenum").props.onPress());
   expect(action(renderer.root, "Create Food")).toBeDefined();
   await act(async () => renderer.unmount());
+});
+
+
+test("#108 confirmation keeps Cancel and route title outside the scrolling review body", async () => {
+  const onCancel = jest.fn();
+  const { renderer } = await render(
+    draft(),
+    jest.fn(),
+    jest.fn(),
+    onCancel,
+  );
+
+  expectFixedRouteHeader(
+    renderer.root,
+    "Confirm nutrition",
+  );
+
+  const header = renderer.root.findByProps({
+    testID: "route-screen-header",
+  });
+
+  for (
+    const scroll
+    of renderer.root.findAllByType(
+      ScrollView,
+    )
+  ) {
+    expect(
+      scroll.findAllByProps({
+        testID: "route-screen-header",
+      }),
+    ).toHaveLength(0);
+  }
+
+  const heading = header
+    .findAllByType(Text)
+    .find(
+      (node) =>
+        node.props.accessibilityRole
+        === "header",
+    );
+
+  expect(
+    heading?.props.maxFontSizeMultiplier,
+  ).toBe(1.5);
+
+  const cancelAction = action(
+    header,
+    "Cancel confirmation",
+  );
+
+  await act(async () =>
+    cancelAction.props.onPress(),
+  );
+
+  expect(onCancel).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

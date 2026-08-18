@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { StyleSheet, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -122,4 +123,44 @@ test("Recipe serving ingredients can open authoritative saved-serving management
   expect(onManageServingSizes).toHaveBeenCalledWith(draft.ingredients[0]);
 
   await act(async () => renderer.unmount());
+});
+
+test("#108 Recipe Form keeps Cancel and route title outside keyboard-safe scrolling", async () => {
+  const onCancel = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(
+        RecipeFormScreen,
+        {
+          draft,
+          setDraft: jest.fn(),
+          onCancel,
+          onSaved: jest.fn(),
+          onAddIngredient: jest.fn(),
+        },
+      ),
+    );
+  });
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "New Recipe",
+  );
+
+  const cancel = header.findByProps({
+    accessibilityLabel:
+      "Cancel Recipe editing",
+  });
+
+  await act(async () =>
+    cancel.props.onPress(),
+  );
+
+  expect(onCancel).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

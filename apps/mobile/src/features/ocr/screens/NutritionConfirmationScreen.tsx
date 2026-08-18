@@ -8,6 +8,10 @@ import { KeyboardSafeScrollView, type KeyboardSafeScrollViewHandle } from "../..
 import { LabeledField } from "../../../shared/forms/LabeledField";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
 import { focusAccessibilityElement, useAccessibilityScreenFocus, type CancelAccessibilityFocus } from "../../../shared/accessibility/focus";
 import { useNutrients } from "../../foods/hooks/useFoods";
@@ -302,8 +306,21 @@ export function NutritionConfirmationScreen({
 
   return <View style={styles.screen}>
     <View accessibilityElementsHidden={reviewPresented} importantForAccessibility={reviewPresented ? "no-hide-descendants" : "auto"} style={styles.screenContent}>
+      <RouteScreenHeader
+        title="Confirm nutrition"
+        titleRef={headingRef}
+        titleStyle={styles.title}
+        trailing={(
+          <RouteHeaderAction
+            accessibilityLabel="Cancel confirmation"
+            disabled={submitting}
+            label="Cancel"
+            onPress={cancel}
+          />
+        )}
+      />
+
       <KeyboardSafeScrollView ref={scrollRef} contentContainerStyle={styles.content}>{(focusProps) => <>
-      <View style={styles.header}><Text ref={headingRef} accessibilityRole="header" style={styles.title}>Confirm nutrition</Text><AccessiblePressable accessibilityLabel="Cancel confirmation" disabled={submitting} onPress={cancel}><Text style={styles.link}>Cancel</Text></AccessiblePressable></View>
       <Text accessibilityLiveRegion="polite" style={styles.notice}>Review flagged values. The image is not uploaded or saved.</Text>
       <Text accessibilityRole="header" style={styles.section}>Food</Text>
       <LabeledField {...focusProps("ocr.name")} label="Food name" validationTarget="ocr.name" required disabled={submitting} invalid={issuesByField.has("food.name")} error={issuesByField.get("food.name")?.message ?? null} value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} placeholder="Food name" placeholderTextColor={theme.colors.placeholder} inputStyle={styles.input}/>

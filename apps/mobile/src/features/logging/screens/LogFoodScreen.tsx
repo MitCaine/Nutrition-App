@@ -34,6 +34,10 @@ import { logInputSchema } from "../validation/logValidation";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { DatePickerModal } from "./DatePickerModal";
 import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { AccessibleModal } from "../../../shared/accessibility/AccessibleModal";
 import { contextualActionLabel } from "../../../shared/accessibility/contextualActionLabels";
 import { useAccessibilityAnnouncement } from "../../../shared/accessibility/announcements";
@@ -835,19 +839,25 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={12}
       >
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
-          <View style={styles.header}>
-            <Text ref={moveHeadingRef} accessibilityRole="header" style={styles.title}>Move Legacy Entry</Text>
-            <AccessiblePressable
+        <RouteScreenHeader
+          title="Move Legacy Entry"
+          titleRef={moveHeadingRef}
+          titleStyle={styles.title}
+          trailing={(
+            <RouteHeaderAction
               accessibilityLabel="Cancel moving entry"
-              accessibilityRole="button"
-              accessibilityState={{ disabled: isSubmitting }}
+              busy={isSubmitting}
               disabled={isSubmitting}
+              label="Cancel"
               onPress={cancel}
-            >
-              <Text style={styles.text}>Cancel</Text>
-            </AccessiblePressable>
-          </View>
+            />
+          )}
+        />
+
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.screen}
+        >
           <Text style={styles.calendarNotice}>Move this entry to Today or an earlier date. The entry identity, nutrition, and metadata remain unchanged.</Text>
           <Text
             accessibilityLabel={`${log.food_name_snapshot ?? "Deleted food"}, original date ${formatReadableDate(log.logged_date)}, ${formatInitialLogAmount(log.amount_quantity)} ${log.amount_unit}, ${mealLabel.toLowerCase()}${log.notes ? ", note present" : ", no note"}${!log.source_food_available ? ", source unavailable" : ""}`}
@@ -929,22 +939,25 @@ export function LogFoodScreen({ foodId, date, calendarRevision, onCancel, onSave
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={12}
     >
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
-        <View style={styles.header}>
-          <Text ref={headingRef} accessibilityRole="header" style={styles.title}>
-            {log ? "Edit Log" : "Log Food"}
-          </Text>
-          <AccessiblePressable
+      <RouteScreenHeader
+        title={log ? "Edit Log" : "Log Food"}
+        titleRef={headingRef}
+        titleStyle={styles.title}
+        trailing={(
+          <RouteHeaderAction
             accessibilityLabel={log ? "Cancel editing" : "Cancel logging"}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: isSubmitting }}
+            busy={isSubmitting}
             disabled={isSubmitting}
+            label="Cancel"
             onPress={cancel}
-            style={isSubmitting && styles.disabled}
-          >
-            <Text style={styles.text}>Cancel</Text>
-          </AccessiblePressable>
-        </View>
+          />
+        )}
+      />
+
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.screen}
+      >
         <Text style={styles.foodName}>{log?.food_name_snapshot ?? food.data?.name ?? "Food"}</Text>
         <Text accessibilityLabel={`Log date ${date}`} style={styles.calendarNotice}>Logging for {date}</Text>
         {log ? (

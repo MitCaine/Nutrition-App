@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -449,4 +450,43 @@ test("manual nutrient hierarchy uses one shared child indent and a normal termin
   expect(scrollViews).toHaveLength(1);
   expect(StyleSheet.flatten(scrollViews[0].props.contentContainerStyle)).toMatchObject({ paddingBottom: 16 });
   await act(async () => renderer.unmount());
+});
+
+test("#108 Food Form keeps Cancel and route title outside keyboard-safe scrolling", async () => {
+  const onCancel = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(
+        FoodFormScreen,
+        {
+          onCancel,
+          onSaved: jest.fn(),
+        },
+      ),
+    );
+  });
+
+  activeRenderers.add(renderer);
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "New Food",
+  );
+
+  const cancel = header.findByProps({
+    accessibilityLabel:
+      "Cancel creating food",
+  });
+
+  await act(async () =>
+    cancel.props.onPress(),
+  );
+
+  expect(onCancel).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

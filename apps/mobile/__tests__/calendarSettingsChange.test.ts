@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
@@ -236,4 +237,45 @@ test("a failed calendar confirmation exposes a safe assertive retry contract", a
     previewToken: "preview-token",
   });
   await act(async () => renderer.unmount());
+});
+
+test("#108 Settings keeps its route header outside the settings scroller", async () => {
+  const onBack = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(
+        SettingsScreen,
+        {
+          onBack,
+          onOpenNutritionTargets:
+            jest.fn(),
+        },
+      ),
+    );
+  });
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "Settings",
+  );
+
+  const back = header
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "Back from settings",
+    )!;
+
+  await act(async () =>
+    back.props.onPress(),
+  );
+
+  expect(onBack).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pressable, Text, TextInput } from "react-native";
@@ -828,5 +829,37 @@ test("a successful log followed by a fresh screen uses a new request ID", async 
   await flushRecoveryBarrier();
   expect(mockCreateLog.mock.calls[0][0].client_request_id).not.toBe(
     mockCreateLog.mock.calls[1][0].client_request_id,
+  );
+});
+
+test("#108 Log Food keeps Cancel and route title outside its form scroller", async () => {
+  const onCancel = jest.fn();
+
+  const renderer = await render(
+    createScreen(
+      jest.fn(),
+      undefined,
+      onCancel,
+    ),
+  );
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "Log Food",
+  );
+
+  const cancel = header.findByProps({
+    accessibilityLabel:
+      "Cancel logging",
+  });
+
+  await act(async () =>
+    cancel.props.onPress(),
+  );
+
+  expect(onCancel).toHaveBeenCalledTimes(1);
+
+  await act(async () =>
+    renderer.unmount(),
   );
 });

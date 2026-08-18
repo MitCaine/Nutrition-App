@@ -11,6 +11,7 @@ import {
 import { useAppTheme } from "../../app/theme/AppTheme";
 import { KeyboardSafeScrollView } from "../../shared/forms/KeyboardSafeScrollView";
 import { BackButton } from "../../shared/components/BackButton";
+import { RouteScreenHeader } from "../../shared/components/RouteScreenHeader";
 import { TransientSuccessBanner } from "../../shared/components/TransientSuccessBanner";
 import { formatDisplayNumber } from "../../shared/nutrition/display";
 import { NUTRIENT_CATALOG } from "../../shared/nutrition/catalog";
@@ -298,7 +299,21 @@ export function TargetSettingsScreen({
   if (query.isLoading && !result) {
     return (
       <View style={styles.screen}>
-        <Text style={styles.text}>Loading nutrition targets…</Text>
+        <RouteScreenHeader
+          title="Nutrition targets"
+          titleStyle={styles.title}
+          leading={(
+            <BackButton
+              accessibilityLabel="Back from nutrition targets"
+              onPress={onBack}
+            />
+          )}
+        />
+        <View style={styles.loadingContent}>
+          <Text style={styles.text}>
+            Loading nutrition targets…
+          </Text>
+        </View>
       </View>
     );
   }
@@ -306,11 +321,24 @@ export function TargetSettingsScreen({
   if (query.isError && !result) {
     return (
       <View style={styles.screen}>
-        <Text accessibilityRole="alert" style={styles.error}>
-          Could not load nutrition targets.
-        </Text>
-
-        <BackButton accessibilityLabel="Back from nutrition targets" onPress={onBack} />
+        <RouteScreenHeader
+          title="Nutrition targets"
+          titleStyle={styles.title}
+          leading={(
+            <BackButton
+              accessibilityLabel="Back from nutrition targets"
+              onPress={onBack}
+            />
+          )}
+        />
+        <View style={styles.loadingContent}>
+          <Text
+            accessibilityRole="alert"
+            style={styles.error}
+          >
+            Could not load nutrition targets.
+          </Text>
+        </View>
       </View>
     );
   }
@@ -367,17 +395,21 @@ export function TargetSettingsScreen({
 
   return (
     <View style={styles.screen}>
+      <RouteScreenHeader
+        title="Nutrition targets"
+        titleStyle={styles.title}
+        leading={(
+          <BackButton
+            accessibilityLabel="Back from nutrition targets"
+            disabled={submitting}
+            onPress={onBack}
+          />
+        )}
+      />
+
       <KeyboardSafeScrollView contentContainerStyle={styles.content}>
         {() => (
           <>
-            <View style={styles.header}>
-              <BackButton accessibilityLabel="Back from nutrition targets" disabled={submitting} onPress={onBack} />
-
-              <Text accessibilityRole="header" style={styles.title}>
-                Nutrition targets
-              </Text>
-            </View>
-
             <TransientSuccessBanner
                 message={successMessage}
                 onExpired={() => setSuccessMessage(null)}
@@ -1381,6 +1413,9 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) {
     },
     header: {
       gap: 8,
+    },
+    loadingContent: {
+      padding: 16,
     },
     input: {
       backgroundColor: theme.colors.secondarySurface,

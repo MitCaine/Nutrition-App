@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -788,6 +789,51 @@ test("#103 settings distinguishes profile-unavailable recommendation from amount
   expect(text).not.toContain(
     "No established target · Amount only by default",
   );
+
+  await act(async () =>
+    renderer.unmount(),
+  );
+});
+
+
+test("#108 nutrition targets keep route chrome outside the scrolling body", async () => {
+  const renderer = await render();
+  expectFixedRouteHeader(
+    renderer.root,
+    "Nutrition targets",
+  );
+
+  const header = renderer.root.findByProps({
+    testID: "route-screen-header",
+  });
+  const scroll = renderer.root.findByType(ScrollView);
+
+  expect(
+    scroll.findAllByProps({
+      testID: "route-screen-header",
+    }),
+  ).toHaveLength(0);
+
+  const heading = header
+    .findAllByType(Text)
+    .find(
+      (node) =>
+        node.props.accessibilityRole
+        === "header",
+    );
+
+  expect(
+    textContent(heading!),
+  ).toBe("Nutrition targets");
+  expect(
+    heading?.props.maxFontSizeMultiplier,
+  ).toBe(1.5);
+  expect(
+    action(
+      header,
+      "Back from nutrition targets",
+    ),
+  ).toBeDefined();
 
   await act(async () =>
     renderer.unmount(),

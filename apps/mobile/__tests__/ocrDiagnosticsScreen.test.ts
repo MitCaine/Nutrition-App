@@ -1,3 +1,4 @@
+import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { Image, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
@@ -234,4 +235,23 @@ test("repeated acquisition and recognition actions are blocked while busy", asyn
   expect(mockRecognizeTextFromImage).toHaveBeenCalledTimes(1);
   await act(async () => recognition.resolve(result));
   await act(async () => renderer.unmount());
+});
+
+test("#108 OCR Diagnostics keeps Back and route title outside diagnostics scrolling", async () => {
+  const renderer = await renderScreen();
+
+  const header = expectFixedRouteHeader(
+    renderer.root,
+    "OCR Diagnostics",
+  );
+
+  expect(
+    header.findByProps({
+      accessibilityLabel: "Back",
+    }),
+  ).toBeDefined();
+
+  await act(async () =>
+    renderer.unmount(),
+  );
 });

@@ -24,7 +24,12 @@ export function BackButton({ accessibilityLabel, disabled = false, onPress }: Pr
       style={({ pressed }) => [styles.back, pressed && styles.pressed]}
     >
       <Ionicons color={theme.colors.accent} name="chevron-back" size={24} />
-      <Text style={styles.backText}>Back</Text>
+      <Text
+        maxFontSizeMultiplier={1.5}
+        style={styles.backText}
+      >
+        Back
+      </Text>
     </AccessiblePressable>
   );
 }
