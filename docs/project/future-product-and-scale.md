@@ -132,6 +132,22 @@ Potential future work includes:
 
 Manual crop should not be introduced casually because the current OCR image lifecycle intentionally minimizes retained image state.
 
+## Accessibility expansion
+
+The application already contains some platform-level accessibility labels, roles, status semantics, touch-target treatment, and Dynamic Type-aware UI work. Comprehensive accessibility-focused product design and qualification are not currently active scope for the personal-use application.
+
+Potential future work includes:
+
+- screen-reader-specific semantics for charts and historical data visualizations;
+- dedicated accessible alternatives for dense or gesture-driven analytical controls;
+- systematic VoiceOver navigation/focus qualification across primary flows;
+- broader Dynamic Type and text-scaling qualification for dense nutrition surfaces;
+- contrast and non-color-cue audits across target/limit/history presentation;
+- accessibility-specific chart summaries and exact-value navigation;
+- accessibility settings where a concrete user need justifies app-specific controls rather than relying on platform behavior.
+
+These should be introduced as explicit product requirements when needed rather than expanding unrelated feature Epics by default.
+
 ## Durable drafts and queued work
 
 Current mutation recovery determines whether an already submitted mutation committed. Separately, navigation guards protect unsaved in-memory drafts from accidental abandonment.
