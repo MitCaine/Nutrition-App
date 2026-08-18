@@ -69,6 +69,8 @@ guides—not old planning artifacts—are the source for present feature scope.
 - [Implementation Lessons](project/implementation-lessons.md): retained engineering lessons from
   completed implementation work.
 
+- [Future Product and Scalability Options](project/future-product-and-scale.md): non-roadmap idea register for deliberately deferred product, platform, and scaling options.
+
 ## Current repository status
 
 Version 1.1 and Epic 2 are complete. The subsequent implementation issue/PR work represented in the
