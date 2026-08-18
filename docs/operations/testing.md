@@ -76,7 +76,7 @@ claim that depends on those native behaviors.
 These names are representative, not permission to skip affected neighboring tests. Use the complete
 backend/mobile baseline before declaring a cross-cutting feature change finished.
 
-## What each backend suite family proves
+## What each backend suite proves
 
 | Suite family | Main claim |
 | --- | --- |
@@ -184,7 +184,7 @@ NUTRITION_TEST_POSTGRES_URL=postgresql+psycopg://nutrition_app:nutrition_app@loc
 Performance evidence does not replace correctness qualification. A timing result cannot waive
 conversion, lineage, immutable-history, or authority rules.
 
-## Control database and production-hardening tests
+## Control-database qualification
 
 The control/Phase 5C4 suites are security/authority qualification. Use only disposable PostgreSQL
 and follow the [Control Plane Guide](control-plane.md) and exact runbook associated with the stage.
@@ -245,12 +245,19 @@ Ordinary/session-end suites do not start this destructive topology. A qualified 
 proof only of the bounded provider/PostgreSQL/pgBackRest/MinIO scenarios named by that qualifier; it
 is not production-vendor certification.
 
-### Phase 5C4.9 / Version 1.0 frozen release boundary
+### Phase 5C4.9 Version 1.0 release gate
 
 The preserved Version 1.0 release boundary remains application
 `0021_target_activation_execution` and control `ops_0011_phase5c4_recovery_audit`. Current remote
 application development has advanced to `0030_total_omega_3_nutrient`; this does not rewrite the
 historical release head.
+
+The frozen initial-migration replay comparison remains part of that qualification boundary:
+
+```bash
+REQUIRE_POSTGRES_TESTS=1 \
+  pytest -q tests/test_initial_migration_replay_postgres.py
+```
 
 The authoritative frozen command/evidence manifest is
 [Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md). Developer

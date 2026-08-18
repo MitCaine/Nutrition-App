@@ -24,7 +24,7 @@ deployment-profile record remains decision provenance; the current boundary is m
 - [Recipe Food compatibility projections](#recipe-food-compatibility-projections)
 - [Revision-backed nutrition logging](#revision-backed-nutrition-logging)
 - [Unknown nutrients are not zero](#unknown-nutrients-are-not-zero)
-- [Explicit serving identities, gram authority, and reference measurements](#explicit-serving-identities-gram-authority-and-reference-measurements)
+- [Explicit serving identities and gram weights](#explicit-serving-identities-and-gram-weights)
 - [Reference-derived Targets stay outside nutrition history](#reference-derived-targets-stay-outside-nutrition-history)
 - [Bounded OCR correction provenance](#bounded-ocr-correction-provenance)
 - [Saved Foods and USDA Foods remain distinct](#saved-foods-and-usda-foods-remain-distinct)
@@ -107,7 +107,7 @@ status through aggregation exposes incomplete contributors instead of creating f
 **Read more:** [Foods and Nutrition Domain](../features/foods-and-nutrition.md#canonical-nutrition-model) and
 [Project Invariants](../project/invariants.md#why-distinguish-unknown-from-zero)
 
-### Explicit serving identities, gram authority, and reference measurements
+### Explicit serving identities and gram weights
 
 **Decision:** Serving-mode Recipe ingredients retain an exact serving ID. A household or display
 unit implies mass only when an explicit gram weight establishes physical equivalence. Serving

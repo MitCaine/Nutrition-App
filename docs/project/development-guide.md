@@ -102,9 +102,10 @@ development/release build rather than Expo Go.
 For every feature change, determine whether the contract change is authority-neutral, local-only,
 remote-only, or a parity change before editing implementation.
 
-## If you need to modify Foods, nutrients, or servings
+## If you need to modify Foods or servings
 
-Begin with the behavior being changed, not with a migration:
+Begin with the behavior being changed, including nutrient-catalog changes when Foods carry the new
+identity or unit:
 
 1. `app/catalog/nutrients.py` for canonical nutrient identity/hierarchy/default units/reference metadata;
 2. `app/api/v1/routers/foods.py` and `app/services/food_service.py` for remote Food mutations;
@@ -188,7 +189,7 @@ source-identity deduplication, and explicit import in both authorities. Use mock
 transport/mapper tests for most changes; use live upstream checks only as explicit manual
 qualification.
 
-## If you need to modify OCR, camera capture, or image-quality policy
+## If you need to modify OCR
 
 Follow the flow in [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md).
 
@@ -218,7 +219,7 @@ unified-search composition, Food/USDA hooks, and Food discovery helpers for favo
 Preserve stale-query suppression, the USDA minimum query length, explicit source sections, and the
 difference between importing an upstream Food and selecting a saved Food.
 
-## If you need to modify Targets or nutrition references
+## If you need to modify Targets
 
 Begin at `NutritionRuntime.targets`, then separate shared reference semantics from persistence:
 

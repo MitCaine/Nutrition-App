@@ -47,7 +47,7 @@ sequenceDiagram
     Mobile->>Mobile: Delete temporary camera capture
 ```
 
-### Guided capture and on-device responsibilities
+### On-device responsibilities
 
 The app now owns the nutrition-label camera preview through `expo-camera` instead of delegating
 camera acquisition to a generic image-picker camera flow. The capture view selects a supported back

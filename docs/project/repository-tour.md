@@ -136,7 +136,7 @@ under its versioned directory as completed evidence, not an active backlog.
 - `scripts/session-start.sh` and `scripts/session-end.sh` report and validate repository state.
 - `scripts/zip-project.sh` creates a bounded review archive without local secrets/generated output.
 
-## Persistence map
+## The persistence map
 
 There are three distinct durable persistence domains plus one local replacement/backup mechanism:
 
@@ -156,7 +156,7 @@ Current PostgreSQL heads are canonical in [Current State](current-state.md): rem
 authorized `0021_target_activation_execution` boundary remains part of remote operational history;
 it is not the current feature-development head.
 
-## Authority-first rule
+### Authority-first rule
 
 Before following any walkthrough, decide whether the change is:
 
@@ -170,7 +170,7 @@ That decision determines which implementation and tests are authoritative.
 
 ## Find your change
 
-### Foods, nutrients, or servings
+### If you're working on Foods
 
 Read [Foods and Nutrition Domain](../features/foods-and-nutrition.md). Start at
 `apps/mobile/src/features/foods`; then follow `NutritionRuntime.foods` into local Foods runtime or
@@ -178,7 +178,7 @@ the remote Food router/service. Canonical nutrient identity begins at `app/catal
 serving/unit semantics begin in `app/nutrition` and the Food schemas. Check Recipes whenever a
 serving generation or Food nutrition changes.
 
-### Recipes or Daily Logs
+### If you're working on Recipes or Daily Logs
 
 Read [Recipes and Nutrition History](../features/recipes-and-logging.md). Recipe behavior begins in
 `apps/mobile/src/features/recipes` and `app/services/recipe_service.py`; Log behavior begins in
@@ -186,7 +186,7 @@ Read [Recipes and Nutrition History](../features/recipes-and-logging.md). Recipe
 resolution before changing historical behavior. For navigation changes, also read the shared draft
 guard and route-header components.
 
-### Targets and DRI/FDA references
+### If you're working on Targets and DRI/FDA references
 
 Read [Targets and comparisons](../features/foods-and-nutrition.md#targets-and-comparisons). Start at
 `NutritionRuntime.targets`, local `localTargetsRuntime.ts`, remote `target_service.py`, and
@@ -194,7 +194,7 @@ Read [Targets and comparisons](../features/foods-and-nutrition.md#targets-and-co
 `src/shared/nutrition`, and `engineering/reference-data`. Keep DRI scope separate from the narrower
 calorie-estimation scope.
 
-### OCR or camera capture
+### If you're working on OCR
 
 Read [OCR, Search, Offline Behavior, and Local Backup](../features/ocr-search-and-offline.md). Start
 at `NutritionScanScreen.tsx` for the user flow, `NutritionCameraCapture.tsx`/`src/native/camera` for
@@ -202,26 +202,26 @@ guided acquisition, `modules/nutrition-ocr` for Apple Vision and image-quality m
 `app/ocr/parser.py` for remote deterministic parsing, or confirmation services/runtimes for
 persistence.
 
-### Local backup or restore
+### If you're working on local backup or restore
 
 Start at `src/storage/backup`, then Settings and the application-runtime bootstrap. Restore is
 validated replacement before the local authority opens. It is not an ordinary feature mutation and
 must not be converted into a merge/synchronization flow implicitly.
 
-### Search
+### If you're working on Search
 
 Start with [Unified Food search](../features/ocr-search-and-offline.md#unified-food-search), then
 follow the Saved Foods screen, unified-search/debounce utilities, Food query hook, and USDA query
 hook. Search is a client composition of two sources, not a standalone backend subsystem.
 
-### Epic 2 transfer or parity fixtures
+### If you're working on Epic 2 transfer or parity fixtures
 
 Epic 2 is complete. Begin with the retained E2-15 architecture/runbook and the corresponding
 `packages/shared-contracts/e2-15` artifacts only when a current schema/transfer change crosses that
 compatibility boundary. Do not reopen completed Epic 2 planning merely because a regression fixture
 needs a new version.
 
-### Phase 5 / control plane
+### If you're working on Phase 5
 
 Begin with the optional [Control Plane Guide](../operations/control-plane.md) and identify the exact
 stage before opening implementation files. Historical conversion lives in `app/operators`; remote
@@ -230,6 +230,70 @@ lives in `app/control_migrations` and `phase5c4_*` operator modules.
 
 Feature developers generally do not need this path. Phase 5 is production operations engineering
 around the preserved remote authority, not a prerequisite for ordinary local-first feature work.
+
+## Typical Change Walkthroughs
+
+These stable walkthrough anchors are retained because other project documentation can link directly
+to them. The detailed implementation checklist lives in the [Development Guide](development-guide.md).
+
+### Adding a new Food property
+
+Start with the canonical/domain meaning, then remote model/schema/service only if the remote
+contract changes, and the owning local runtime/mobile representation if local behavior changes.
+Include nutrient catalog/qualified-unit and serving-reference semantics when applicable. Preserve
+unknown-versus-zero, owner scope, idempotency, and immutable historical snapshots.
+
+### Extending Recipe publication
+
+Begin at Recipe service/publication and determine whether mutable authoring, immutable revision
+content, amount definitions, projection state, or nested dependency behavior changes. Preserve
+insert-only revision history and exact revision/amount authority.
+
+### Modifying OCR processing
+
+Identify the boundary first: guided acquisition, native recognition/image-quality inspection,
+TypeScript normalization, parser, or confirmation persistence. Preserve bounded provenance and the
+best-effort nature of image-quality inspection.
+
+### Adding a Daily Log feature
+
+Start at Log service/local Log runtime and snapshot/revision resolution. Preserve totals derived
+from snapshots, exact Recipe revision/amount bindings, owner scope, atomic mutation, and explicit
+confirmed-versus-unresolved results.
+
+### Extending USDA import
+
+Separate upstream transport, nutrient/serving mapping, preview, and persistent import. Preserve
+request-time credential boundaries, explicit import, expanded canonical nutrient mapping,
+per-100g normalization, source identity, and owner scope.
+
+### Adding a repository method
+
+Start from the owning remote service and add a repository method only when query reuse,
+lock-sensitive behavior, or persistence clarity earns the abstraction. Repositories do not replace
+service-owned transaction/ownership authority.
+
+### Adding a backend endpoint
+
+Define the use case/schema, keep the router thin, delegate to the owning service, and preserve
+central authentication, ownership, stable errors, transaction boundaries, and payload-bound replay
+where applicable.
+
+### Adding a mobile screen
+
+Start in the owning feature, determine its `NutritionRuntime` capability, and reuse shared route
+headers, draft guards, accessibility/status primitives, and central remote transport where
+appropriate. Never imply a mutation succeeded before the selected authority confirms it.
+
+### Changing local SQLite persistence
+
+Local SQLite is the implemented local authority, not a future cache. Start with the owning local
+runtime plus `src/storage/sqlite`; include `src/storage/backup` when schema/lifecycle changes can
+affect exported or restored databases. Preserve one selected authority, exact values, immutable
+history, idempotency, rollback, and native qualification for lifecycle claims.
+
+Any future synchronization or multi-device merge remains a new architecture decision; local SQLite
+and local backup are already implemented without those semantics.
 
 ## Cross-cutting mobile UI paths
 
@@ -260,9 +324,32 @@ semantics.
 
 Use the [Testing Guide](../operations/testing.md) to choose the minimum proof for a change.
 
+## What to ignore
+
+When working on ordinary local-first features, initially ignore:
+
+- `app/operators/phase5c*`;
+- `app/control_migrations/`;
+- `scripts/*phase5c*`;
+- `docs/historical/`;
+- production qualification Compose profiles.
+
+Return to them when a change actually touches remote migration/role topology, historical
+conversion, control evidence, promotion admission, or recovery qualification. Completed
+Version 1.1/Epic 2 planning is likewise not ordinary implementation context unless a retained
+compatibility contract explicitly points there.
+
 ## Next reading
 
 - Use the [Development Guide](development-guide.md) for a bounded modification checklist.
 - Use [Current State](current-state.md) for active heads and current limitations.
+- Use [Project Invariants](invariants.md) for the reasoning behind these boundaries.
 - Use the relevant feature guide before changing user-visible semantics.
 - Open versioned/historical records only for provenance or a compatibility boundary they explicitly own.
+
+## See also
+
+- [Architecture Decision Index](../architecture/decisions.md) for a quick rationale refresher
+- [Glossary](../reference/glossary.md) for project-specific terminology
+- [Documentation index](../README.md) for role-based reading paths
+- [Control Plane Guide](../operations/control-plane.md) for Phase 5 work only
