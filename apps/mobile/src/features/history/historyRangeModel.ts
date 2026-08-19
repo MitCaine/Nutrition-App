@@ -5,6 +5,9 @@ import {
   addCalendarDays,
 } from "../logging/utils/dailyLogDisplay";
 import type {
+  NutrientSectionId,
+} from "../../shared/nutrition/nutrientSections";
+import type {
   HistoryProjectionMode,
 } from "./types";
 
@@ -16,7 +19,26 @@ export type HistoryRangeLength =
 
 export type HistorySurface =
   | "overview"
-  | "nutrition_details";
+  | "nutrition_details"
+  | "focused_nutrient";
+
+export const HISTORY_DETAIL_SECTION_ORDER:
+readonly NutrientSectionId[] = [
+  "nutrition_facts",
+  "vitamins",
+  "minerals",
+  "fatty_acids",
+  "other",
+];
+
+export const
+DEFAULT_HISTORY_DETAIL_COLLAPSED_SECTION_IDS:
+readonly NutrientSectionId[] = [
+  "vitamins",
+  "minerals",
+  "fatty_acids",
+  "other",
+];
 
 export type HistorySession = Readonly<{
   rangeLength: HistoryRangeLength;
@@ -27,6 +49,10 @@ export type HistorySession = Readonly<{
     HistoryProjectionMode | null;
   surface?: HistorySurface;
   selectedChartDate?: string | null;
+  detailCollapsedSectionIds?:
+    readonly NutrientSectionId[];
+  detailScrollOffset?: number;
+  focusedNutrientId?: string | null;
 }>;
 
 export type HistoryRange = Readonly<{
@@ -88,10 +114,6 @@ export function withHistoryRangeLength(
   return {
     ...session,
     rangeLength,
-    // A mode change starts from the newest supported
-    // endpoint for this History navigation session.
-    // This keeps subsequent Previous/Next navigation
-    // on an exact 7- or 30-date paging lattice.
     endDate: session.latestEndDate,
     ...(
       session.selectedChartDate
@@ -129,6 +151,30 @@ export function historySelectedChartDate(
     ?? null;
 }
 
+export function
+historyDetailCollapsedSectionIds(
+  session: HistorySession,
+): readonly NutrientSectionId[] {
+  return (
+    session.detailCollapsedSectionIds
+    ?? DEFAULT_HISTORY_DETAIL_COLLAPSED_SECTION_IDS
+  );
+}
+
+export function historyDetailsScrollOffset(
+  session: HistorySession,
+): number {
+  return session.detailScrollOffset
+    ?? 0;
+}
+
+export function historyFocusedNutrientId(
+  session: HistorySession,
+): string | null {
+  return session.focusedNutrientId
+    ?? null;
+}
+
 export function withHistorySurface(
   session: HistorySession,
   surface: HistorySurface,
@@ -146,6 +192,78 @@ export function withHistorySelectedChartDate(
   return {
     ...session,
     selectedChartDate,
+  };
+}
+
+export function
+withHistoryDetailSectionToggled(
+  session: HistorySession,
+  sectionId: NutrientSectionId,
+): HistorySession {
+  const current =
+    historyDetailCollapsedSectionIds(
+      session,
+    );
+
+  const collapsed =
+    current.includes(sectionId)
+      ? current.filter(
+          (candidate) =>
+            candidate !== sectionId,
+        )
+      : [
+          ...current,
+          sectionId,
+        ];
+
+  const normalized =
+    HISTORY_DETAIL_SECTION_ORDER
+      .filter(
+        (candidate) =>
+          collapsed.includes(
+            candidate,
+          ),
+      );
+
+  return {
+    ...session,
+    detailCollapsedSectionIds:
+      normalized,
+  };
+}
+
+export function withHistoryDetailsScrollOffset(
+  session: HistorySession,
+  detailScrollOffset: number,
+): HistorySession {
+  const normalized =
+    Number.isFinite(
+      detailScrollOffset,
+    )
+      ? Math.max(
+          0,
+          Math.round(
+            detailScrollOffset,
+          ),
+        )
+      : 0;
+
+  return {
+    ...session,
+    detailScrollOffset:
+      normalized,
+  };
+}
+
+export function withHistoryFocusedNutrient(
+  session: HistorySession,
+  focusedNutrientId: string,
+): HistorySession {
+  return {
+    ...session,
+    surface:
+      "focused_nutrient",
+    focusedNutrientId,
   };
 }
 

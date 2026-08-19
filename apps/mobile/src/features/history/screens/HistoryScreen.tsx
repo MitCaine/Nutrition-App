@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
 } from "react";
 import {
   ScrollView,
@@ -42,6 +43,9 @@ import {
   selectedHistoryValueLabel,
 } from "../historyOverview";
 import {
+  buildHistoryNutritionDetailSections,
+} from "../historyNutritionDetails";
+import {
   HistoryDailyBarChart,
 } from "../components/HistoryDailyBarChart";
 import {
@@ -52,9 +56,15 @@ import {
   historyRange,
   nextHistorySession,
   previousHistorySession,
+  historyDetailCollapsedSectionIds,
+  historyDetailsScrollOffset,
+  historyFocusedNutrientId,
   historySelectedChartDate,
   historySurface,
   withHistoryDenominatorPreference,
+  withHistoryDetailSectionToggled,
+  withHistoryDetailsScrollOffset,
+  withHistoryFocusedNutrient,
   withHistoryRangeLength,
   withHistorySelectedChartDate,
   withHistorySurface,
@@ -84,6 +94,106 @@ function modeLabel(
     : "Logged days";
 }
 
+const HISTORY_MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+function compactHistoryRangeLabel(
+  startDate: string,
+  endDate: string,
+): string {
+  const [
+    startYear,
+    startMonth,
+    startDay,
+  ] = startDate
+    .split("-")
+    .map(Number);
+
+  const [
+    endYear,
+    endMonth,
+    endDay,
+  ] = endDate
+    .split("-")
+    .map(Number);
+
+  const startMonthLabel =
+    HISTORY_MONTH_LABELS[
+      startMonth - 1
+    ];
+
+  const endMonthLabel =
+    HISTORY_MONTH_LABELS[
+      endMonth - 1
+    ];
+
+  if (
+    !startMonthLabel
+    || !endMonthLabel
+    || !Number.isInteger(startYear)
+    || !Number.isInteger(endYear)
+    || !Number.isInteger(startDay)
+    || !Number.isInteger(endDay)
+  ) {
+    return `${startDate} – ${endDate}`;
+  }
+
+  if (
+    startYear === endYear
+    && startMonth === endMonth
+  ) {
+    return (
+      `${startMonthLabel} `
+      + `${startDay}–${endDay}, `
+      + `${startYear}`
+    );
+  }
+
+  if (
+    startYear === endYear
+  ) {
+    return (
+      `${startMonthLabel} ${startDay}`
+      + `–${endMonthLabel} ${endDay}, `
+      + `${startYear}`
+    );
+  }
+
+  return (
+    `${startMonthLabel} ${startDay}, `
+    + `${startYear}`
+    + `–${endMonthLabel} ${endDay}, `
+    + `${endYear}`
+  );
+}
+
+function compactHistoryCoverageLabel(
+  loggedDayCount: number,
+  completeDayCount: number,
+): string {
+  const loggedDayLabel =
+    loggedDayCount === 1
+      ? "day"
+      : "days";
+
+  return (
+    `${loggedDayCount} ${loggedDayLabel} logged`
+    + ` · ${completeDayCount} complete`
+  );
+}
+
 export function HistoryScreen({
   session,
   onSessionChange,
@@ -95,6 +205,9 @@ export function HistoryScreen({
     () => createStyles(theme),
     [theme],
   );
+
+  const scrollViewRef =
+    useRef<ScrollView>(null);
 
   const range =
     historyRange(session);
@@ -173,10 +286,82 @@ export function HistoryScreen({
     ],
   );
 
+  const detailSections = useMemo(
+    () =>
+      projection
+      && projection.coverage
+        .loggedDayCount > 0
+        ? buildHistoryNutritionDetailSections(
+            projection,
+            targetConfiguration.data,
+          )
+        : [],
+    [
+      projection,
+      targetConfiguration.data,
+    ],
+  );
+
   const surface =
     historySurface(
       session,
     );
+
+  const collapsedDetailSectionIds =
+    historyDetailCollapsedSectionIds(
+      session,
+    );
+
+  const detailScrollOffset =
+    historyDetailsScrollOffset(
+      session,
+    );
+
+  const focusedNutrientId =
+    historyFocusedNutrientId(
+      session,
+    );
+
+  const focusedDetailRow = useMemo(
+    () =>
+      focusedNutrientId
+        ? (
+            detailSections
+              .flatMap(
+                (section) =>
+                  section.rows,
+              )
+              .find(
+                (row) =>
+                  row.nutrientId
+                  === focusedNutrientId,
+              )
+            ?? null
+          )
+        : null,
+    [
+      detailSections,
+      focusedNutrientId,
+    ],
+  );
+
+  useEffect(() => {
+    if (
+      surface
+      !== "nutrition_details"
+    ) {
+      return;
+    }
+
+    scrollViewRef.current
+      ?.scrollTo({
+        animated: false,
+        y: detailScrollOffset,
+      });
+  }, [
+    detailScrollOffset,
+    surface,
+  ]);
 
   const selectedChartDate =
     historySelectedChartDate(
@@ -208,6 +393,12 @@ export function HistoryScreen({
     )} – ${formatReadableDate(
       range.endDate,
     )}`;
+
+  const compactRangeLabel =
+    compactHistoryRangeLabel(
+      range.startDate,
+      range.endDate,
+    );
 
   const chooseRangeLength = (
     rangeLength: HistoryRangeLength,
@@ -245,91 +436,179 @@ export function HistoryScreen({
     );
   };
 
+  const rememberDetailScrollOffset = (
+    offset: number,
+  ) => {
+    if (
+      surface
+      !== "nutrition_details"
+    ) {
+      return;
+    }
+
+    const normalized =
+      Math.max(
+        0,
+        Math.round(offset),
+      );
+
+    if (
+      normalized
+      === detailScrollOffset
+    ) {
+      return;
+    }
+
+    onSessionChange(
+      withHistoryDetailsScrollOffset(
+        session,
+        normalized,
+      ),
+    );
+  };
+
+  const handleHeaderBack = () => {
+    if (
+      surface
+      === "focused_nutrient"
+    ) {
+      onSessionChange(
+        withHistorySurface(
+          session,
+          "nutrition_details",
+        ),
+      );
+
+      return;
+    }
+
+    onBack();
+  };
+
   return (
     <View style={styles.screen}>
       <RouteScreenHeader
         title="History"
         leading={(
           <BackButton
-            accessibilityLabel="Back to Daily Log from History"
-            onPress={onBack}
+            accessibilityLabel={
+              surface
+                === "focused_nutrient"
+                ? "Back to Nutrition Details from focused History"
+                : "Back to Daily Log from History"
+            }
+            onPress={
+              handleHeaderBack
+            }
           />
         )}
       />
 
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={
           styles.content
         }
+        onMomentumScrollEnd={(
+          event,
+        ) =>
+          rememberDetailScrollOffset(
+            event.nativeEvent
+              .contentOffset.y,
+          )
+        }
+        onScrollEndDrag={(
+          event,
+        ) =>
+          rememberDetailScrollOffset(
+            event.nativeEvent
+              .contentOffset.y,
+          )
+        }
+        scrollEventThrottle={16}
       >
         <View
-          accessibilityRole="radiogroup"
-          style={styles.controlGroup}
+          style={
+            styles.compactPeriodCard
+          }
         >
-          <Text style={styles.label}>
-            Range
-          </Text>
+          <View
+            style={
+              styles.compactPeriodTopRow
+            }
+          >
+            <Text
+              accessibilityLabel={
+                `Selected History range ${rangeLabel}`
+              }
+              style={
+                styles.compactRangeText
+              }
+            >
+              {compactRangeLabel}
+            </Text>
 
-          <View style={styles.controlRow}>
-            {HISTORY_RANGE_LENGTHS.map(
-              (rangeLength) => {
-                const selected =
-                  session.rangeLength
-                  === rangeLength;
+            <View
+              accessibilityRole="radiogroup"
+              style={
+                styles.compactControlRow
+              }
+            >
+              {HISTORY_RANGE_LENGTHS.map(
+                (rangeLength) => {
+                  const selected =
+                    session.rangeLength
+                    === rangeLength;
 
-                return (
-                  <AccessiblePressable
-                    key={rangeLength}
-                    accessibilityLabel={
-                      `Use ${rangeLength} Days`
-                    }
-                    accessibilityRole="radio"
-                    accessibilityState={{
-                      checked: selected,
-                    }}
-                    onPress={() =>
-                      chooseRangeLength(
-                        rangeLength,
-                      )
-                    }
-                    style={[
-                      styles.choice,
-                      selected
-                        && styles.choiceSelected,
-                    ]}
-                  >
-                    <Text
+                  return (
+                    <AccessiblePressable
+                      key={rangeLength}
+                      accessibilityLabel={
+                        `Use ${rangeLength} Days`
+                      }
+                      accessibilityRole="radio"
+                      accessibilityState={{
+                        checked: selected,
+                      }}
+                      hitSlop={{
+                        top: 3,
+                        bottom: 3,
+                      }}
+                      onPress={() =>
+                        chooseRangeLength(
+                          rangeLength,
+                        )
+                      }
                       style={[
-                        styles.choiceText,
+                        styles.compactChoice,
+                        styles.compactRangeChoice,
                         selected
                           && styles
-                            .choiceTextSelected,
+                            .compactChoiceSelected,
                       ]}
                     >
-                      {rangeLength} Days
-                    </Text>
-                  </AccessiblePressable>
-                );
-              },
-            )}
+                      <Text
+                        style={[
+                          styles.compactChoiceText,
+                          selected
+                            && styles
+                              .compactChoiceTextSelected,
+                        ]}
+                      >
+                        {rangeLength} Days
+                      </Text>
+                    </AccessiblePressable>
+                  );
+                },
+              )}
+            </View>
           </View>
-        </View>
 
-        <View style={styles.rangeCard}>
-          <Text style={styles.label}>
-            Selected range
-          </Text>
-
-          <Text
-            accessibilityLabel={
-              `Selected History range ${rangeLabel}`
+          <View
+            style={
+              styles.compactPagingRow
             }
-            style={styles.rangeText}
           >
-            {rangeLabel}
-          </Text>
-
-          <View style={styles.pagingRow}>
             <AccessiblePressable
               accessibilityLabel="Previous History period"
               accessibilityState={{
@@ -344,14 +623,14 @@ export function HistoryScreen({
                 )
               }
               style={[
-                styles.pageButton,
+                styles.compactPageButton,
                 !canPrevious
                   && styles.disabled,
               ]}
             >
               <Text
                 style={[
-                  styles.pageButtonText,
+                  styles.compactPageButtonText,
                   !canPrevious
                     && styles.disabledText,
                 ]}
@@ -374,14 +653,14 @@ export function HistoryScreen({
                 )
               }
               style={[
-                styles.pageButton,
+                styles.compactPageButton,
                 !canNext
                   && styles.disabled,
               ]}
             >
               <Text
                 style={[
-                  styles.pageButtonText,
+                  styles.compactPageButtonText,
                   !canNext
                     && styles.disabledText,
                 ]}
@@ -390,6 +669,91 @@ export function HistoryScreen({
               </Text>
             </AccessiblePressable>
           </View>
+
+          {projection
+            && projection.coverage
+              .loggedDayCount > 0 ? (
+            <View
+              style={
+                styles.compactCoverageRow
+              }
+            >
+              {projection.coverage
+                .completeDayCount > 0 ? (
+                <View
+                  accessibilityRole="radiogroup"
+                  style={
+                    styles.compactControlRow
+                  }
+                >
+                  {(
+                    [
+                      "complete_days",
+                      "logged_days",
+                    ] as const
+                  ).map((mode) => {
+                    const selected =
+                      effectiveMode
+                      === mode;
+
+                    return (
+                      <AccessiblePressable
+                        key={mode}
+                        accessibilityLabel={
+                          `Use ${modeLabel(
+                            mode,
+                          )}`
+                        }
+                        accessibilityRole="radio"
+                        accessibilityState={{
+                          checked:
+                            selected,
+                        }}
+                        onPress={() =>
+                          chooseMode(
+                            mode,
+                          )
+                        }
+                        style={[
+                          styles.compactChoice,
+                          selected
+                            && styles
+                              .compactChoiceSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.compactChoiceText,
+                            selected
+                              && styles
+                                .compactChoiceTextSelected,
+                          ]}
+                        >
+                          {mode
+                            === "complete_days"
+                            ? "Complete"
+                            : "Logged"}
+                        </Text>
+                      </AccessiblePressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <Text
+                style={
+                  styles.compactCountText
+                }
+              >
+                {compactHistoryCoverageLabel(
+                  projection.coverage
+                    .loggedDayCount,
+                  projection.coverage
+                    .completeDayCount,
+                )}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {readState.kind
@@ -411,14 +775,6 @@ export function HistoryScreen({
               readState.retry
             }
             retryContext="History"
-          />
-        ) : null}
-
-        {readState.kind
-          === "refreshing" ? (
-          <AccessibilityStatus
-            kind="refreshing"
-            message="Refreshing History…"
           />
         ) : null}
 
@@ -458,96 +814,6 @@ export function HistoryScreen({
               />
             ) : (
               <>
-                <View style={styles.summaryCard}>
-                  {projection.coverage
-                    .completeDayCount > 0 ? (
-                    <View
-                      accessibilityRole="radiogroup"
-                      style={styles.controlGroup}
-                    >
-                      <Text style={styles.label}>
-                        Coverage
-                      </Text>
-
-                      <View
-                        style={
-                          styles.controlRow
-                        }
-                      >
-                        {(
-                          [
-                            "complete_days",
-                            "logged_days",
-                          ] as const
-                        ).map((mode) => {
-                          const selected =
-                            effectiveMode
-                            === mode;
-
-                          return (
-                            <AccessiblePressable
-                              key={mode}
-                              accessibilityLabel={
-                                `Use ${modeLabel(
-                                  mode,
-                                )}`
-                              }
-                              accessibilityRole="radio"
-                              accessibilityState={{
-                                checked:
-                                  selected,
-                              }}
-                              onPress={() =>
-                                chooseMode(
-                                  mode,
-                                )
-                              }
-                              style={[
-                                styles.choice,
-                                selected
-                                  && styles
-                                    .choiceSelected,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.choiceText,
-                                  selected
-                                    && styles
-                                      .choiceTextSelected,
-                                ]}
-                              >
-                                {modeLabel(
-                                  mode,
-                                )}
-                              </Text>
-                            </AccessiblePressable>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  <Text style={styles.summaryTitle}>
-                    Coverage mode:{" "}
-                    {modeLabel(
-                      effectiveMode,
-                    )}
-                  </Text>
-
-                  <Text style={styles.summaryText}>
-                    {
-                      projection.coverage
-                        .completeDayCount
-                    }{" "}
-                    Complete days ·{" "}
-                    {
-                      projection.coverage
-                        .loggedDayCount
-                    }{" "}
-                    logged days
-                  </Text>
-                </View>
 
                 {surface
                   === "overview" ? (
@@ -696,6 +962,209 @@ export function HistoryScreen({
                       },
                     )}
                   </>
+                ) : surface
+                    === "nutrition_details" ? (
+                  <View
+                    style={
+                      styles.detailsSurface
+                    }
+                  >
+                    <View
+                      style={
+                        styles.detailsHeader
+                      }
+                    >
+                      <Text
+                        accessibilityRole="header"
+                        style={
+                          styles.detailsTitle
+                        }
+                      >
+                        Nutrition Details
+                      </Text>
+
+                      <AccessiblePressable
+                        accessibilityHint={
+                          "Closes Nutrition Details and returns to the History overview"
+                        }
+                        accessibilityLabel={
+                          "Back to History overview"
+                        }
+                        hitSlop={{
+                          top: 3,
+                          bottom: 3,
+                        }}
+                        onPress={() =>
+                          onSessionChange(
+                            withHistorySurface(
+                              session,
+                              "overview",
+                            ),
+                          )
+                        }
+                        style={
+                          styles.closeButton
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.closeButtonText
+                          }
+                        >
+                          Close
+                        </Text>
+                      </AccessiblePressable>
+                    </View>
+
+                    {detailSections.map(
+                      (section) => {
+                        const expanded =
+                          !collapsedDetailSectionIds
+                            .includes(
+                              section.id,
+                            );
+
+                        return (
+                          <View
+                            key={
+                              section.id
+                            }
+                            style={
+                              styles.detailSection
+                            }
+                          >
+                            <AccessiblePressable
+                              accessibilityLabel={
+                                `${section.label} History section`
+                              }
+                              accessibilityState={{
+                                expanded,
+                              }}
+                              onPress={() =>
+                                onSessionChange(
+                                  withHistoryDetailSectionToggled(
+                                    session,
+                                    section.id,
+                                  ),
+                                )
+                              }
+                              style={
+                                styles.detailSectionHeader
+                              }
+                            >
+                              <Text
+                                accessibilityRole="header"
+                                style={
+                                  styles.detailSectionTitle
+                                }
+                              >
+                                {
+                                  section.label
+                                }
+                              </Text>
+
+                              <Text
+                                accessible={false}
+                                style={
+                                  styles.detailToggle
+                                }
+                              >
+                                {expanded
+                                  ? "−"
+                                  : "+"}
+                              </Text>
+                            </AccessiblePressable>
+
+                            {expanded
+                              ? section.rows.map(
+                                  (row) => (
+                                    <AccessiblePressable
+                                      key={
+                                        row.nutrientId
+                                      }
+                                      accessibilityHint={
+                                        "Opens focused nutrient History"
+                                      }
+                                      accessibilityLabel={
+                                        `Open ${row.label} focused History`
+                                      }
+                                      onPress={() =>
+                                        onSessionChange(
+                                          withHistoryFocusedNutrient(
+                                            session,
+                                            row.nutrientId,
+                                          ),
+                                        )
+                                      }
+                                      style={[
+                                        styles.detailRow,
+                                        row.hierarchyDepth
+                                          > 0
+                                          ? {
+                                              marginLeft:
+                                                row.hierarchyDepth
+                                                * 16,
+                                            }
+                                          : undefined,
+                                      ]}
+                                    >
+                                      <View
+                                        style={
+                                          styles.detailRowTop
+                                        }
+                                      >
+                                        <Text
+                                          style={
+                                            styles.detailRowName
+                                          }
+                                        >
+                                          {
+                                            row.label
+                                          }
+                                        </Text>
+
+                                        <Text
+                                          style={
+                                            styles.detailRowValue
+                                          }
+                                        >
+                                          {
+                                            row.value
+                                          }
+                                        </Text>
+                                      </View>
+
+                                      <Text
+                                        style={
+                                          styles.detailSecondary
+                                        }
+                                      >
+                                        {
+                                          row.denominatorContext
+                                        }
+                                      </Text>
+
+                                      {row.targetContext
+                                        ? (
+                                        <Text
+                                          style={
+                                            styles.detailSecondary
+                                          }
+                                        >
+                                          {
+                                            row.targetContext
+                                          }
+                                        </Text>
+                                      ) : null}
+                                    </AccessiblePressable>
+                                  ),
+                                )
+                              : null}
+                          </View>
+                        );
+                      },
+                    )}
+                  </View>
                 ) : (
                   <View
                     style={
@@ -703,31 +1172,49 @@ export function HistoryScreen({
                     }
                   >
                     <Text
+                      accessibilityRole="header"
                       style={
-                        styles.summaryTitle
+                        styles.detailsTitle
                       }
                     >
-                      Nutrition Details
+                      Focused nutrient History
                     </Text>
 
-                    <AccessiblePressable
-                      accessibilityLabel={
-                        "Back to History overview"
+                    <Text
+                      style={
+                        styles.focusedNutrientName
                       }
-                      onPress={() =>
-                        onSessionChange(
-                          withHistorySurface(
-                            session,
-                            "overview",
-                          ),
-                        )
-                      }
-                      style={styles.choice}
                     >
-                      <Text style={styles.choiceText}>
-                        Back to overview
+                      {
+                        focusedDetailRow
+                          ?.label
+                        ?? focusedNutrientId
+                        ?? "Nutrient"
+                      }
+                    </Text>
+
+                    {focusedDetailRow
+                      ? (
+                      <Text
+                        style={
+                          styles.detailSecondary
+                        }
+                      >
+                        Canonical unit:{" "}
+                        {
+                          focusedDetailRow
+                            .unit
+                        }
                       </Text>
-                    </AccessiblePressable>
+                    ) : null}
+
+                    <Text
+                      style={
+                        styles.detailSecondary
+                      }
+                    >
+                      Focused chart and exact daily values are implemented in E4-12.
+                    </Text>
                   </View>
                 )}
               </>
@@ -771,6 +1258,117 @@ function createStyles(
         theme.colors
           .selectedNavigationForeground,
     },
+    compactChoice: {
+      alignItems:
+        "center",
+      borderColor:
+        theme.colors.border,
+      borderRadius: 9,
+      borderWidth: 1,
+      justifyContent:
+        "center",
+      minHeight: 44,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    compactChoiceSelected: {
+      backgroundColor:
+        theme.colors
+          .selectedNavigationBackground,
+      borderColor:
+        theme.colors.accent,
+    },
+    compactChoiceText: {
+      color:
+        theme.colors.secondaryText,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    compactChoiceTextSelected: {
+      color:
+        theme.colors
+          .selectedNavigationForeground,
+    },
+    compactControlRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    compactCountText: {
+      color:
+        theme.colors.secondaryText,
+      flexGrow: 1,
+      flexShrink: 1,
+      fontSize: 13,
+      fontWeight: "600",
+      textAlign: "left",
+    },
+    compactCoverageRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+      justifyContent:
+        "space-between",
+    },
+    compactPageButton: {
+      alignItems:
+        "center",
+      borderColor:
+        theme.colors.border,
+      borderRadius: 9,
+      borderWidth: 1,
+      flex: 1,
+      justifyContent:
+        "center",
+      minHeight: 44,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    compactPageButtonText: {
+      color:
+        theme.colors.accent,
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    compactPagingRow: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 4,
+    },
+    compactPeriodCard: {
+      backgroundColor:
+        theme.colors.surface,
+      borderColor:
+        theme.colors.border,
+      borderRadius: 12,
+      borderWidth: 1,
+      gap: 8,
+      padding: 10,
+    },
+    compactPeriodTopRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 10,
+      justifyContent:
+        "space-between",
+    },
+    compactRangeChoice: {
+      minHeight: 38,
+      paddingVertical: 3,
+    },
+    compactRangeText: {
+      color:
+        theme.colors.text,
+      flexGrow: 1,
+      flexShrink: 1,
+      fontSize: 16,
+      fontWeight: "800",
+      lineHeight: 20,
+      minWidth: 140,
+      textAlign: "left",
+    },
     content: {
       gap: 16,
       padding: 16,
@@ -793,6 +1391,112 @@ function createStyles(
     disabledText: {
       color:
         theme.colors.disabledText,
+    },
+    closeButton: {
+      alignItems:
+        "center",
+      borderColor:
+        theme.colors.border,
+      borderRadius: 10,
+      borderWidth: 1,
+      justifyContent:
+        "center",
+      minHeight: 38,
+      paddingHorizontal: 14,
+      paddingVertical: 3,
+    },
+    closeButtonText: {
+      color:
+        theme.colors.accent,
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    detailRow: {
+      borderBottomColor:
+        theme.colors.border,
+      borderBottomWidth: 1,
+      gap: 4,
+      paddingHorizontal: 2,
+      paddingVertical: 10,
+    },
+    detailRowName: {
+      color:
+        theme.colors.text,
+      flex: 1,
+      fontSize: 15,
+      fontWeight: "700",
+      paddingRight: 10,
+    },
+    detailRowTop: {
+      alignItems: "flex-start",
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+    },
+    detailRowValue: {
+      color:
+        theme.colors.text,
+      fontSize: 15,
+      fontWeight: "600",
+      textAlign: "right",
+    },
+    detailSecondary: {
+      color:
+        theme.colors.secondaryText,
+      fontSize: 13,
+    },
+    detailsHeader: {
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+    },
+    detailsSurface: {
+      backgroundColor:
+        theme.colors.surface,
+      borderColor:
+        theme.colors.border,
+      borderRadius: 12,
+      borderWidth: 1,
+      gap: 12,
+      padding: 14,
+    },
+    detailsTitle: {
+      color:
+        theme.colors.text,
+      fontSize: 22,
+      fontWeight: "800",
+    },
+    detailSection: {
+      gap: 2,
+    },
+    detailSectionHeader: {
+      alignItems: "center",
+      borderBottomColor:
+        theme.colors.border,
+      borderBottomWidth: 2,
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      paddingVertical: 8,
+    },
+    detailSectionTitle: {
+      color:
+        theme.colors.text,
+      fontSize: 17,
+      fontWeight: "800",
+    },
+    detailToggle: {
+      color:
+        theme.colors.text,
+      fontSize: 24,
+      fontWeight: "600",
+    },
+    focusedNutrientName: {
+      color:
+        theme.colors.text,
+      fontSize: 20,
+      fontWeight: "800",
     },
     label: {
       color:

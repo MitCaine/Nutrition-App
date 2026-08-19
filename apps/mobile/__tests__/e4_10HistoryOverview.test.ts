@@ -981,11 +981,26 @@ test(
       "Nutrition Details",
     );
 
+    const detailsChartDateControls =
+      renderer.root
+        .findAllByType(
+          Pressable,
+        )
+        .filter(
+          (node) =>
+            typeof node.props
+              .accessibilityLabel
+              === "string"
+            && node.props
+              .accessibilityLabel
+              .startsWith(
+                "Select Calories History date",
+              ),
+        );
+
     expect(
-      detailsText,
-    ).not.toContain(
-      "Carbohydrate",
-    );
+      detailsChartDateControls,
+    ).toHaveLength(0);
 
     const back =
       renderer.root

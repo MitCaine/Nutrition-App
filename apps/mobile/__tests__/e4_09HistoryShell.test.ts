@@ -792,10 +792,10 @@ describe(
           "History",
         );
         expect(text).toContain(
-          "Coverage mode: Logged days",
+          "3 days logged · 0 complete",
         );
         expect(text).toContain(
-          "3 logged days",
+          "3 days logged",
         );
 
         expect(
@@ -868,7 +868,7 @@ describe(
         expect(
           screenText(renderer),
         ).toContain(
-          "Coverage mode: Complete days",
+          "3 days logged · 2 complete",
         );
 
         const completeControl =
@@ -1065,7 +1065,7 @@ describe(
         expect(
           refreshText,
         ).toContain(
-          "3 logged days",
+          "3 days logged",
         );
 
         await act(async () => {
