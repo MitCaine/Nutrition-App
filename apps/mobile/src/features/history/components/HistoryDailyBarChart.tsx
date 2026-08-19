@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import Svg, {
   Circle,
+  Line,
   Rect,
 } from "react-native-svg";
 
@@ -43,14 +44,37 @@ export type HistoryDailyBarGeometry =
     height: number;
     baseline: number;
     maxNumericValue: number;
+    scaleMaximum: number;
+    referenceValue: number | null;
+    referenceY: number | null;
     isScrollable: boolean;
     points:
       readonly HistoryDailyBarGeometryPoint[];
   }>;
 
+function normalizedReferenceValue(
+  referenceValue:
+    number | null | undefined,
+): number | null {
+  if (
+    referenceValue === null
+    || referenceValue === undefined
+    || !Number.isFinite(
+      referenceValue,
+    )
+    || referenceValue < 0
+  ) {
+    return null;
+  }
+
+  return referenceValue;
+}
+
 export function historyDailyBarGeometry(
   days:
     readonly HistoryProjectedDailyValue[],
+  referenceValue?:
+    number | null,
 ): HistoryDailyBarGeometry {
   const width =
     days.length > 7
@@ -87,6 +111,17 @@ export function historyDailyBarGeometry(
           0,
         )
       : 0;
+
+  const normalizedReference =
+    normalizedReferenceValue(
+      referenceValue,
+    );
+
+  const scaleMaximum =
+    Math.max(
+      maxNumericValue,
+      normalizedReference ?? 0,
+    );
 
   const slotWidth =
     days.length > 0
@@ -126,10 +161,10 @@ export function historyDailyBarGeometry(
         const barHeight =
           numericValue !== null
           && numericValue > 0
-          && maxNumericValue > 0
+          && scaleMaximum > 0
             ? (
                 numericValue
-                / maxNumericValue
+                / scaleMaximum
               ) * PLOT_HEIGHT
             : 0;
 
@@ -161,6 +196,19 @@ export function historyDailyBarGeometry(
       },
     );
 
+  const referenceY =
+    normalizedReference === null
+      ? null
+      : scaleMaximum > 0
+        ? (
+            BASELINE
+            - (
+              normalizedReference
+              / scaleMaximum
+            ) * PLOT_HEIGHT
+          )
+        : BASELINE;
+
   return {
     width,
     viewportWidth:
@@ -170,6 +218,10 @@ export function historyDailyBarGeometry(
     baseline:
       BASELINE,
     maxNumericValue,
+    scaleMaximum,
+    referenceValue:
+      normalizedReference,
+    referenceY,
     isScrollable:
       width
       > CHART_VIEWPORT_WIDTH,
@@ -187,6 +239,9 @@ type Props = {
   ) => void;
   barColor: string;
   selectedBarColor: string;
+  referenceValue?:
+    number | null;
+  referenceLineColor?: string;
 };
 
 export function HistoryDailyBarChart({
@@ -196,10 +251,13 @@ export function HistoryDailyBarChart({
   onSelectDate,
   barColor,
   selectedBarColor,
+  referenceValue,
+  referenceLineColor,
 }: Props) {
   const geometry =
     historyDailyBarGeometry(
       days,
+      referenceValue,
     );
 
   const plot = (
@@ -223,6 +281,28 @@ export function HistoryDailyBarChart({
           geometry.width
         }
       >
+        {geometry.referenceY
+          !== null
+          && referenceLineColor
+            ? (
+            <Line
+              stroke={
+                referenceLineColor
+              }
+              strokeWidth={1.5}
+              x1={0}
+              x2={
+                geometry.width
+              }
+              y1={
+                geometry.referenceY
+              }
+              y2={
+                geometry.referenceY
+              }
+            />
+          ) : null}
+
         {geometry.points.map(
           (point) => {
             if (

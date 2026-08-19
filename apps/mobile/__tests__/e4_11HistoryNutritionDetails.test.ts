@@ -901,19 +901,25 @@ test(
     expect(
       focusedText,
     ).toContain(
-      "Focused nutrient History",
-    );
-
-    expect(
-      focusedText,
-    ).toContain(
       "Vitamin C",
     );
 
     expect(
       focusedText,
     ).toContain(
-      "E4-12",
+      "Focused History · mg",
+    );
+
+    expect(
+      focusedText,
+    ).toContain(
+      "Daily values",
+    );
+
+    expect(
+      focusedText,
+    ).not.toContain(
+      "Focused chart and exact daily values are implemented in E4-12.",
     );
 
     expect(

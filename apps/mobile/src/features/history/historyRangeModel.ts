@@ -53,6 +53,7 @@ export type HistorySession = Readonly<{
     readonly NutrientSectionId[];
   detailScrollOffset?: number;
   focusedNutrientId?: string | null;
+  focusedDailyValuesExpanded?: boolean;
 }>;
 
 export type HistoryRange = Readonly<{
@@ -93,6 +94,18 @@ export function freshHistorySession(
     latestEndDate,
     denominatorPreference: null,
   };
+}
+
+export function historySessionForOpen(
+  current: HistorySession | null,
+  today: string,
+): HistorySession {
+  return (
+    current
+    ?? freshHistorySession(
+      today,
+    )
+  );
 }
 
 export function historyRange(
@@ -173,6 +186,16 @@ export function historyFocusedNutrientId(
 ): string | null {
   return session.focusedNutrientId
     ?? null;
+}
+
+export function
+historyFocusedDailyValuesExpanded(
+  session: HistorySession,
+): boolean {
+  return (
+    session.focusedDailyValuesExpanded
+    ?? session.rangeLength === 7
+  );
 }
 
 export function withHistorySurface(
@@ -264,6 +287,17 @@ export function withHistoryFocusedNutrient(
     surface:
       "focused_nutrient",
     focusedNutrientId,
+  };
+}
+
+export function
+withHistoryFocusedDailyValuesExpanded(
+  session: HistorySession,
+  focusedDailyValuesExpanded: boolean,
+): HistorySession {
+  return {
+    ...session,
+    focusedDailyValuesExpanded,
   };
 }
 

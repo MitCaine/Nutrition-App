@@ -15,7 +15,7 @@ import { DailyNutritionScreen } from "../../features/logging/screens/DailyNutrit
 import { HistoryScreen } from "../../features/history/screens/HistoryScreen";
 import {
   authoritativeHistoryToday,
-  freshHistorySession,
+  historySessionForOpen,
   withHistoryFirstLoggedDate,
   type HistorySession,
 } from "../../features/history/historyRangeModel";
@@ -782,6 +782,16 @@ export function AppNavigator() {
         onFirstLoggedDateChange={
           captureHistoryFirstLoggedDate
         }
+        onOpenDailyLogDate={(
+          historyDate,
+        ) => {
+          setDate(
+            historyDate,
+          );
+          setRoute({
+            name: "daily-log",
+          });
+        }}
         onBack={() => {
           setDate(route.date);
           setHistorySession(null);
@@ -871,9 +881,11 @@ export function AppNavigator() {
         }
 
         setHistorySession(
-          freshHistorySession(
-            historyToday,
-          ),
+          (current) =>
+            historySessionForOpen(
+              current,
+              historyToday,
+            ),
         );
         setRoute({
           name: "daily-log-history",

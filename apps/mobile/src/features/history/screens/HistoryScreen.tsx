@@ -46,6 +46,10 @@ import {
   buildHistoryNutritionDetailSections,
 } from "../historyNutritionDetails";
 import {
+  buildHistoryFocusedNutrient,
+  focusedHistoryDayForDate,
+} from "../historyFocusedNutrient";
+import {
   HistoryDailyBarChart,
 } from "../components/HistoryDailyBarChart";
 import {
@@ -58,12 +62,14 @@ import {
   previousHistorySession,
   historyDetailCollapsedSectionIds,
   historyDetailsScrollOffset,
+  historyFocusedDailyValuesExpanded,
   historyFocusedNutrientId,
   historySelectedChartDate,
   historySurface,
   withHistoryDenominatorPreference,
   withHistoryDetailSectionToggled,
   withHistoryDetailsScrollOffset,
+  withHistoryFocusedDailyValuesExpanded,
   withHistoryFocusedNutrient,
   withHistoryRangeLength,
   withHistorySelectedChartDate,
@@ -82,6 +88,9 @@ type Props = {
   ) => void;
   onFirstLoggedDateChange: (
     firstLoggedDate: string | null,
+  ) => void;
+  onOpenDailyLogDate?: (
+    date: string,
   ) => void;
   onBack: () => void;
 };
@@ -198,6 +207,7 @@ export function HistoryScreen({
   session,
   onSessionChange,
   onFirstLoggedDateChange,
+  onOpenDailyLogDate,
   onBack,
 }: Props) {
   const theme = useAppTheme();
@@ -322,28 +332,44 @@ export function HistoryScreen({
       session,
     );
 
-  const focusedDetailRow = useMemo(
-    () =>
-      focusedNutrientId
-        ? (
-            detailSections
-              .flatMap(
-                (section) =>
-                  section.rows,
-              )
-              .find(
-                (row) =>
-                  row.nutrientId
-                  === focusedNutrientId,
-              )
-            ?? null
-          )
-        : null,
-    [
-      detailSections,
-      focusedNutrientId,
-    ],
-  );
+  const focusedProjectedNutrient =
+    useMemo(
+      () =>
+        focusedNutrientId
+        && projection
+          ? (
+              projection.nutrients
+                .find(
+                  (nutrient) =>
+                    nutrient.nutrientId
+                    === focusedNutrientId,
+                )
+              ?? null
+            )
+          : null,
+      [
+        focusedNutrientId,
+        projection,
+      ],
+    );
+
+  const focusedModel =
+    useMemo(
+      () =>
+        focusedProjectedNutrient
+        && projection
+          ? buildHistoryFocusedNutrient(
+              focusedProjectedNutrient,
+              projection.mode,
+              targetConfiguration.data,
+            )
+          : null,
+      [
+        focusedProjectedNutrient,
+        projection,
+        targetConfiguration.data,
+      ],
+    );
 
   useEffect(() => {
     if (
@@ -367,6 +393,20 @@ export function HistoryScreen({
     historySelectedChartDate(
       session,
     );
+
+  const focusedDailyValuesExpanded =
+    historyFocusedDailyValuesExpanded(
+      session,
+    );
+
+  const selectedFocusedDay =
+    focusedModel
+    && selectedChartDate
+      ? focusedHistoryDayForDate(
+          focusedModel,
+          selectedChartDate,
+        )
+      : null;
 
   const knownFirstLoggedDate =
     session.firstLoggedDate
@@ -433,6 +473,21 @@ export function HistoryScreen({
         session,
         mode,
       ),
+    );
+  };
+
+  const openFocusedDailyLogDate = (
+    date: string,
+  ) => {
+    onSessionChange(
+      withHistorySelectedChartDate(
+        session,
+        date,
+      ),
+    );
+
+    onOpenDailyLogDate?.(
+      date,
     );
   };
 
@@ -1165,10 +1220,10 @@ export function HistoryScreen({
                       },
                     )}
                   </View>
-                ) : (
+                ) : focusedModel ? (
                   <View
                     style={
-                      styles.summaryCard
+                      styles.detailsSurface
                     }
                   >
                     <Text
@@ -1177,45 +1232,279 @@ export function HistoryScreen({
                         styles.detailsTitle
                       }
                     >
-                      Focused nutrient History
+                      {focusedModel.label}
                     </Text>
-
-                    <Text
-                      style={
-                        styles.focusedNutrientName
-                      }
-                    >
-                      {
-                        focusedDetailRow
-                          ?.label
-                        ?? focusedNutrientId
-                        ?? "Nutrient"
-                      }
-                    </Text>
-
-                    {focusedDetailRow
-                      ? (
-                      <Text
-                        style={
-                          styles.detailSecondary
-                        }
-                      >
-                        Canonical unit:{" "}
-                        {
-                          focusedDetailRow
-                            .unit
-                        }
-                      </Text>
-                    ) : null}
 
                     <Text
                       style={
                         styles.detailSecondary
                       }
                     >
-                      Focused chart and exact daily values are implemented in E4-12.
+                      Focused History ·{" "}
+                      {focusedModel.unit}
                     </Text>
+
+                    <Text
+                      style={
+                        styles.focusedStatistic
+                      }
+                    >
+                      {
+                        focusedModel
+                          .statistic
+                      }
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.detailSecondary
+                      }
+                    >
+                      {
+                        focusedModel
+                          .denominatorContext
+                      }
+                    </Text>
+
+                    {focusedModel
+                      .currentReference
+                      ? (
+                      <Text
+                        style={
+                          styles.detailSecondary
+                        }
+                      >
+                        {
+                          focusedModel
+                            .currentReference
+                            .context
+                        }
+                      </Text>
+                    ) : null}
+
+                    <HistoryDailyBarChart
+                      barColor={
+                        theme.colors
+                          .accent
+                      }
+                      days={
+                        focusedModel
+                          .projectedDays
+                      }
+                      onSelectDate={(
+                        date,
+                      ) =>
+                        onSessionChange(
+                          withHistorySelectedChartDate(
+                            session,
+                            date,
+                          ),
+                        )
+                      }
+                      referenceLineColor={
+                        theme.colors
+                          .secondaryText
+                      }
+                      referenceValue={
+                        focusedModel
+                          .currentReference
+                          ?.numericValue
+                        ?? null
+                      }
+                      selectedBarColor={
+                        theme.colors.text
+                      }
+                      selectedDate={
+                        selectedChartDate
+                      }
+                      seriesLabel={
+                        focusedModel.label
+                      }
+                    />
+
+                    {focusedModel
+                      .currentReference
+                      ? (
+                      <Text
+                        accessibilityLabel={
+                          `Focused History chart line ${focusedModel.currentReference.lineLabel}`
+                        }
+                        style={
+                          styles.detailSecondary
+                        }
+                      >
+                        Chart line ·{" "}
+                        {
+                          focusedModel
+                            .currentReference
+                            .lineLabel
+                        }
+                      </Text>
+                    ) : null}
+
+                    {selectedChartDate
+                      && selectedFocusedDay
+                      ? (
+                      <Text
+                        accessibilityLabel={
+                          `${focusedModel.label} selected ${selectedChartDate} ${selectedFocusedDay.value}`
+                        }
+                        style={
+                          styles.focusedSelection
+                        }
+                      >
+                        {
+                          formatReadableDate(
+                            selectedChartDate,
+                          )
+                        }{" "}
+                        ·{" "}
+                        {
+                          selectedFocusedDay
+                            .value
+                        }
+                      </Text>
+                    ) : null}
+
+                    <AccessiblePressable
+                      accessibilityLabel={
+                        "Daily values"
+                      }
+                      accessibilityState={{
+                        expanded:
+                          focusedDailyValuesExpanded,
+                      }}
+                      onPress={() =>
+                        onSessionChange(
+                          withHistoryFocusedDailyValuesExpanded(
+                            session,
+                            !focusedDailyValuesExpanded,
+                          ),
+                        )
+                      }
+                      style={
+                        styles.detailSectionHeader
+                      }
+                    >
+                      <Text
+                        accessibilityRole="header"
+                        style={
+                          styles.detailSectionTitle
+                        }
+                      >
+                        Daily values
+                      </Text>
+
+                      <Text
+                        accessible={false}
+                        style={
+                          styles.detailToggle
+                        }
+                      >
+                        {
+                          focusedDailyValuesExpanded
+                            ? "−"
+                            : "+"
+                        }
+                      </Text>
+                    </AccessiblePressable>
+
+                    {focusedDailyValuesExpanded
+                      ? focusedModel.days.map(
+                          (day) => {
+                            const selected =
+                              selectedChartDate
+                              === day.date;
+
+                            const secondary = [
+                              day.isComplete
+                                ? "✓ Complete"
+                                : null,
+                              day.includesEstimated
+                                ? "Estimated contribution included"
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ");
+
+                            return (
+                              <AccessiblePressable
+                                key={
+                                  day.date
+                                }
+                                accessibilityHint={
+                                  "Opens this exact Daily Log calendar date"
+                                }
+                                accessibilityLabel={
+                                  `Open Daily Log for ${day.date}, ${day.value}`
+                                }
+                                accessibilityState={{
+                                  selected,
+                                }}
+                                onPress={() =>
+                                  openFocusedDailyLogDate(
+                                    day.date,
+                                  )
+                                }
+                                style={[
+                                  styles.detailRow,
+                                  selected
+                                    && styles
+                                      .focusedDailyRowSelected,
+                                ]}
+                              >
+                                <View
+                                  style={
+                                    styles.detailRowTop
+                                  }
+                                >
+                                  <Text
+                                    style={
+                                      styles.detailRowName
+                                    }
+                                  >
+                                    {
+                                      formatReadableDate(
+                                        day.date,
+                                      )
+                                    }
+                                  </Text>
+
+                                  <Text
+                                    style={
+                                      styles.detailRowValue
+                                    }
+                                  >
+                                    {
+                                      day.value
+                                    }
+                                  </Text>
+                                </View>
+
+                                {secondary
+                                  ? (
+                                  <Text
+                                    style={
+                                      styles.detailSecondary
+                                    }
+                                  >
+                                    {secondary}
+                                  </Text>
+                                ) : null}
+                              </AccessiblePressable>
+                            );
+                          },
+                        )
+                      : null}
                   </View>
+                ) : (
+                  <AccessibilityStatus
+                    kind="empty"
+                    title="Focused nutrient unavailable"
+                    message={
+                      "This nutrient is not available in the current History projection."
+                    }
+                  />
                 )}
               </>
             )}
@@ -1492,10 +1781,21 @@ function createStyles(
       fontSize: 24,
       fontWeight: "600",
     },
-    focusedNutrientName: {
+    focusedDailyRowSelected: {
+      backgroundColor:
+        theme.colors
+          .selectedNavigationBackground,
+    },
+    focusedSelection: {
       color:
         theme.colors.text,
-      fontSize: 20,
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    focusedStatistic: {
+      color:
+        theme.colors.text,
+      fontSize: 24,
       fontWeight: "800",
     },
     label: {
