@@ -52,6 +52,7 @@ import {
 } from "../../storage/sqlite/migrations";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { DailyLogsRuntime } from "../NutritionRuntime";
+import { clearLocalDailyLogCompletionsInTransaction } from "./localDailyLogCompleteState";
 import { LocalRuntimeError } from "./localErrors";
 import {
   withLocalDailyLogSnapshotReplacement,
@@ -258,6 +259,21 @@ type ResolvedSnapshot = Readonly<{
   sourceNutrientId: string | null;
   servingDefinitionId: string | null;
   metadata: string;
+}>;
+
+type PersistedSnapshotSignatureRow = Readonly<{
+  source_food_item_id: string;
+  source_food_nutrient_id: string | null;
+  serving_definition_id: string | null;
+  nutrient_id: string;
+  amount: string | null;
+  unit: string;
+  data_status: string;
+  consumed_amount_quantity: string;
+  consumed_amount_unit: string;
+  consumed_gram_amount: string | null;
+  consumed_package_fraction: string | null;
+  calculation_metadata: string | null;
 }>;
 
 type ResolvedSource = Readonly<{
@@ -982,50 +998,57 @@ async function insertReplacementSnapshots(
   }
 }
 
-function validateCalendarProfile(profile: ProfileRow | null, mutation = true): { zone: string; revision: number } {
-  if (!profile || !profile.authoritative_time_zone) {
-    throw errorFor(
-      "validation",
-      "authoritative_time_zone_required",
-      "Confirm an authoritative time zone before changing the Daily Log.",
-      mutation ? "confirmed_non_commit" : "not_applicable",
-    );
-  }
-  let zone: string;
-  try {
-    zone = parseIanaTimeZone(profile.authoritative_time_zone);
-  } catch {
-    throw errorFor(
-      "invalid_response",
-      "invalid_local_calendar_state",
-      "The local calendar state is invalid and cannot be used safely.",
-      mutation ? "confirmed_non_commit" : "not_applicable",
-    );
-  }
-  if (!Number.isSafeInteger(profile.calendar_revision) || profile.calendar_revision < 0) {
-    throw errorFor(
-      "invalid_response",
-      "invalid_local_calendar_state",
-      "The local calendar state is invalid and cannot be used safely.",
-      mutation ? "confirmed_non_commit" : "not_applicable",
-    );
-  }
-  return { zone, revision: profile.calendar_revision };
-}
-
-async function requireAuthoritativeTimeZone(
+async function persistedSnapshotSignature(
   transaction: SQLiteDatabase,
-  ownerId: string,
-): Promise<void> {
-  const profile = await readProfile(transaction, ownerId);
-  if (!profile || !profile.authoritative_time_zone) {
-    throw errorFor(
-      "validation",
-      "authoritative_time_zone_required",
-      "Confirm an authoritative time zone before changing the Daily Log.",
-      "confirmed_non_commit",
-    );
-  }
+  logId: string,
+): Promise<string> {
+  const rows = await transaction.getAllAsync<PersistedSnapshotSignatureRow>(
+    `SELECT "source_food_item_id", "source_food_nutrient_id", "serving_definition_id",
+            "nutrient_id", "amount", "unit", "data_status", "consumed_amount_quantity",
+            "consumed_amount_unit", "consumed_gram_amount", "consumed_package_fraction",
+            "calculation_metadata"
+     FROM "daily_log_nutrient_snapshots"
+     WHERE "daily_log_id" = ?`,
+    [logId],
+  );
+  const signatures = rows.map((row) => {
+    let metadata: unknown = null;
+    if (row.calculation_metadata !== null) {
+      try {
+        parseCanonicalJson(row.calculation_metadata);
+        metadata = JSON.parse(row.calculation_metadata);
+      } catch {
+        throw invalidStored("mutation");
+      }
+    }
+    return canonicalJsonStringify({
+      source_food_item_id: parsePersistedUuid(row.source_food_item_id, "mutation"),
+      source_food_nutrient_id: row.source_food_nutrient_id === null
+        ? null
+        : parsePersistedUuid(row.source_food_nutrient_id, "mutation"),
+      serving_definition_id: row.serving_definition_id === null
+        ? null
+        : parsePersistedUuid(row.serving_definition_id, "mutation"),
+      nutrient_id: row.nutrient_id,
+      amount: parsePersistedDecimal(row.amount, true, "mutation"),
+      unit: row.unit,
+      data_status: row.data_status,
+      consumed_amount_quantity: parsePersistedDecimal(
+        row.consumed_amount_quantity,
+        false,
+        "mutation",
+      ),
+      consumed_amount_unit: row.consumed_amount_unit,
+      consumed_gram_amount: parsePersistedDecimal(row.consumed_gram_amount, true, "mutation"),
+      consumed_package_fraction: parsePersistedDecimal(
+        row.consumed_package_fraction,
+        true,
+        "mutation",
+      ),
+      calculation_metadata: metadata,
+    });
+  }).sort();
+  return canonicalJsonStringify(signatures);
 }
 
 async function validateCreateCalendar(
@@ -1090,6 +1113,52 @@ async function validateDeleteCalendar(
       "conflict",
       "calendar_context_changed",
       "The authoritative calendar changed. Review this entry again before deleting.",
+      "confirmed_non_commit",
+    );
+  }
+}
+
+function validateCalendarProfile(profile: ProfileRow | null, mutation = true): { zone: string; revision: number } {
+  if (!profile || !profile.authoritative_time_zone) {
+    throw errorFor(
+      "validation",
+      "authoritative_time_zone_required",
+      "Confirm an authoritative time zone before changing the Daily Log.",
+      mutation ? "confirmed_non_commit" : "not_applicable",
+    );
+  }
+  let zone: string;
+  try {
+    zone = parseIanaTimeZone(profile.authoritative_time_zone);
+  } catch {
+    throw errorFor(
+      "invalid_response",
+      "invalid_local_calendar_state",
+      "The local calendar state is invalid and cannot be used safely.",
+      mutation ? "confirmed_non_commit" : "not_applicable",
+    );
+  }
+  if (!Number.isSafeInteger(profile.calendar_revision) || profile.calendar_revision < 0) {
+    throw errorFor(
+      "invalid_response",
+      "invalid_local_calendar_state",
+      "The local calendar state is invalid and cannot be used safely.",
+      mutation ? "confirmed_non_commit" : "not_applicable",
+    );
+  }
+  return { zone, revision: profile.calendar_revision };
+}
+
+async function requireAuthoritativeTimeZone(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+): Promise<void> {
+  const profile = await readProfile(transaction, ownerId);
+  if (!profile || !profile.authoritative_time_zone) {
+    throw errorFor(
+      "validation",
+      "authoritative_time_zone_required",
+      "Confirm an authoritative time zone before changing the Daily Log.",
       "confirmed_non_commit",
     );
   }
@@ -1954,6 +2023,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           );
         }
         await this.createStage("after_snapshots");
+        await clearLocalDailyLogCompletionsInTransaction(transaction, [normalized.loggedDate]);
         const row = await loadLog(transaction, this.ownerId, logId);
         if (!row) throw invalidStored("mutation");
         const response = await logResponse(transaction, this.ownerId, row);
@@ -2414,7 +2484,8 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           normalized.expectedUpdatedAt !== null
           && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
         ) throw staleEntry();
-        const destinationDate = normalized.loggedDate ?? storedDate(row.logged_date);
+        const sourceDate = storedDate(row.logged_date);
+        const destinationDate = normalized.loggedDate ?? sourceDate;
         await validateUpdateCalendar(
           transaction,
           this.ownerId,
@@ -2456,6 +2527,12 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
         const updated = await loadLog(transaction, this.ownerId, id);
         if (!updated) throw invalidStored("mutation");
         const response = await logResponse(transaction, this.ownerId, updated);
+        if (sourceDate !== response.logged_date) {
+          await clearLocalDailyLogCompletionsInTransaction(
+            transaction,
+            [sourceDate, response.logged_date],
+          );
+        }
         await completeMutationReceipt(
           transaction,
           this.ownerId,
@@ -2463,7 +2540,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           normalized.clientRequestId,
           {
             kind: UPDATE_OPERATION,
-            source_logged_date: storedDate(row.logged_date),
+            source_logged_date: sourceDate,
             destination_logged_date: response.logged_date,
             result: response,
           },
@@ -2498,6 +2575,8 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             normalized.expectedUpdatedAt !== null
             && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
           ) throw staleEntry();
+          const sourceDate = storedDate(row.logged_date);
+          const beforeSnapshotSignature = await persistedSnapshotSignature(transaction, id);
 
           const resolverInput = updateResolverInput(row, normalized);
           await validateUpdateCalendar(
@@ -2632,6 +2711,15 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           await this.nutritionEditStage("after_log_provenance_mutation");
           await insertReplacementSnapshots(transaction, id, food!.id, replacementInput, resolved);
           await this.nutritionEditStage("after_replacement_snapshots_inserted");
+          const afterSnapshotSignature = await persistedSnapshotSignature(transaction, id);
+          if (sourceDate !== resolverInput.loggedDate) {
+            await clearLocalDailyLogCompletionsInTransaction(
+              transaction,
+              [sourceDate, resolverInput.loggedDate],
+            );
+          } else if (beforeSnapshotSignature !== afterSnapshotSignature) {
+            await clearLocalDailyLogCompletionsInTransaction(transaction, [sourceDate]);
+          }
           const updated = await loadLog(transaction, this.ownerId, id);
           if (!updated) throw invalidStored("mutation");
           const response = await logResponse(transaction, this.ownerId, updated);
@@ -2642,7 +2730,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             normalized.clientRequestId,
             {
               kind: UPDATE_OPERATION,
-              source_logged_date: storedDate(row.logged_date),
+              source_logged_date: sourceDate,
               destination_logged_date: response.logged_date,
               result: response,
             },
@@ -2708,6 +2796,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             normalized.expectedUpdatedAt !== null
             && parsePersistedInstant(row.updated_at, "mutation") !== normalized.expectedUpdatedAt
           ) throw staleEntry();
+          const sourceDate = storedDate(row.logged_date);
           await validateDeleteCalendar(transaction, this.ownerId, normalized.calendarRevision);
           await reserveMutationReceipt(
             transaction,
@@ -2728,6 +2817,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             [id, this.ownerId],
           );
           if (await loadLog(transaction, this.ownerId, id)) throw invalidStored("mutation");
+          await clearLocalDailyLogCompletionsInTransaction(transaction, [sourceDate]);
           await completeMutationReceipt(
             transaction,
             this.ownerId,
@@ -2736,7 +2826,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
             {
               kind: DELETE_OPERATION,
               log_id: id,
-              source_logged_date: storedDate(row.logged_date),
+              source_logged_date: sourceDate,
             },
             canonicalNow(this.now),
           );

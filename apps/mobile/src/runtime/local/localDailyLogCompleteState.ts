@@ -239,6 +239,19 @@ async function readCompletionRow(
   );
 }
 
+export async function clearLocalDailyLogCompletionsInTransaction(
+  transaction: SQLiteDatabase,
+  loggedDates: readonly string[],
+): Promise<void> {
+  const canonicalDates = [...new Set(loggedDates.map(canonicalDate))].sort();
+  for (const loggedDate of canonicalDates) {
+    await transaction.runAsync(
+      `DELETE FROM "daily_log_day_completions" WHERE "logged_date" = ?`,
+      [loggedDate],
+    );
+  }
+}
+
 export async function readLocalDailyLogCompletion(
   database: SQLiteDatabase,
   loggedDate: string,

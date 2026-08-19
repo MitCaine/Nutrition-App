@@ -255,6 +255,35 @@ def _parse_receipt_date(value: object) -> date | None:
         return None
 
 
+def _snapshot_signature(log: DailyLog) -> tuple[str, ...]:
+    """Canonical persisted nutrition semantics for Complete invalidation decisions."""
+
+    rows: list[str] = []
+    for snapshot in log.snapshots:
+        canonical = {
+            "source_food_item_id": snapshot.source_food_item_id,
+            "source_food_nutrient_id": snapshot.source_food_nutrient_id,
+            "serving_definition_id": snapshot.serving_definition_id,
+            "nutrient_id": snapshot.nutrient_id,
+            "amount": snapshot.amount,
+            "unit": snapshot.unit,
+            "data_status": snapshot.data_status,
+            "consumed_amount_quantity": snapshot.consumed_amount_quantity,
+            "consumed_amount_unit": snapshot.consumed_amount_unit,
+            "consumed_gram_amount": snapshot.consumed_gram_amount,
+            "consumed_package_fraction": snapshot.consumed_package_fraction,
+            "calculation_metadata": snapshot.calculation_metadata,
+        }
+        rows.append(
+            json.dumps(
+                _canonicalize_mutation_value(canonical),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+    return tuple(sorted(rows))
+
+
 class LogService:
     def __init__(self, db: Session):
         self.db = db
@@ -266,6 +295,23 @@ class LogService:
         # canonical fingerprint plus terminal response snapshot. Reusing it
         # keeps log mutation replay within the established transaction model.
         self.mutation_receipts = CreateIdempotencyCoordinator(db)
+
+    def _invalidate_complete_dates(
+        self,
+        user_id: UUID,
+        logged_dates: set[date],
+    ) -> set[date]:
+        invalidated = {
+            logged_date
+            for logged_date in logged_dates
+            if self.logs.clear_day_completion(user_id, logged_date)
+        }
+        if invalidated:
+            self._after_complete_invalidation(invalidated)
+        return invalidated
+
+    def _after_complete_invalidation(self, _logged_dates: set[date]) -> None:
+        """Test seam after Complete deletion and before the surrounding commit."""
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
         if payload.calendar_revision is None:
@@ -295,6 +341,10 @@ class LogService:
             if existing is not None:
                 return _matching_idempotent_log(existing, fingerprint)
         try:
+            # E4-02 mark-Complete serializes through the first Log on a date.
+            # Take that same anchor before source locks so a create and a
+            # concurrent Complete assertion have one ordering authority.
+            self.logs.lock_first_for_dates(user_id, {payload.logged_date})
             try:
                 food = self.foods.get_required(payload.food_item_id, user_id)
             except LookupError as exc:
@@ -324,6 +374,7 @@ class LogService:
                     payload.calendar_revision,
                     created.logged_date,
                 )
+            self._invalidate_complete_dates(user_id, {created.logged_date})
             self.db.commit()
             return created
         except IntegrityError as exc:
@@ -1132,6 +1183,14 @@ class LogService:
             ):
                 raise StaleLogMutationError(StaleLogMutationError.message)
             source_logged_date = log.logged_date
+            destination_logged_date = (
+                payload.logged_date if payload.logged_date is not None else source_logged_date
+            )
+            self.logs.lock_first_for_dates(
+                user_id,
+                {source_logged_date, destination_logged_date},
+            )
+            before_snapshot_signature = _snapshot_signature(log)
             if payload.client_request_id is not None:
                 try:
                     receipt = self.mutation_receipts.reserve(
@@ -1158,7 +1217,7 @@ class LogService:
                 CalendarService(self.db).validate_mutation_context(
                     user_id,
                     payload.calendar_revision,
-                    payload.logged_date if payload.logged_date is not None else log.logged_date,
+                    destination_logged_date,
                 )
             if log.recipe_publication_revision_id is not None:
                 self._update_revision_aware_log(user_id, log, payload)
@@ -1170,9 +1229,16 @@ class LogService:
                     payload.calendar_revision,
                     log.logged_date,
                 )
+            self.db.flush()
+            after_snapshot_signature = _snapshot_signature(log)
+            invalidation_dates: set[date] = set()
+            if source_logged_date != log.logged_date:
+                invalidation_dates.update({source_logged_date, log.logged_date})
+            elif before_snapshot_signature != after_snapshot_signature:
+                invalidation_dates.add(log.logged_date)
+            self._invalidate_complete_dates(user_id, invalidation_dates)
             # Serialize the same refreshed ORM view that will be returned after
             # commit, so an exact replay is wire-equivalent to the first result.
-            self.db.flush()
             self.db.expire(log)
             response_snapshot = self._update_response_snapshot(
                 self.logs.get_required(log.id, user_id),
@@ -1616,6 +1682,8 @@ class LogService:
                 and not _same_timestamp(log.updated_at, intent.expected_updated_at)
             ):
                 raise StaleLogMutationError(StaleLogMutationError.message)
+            source_logged_date = log.logged_date
+            self.logs.lock_first_for_dates(user_id, {source_logged_date})
             if intent.calendar_revision is not None:
                 CalendarService(self.db).validate_delete_context(
                     user_id,
@@ -1644,6 +1712,7 @@ class LogService:
             self.logs.delete(log, user_id)
             self.db.flush()
             self._after_log_delete_flush(log)
+            self._invalidate_complete_dates(user_id, {source_logged_date})
             if receipt is not None:
                 self.mutation_receipts.complete(
                     receipt,

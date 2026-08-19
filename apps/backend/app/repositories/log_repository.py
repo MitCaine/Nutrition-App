@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.food import FoodItem, ServingDefinition
 from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
 from app.models.recipe import Recipe
+from app.models.user import User
 from app.operators.immutable_provenance_postgres import (
     POSTGRES_SCHEMA_SESSION_INFO_KEY,
     PRODUCTION_SCHEMA,
@@ -61,6 +62,15 @@ class LogRepository:
         return self.db.scalars(statement).first()
 
     def get_for_update(self, log_id: UUID, user_id: UUID) -> DailyLog:
+        # E4-02 mark-Complete acquires the owner row before its date anchor.
+        # Explicit Log mutations use the same owner-first order so a Complete
+        # assertion and update/delete cannot form an owner/date lock cycle.
+        locked_user_id = self.db.scalar(
+            select(User.id).where(User.id == user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise LookupError("Daily log owner not found")
+
         pending_values: dict[str, object] = {}
         existing = next(
             (
@@ -151,6 +161,16 @@ class LogRepository:
         )
         return self.db.scalars(statement).first()
 
+    def lock_first_for_dates(
+        self,
+        user_id: UUID,
+        logged_dates: set[date],
+    ) -> None:
+        """Lock date anchors in canonical order for one multi-date mutation."""
+
+        for logged_date in sorted(logged_dates):
+            self.lock_first_for_date(user_id, logged_date)
+
     def get_day_completion(
         self,
         user_id: UUID,
@@ -174,6 +194,21 @@ class LogRepository:
         self.db.flush()
         self.db.refresh(completion)
         return completion
+
+    def clear_day_completion(
+        self,
+        user_id: UUID,
+        logged_date: date,
+    ) -> bool:
+        """Delete positive Complete state inside the caller's current transaction."""
+
+        result = self.db.execute(
+            delete(DailyLogDayCompletion).where(
+                DailyLogDayCompletion.user_id == user_id,
+                DailyLogDayCompletion.logged_date == logged_date,
+            )
+        )
+        return bool(result.rowcount)
 
     def list_recent_entries(
         self,
@@ -248,9 +283,7 @@ class LogRepository:
             )
             routine = snapshot_replacement_routine_name(schema)
             self.db.execute(
-                text(
-                    f"SELECT {routine}(:log_id, :user_id)"
-                ),
+                text(f"SELECT {routine}(:log_id, :user_id)"),
                 {"log_id": log_id, "user_id": user_id},
             )
             return
