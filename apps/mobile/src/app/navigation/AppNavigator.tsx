@@ -11,6 +11,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useFood } from "../../features/foods/hooks/useFoods";
 import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
+import { DailyNutritionScreen } from "../../features/logging/screens/DailyNutritionScreen";
 import { AddFoodScreen } from "../../features/logging/screens/AddFoodScreen";
 import { LogFoodScreen, type LogFoodDraft } from "../../features/logging/screens/LogFoodScreen";
 import type { DailyLog, RecentEntry } from "../../features/logging/api/types";
@@ -43,6 +44,7 @@ import { NutritionScanScreen } from "../../features/ocr/screens/NutritionScanScr
 import { NutritionConfirmationScreen } from "../../features/ocr/screens/NutritionConfirmationScreen";
 import type { NutritionConfirmationDraft } from "../../features/ocr/api/types";
 import { TargetSettingsScreen } from "../../features/targets/TargetSettingsScreen";
+import type { NutrientSectionId } from "../../shared/nutrition/nutrientSections";
 import { useCalendarState } from "../../features/calendar/hooks/useCalendar";
 import { deviceTimeZone } from "../../features/calendar/deviceTimeZone";
 import { calendarMutationsEnabled, calendarToday } from "../../features/calendar/calendarModel";
@@ -95,7 +97,7 @@ type Route =
   | { name: "daily-log-history"; date: string }
   | { name: "daily-log-nutrition"; date: string }
   | { name: "settings"; origin: MainTab }
-  | { name: "nutrition-targets"; origin: MainTab; returnDirect?: boolean }
+  | { name: "nutrition-targets"; origin: MainTab; returnDirect?: boolean; returnToDailyNutritionDate?: string }
   | { name: "ocr-diagnostics"; origin: MainTab }
   | { name: "nutrition-scan"; autoAcquireCamera?: boolean }
   | { name: "nutrition-confirm"; draft: NutritionConfirmationDraft };
@@ -164,6 +166,12 @@ export function AppNavigator() {
   const foodSearchScroll = useRef({ query: "", offset: 0 });
   const recipeSearchScroll = useRef({ query: "", offset: 0 });
   const dailyLogScroll = useRef({ date, offset: 0 });
+  const [
+    dailyNutritionCollapsedSections,
+    setDailyNutritionCollapsedSections,
+  ] = useState<Set<NutrientSectionId>>(
+    () => new Set(),
+  );
   const activeTab = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
   const navigationOverlayOpen = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics";
   const swipeEnabled = isMainTabRoot(route.name);
@@ -329,9 +337,19 @@ export function AppNavigator() {
       draftStateKey={draftStateKeyForRoute(route) ?? undefined}
       onDraftStateChange={reportDraftState}
       onBack={() => requestDraftExit(() =>
-        setRoute(route.returnDirect
-          ? routeForMainTab(route.origin)
-          : { name: "settings", origin: route.origin }))
+        setRoute(
+          route.returnToDailyNutritionDate
+            ? {
+                name: "daily-log-nutrition",
+                date: route.returnToDailyNutritionDate,
+              }
+            : route.returnDirect
+              ? routeForMainTab(route.origin)
+              : {
+                  name: "settings",
+                  origin: route.origin,
+                },
+        ))
       }
     />;
   } else if (route.name === "ocr-diagnostics" && ocrDiagnosticsEnabled) {
@@ -726,13 +744,45 @@ export function AppNavigator() {
     );
   } else if (route.name === "daily-log-nutrition") {
     content = (
-      <DeferredDailyLogSurface
-        title="Daily Nutrition"
+      <DailyNutritionScreen
         date={route.date}
+        collapsedSectionIds={
+          dailyNutritionCollapsedSections
+        }
+        onToggleSection={(sectionId) => {
+          setDailyNutritionCollapsedSections(
+            (current) => {
+              const next =
+                new Set(current);
+
+              if (
+                next.has(sectionId)
+              ) {
+                next.delete(
+                  sectionId,
+                );
+              } else {
+                next.add(sectionId);
+              }
+
+              return next;
+            },
+          );
+        }}
         onBack={() => {
           setDate(route.date);
-          setRoute({ name: "daily-log" });
+          setRoute({
+            name: "daily-log",
+          });
         }}
+        onOpenTargets={() =>
+          setRoute({
+            name: "nutrition-targets",
+            origin: "daily-log",
+            returnToDailyNutritionDate:
+              route.date,
+          })
+        }
       />
     );
   } else if (route.name === "daily-log") {
