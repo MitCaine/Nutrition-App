@@ -1,0 +1,188 @@
+import type {
+  CalendarState,
+} from "../calendar/types";
+import {
+  addCalendarDays,
+} from "../logging/utils/dailyLogDisplay";
+import type {
+  HistoryProjectionMode,
+} from "./types";
+
+export const HISTORY_RANGE_LENGTHS =
+  [7, 30] as const;
+
+export type HistoryRangeLength =
+  typeof HISTORY_RANGE_LENGTHS[number];
+
+export type HistorySession = Readonly<{
+  rangeLength: HistoryRangeLength;
+  endDate: string;
+  latestEndDate: string;
+  firstLoggedDate?: string | null;
+  denominatorPreference:
+    HistoryProjectionMode | null;
+}>;
+
+export type HistoryRange = Readonly<{
+  startDate: string;
+  endDate: string;
+}>;
+
+export function authoritativeHistoryToday(
+  state: CalendarState | undefined,
+): string | null {
+  if (
+    state?.is_established !== true
+    || !state.authoritative_time_zone
+    || !state.today
+  ) {
+    return null;
+  }
+
+  return state.today;
+}
+
+export function latestHistoryEndDate(
+  today: string,
+): string {
+  return addCalendarDays(today, -1);
+}
+
+export function freshHistorySession(
+  today: string,
+  rangeLength: HistoryRangeLength = 7,
+): HistorySession {
+  const latestEndDate =
+    latestHistoryEndDate(today);
+
+  return {
+    rangeLength,
+    endDate: latestEndDate,
+    latestEndDate,
+    denominatorPreference: null,
+  };
+}
+
+export function historyRange(
+  session: HistorySession,
+): HistoryRange {
+  return {
+    startDate: addCalendarDays(
+      session.endDate,
+      -(session.rangeLength - 1),
+    ),
+    endDate: session.endDate,
+  };
+}
+
+export function withHistoryRangeLength(
+  session: HistorySession,
+  rangeLength: HistoryRangeLength,
+): HistorySession {
+  return {
+    ...session,
+    rangeLength,
+    // A mode change starts from the newest supported
+    // endpoint for this History navigation session.
+    // This keeps subsequent Previous/Next navigation
+    // on an exact 7- or 30-date paging lattice.
+    endDate: session.latestEndDate,
+  };
+}
+
+export function withHistoryFirstLoggedDate(
+  session: HistorySession,
+  firstLoggedDate: string | null,
+): HistorySession {
+  return {
+    ...session,
+    firstLoggedDate,
+  };
+}
+
+export function withHistoryDenominatorPreference(
+  session: HistorySession,
+  denominatorPreference:
+    HistoryProjectionMode,
+): HistorySession {
+  return {
+    ...session,
+    denominatorPreference,
+  };
+}
+
+export function previousHistorySession(
+  session: HistorySession,
+): HistorySession {
+  return {
+    ...session,
+    endDate: addCalendarDays(
+      session.endDate,
+      -session.rangeLength,
+    ),
+  };
+}
+
+export function canPageHistoryNext(
+  session: HistorySession,
+): boolean {
+  const candidate =
+    addCalendarDays(
+      session.endDate,
+      session.rangeLength,
+    );
+
+  return (
+    candidate
+    <= session.latestEndDate
+  );
+}
+
+export function nextHistorySession(
+  session: HistorySession,
+): HistorySession {
+  if (
+    !canPageHistoryNext(session)
+  ) {
+    return session;
+  }
+
+  return {
+    ...session,
+    endDate: addCalendarDays(
+      session.endDate,
+      session.rangeLength,
+    ),
+  };
+}
+
+export function canPageHistoryPrevious(
+  session: HistorySession,
+  firstLoggedDate: string | null,
+): boolean {
+  if (firstLoggedDate === null) {
+    return false;
+  }
+
+  const candidatePreviousEnd =
+    addCalendarDays(
+      session.endDate,
+      -session.rangeLength,
+    );
+
+  return (
+    candidatePreviousEnd
+    >= firstLoggedDate
+  );
+}
+
+export function effectiveHistoryProjectionMode(
+  completeDayCount: number,
+  preference: HistoryProjectionMode | null,
+): HistoryProjectionMode {
+  if (completeDayCount === 0) {
+    return "logged_days";
+  }
+
+  return preference ?? "complete_days";
+}

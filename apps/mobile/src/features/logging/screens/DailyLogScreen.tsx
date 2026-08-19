@@ -178,6 +178,7 @@ type Props = {
   onMoveLog?: (logId: string, log?: DailyLog) => void;
   onReviewRecovery?: () => void;
   onOpenSettings: () => void;
+  historyAvailable?: boolean;
   onOpenHistory: () => void;
   onOpenNutrition: () => void;
   initialScrollOffset: number;
@@ -188,7 +189,7 @@ type Props = {
   onReturnFocusHandled?: () => void;
 };
 
-export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenHistory, onOpenNutrition, initialScrollOffset, onScrollOffsetChange, mutationOutcome = null, onMutationOutcomeHandled, returnFocusKey = null, onReturnFocusHandled }: Props) {
+export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, historyAvailable = true, onOpenHistory, onOpenNutrition, initialScrollOffset, onScrollOffsetChange, mutationOutcome = null, onMutationOutcomeHandled, returnFocusKey = null, onReturnFocusHandled }: Props) {
   const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -951,10 +952,24 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         </AccessiblePressable>
 
         <AccessiblePressable
-          accessibilityHint="Opens History for the selected Daily Log context"
+          accessibilityHint={
+            historyAvailable
+              ? "Opens History for the selected Daily Log context"
+              : "Confirm the calendar in Settings before opening History"
+          }
           accessibilityLabel="History"
+          accessibilityState={{
+            disabled:
+              !historyAvailable,
+          }}
+          disabled={!historyAvailable}
           onPress={onOpenHistory}
-          style={styles.navigationButton}
+          style={[
+            styles.navigationButton,
+            !historyAvailable
+              ? styles.disabledButton
+              : null,
+          ]}
         >
           <Text style={styles.text}>
             History

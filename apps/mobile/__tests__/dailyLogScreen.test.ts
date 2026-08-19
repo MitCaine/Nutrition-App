@@ -293,6 +293,48 @@ test("E4-07 Daily Log is logging-first with centered History and compact nutriti
   await act(async () => rendered.renderer.unmount());
 });
 
+test("E4-09 History entry is disabled until an authoritative calendar is available", async () => {
+  const onOpenHistory = jest.fn();
+
+  const rendered = await render(
+    "2026-07-14",
+    jest.fn(),
+    jest.fn(),
+    {
+      historyAvailable: false,
+      onOpenHistory,
+    },
+  );
+
+  const history = rendered.renderer.root
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "History",
+    );
+
+  expect(history).toBeDefined();
+  expect(history?.props.disabled)
+    .toBe(true);
+  expect(
+    history?.props
+      .accessibilityState.disabled,
+  ).toBe(true);
+  expect(
+    history?.props
+      .accessibilityHint,
+  ).toContain(
+    "Confirm the calendar in Settings",
+  );
+  expect(onOpenHistory)
+    .not.toHaveBeenCalled();
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
+});
+
 test("E4-07 empty date disables Complete and shows four neutral zero rows", async () => {
   const rendered = await render();
   const text = screenText(rendered.renderer.root);

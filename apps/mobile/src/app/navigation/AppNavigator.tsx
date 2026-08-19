@@ -12,6 +12,13 @@ import { useFood } from "../../features/foods/hooks/useFoods";
 import { useDailyLogs } from "../../features/logging/hooks/useLogs";
 import { DailyLogScreen } from "../../features/logging/screens/DailyLogScreen";
 import { DailyNutritionScreen } from "../../features/logging/screens/DailyNutritionScreen";
+import { HistoryScreen } from "../../features/history/screens/HistoryScreen";
+import {
+  authoritativeHistoryToday,
+  freshHistorySession,
+  withHistoryFirstLoggedDate,
+  type HistorySession,
+} from "../../features/history/historyRangeModel";
 import { AddFoodScreen } from "../../features/logging/screens/AddFoodScreen";
 import { LogFoodScreen, type LogFoodDraft } from "../../features/logging/screens/LogFoodScreen";
 import type { DailyLog, RecentEntry } from "../../features/logging/api/types";
@@ -57,7 +64,6 @@ import {
   type DraftStatusReporter,
 } from "../../shared/navigation/draftGuard";
 import { UnsavedDraftDialog } from "../../shared/navigation/UnsavedDraftDialog";
-import { AccessiblePressable } from "../../shared/accessibility/AccessiblePressable";
 
 type AddLogFoodWorkflow = {
   foodId: string;
@@ -161,6 +167,10 @@ export function AppNavigator() {
   const [addFoodFlow, setAddFoodFlow] = useState<AddFoodFlowState | null>(null);
   const [addLogFoodWorkflow, setAddLogFoodWorkflow] = useState<AddLogFoodWorkflow | null>(null);
   const calendar = useCalendarState();
+  const historyToday =
+    authoritativeHistoryToday(
+      calendar.data,
+    );
   const [date, setDate] = useState(() => todayInTimeZone(deviceTimeZone()));
   const calendarMutationsAvailable = calendarMutationsEnabled(calendar.data) && date <= calendarToday(calendar.data, deviceTimeZone());
   const foodSearchScroll = useRef({ query: "", offset: 0 });
@@ -172,6 +182,37 @@ export function AppNavigator() {
   ] = useState<Set<NutrientSectionId>>(
     () => new Set(),
   );
+  const [
+    historySession,
+    setHistorySession,
+  ] = useState<HistorySession | null>(
+    null,
+  );
+  const captureHistoryFirstLoggedDate =
+    useCallback(
+      (
+        firstLoggedDate: string | null,
+      ) => {
+        setHistorySession(
+          (current) => {
+            if (
+              current === null
+              || current.firstLoggedDate
+                === firstLoggedDate
+            ) {
+              return current;
+            }
+
+            return withHistoryFirstLoggedDate(
+              current,
+              firstLoggedDate,
+            );
+          },
+        );
+      },
+      [],
+    );
+
   const activeTab = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics" ? route.origin : mainTabForRoute(route.name);
   const navigationOverlayOpen = route.name === "settings" || route.name === "nutrition-targets" || route.name === "ocr-diagnostics";
   const swipeEnabled = isMainTabRoot(route.name);
@@ -732,15 +773,25 @@ export function AppNavigator() {
       />
     );
   } else if (route.name === "daily-log-history") {
-    content = (
-      <DeferredDailyLogSurface
-        title="History"
-        date={route.date}
+    content = historySession ? (
+      <HistoryScreen
+        session={historySession}
+        onSessionChange={
+          setHistorySession
+        }
+        onFirstLoggedDateChange={
+          captureHistoryFirstLoggedDate
+        }
         onBack={() => {
           setDate(route.date);
-          setRoute({ name: "daily-log" });
+          setHistorySession(null);
+          setRoute({
+            name: "daily-log",
+          });
         }}
       />
+    ) : (
+      <LoadingState />
     );
   } else if (route.name === "daily-log-nutrition") {
     content = (
@@ -811,12 +862,24 @@ export function AppNavigator() {
         setRoute({ name: "add-food" });
       }}
       onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
-      onOpenHistory={() =>
+      historyAvailable={
+        historyToday !== null
+      }
+      onOpenHistory={() => {
+        if (historyToday === null) {
+          return;
+        }
+
+        setHistorySession(
+          freshHistorySession(
+            historyToday,
+          ),
+        );
         setRoute({
           name: "daily-log-history",
           date,
-        })
-      }
+        });
+      }}
       onOpenNutrition={() =>
         setRoute({
           name: "daily-log-nutrition",
@@ -1009,65 +1072,6 @@ function EditFoodRoute({
       draftStateKey={draftStateKey}
       onDraftStateChange={onDraftStateChange}
     />
-  );
-}
-
-function DeferredDailyLogSurface({
-  title,
-  date,
-  onBack,
-}: {
-  title: "History" | "Daily Nutrition";
-  date: string;
-  onBack: () => void;
-}) {
-  const theme = useAppTheme();
-
-  return (
-    <View
-      style={[
-        styles.loading,
-        {
-          backgroundColor:
-            theme.colors.background,
-        },
-      ]}
-    >
-      <Text
-        accessibilityRole="header"
-        style={{
-          color: theme.colors.text,
-          fontSize: 28,
-          fontWeight: "800",
-        }}
-      >
-        {title}
-      </Text>
-
-      <Text
-        style={{
-          color: theme.colors.text,
-          marginTop: 8,
-        }}
-      >
-        {date}
-      </Text>
-
-      <AccessiblePressable
-        accessibilityLabel={`Back to Daily Log from ${title}`}
-        onPress={onBack}
-        style={{ marginTop: 16 }}
-      >
-        <Text
-          style={{
-            color: theme.colors.text,
-            fontWeight: "600",
-          }}
-        >
-          Back to Daily Log
-        </Text>
-      </AccessiblePressable>
-    </View>
   );
 }
 

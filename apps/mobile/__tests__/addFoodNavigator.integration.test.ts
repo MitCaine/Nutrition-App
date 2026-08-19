@@ -40,6 +40,10 @@ type CalendarState = {
   today: string;
 };
 
+jest.mock("@expo/vector-icons", () => ({
+  Ionicons: () => null,
+}));
+
 jest.mock("../src/shared/components/RootScreenHeader", () => {
   const mockReact = require("react");
   const { Pressable: MockPressable, Text: MockText } = require("react-native");
