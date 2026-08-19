@@ -1,0 +1,214 @@
+{
+  "evidence": {
+    "startDate": "2026-08-10",
+    "endDate": "2026-08-13",
+    "firstLoggedDate": "2026-08-02",
+    "days": [
+      {
+        "date": "2026-08-10",
+        "hasLogs": false,
+        "isComplete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-11",
+        "hasLogs": true,
+        "isComplete": true,
+        "nutrients": [
+          {
+            "nutrientId": "protein",
+            "amountKnown": "1.000000",
+            "amountEstimated": "0",
+            "unit": "g",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          },
+          {
+            "nutrientId": "sodium",
+            "amountKnown": "0",
+            "amountEstimated": "0",
+            "unit": "mg",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": true,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          },
+          {
+            "nutrientId": "vitamin_c",
+            "amountKnown": "0",
+            "amountEstimated": "0",
+            "unit": "mg",
+            "hasNumericEvidence": false,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": true,
+            "unknownContributorCount": 1
+          },
+          {
+            "nutrientId": "total_omega_3",
+            "amountKnown": "100.000000",
+            "amountEstimated": "0",
+            "unit": "mg",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          }
+        ]
+      },
+      {
+        "date": "2026-08-12",
+        "hasLogs": true,
+        "isComplete": true,
+        "nutrients": [
+          {
+            "nutrientId": "protein",
+            "amountKnown": "0.250000",
+            "amountEstimated": "0.500000",
+            "unit": "g",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": true,
+            "unknownContributorCount": 1
+          },
+          {
+            "nutrientId": "sodium",
+            "amountKnown": "0.000000",
+            "amountEstimated": "0",
+            "unit": "mg",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          },
+          {
+            "nutrientId": "magnesium",
+            "amountKnown": "10.000000",
+            "amountEstimated": "0",
+            "unit": "mg",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          }
+        ]
+      },
+      {
+        "date": "2026-08-13",
+        "hasLogs": true,
+        "isComplete": false,
+        "nutrients": [
+          {
+            "nutrientId": "protein",
+            "amountKnown": "1.250000000",
+            "amountEstimated": "0",
+            "unit": "g",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          },
+          {
+            "nutrientId": "vitamin_c",
+            "amountKnown": "0",
+            "amountEstimated": "5.000000",
+            "unit": "mg",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          },
+          {
+            "nutrientId": "saturated_fat",
+            "amountKnown": "2.000000",
+            "amountEstimated": "0",
+            "unit": "g",
+            "hasNumericEvidence": true,
+            "isExplicitZeroTotal": false,
+            "hasUnknownContributors": false,
+            "unknownContributorCount": 0
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "coverage": {
+      "requestedDayCount": 4,
+      "loggedDayCount": 3,
+      "completeDayCount": 2
+    },
+    "groupedSectionIds": [
+      "nutrition_facts",
+      "vitamins",
+      "minerals",
+      "fatty_acids",
+      "other"
+    ],
+    "complete_days": [
+      {
+        "nutrientId": "saturated_fat",
+        "usableDayCount": 0,
+        "average": null
+      },
+      {
+        "nutrientId": "sodium",
+        "usableDayCount": 2,
+        "average": "0"
+      },
+      {
+        "nutrientId": "protein",
+        "usableDayCount": 2,
+        "average": "0.875"
+      },
+      {
+        "nutrientId": "vitamin_c",
+        "usableDayCount": 0,
+        "average": null
+      },
+      {
+        "nutrientId": "magnesium",
+        "usableDayCount": 1,
+        "average": "10"
+      },
+      {
+        "nutrientId": "total_omega_3",
+        "usableDayCount": 1,
+        "average": "100"
+      }
+    ],
+    "logged_days": [
+      {
+        "nutrientId": "saturated_fat",
+        "usableDayCount": 1,
+        "average": "2"
+      },
+      {
+        "nutrientId": "sodium",
+        "usableDayCount": 2,
+        "average": "0"
+      },
+      {
+        "nutrientId": "protein",
+        "usableDayCount": 3,
+        "average": "1"
+      },
+      {
+        "nutrientId": "vitamin_c",
+        "usableDayCount": 1,
+        "average": "5"
+      },
+      {
+        "nutrientId": "magnesium",
+        "usableDayCount": 1,
+        "average": "10"
+      },
+      {
+        "nutrientId": "total_omega_3",
+        "usableDayCount": 1,
+        "average": "100"
+      }
+    ]
+  }
+}
