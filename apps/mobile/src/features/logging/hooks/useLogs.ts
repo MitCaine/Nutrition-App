@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import type { DailyLog, DailyLogDeleteInput, DailyLogUpdateInput, DailySummary, RecentEntry } from "../api/types";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
+import { invalidateHistoryRangesForDates } from "../../history/historyQuery";
 
 export type DailyLogReadState =
   | { kind: "initial-loading"; data: null; retry: () => void }
@@ -188,6 +189,13 @@ export function useLogEditContext(logId: string | null, enabled = true) {
 export function useLogMutations(date: string) {
   const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
+  const invalidateHistory = (...affectedDates: string[]) => {
+    void invalidateHistoryRangesForDates(
+      queryClient,
+      runtime.authority,
+      affectedDates,
+    );
+  };
   const invalidate = () => invalidateLogDateCaches(queryClient, date);
   const invalidateUse = () => {
     invalidate();
@@ -200,19 +208,25 @@ export function useLogMutations(date: string) {
     queryClient.invalidateQueries({ queryKey: ["future-logs", sourceDate] });
     invalidateFoodRecents(queryClient);
     invalidateRecentEntries(queryClient);
+    invalidateHistory(sourceDate);
   };
   const refreshDate = (sourceDate: string) => {
     void queryClient.refetchQueries({ queryKey: ["logs", sourceDate] });
     void queryClient.refetchQueries({ queryKey: ["future-logs", sourceDate] });
     void queryClient.refetchQueries({ queryKey: ["daily-summary", sourceDate] });
     void queryClient.refetchQueries({ queryKey: ["target-comparison", sourceDate] });
+    invalidateHistory(sourceDate);
   };
   return {
     queryClient,
     createLog: useMutation({
       mutationFn: (input: Parameters<typeof runtime.dailyLogs.create>[0]) =>
         runtime.dailyLogs.create(input),
-      onSuccess: (result) => { projectConfirmedLog(queryClient, date, result); invalidateUse(); },
+      onSuccess: (result) => {
+        projectConfirmedLog(queryClient, date, result);
+        invalidateUse();
+        invalidateHistory(result.logged_date);
+      },
     }),
     updateLog: useMutation({
       mutationFn: ({ logId, input }: { logId: string; input: Partial<DailyLogUpdateInput> }) =>
@@ -224,6 +238,7 @@ export function useLogMutations(date: string) {
           invalidateLogDateCaches(queryClient, result.logged_date);
           queryClient.invalidateQueries({ queryKey: ["future-logs", date] });
         }
+        invalidateHistory(date, result.logged_date);
       },
     }),
     deleteLog: useMutation({
@@ -239,6 +254,17 @@ export function useLogMutations(date: string) {
         projectDelete(
           typeof variables === "string" ? variables : variables.logId,
         );
+      },
+    }),
+    completeDay: useMutation({
+      mutationFn: (
+        input: Parameters<
+          typeof runtime.dailyLogs.markDayComplete
+        >[0],
+      ) =>
+        runtime.dailyLogs.markDayComplete(input),
+      onSuccess: (result) => {
+        invalidateHistory(result.logged_date);
       },
     }),
     projectDelete,
