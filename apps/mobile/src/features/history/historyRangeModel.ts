@@ -14,6 +14,10 @@ export const HISTORY_RANGE_LENGTHS =
 export type HistoryRangeLength =
   typeof HISTORY_RANGE_LENGTHS[number];
 
+export type HistorySurface =
+  | "overview"
+  | "nutrition_details";
+
 export type HistorySession = Readonly<{
   rangeLength: HistoryRangeLength;
   endDate: string;
@@ -21,6 +25,8 @@ export type HistorySession = Readonly<{
   firstLoggedDate?: string | null;
   denominatorPreference:
     HistoryProjectionMode | null;
+  surface?: HistorySurface;
+  selectedChartDate?: string | null;
 }>;
 
 export type HistoryRange = Readonly<{
@@ -87,6 +93,15 @@ export function withHistoryRangeLength(
     // This keeps subsequent Previous/Next navigation
     // on an exact 7- or 30-date paging lattice.
     endDate: session.latestEndDate,
+    ...(
+      session.selectedChartDate
+        === undefined
+        ? {}
+        : {
+            selectedChartDate:
+              null,
+          }
+    ),
   };
 }
 
@@ -97,6 +112,40 @@ export function withHistoryFirstLoggedDate(
   return {
     ...session,
     firstLoggedDate,
+  };
+}
+
+export function historySurface(
+  session: HistorySession,
+): HistorySurface {
+  return session.surface
+    ?? "overview";
+}
+
+export function historySelectedChartDate(
+  session: HistorySession,
+): string | null {
+  return session.selectedChartDate
+    ?? null;
+}
+
+export function withHistorySurface(
+  session: HistorySession,
+  surface: HistorySurface,
+): HistorySession {
+  return {
+    ...session,
+    surface,
+  };
+}
+
+export function withHistorySelectedChartDate(
+  session: HistorySession,
+  selectedChartDate: string | null,
+): HistorySession {
+  return {
+    ...session,
+    selectedChartDate,
   };
 }
 
@@ -119,6 +168,15 @@ export function previousHistorySession(
     endDate: addCalendarDays(
       session.endDate,
       -session.rangeLength,
+    ),
+    ...(
+      session.selectedChartDate
+        === undefined
+        ? {}
+        : {
+            selectedChartDate:
+              null,
+          }
     ),
   };
 }
@@ -152,6 +210,15 @@ export function nextHistorySession(
     endDate: addCalendarDays(
       session.endDate,
       session.rangeLength,
+    ),
+    ...(
+      session.selectedChartDate
+        === undefined
+        ? {}
+        : {
+            selectedChartDate:
+              null,
+          }
     ),
   };
 }

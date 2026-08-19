@@ -6,6 +6,30 @@ jest.mock(
 );
 
 jest.mock(
+  "react-native-svg",
+  () => ({
+    __esModule: true,
+    default: "Svg",
+    Svg: "Svg",
+    Circle: "Circle",
+    Rect: "Rect",
+  }),
+);
+
+jest.mock(
+  "../src/features/targets/hooks/useDailyTargetComparison",
+  () => ({
+    useTargetConfiguration:
+      jest.fn(
+        () => ({
+          data:
+            undefined,
+        }),
+      ),
+  }),
+);
+
+jest.mock(
   "../src/features/history/historyQuery",
   () => ({
     ...jest.requireActual(

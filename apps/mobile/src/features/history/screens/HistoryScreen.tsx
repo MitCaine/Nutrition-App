@@ -13,6 +13,9 @@ import {
   useAppTheme,
 } from "../../../app/theme/AppTheme";
 import {
+  useTargetConfiguration,
+} from "../../targets/hooks/useDailyTargetComparison";
+import {
   AccessibilityStatus,
 } from "../../../shared/accessibility/AccessibilityStatus";
 import {
@@ -35,6 +38,13 @@ import {
   projectHistoryRange,
 } from "../historyProjection";
 import {
+  buildHistoryOverviewCards,
+  selectedHistoryValueLabel,
+} from "../historyOverview";
+import {
+  HistoryDailyBarChart,
+} from "../components/HistoryDailyBarChart";
+import {
   canPageHistoryNext,
   canPageHistoryPrevious,
   effectiveHistoryProjectionMode,
@@ -42,8 +52,12 @@ import {
   historyRange,
   nextHistorySession,
   previousHistorySession,
+  historySelectedChartDate,
+  historySurface,
   withHistoryDenominatorPreference,
   withHistoryRangeLength,
+  withHistorySelectedChartDate,
+  withHistorySurface,
   type HistoryRangeLength,
   type HistorySession,
 } from "../historyRangeModel";
@@ -93,6 +107,9 @@ export function HistoryScreen({
   const readState =
     historyRangeReadState(query);
 
+  const targetConfiguration =
+    useTargetConfiguration();
+
   const evidence = readState.data;
   const evidenceFirstLoggedDate =
     evidence?.firstLoggedDate;
@@ -139,6 +156,32 @@ export function HistoryScreen({
       evidence,
     ],
   );
+
+  const overviewCards = useMemo(
+    () =>
+      projection
+      && projection.coverage
+        .loggedDayCount > 0
+        ? buildHistoryOverviewCards(
+            projection,
+            targetConfiguration.data,
+          )
+        : [],
+    [
+      projection,
+      targetConfiguration.data,
+    ],
+  );
+
+  const surface =
+    historySurface(
+      session,
+    );
+
+  const selectedChartDate =
+    historySelectedChartDate(
+      session,
+    );
 
   const knownFirstLoggedDate =
     session.firstLoggedDate
@@ -410,100 +453,284 @@ export function HistoryScreen({
                 kind="empty"
                 title="No logged days in this range"
                 message={
-                  "Use Previous or Next to view another History period."
+                  "No food was logged during this period."
                 }
               />
             ) : (
-              <View style={styles.summaryCard}>
-                {projection.coverage
-                  .completeDayCount > 0 ? (
-                  <View
-                    accessibilityRole="radiogroup"
-                    style={styles.controlGroup}
-                  >
-                    <Text style={styles.label}>
-                      Coverage
-                    </Text>
-
+              <>
+                <View style={styles.summaryCard}>
+                  {projection.coverage
+                    .completeDayCount > 0 ? (
                     <View
-                      style={
-                        styles.controlRow
-                      }
+                      accessibilityRole="radiogroup"
+                      style={styles.controlGroup}
                     >
-                      {(
-                        [
-                          "complete_days",
-                          "logged_days",
-                        ] as const
-                      ).map((mode) => {
-                        const selected =
-                          effectiveMode
-                          === mode;
+                      <Text style={styles.label}>
+                        Coverage
+                      </Text>
 
-                        return (
-                          <AccessiblePressable
-                            key={mode}
-                            accessibilityLabel={
-                              `Use ${modeLabel(
-                                mode,
-                              )}`
-                            }
-                            accessibilityRole="radio"
-                            accessibilityState={{
-                              checked:
-                                selected,
-                            }}
-                            onPress={() =>
-                              chooseMode(
-                                mode,
-                              )
-                            }
-                            style={[
-                              styles.choice,
-                              selected
-                                && styles
-                                  .choiceSelected,
-                            ]}
-                          >
-                            <Text
+                      <View
+                        style={
+                          styles.controlRow
+                        }
+                      >
+                        {(
+                          [
+                            "complete_days",
+                            "logged_days",
+                          ] as const
+                        ).map((mode) => {
+                          const selected =
+                            effectiveMode
+                            === mode;
+
+                          return (
+                            <AccessiblePressable
+                              key={mode}
+                              accessibilityLabel={
+                                `Use ${modeLabel(
+                                  mode,
+                                )}`
+                              }
+                              accessibilityRole="radio"
+                              accessibilityState={{
+                                checked:
+                                  selected,
+                              }}
+                              onPress={() =>
+                                chooseMode(
+                                  mode,
+                                )
+                              }
                               style={[
-                                styles.choiceText,
+                                styles.choice,
                                 selected
                                   && styles
-                                    .choiceTextSelected,
+                                    .choiceSelected,
                               ]}
                             >
-                              {modeLabel(
-                                mode,
-                              )}
-                            </Text>
-                          </AccessiblePressable>
-                        );
-                      })}
+                              <Text
+                                style={[
+                                  styles.choiceText,
+                                  selected
+                                    && styles
+                                      .choiceTextSelected,
+                                ]}
+                              >
+                                {modeLabel(
+                                  mode,
+                                )}
+                              </Text>
+                            </AccessiblePressable>
+                          );
+                        })}
+                      </View>
                     </View>
+                  ) : null}
+
+                  <Text style={styles.summaryTitle}>
+                    Coverage mode:{" "}
+                    {modeLabel(
+                      effectiveMode,
+                    )}
+                  </Text>
+
+                  <Text style={styles.summaryText}>
+                    {
+                      projection.coverage
+                        .completeDayCount
+                    }{" "}
+                    Complete days ·{" "}
+                    {
+                      projection.coverage
+                        .loggedDayCount
+                    }{" "}
+                    logged days
+                  </Text>
+                </View>
+
+                {surface
+                  === "overview" ? (
+                  <>
+                    <AccessiblePressable
+                      accessibilityHint={
+                        "Opens the distinct Nutrition Details History surface"
+                      }
+                      accessibilityLabel={
+                        "Show more nutrition"
+                      }
+                      onPress={() =>
+                        onSessionChange(
+                          withHistorySurface(
+                            session,
+                            "nutrition_details",
+                          ),
+                        )
+                      }
+                      style={styles.choice}
+                    >
+                      <Text style={styles.choiceText}>
+                        Show more nutrition
+                      </Text>
+                    </AccessiblePressable>
+
+                    {overviewCards.map(
+                      (card) => {
+                        const selectedValue =
+                          selectedChartDate
+                            ? selectedHistoryValueLabel(
+                                card,
+                                selectedChartDate,
+                              )
+                            : null;
+
+                        return (
+                          <View
+                            key={
+                              card.nutrientId
+                            }
+                            style={
+                              styles.summaryCard
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.summaryTitle
+                              }
+                            >
+                              {card.label}
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.rangeText
+                              }
+                            >
+                              {card.statistic}
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.summaryText
+                              }
+                            >
+                              {
+                                card.denominatorContext
+                              }
+                            </Text>
+
+                            {card.targetContext
+                              ? (
+                              <Text
+                                style={
+                                  styles.summaryText
+                                }
+                              >
+                                {
+                                  card.targetContext
+                                }
+                              </Text>
+                            ) : null}
+
+                            <HistoryDailyBarChart
+                              barColor={
+                                theme.colors
+                                  .accent
+                              }
+                              days={
+                                card.days
+                              }
+                              onSelectDate={(
+                                date,
+                              ) =>
+                                onSessionChange(
+                                  withHistorySelectedChartDate(
+                                    session,
+                                    date,
+                                  ),
+                                )
+                              }
+                              selectedBarColor={
+                                theme.colors
+                                  .text
+                              }
+                              selectedDate={
+                                selectedChartDate
+                              }
+                              seriesLabel={
+                                card.label
+                              }
+                            />
+
+                            {selectedChartDate
+                              ? (
+                              <Text
+                                accessibilityLabel={
+                                  `${
+                                    card.label
+                                  } selected ${
+                                    selectedChartDate
+                                  } ${
+                                    selectedValue
+                                      ?? "—"
+                                  }`
+                                }
+                                style={
+                                  styles.summaryText
+                                }
+                              >
+                                {
+                                  formatReadableDate(
+                                    selectedChartDate,
+                                  )
+                                }{" "}
+                                ·{" "}
+                                {
+                                  selectedValue
+                                  ?? "—"
+                                }
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      },
+                    )}
+                  </>
+                ) : (
+                  <View
+                    style={
+                      styles.summaryCard
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.summaryTitle
+                      }
+                    >
+                      Nutrition Details
+                    </Text>
+
+                    <AccessiblePressable
+                      accessibilityLabel={
+                        "Back to History overview"
+                      }
+                      onPress={() =>
+                        onSessionChange(
+                          withHistorySurface(
+                            session,
+                            "overview",
+                          ),
+                        )
+                      }
+                      style={styles.choice}
+                    >
+                      <Text style={styles.choiceText}>
+                        Back to overview
+                      </Text>
+                    </AccessiblePressable>
                   </View>
-                ) : null}
-
-                <Text style={styles.summaryTitle}>
-                  Coverage mode:{" "}
-                  {modeLabel(
-                    effectiveMode,
-                  )}
-                </Text>
-
-                <Text style={styles.summaryText}>
-                  {
-                    projection.coverage
-                      .completeDayCount
-                  }{" "}
-                  Complete days ·{" "}
-                  {
-                    projection.coverage
-                      .loggedDayCount
-                  }{" "}
-                  logged days
-                </Text>
-              </View>
+                )}
+              </>
             )}
           </>
         ) : null}
