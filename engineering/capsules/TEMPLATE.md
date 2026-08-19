@@ -110,6 +110,7 @@ Provide only context a fresh executor needs; link rather than copy authority.
 ## Completion record
 
 - **Reviewed commit:**
+- **Merged commit:**
 - **Review disposition:**
 - **Verification summary:**
 - **Specialized qualification:**

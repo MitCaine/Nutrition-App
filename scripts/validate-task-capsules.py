@@ -384,13 +384,23 @@ def validate_string_list(
     return [item.strip() for item in value]
 
 
-def validate_commit(repo: Path, value: str, field_name: str, result: CapsuleResult) -> bool:
+def validate_commit_syntax(
+    value: str,
+    field_name: str,
+    result: CapsuleResult,
+) -> bool:
     if not COMMIT_PATTERN.fullmatch(value):
         result.error(
             "COMMIT_INVALID",
             f"{field_name} must be an exact lowercase 40-character commit hash.",
             field_name,
         )
+        return False
+    return True
+
+
+def validate_commit(repo: Path, value: str, field_name: str, result: CapsuleResult) -> bool:
+    if not validate_commit_syntax(value, field_name, result):
         return False
     resolved = run_git(repo, "rev-parse", f"{value}^{{commit}}")
     if resolved.returncode or resolved.stdout.strip() != value:
@@ -401,6 +411,22 @@ def validate_commit(repo: Path, value: str, field_name: str, result: CapsuleResu
         )
         return False
     return True
+
+
+def extract_commit_reference(
+    value: str,
+    field_name: str,
+    result: CapsuleResult,
+) -> str | None:
+    matches = re.findall(r"(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z])", value)
+    if len(matches) != 1:
+        result.error(
+            "COMMIT_INVALID",
+            f"{field_name} must contain exactly one lowercase 40-character commit hash.",
+            field_name,
+        )
+        return None
+    return matches[0]
 
 
 def validate_scope_paths(entries: Iterable[str], field_name: str, result: CapsuleResult) -> None:
@@ -544,7 +570,7 @@ def parse_state_history(
 
 
 def completion_values(content: str) -> dict[str, str]:
-    pattern = re.compile(r"(?m)^\s*-\s+\*\*(.+?):\*\*\s*(.*)$")
+    pattern = re.compile(r"(?m)^[ \t]*-[ \t]+\*\*(.+?):\*\*[ \t]*(.*)$")
     return {match.group(1).strip(): match.group(2).strip() for match in pattern.finditer(content)}
 
 
@@ -568,7 +594,34 @@ def validate_completion(repo: Path, state: str, content: str, result: CapsuleRes
     if state in {"MERGED", "RETROSPECTED"}:
         reviewed = values.get("Reviewed commit", "")
         if reviewed:
-            validate_commit(repo, reviewed, "Reviewed commit", result)
+            validate_commit_syntax(reviewed, "Reviewed commit", result)
+
+        if "Merged commit" not in values:
+            result.error(
+                "COMPLETION_FIELD_MISSING",
+                "Completion field is missing: Merged commit",
+                "Completion record",
+            )
+        elif not meaningful(values["Merged commit"]):
+            result.error(
+                "COMPLETION_FIELD_INCOMPLETE",
+                "Completion field is incomplete: Merged commit",
+                "Completion record",
+            )
+        else:
+            merged_commit = extract_commit_reference(
+                values["Merged commit"],
+                "Merged commit",
+                result,
+            )
+            if merged_commit is not None:
+                validate_commit(
+                    repo,
+                    merged_commit,
+                    "Merged commit",
+                    result,
+                )
+
         disposition = values.get("Review disposition", "")
         if disposition and not disposition.lower().startswith("approved"):
             result.error(

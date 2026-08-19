@@ -194,6 +194,56 @@ Not applicable — no unresolved assumptions remain.
 '''
 
 
+
+def completed_capsule_text(
+    capsule_id: str,
+    state: str,
+    base_commit: str,
+    reviewed_commit: str,
+    merged_commit: str | None,
+) -> str:
+    text = capsule_text(
+        capsule_id,
+        state,
+        base_commit,
+        acceptance_checked=True,
+    )
+
+    heading = "## Completion record\n\n"
+    prefix, separator, _ = text.partition(heading)
+    assert separator
+
+    lines = [
+        f"- **Reviewed commit:** {reviewed_commit}",
+    ]
+
+    if merged_commit is not None:
+        lines.append(f"- **Merged commit:** {merged_commit}")
+
+    lines.extend(
+        [
+            "- **Review disposition:** Approved — test completion.",
+            "- **Verification summary:** Focused validation passed.",
+            (
+                "- **Specialized qualification:** "
+                "Temporary repository qualification passed."
+            ),
+            "- **Known warnings:** None observed.",
+            "- **Deferred work/follow-up IDs:** None.",
+            (
+                "- **Retrospective required:** "
+                "yes — retrospective recorded."
+                if state == "RETROSPECTED"
+                else
+                "- **Retrospective required:** "
+                "no — no task-specific retrospective required."
+            ),
+        ]
+    )
+
+    return prefix + heading + "\n".join(lines) + "\n"
+
+
 def run_validator(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -316,3 +366,183 @@ def test_verified_capsule_requires_checked_acceptance(tmp_path: Path) -> None:
     result = run_validator(repo, relative.as_posix(), "--json")
     assert result.returncode == 1
     assert "ACCEPTANCE_UNVERIFIED" in error_codes(result)
+def test_merged_allows_unreachable_reviewed_commit(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+
+    git(repo, "checkout", "-q", "-b", "review-source")
+    (repo / "reviewed.txt").write_text(
+        "reviewed implementation\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", "reviewed.txt")
+    git(repo, "commit", "-m", "reviewed implementation")
+    reviewed = git(repo, "rev-parse", "HEAD")
+
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "-D", "review-source")
+    git(repo, "reflog", "expire", "--expire=now", "--all")
+    git(repo, "gc", "--prune=now")
+
+    probe = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "cat-file",
+            "-e",
+            f"{reviewed}^{{commit}}",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert probe.returncode != 0
+
+    (repo / "merged.txt").write_text(
+        "squash result\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", "merged.txt")
+    git(repo, "commit", "-m", "squash merge")
+    merged = git(repo, "rev-parse", "HEAD")
+
+    cases = (
+        ("WF-MERGED", "MERGED", f"`{merged}` on `main`."),
+        ("WF-RETRO", "RETROSPECTED", merged),
+    )
+
+    for capsule_id, state, merged_value in cases:
+        relative = Path(
+            f"engineering/capsules/completed/{capsule_id}.md"
+        )
+        (repo / relative).write_text(
+            completed_capsule_text(
+                capsule_id,
+                state,
+                base,
+                reviewed,
+                merged_value,
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_validator(
+            repo,
+            relative.as_posix(),
+            "--json",
+        )
+
+        assert result.returncode == 0, (
+            result.stdout + result.stderr
+        )
+
+
+def test_merged_commit_evidence_is_strict(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+
+    cases = (
+        (
+            "WF-MISSING",
+            None,
+            "COMPLETION_FIELD_MISSING",
+        ),
+        (
+            "WF-EMPTY",
+            "",
+            "COMPLETION_FIELD_INCOMPLETE",
+        ),
+        (
+            "WF-MALFORMED",
+            "abc123",
+            "COMMIT_INVALID",
+        ),
+        (
+            "WF-UNKNOWN",
+            "f" * 40,
+            "COMMIT_UNKNOWN",
+        ),
+    )
+
+    for capsule_id, merged_value, expected in cases:
+        relative = Path(
+            f"engineering/capsules/completed/{capsule_id}.md"
+        )
+        (repo / relative).write_text(
+            completed_capsule_text(
+                capsule_id,
+                "MERGED",
+                base,
+                base,
+                merged_value,
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_validator(
+            repo,
+            relative.as_posix(),
+            "--json",
+        )
+
+        assert result.returncode == 1
+        assert expected in error_codes(result)
+
+
+def test_merged_reviewed_commit_requires_full_sha(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+
+    relative = Path(
+        "engineering/capsules/completed/WF-REVIEWED.md"
+    )
+    (repo / relative).write_text(
+        completed_capsule_text(
+            "WF-REVIEWED",
+            "MERGED",
+            base,
+            "abc123",
+            base,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(
+        repo,
+        relative.as_posix(),
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert "COMMIT_INVALID" in error_codes(result)
+
+
+def test_premerge_commit_resolution_remains_strict(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    relative = Path(
+        "engineering/capsules/active/WF-PREMERGE.md"
+    )
+    (repo / relative).write_text(
+        capsule_text(
+            "WF-PREMERGE",
+            "READY",
+            "e" * 40,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(
+        repo,
+        relative.as_posix(),
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert "COMMIT_UNKNOWN" in error_codes(result)
