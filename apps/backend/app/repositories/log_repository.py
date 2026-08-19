@@ -62,15 +62,6 @@ class LogRepository:
         return self.db.scalars(statement).first()
 
     def get_for_update(self, log_id: UUID, user_id: UUID) -> DailyLog:
-        # E4-02 mark-Complete acquires the owner row before its date anchor.
-        # Explicit Log mutations use the same owner-first order so a Complete
-        # assertion and update/delete cannot form an owner/date lock cycle.
-        locked_user_id = self.db.scalar(
-            select(User.id).where(User.id == user_id).with_for_update()
-        )
-        if locked_user_id is None:
-            raise LookupError("Daily log owner not found")
-
         pending_values: dict[str, object] = {}
         existing = next(
             (
@@ -100,6 +91,20 @@ class LogRepository:
         for key, value in pending_values.items():
             setattr(log, key, value)
         return log
+
+    def lock_owner_shared(self, user_id: UUID) -> None:
+        """Serialize legacy Log mutations with exclusive calendar/Complete owner locks.
+
+        PostgreSQL FOR SHARE permits peer legacy Log mutations to coexist while
+        conflicting with the FOR UPDATE owner lock used by CalendarService and
+        mark-Complete. Other dialects retain their supported SELECT-lock behavior.
+        """
+
+        locked_user_id = self.db.scalar(
+            select(User.id).where(User.id == user_id).with_for_update(read=True)
+        )
+        if locked_user_id is None:
+            raise LookupError("Daily log owner not found")
 
     def lock_for_food_serving_replacement(
         self,

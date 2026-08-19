@@ -1159,6 +1159,21 @@ class LogService:
                 )
                 if receipt is not None:
                     return self._replay_mutation_receipt(receipt)
+            if payload.calendar_revision is None:
+                self.logs.lock_owner_shared(user_id)
+            else:
+                candidate = self.logs.get(log_id, user_id)
+                if candidate is not None:
+                    candidate_logged_date = (
+                        payload.logged_date
+                        if payload.logged_date is not None
+                        else candidate.logged_date
+                    )
+                    CalendarService(self.db).validate_mutation_context(
+                        user_id,
+                        payload.calendar_revision,
+                        candidate_logged_date,
+                    )
             try:
                 log = self.logs.get_for_update(log_id, user_id)
             except LookupError as exc:
@@ -1186,10 +1201,11 @@ class LogService:
             destination_logged_date = (
                 payload.logged_date if payload.logged_date is not None else source_logged_date
             )
-            self.logs.lock_first_for_dates(
-                user_id,
-                {source_logged_date, destination_logged_date},
-            )
+            if payload.calendar_revision is not None:
+                self.logs.lock_first_for_dates(
+                    user_id,
+                    {source_logged_date, destination_logged_date},
+                )
             before_snapshot_signature = _snapshot_signature(log)
             if payload.client_request_id is not None:
                 try:
@@ -1650,6 +1666,13 @@ class LogService:
                 )
                 if receipt is not None:
                     return self._replay_mutation_receipt(receipt)
+            if intent.calendar_revision is None:
+                self.logs.lock_owner_shared(user_id)
+            else:
+                CalendarService(self.db).validate_delete_context(
+                    user_id,
+                    intent.calendar_revision,
+                )
             try:
                 # Serialize deletes with edits and other deletes using the
                 # established owned-row lock path before checking the
@@ -1683,7 +1706,8 @@ class LogService:
             ):
                 raise StaleLogMutationError(StaleLogMutationError.message)
             source_logged_date = log.logged_date
-            self.logs.lock_first_for_dates(user_id, {source_logged_date})
+            if intent.calendar_revision is not None:
+                self.logs.lock_first_for_dates(user_id, {source_logged_date})
             if intent.calendar_revision is not None:
                 CalendarService(self.db).validate_delete_context(
                     user_id,

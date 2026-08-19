@@ -640,3 +640,156 @@ def test_move_then_concurrent_destination_complete_represents_post_move_date() -
             assert any(log.id == source_id for log in destination_logs)
             assert db.get(DailyLogDayCompletion, (owner_id, SOURCE_DATE)) is None
             assert db.get(DailyLogDayCompletion, (owner_id, DESTINATION_DATE)) is not None
+
+
+def test_legacy_update_then_complete_uses_shared_owner_order() -> None:
+    owner_id = uuid4()
+    complete_request_id = uuid4()
+
+    with isolated_postgres_session_factory(
+        database_url=POSTGRES_URL,
+        schema_prefix="e4_03_legacy_update_then_complete",
+    ) as factory:
+        with factory() as db:
+            _assert_postgres_16(db)
+            food_id, serving_id, calendar_revision = _seed_owner_food(
+                db,
+                user_id=owner_id,
+                email="e4-03-legacy-update-first@example.com",
+            )
+            log = _create_log(
+                db,
+                user_id=owner_id,
+                food_id=food_id,
+                serving_id=serving_id,
+                calendar_revision=calendar_revision,
+                logged_date=SOURCE_DATE,
+            )
+            log_id = log.id
+
+        mutation_locked = Event()
+        release_mutation = Event()
+        complete_started = Event()
+
+        def submit_legacy_update() -> None:
+            with factory() as db:
+                service = LogService(db)
+                original_lock = service.logs.lock_owner_shared
+
+                def hold_shared_owner_lock(user_id: UUID) -> None:
+                    original_lock(user_id)
+                    mutation_locked.set()
+                    if not release_mutation.wait(timeout=10):
+                        raise TimeoutError("timed out holding legacy shared owner lock")
+
+                service.logs.lock_owner_shared = hold_shared_owner_lock
+                service.update_log(
+                    owner_id,
+                    log_id,
+                    DailyLogUpdateRequest(
+                        amount_quantity=Decimal("2"),
+                        amount_unit="serving",
+                        serving_definition_id=serving_id,
+                    ),
+                )
+
+        def submit_complete() -> None:
+            with factory() as db:
+                complete_started.set()
+                _mark_complete(
+                    db,
+                    user_id=owner_id,
+                    calendar_revision=calendar_revision,
+                    logged_date=SOURCE_DATE,
+                    request_id=complete_request_id,
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            update_future = executor.submit(submit_legacy_update)
+            assert mutation_locked.wait(timeout=10)
+
+            complete_future = executor.submit(submit_complete)
+            assert complete_started.wait(timeout=10)
+            Event().wait(0.2)
+            assert not complete_future.done()
+
+            release_mutation.set()
+            update_future.result(timeout=20)
+            complete_future.result(timeout=20)
+
+        with factory() as db:
+            stored = db.get(DailyLog, log_id)
+            assert stored is not None
+            assert stored.amount_quantity == Decimal("2.000000")
+            assert db.get(DailyLogDayCompletion, (owner_id, SOURCE_DATE)) is not None
+
+
+def test_complete_then_legacy_update_uses_shared_owner_order() -> None:
+    owner_id = uuid4()
+    complete_request_id = uuid4()
+
+    with isolated_postgres_session_factory(
+        database_url=POSTGRES_URL,
+        schema_prefix="e4_03_complete_then_legacy_update",
+    ) as factory:
+        with factory() as db:
+            _assert_postgres_16(db)
+            food_id, serving_id, calendar_revision = _seed_owner_food(
+                db,
+                user_id=owner_id,
+                email="e4-03-complete-legacy-first@example.com",
+            )
+            log = _create_log(
+                db,
+                user_id=owner_id,
+                food_id=food_id,
+                serving_id=serving_id,
+                calendar_revision=calendar_revision,
+                logged_date=SOURCE_DATE,
+            )
+            log_id = log.id
+
+        complete_reached = Event()
+        release_complete = Event()
+        update_started = Event()
+
+        def submit_legacy_update() -> None:
+            with factory() as db:
+                update_started.set()
+                LogService(db).update_log(
+                    owner_id,
+                    log_id,
+                    DailyLogUpdateRequest(
+                        amount_quantity=Decimal("2"),
+                        amount_unit="serving",
+                        serving_definition_id=serving_id,
+                    ),
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            complete_future = executor.submit(
+                _blocking_complete,
+                factory,
+                user_id=owner_id,
+                calendar_revision=calendar_revision,
+                logged_date=SOURCE_DATE,
+                request_id=complete_request_id,
+                reached=complete_reached,
+                release=release_complete,
+            )
+            assert complete_reached.wait(timeout=10)
+
+            update_future = executor.submit(submit_legacy_update)
+            assert update_started.wait(timeout=10)
+            Event().wait(0.2)
+            assert not update_future.done()
+
+            release_complete.set()
+            complete_future.result(timeout=20)
+            update_future.result(timeout=20)
+
+        with factory() as db:
+            stored = db.get(DailyLog, log_id)
+            assert stored is not None
+            assert stored.amount_quantity == Decimal("2.000000")
+            assert db.get(DailyLogDayCompletion, (owner_id, SOURCE_DATE)) is None
