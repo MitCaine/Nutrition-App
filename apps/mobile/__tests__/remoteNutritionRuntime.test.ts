@@ -140,7 +140,8 @@ test("one composed runtime exposes every approved feature interface", () => {
   ]);
   expect(Object.keys(remoteNutritionRuntime.dailyLogs)).toEqual([
     "list", "listFuture", "listRecentEntries", "create", "update",
-    "getEditContext", "delete", "markDayComplete", "getMutationStatus", "getDailySummary",
+    "getEditContext", "delete", "markDayComplete", "getMutationStatus", "getHistoryRange",
+    "getDailySummary",
   ]);
   expect(Object.keys(remoteNutritionRuntime.targets)).toEqual([
     "getConfiguration", "updateConfiguration", "resetOverride", "getDailyComparison",

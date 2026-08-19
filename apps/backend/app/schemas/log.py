@@ -238,3 +238,28 @@ class RecentEntryListResponse(BaseModel):
 class DailySummaryResponse(BaseModel):
     logged_date: date
     totals: list[AggregatedNutrientTotalSchema]
+
+
+class HistoryNutrientEvidenceResponse(BaseModel):
+    nutrient_id: str
+    amount_known: Decimal
+    amount_estimated: Decimal
+    unit: str
+    has_numeric_evidence: bool
+    is_explicit_zero_total: bool
+    has_unknown_contributors: bool
+    unknown_contributor_count: int
+
+
+class HistoryDayEvidenceResponse(BaseModel):
+    date: date
+    has_logs: bool
+    is_complete: bool
+    nutrients: list[HistoryNutrientEvidenceResponse]
+
+
+class HistoryRangeResponse(BaseModel):
+    start_date: date
+    end_date: date
+    first_logged_date: date | None
+    days: list[HistoryDayEvidenceResponse]

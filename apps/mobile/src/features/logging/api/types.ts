@@ -122,6 +122,52 @@ export type DailyLogEditContext = {
   current_amount_choices?: DailyLogEditAmount[];
 };
 
+export type HistoryNutrientEvidence = {
+  nutrientId: string;
+  amountKnown: string;
+  amountEstimated: string;
+  unit: AggregatedNutrientTotal["unit"];
+  hasNumericEvidence: boolean;
+  isExplicitZeroTotal: boolean;
+  hasUnknownContributors: boolean;
+  unknownContributorCount: number;
+};
+
+export type HistoryDayEvidence = {
+  date: string;
+  hasLogs: boolean;
+  isComplete: boolean;
+  nutrients: HistoryNutrientEvidence[];
+};
+
+export type HistoryRangeEvidence = {
+  startDate: string;
+  endDate: string;
+  firstLoggedDate: string | null;
+  days: HistoryDayEvidence[];
+};
+
+export type HistoryRangeResponse = {
+  start_date: string;
+  end_date: string;
+  first_logged_date: string | null;
+  days: Array<{
+    date: string;
+    has_logs: boolean;
+    is_complete: boolean;
+    nutrients: Array<{
+      nutrient_id: string;
+      amount_known: string;
+      amount_estimated: string;
+      unit: AggregatedNutrientTotal["unit"];
+      has_numeric_evidence: boolean;
+      is_explicit_zero_total: boolean;
+      has_unknown_contributors: boolean;
+      unknown_contributor_count: number;
+    }>;
+  }>;
+};
+
 export type DailySummary = {
   logged_date: string;
   totals: AggregatedNutrientTotal[];

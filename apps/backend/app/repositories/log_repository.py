@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import and_, delete, inspect, or_, select, text
+from sqlalchemy import and_, delete, func, inspect, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.food import FoodItem, ServingDefinition
@@ -140,6 +140,44 @@ class LogRepository:
             .order_by(DailyLog.created_at, DailyLog.id)
         )
         return list(self.db.scalars(statement).all())
+
+    def list_for_range(
+        self,
+        user_id: UUID,
+        start_date: date,
+        end_date: date,
+    ) -> list[DailyLog]:
+        """Return one owner's immutable Daily Logs and snapshots for a bounded range."""
+
+        statement = (
+            select(DailyLog)
+            .where(
+                DailyLog.user_id == user_id,
+                DailyLog.logged_date >= start_date,
+                DailyLog.logged_date <= end_date,
+            )
+            .options(selectinload(DailyLog.snapshots))
+            .order_by(DailyLog.logged_date, DailyLog.created_at, DailyLog.id)
+        )
+        return list(self.db.scalars(statement).all())
+
+    def completed_dates_for_range(
+        self,
+        user_id: UUID,
+        start_date: date,
+        end_date: date,
+    ) -> set[date]:
+        statement = select(DailyLogDayCompletion.logged_date).where(
+            DailyLogDayCompletion.user_id == user_id,
+            DailyLogDayCompletion.logged_date >= start_date,
+            DailyLogDayCompletion.logged_date <= end_date,
+        )
+        return set(self.db.scalars(statement).all())
+
+    def first_logged_date(self, user_id: UUID) -> date | None:
+        return self.db.scalar(
+            select(func.min(DailyLog.logged_date)).where(DailyLog.user_id == user_id)
+        )
 
     def has_logs_for_date(self, user_id: UUID, logged_date: date) -> bool:
         statement = (

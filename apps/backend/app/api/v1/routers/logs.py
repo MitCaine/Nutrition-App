@@ -23,6 +23,7 @@ from app.schemas.log import (
     DailyLogResponse,
     DailyLogUpdateRequest,
     DailySummaryResponse,
+    HistoryRangeResponse,
     RecentEntryListResponse,
 )
 from app.services.calendar_service import (
@@ -36,6 +37,7 @@ from app.services.log_day_completion_service import (
     LogDayCompletionService,
 )
 from app.services.log_service import (
+    HistoryRangeError,
     LogEditConflictError,
     LogIdempotencyConflictError,
     LogMutationPayloadConflictError,
@@ -169,6 +171,27 @@ def list_recent_entries(
     except AuthoritativeTimeZoneRequiredError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+
+
+@router.get("/history-range", response_model=HistoryRangeResponse)
+def history_range(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> HistoryRangeResponse:
+    try:
+        return _service(db).history_range(user.id, start_date, end_date)
+    except AuthoritativeTimeZoneRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        ) from exc
+    except HistoryRangeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=exc.detail(),
         ) from exc
 

@@ -1,0 +1,68 @@
+{
+  "expected": {
+    "start_date": "2026-08-06",
+    "end_date": "2026-08-08",
+    "first_logged_date": "2026-08-05",
+    "days": [
+      {
+        "date": "2026-08-06",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-07",
+        "has_logs": true,
+        "is_complete": true,
+        "nutrients": [
+          {
+            "nutrient_id": "added_sugars",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": true,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          },
+          {
+            "nutrient_id": "protein",
+            "amount_known": "1.250000000",
+            "amount_estimated": "0.500000",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": true,
+            "unknown_contributor_count": 1
+          },
+          {
+            "nutrient_id": "sodium",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "mg",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          },
+          {
+            "nutrient_id": "vitamin_d",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "mcg",
+            "has_numeric_evidence": false,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": true,
+            "unknown_contributor_count": 1
+          }
+        ]
+      },
+      {
+        "date": "2026-08-08",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      }
+    ]
+  }
+}

@@ -10,6 +10,8 @@ import type {
   DailyLogUpdateInput,
   DailySummary,
   DailySummaryResponse,
+  HistoryRangeEvidence,
+  HistoryRangeResponse,
   RecentEntry,
 } from "./types";
 
@@ -63,6 +65,35 @@ export function getLogMutationStatus(
 ): Promise<DailyLogMutationStatus> {
   const suffix = operation ? `?operation=${encodeURIComponent(operation)}` : "";
   return apiRequest<DailyLogMutationStatus>(`/logs/mutations/${clientRequestId}${suffix}`);
+}
+
+export async function getHistoryRange(
+  startDate: string,
+  endDate: string,
+): Promise<HistoryRangeEvidence> {
+  const response = await apiRequest<HistoryRangeResponse>(
+    `/logs/history-range?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
+  );
+  return {
+    startDate: response.start_date,
+    endDate: response.end_date,
+    firstLoggedDate: response.first_logged_date,
+    days: response.days.map((day) => ({
+      date: day.date,
+      hasLogs: day.has_logs,
+      isComplete: day.is_complete,
+      nutrients: day.nutrients.map((nutrient) => ({
+        nutrientId: nutrient.nutrient_id,
+        amountKnown: nutrient.amount_known,
+        amountEstimated: nutrient.amount_estimated,
+        unit: nutrient.unit,
+        hasNumericEvidence: nutrient.has_numeric_evidence,
+        isExplicitZeroTotal: nutrient.is_explicit_zero_total,
+        hasUnknownContributors: nutrient.has_unknown_contributors,
+        unknownContributorCount: nutrient.unknown_contributor_count,
+      })),
+    })),
+  };
 }
 
 export async function getDailySummary(date: string): Promise<DailySummary> {

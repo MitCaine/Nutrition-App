@@ -26,6 +26,7 @@ import type {
   DailyLogMutationStatus,
   DailyLogUpdateInput,
   DailySummary,
+  HistoryRangeEvidence,
   RecentEntry,
 } from "../features/logging/api/types";
 import type {
@@ -102,6 +103,7 @@ export interface DailyLogsRuntime {
     clientRequestId: string,
     operation?: DailyLogMutationStatus["operation"],
   ): Promise<DailyLogMutationStatus>;
+  getHistoryRange(startDate: string, endDate: string): Promise<HistoryRangeEvidence>;
   getDailySummary(date: string): Promise<DailySummary>;
 }
 

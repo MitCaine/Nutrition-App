@@ -32,6 +32,7 @@ import {
   createLog,
   deleteLog,
   getDailySummary,
+  getHistoryRange,
   getLogEditContext,
   getLogMutationStatus,
   listFutureEntries,
@@ -110,6 +111,9 @@ const runtime: NutritionRuntime = {
     markDayComplete: (input) => mutate(() => markDayComplete(input)),
     getMutationStatus: (clientRequestId, operation) => read(
       () => getLogMutationStatus(clientRequestId, operation),
+    ),
+    getHistoryRange: (startDate, endDate) => read(
+      () => getHistoryRange(startDate, endDate),
     ),
     getDailySummary: (date) => read(() => getDailySummary(date)),
   },

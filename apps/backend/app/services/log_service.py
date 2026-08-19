@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -45,6 +46,9 @@ from app.schemas.log import (
     DailyLogMutationStatusResponse,
     DailyLogResponse,
     DailyLogUpdateRequest,
+    HistoryDayEvidenceResponse,
+    HistoryNutrientEvidenceResponse,
+    HistoryRangeResponse,
 )
 from app.services.calendar_service import (
     CalendarService,
@@ -177,6 +181,27 @@ class LogMutationResultUnavailableError(ValueError):
     )
 
 
+class HistoryRangeError(ValueError):
+    """Stable semantic failure for the bounded History evidence read."""
+
+    def __init__(self, code: str, message: str, field: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+    def detail(self) -> dict[str, object]:
+        detail: dict[str, object] = {"code": self.code, "message": str(self)}
+        if self.field is not None:
+            detail["field_errors"] = [
+                {
+                    "field": self.field,
+                    "code": self.code,
+                    "message": str(self),
+                }
+            ]
+        return detail
+
+
 class LogMutationReplay:
     """A prior committed response returned without reapplying the mutation."""
 
@@ -253,6 +278,38 @@ def _parse_receipt_date(value: object) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _parse_history_date(value: str | date, field: str) -> date:
+    if isinstance(value, datetime):
+        raise HistoryRangeError(
+            "history_range_date_invalid",
+            "History range endpoints must be canonical calendar dates.",
+            field,
+        )
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        raise HistoryRangeError(
+            "history_range_date_invalid",
+            "History range endpoints must be canonical calendar dates.",
+            field,
+        )
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise HistoryRangeError(
+            "history_range_date_invalid",
+            "History range endpoints must use YYYY-MM-DD.",
+            field,
+        ) from exc
+    if parsed.isoformat() != value:
+        raise HistoryRangeError(
+            "history_range_date_invalid",
+            "History range endpoints must use canonical YYYY-MM-DD.",
+            field,
+        )
+    return parsed
 
 
 def _snapshot_signature(log: DailyLog) -> tuple[str, ...]:
@@ -1749,6 +1806,130 @@ class LogService:
 
     def _after_log_delete_flush(self, _log: DailyLog) -> None:
         """Test seam after DailyLog deletion and cascades are flushed."""
+
+    def history_range(
+        self,
+        user_id: UUID,
+        start_date: str | date,
+        end_date: str | date,
+    ) -> HistoryRangeResponse:
+        """Return bounded immutable History evidence from one selected authority."""
+
+        start = _parse_history_date(start_date, "start_date")
+        end = _parse_history_date(end_date, "end_date")
+
+        if start > end:
+            raise HistoryRangeError(
+                "history_range_order_invalid",
+                "History range start date must not be after end date.",
+            )
+
+        cardinality = (end - start).days + 1
+        if cardinality > 30:
+            raise HistoryRangeError(
+                "history_range_too_large",
+                "History ranges may contain at most 30 calendar dates.",
+            )
+
+        calendar = CalendarService(self.db).state(user_id)
+        if calendar.today is None:
+            raise AuthoritativeTimeZoneRequiredError()
+
+        yesterday = calendar.today - timedelta(days=1)
+        if end > yesterday:
+            raise HistoryRangeError(
+                "history_range_future_endpoint",
+                "History ranges must end no later than yesterday.",
+                "end_date",
+            )
+
+        logs = self.logs.list_for_range(user_id, start, end)
+        completed_dates = self.logs.completed_dates_for_range(user_id, start, end)
+        first_logged_date = self.logs.first_logged_date(user_id)
+
+        logs_by_date: dict[date, list[DailyLog]] = defaultdict(list)
+        for log in logs:
+            logs_by_date[log.logged_date].append(log)
+
+        days: list[HistoryDayEvidenceResponse] = []
+        for offset in range(cardinality):
+            logged_date = start + timedelta(days=offset)
+            date_logs = logs_by_date.get(logged_date, [])
+            if not date_logs:
+                days.append(
+                    HistoryDayEvidenceResponse(
+                        date=logged_date,
+                        has_logs=False,
+                        is_complete=False,
+                        nutrients=[],
+                    )
+                )
+                continue
+
+            snapshots = [
+                snapshot
+                for log in date_logs
+                for snapshot in log.snapshots
+            ]
+            domain_snapshots = [
+                NutrientSnapshot(
+                    nutrient_id=snapshot.nutrient_id,
+                    amount=snapshot.amount,
+                    unit=snapshot.unit,
+                    data_status=NutrientDataStatus(snapshot.data_status),
+                )
+                for snapshot in snapshots
+            ]
+            totals = aggregate_snapshots(domain_snapshots)
+
+            statuses_by_nutrient: dict[str, list[NutrientDataStatus]] = defaultdict(list)
+            for snapshot in snapshots:
+                statuses_by_nutrient[snapshot.nutrient_id].append(
+                    NutrientDataStatus(snapshot.data_status)
+                )
+
+            nutrient_evidence: list[HistoryNutrientEvidenceResponse] = []
+            for total in totals:
+                statuses = statuses_by_nutrient[total.nutrient_id]
+                numeric_statuses = [
+                    nutrient_status
+                    for nutrient_status in statuses
+                    if nutrient_status != NutrientDataStatus.UNKNOWN
+                ]
+                nutrient_evidence.append(
+                    HistoryNutrientEvidenceResponse(
+                        nutrient_id=total.nutrient_id,
+                        amount_known=total.amount_known,
+                        amount_estimated=total.amount_estimated,
+                        unit=total.unit,
+                        has_numeric_evidence=bool(numeric_statuses),
+                        is_explicit_zero_total=(
+                            bool(numeric_statuses)
+                            and all(
+                                nutrient_status == NutrientDataStatus.ZERO
+                                for nutrient_status in numeric_statuses
+                            )
+                        ),
+                        has_unknown_contributors=total.has_unknown_contributors,
+                        unknown_contributor_count=total.unknown_contributor_count,
+                    )
+                )
+
+            days.append(
+                HistoryDayEvidenceResponse(
+                    date=logged_date,
+                    has_logs=True,
+                    is_complete=logged_date in completed_dates,
+                    nutrients=nutrient_evidence,
+                )
+            )
+
+        return HistoryRangeResponse(
+            start_date=start,
+            end_date=end,
+            first_logged_date=first_logged_date,
+            days=days,
+        )
 
     def daily_summary(self, user_id: UUID, logged_date: date):
         snapshots = [

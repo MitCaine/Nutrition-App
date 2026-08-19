@@ -10,6 +10,7 @@ import type {
   DailyLogMutationStatus,
   DailyLogUpdateInput,
   DailySummary,
+  HistoryRangeEvidence,
   RecentEntry,
 } from "../../features/logging/api/types";
 import {
@@ -602,6 +603,34 @@ function readDate(value: unknown, context: OperationContext = "read"): string {
     if (context === "mutation") throw invalidCreate("Log dates must use YYYY-MM-DD.", "log_date_invalid", "logged_date");
     throw errorFor("validation", "log_date_invalid", "Log dates must use YYYY-MM-DD.", "not_applicable", "date");
   }
+}
+
+function historyRangeDate(value: string, field: "start_date" | "end_date"): string {
+  try {
+    const parsed = parseDateOnly(value);
+    if (parsed !== value) throw new Error("non-canonical date");
+    return parsed;
+  } catch {
+    throw errorFor(
+      "validation",
+      "history_range_date_invalid",
+      "History range endpoints must use canonical YYYY-MM-DD.",
+      "not_applicable",
+      field,
+    );
+  }
+}
+
+function historyDateOrdinal(value: string): number {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year!, month! - 1, day!);
+  return Math.floor(date.getTime() / 86_400_000);
+}
+
+function historyDateFromOrdinal(ordinal: number): string {
+  return new Date(ordinal * 86_400_000).toISOString().slice(0, 10);
 }
 
 function storedDate(value: unknown): string {
@@ -2292,6 +2321,231 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           is_selected: amount.id === selected?.id,
         })),
       };
+    } catch (error) {
+      if (error instanceof LocalRuntimeError) throw error;
+      throw readFailure();
+    }
+  }
+
+  async getHistoryRange(
+    startDate: string,
+    endDate: string,
+  ): Promise<HistoryRangeEvidence> {
+    const start = historyRangeDate(startDate, "start_date");
+    const end = historyRangeDate(endDate, "end_date");
+    const startOrdinal = historyDateOrdinal(start);
+    const endOrdinal = historyDateOrdinal(end);
+
+    if (startOrdinal > endOrdinal) {
+      throw errorFor(
+        "validation",
+        "history_range_order_invalid",
+        "History range start date must not be after end date.",
+      );
+    }
+
+    const cardinality = endOrdinal - startOrdinal + 1;
+    if (cardinality > 30) {
+      throw errorFor(
+        "validation",
+        "history_range_too_large",
+        "History ranges may contain at most 30 calendar dates.",
+      );
+    }
+
+    try {
+      return await withLocalOrderedRead(this.database, async () => {
+        const calendar = validateCalendarProfile(
+          await readProfile(this.database, this.ownerId),
+          false,
+        );
+        const today = todayInTimeZone(calendar.zone, this.now());
+        const yesterdayOrdinal = historyDateOrdinal(today) - 1;
+
+        if (endOrdinal > yesterdayOrdinal) {
+          throw errorFor(
+            "validation",
+            "history_range_future_endpoint",
+            "History ranges must end no later than yesterday.",
+            "not_applicable",
+            "end_date",
+          );
+        }
+
+        const logDates = await this.database.getAllAsync<{ logged_date: string }>(
+          `SELECT DISTINCT "logged_date"
+           FROM "daily_logs"
+           WHERE "user_id" = ?
+             AND "logged_date" >= ?
+             AND "logged_date" <= ?
+           ORDER BY "logged_date"`,
+          [this.ownerId, start, end],
+        );
+
+        const snapshotRows = await this.database.getAllAsync<{
+          logged_date: string;
+          nutrient_id: string;
+          amount: string | null;
+          unit: string;
+          data_status: string;
+          default_unit: string | null;
+        }>(
+          `SELECT "log"."logged_date",
+                  "snapshot"."nutrient_id",
+                  "snapshot"."amount",
+                  "snapshot"."unit",
+                  "snapshot"."data_status",
+                  "nutrient"."default_unit"
+           FROM "daily_log_nutrient_snapshots" AS "snapshot"
+           JOIN "daily_logs" AS "log"
+             ON "log"."id" = "snapshot"."daily_log_id"
+           LEFT JOIN "nutrients" AS "nutrient"
+             ON "nutrient"."id" = "snapshot"."nutrient_id"
+           WHERE "log"."user_id" = ?
+             AND "log"."logged_date" >= ?
+             AND "log"."logged_date" <= ?
+           ORDER BY "log"."logged_date", "snapshot"."nutrient_id", "snapshot"."id"`,
+          [this.ownerId, start, end],
+        );
+
+        const completionRows = await this.database.getAllAsync<{ logged_date: string }>(
+          `SELECT "logged_date"
+           FROM "daily_log_day_completions"
+           WHERE "logged_date" >= ? AND "logged_date" <= ?
+           ORDER BY "logged_date"`,
+          [start, end],
+        );
+
+        const firstRow = await this.database.getFirstAsync<{
+          first_logged_date: string | null;
+        }>(
+          `SELECT MIN("logged_date") AS "first_logged_date"
+           FROM "daily_logs"
+           WHERE "user_id" = ?`,
+          [this.ownerId],
+        );
+
+        const hasLogs = new Set(logDates.map((row) => storedDate(row.logged_date)));
+        const completed = new Set(
+          completionRows.map((row) => storedDate(row.logged_date)),
+        );
+
+        type HistoryAccumulator = {
+          known: ResponseDecimal;
+          estimated: ResponseDecimal;
+          unit: NutrientUnit;
+          numericCount: number;
+          explicitZeroCount: number;
+          unknownCount: number;
+        };
+
+        const byDate = new Map<string, Map<string, HistoryAccumulator>>();
+
+        for (const row of snapshotRows) {
+          const loggedDate = storedDate(row.logged_date);
+          const status = row.data_status as NutrientDataStatus;
+          if (!NUTRIENT_STATUSES.has(status)) throw invalidStored();
+
+          const sourceUnit = normalizeNutrientUnit(row.unit);
+          const unit = normalizeNutrientUnit(
+            row.default_unit
+              ?? DEFAULT_NUTRIENT_UNITS.get(row.nutrient_id)
+              ?? row.unit,
+          );
+
+          const day = byDate.get(loggedDate) ?? new Map<string, HistoryAccumulator>();
+          const current = day.get(row.nutrient_id) ?? {
+            known: parseResponseDecimal("0"),
+            estimated: parseResponseDecimal("0"),
+            unit,
+            numericCount: 0,
+            explicitZeroCount: 0,
+            unknownCount: 0,
+          };
+
+          if (!sameUnitFamily(sourceUnit, current.unit)) throw invalidStored();
+
+          if (status === "unknown") {
+            if (row.amount !== null) throw invalidStored();
+            current.unknownCount += 1;
+          } else {
+            const amount = parsePersistedDecimal(row.amount, false) as ExactDecimal;
+
+            if (
+              status === "zero"
+              && compareDecimals(amount, "0", NUMERIC_14_6) !== 0
+            ) {
+              throw invalidStored();
+            }
+
+            current.numericCount += 1;
+            if (status === "zero") current.explicitZeroCount += 1;
+
+            const converted = compareDecimals(amount, "0", NUMERIC_14_6) === 0
+              ? parseResponseDecimal("0")
+              : convertNutritionAmount(amount, sourceUnit, current.unit);
+
+            if (status === "estimated") {
+              current.estimated = addResponseDecimals(
+                current.estimated,
+                converted,
+              );
+            } else {
+              current.known = addResponseDecimals(current.known, converted);
+            }
+          }
+
+          day.set(row.nutrient_id, current);
+          byDate.set(loggedDate, day);
+        }
+
+        const days = Array.from({ length: cardinality }, (_, offset) => {
+          const date = historyDateFromOrdinal(startOrdinal + offset);
+          const dateHasLogs = hasLogs.has(date);
+
+          if (!dateHasLogs) {
+            return {
+              date,
+              hasLogs: false,
+              isComplete: false,
+              nutrients: [],
+            };
+          }
+
+          const nutrients = [...(byDate.get(date)?.entries() ?? [])]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([nutrientId, total]) => ({
+              nutrientId,
+              amountKnown: total.known,
+              amountEstimated: total.estimated,
+              unit: total.unit,
+              hasNumericEvidence: total.numericCount > 0,
+              isExplicitZeroTotal:
+                total.numericCount > 0
+                && total.explicitZeroCount === total.numericCount,
+              hasUnknownContributors: total.unknownCount > 0,
+              unknownContributorCount: total.unknownCount,
+            }));
+
+          return {
+            date,
+            hasLogs: true,
+            isComplete: completed.has(date),
+            nutrients,
+          };
+        });
+
+        const firstLoggedDate = firstRow?.first_logged_date == null
+          ? null
+          : storedDate(firstRow.first_logged_date);
+
+        return {
+          startDate: start,
+          endDate: end,
+          firstLoggedDate,
+          days,
+        };
+      });
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
       throw readFailure();
