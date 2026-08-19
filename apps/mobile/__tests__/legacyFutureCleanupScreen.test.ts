@@ -23,6 +23,16 @@ jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
     isFetching: false,
     isError: false,
   }),
+  useDailyTargetComparison: () => ({
+    data: {
+      date: "2026-07-14",
+      comparisons: [],
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: jest.fn(),
+  }),
 }));
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
@@ -72,7 +82,7 @@ async function renderCleanup() {
       onOpenFood: jest.fn(),
       onEditLog: jest.fn(),
       onOpenSettings: jest.fn(),
-      onOpenNutritionTargets: jest.fn(),
+      onOpenHistory: jest.fn(), onOpenNutrition: jest.fn(),
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
     })));

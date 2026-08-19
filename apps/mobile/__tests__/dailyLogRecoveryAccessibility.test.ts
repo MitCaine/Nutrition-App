@@ -43,6 +43,16 @@ jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
     isFetching: false,
     isError: false,
   }),
+  useDailyTargetComparison: () => ({
+    data: {
+      date: "2026-07-14",
+      comparisons: [],
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: jest.fn(),
+  }),
 }));
 
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
@@ -53,7 +63,17 @@ jest.mock("../src/features/logging/hooks/useLogs", () => ({
   ...jest.requireActual("../src/features/logging/hooks/useLogs"),
   useDailyLogs: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
   useFutureLogs: () => ({ data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
-  useDailySummary: () => ({ data: { logged_date: "2026-07-14", totals: [] }, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() }),
+  useDailySummary: () => ({
+    data: {
+      logged_date: "2026-07-14",
+      is_complete: false,
+      totals: [],
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: jest.fn(),
+  }),
   useLogMutations: () => ({
     deleteLog: { mutateAsync: jest.fn() },
     projectDelete: jest.fn(),
@@ -123,7 +143,7 @@ async function renderRecovery() {
       onOpenFood: jest.fn(),
       onEditLog: jest.fn(),
       onOpenSettings: jest.fn(),
-      onOpenNutritionTargets: jest.fn(),
+      onOpenHistory: jest.fn(), onOpenNutrition: jest.fn(),
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
     }), testRuntime));
@@ -164,7 +184,7 @@ test("similar recovery records expose distinct summaries and contextual actions"
     expect.objectContaining({ kind: "warning" }),
   );
   await act(async () => renderer.update(withNutritionRuntime(React.createElement(DailyLogScreen, {
-    date: "2026-07-14", setDate: jest.fn(), onOpenFood: jest.fn(), onEditLog: jest.fn(), onOpenSettings: jest.fn(), onOpenNutritionTargets: jest.fn(), initialScrollOffset: 0, onScrollOffsetChange: jest.fn(),
+    date: "2026-07-14", setDate: jest.fn(), onOpenFood: jest.fn(), onEditLog: jest.fn(), onOpenSettings: jest.fn(), onOpenHistory: jest.fn(), onOpenNutrition: jest.fn(), initialScrollOffset: 0, onScrollOffsetChange: jest.fn(),
   }), testRuntime)));
   expect(mockAnnounce.mock.calls.filter(([message]) => String(message).includes("operations need attention"))).toHaveLength(1);
   await act(async () => renderer.unmount());

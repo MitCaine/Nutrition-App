@@ -202,7 +202,11 @@ def daily_summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DailySummaryResponse:
-    return DailySummaryResponse(logged_date=date, totals=_service(db).daily_summary(user.id, date))
+    return DailySummaryResponse(
+        logged_date=date,
+        is_complete=_complete_service(db).get_completion(user.id, date) is not None,
+        totals=_service(db).daily_summary(user.id, date),
+    )
 
 
 @router.post("/complete", response_model=DailyLogCompleteResponse)

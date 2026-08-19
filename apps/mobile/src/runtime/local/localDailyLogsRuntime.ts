@@ -53,7 +53,9 @@ import {
 } from "../../storage/sqlite/migrations";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../../storage/sqlite/schema";
 import type { DailyLogsRuntime } from "../NutritionRuntime";
-import { clearLocalDailyLogCompletionsInTransaction } from "./localDailyLogCompleteState";
+import {
+  clearLocalDailyLogCompletionsInTransaction,
+} from "./localDailyLogCompleteState";
 import { LocalRuntimeError } from "./localErrors";
 import {
   withLocalDailyLogSnapshotReplacement,
@@ -2597,8 +2599,22 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
         }
         totals.set(row.nutrient_id, current);
       }
+      const completion = await this.database.getFirstAsync<{
+        completed_at: string;
+      }>(
+        `SELECT "completed_at"
+         FROM "daily_log_day_completions"
+         WHERE "logged_date" = ?`,
+        [loggedDate],
+      );
+
+      if (completion !== null) {
+        parsePersistedInstant(completion.completed_at);
+      }
+
       return {
         logged_date: loggedDate,
+        is_complete: completion !== null,
         totals: [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([nutrientId, total]) => ({
           nutrientId,
           amountKnown: total.known,

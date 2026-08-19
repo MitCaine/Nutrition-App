@@ -55,6 +55,7 @@ import {
   type DraftStatusReporter,
 } from "../../shared/navigation/draftGuard";
 import { UnsavedDraftDialog } from "../../shared/navigation/UnsavedDraftDialog";
+import { AccessiblePressable } from "../../shared/accessibility/AccessiblePressable";
 
 type AddLogFoodWorkflow = {
   foodId: string;
@@ -91,6 +92,8 @@ type Route =
   | { name: "recipe-usda-search" }
   | { name: "recipe-usda-preview"; fdcId: number }
   | { name: "daily-log" }
+  | { name: "daily-log-history"; date: string }
+  | { name: "daily-log-nutrition"; date: string }
   | { name: "settings"; origin: MainTab }
   | { name: "nutrition-targets"; origin: MainTab; returnDirect?: boolean }
   | { name: "ocr-diagnostics"; origin: MainTab }
@@ -710,6 +713,28 @@ export function AppNavigator() {
         }}
       />
     );
+  } else if (route.name === "daily-log-history") {
+    content = (
+      <DeferredDailyLogSurface
+        title="History"
+        date={route.date}
+        onBack={() => {
+          setDate(route.date);
+          setRoute({ name: "daily-log" });
+        }}
+      />
+    );
+  } else if (route.name === "daily-log-nutrition") {
+    content = (
+      <DeferredDailyLogSurface
+        title="Daily Nutrition"
+        date={route.date}
+        onBack={() => {
+          setDate(route.date);
+          setRoute({ name: "daily-log" });
+        }}
+      />
+    );
   } else if (route.name === "daily-log") {
     const dailyLogIsFuture = calendar.data?.is_established === true
       && date > calendarToday(calendar.data, deviceTimeZone());
@@ -736,7 +761,18 @@ export function AppNavigator() {
         setRoute({ name: "add-food" });
       }}
       onOpenSettings={() => setRoute({ name: "settings", origin: "daily-log" })}
-      onOpenNutritionTargets={() => setRoute({ name: "nutrition-targets", origin: "daily-log", returnDirect: true })}
+      onOpenHistory={() =>
+        setRoute({
+          name: "daily-log-history",
+          date,
+        })
+      }
+      onOpenNutrition={() =>
+        setRoute({
+          name: "daily-log-nutrition",
+          date,
+        })
+      }
       mutationOutcome={dailyLogMutationOutcome}
       onMutationOutcomeHandled={() => setDailyLogMutationOutcome(null)}
       returnFocusKey={dailyLogReturnFocus}
@@ -923,6 +959,65 @@ function EditFoodRoute({
       draftStateKey={draftStateKey}
       onDraftStateChange={onDraftStateChange}
     />
+  );
+}
+
+function DeferredDailyLogSurface({
+  title,
+  date,
+  onBack,
+}: {
+  title: "History" | "Daily Nutrition";
+  date: string;
+  onBack: () => void;
+}) {
+  const theme = useAppTheme();
+
+  return (
+    <View
+      style={[
+        styles.loading,
+        {
+          backgroundColor:
+            theme.colors.background,
+        },
+      ]}
+    >
+      <Text
+        accessibilityRole="header"
+        style={{
+          color: theme.colors.text,
+          fontSize: 28,
+          fontWeight: "800",
+        }}
+      >
+        {title}
+      </Text>
+
+      <Text
+        style={{
+          color: theme.colors.text,
+          marginTop: 8,
+        }}
+      >
+        {date}
+      </Text>
+
+      <AccessiblePressable
+        accessibilityLabel={`Back to Daily Log from ${title}`}
+        onPress={onBack}
+        style={{ marginTop: 16 }}
+      >
+        <Text
+          style={{
+            color: theme.colors.text,
+            fontWeight: "600",
+          }}
+        >
+          Back to Daily Log
+        </Text>
+      </AccessiblePressable>
+    </View>
   );
 }
 

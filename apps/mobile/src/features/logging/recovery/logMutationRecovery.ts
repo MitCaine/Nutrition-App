@@ -460,6 +460,26 @@ export async function removeLogMutationRecoveryRecord(
   });
 }
 
+/**
+ * Once authority has confirmed success, recovery-journal cleanup is
+ * secondary bookkeeping. A cleanup failure must never downgrade the
+ * authoritative mutation outcome.
+ */
+export async function finalizeConfirmedLogMutationRecoveryRecord(
+  record: LogMutationRecoveryRecord,
+  storage: RecoveryStorage = defaultStorage,
+): Promise<boolean> {
+  try {
+    await removeLogMutationRecoveryRecord(
+      record,
+      storage,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function removeLogMutationRecoveryRecordById(
   id: string,
   authority: RuntimeAuthorityIdentity,
@@ -659,8 +679,15 @@ export async function reconcileLogMutationRecoveryRecord(
           operationFor(record),
         );
     if (status.status === "confirmed_success") {
-      projectConfirmedRecovery(queryClient, record, status);
-      await removeLogMutationRecoveryRecord(record, storage);
+      projectConfirmedRecovery(
+        queryClient,
+        record,
+        status,
+      );
+      await finalizeConfirmedLogMutationRecoveryRecord(
+        record,
+        storage,
+      );
       return "confirmed";
     }
     if (status.status === "confirmed_non_commit") {
@@ -714,13 +741,47 @@ export async function retryLogMutationRecoveryRecord(
       source_logged_date: submitted.source_date,
       destination_logged_date: result?.logged_date ?? submitted.destination_date,
     };
-    projectConfirmedRecovery(queryClient, submitted, status);
-    await removeLogMutationRecoveryRecord(submitted, storage);
+    projectConfirmedRecovery(
+      queryClient,
+      submitted,
+      status,
+    );
+    await finalizeConfirmedLogMutationRecoveryRecord(
+      submitted,
+      storage,
+    );
     return "confirmed";
   } catch (error) {
     if (isUncertainLogMutationError(error)) return "pending";
-    if (queryClient) refreshAffectedDates(queryClient, submitted);
-    await removeLogMutationRecoveryRecord(submitted, storage);
+    if (
+      error instanceof RuntimeError
+      && error.mutationOutcome === "confirmed_non_commit"
+    ) {
+      await upsertLogMutationRecoveryRecord(
+        {
+          ...submitted,
+          state: "confirmed_non_commit",
+        },
+        storage,
+      );
+      if (queryClient) {
+        refreshAffectedDates(
+          queryClient,
+          submitted,
+        );
+      }
+      return "retryable";
+    }
+    if (queryClient) {
+      refreshAffectedDates(
+        queryClient,
+        submitted,
+      );
+    }
+    await removeLogMutationRecoveryRecord(
+      submitted,
+      storage,
+    );
     return "discarded";
   }
 }

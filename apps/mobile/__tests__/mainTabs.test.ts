@@ -3,6 +3,7 @@ import {
   isRecipeAuthoringRoute,
   mainTabForRoute,
   MAIN_TAB_ACCESSIBILITY_LABELS,
+  MAIN_TABS,
   settingsOriginForRoute,
   swipeDestination,
   tabSelectionDestination,
@@ -12,6 +13,8 @@ test("main and nested routes select the correct bottom tab", () => {
   expect(mainTabForRoute("foods")).toBe("foods");
   expect(mainTabForRoute("food-detail")).toBe("foods");
   expect(mainTabForRoute("daily-log")).toBe("daily-log");
+  expect(mainTabForRoute("daily-log-history")).toBe("daily-log");
+  expect(mainTabForRoute("daily-log-nutrition")).toBe("daily-log");
   expect(mainTabForRoute("edit-log")).toBe("daily-log");
   expect(mainTabForRoute("add-food")).toBe("daily-log");
   expect(mainTabForRoute("add-custom-food")).toBe("daily-log");
@@ -77,4 +80,13 @@ test("Recipe authoring routes remain one guarded draft flow", () => {
 
   expect(isRecipeAuthoringRoute("recipes")).toBe(false);
   expect(isRecipeAuthoringRoute("recipe-detail")).toBe(false);
+});
+
+
+test("Epic 4 retains exactly three bottom tabs", () => {
+  expect(MAIN_TABS).toEqual([
+    "foods",
+    "daily-log",
+    "recipes",
+  ]);
 });

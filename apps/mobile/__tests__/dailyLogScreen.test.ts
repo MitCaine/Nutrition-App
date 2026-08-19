@@ -14,9 +14,16 @@ let mockCalendar: Record<string, unknown>;
 let mockDeleteMutation: { mutateAsync: jest.Mock; isPending: boolean; projectDelete: jest.Mock; refreshDate: jest.Mock };
 let mockTargetProgressProps: Record<string, unknown> | null = null;
 let mockTargetConfiguration: Record<string, unknown>;
+let mockTargetComparison: Record<string, unknown>;
+let mockRootHeaderProps: Record<string, any> | null = null;
 const mockAccessibilityFocus = jest.fn((_target?: unknown, _options?: unknown) => jest.fn());
 
-jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
+jest.mock("../src/shared/components/RootScreenHeader", () => ({
+  RootScreenHeader: (props: Record<string, any>) => {
+    mockRootHeaderProps = props;
+    return null;
+  },
+}));
 jest.mock("../src/shared/accessibility/focus", () => ({
   ...jest.requireActual("../src/shared/accessibility/focus"),
   focusAccessibilityElement: (target: unknown, options: unknown) => mockAccessibilityFocus(target, options),
@@ -25,6 +32,8 @@ jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgre
 jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
   useTargetConfiguration: () =>
     mockTargetConfiguration,
+  useDailyTargetComparison: () =>
+    mockTargetComparison,
 }));
 jest.mock("../src/features/foods/hooks/useFoods", () => ({ useFoods: () => ({ data: [] }) }));
 jest.mock("../src/features/logging/hooks/useLogs", () => ({
@@ -86,7 +95,8 @@ async function render(
       onOpenFood: jest.fn(),
       onEditLog: jest.fn(),
       onOpenSettings: jest.fn(),
-      onOpenNutritionTargets: jest.fn(),
+      onOpenHistory: jest.fn(),
+      onOpenNutrition: jest.fn(),
       initialScrollOffset: 0,
       onScrollOffsetChange: jest.fn(),
       ...extraProps,
@@ -122,7 +132,17 @@ beforeEach(() => {
     refreshDate: jest.fn(),
   };
   mockLogs = { data: [], isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
-  mockSummary = { data: { totals: [] }, isLoading: false, isFetching: false, isError: false, refetch: jest.fn() };
+  mockSummary = {
+    data: {
+      logged_date: "2026-07-14",
+      is_complete: false,
+      totals: [],
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: jest.fn(),
+  };
   mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
   mockTargetProgressProps = null;
   mockTargetConfiguration = {
@@ -133,18 +153,191 @@ beforeEach(() => {
     isFetching: false,
     isError: false,
   };
+  mockTargetComparison = {
+    data: {
+      date: "2026-07-14",
+      comparisons: [
+        {
+          nutrientId: "calories",
+          consumedAmount: "500",
+          targetAmount: "2000",
+          unit: "kcal",
+          trackingMode: "recommended",
+          status: "available",
+        },
+        {
+          nutrientId: "protein",
+          consumedAmount: "30",
+          targetAmount: "100",
+          unit: "g",
+          trackingMode: "custom",
+          status: "available",
+        },
+        {
+          nutrientId: "total_carbohydrate",
+          consumedAmount: "45",
+          targetAmount: "250",
+          unit: "g",
+          trackingMode: "amount_only",
+          status: "amount_only",
+        },
+        {
+          nutrientId: "total_fat",
+          consumedAmount: "20",
+          targetAmount: "70",
+          unit: "g",
+          trackingMode: "recommended",
+          status: "available",
+        },
+      ],
+    },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: jest.fn(),
+  };
+  mockRootHeaderProps = null;
   mockAccessibilityFocus.mockClear();
 });
 
-test("Daily Log derives Target Progress onboarding from existing entry state", async () => {
-  const empty = await render();
-  expect(mockTargetProgressProps?.hasLoggedNutrition).toBe(false);
-  await act(async () => empty.renderer.unmount());
+test("E4-07 Daily Log is logging-first with centered History and compact nutrition", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: [log("breakfast")],
+  };
 
-  mockLogs = { ...mockLogs, data: [log("breakfast")] };
-  const logged = await render();
-  expect(mockTargetProgressProps?.hasLoggedNutrition).toBe(true);
-  await act(async () => logged.renderer.unmount());
+  const onOpenHistory = jest.fn();
+  const onOpenNutrition = jest.fn();
+
+  const rendered = await render(
+    "2026-07-14",
+    jest.fn(),
+    jest.fn(),
+    {
+      onOpenHistory,
+      onOpenNutrition,
+    },
+  );
+
+  const root = rendered.renderer.root;
+  const text = screenText(root);
+
+  expect(text.indexOf("Entries"))
+    .toBeLessThan(text.indexOf("Nutrition"));
+  expect(text).not.toContain("Target Progress");
+  expect(text).not.toContain("Totals");
+
+  expect(text).toContain("Calories");
+  expect(text).toContain("Protein");
+  expect(text).toContain("Carbohydrate");
+  expect(text).toContain("Fat");
+
+  expect(text).toContain("500 / 2,000 kcal");
+  expect(text).toContain("30 / 100 g");
+  expect(text).toContain("45 g");
+  expect(text).toContain("20 / 70 g");
+  expect(text).not.toMatch(/\d+(?:\.\d+)?%/);
+
+  const previous = root
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "Previous Day",
+    );
+  const history = root
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "History",
+    );
+  const next = root
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "Next Day",
+    );
+  const viewNutrition = root
+    .findAllByType(Pressable)
+    .find(
+      (node) =>
+        node.props.accessibilityLabel
+        === "View Nutrition",
+    );
+
+  expect(previous).toBeDefined();
+  expect(history).toBeDefined();
+  expect(next).toBeDefined();
+  expect(viewNutrition).toBeDefined();
+
+  await act(async () => {
+    history?.props.onPress();
+  });
+  await act(async () => {
+    viewNutrition?.props.onPress();
+  });
+
+  expect(onOpenHistory).toHaveBeenCalledTimes(1);
+  expect(onOpenNutrition).toHaveBeenCalledTimes(1);
+
+  expect(mockRootHeaderProps?.action).toEqual(
+    expect.objectContaining({
+      label: "Complete",
+      checked: false,
+      disabled: false,
+    }),
+  );
+
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("E4-07 empty date disables Complete and shows four neutral zero rows", async () => {
+  const rendered = await render();
+  const text = screenText(rendered.renderer.root);
+
+  expect(mockRootHeaderProps?.action).toEqual(
+    expect.objectContaining({
+      label: "Complete",
+      checked: false,
+      disabled: true,
+    }),
+  );
+
+  expect(
+    text.match(/0 logged/g)?.length,
+  ).toBe(4);
+
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("E4-07 authoritative Complete state is checked without optimistic state", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: [log("breakfast")],
+  };
+
+  mockSummary = {
+    ...mockSummary,
+    data: {
+      logged_date: "2026-07-14",
+      is_complete: true,
+      totals: [],
+    },
+  };
+
+  const rendered = await render();
+
+  expect(mockRootHeaderProps?.action).toEqual(
+    expect.objectContaining({
+      label: "Complete",
+      checked: true,
+      disabled: true,
+    }),
+  );
+
+  await act(async () => rendered.renderer.unmount());
 });
 
 test("delete requires contextual destructive confirmation and submits the reviewed entry", async () => {
@@ -276,69 +469,226 @@ test("provisional and future dates expose no Add Food actions", async () => {
   await act(async () => future.renderer.unmount());
 });
 
-test("totals failure does not hide confirmed entries", async () => {
-  mockLogs = { ...mockLogs, data: [log("breakfast")] };
-  mockSummary = { ...mockSummary, data: undefined, isLoading: false, isError: true, error: new Error("offline") };
-  const rendered = await render();
-  const text = screenText(rendered.renderer.root);
-  expect(text).toContain("Totals could not be loaded.");
-  expect(text).toContain("Food");
-  expect(text).not.toContain("No food logged for this date.");
-  await act(async () => rendered.renderer.unmount());
-});
-
-test("unknown entries do not present cached totals as confirmed zero", async () => {
-  mockLogs = { ...mockLogs, data: undefined, isLoading: false, isError: true, error: new Error("offline") };
-  mockSummary = {
-    ...mockSummary,
-    data: { logged_date: "2026-07-14", totals: [{ nutrientId: "calories", amountKnown: "0", amountEstimated: "0", unit: "kcal", hasUnknownContributors: false, unknownContributorCount: 0 }] },
+test("Daily Summary failure does not hide confirmed entries and keeps Complete unavailable", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: [log("breakfast")],
   };
-  const rendered = await render();
-  const text = screenText(rendered.renderer.root);
-  expect(text).toContain("Totals are unavailable until Daily Log entries are available.");
-  expect(text).not.toContain("0 kcal");
-  await act(async () => rendered.renderer.unmount());
-});
-
-test("same-date totals refresh failure retains totals with a stale marker", async () => {
-  mockLogs = { ...mockLogs, data: [log("breakfast")] };
   mockSummary = {
     ...mockSummary,
-    data: { logged_date: "2026-07-14", totals: [{ nutrientId: "calories", amountKnown: "120", amountEstimated: "0", unit: "kcal", hasUnknownContributors: false, unknownContributorCount: 0 }] },
+    data: undefined,
+    isLoading: false,
+    isError: true,
+    error: new Error("offline"),
+  };
+
+  const rendered = await render();
+  const text = screenText(
+    rendered.renderer.root,
+  );
+
+  expect(text).toContain("Food");
+  expect(text).toContain("Nutrition");
+  expect(text).toContain(
+    "500 / 2,000 kcal",
+  );
+  expect(text).not.toContain(
+    "No food logged for this date.",
+  );
+
+  expect(
+    mockRootHeaderProps?.action,
+  ).toEqual(
+    expect.objectContaining({
+      label: "Complete",
+      checked: false,
+      disabled: true,
+    }),
+  );
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
+});
+
+test("unknown entries never present compact nutrition as confirmed zero", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: undefined,
+    isLoading: false,
+    isError: true,
+    error: new Error("offline"),
+  };
+
+  mockSummary = {
+    ...mockSummary,
+    data: {
+      logged_date: "2026-07-14",
+      is_complete: false,
+      totals: [],
+    },
+  };
+
+  const rendered = await render();
+  const text = screenText(
+    rendered.renderer.root,
+  );
+
+  expect(text).toContain(
+    "Entries could not be loaded.",
+  );
+  expect(text).toContain("Nutrition");
+
+  expect(
+    text.match(/Unavailable/g)?.length
+      ?? 0,
+  ).toBeGreaterThanOrEqual(4);
+
+  expect(text).not.toContain(
+    "0 logged",
+  );
+
+  expect(
+    mockRootHeaderProps?.action,
+  ).toEqual(
+    expect.objectContaining({
+      checked: false,
+      disabled: true,
+    }),
+  );
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
+});
+
+test("same-date Daily Summary refresh failure retains logging and compact nutrition from independent reads", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: [log("breakfast")],
+  };
+
+  mockSummary = {
+    ...mockSummary,
+    data: {
+      logged_date: "2026-07-14",
+      is_complete: false,
+      totals: [],
+    },
     isError: true,
     isRefetchError: true,
     error: new Error("offline"),
   };
+
   const rendered = await render();
-  const text = screenText(rendered.renderer.root);
-  expect(text).toContain("Totals could not be refreshed; showing the last confirmed totals.");
-  expect(text).toContain("120kcal");
-  await act(async () => rendered.renderer.unmount());
+  const text = screenText(
+    rendered.renderer.root,
+  );
+
+  expect(text).toContain("Food");
+  expect(text).toContain(
+    "500 / 2,000 kcal",
+  );
+  expect(text).not.toContain(
+    "Totals could not be refreshed",
+  );
+
+  expect(
+    mockRootHeaderProps?.action,
+  ).toEqual(
+    expect.objectContaining({
+      checked: false,
+      disabled: false,
+    }),
+  );
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
 });
 
-test("date navigation and section hierarchy expose names, roles, state, and headings", async () => {
-  mockLogs = { ...mockLogs, data: [log("breakfast")] };
+test("E4-07 date navigation and logging-first hierarchy expose accessible names and headings", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: [log("breakfast")],
+  };
+
   const rendered = await render();
-  const controls = rendered.renderer.root.findAllByType(Pressable);
-  const previous = controls.find((node) => node.props.accessibilityLabel === "Previous Day");
-  const next = controls.find((node) => node.props.accessibilityLabel === "Next Day");
-  const picker = controls.find((node) => node.props.accessibilityLabel?.startsWith("Choose date,"));
-  expect(previous?.props.accessibilityRole).toBe("button");
-  expect(next?.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
-  expect(picker?.props.accessibilityRole).toBe("button");
-  const headings = rendered.renderer.root.findAllByType(Text)
-    .filter((node) => node.props.accessibilityRole === "header")
-    .map(textContent);
-  expect(headings).toEqual(expect.arrayContaining([
-    expect.stringContaining("Jul 14, 2026"),
+
+  const controls =
+    rendered.renderer.root.findAllByType(
+      Pressable,
+    );
+
+  const previous = controls.find(
+    (node) =>
+      node.props.accessibilityLabel
+      === "Previous Day",
+  );
+  const history = controls.find(
+    (node) =>
+      node.props.accessibilityLabel
+      === "History",
+  );
+  const next = controls.find(
+    (node) =>
+      node.props.accessibilityLabel
+      === "Next Day",
+  );
+  const picker = controls.find(
+    (node) =>
+      node.props.accessibilityLabel
+        ?.startsWith("Choose date,"),
+  );
+
+  expect(
+    previous?.props.accessibilityRole,
+  ).toBe("button");
+  expect(
+    history?.props.accessibilityRole,
+  ).toBe("button");
+  expect(
+    next?.props.accessibilityState,
+  ).toEqual(
+    expect.objectContaining({
+      disabled: true,
+    }),
+  );
+  expect(
+    picker?.props.accessibilityRole,
+  ).toBe("button");
+
+  const headings =
+    rendered.renderer.root
+      .findAllByType(Text)
+      .filter(
+        (node) =>
+          node.props.accessibilityRole
+          === "header",
+      )
+      .map(textContent);
+
+  expect(headings).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining(
+        "Jul 14, 2026",
+      ),
+      "Entries",
+      "Breakfast",
+      "Lunch",
+      "Dinner",
+      "Snack",
+      "Nutrition",
+    ]),
+  );
+
+  expect(headings).not.toContain(
     "Totals",
-    "Entries",
-    "Breakfast",
-    "Lunch",
-    "Dinner",
-    "Snack",
-  ]));
-  await act(async () => rendered.renderer.unmount());
+  );
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
 });
 
 function dateHeadingRow(root: TestRenderer.ReactTestInstance): TestRenderer.ReactTestInstance {
@@ -372,15 +722,57 @@ test("selected date classification is compact and stays with the date heading", 
   await act(async () => future.renderer.unmount());
 });
 
-test("past dates omit visible classification while retaining return-to-Today navigation", async () => {
-  const past = await render("2026-07-13");
-  expect(screenText(past.renderer.root)).not.toContain("Past date");
-  expect(dateStatus(past.renderer.root, "Today")).toBeUndefined();
-  const todayButton = past.renderer.root.findByProps({ accessibilityLabel: "Today" });
-  expect(todayButton).toBeDefined();
-  await act(async () => todayButton.props.onPress());
-  expect(past.setDate).toHaveBeenCalledWith("2026-07-14");
-  await act(async () => past.renderer.unmount());
+test("past dates advance through Next Day without adding a separate Today navigation action", async () => {
+  const past = await render(
+    "2026-07-13",
+  );
+
+  expect(
+    screenText(past.renderer.root),
+  ).not.toContain("Past date");
+
+  expect(
+    dateStatus(
+      past.renderer.root,
+      "Today",
+    ),
+  ).toBeUndefined();
+
+  expect(
+    past.renderer.root
+      .findAllByProps({
+        accessibilityLabel: "Today",
+      }),
+  ).toHaveLength(0);
+
+  const nextButton =
+    past.renderer.root.findByProps({
+      accessibilityLabel: "Next Day",
+    });
+
+  expect(
+    nextButton.props
+      .accessibilityState?.disabled,
+  ).not.toBe(true);
+
+  await act(async () =>
+    nextButton.props.onPress(),
+  );
+
+  expect(past.setDate)
+    .toHaveBeenCalledWith(
+      "2026-07-14",
+    );
+
+  expect(
+    past.renderer.root.findByProps({
+      accessibilityLabel: "History",
+    }),
+  ).toBeDefined();
+
+  await act(async () =>
+    past.renderer.unmount(),
+  );
 });
 
 test("entry summaries and repeated actions distinguish otherwise similar foods", async () => {
@@ -418,14 +810,70 @@ test("note disclosure is enabled by measured layout and exposes expanded state",
   await act(async () => rendered.renderer.unmount());
 });
 
-test("entries and totals use independent semantic status components with contextual retry names", async () => {
-  mockLogs = { ...mockLogs, data: undefined, isLoading: false, isError: true, error: new Error("offline") };
-  mockSummary = { ...mockSummary, data: { logged_date: "2026-07-14", totals: [] }, isLoading: false, isError: false };
+test("entry failure keeps compact nutrition unresolved and Complete unavailable", async () => {
+  mockLogs = {
+    ...mockLogs,
+    data: undefined,
+    isLoading: false,
+    isError: true,
+    error: new Error("offline"),
+  };
+
+  mockSummary = {
+    ...mockSummary,
+    data: {
+      logged_date: "2026-07-14",
+      is_complete: false,
+      totals: [],
+    },
+    isLoading: false,
+    isError: false,
+  };
+
   const rendered = await render();
-  const states = rendered.renderer.root.findAllByType(AccessibilityStatus);
-  expect(states.some((node) => node.props.kind === "initial-failure" && node.props.retryContext === "entries")).toBe(true);
-  expect(states.some((node) => node.props.kind === "unavailable" && node.props.retryContext === "totals")).toBe(true);
-  await act(async () => rendered.renderer.unmount());
+
+  const states =
+    rendered.renderer.root
+      .findAllByType(
+        AccessibilityStatus,
+      );
+
+  expect(
+    states.some(
+      (node) =>
+        node.props.kind
+          === "initial-failure"
+        && node.props.retryContext
+          === "entries",
+    ),
+  ).toBe(true);
+
+  expect(
+    states.some(
+      (node) =>
+        node.props.retryContext
+          === "totals",
+    ),
+  ).toBe(false);
+
+  expect(
+    screenText(
+      rendered.renderer.root,
+    ),
+  ).toContain("Unavailable");
+
+  expect(
+    mockRootHeaderProps?.action,
+  ).toEqual(
+    expect.objectContaining({
+      checked: false,
+      disabled: true,
+    }),
+  );
+
+  await act(async () =>
+    rendered.renderer.unmount(),
+  );
 });
 
 test("delete confirmation uses the shared modal and keeps busy state off its heading", async () => {
@@ -488,50 +936,15 @@ test("confirmed create or edit return focuses the projected entry summary", asyn
 });
 
 
-test("#103 Daily Log Totals omit ignored nutrients while keeping the totals read independent", async () => {
+test("#103 E4-07 compact summary remains fixed to the four required nutrients", async () => {
   mockLogs = {
     ...mockLogs,
-    data: [
-      log("breakfast"),
-    ],
+    data: [log("breakfast")],
   };
 
-  mockSummary = {
-    ...mockSummary,
-    data: {
-      logged_date:
-        "2026-07-14",
-      totals: [
-        {
-          nutrientId:
-            "protein",
-          amountKnown:
-            "12.000000",
-          amountEstimated:
-            "0.000000",
-          unit: "g",
-          hasUnknownContributors:
-            false,
-          unknownContributorCount:
-            0,
-        },
-        {
-          nutrientId:
-            "total_fat",
-          amountKnown:
-            "7.000000",
-          amountEstimated:
-            "0.000000",
-          unit: "g",
-          hasUnknownContributors:
-            false,
-          unknownContributorCount:
-            0,
-        },
-      ],
-    },
-  };
-
+  // The old primary Daily Log filtered visible totals
+  // using target-configuration display preferences.
+  // E4-07 instead owns a fixed compact four-row summary.
   mockTargetConfiguration = {
     data: {
       trackingPreferences: {
@@ -543,31 +956,42 @@ test("#103 Daily Log Totals omit ignored nutrients while keeping the totals read
     isError: false,
   };
 
-  const rendered =
-    await render();
+  const rendered = await render();
+  const text = screenText(
+    rendered.renderer.root,
+  );
 
-  const text =
-    screenText(
-      rendered.renderer.root,
-    );
+  expect(text).toContain("Calories");
+  expect(text).toContain("Protein");
+  expect(text).toContain(
+    "Carbohydrate",
+  );
+  expect(text).toContain("Fat");
+
+  expect(text).toContain(
+    "500 / 2,000 kcal",
+  );
+  expect(text).toContain(
+    "30 / 100 g",
+  );
+  expect(text).toContain("45 g");
+  expect(text).toContain(
+    "20 / 70 g",
+  );
 
   expect(text).not.toContain(
-    "Protein",
+    "Target Progress",
   );
-  expect(text).toContain(
-    "Total Fat",
-  );
-  expect(text).toContain(
-    "7g",
+  expect(text).not.toContain(
+    "Totals",
   );
 
   await act(async () =>
     rendered.renderer.unmount(),
   );
 
-  // Target-preference reads remain operationally independent.
-  // If that read is unavailable and no cached preference exists,
-  // confirmed Daily Log totals are not discarded.
+  // Loss of the old target-configuration read must
+  // not remove the fixed compact rows.
   mockTargetConfiguration = {
     data: undefined,
     isLoading: false,
@@ -581,11 +1005,15 @@ test("#103 Daily Log Totals omit ignored nutrients while keeping the totals read
   const independent =
     await render();
 
-  expect(
+  const independentText =
     screenText(
       independent.renderer.root,
-    ),
-  ).toContain("Protein");
+    );
+
+  expect(independentText)
+    .toContain("Protein");
+  expect(independentText)
+    .toContain("Nutrition");
 
   await act(async () =>
     independent.renderer.unmount(),

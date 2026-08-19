@@ -102,6 +102,7 @@ export async function getDailySummary(date: string): Promise<DailySummary> {
   );
   return {
     logged_date: response.logged_date,
+    is_complete: response.is_complete,
     totals: response.totals.map((total) => ({
       nutrientId: total.nutrient_id,
       amountKnown: total.amount_known,

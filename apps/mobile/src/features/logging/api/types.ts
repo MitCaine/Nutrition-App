@@ -170,11 +170,13 @@ export type HistoryRangeResponse = {
 
 export type DailySummary = {
   logged_date: string;
+  is_complete: boolean;
   totals: AggregatedNutrientTotal[];
 };
 
 export type DailySummaryResponse = {
   logged_date: string;
+  is_complete: boolean;
   totals: Array<{
     nutrient_id: string;
     amount_known: string;

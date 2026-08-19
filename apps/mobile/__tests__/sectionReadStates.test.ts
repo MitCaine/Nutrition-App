@@ -3,7 +3,7 @@ import { dailySummaryReadState } from "../src/features/logging/hooks/useLogs";
 import type { DailyTargetComparison } from "../src/features/targets/api/types";
 import { targetProgressReadState } from "../src/features/targets/hooks/useDailyTargetComparison";
 
-const summary: DailySummary = { logged_date: "2026-07-08", totals: [] };
+const summary: DailySummary = { logged_date: "2026-07-08", is_complete: false, totals: [] };
 const comparison: DailyTargetComparison = {
   date: "2026-07-08",
   dailyValueCatalogVersion: "fda_daily_values_2016_v1",

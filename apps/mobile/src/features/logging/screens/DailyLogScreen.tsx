@@ -3,12 +3,11 @@ import { ScrollView, StyleSheet, Text, View, type NativeSyntheticEvent, type Tex
 import type { QueryClient } from "@tanstack/react-query";
 
 import {
-  formatAggregatedTotal,
   formatDisplayNumber,
-  formatNutrientLabel,
 } from "../../../shared/nutrition/display";
 import { useFoods } from "../../foods/hooks/useFoods";
 import type { DailyLog, DailyLogDeleteInput } from "../api/types";
+import type { DailyTargetComparisonItem } from "../../targets/api/types";
 import { RuntimeError } from "../../../runtime/RuntimeError";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
@@ -25,7 +24,6 @@ import {
   parseLocalDateString,
   loggedFoodDisplayName,
   unsupportedMealNotice,
-  visibleDailyTotals,
 } from "../utils/dailyLogDisplay";
 import { isSupportedMeal, type MealType } from "../validation/logContracts";
 import { useAppTheme } from "../../../app/theme/AppTheme";
@@ -40,9 +38,18 @@ import {
   type AccessibilityFocusTarget,
   type CancelAccessibilityFocus,
 } from "../../../shared/accessibility/focus";
-import { TargetProgressSection } from "../../targets/TargetProgressSection";
-import { useTargetConfiguration } from "../../targets/hooks/useDailyTargetComparison";
-import { calendarMutationsEnabled, calendarStateLabel, calendarToday } from "../../calendar/calendarModel";
+import {
+  useDailyTargetComparison,
+} from "../../targets/hooks/useDailyTargetComparison";
+import {
+  formatTargetAmount,
+} from "../../targets/targetProgress";
+import {
+  calendarMutationsEnabled,
+  calendarRevision,
+  calendarStateLabel,
+  calendarToday,
+} from "../../calendar/calendarModel";
 import { deviceTimeZone } from "../../calendar/deviceTimeZone";
 import { useCalendarState } from "../../calendar/hooks/useCalendar";
 import { DatePickerModal } from "./DatePickerModal";
@@ -51,6 +58,7 @@ import { deleteErrorMessage, isDeleteReconciliationRequired } from "../utils/log
 import { logEditErrorCode } from "../utils/logEditErrors";
 import {
   createLogMutationRecoveryRecord,
+  finalizeConfirmedLogMutationRecoveryRecord,
   markLogMutationRecoveryAttempt,
   persistRecoveryBeforeTransmission,
   removeLogMutationRecoveryRecord,
@@ -58,7 +66,9 @@ import {
   dismissLogMutationRecoveryRecord,
   getRecoveryJournalState,
   hasOverlappingRecovery,
+  hasUnresolvedNutritionMutationForDate,
   isUncertainLogMutationError,
+  recoveryActionableState,
   RecoveryStorageError,
   useLogMutationRecoveryJournal,
   reconcileLogMutationRecoveryRecord,
@@ -70,6 +80,78 @@ import {
 
 function isLocalRecoveryStorageError(error: unknown): boolean {
   return error instanceof RecoveryStorageError;
+}
+
+export const E4_07_COMPACT_NUTRIENTS = [
+  { nutrientId: "calories", label: "Calories" },
+  { nutrientId: "protein", label: "Protein" },
+  { nutrientId: "total_carbohydrate", label: "Carbohydrate" },
+  { nutrientId: "total_fat", label: "Fat" },
+] as const;
+
+export type E407CompactNutritionRow = Readonly<{
+  nutrientId: string;
+  label: string;
+  value: string;
+}>;
+
+export function buildE407CompactNutritionRows(
+  comparisons: readonly DailyTargetComparisonItem[],
+  hasEntries: boolean | null,
+): E407CompactNutritionRow[] {
+  const byId = new Map(
+    comparisons.map((item) => [item.nutrientId, item]),
+  );
+
+  return E4_07_COMPACT_NUTRIENTS.map((definition) => {
+    if (hasEntries === false) {
+      return {
+        ...definition,
+        value: "0 logged",
+      };
+    }
+
+    const item = byId.get(definition.nutrientId);
+
+    if (
+      hasEntries === null
+      || !item
+      || item.consumedAmount === null
+    ) {
+      return {
+        ...definition,
+        value: "Unavailable",
+      };
+    }
+
+    const consumed = formatTargetAmount(
+      item.consumedAmount,
+      item.unit,
+    );
+
+    const meaningfulTarget =
+      item.trackingMode !== "amount_only"
+      && item.trackingMode !== "ignored"
+      && item.targetAmount !== null
+      && item.status !== "target_unavailable";
+
+    if (meaningfulTarget) {
+      const target = formatTargetAmount(
+        item.targetAmount as string,
+        item.unit,
+      );
+
+      return {
+        ...definition,
+        value: `${consumed} / ${target} ${item.unit}`,
+      };
+    }
+
+    return {
+      ...definition,
+      value: `${consumed} ${item.unit}`,
+    };
+  });
 }
 
 type DeletePhase = "confirming" | "submitting" | "uncertain" | "retryable";
@@ -96,7 +178,8 @@ type Props = {
   onMoveLog?: (logId: string, log?: DailyLog) => void;
   onReviewRecovery?: () => void;
   onOpenSettings: () => void;
-  onOpenNutritionTargets: () => void;
+  onOpenHistory: () => void;
+  onOpenNutrition: () => void;
   initialScrollOffset: number;
   onScrollOffsetChange: (offset: number) => void;
   mutationOutcome?: { key: string; message: string; focusDateHeading?: boolean; focusEntryId?: string } | null;
@@ -105,7 +188,7 @@ type Props = {
   onReturnFocusHandled?: () => void;
 };
 
-export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenNutritionTargets, initialScrollOffset, onScrollOffsetChange, mutationOutcome = null, onMutationOutcomeHandled, returnFocusKey = null, onReturnFocusHandled }: Props) {
+export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood, onGeneralAddFood, onOpenFood, onEditLog, onMoveLog, onReviewRecovery, onOpenSettings, onOpenHistory, onOpenNutrition, initialScrollOffset, onScrollOffsetChange, mutationOutcome = null, onMutationOutcomeHandled, returnFocusKey = null, onReturnFocusHandled }: Props) {
   const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -116,6 +199,8 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteOverlapRecord, setDeleteOverlapRecord] = useState<LogMutationRecoveryRecord | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [completeNotice, setCompleteNotice] = useState<string | null>(null);
+  const [completeSubmitting, setCompleteSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [successAnnouncementKey, setSuccessAnnouncementKey] = useState<string | null>(null);
   const announce = useAccessibilityAnnouncement();
@@ -126,35 +211,18 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const futureQuery = useFutureLogs(date, legacyFuture);
   const futureLogs = dailyLogReadState(futureQuery);
   const summaryQuery = useDailySummary(date, !legacyFuture);
-  const targetConfigurationQuery =
-    useTargetConfiguration();
-
-  const ignoredNutrientIds = useMemo(
-    () =>
-      new Set(
-        Object.entries(
-          targetConfigurationQuery.data
-            ?.trackingPreferences
-          ?? {},
-        )
-          .filter(
-            ([, mode]) =>
-              mode === "ignored",
-          )
-          .map(
-            ([nutrientId]) =>
-              nutrientId,
-          ),
-      ),
-    [
-      targetConfigurationQuery.data
-        ?.trackingPreferences,
-    ],
-  );
+  const targetComparisonQuery =
+    useDailyTargetComparison(date);
 
   const entriesKnown = logs.kind === "empty" || logs.kind === "success" || logs.kind === "refreshing" || logs.kind === "refresh-failure";
-  const hasLoggedNutrition = logs.data === null ? undefined : logs.data.length > 0;
   const totals = dailySummaryReadState(summaryQuery, entriesKnown);
+  const compactNutritionRows =
+    buildE407CompactNutritionRows(
+      targetComparisonQuery.data?.comparisons ?? [],
+      entriesKnown
+        ? (logs.data?.length ?? 0) > 0
+        : null,
+    );
   const foods = useFoods("");
   const mutations = useLogMutations(date);
   const calendar = useCalendarState();
@@ -166,11 +234,47 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const provisionalTimeZone = deviceTimeZone();
   const today = calendarToday(calendar.data, provisionalTimeZone, clock);
   const dateClassification = classifyCalendarDate(date, today);
+  const selectedCalendarRevision = calendarRevision(calendar.data);
   const mutationsEnabled = calendarMutationsEnabled(calendar.data)
     && dateClassification !== "future"
     && recovery.ready;
   const cleanupMutationsEnabled = calendarMutationsEnabled(calendar.data) && recovery.ready;
   const isProvisional = !calendar.data?.is_established;
+
+  const completeRecord = recovery.records.find(
+    (record) =>
+      record.mutation_type === "complete"
+      && record.source_date === date,
+  ) ?? null;
+  const completeRecoveryState = completeRecord
+    ? recoveryActionableState(completeRecord)
+    : null;
+  const completeUnresolved =
+    completeRecoveryState === "prepared"
+    || completeRecoveryState === "submitted"
+    || completeRecoveryState === "reconciling";
+  const completeRetryable =
+    completeRecoveryState === "confirmed_non_commit";
+  const unresolvedNutritionForDate =
+    hasUnresolvedNutritionMutationForDate(
+      recovery.records,
+      date,
+    );
+  const completeStateKnown = totals.data !== null;
+  const completeChecked =
+    totals.data?.is_complete === true;
+  const completeHasEntries =
+    logs.data !== null
+    && logs.data.length > 0;
+  const completeDisabled =
+    completeChecked
+    || completeSubmitting
+    || !completeStateKnown
+    || !mutationsEnabled
+    || selectedCalendarRevision === null
+    || !completeHasEntries
+    || completeUnresolved
+    || unresolvedNutritionForDate;
   const foodNames = new Map((foods.data ?? []).map((food) => [food.id, food.name]));
   const groups = groupDailyLogs(logs.data ?? []);
   const scrollRef = useRef<ScrollView>(null);
@@ -190,7 +294,10 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
     const timer = setInterval(() => setClock(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
-  useEffect(() => { restoredRef.current = false; }, [date, initialScrollOffset]);
+  useEffect(() => {
+    restoredRef.current = false;
+    setCompleteNotice(null);
+  }, [date, initialScrollOffset]);
   useEffect(() => () => pendingFocus.current?.(), []);
   useEffect(() => {
     if (!mutationOutcome) return;
@@ -256,6 +363,164 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
       ?? mealHeadingRefs.current.get(group.key)
       ?? emptyStateRef.current
       ?? screenHeadingRef.current;
+  };
+
+  const submitComplete = async () => {
+    if (completeSubmitting || completeChecked) return;
+
+    setCompleteNotice(null);
+
+    if (completeRecord) {
+      if (!completeRetryable) return;
+
+      setCompleteSubmitting(true);
+      try {
+        const outcome =
+          await retryLogMutationRecoveryRecord(
+            completeRecord,
+            mutations.queryClient,
+            recoveryDependencies,
+          );
+
+        if (outcome === "confirmed") {
+          setSuccessMessage(
+            `Marked ${formatReadableDate(date)} Complete.`,
+          );
+          setSuccessAnnouncementKey(
+            `complete:${completeRecord.client_request_id}:confirmed`,
+          );
+        } else if (outcome === "pending") {
+          setCompleteNotice(
+            "The Complete outcome is still unresolved. It remains unchecked until authoritative confirmation.",
+          );
+        } else if (outcome === "retryable") {
+          setCompleteNotice(
+            "Complete was not committed. Retry uses the same reviewed Complete request.",
+          );
+        } else {
+          setCompleteNotice(
+            "Complete was not committed. Review the current Daily Log before starting another Complete attempt.",
+          );
+        }
+      } catch (error) {
+        setCompleteNotice(
+          isLocalRecoveryStorageError(error)
+            ? "Local recovery storage is unavailable. The saved Complete intent remains protected."
+            : "The Complete retry could not be resolved. It remains unchecked.",
+        );
+      } finally {
+        setCompleteSubmitting(false);
+      }
+      return;
+    }
+
+    if (
+      completeDisabled
+      || selectedCalendarRevision === null
+    ) {
+      return;
+    }
+
+    const clientRequestId = createClientRequestId();
+    const input = {
+      client_request_id: clientRequestId,
+      calendar_revision: selectedCalendarRevision,
+      logged_date: date,
+    };
+
+    const record =
+      createLogMutationRecoveryRecord({
+        authority: runtime.authority,
+        clientRequestId,
+        mutationType: "complete",
+        sourceDate: date,
+        displayContext: {
+          item_name: null,
+          amount_label: null,
+          meal_label: null,
+        },
+        payload: {
+          operation: "complete",
+          input,
+        },
+      });
+
+    setCompleteSubmitting(true);
+
+    let submittedRecord: LogMutationRecoveryRecord;
+
+    try {
+      submittedRecord =
+        await persistRecoveryBeforeTransmission(record);
+    } catch (error) {
+      setCompleteSubmitting(false);
+      setCompleteNotice(
+        isLocalRecoveryStorageError(error)
+          ? "Local recovery storage is unavailable. Complete was not transmitted."
+          : "Complete could not be prepared safely.",
+      );
+      return;
+    }
+
+    try {
+      await mutations.completeDay.mutateAsync(input);
+
+      const recoveryCleaned =
+        await finalizeConfirmedLogMutationRecoveryRecord(
+          submittedRecord,
+        );
+
+      setSuccessMessage(
+        `Marked ${formatReadableDate(date)} Complete.`,
+      );
+      setSuccessAnnouncementKey(
+        `complete:${clientRequestId}:confirmed`,
+      );
+
+      if (!recoveryCleaned) {
+        setCompleteNotice(
+          "Complete was confirmed, but local recovery cleanup is unavailable. The saved confirmation will be reconciled again when storage is available.",
+        );
+      }
+    } catch (error) {
+      if (isUncertainLogMutationError(error)) {
+        setCompleteNotice(
+          "The Complete outcome is unresolved. It remains unchecked while authoritative status is reconciled.",
+        );
+      } else if (
+        error instanceof RuntimeError
+        && error.mutationOutcome
+          === "confirmed_non_commit"
+      ) {
+        try {
+          await upsertLogMutationRecoveryRecord({
+            ...submittedRecord,
+            state: "confirmed_non_commit",
+          });
+          setCompleteNotice(
+            "Complete was not committed. Retry uses the same reviewed Complete request.",
+          );
+        } catch {
+          setCompleteNotice(
+            "Complete was not committed, but local recovery storage is unavailable.",
+          );
+        }
+      } else {
+        try {
+          await removeLogMutationRecoveryRecord(
+            submittedRecord,
+          );
+        } catch {
+          // The authoritative mutation is already known not
+          // to have committed. Recovery cleanup is best-effort.
+        }
+        setCompleteNotice(
+          "Complete was not committed. Review the current Daily Log before trying again.",
+        );
+      }
+    } finally {
+      setCompleteSubmitting(false);
+    }
   };
 
   const beginDelete = (log: DailyLog) => {
@@ -570,7 +835,38 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   return (
     <View style={styles.root}>
       <View style={styles.chrome}>
-        <RootScreenHeader title="Daily Log" headingRef={screenHeadingRef} autoFocus={!mutationOutcome?.focusDateHeading && !mutationOutcome?.focusEntryId && !returnFocusKey} onOpenSettings={onOpenSettings} />
+        <RootScreenHeader
+          title="Daily Log"
+          headingRef={screenHeadingRef}
+          autoFocus={
+            !mutationOutcome?.focusDateHeading
+            && !mutationOutcome?.focusEntryId
+            && !returnFocusKey
+          }
+          onOpenSettings={onOpenSettings}
+          action={{
+            label: "Complete",
+            accessibilityLabel: completeChecked
+              ? "Complete, checked"
+              : "Complete",
+            accessibilityHint: completeChecked
+              ? "This date is authoritatively marked Complete"
+              : completeUnresolved
+                ? "Complete is unavailable while the existing Complete request is unresolved"
+                : unresolvedNutritionForDate
+                  ? "Complete is unavailable while a nutrition-changing Daily Log mutation is unresolved"
+                  : !completeStateKnown
+                    ? "Complete is unavailable until authoritative Daily Log state is available"
+                    : !completeHasEntries
+                      ? "Complete is unavailable until this date contains a Daily Log entry"
+                      : "Marks this Daily Log date Complete",
+            checked: completeChecked,
+            disabled: completeDisabled,
+            onPress: () => {
+              void submitComplete();
+            },
+          }}
+        />
         <TransientSuccessBanner
             message={successMessage}
             announcementKey={successAnnouncementKey ?? undefined}
@@ -580,7 +876,50 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
               setSuccessAnnouncementKey(null);
             }}
         />
-        <RecoveryPanel records={recovery.records} health={recovery} recoveryDependencies={recoveryDependencies} queryClient={mutations.queryClient} onRefreshDate={mutations.refreshDate} styles={styles} />
+        <RecoveryPanel
+          records={recovery.records.filter(
+            (record) =>
+              !(
+                record.mutation_type === "complete"
+                && record.source_date === date
+              ),
+          )}
+          health={recovery}
+          recoveryDependencies={recoveryDependencies}
+          queryClient={mutations.queryClient}
+          onRefreshDate={mutations.refreshDate}
+          styles={styles}
+        />
+        {completeNotice ? (
+          <Text
+            accessibilityRole="alert"
+            style={styles.calendarNotice}
+          >
+            {completeNotice}
+          </Text>
+        ) : null}
+        {completeRetryable ? (
+          <AccessiblePressable
+            accessibilityLabel="Retry Complete"
+            accessibilityHint="Retries the same reviewed Complete request"
+            disabled={completeSubmitting}
+            onPress={() => {
+              void submitComplete();
+            }}
+            style={[
+              styles.navigationButton,
+              completeSubmitting
+                ? styles.disabledButton
+                : null,
+            ]}
+          >
+            <Text style={styles.text}>
+              {completeSubmitting
+                ? "Retrying Complete…"
+                : "Retry Complete"}
+            </Text>
+          </AccessiblePressable>
+        ) : null}
       </View>
       <ScrollView
         ref={scrollRef}
@@ -599,29 +938,48 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         <AccessiblePressable
           accessibilityHint="Shows the preceding calendar date"
           accessibilityLabel="Previous Day"
-          onPress={() => selectDate(addCalendarDays(date, -1))}
+          onPress={() =>
+            selectDate(
+              addCalendarDays(date, -1),
+            )
+          }
           style={styles.navigationButton}
         >
-          <Text style={styles.text}>Previous Day</Text>
+          <Text style={styles.text}>
+            Previous Day
+          </Text>
         </AccessiblePressable>
-        {date !== today ? (
-          <AccessiblePressable
-            accessibilityHint="Shows the authoritative current date"
-            accessibilityLabel="Today"
-            onPress={() => selectDate(today)}
-            style={styles.navigationButton}
-          >
-            <Text style={styles.text}>Today</Text>
-          </AccessiblePressable>
-        ) : null}
+
+        <AccessiblePressable
+          accessibilityHint="Opens History for the selected Daily Log context"
+          accessibilityLabel="History"
+          onPress={onOpenHistory}
+          style={styles.navigationButton}
+        >
+          <Text style={styles.text}>
+            History
+          </Text>
+        </AccessiblePressable>
+
         <AccessiblePressable
           accessibilityHint="Shows the next calendar date"
           accessibilityLabel="Next Day"
           disabled={date >= today}
-          onPress={() => selectDate(addCalendarDays(date, 1))}
-          style={[styles.navigationButton, date >= today ? styles.disabledButton : null]}
+          onPress={() =>
+            selectDate(
+              addCalendarDays(date, 1),
+            )
+          }
+          style={[
+            styles.navigationButton,
+            date >= today
+              ? styles.disabledButton
+              : null,
+          ]}
         >
-          <Text style={styles.text}>Next Day</Text>
+          <Text style={styles.text}>
+            Next Day
+          </Text>
         </AccessiblePressable>
       </View>
       <View style={styles.dateHeadingRow}>
@@ -676,23 +1034,6 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
         styles={styles}
         />
       ) : null}
-      <TargetProgressSection date={date} entriesKnown={entriesKnown} hasLoggedNutrition={hasLoggedNutrition} onOpenTargets={onOpenNutritionTargets} />
-      <Text accessibilityRole="header" style={styles.sectionTitle}>Totals</Text>
-      {totals.kind === "initial-loading" ? <AccessibilityStatus kind="loading" message="Loading totals…" /> : null}
-      {totals.kind === "refreshing" ? <AccessibilityStatus kind="refreshing" message="Refreshing totals…" /> : null}
-      {totals.kind === "initial-failure" ? <AccessibilityStatus kind="initial-failure" message="Totals could not be loaded." onRetry={totals.retry} retryContext="totals" /> : null}
-      {totals.kind === "refresh-failure" ? <AccessibilityStatus kind="stale" message="Totals could not be refreshed; showing the last confirmed totals." onRetry={totals.retry} retryContext="totals" /> : null}
-      {totals.kind === "unavailable" ? <AccessibilityStatus kind="unavailable" message="Totals are unavailable until Daily Log entries are available." onRetry={totals.retry} retryContext="totals" /> : null}
-      {totals.kind === "empty" ? <AccessibilityStatus kind="empty" message="No nutrition totals for this date." /> : null}
-      {totals.data ? visibleDailyTotals(
-        totals.data.totals,
-        ignoredNutrientIds,
-      ).map((total) => (
-        <View key={total.nutrientId} style={styles.totalRow}>
-          <Text style={styles.text}>{formatNutrientLabel(total.nutrientId)}</Text>
-          <Text style={styles.text}>{formatAggregatedTotal(total)}</Text>
-        </View>
-      )) : null}
       <View style={styles.entriesHeader}>
         <Text accessibilityRole="header" style={styles.sectionTitle}>Entries</Text>
         {mutationsEnabled ? (
@@ -773,6 +1114,44 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
           </View>
         );
       }) : null}
+      <View
+        accessibilityLabel="Compact daily nutrition"
+        style={styles.mealGroup}
+      >
+        <View style={styles.entriesHeader}>
+          <Text
+            accessibilityRole="header"
+            style={styles.sectionTitle}
+          >
+            Nutrition
+          </Text>
+
+          <AccessiblePressable
+            accessibilityLabel="View Nutrition"
+            accessibilityHint="Opens Daily Nutrition for this selected date"
+            onPress={onOpenNutrition}
+            style={styles.addFoodButton}
+          >
+            <Text style={styles.addFoodText}>
+              View Nutrition
+            </Text>
+          </AccessiblePressable>
+        </View>
+
+        {compactNutritionRows.map((row) => (
+          <View
+            key={row.nutrientId}
+            style={styles.totalRow}
+          >
+            <Text style={styles.text}>
+              {row.label}
+            </Text>
+            <Text style={styles.text}>
+              {row.value}
+            </Text>
+          </View>
+        ))}
+      </View>
       </ScrollView>
     </View>
   );

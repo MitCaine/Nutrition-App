@@ -264,6 +264,7 @@ export function useLogMutations(date: string) {
       ) =>
         runtime.dailyLogs.markDayComplete(input),
       onSuccess: (result) => {
+        invalidateLogDateCaches(queryClient, result.logged_date);
         invalidateHistory(result.logged_date);
       },
     }),

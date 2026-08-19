@@ -371,7 +371,7 @@ const mockCreateLog = jest.fn(async (input: Record<string, unknown>) => {
     updated_at: "2026-07-13T12:00:00Z",
   };
   mockLogs.data = [...(mockLogs.data ?? []), entry];
-  mockSummary.data = { logged_date: entry.logged_date, totals: [total] };
+  mockSummary.data = { logged_date: entry.logged_date, is_complete: false, totals: [total] };
   mockTargets.data = { ...targets, date: entry.logged_date };
   return entry;
 });
@@ -394,7 +394,7 @@ function emptyQuery<T>(data: T): QueryState<T> {
 
 function resetState() {
   mockLogs = emptyQuery([]);
-  mockSummary = emptyQuery({ logged_date: "2026-07-14", totals: [] });
+  mockSummary = emptyQuery({ logged_date: "2026-07-14", is_complete: false, totals: [] });
   mockTargets = emptyQuery(targets);
   mockCalendar = emptyQuery({ is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" });
   mockFoodQuery = emptyQuery(food);
@@ -786,9 +786,14 @@ test("confirmed projection remains visible when independent refreshes fail", asy
   const text = screenText(renderer.root);
   expect(text).toContain("Oatmeal");
   expect(text).toContain("Entries could not be refreshed; showing the last confirmed entries.");
-  expect(text).toContain("Totals could not be refreshed; showing the last confirmed totals.");
-  expect(text).toContain("Target comparisons could not be refreshed; showing the last confirmed progress.");
-  expect(text).toContain("250");
+
+  // E4-07 removes the old full Totals and Target Progress
+  // surfaces. Cached target-comparison evidence still
+  // drives the compact four-row summary.
+  expect(text).toContain("Nutrition");
+  expect(text).toContain("250 / 2,000 kcal");
+  expect(text).not.toContain("Totals could not be refreshed; showing the last confirmed totals.");
+  expect(text).not.toContain("Target comparisons could not be refreshed; showing the last confirmed progress.");
   expect(text).not.toContain("Could not save this log");
   await act(async () => renderer.unmount());
 });

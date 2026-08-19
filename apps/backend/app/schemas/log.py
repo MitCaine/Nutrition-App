@@ -237,6 +237,7 @@ class RecentEntryListResponse(BaseModel):
 
 class DailySummaryResponse(BaseModel):
     logged_date: date
+    is_complete: bool
     totals: list[AggregatedNutrientTotalSchema]
 
 

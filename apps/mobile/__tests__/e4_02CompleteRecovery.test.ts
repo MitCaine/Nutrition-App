@@ -9,6 +9,7 @@ import {
   type RecoveryStorage,
 } from "../src/features/logging/recovery/logMutationRecovery";
 import { remoteAuthorityIdentity } from "../src/runtime/authorityIdentity";
+import { RuntimeError } from "../src/runtime/RuntimeError";
 
 const AUTHORITY = remoteAuthorityIdentity("e4-02-owner");
 const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
@@ -156,6 +157,131 @@ describe("E4-02 Complete recovery", () => {
 
     expect(outcome).toBe("confirmed");
     expect(markDayComplete).toHaveBeenCalledWith(record.payload.operation === "complete" ? record.payload.input : null);
+  });
+
+  test("confirmed Complete retry remains confirmed when recovery cleanup storage fails", async () => {
+    const backing = memoryStorage();
+    let writeCount = 0;
+
+    const storage: RecoveryStorage = {
+      getItem: backing.getItem,
+      removeItem: backing.removeItem,
+      setItem: jest.fn(
+        async (
+          key: string,
+          value: string,
+        ) => {
+          writeCount += 1;
+
+          // First write persists submitted state.
+          // Second write is confirmed-success cleanup.
+          if (writeCount === 2) {
+            throw new Error(
+              "recovery cleanup unavailable",
+            );
+          }
+
+          await backing.setItem(
+            key,
+            value,
+          );
+        },
+      ),
+    };
+
+    const record = {
+      ...completeRecord(),
+      state: "confirmed_non_commit" as const,
+    };
+
+    const markDayComplete = jest.fn(
+      async () => ({
+        logged_date: "2026-08-18",
+        completed_at:
+          "2026-08-18T20:00:00.000000Z",
+      }),
+    );
+
+    const outcome =
+      await retryLogMutationRecoveryRecord(
+        record,
+        null,
+        dependencies({
+          markDayComplete,
+        }),
+        storage,
+      );
+
+    expect(outcome).toBe("confirmed");
+    expect(markDayComplete)
+      .toHaveBeenCalledTimes(1);
+
+    // Cleanup failed, so durable submitted evidence may remain.
+    // It must be reconciled later rather than reclassifying the
+    // already-authoritative success as non-commit or unresolved.
+    const [persisted] =
+      await loadLogMutationRecoveryJournal(
+        AUTHORITY,
+        storage,
+      );
+
+    expect(persisted).toEqual(
+      expect.objectContaining({
+        client_request_id:
+          REQUEST_ID,
+        state: "submitted",
+        payload: record.payload,
+      }),
+    );
+  });
+
+  test("a repeated confirmed non-commit preserves the same Complete retry intent", async () => {
+    const storage = memoryStorage();
+    const record = {
+      ...completeRecord(),
+      state: "confirmed_non_commit" as const,
+    };
+
+    const markDayComplete = jest.fn(
+      async () => {
+        throw new RuntimeError({
+          kind: "conflict",
+          code: "complete_not_committed",
+          message: "Complete was not committed.",
+          retryable: true,
+          mutationOutcome: "confirmed_non_commit",
+        });
+      },
+    );
+
+    const outcome =
+      await retryLogMutationRecoveryRecord(
+        record,
+        null,
+        dependencies({ markDayComplete }),
+        storage,
+      );
+
+    expect(outcome).toBe("retryable");
+    expect(markDayComplete).toHaveBeenCalledWith(
+      record.payload.operation === "complete"
+        ? record.payload.input
+        : null,
+    );
+
+    const [persisted] =
+      await loadLogMutationRecoveryJournal(
+        AUTHORITY,
+        storage,
+      );
+
+    expect(persisted).toEqual(
+      expect.objectContaining({
+        client_request_id: REQUEST_ID,
+        state: "confirmed_non_commit",
+        payload: record.payload,
+      }),
+    );
   });
 
   test("same-date gate blocks only unresolved nutrition-changing work", () => {

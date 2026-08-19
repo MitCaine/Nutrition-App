@@ -1310,7 +1310,11 @@ describe("E2-09 local Daily Logs", () => {
     await seedLocalOwner(database, OTHER_OWNER);
     const other = createLocalDailyLogsRuntime(database.asExpoDatabase(), OTHER_OWNER, { now: NOW });
     await expect(other.list("2026-08-09")).resolves.toEqual([]);
-    await expect(other.getDailySummary("2026-08-09")).resolves.toEqual({ logged_date: "2026-08-09", totals: [] });
+    await expect(other.getDailySummary("2026-08-09")).resolves.toEqual({
+      logged_date: "2026-08-09",
+      is_complete: false,
+      totals: [],
+    });
   });
 });
 
