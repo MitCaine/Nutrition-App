@@ -1,0 +1,447 @@
+{
+  "fixtureVersion": 1,
+  "fixtureId": "e4-16-history-parity-v1",
+  "selectedNutrients": [
+    "protein",
+    "vitamin_c"
+  ],
+  "owners": {
+    "selected": "00000000-0000-4000-8000-000000000001",
+    "other": "00000000-0000-4000-8000-000000000002",
+    "noHistory": "00000000-0000-4000-8000-000000000003"
+  },
+  "foods": [
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "name": "E4-16 selected-owner evidence"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "ownerId": "00000000-0000-4000-8000-000000000002",
+      "name": "E4-16 other-owner isolation evidence"
+    }
+  ],
+  "range": {
+    "startDate": "2026-08-10",
+    "endDate": "2026-08-16",
+    "today": "2026-08-17",
+    "firstLoggedDate": "2026-08-08"
+  },
+  "logs": [
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-08"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000021",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-11"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000022",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-12"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000023",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-13"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000024",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-14"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000025",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-15"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000026",
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "foodId": "00000000-0000-4000-8000-000000000010",
+      "loggedDate": "2026-08-16"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000030",
+      "ownerId": "00000000-0000-4000-8000-000000000002",
+      "foodId": "00000000-0000-4000-8000-000000000011",
+      "loggedDate": "2026-08-01"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000031",
+      "ownerId": "00000000-0000-4000-8000-000000000002",
+      "foodId": "00000000-0000-4000-8000-000000000011",
+      "loggedDate": "2026-08-10"
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "logId": "00000000-0000-4000-8000-000000000021",
+      "nutrientId": "protein",
+      "amount": "1000.000000",
+      "unit": "mg",
+      "status": "known"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "logId": "00000000-0000-4000-8000-000000000021",
+      "nutrientId": "vitamin_c",
+      "amount": "1.000000",
+      "unit": "mg",
+      "status": "known"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000103",
+      "logId": "00000000-0000-4000-8000-000000000022",
+      "nutrientId": "protein",
+      "amount": "0.500000",
+      "unit": "g",
+      "status": "estimated"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000104",
+      "logId": "00000000-0000-4000-8000-000000000023",
+      "nutrientId": "protein",
+      "amount": "0.000000",
+      "unit": "g",
+      "status": "zero"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000105",
+      "logId": "00000000-0000-4000-8000-000000000024",
+      "nutrientId": "protein",
+      "amount": "0.333333",
+      "unit": "g",
+      "status": "known"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000106",
+      "logId": "00000000-0000-4000-8000-000000000024",
+      "nutrientId": "protein",
+      "amount": null,
+      "unit": "g",
+      "status": "unknown"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000107",
+      "logId": "00000000-0000-4000-8000-000000000024",
+      "nutrientId": "vitamin_c",
+      "amount": null,
+      "unit": "mg",
+      "status": "unknown"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000108",
+      "logId": "00000000-0000-4000-8000-000000000025",
+      "nutrientId": "protein",
+      "amount": null,
+      "unit": "g",
+      "status": "unknown"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000109",
+      "logId": "00000000-0000-4000-8000-000000000025",
+      "nutrientId": "vitamin_c",
+      "amount": null,
+      "unit": "mg",
+      "status": "unknown"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000110",
+      "logId": "00000000-0000-4000-8000-000000000026",
+      "nutrientId": "protein",
+      "amount": "0.666667",
+      "unit": "g",
+      "status": "known"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000111",
+      "logId": "00000000-0000-4000-8000-000000000026",
+      "nutrientId": "vitamin_c",
+      "amount": "2.000000",
+      "unit": "mg",
+      "status": "estimated"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000120",
+      "logId": "00000000-0000-4000-8000-000000000031",
+      "nutrientId": "protein",
+      "amount": "999.000000",
+      "unit": "g",
+      "status": "known"
+    }
+  ],
+  "completions": [
+    {
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "loggedDate": "2026-08-11",
+      "completedAt": "2026-08-11T18:00:00.000000Z"
+    },
+    {
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "loggedDate": "2026-08-12",
+      "completedAt": "2026-08-12T18:00:00.000000Z"
+    },
+    {
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "loggedDate": "2026-08-14",
+      "completedAt": "2026-08-14T18:00:00.000000Z"
+    },
+    {
+      "ownerId": "00000000-0000-4000-8000-000000000001",
+      "loggedDate": "2026-08-15",
+      "completedAt": "2026-08-15T18:00:00.000000Z"
+    },
+    {
+      "ownerId": "00000000-0000-4000-8000-000000000002",
+      "loggedDate": "2026-08-10",
+      "completedAt": "2026-08-10T18:00:00.000000Z"
+    }
+  ],
+  "expectedRemoteEvidence": {
+    "start_date": "2026-08-10",
+    "end_date": "2026-08-16",
+    "first_logged_date": "2026-08-08",
+    "days": [
+      {
+        "date": "2026-08-10",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-11",
+        "has_logs": true,
+        "is_complete": true,
+        "nutrients": [
+          {
+            "nutrient_id": "protein",
+            "amount_known": "1.000000000",
+            "amount_estimated": "0",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          },
+          {
+            "nutrient_id": "vitamin_c",
+            "amount_known": "1.000000",
+            "amount_estimated": "0",
+            "unit": "mg",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          }
+        ]
+      },
+      {
+        "date": "2026-08-12",
+        "has_logs": true,
+        "is_complete": true,
+        "nutrients": [
+          {
+            "nutrient_id": "protein",
+            "amount_known": "0",
+            "amount_estimated": "0.500000",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          }
+        ]
+      },
+      {
+        "date": "2026-08-13",
+        "has_logs": true,
+        "is_complete": false,
+        "nutrients": [
+          {
+            "nutrient_id": "protein",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": true,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          }
+        ]
+      },
+      {
+        "date": "2026-08-14",
+        "has_logs": true,
+        "is_complete": true,
+        "nutrients": [
+          {
+            "nutrient_id": "protein",
+            "amount_known": "0.333333",
+            "amount_estimated": "0",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": true,
+            "unknown_contributor_count": 1
+          },
+          {
+            "nutrient_id": "vitamin_c",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "mg",
+            "has_numeric_evidence": false,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": true,
+            "unknown_contributor_count": 1
+          }
+        ]
+      },
+      {
+        "date": "2026-08-15",
+        "has_logs": true,
+        "is_complete": true,
+        "nutrients": [
+          {
+            "nutrient_id": "protein",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "g",
+            "has_numeric_evidence": false,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": true,
+            "unknown_contributor_count": 1
+          },
+          {
+            "nutrient_id": "vitamin_c",
+            "amount_known": "0",
+            "amount_estimated": "0",
+            "unit": "mg",
+            "has_numeric_evidence": false,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": true,
+            "unknown_contributor_count": 1
+          }
+        ]
+      },
+      {
+        "date": "2026-08-16",
+        "has_logs": true,
+        "is_complete": false,
+        "nutrients": [
+          {
+            "nutrient_id": "protein",
+            "amount_known": "0.666667",
+            "amount_estimated": "0",
+            "unit": "g",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          },
+          {
+            "nutrient_id": "vitamin_c",
+            "amount_known": "0",
+            "amount_estimated": "2.000000",
+            "unit": "mg",
+            "has_numeric_evidence": true,
+            "is_explicit_zero_total": false,
+            "has_unknown_contributors": false,
+            "unknown_contributor_count": 0
+          }
+        ]
+      }
+    ]
+  },
+  "expectedNoHistoryEvidence": {
+    "start_date": "2026-08-10",
+    "end_date": "2026-08-16",
+    "first_logged_date": null,
+    "days": [
+      {
+        "date": "2026-08-10",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-11",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-12",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-13",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-14",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-15",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      },
+      {
+        "date": "2026-08-16",
+        "has_logs": false,
+        "is_complete": false,
+        "nutrients": []
+      }
+    ]
+  },
+  "expectedProjection": {
+    "coverage": {
+      "requestedDayCount": 7,
+      "loggedDayCount": 6,
+      "completeDayCount": 4
+    },
+    "complete_days": [
+      {
+        "nutrientId": "protein",
+        "usableDayCount": 3,
+        "average": "0.611111"
+      },
+      {
+        "nutrientId": "vitamin_c",
+        "usableDayCount": 1,
+        "average": "1"
+      }
+    ],
+    "logged_days": [
+      {
+        "nutrientId": "protein",
+        "usableDayCount": 5,
+        "average": "0.5"
+      },
+      {
+        "nutrientId": "vitamin_c",
+        "usableDayCount": 2,
+        "average": "1.5"
+      }
+    ]
+  }
+}
