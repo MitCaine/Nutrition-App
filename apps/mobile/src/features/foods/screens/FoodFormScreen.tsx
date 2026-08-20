@@ -20,6 +20,7 @@ import { useFoodMutations, useNutrients } from "../hooks/useFoods";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { foodFocusKey } from "../../../shared/forms/focusTargets";
 import { apiErrorMessage } from "../utils/foodDelete";
+import { conventionalNutritionFactsNutrients } from "../utils/foodAuthoringNutrients";
 import { createClientRequestId } from "../../logging/utils/clientRequestId";
 import { bindCreateIntent, type CreateIntent } from "../../../shared/idempotency/createIntent";
 import { foodValidationTargetFocusKey } from "../validation/foodValidation";
@@ -73,6 +74,16 @@ export function FoodFormScreen({
   const nutrientDefinitions = useMemo(
     () => [...(nutrientQuery.data ?? [])].sort((a, b) => a.display_order - b.display_order),
     [nutrientQuery.data],
+  );
+  const nutrientEntryDefinitions = useMemo(
+    () => (
+      food
+        ? nutrientDefinitions
+        : conventionalNutritionFactsNutrients(
+            nutrientDefinitions,
+          )
+    ),
+    [food, nutrientDefinitions],
   );
   const form = useFoodForm(food, nutrientDefinitions);
   const saving = Boolean(mutations.createFood.isPending || mutations.updateFood.isPending);
@@ -212,7 +223,7 @@ export function FoodFormScreen({
                 <Text accessibilityRole="header" style={styles.sectionTitle}>Nutrients</Text>
                 {nutrientQuery.isLoading ? <AccessibilityStatus kind="loading" message="Loading nutrient fields…" /> : null}
                 {nutrientQuery.isError ? <AccessibilityStatus kind="retryable-failure" message="Nutrient fields are unavailable." retryContext="nutrient fields" onRetry={() => { void nutrientQuery.refetch(); }} /> : null}
-                {!nutrientQuery.isLoading && !nutrientQuery.isError ? <NutrientEntryList nutrients={nutrientDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} disabled={saving} validationTarget={form.validationIssue?.target} validationError={form.error} hideUnknownByDefault={Boolean(food)} /> : null}
+                {!nutrientQuery.isLoading && !nutrientQuery.isError ? <NutrientEntryList nutrients={nutrientEntryDefinitions} values={form.nutrients} onChange={form.setNutrients} focusProps={focusProps} disabled={saving} validationTarget={form.validationIssue?.target} validationError={form.error} hideUnknownByDefault={Boolean(food)} /> : null}
               </>
             ) : null}
           </>

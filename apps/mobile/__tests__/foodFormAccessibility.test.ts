@@ -388,13 +388,13 @@ test("invalid manual nutrient text keeps the focused validation association", as
 
 test("manual nutrient hierarchy preserves nested visible depth and a normal terminal content gap", async () => {
   mockNutrients = [
-    { id: "total-fat", display_name: "Total Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 1 },
-    { id: "saturated-fat", display_name: "Saturated Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total-fat", display_order: 2 },
-    { id: "trans-fat", display_name: "Trans Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total-fat", display_order: 3 },
-    { id: "total-carbohydrate", display_name: "Total Carbohydrate", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 4 },
-    { id: "dietary-fiber", display_name: "Dietary Fiber", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total-carbohydrate", display_order: 5 },
-    { id: "total-sugars", display_name: "Total Sugars", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total-carbohydrate", display_order: 6 },
-    { id: "added-sugars", display_name: "Added Sugars", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total-sugars", display_order: 7 },
+    { id: "total_fat", display_name: "Total Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 1 },
+    { id: "saturated_fat", display_name: "Saturated Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total_fat", display_order: 2 },
+    { id: "trans_fat", display_name: "Trans Fat", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total_fat", display_order: 3 },
+    { id: "total_carbohydrate", display_name: "Total Carbohydrate", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: null, display_order: 4 },
+    { id: "dietary_fiber", display_name: "Dietary Fiber", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total_carbohydrate", display_order: 5 },
+    { id: "total_sugars", display_name: "Total Sugars", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total_carbohydrate", display_order: 6 },
+    { id: "added_sugars", display_name: "Added Sugars", default_unit: "g", nutrient_kind: "macro", parent_nutrient_id: "total_sugars", display_order: 7 },
   ];
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -518,6 +518,73 @@ test("fatty-acid editor uses section headings and a real Omega-3 parent nutrient
     },
   ];
 
+  const extendedEditFood: Food = {
+    ...editableFood,
+    id: "food-extended-edit",
+    nutrients: [
+      {
+        id: "nutrient-chloride",
+        nutrient_id: "chloride",
+        amount: "120",
+        unit: "mg",
+        basis: "per_serving",
+        data_status: "known",
+        source: "manual",
+        is_user_confirmed: true,
+      },
+      {
+        id: "nutrient-omega-3",
+        nutrient_id: "total_omega_3",
+        amount: "500",
+        unit: "mg",
+        basis: "per_serving",
+        data_status: "known",
+        source: "manual",
+        is_user_confirmed: true,
+      },
+      {
+        id: "nutrient-ala",
+        nutrient_id: "alpha_linolenic_acid",
+        amount: "0.4",
+        unit: "g",
+        basis: "per_serving",
+        data_status: "known",
+        source: "manual",
+        is_user_confirmed: true,
+      },
+      {
+        id: "nutrient-epa",
+        nutrient_id: "epa",
+        amount: "100",
+        unit: "mg",
+        basis: "per_serving",
+        data_status: "known",
+        source: "manual",
+        is_user_confirmed: true,
+      },
+      {
+        id: "nutrient-dha",
+        nutrient_id: "dha",
+        amount: "200",
+        unit: "mg",
+        basis: "per_serving",
+        data_status: "known",
+        source: "manual",
+        is_user_confirmed: true,
+      },
+      {
+        id: "nutrient-linoleic",
+        nutrient_id: "linoleic_acid",
+        amount: "2",
+        unit: "g",
+        basis: "per_serving",
+        data_status: "known",
+        source: "manual",
+        is_user_confirmed: true,
+      },
+    ],
+  };
+
   let renderer!:
     TestRenderer.ReactTestRenderer;
 
@@ -526,6 +593,7 @@ test("fatty-acid editor uses section headings and a real Omega-3 parent nutrient
       React.createElement(
         FoodFormScreen,
         {
+          food: extendedEditFood,
           onCancel: jest.fn(),
           onSaved: jest.fn(),
         },
