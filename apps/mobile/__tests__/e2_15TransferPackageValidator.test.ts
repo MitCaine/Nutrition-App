@@ -1,6 +1,7 @@
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
-import legacyRepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
+import v2RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v2.json";
+import v1RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
 
 import {
   buildTransferSection,
@@ -119,8 +120,17 @@ test("validates and deeply freezes a complete canonical package before SQLite", 
 });
 
 test("continues to validate the frozen v1 transfer package for legacy one-time imports", async () => {
-  const validated = await parseAndValidateTransferPackage(canonicalTransferJson(legacyRepresentativePackage));
+  const validated = await parseAndValidateTransferPackage(
+    canonicalTransferJson(v1RepresentativePackage),
+  );
   expect(validated.format_version).toBe("1");
+});
+
+test("continues to validate the frozen v2 transfer package for legacy one-time imports", async () => {
+  const validated = await parseAndValidateTransferPackage(
+    canonicalTransferJson(v2RepresentativePackage),
+  );
+  expect(validated.format_version).toBe("2");
 });
 
 test("rejects noncanonical, tampered, unsupported, and duplicate-key documents", async () => {
@@ -315,6 +325,88 @@ function portableReceiptMutation(operation: string, tamper?: ReceiptTamper) {
     receipt.response_snapshot = canonicalTransferJson(snapshot);
   };
 }
+
+test("v3 representative carries one explicit Complete date and one unconfirmed logged date", async () => {
+  const validated = await parseAndValidateTransferPackage(
+    canonicalTransferJson(representativePackage),
+  );
+  expect(validated.format_version).toBe("3");
+
+  const sections = new Map(
+    (validated.sections as Record<string, unknown>[]).map(
+      (section) => [section.name as string, section],
+    ),
+  );
+  const logs =
+    sections.get("daily_logs")!.records as Record<string, unknown>[];
+  const completions =
+    sections.get("daily_log_day_completions")!.records as Record<string, unknown>[];
+
+  expect(new Set(logs.map((row) => row.logged_date))).toEqual(
+    new Set(["2026-08-09", "2026-08-10"]),
+  );
+  expect(completions).toEqual([
+    {
+      user_id: OWNER,
+      logged_date: "2026-08-09",
+      completed_at: "2026-08-10T12:34:56.123456Z",
+    },
+  ]);
+});
+
+test.each([
+  [
+    "cross-owner",
+    (row: Record<string, unknown>) => {
+      row.user_id =
+        "00000000-0000-4000-8000-000000000002";
+    },
+    "owner_graph_invalid",
+  ],
+  [
+    "orphan date",
+    (row: Record<string, unknown>) => {
+      row.logged_date = "2026-08-11";
+    },
+    "owner_graph_invalid",
+  ],
+  [
+    "malformed date",
+    (row: Record<string, unknown>) => {
+      row.logged_date = "2026-02-30";
+    },
+    "invalid_record_value",
+  ],
+  [
+    "malformed completion time",
+    (row: Record<string, unknown>) => {
+      row.completed_at = "2026-08-10T12:34:56";
+    },
+    "invalid_record_value",
+  ],
+])(
+  "rejects v3 Complete evidence with %s",
+  async (
+    _label,
+    mutate: (row: Record<string, unknown>) => void,
+    code,
+  ) => {
+    const document = await mutatedRepresentative(
+      (_value, sections) => {
+        const completions =
+          sections.get(
+            "daily_log_day_completions",
+          )!.records as Record<string, unknown>[];
+
+        mutate(completions[0]!);
+      },
+    );
+
+    await expect(
+      parseAndValidateTransferPackage(document),
+    ).rejects.toMatchObject({ code });
+  },
+);
 
 test("validates the representative graph and rejects re-signed graph, OCR, and receipt tampering", async () => {
   await expect(parseAndValidateTransferPackage(

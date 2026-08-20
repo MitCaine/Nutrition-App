@@ -1,9 +1,11 @@
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
-import legacyRepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
+import v2RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v2.json";
+import v1RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
 
-const { mkdtempSync, rmSync } = require("node:fs") as {
+const { mkdtempSync, readFileSync, rmSync } = require("node:fs") as {
   mkdtempSync(prefix: string): string;
+  readFileSync(path: string, encoding: "utf8"): string;
   rmSync(path: string, options: { recursive: boolean; force: boolean }): void;
 };
 const { tmpdir } = require("node:os") as { tmpdir(): string };
@@ -26,6 +28,7 @@ import {
 
 const OWNER = "00000000-0000-4000-8000-000000000001";
 const INSTANT = "2026-08-10T12:34:56.123456Z";
+const PHYSICAL_EXPORT_PATH = process.env.NUTRITION_E2_15_E2E_OUTPUT_PATH;
 
 async function minimalDocument(): Promise<string> {
   const values: Record<string, readonly Readonly<Record<string, unknown>>[]> = {};
@@ -132,7 +135,7 @@ test("imports a frozen v1 package into the current compatible target with null s
   try {
     const result = await importPersonalTransfer(
       database.asExpoDatabase(),
-      canonicalTransferJson(legacyRepresentativePackage),
+      canonicalTransferJson(v1RepresentativePackage),
     );
     expect(result.ownerId).toBe(OWNER);
     const serving = await database.getFirstAsync<{
@@ -146,15 +149,21 @@ test("imports a frozen v1 package into the current compatible target with null s
       reference_unit: null,
       reference_gram_weight: null,
     });
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions"`,
+    )).resolves.toEqual({ count: 0 });
   } finally {
     database.close();
   }
 });
 
-test("preserves current and reference serving measurements through a v2 transfer", async () => {
+test("preserves frozen v2 serving measurements without inferring Complete", async () => {
   const database = await migratedDatabase();
   try {
-    await importPersonalTransfer(database.asExpoDatabase(), canonicalTransferJson(representativePackage));
+    await importPersonalTransfer(
+      database.asExpoDatabase(),
+      canonicalTransferJson(v2RepresentativePackage),
+    );
     const serving = await database.getFirstAsync<{
       quantity: string;
       unit: string;
@@ -172,6 +181,9 @@ test("preserves current and reference serving measurements through a v2 transfer
       reference_unit: "cup",
       reference_gram_weight: "100.000000",
     });
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions"`,
+    )).resolves.toEqual({ count: 0 });
   } finally {
     database.close();
   }
@@ -242,6 +254,7 @@ const CHECKPOINTS: readonly TransferImportCheckpoint[] = [
   "recipe_ingredients",
   "daily_logs",
   "daily_log_nutrient_snapshots",
+  "daily_log_day_completions",
   "food_favorites",
   "ocr_nutrition_confirmation_traces",
   "nutrition_targets",
@@ -280,6 +293,210 @@ test.each(CHECKPOINTS)("rolls back completely after injected %s failure", async 
   }
 });
 
+test("rolls back the entire transfer after a real Complete insertion checkpoint", async () => {
+  const directory = mkdtempSync(
+    join(tmpdir(), "e4-15-complete-rollback-"),
+  );
+  const path = join(
+    directory,
+    "nutrition.sqlite",
+  );
+
+  let database =
+    new LocalSQLiteTestDatabase(path);
+
+  let observedCompleteCheckpoint = false;
+
+  try {
+    await migrateNutritionDatabase(
+      database.asExpoDatabase(),
+    );
+
+    await expect(
+      importPersonalTransfer(
+        database.asExpoDatabase(),
+        canonicalTransferJson(
+          representativePackage,
+        ),
+        {
+          onCheckpoint: (checkpoint) => {
+            if (
+              checkpoint
+              === "daily_log_day_completions"
+            ) {
+              observedCompleteCheckpoint = true;
+              throw new Error(
+                "injected:daily_log_day_completions",
+              );
+            }
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      "injected:daily_log_day_completions",
+    );
+
+    expect(
+      observedCompleteCheckpoint,
+    ).toBe(true);
+
+    database.close();
+
+    database =
+      new LocalSQLiteTestDatabase(path);
+
+    await expect(
+      database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+           FROM "users"`,
+      ),
+    ).resolves.toEqual({ count: 0 });
+
+    await expect(
+      database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+           FROM "daily_logs"`,
+      ),
+    ).resolves.toEqual({ count: 0 });
+
+    await expect(
+      database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+           FROM "daily_log_nutrient_snapshots"`,
+      ),
+    ).resolves.toEqual({ count: 0 });
+
+    await expect(
+      database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+           FROM "daily_log_day_completions"`,
+      ),
+    ).resolves.toEqual({ count: 0 });
+
+    await expect(
+      database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+           FROM "nutrients"`,
+      ),
+    ).resolves.toEqual({
+      count: SQLITE_NUTRIENT_SEED_ROWS.length,
+    });
+  } finally {
+    try {
+      database.close();
+    } catch {
+      // already closed during reopen
+    }
+
+    rmSync(
+      directory,
+      {
+        recursive: true,
+        force: true,
+      },
+    );
+  }
+});
+
+const physicalExportTest = PHYSICAL_EXPORT_PATH ? test : test.skip;
+
+physicalExportTest(
+  "imports and reopens the physical pg-0033 qualifier export without inferring Complete",
+  async () => {
+    if (!PHYSICAL_EXPORT_PATH) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "e4-15-physical-import-"));
+    const path = join(directory, "nutrition.sqlite");
+    const document = readFileSync(PHYSICAL_EXPORT_PATH, "utf8");
+    const physicalPackage = JSON.parse(document) as {
+      sections: Array<{
+        name: string;
+        records: Array<Record<string, string | null>>;
+      }>;
+    };
+    const expectedSnapshots = physicalPackage.sections.find(
+      (section) => section.name === "daily_log_nutrient_snapshots",
+    )!.records;
+
+    let database = new LocalSQLiteTestDatabase(path);
+    try {
+      await migrateNutritionDatabase(database.asExpoDatabase());
+      let reachedCompleteCheckpoint = false;
+      await expect(
+        importPersonalTransfer(database.asExpoDatabase(), document, {
+          onCheckpoint: (checkpoint) => {
+            if (checkpoint === "daily_log_day_completions") {
+              reachedCompleteCheckpoint = true;
+              throw new Error("injected:physical-daily_log_day_completions");
+            }
+          },
+        }),
+      ).rejects.toThrow("injected:physical-daily_log_day_completions");
+      expect(reachedCompleteCheckpoint).toBe(true);
+
+      database.close();
+      database = new LocalSQLiteTestDatabase(path);
+      await expect(database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "users"`,
+      )).resolves.toEqual({ count: 0 });
+      await expect(database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "daily_logs"`,
+      )).resolves.toEqual({ count: 0 });
+      await expect(database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "daily_log_nutrient_snapshots"`,
+      )).resolves.toEqual({ count: 0 });
+      await expect(database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions"`,
+      )).resolves.toEqual({ count: 0 });
+
+      await importPersonalTransfer(database.asExpoDatabase(), document);
+      database.close();
+      database = new LocalSQLiteTestDatabase(path);
+
+      await expect(database.getAllAsync<{ logged_date: string }>(
+        `SELECT "logged_date" FROM "daily_logs" ORDER BY "logged_date"`,
+      )).resolves.toEqual([
+        { logged_date: "2026-08-18" },
+        { logged_date: "2026-08-19" },
+      ]);
+      await expect(database.getAllAsync<{
+        logged_date: string;
+        completed_at: string;
+      }>(
+        `SELECT "logged_date", "completed_at"
+           FROM "daily_log_day_completions"
+          ORDER BY "logged_date"`,
+      )).resolves.toEqual([
+        {
+          logged_date: "2026-08-18",
+          completed_at: "2026-08-20T12:34:56.123456Z",
+        },
+      ]);
+      await expect(database.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) AS "count"
+           FROM "daily_log_day_completions"
+          WHERE "logged_date" = '2026-08-19'`,
+      )).resolves.toEqual({ count: 0 });
+      await expect(database.getAllAsync<Record<string, string | null>>(
+        `SELECT
+           "id", "daily_log_id", "source_food_item_id",
+           "source_food_nutrient_id", "serving_definition_id", "nutrient_id",
+           "amount", "unit", "data_status", "consumed_amount_quantity",
+           "consumed_amount_unit", "consumed_gram_amount",
+           "consumed_package_fraction", "calculation_metadata"
+         FROM "daily_log_nutrient_snapshots"
+         ORDER BY "id"`,
+      )).resolves.toEqual(expectedSnapshots);
+      await expect(database.getAllAsync<{ id: string }>(
+        `SELECT "id" FROM "users" ORDER BY "id"`,
+      )).resolves.toEqual([{ id: OWNER }]);
+    } finally {
+      try { database.close(); } catch { /* already closed during reopen */ }
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
+
 test("representative package preserves full owner graph, history, receipts, and reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "e2-15-import-"));
   const path = join(directory, "nutrition.sqlite");
@@ -294,8 +511,67 @@ test("representative package preserves full owner graph, history, receipts, and 
       recipe_publication_revisions: 3,
       daily_logs: 2,
       daily_log_nutrient_snapshots: 2,
+      daily_log_day_completions: 1,
       create_operation_idempotency: 3,
     });
+    await expect(database.getAllAsync<{
+      logged_date: string;
+      completed_at: string;
+    }>(
+      `SELECT "logged_date", "completed_at"
+         FROM "daily_log_day_completions"
+        ORDER BY "logged_date"`,
+    )).resolves.toEqual([
+      {
+        logged_date: "2026-08-09",
+        completed_at: "2026-08-10T12:34:56.123456Z",
+      },
+    ]);
+    await expect(database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count"
+         FROM "daily_log_day_completions"
+        WHERE "logged_date" = '2026-08-10'`,
+    )).resolves.toEqual({ count: 0 });
+
+    const representativeSections =
+      representativePackage.sections as unknown as Array<{
+        name: string;
+        records: Array<Record<string, string | null>>;
+      }>;
+
+    const expectedSnapshots =
+      representativeSections.find(
+        (section) =>
+          section.name
+          === "daily_log_nutrient_snapshots",
+      )!.records;
+
+    const importedSnapshots = await database.getAllAsync<
+      Record<string, string | null>
+    >(
+      `SELECT
+         "id",
+         "daily_log_id",
+         "source_food_item_id",
+         "source_food_nutrient_id",
+         "serving_definition_id",
+         "nutrient_id",
+         "amount",
+         "unit",
+         "data_status",
+         "consumed_amount_quantity",
+         "consumed_amount_unit",
+         "consumed_gram_amount",
+         "consumed_package_fraction",
+         "calculation_metadata"
+       FROM "daily_log_nutrient_snapshots"
+       ORDER BY "id"`,
+    );
+
+    expect(importedSnapshots).toEqual(
+      expectedSnapshots,
+    );
+
     await expect(database.getFirstAsync<{ raw_payload: string }>(
       `SELECT "raw_payload" FROM "food_sources"`,
     )).resolves.toEqual({ raw_payload: '{"description":"Apple, raw","unicode":"🍎"}' });

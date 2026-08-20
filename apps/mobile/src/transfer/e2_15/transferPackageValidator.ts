@@ -2,8 +2,10 @@ import * as Crypto from "expo-crypto";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import sourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema.json";
-import legacyContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
-import legacySourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v1.json";
+import v2ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v2.json";
+import v2SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v2.json";
+import v1ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
+import v1SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v1.json";
 
 import {
   canonicalJsonStringify,
@@ -65,7 +67,8 @@ type TransferContract = Readonly<{
 }>;
 
 const CONTRACT = contractJson as unknown as TransferContract;
-const LEGACY_CONTRACT = legacyContractJson as unknown as TransferContract;
+const V2_CONTRACT = v2ContractJson as unknown as TransferContract;
+const V1_CONTRACT = v1ContractJson as unknown as TransferContract;
 const NUTRIENT_IDS = new Set(SQLITE_NUTRIENT_SEED_ROWS.map(([id]) => id));
 const SHA256 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -238,6 +241,17 @@ function validateOwnerGraph(packageValue: JsonRecord): void {
   const revisions = new Map((records.get("recipe_publication_revisions") as JsonRecord[]).map((row) => [row.id, row]));
   const amounts = new Map((records.get("recipe_publication_amount_definitions") as JsonRecord[]).map((row) => [row.id, row]));
   const logs = new Map((records.get("daily_logs") as JsonRecord[]).map((row) => [row.id, row]));
+  const completions = records.get("daily_log_day_completions") ?? [];
+  if (completions.some((row) => row.user_id !== ownerId)) {
+    invalid("owner_graph_invalid", "Transfer package contains a cross-owner Complete assertion.");
+  }
+  const loggedDates = new Set([...logs.values()].map((row) => row.logged_date));
+  if (completions.some((row) => !loggedDates.has(row.logged_date))) {
+    invalid(
+      "owner_graph_invalid",
+      "Complete assertion references a date without a transferred Daily Log.",
+    );
+  }
   const linkedRecipes = new Map(
     [...recipes.values()]
       .filter((row) => row.published_food_item_id !== null)
@@ -770,7 +784,7 @@ async function validateIdempotencyPolicy(packageValue: JsonRecord, contract: Tra
         snapshot,
         records,
         packageValue.owner_id as string,
-        contract.format_version === "2",
+        contract.format_version !== "1",
       );
     }
   }
@@ -798,10 +812,16 @@ export async function parseAndValidateTransferPackage(document: string): Promise
   const packageValue = exactKeys(parsed, TOP_LEVEL_KEYS);
   const contract = packageValue.format_version === CONTRACT.format_version
     ? CONTRACT
-    : packageValue.format_version === LEGACY_CONTRACT.format_version
-    ? LEGACY_CONTRACT
+    : packageValue.format_version === V2_CONTRACT.format_version
+    ? V2_CONTRACT
+    : packageValue.format_version === V1_CONTRACT.format_version
+    ? V1_CONTRACT
     : null;
-  const installedSourceSchema = contract === CONTRACT ? sourceSchema : legacySourceSchema;
+  const installedSourceSchema = contract === CONTRACT
+    ? sourceSchema
+    : contract === V2_CONTRACT
+    ? v2SourceSchema
+    : v1SourceSchema;
   if (contract === null || packageValue.format !== contract.format || packageValue.codec_version !== contract.codec_version) {
     invalid("unsupported_package", "Transfer package version is unsupported.");
   }

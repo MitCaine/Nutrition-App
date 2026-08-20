@@ -574,6 +574,7 @@ def _validate_owner_graph(package: Mapping[str, Any]) -> None:
         "recipe_ingredients",
         "recipe_publication_revisions",
         "daily_logs",
+        "daily_log_day_completions",
         "ocr_nutrition_confirmation_traces",
         "nutrition_targets",
         "create_operation_idempotency",
@@ -614,6 +615,18 @@ def _validate_owner_graph(package: Mapping[str, Any]) -> None:
     revisions = {row["id"]: row for row in records["recipe_publication_revisions"]}
     amounts = {row["id"]: row for row in records["recipe_publication_amount_definitions"]}
     logs = {row["id"]: row for row in records["daily_logs"]}
+    logged_dates = {
+        row["logged_date"] for row in logs.values()
+    }
+    completion_dates = {
+        row["logged_date"]
+        for row in records["daily_log_day_completions"]
+    }
+    if not completion_dates.issubset(logged_dates):
+        raise _invalid(
+            "owner_graph_invalid",
+            "Complete assertion references a date without a transferred Daily Log.",
+        )
 
     linked_recipes = {
         row["published_food_item_id"]: row

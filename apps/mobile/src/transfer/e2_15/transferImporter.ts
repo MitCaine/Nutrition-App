@@ -1,7 +1,8 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
-import legacyContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
+import v2ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v2.json";
+import v1ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
 import targetSchemaJson from "../../../../../packages/shared-contracts/e2-15/target-schema.json";
 
 import { createLocalDailyLogsRuntime } from "../../runtime/local/localDailyLogsRuntime";
@@ -42,7 +43,8 @@ type Contract = Readonly<{
   sections: readonly SectionContract[];
 }>;
 const CONTRACT = contractJson as unknown as Contract;
-const LEGACY_CONTRACT = legacyContractJson as unknown as Contract;
+const V2_CONTRACT = v2ContractJson as unknown as Contract;
+const V1_CONTRACT = v1ContractJson as unknown as Contract;
 const SECTION_CONTRACTS = new Map(CONTRACT.sections.map((section) => [section.name, section]));
 
 const E2_15_RUNTIME_SCHEMA_EXTENSION_OBJECTS = [
@@ -86,10 +88,6 @@ const E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES = new Set(
   ),
 );
 
-const E2_15_RUNTIME_ONLY_TRANSFER_OBJECT_NAMES = new Set([
-  "table:daily_log_day_completions",
-]);
-
 export type TransferImportCheckpoint =
   | "owner_profile"
   | "non_projection_food_items"
@@ -103,6 +101,7 @@ export type TransferImportCheckpoint =
   | "recipe_ingredients"
   | "daily_logs"
   | "daily_log_nutrient_snapshots"
+  | "daily_log_day_completions"
   | "food_favorites"
   | "ocr_nutrition_confirmation_traces"
   | "nutrition_targets"
@@ -212,8 +211,7 @@ async function assertSchemaAndSeed(database: SQLiteDatabase): Promise<void> {
   }
 
   const transferDescriptorObjects = descriptorObjects.filter((row) =>
-    !E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES.has(`${row.type}:${row.name}`)
-    && !E2_15_RUNTIME_ONLY_TRANSFER_OBJECT_NAMES.has(`${row.type}:${row.name}`),
+    !E2_15_RUNTIME_SCHEMA_EXTENSION_NAMES.has(`${row.type}:${row.name}`),
   );
 
   const tableColumns = new Map<string, readonly string[]>([
@@ -325,6 +323,25 @@ async function insertRows(
   }
 }
 
+async function insertDailyLogDayCompletions(
+  database: SQLiteDatabase,
+  rows: readonly JsonRecord[],
+  ownerId: string,
+): Promise<void> {
+  for (const row of rows) {
+    if (row.user_id !== ownerId) {
+      invalid("owner_graph_invalid", "Complete assertion owner is invalid.");
+    }
+    await database.runAsync(
+      `INSERT INTO "daily_log_day_completions" ("logged_date", "completed_at") VALUES (?, ?)`,
+      [
+        sqliteValue(row.logged_date, "date"),
+        sqliteValue(row.completed_at, "instant"),
+      ],
+    );
+  }
+}
+
 function rowsForFoods(
   rows: readonly JsonRecord[],
   foodIds: ReadonlySet<unknown>,
@@ -337,14 +354,29 @@ async function qualifySections(
   packageValue: ValidatedTransferPackage,
 ): Promise<void> {
   const packaged = recordsByName(packageValue);
-  const qualificationContract = packageValue.format_version === LEGACY_CONTRACT.format_version
-    ? LEGACY_CONTRACT
-    : CONTRACT;
+  const qualificationContract =
+    packageValue.format_version === CONTRACT.format_version
+      ? CONTRACT
+      : packageValue.format_version === V2_CONTRACT.format_version
+      ? V2_CONTRACT
+      : V1_CONTRACT;
   for (const section of qualificationContract.sections) {
     const columnsSql = section.columns.map(([name]) => `"${name}"`).join(", ");
-    const rows = await database.getAllAsync<JsonRecord>(
-      `SELECT ${columnsSql} FROM "${section.name}"`,
-    );
+    let rows: JsonRecord[];
+    if (section.name === "daily_log_day_completions") {
+      const localRows = await database.getAllAsync<JsonRecord>(
+        `SELECT "logged_date", "completed_at" FROM "daily_log_day_completions"`,
+      );
+      rows = localRows.map((row) => ({
+        user_id: packageValue.owner_id,
+        logged_date: row.logged_date,
+        completed_at: row.completed_at,
+      }));
+    } else {
+      rows = await database.getAllAsync<JsonRecord>(
+        `SELECT ${columnsSql} FROM "${section.name}"`,
+      );
+    }
     const normalized = rows.map((row) => Object.fromEntries(section.columns.map(([name, kind]) => {
       const effective = kind.startsWith("nullable_") ? kind.slice("nullable_".length) : kind;
       return [name, effective === "boolean" && row[name] !== null ? row[name] === 1 : row[name]];
@@ -445,6 +477,21 @@ async function qualifyOwnerGraph(database: SQLiteDatabase, ownerId: string): Pro
               OR amount."revision_id" IS NOT log."recipe_publication_revision_id"))`,
   );
   if (logViolations?.count !== 0) invalid("target_qualification_failed", "Imported Daily Log links are incoherent.");
+
+  const completionViolations = await database.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions" completion
+      WHERE NOT EXISTS (
+        SELECT 1
+          FROM "daily_logs" log
+         WHERE log."logged_date" = completion."logged_date"
+      )`,
+  );
+  if (completionViolations?.count !== 0) {
+    invalid(
+      "target_qualification_failed",
+      "Imported Complete assertion has no Daily Log date.",
+    );
+  }
 
   const snapshotViolations = await database.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) AS "count" FROM "daily_log_nutrient_snapshots" snapshot
@@ -697,6 +744,15 @@ export async function importPersonalTransfer(
     await checkpoint("daily_logs");
     await insertRows(transaction, "daily_log_nutrient_snapshots", records.get("daily_log_nutrient_snapshots") as JsonRecord[]);
     await checkpoint("daily_log_nutrient_snapshots");
+    const completions = records.get("daily_log_day_completions");
+    if (completions !== undefined) {
+      await insertDailyLogDayCompletions(
+        transaction,
+        completions,
+        packageValue.owner_id as string,
+      );
+      await checkpoint("daily_log_day_completions");
+    }
     await insertRows(transaction, "food_favorites", records.get("food_favorites") as JsonRecord[]);
     await checkpoint("food_favorites");
     await insertRows(transaction, "ocr_nutrition_confirmation_traces", records.get("ocr_nutrition_confirmation_traces") as JsonRecord[]);

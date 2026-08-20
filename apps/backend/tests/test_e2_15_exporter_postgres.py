@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import date, datetime, timezone
 from decimal import Decimal
 import os
 from pathlib import Path
 import re
 import secrets
-from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -16,6 +17,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
 
 from app.operators import phase5c4_roles as roles
+from app.operators.phase5c_contracts import canonical_digest as phase5c_digest
 from app.models.recipe_publication import (
     RecipePublicationAmountDefinition,
     RecipePublicationRevision,
@@ -28,19 +30,241 @@ from app.transfer.e2_15_exporter import (
     qualify_source_nutrients,
     qualify_source_schema,
 )
+from tests.test_issue_146_complete_runtime_authority_postgres import (
+    MIGRATIONS,
+    _apply_migration,
+    _open_runtime,
+)
+from tests import test_phase5c4_recovery_postgres as recovery_support
+from tests import test_resource_membership_migration_postgres as membership_support
+from tests.test_phase5c4_target_activation_postgres import (
+    _BINDINGS,
+    _upgrade_0021,
+)
 pytestmark = pytest.mark.postgres_concurrency
-E2_15_POSTGRES_URL = os.getenv("NUTRITION_E2_15_TEST_POSTGRES_URL")
+pytest_plugins = ("tests.test_phase5c4_prerequisites_postgres",)
 E2_15_E2E_OUTPUT_PATH = os.getenv("NUTRITION_E2_15_E2E_OUTPUT_PATH")
 
 
 @pytest.fixture(scope="module")
-def qualified_database():
-    if not E2_15_POSTGRES_URL:
-        pytest.skip(
-            "set NUTRITION_E2_15_TEST_POSTGRES_URL to an operator-prepared "
-            "disposable pg-0025 database"
+def qualified_database(target_database):
+    target = target_database
+    admin = target.engine()
+    try:
+        with admin.connect() as connection:
+            connection.execute(
+                text(f"SET SESSION AUTHORIZATION {roles.MIGRATOR_ROLE}")
+            )
+            roles.assume_migration_owner(connection)
+            marker = dict(
+                connection.execute(
+                    text("SELECT * FROM public.phase5c_conversion_clone_marker")
+                )
+                .mappings()
+                .one()
+            )
+            marker["isolation_evidence_contract_version"] = (
+                "phase5c_isolation_evidence_v1"
+            )
+            marker["conversion_rules_version"] = "phase5c_conversion_rules_v1"
+            marker["operator_attestation_version"] = (
+                "phase5c_operator_attestation_v1"
+            )
+            marker["operator_attestation_scope"] = "bridge_and_planning"
+            marker_digest = phase5c_digest(
+                {
+                    key: value
+                    for key, value in marker.items()
+                    if key != "clone_marker_digest"
+                }
+            )
+            archive_schema = str(
+                connection.scalar(
+                    text(
+                        "SELECT archive_schema "
+                        "FROM public.phase5c_conversion_metadata"
+                    )
+                )
+            )
+            quoted_archive = connection.dialect.identifier_preparer.quote(
+                archive_schema
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_conversion_clone_marker "
+                    "DISABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_conversion_metadata "
+                    "DISABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_conversion_runs "
+                    "DISABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    f"ALTER TABLE {quoted_archive}.bridge_metadata "
+                    "DISABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE public.phase5c_conversion_clone_marker "
+                    "SET isolation_evidence_contract_version = :isolation_version, "
+                    "conversion_rules_version = :rules_version, "
+                    "operator_attestation_version = :attestation_version, "
+                    "operator_attestation_scope = :scope, "
+                    "clone_marker_digest = :digest"
+                ),
+                {
+                    "isolation_version": marker[
+                        "isolation_evidence_contract_version"
+                    ],
+                    "rules_version": marker["conversion_rules_version"],
+                    "attestation_version": marker[
+                        "operator_attestation_version"
+                    ],
+                    "scope": marker["operator_attestation_scope"],
+                    "digest": marker_digest,
+                },
+            )
+            connection.execute(
+                text(
+                    "UPDATE public.phase5c_conversion_metadata "
+                    "SET clone_marker_digest = :digest"
+                ),
+                {"digest": marker_digest},
+            )
+            connection.execute(
+                text(
+                    "UPDATE public.phase5c_conversion_runs "
+                    "SET clone_marker_digest = :digest"
+                ),
+                {"digest": marker_digest},
+            )
+            connection.execute(
+                text(
+                    f"UPDATE {quoted_archive}.bridge_metadata "
+                    "SET clone_marker_digest = :digest"
+                ),
+                {"digest": marker_digest},
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_conversion_clone_marker "
+                    "ENABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_conversion_metadata "
+                    "ENABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE public.phase5c_conversion_runs "
+                    "ENABLE TRIGGER USER"
+                )
+            )
+            connection.execute(
+                text(
+                    f"ALTER TABLE {quoted_archive}.bridge_metadata "
+                    "ENABLE TRIGGER USER"
+                )
+            )
+            connection.commit()
+    finally:
+        admin.dispose()
+    target = replace(target, clone_marker_digest=marker_digest)
+    membership_support._initialize_closed_fence(target)
+    membership_support._upgrade_0019(target.admin_url)
+    recovery_support._upgrade_0020(target.admin_url)
+
+    ops = membership_support.historical_support._engine_as(
+        target,
+        roles.OPS_ROLE,
+        read_only=False,
+    )
+    try:
+        assert roles.restore_runtime_privileges(ops)["state"] == "normal"
+        closed = roles.close_runtime_maintenance(
+            ops,
+            quiet_period_seconds=0,
+            drain_timeout_seconds=1,
+            poll_interval_seconds=0.01,
         )
-    yield SimpleNamespace(admin_url=E2_15_POSTGRES_URL)
+        assert closed["state"] == "maintenance"
+        admin = target.engine()
+        try:
+            with admin.connect() as connection:
+                fence = (
+                    connection.execute(
+                        text(
+                            "SELECT target_instance_id, epoch, mode, "
+                            "last_event_digest "
+                            "FROM public.phase5c_write_fence_state"
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+        finally:
+            admin.dispose()
+        with ops.begin() as connection:
+            transitioned = connection.scalar(
+                text(
+                    "SELECT public.phase5c_transition_closed_write_fence("
+                    "CAST(:target_id AS uuid), CAST(:command_id AS uuid), "
+                    ":epoch, :mode, :last_event_digest, 'closed_cutover', "
+                    "NULL, NULL, NULL)"
+                ),
+                {
+                    "target_id": str(fence["target_instance_id"]),
+                    "command_id": "00000000-0000-4000-8000-000000128100",
+                    "epoch": int(fence["epoch"]),
+                    "mode": fence["mode"],
+                    "last_event_digest": fence["last_event_digest"],
+                },
+            )
+            assert transitioned["state"]["mode"] == "closed_cutover"
+    finally:
+        ops.dispose()
+
+    admin = target.engine()
+    try:
+        with admin.connect() as connection:
+            identity = (
+                connection.execute(
+                    text(
+                        "SELECT target.target_instance_id::text, "
+                        "target.identity_digest "
+                        "FROM public.phase5c_promotion_target_identity target"
+                    )
+                )
+                .mappings()
+                .one()
+            )
+    finally:
+        admin.dispose()
+    bindings = {
+        **_BINDINGS,
+        "NUTRITION_PHASE5C4_TARGET_DATABASE_INSTANCE_ID": identity[
+            "target_instance_id"
+        ],
+        "NUTRITION_PHASE5C4_TARGET_IDENTITY_DIGEST": identity["identity_digest"],
+    }
+    _upgrade_0021(target, bindings)
+    for module_name in MIGRATIONS:
+        _apply_migration(target, module_name)
+    _open_runtime(target, suffix="15")
+    yield target
 
 
 def _qualifier_url(database) -> str:
@@ -108,6 +332,12 @@ def _is_allowed_export_sql(statement: str) -> bool:
         return False
     if normalized.startswith(("SELECT ", "SHOW ")):
         return True
+    if normalized.startswith("WITH "):
+        data_changing_cte = re.compile(
+            r"\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+(?:ONLY\s+)?[A-Z_\"]|"
+            r"MERGE\s+INTO)\b"
+        )
+        return data_changing_cte.search(normalized) is None
     if normalized.startswith("SET LOCAL "):
         return True
     return normalized in {
@@ -157,13 +387,14 @@ def test_export_sql_surface_classifier_rejects_mutating_select_functions(
         "SELECT public.phase0020_immutable_provenance_integrity_valid()",
         "SELECT pg_catalog.current_setting('transaction_read_only')",
         "SELECT source.id FROM public.users AS source",
+        "WITH managed AS (SELECT oid FROM pg_catalog.pg_roles) SELECT * FROM managed",
     ],
 )
 def test_export_sql_surface_classifier_allows_approved_reads(statement: str) -> None:
     assert _is_allowed_export_sql(statement) is True
 
 
-def test_pg_0025_qualifier_is_exact_read_only_serializable_deferrable_and_non_mutating(
+def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutating(
     qualified_database,
     tmp_path: Path,
 ) -> None:
@@ -175,6 +406,17 @@ def test_pg_0025_qualifier_is_exact_read_only_serializable_deferrable_and_non_mu
     amount_json_null_id = "00000000-0000-4000-8000-000000000013"
     target_sql_null_id = "00000000-0000-4000-8000-000000000014"
     target_json_null_id = "00000000-0000-4000-8000-000000000015"
+    selected_food_id = "00000000-0000-4000-8000-000000000020"
+    other_food_id = "00000000-0000-4000-8000-000000000021"
+    complete_log_id = "00000000-0000-4000-8000-000000000022"
+    unconfirmed_log_id = "00000000-0000-4000-8000-000000000023"
+    other_log_id = "00000000-0000-4000-8000-000000000024"
+    complete_snapshot_id = "00000000-0000-4000-8000-000000000025"
+    unconfirmed_snapshot_id = "00000000-0000-4000-8000-000000000026"
+    other_snapshot_id = "00000000-0000-4000-8000-000000000027"
+    complete_date = date(2026, 8, 18)
+    unconfirmed_date = date(2026, 8, 19)
+    completed_at = datetime(2026, 8, 20, 12, 34, 56, 123456, tzinfo=timezone.utc)
     fixture_revision = RecipePublicationRevision(
         id=UUID(revision_id),
         recipe_id=UUID(recipe_id),
@@ -256,6 +498,85 @@ def test_pg_0025_qualifier_is_exact_read_only_serializable_deferrable_and_non_mu
                     "recipe_id": recipe_id,
                     "owner_id": owner_id,
                     "digest": fixture_content_digest,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO public.food_items "
+                    "(id, user_id, name, source_type, is_recipe) VALUES "
+                    "(:selected_food_id, :owner_id, 'Selected transfer food', 'manual', false), "
+                    "(:other_food_id, :other_id, 'Excluded transfer food', 'manual', false)"
+                ),
+                {
+                    "selected_food_id": selected_food_id,
+                    "other_food_id": other_food_id,
+                    "owner_id": owner_id,
+                    "other_id": other_id,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO public.daily_logs "
+                    "(id, user_id, food_item_id, logged_date, meal_type, "
+                    "amount_quantity, amount_unit, gram_amount, food_name_snapshot) VALUES "
+                    "(:complete_log_id, :owner_id, :selected_food_id, :complete_date, "
+                    "'breakfast', 1.000000, 'g', 1.000000, 'Selected transfer food'), "
+                    "(:unconfirmed_log_id, :owner_id, :selected_food_id, :unconfirmed_date, "
+                    "'lunch', 2.000000, 'g', 2.000000, 'Selected transfer food'), "
+                    "(:other_log_id, :other_id, :other_food_id, :complete_date, "
+                    "'dinner', 3.000000, 'g', 3.000000, 'Excluded transfer food')"
+                ),
+                {
+                    "complete_log_id": complete_log_id,
+                    "unconfirmed_log_id": unconfirmed_log_id,
+                    "other_log_id": other_log_id,
+                    "owner_id": owner_id,
+                    "other_id": other_id,
+                    "selected_food_id": selected_food_id,
+                    "other_food_id": other_food_id,
+                    "complete_date": complete_date,
+                    "unconfirmed_date": unconfirmed_date,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO public.daily_log_nutrient_snapshots "
+                    "(id, daily_log_id, source_food_item_id, nutrient_id, amount, unit, "
+                    "data_status, consumed_amount_quantity, consumed_amount_unit, "
+                    "consumed_gram_amount, calculation_metadata) VALUES "
+                    "(:complete_snapshot_id, :complete_log_id, :selected_food_id, "
+                    "'calories', 111.123456, 'kcal', 'known', 1.000000, 'g', 1.000000, "
+                    "CAST('{\"fixture\":\"selected-complete\"}' AS jsonb)), "
+                    "(:unconfirmed_snapshot_id, :unconfirmed_log_id, :selected_food_id, "
+                    "'calories', 222.654321, 'kcal', 'known', 2.000000, 'g', 2.000000, "
+                    "CAST('{\"fixture\":\"selected-unconfirmed\"}' AS jsonb)), "
+                    "(:other_snapshot_id, :other_log_id, :other_food_id, "
+                    "'calories', 333.000001, 'kcal', 'known', 3.000000, 'g', 3.000000, "
+                    "CAST('{\"fixture\":\"other-complete\"}' AS jsonb))"
+                ),
+                {
+                    "complete_snapshot_id": complete_snapshot_id,
+                    "unconfirmed_snapshot_id": unconfirmed_snapshot_id,
+                    "other_snapshot_id": other_snapshot_id,
+                    "complete_log_id": complete_log_id,
+                    "unconfirmed_log_id": unconfirmed_log_id,
+                    "other_log_id": other_log_id,
+                    "selected_food_id": selected_food_id,
+                    "other_food_id": other_food_id,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO public.daily_log_day_completions "
+                    "(user_id, logged_date, completed_at) VALUES "
+                    "(:owner_id, :complete_date, :completed_at), "
+                    "(:other_id, :complete_date, :completed_at)"
+                ),
+                {
+                    "owner_id": owner_id,
+                    "other_id": other_id,
+                    "complete_date": complete_date,
+                    "completed_at": completed_at,
                 },
             )
             connection.execute(
@@ -351,7 +672,6 @@ def test_pg_0025_qualifier_is_exact_read_only_serializable_deferrable_and_non_mu
     )
     assert any("has_function_privilege" in sql for sql in observed_sql)
     assert any('FROM public."users"' in sql for sql in observed_sql)
-    assert any("phase5c_conversion_clone_marker" in sql for sql in observed_sql)
 
     package = validate_transfer_package(output.read_bytes())
     records = {
@@ -359,8 +679,65 @@ def test_pg_0025_qualifier_is_exact_read_only_serializable_deferrable_and_non_mu
         for section in package["sections"]
     }
     assert result.overall_digest == package["overall_digest"]
+    assert package["format_version"] == "3"
+    assert package["source"] == {
+        "postgres_major": "16",
+        "alembic_revision": "0033_complete_runtime_authority",
+        "schema_contract": "e2-15.pg-0033.v3",
+        "schema_contract_digest": CONTRACT["source"]["schema_descriptor_digest"],
+    }
     assert [row["id"] for row in records["users"]] == [owner_id]
     assert [row["user_id"] for row in records["user_profiles"]] == [owner_id]
+    assert [row["id"] for row in records["daily_logs"]] == [
+        complete_log_id,
+        unconfirmed_log_id,
+    ]
+    assert records["daily_log_day_completions"] == [
+        {
+            "user_id": owner_id,
+            "logged_date": complete_date.isoformat(),
+            "completed_at": "2026-08-20T12:34:56.123456Z",
+        }
+    ]
+    assert unconfirmed_date.isoformat() not in {
+        row["logged_date"] for row in records["daily_log_day_completions"]
+    }
+    assert records["daily_log_nutrient_snapshots"] == [
+        {
+            "id": complete_snapshot_id,
+            "daily_log_id": complete_log_id,
+            "source_food_item_id": selected_food_id,
+            "source_food_nutrient_id": None,
+            "serving_definition_id": None,
+            "nutrient_id": "calories",
+            "amount": "111.123456",
+            "unit": "kcal",
+            "data_status": "known",
+            "consumed_amount_quantity": "1.000000",
+            "consumed_amount_unit": "g",
+            "consumed_gram_amount": "1.000000",
+            "consumed_package_fraction": None,
+            "calculation_metadata": '{"fixture":"selected-complete"}',
+        },
+        {
+            "id": unconfirmed_snapshot_id,
+            "daily_log_id": unconfirmed_log_id,
+            "source_food_item_id": selected_food_id,
+            "source_food_nutrient_id": None,
+            "serving_definition_id": None,
+            "nutrient_id": "calories",
+            "amount": "222.654321",
+            "unit": "kcal",
+            "data_status": "known",
+            "consumed_amount_quantity": "2.000000",
+            "consumed_amount_unit": "g",
+            "consumed_gram_amount": "2.000000",
+            "consumed_package_fraction": None,
+            "calculation_metadata": '{"fixture":"selected-unconfirmed"}',
+        },
+    ]
+    assert other_id not in output.read_text(encoding="utf-8")
+    assert other_log_id not in output.read_text(encoding="utf-8")
     amount_metadata = {
         row["id"]: row["conversion_metadata"]
         for row in records["recipe_publication_amount_definitions"]
@@ -382,10 +759,6 @@ def test_pg_0025_qualifier_is_exact_read_only_serializable_deferrable_and_non_mu
         "'00000000-0000-4000-8000-000000000001'",
         "TRUNCATE public.user_profiles",
         "CREATE TABLE public.e2_15_forbidden (id integer)",
-        "UPDATE public.phase5c_conversion_clone_marker "
-        "SET clone_marker_digest = clone_marker_digest",
-        "DELETE FROM public.phase5c_conversion_clone_marker",
-        "TRUNCATE public.phase5c_conversion_clone_marker",
     )
     for statement in forbidden:
         with qualifier.connect() as connection:

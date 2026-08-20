@@ -24,15 +24,14 @@ from sqlalchemy.pool import NullPool
 from app.catalog.nutrients import nutrient_seed_rows
 from app.core.database_identity import database_connect_args
 from app.domain.nutrition import NutrientDataStatus, NutrientSnapshot
-from app.migrations.immutable_provenance_0026_contracts import (
-    EXPECTED_0026_ACTIVATION_V4_EXECUTE_ACL,
-    EXPECTED_0026_RUNTIME_EXECUTE_ROUTINES,
-    EXPECTED_0026_RUNTIME_RELATION_PRIVILEGES,
-)
 from app.nutrition.aggregation import aggregate_snapshots
 from app.operators.immutable_provenance_qualification import (
     ImmutableProvenanceQualificationError,
     qualify_immutable_provenance_manifest,
+)
+from app.operators.current_runtime_authority import (
+    CurrentRuntimeAuthorityError,
+    qualify_current_runtime_authority,
 )
 from app.operators.phase5c_contracts import Phase5CAdmissionError
 from app.operators.phase5c_isolation import load_clone_marker
@@ -97,7 +96,7 @@ EXPECTED_CLONE_MARKER_PROTECTIONS = (
     ),
 )
 _POSTGRES_DIALECT = postgresql.dialect()
-CURRENT_EXPORT_SOURCE_REVISION = "0027_serving_reference_measurement"
+CURRENT_EXPORT_SOURCE_REVISION = "0033_complete_runtime_authority"
 
 
 def canonical_owner_id(value: str) -> str:
@@ -243,7 +242,11 @@ _INLINE_TEXT_LITERAL_CAST = re.compile(
     r"('(?:''|[^'])*')::(?:text|character varying)", re.I
 )
 _SIMPLE_PREDICATE_GROUP = re.compile(
-    r"\(([^()]*(?:\bIS\s+(?:NOT\s+)?NULL\b|=\s*(?:true|false|'(?:''|[^'])*'))[^()]*)\)",
+    r"\(([^()]*(?:"
+    r"\bIS\s+(?:NOT\s+)?NULL\b"
+    r"|=\s*(?:true|false|'(?:''|[^'])*')"
+    r"|<>\s*'(?:''|[^'])*'"
+    r")[^()]*)\)",
     re.I,
 )
 
@@ -354,11 +357,12 @@ def observe_source_schema(connection: Connection) -> dict[str, Any]:
 def project_current_source_tables_to_frozen_contract(
     actual: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Qualify the current 0027 source schema.
+    """Qualify the current 0033 source schema.
 
-    The function name is retained for the established test seam, but E2-15 v2 no
-    longer projects current rows back to the old pg-0025 descriptor: the serving
-    reference triplet is transferable application data and must remain visible.
+    The function name is retained for the established test seam. E2-15 v3
+    qualifies the current source directly: source-identity semantics, the
+    current nutrient catalog, and explicit Daily Log Complete state remain
+    visible rather than being projected back to an older contract.
     """
 
     validate_source_schema_tables(actual)
@@ -378,7 +382,7 @@ def validate_source_schema_tables(actual: Mapping[str, Any]) -> bool:
     ):
         raise _fail(
             "source_schema_invalid",
-            "PostgreSQL source schema differs from pg-0027.",
+            "PostgreSQL source schema differs from pg-0033.",
         )
     marker_present = OPTIONAL_CLONE_MARKER_TABLE in extra_names
     if marker_present and actual[OPTIONAL_CLONE_MARKER_TABLE] != optional[
@@ -386,7 +390,7 @@ def validate_source_schema_tables(actual: Mapping[str, Any]) -> bool:
     ]:
         raise _fail(
             "source_schema_invalid",
-            "PostgreSQL optional clone-marker schema differs from pg-0027.",
+            "PostgreSQL optional clone-marker schema differs from pg-0033.",
         )
     return marker_present
 
@@ -462,7 +466,7 @@ def qualify_source_schema(connection: Connection) -> None:
     if canonical_digest(SOURCE_SCHEMA) != SCHEMA_CONTRACT_DIGEST:
         raise _fail(
             "source_schema_invalid",
-            "Installed pg-0027 schema contract is invalid.",
+            "Installed pg-0033 schema contract is invalid.",
         )
     projected_tables = project_current_source_tables_to_frozen_contract(
         observed["tables"]
@@ -478,106 +482,12 @@ def qualify_source_schema(connection: Connection) -> None:
 
 
 def qualify_current_validator_inputs(connection: Connection) -> None:
-    privileges = (
-        "DELETE",
-        "INSERT",
-        "REFERENCES",
-        "SELECT",
-        "TRIGGER",
-        "TRUNCATE",
-        "UPDATE",
-    )
-    actual_relations: dict[str, list[str]] = {}
-    for relation, privilege in connection.execute(
-        text(
-            "SELECT relation.relname::text, privilege.name::text "
-            "FROM pg_catalog.pg_class AS relation "
-            "JOIN pg_catalog.pg_namespace AS namespace "
-            "ON namespace.oid = relation.relnamespace "
-            "CROSS JOIN pg_catalog.unnest(CAST(:privileges AS text[])) "
-            "AS privilege(name) "
-            "WHERE namespace.nspname = 'public' "
-            "AND relation.relkind IN ('r','p','S') "
-            "AND pg_catalog.has_table_privilege("
-            "'nutrition_runtime', relation.oid, privilege.name) "
-            "ORDER BY relation.relname, privilege.name"
-        ),
-        {"privileges": list(privileges)},
-    ):
-        actual_relations.setdefault(str(relation), []).append(str(privilege))
-    relation_manifest = tuple(
-        (relation, tuple(values)) for relation, values in actual_relations.items()
-    )
-    execute_manifest = tuple(
-        connection.scalars(
-            text(
-                "SELECT pg_catalog.format('%I.%I(%s)', namespace.nspname, "
-                "routine.proname, "
-                "pg_catalog.pg_get_function_identity_arguments(routine.oid)) "
-                "FROM pg_catalog.pg_proc AS routine "
-                "JOIN pg_catalog.pg_namespace AS namespace "
-                "ON namespace.oid = routine.pronamespace "
-                "WHERE namespace.nspname = 'public' "
-                "AND pg_catalog.has_function_privilege("
-                "'nutrition_runtime', routine.oid, 'EXECUTE') "
-                "ORDER BY namespace.nspname, routine.proname, "
-                "pg_catalog.pg_get_function_identity_arguments(routine.oid)"
-            )
-        )
-    )
-    activation_v4_acl = tuple(
-        (str(row["role_name"]), bool(row["is_grantable"]))
-        for row in connection.execute(
-            text(
-                "SELECT CASE WHEN acl.grantee = 0 THEN 'PUBLIC' "
-                "ELSE grantee.rolname::text END AS role_name, "
-                "acl.is_grantable "
-                "FROM pg_catalog.pg_proc AS routine "
-                "JOIN pg_catalog.pg_namespace AS namespace "
-                "ON namespace.oid = routine.pronamespace "
-                "CROSS JOIN LATERAL pg_catalog.aclexplode(COALESCE("
-                "routine.proacl, pg_catalog.acldefault('f', routine.proowner)"
-                ")) AS acl "
-                "LEFT JOIN pg_catalog.pg_roles AS grantee "
-                "ON grantee.oid = acl.grantee "
-                "WHERE namespace.nspname = 'public' "
-                "AND routine.proname = 'phase5c_local_admission_v4' "
-                "AND pg_catalog.pg_get_function_identity_arguments(routine.oid) = '' "
-                "AND acl.privilege_type = 'EXECUTE' "
-                "ORDER BY role_name"
-            )
-        ).mappings()
-    )
-    role = connection.execute(
-        text(
-            "SELECT role.rolsuper, role.rolcreatedb, role.rolcreaterole, "
-            "role.rolreplication, role.rolbypassrls, "
-            "pg_catalog.has_database_privilege("
-            "role.rolname, pg_catalog.current_database(), 'CREATE') "
-            "AS database_create, "
-            "pg_catalog.has_database_privilege("
-            "role.rolname, pg_catalog.current_database(), 'TEMP') "
-            "AS database_temp, "
-            "pg_catalog.has_schema_privilege("
-            "role.rolname, 'public', 'CREATE') AS schema_create, "
-            "pg_catalog.pg_has_role("
-            "role.rolname, 'nutrition_owner', 'USAGE') AS owner_usage, "
-            "pg_catalog.pg_has_role("
-            "role.rolname, 'nutrition_migrator', 'USAGE') AS migrator_usage "
-            "FROM pg_catalog.pg_roles AS role "
-            "WHERE role.rolname = 'nutrition_runtime'"
-        )
-    ).one_or_none()
-    if (
-        relation_manifest != EXPECTED_0026_RUNTIME_RELATION_PRIVILEGES
-        or execute_manifest != EXPECTED_0026_RUNTIME_EXECUTE_ROUTINES
-        or activation_v4_acl != EXPECTED_0026_ACTIVATION_V4_EXECUTE_ACL
-        or role is None
-        or any(bool(value) for value in role)
-    ):
+    try:
+        qualify_current_runtime_authority(connection, expected_state="normal")
+    except CurrentRuntimeAuthorityError:
         raise ImmutableProvenanceQualificationError(
             "immutable_provenance_current_runtime_authority_invalid"
-        )
+        ) from None
 
 
 def qualify_source_nutrients(connection: Connection) -> None:
@@ -610,6 +520,7 @@ _OWNER_DIRECT = {
     "recipe_ingredients": '"user_id" = :owner_id',
     "recipe_publication_revisions": '"user_id" = :owner_id',
     "daily_logs": '"user_id" = :owner_id',
+    "daily_log_day_completions": '"user_id" = :owner_id',
     "ocr_nutrition_confirmation_traces": '"user_id" = :owner_id',
     "nutrition_targets": '"user_id" = :owner_id',
 }

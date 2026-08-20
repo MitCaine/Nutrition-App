@@ -133,6 +133,7 @@ const INSTANT_COLUMN_NAMES = new Set([
   "published_at",
   "confirmed_at",
   "applied_at",
+  "completed_at",
 ]);
 
 function fail(
@@ -515,7 +516,10 @@ async function assertCanonicalColumnValues(
   }
 
   const loggedDates = await database.getAllAsync<{ logged_date: string }>(
-    `SELECT DISTINCT "logged_date" FROM "daily_logs"`,
+    `SELECT DISTINCT "logged_date" FROM "daily_logs"
+     UNION
+     SELECT DISTINCT "logged_date"
+     FROM "daily_log_day_completions"`,
   );
 
   for (const row of loggedDates) {
@@ -529,6 +533,26 @@ async function assertCanonicalColumnValues(
         "A Daily Log date is not canonical.",
       );
     }
+  }
+
+  const orphanCompletion =
+    await database.getFirstAsync<{
+      logged_date: string;
+    }>(
+      `SELECT completion."logged_date"
+       FROM "daily_log_day_completions" completion
+       LEFT JOIN "daily_logs" log
+         ON log."logged_date" = completion."logged_date"
+       GROUP BY completion."logged_date"
+       HAVING COUNT(log."id") = 0
+       LIMIT 1`,
+    );
+
+  if (orphanCompletion) {
+    fail(
+      "backup_integrity_failed",
+      "A Complete assertion references an empty Daily Log date.",
+    );
   }
 }
 

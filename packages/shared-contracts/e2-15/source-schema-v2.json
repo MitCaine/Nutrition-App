@@ -1,6 +1,6 @@
 {
-  "alembic_revision": "0033_complete_runtime_authority",
-  "descriptor_version": "e2-15.pg-0033.schema.v3",
+  "alembic_revision": "0027_serving_reference_measurement",
+  "descriptor_version": "e2-15.pg-0027.schema.v2",
   "immutable_routines": [
     {
       "definition_sha256": "af40c11898f5c51b24b0cd63f2b34e29d299324e01ee482fa0b58979d95d59ef",
@@ -529,52 +529,6 @@
           "name": "uq_create_idempotency_user_operation_request"
         }
       ]
-    },
-    "daily_log_day_completions": {
-      "checks": [],
-      "columns": [
-        {
-          "default": null,
-          "name": "user_id",
-          "nullable": false,
-          "type": "uuid"
-        },
-        {
-          "default": null,
-          "name": "logged_date",
-          "nullable": false,
-          "type": "date"
-        },
-        {
-          "default": "now()",
-          "name": "completed_at",
-          "nullable": false,
-          "type": "timestamp with time zone"
-        }
-      ],
-      "foreign_keys": [
-        {
-          "columns": [
-            "user_id"
-          ],
-          "deferrable": false,
-          "initially": null,
-          "match": "SIMPLE",
-          "name": "fk_daily_log_day_completions_user",
-          "ondelete": "CASCADE",
-          "onupdate": "NO ACTION",
-          "target_columns": [
-            "id"
-          ],
-          "target_table": "users"
-        }
-      ],
-      "indexes": [],
-      "primary_key": [
-        "user_id",
-        "logged_date"
-      ],
-      "unique_constraints": []
     },
     "daily_log_nutrient_snapshots": {
       "checks": [],
@@ -1291,7 +1245,7 @@
             "source_id"
           ],
           "name": "ix_food_items_active_source_identity",
-          "predicate": "deleted_at IS NULL AND source_id IS NOT NULL AND source_type <> 'manual'",
+          "predicate": "deleted_at IS NULL AND source_id IS NOT NULL",
           "unique": true
         },
         {
@@ -4603,6 +4557,24 @@
           "type": "numeric(14,6)"
         },
         {
+          "default": null,
+          "name": "reference_quantity",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
+          "default": null,
+          "name": "reference_unit",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "default": null,
+          "name": "reference_gram_weight",
+          "nullable": true,
+          "type": "numeric(14,6)"
+        },
+        {
           "default": "false",
           "name": "is_default",
           "nullable": false,
@@ -4625,24 +4597,6 @@
           "name": "is_user_confirmed",
           "nullable": false,
           "type": "boolean"
-        },
-        {
-          "default": null,
-          "name": "reference_quantity",
-          "nullable": true,
-          "type": "numeric(14,6)"
-        },
-        {
-          "default": null,
-          "name": "reference_unit",
-          "nullable": true,
-          "type": "text"
-        },
-        {
-          "default": null,
-          "name": "reference_gram_weight",
-          "nullable": true,
-          "type": "numeric(14,6)"
         }
       ],
       "foreign_keys": [

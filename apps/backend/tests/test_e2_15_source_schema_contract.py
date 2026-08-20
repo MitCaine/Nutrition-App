@@ -12,11 +12,12 @@ DESCRIPTOR_PATH = (
 )
 
 
-def test_pg_0024_source_descriptor_is_complete_frozen_and_digest_bound() -> None:
+def test_pg_0033_source_descriptor_is_complete_frozen_and_digest_bound() -> None:
     frozen = json.loads(DESCRIPTOR_PATH.read_text(encoding="utf-8"))
 
-    assert frozen["descriptor_version"] == "e2-15.pg-0027.schema.v2"
-    assert len(frozen["tables"]) == 31
+    assert frozen["descriptor_version"] == "e2-15.pg-0033.schema.v3"
+    assert frozen["alembic_revision"] == "0033_complete_runtime_authority"
+    assert len(frozen["tables"]) == 32
     assert set(frozen["tables"]) == set(CONTRACT["source"]["expected_public_tables"])
     assert CONTRACT["source"]["optional_public_tables"] == [
         "phase5c_conversion_clone_marker"
@@ -99,6 +100,65 @@ def test_pg_0024_source_descriptor_is_complete_frozen_and_digest_bound() -> None
         "client_request_fingerprint",
     ]
     assert frozen["tables"]["daily_logs"]["primary_key"] == ["id"]
+    assert [
+        column["name"]
+        for column in frozen["tables"][
+            "serving_definitions"
+        ]["columns"]
+    ] == [
+        "id",
+        "food_item_id",
+        "label",
+        "quantity",
+        "unit",
+        "gram_weight",
+        "is_default",
+        "source",
+        "confidence",
+        "is_user_confirmed",
+        "reference_quantity",
+        "reference_unit",
+        "reference_gram_weight",
+    ]
+    assert frozen["tables"]["daily_log_day_completions"] == {
+        "checks": [],
+        "columns": [
+            {
+                "default": None,
+                "name": "user_id",
+                "nullable": False,
+                "type": "uuid",
+            },
+            {
+                "default": None,
+                "name": "logged_date",
+                "nullable": False,
+                "type": "date",
+            },
+            {
+                "default": "now()",
+                "name": "completed_at",
+                "nullable": False,
+                "type": "timestamp with time zone",
+            },
+        ],
+        "foreign_keys": [
+            {
+                "columns": ["user_id"],
+                "deferrable": False,
+                "initially": None,
+                "match": "SIMPLE",
+                "name": "fk_daily_log_day_completions_user",
+                "ondelete": "CASCADE",
+                "onupdate": "NO ACTION",
+                "target_columns": ["id"],
+                "target_table": "users",
+            }
+        ],
+        "indexes": [],
+        "primary_key": ["user_id", "logged_date"],
+        "unique_constraints": [],
+    }
     assert all(
         foreign_key["match"] == "SIMPLE"
         and foreign_key["ondelete"] is not None

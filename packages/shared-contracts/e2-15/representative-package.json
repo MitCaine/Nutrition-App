@@ -1,1 +1,673 @@
-{"codec_version":"e2-02.v1","exported_at":"2026-08-10T12:34:56.123456Z","format":"nutrition-personal-transfer","format_version":"2","idempotency_policy":{"copied_portable_count":1,"excluded_log_delete_count":1,"reconstructed_log_create_count":1,"translated_log_update_count":1,"version":"e2-15.idempotency.v1"},"nutrient_catalog_digest":"3c9466c127f770a2cd6d97a0c8252d945e784b57cff8e20653116ef4f56080d7","overall_digest":"50bb7c3c5aec9971b1753899b1d1eab863e82b180ae6ffcffcb139a2c0526164","owner_id":"00000000-0000-4000-8000-000000000001","qualification":{"daily_totals":{"count":2,"digest":"4cfe91e41f6aeb29c47ca177d8bdbd747675d4689589132bba4f261d2c287e3c","name":"daily_totals","records":[{"amount_estimated":"0","amount_known":"200.000000","has_unknown_contributors":false,"logged_date":"2026-08-09","nutrient_id":"calories","unit":"kcal","unknown_contributor_count":0},{"amount_estimated":"0","amount_known":"0","has_unknown_contributors":true,"logged_date":"2026-08-10","nutrient_id":"calories","unit":"kcal","unknown_contributor_count":1}]}},"sections":[{"count":1,"digest":"ae5a0f641b8981cb528bbf7c09e029514020f84efe956e1ffb73c7fb9777db20","name":"users","records":[{"created_at":"2026-08-10T12:34:56.123456Z","display_name":"Transfer Owner","email":"owner@example.invalid","id":"00000000-0000-4000-8000-000000000001"}]},{"count":1,"digest":"5d89a305880b17c34e827efb18ad404f29d954453a0ebed025b5109e6aeb1a45","name":"user_profiles","records":[{"activity_level":"moderate","authoritative_time_zone":"America/Los_Angeles","biological_sex_for_reference_calculations":"female","birth_date":"1990-02-28","calendar_revision":2,"created_at":"2026-08-10T12:34:56.123456Z","energy_estimation_context":"general_adult","height_cm":"170.000","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001","weight_kg":"70.000"}]},{"count":4,"digest":"2202ec5532cc193cbf212b4c4d1e90975fb159b8da3a29488242a5392a9fb128","name":"food_items","records":[{"brand":null,"created_at":"2026-08-10T12:34:56.123456Z","deleted_at":null,"id":"00000000-0000-4000-8000-000000000010","is_recipe":false,"name":"USDA Apple","notes":"Unicode crème 🍎","recipe_publication_revision_id":null,"source_id":"171688","source_type":"usda","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"},{"brand":null,"created_at":"2026-08-10T12:34:56.123456Z","deleted_at":"2026-08-10T12:34:56.123456Z","id":"00000000-0000-4000-8000-000000000011","is_recipe":false,"name":"Deleted Food","notes":null,"recipe_publication_revision_id":null,"source_id":null,"source_type":"manual","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"},{"brand":null,"created_at":"2026-08-10T12:34:56.123456Z","deleted_at":null,"id":"00000000-0000-4000-8000-000000000012","is_recipe":true,"name":"Republished Base","notes":null,"recipe_publication_revision_id":"00000000-0000-4000-8000-000000000061","source_id":"00000000-0000-4000-8000-000000000050","source_type":"recipe","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"},{"brand":null,"created_at":"2026-08-10T12:34:56.123456Z","deleted_at":null,"id":"00000000-0000-4000-8000-000000000013","is_recipe":true,"name":"Nested Recipe","notes":null,"recipe_publication_revision_id":"00000000-0000-4000-8000-000000000062","source_id":"00000000-0000-4000-8000-000000000051","source_type":"recipe","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":1,"digest":"2e179492d7ea84ba4a4d017c7a58043b4d3c111e34b93aec1226c60ff4ab9655","name":"food_sources","records":[{"created_at":"2026-08-10T12:34:56.123456Z","external_id":"171688","food_item_id":"00000000-0000-4000-8000-000000000010","id":"00000000-0000-4000-8000-000000000040","metadata":"{\"retrieved\":\"offline-fixture\"}","raw_payload":"{\"description\":\"Apple, raw\",\"unicode\":\"🍎\"}","source_type":"usda"}]},{"count":3,"digest":"de01a9bf4ea1c8d3a0efdce6fdfb45856b135b43aa99aabfe333ac1b10688986","name":"food_nutrients","records":[{"amount":"100.000000","basis":"per_serving","confidence":null,"created_at":"2026-08-10T12:34:56.123456Z","data_status":"known","food_item_id":"00000000-0000-4000-8000-000000000010","id":"00000000-0000-4000-8000-000000000030","is_user_confirmed":true,"nutrient_id":"calories","original_amount":null,"original_text":null,"original_unit":null,"source":"usda","unit":"kcal","updated_at":"2026-08-10T12:34:56.123456Z"},{"amount":"100.000000","basis":"per_serving","confidence":null,"created_at":"2026-08-10T12:34:56.123456Z","data_status":"known","food_item_id":"00000000-0000-4000-8000-000000000012","id":"00000000-0000-4000-8000-000000000031","is_user_confirmed":true,"nutrient_id":"calories","original_amount":null,"original_text":null,"original_unit":null,"source":"recipe","unit":"kcal","updated_at":"2026-08-10T12:34:56.123456Z"},{"amount":"200.000000","basis":"per_serving","confidence":null,"created_at":"2026-08-10T12:34:56.123456Z","data_status":"known","food_item_id":"00000000-0000-4000-8000-000000000013","id":"00000000-0000-4000-8000-000000000032","is_user_confirmed":true,"nutrient_id":"calories","original_amount":null,"original_text":null,"original_unit":null,"source":"recipe","unit":"kcal","updated_at":"2026-08-10T12:34:56.123456Z"}]},{"count":3,"digest":"c291c79c63be608ab33537cb69e2d795eb608d4cf84c0fafb6881f775fcaa70b","name":"serving_definitions","records":[{"confidence":null,"food_item_id":"00000000-0000-4000-8000-000000000010","gram_weight":"100.000000","id":"00000000-0000-4000-8000-000000000020","is_default":true,"is_user_confirmed":true,"label":"1 serving","quantity":"1.000000","reference_gram_weight":"100.000000","reference_quantity":"1.000000","reference_unit":"cup","source":"usda","unit":"serving"},{"confidence":null,"food_item_id":"00000000-0000-4000-8000-000000000012","gram_weight":"100.000000","id":"00000000-0000-4000-8000-000000000021","is_default":true,"is_user_confirmed":true,"label":"1 serving","quantity":"1.000000","reference_gram_weight":null,"reference_quantity":null,"reference_unit":null,"source":"recipe","unit":"serving"},{"confidence":null,"food_item_id":"00000000-0000-4000-8000-000000000013","gram_weight":"100.000000","id":"00000000-0000-4000-8000-000000000022","is_default":true,"is_user_confirmed":true,"label":"1 serving","quantity":"1.000000","reference_gram_weight":null,"reference_quantity":null,"reference_unit":null,"source":"recipe","unit":"serving"}]},{"count":1,"digest":"f7f038715f2052f2d4709cfb262fd00f6d36af0b29f6f86da5924f7e81714d26","name":"food_favorites","records":[{"created_at":"2026-08-10T12:34:56.123456Z","food_item_id":"00000000-0000-4000-8000-000000000010","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":2,"digest":"fbf89d0b5fad26a752e64d0dea2f83e21a7708bddfa3a3985c7608e559156e17","name":"recipes","records":[{"active_publication_revision_id":"00000000-0000-4000-8000-000000000061","created_at":"2026-08-10T12:34:56.123456Z","deleted_at":null,"final_cooked_weight_display_quantity":null,"final_cooked_weight_display_unit":null,"final_cooked_weight_grams":null,"id":"00000000-0000-4000-8000-000000000050","name":"Republished Base","needs_republish":false,"notes":null,"published_food_item_id":"00000000-0000-4000-8000-000000000012","serving_count_yield":"1.000000","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"},{"active_publication_revision_id":"00000000-0000-4000-8000-000000000062","created_at":"2026-08-10T12:34:56.123456Z","deleted_at":null,"final_cooked_weight_display_quantity":null,"final_cooked_weight_display_unit":null,"final_cooked_weight_grams":null,"id":"00000000-0000-4000-8000-000000000051","name":"Nested Recipe","needs_republish":false,"notes":null,"published_food_item_id":"00000000-0000-4000-8000-000000000013","serving_count_yield":"1.000000","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":2,"digest":"b653a769214e8356ef2d76a9b508cbadf6c1ed551b6956febecdb779e14258d9","name":"recipe_ingredients","records":[{"amount_display_quantity":"1.000000","amount_display_unit":"serving","amount_quantity":"1.000000","amount_unit":"serving","food_item_id":"00000000-0000-4000-8000-000000000010","id":"00000000-0000-4000-8000-000000000090","position":0,"preparation_note":null,"recipe_id":"00000000-0000-4000-8000-000000000050","resolved_gram_amount":"100.000000","serving_definition_id":"00000000-0000-4000-8000-000000000020","user_id":"00000000-0000-4000-8000-000000000001"},{"amount_display_quantity":"1.000000","amount_display_unit":"serving","amount_quantity":"1.000000","amount_unit":"serving","food_item_id":"00000000-0000-4000-8000-000000000012","id":"00000000-0000-4000-8000-000000000091","position":0,"preparation_note":"nested","recipe_id":"00000000-0000-4000-8000-000000000051","resolved_gram_amount":"100.000000","serving_definition_id":"00000000-0000-4000-8000-000000000021","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":3,"digest":"cc17895c04fd323a5abcdf5dd9fa6e994e2940e12e1d89ed9730be3b3f335740","name":"recipe_publication_revisions","records":[{"content_digest":"3428341e081fe63eaa2702de6f08fbf943efdf45bb2c3821a0cc987b5fa3516c","creation_origin":"normal_publication","id":"00000000-0000-4000-8000-000000000060","provenance_confidence":"complete","published_at":"2026-08-10T12:34:56.123456Z","published_name":"Base v1","published_notes":null,"recipe_id":"00000000-0000-4000-8000-000000000050","revision_number":1,"user_id":"00000000-0000-4000-8000-000000000001"},{"content_digest":"ee9f880aa6b3505b1532bb20de0992e2cfa9e797af1b11416d41cf0bfcf31a25","creation_origin":"explicit_republish","id":"00000000-0000-4000-8000-000000000061","provenance_confidence":"complete","published_at":"2026-08-10T12:34:56.123456Z","published_name":"Republished Base","published_notes":null,"recipe_id":"00000000-0000-4000-8000-000000000050","revision_number":2,"user_id":"00000000-0000-4000-8000-000000000001"},{"content_digest":"64c358c072978fe4e31ec9106d13bc68d7ca9da4bc6abe6cd5e3f9811c28b656","creation_origin":"normal_publication","id":"00000000-0000-4000-8000-000000000062","provenance_confidence":"complete","published_at":"2026-08-10T12:34:56.123456Z","published_name":"Nested Recipe","published_notes":null,"recipe_id":"00000000-0000-4000-8000-000000000051","revision_number":1,"user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":3,"digest":"47de582c2f9c14300dc28ca444633d5217b44f9ce4075132698cba93d5464ff0","name":"recipe_publication_amount_definitions","records":[{"conversion_metadata":null,"display_label":"1 serving","display_order":0,"display_quantity":"1.000000","display_unit":"serving","gram_equivalent":"100.000000","id":"00000000-0000-4000-8000-000000000070","is_default":true,"revision_id":"00000000-0000-4000-8000-000000000060","semantic_mode":"serving"},{"conversion_metadata":null,"display_label":"1 serving","display_order":0,"display_quantity":"1.000000","display_unit":"serving","gram_equivalent":"100.000000","id":"00000000-0000-4000-8000-000000000071","is_default":true,"revision_id":"00000000-0000-4000-8000-000000000061","semantic_mode":"serving"},{"conversion_metadata":null,"display_label":"1 serving","display_order":0,"display_quantity":"1.000000","display_unit":"serving","gram_equivalent":"100.000000","id":"00000000-0000-4000-8000-000000000072","is_default":true,"revision_id":"00000000-0000-4000-8000-000000000062","semantic_mode":"serving"}]},{"count":3,"digest":"48bdbf3c93aaf0793c17eb95deb7b36f7209a72b1cf73ec4d6d9b08b6c1ea293","name":"recipe_publication_nutrients","records":[{"amount":"90.000000","basis":"per_serving","data_status":"known","diagnostic_provenance":null,"id":"00000000-0000-4000-8000-000000000080","nutrient_id":"calories","revision_id":"00000000-0000-4000-8000-000000000060","unit":"kcal"},{"amount":"100.000000","basis":"per_serving","data_status":"known","diagnostic_provenance":null,"id":"00000000-0000-4000-8000-000000000081","nutrient_id":"calories","revision_id":"00000000-0000-4000-8000-000000000061","unit":"kcal"},{"amount":"200.000000","basis":"per_serving","data_status":"known","diagnostic_provenance":null,"id":"00000000-0000-4000-8000-000000000082","nutrient_id":"calories","revision_id":"00000000-0000-4000-8000-000000000062","unit":"kcal"}]},{"count":2,"digest":"00a2f4e634ca3d463262c91bbc78d5476b7aae6f9f2fb53ab2e946d639bde2b6","name":"daily_logs","records":[{"amount_quantity":"1.000000","amount_unit":"serving","client_request_fingerprint":"1111111111111111111111111111111111111111111111111111111111111111","client_request_id":"00000000-0000-4000-8000-000000000150","created_at":"2026-08-10T12:34:56.123456Z","food_item_id":"00000000-0000-4000-8000-000000000013","food_name_snapshot":"Nested Recipe","gram_amount":"100.000000","id":"00000000-0000-4000-8000-000000000100","logged_date":"2026-08-09","meal_type":"dinner","notes":"history","package_fraction":null,"recipe_publication_amount_definition_id":"00000000-0000-4000-8000-000000000072","recipe_publication_revision_id":"00000000-0000-4000-8000-000000000062","serving_definition_id":null,"updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"},{"amount_quantity":"1.000000","amount_unit":"serving","client_request_fingerprint":null,"client_request_id":null,"created_at":"2026-08-10T12:34:56.123456Z","food_item_id":"00000000-0000-4000-8000-000000000011","food_name_snapshot":"Deleted Food","gram_amount":null,"id":"00000000-0000-4000-8000-000000000101","logged_date":"2026-08-10","meal_type":null,"notes":null,"package_fraction":null,"recipe_publication_amount_definition_id":null,"recipe_publication_revision_id":null,"serving_definition_id":null,"updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":2,"digest":"09044d44848fc9f8fb2126681deeb4f243975f32c14341b7cee8a641b80effbd","name":"daily_log_nutrient_snapshots","records":[{"amount":"200.000000","calculation_metadata":"{\"authority\":\"immutable\"}","consumed_amount_quantity":"1.000000","consumed_amount_unit":"serving","consumed_gram_amount":"100.000000","consumed_package_fraction":null,"daily_log_id":"00000000-0000-4000-8000-000000000100","data_status":"known","id":"00000000-0000-4000-8000-000000000110","nutrient_id":"calories","serving_definition_id":null,"source_food_item_id":"00000000-0000-4000-8000-000000000013","source_food_nutrient_id":"00000000-0000-4000-8000-000000000032","unit":"kcal"},{"amount":null,"calculation_metadata":null,"consumed_amount_quantity":"1.000000","consumed_amount_unit":"serving","consumed_gram_amount":null,"consumed_package_fraction":null,"daily_log_id":"00000000-0000-4000-8000-000000000101","data_status":"unknown","id":"00000000-0000-4000-8000-000000000111","nutrient_id":"calories","serving_definition_id":null,"source_food_item_id":"00000000-0000-4000-8000-000000000011","source_food_nutrient_id":null,"unit":"kcal"}]},{"count":1,"digest":"c05b9b90bb4a8d46d726cf1000d32cdff774e5eb947a59736a42f271cf1d6aaf","name":"ocr_nutrition_confirmation_traces","records":[{"client_request_id":"00000000-0000-4000-8000-000000000153","confirmed_at":"2026-08-10T12:34:56.123456Z","food_item_id":"00000000-0000-4000-8000-000000000010","id":"00000000-0000-4000-8000-000000000120","image_source_type":"camera","parser_version":"nutrition_label_v1","request_fingerprint":"2222222222222222222222222222222222222222222222222222222222222222","schema_version":"ocr_nutrition_confirmation_v1","trace_snapshot":"{\"field_decisions\":[{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"OCR Food\",\"decision\":\"accepted\",\"field_key\":\"food.name\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"OCR Food\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"0\",\"confirmed_value\":null,\"decision\":\"omitted\",\"field_key\":\"food.brand\",\"nutrient_id\":null,\"parse_status\":\"missing\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":null,\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"0\",\"confirmed_value\":null,\"decision\":\"omitted\",\"field_key\":\"food.notes\",\"nutrient_id\":null,\"parse_status\":\"missing\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":null,\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"1 serving\",\"decision\":\"accepted\",\"field_key\":\"serving.display\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"1 serving\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"1\",\"decision\":\"accepted\",\"field_key\":\"serving.quantity\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"1\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"serving\",\"decision\":\"accepted\",\"field_key\":\"serving.unit\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"serving\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"0\",\"confirmed_value\":null,\"decision\":\"omitted\",\"field_key\":\"serving.gram_weight\",\"nutrient_id\":null,\"parse_status\":\"missing\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":null,\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"100\",\"decision\":\"accepted\",\"field_key\":\"nutrient.calories\",\"nutrient_id\":\"calories\",\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"100\",\"unit\":\"kcal\",\"warning_codes\":[]}],\"parser_warning_codes\":[],\"schema_version\":\"ocr_nutrition_confirmation_v1\",\"unknown_nutrients\":[]}","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":1,"digest":"e4c126c9a48edad6caaad4c7d014cf405961ea893413b6daf3ca9378dcead55d","name":"nutrition_targets","records":[{"basis":"daily","created_at":"2026-08-10T12:34:56.123456Z","id":"00000000-0000-4000-8000-000000000130","max_amount":null,"metadata":"{\"note\":\"exact\"}","min_amount":null,"nutrient_id":"calories","source":"manual","target_amount":"2000.000000","target_type":"nutrient","unit":"kcal","updated_at":"2026-08-10T12:34:56.123456Z","user_id":"00000000-0000-4000-8000-000000000001"}]},{"count":3,"digest":"16b25ec2acc31983e0990867bd753fbb5a599c76af005d52f5a6e6cb389f5437","name":"create_operation_idempotency","records":[{"client_request_id":"00000000-0000-4000-8000-000000000151","completed_at":"2026-08-10T12:34:56.123456Z","created_at":"2026-08-10T12:34:56.123456Z","id":"00000000-0000-4000-8000-000000000140","operation":"food.create_manual","request_fingerprint":"3333333333333333333333333333333333333333333333333333333333333333","resource_id":"00000000-0000-4000-8000-000000000011","response_snapshot":"{\"brand\":null,\"can_favorite\":true,\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"id\":\"00000000-0000-4000-8000-000000000011\",\"is_favorite\":false,\"is_recipe\":false,\"name\":\"Deleted Food\",\"notes\":null,\"nutrients\":[],\"serving_definitions\":[],\"source_id\":null,\"source_kind\":\"manual\",\"source_label\":\"Manual\",\"source_type\":\"manual\",\"updated_at\":\"2026-08-10T12:34:56.123456Z\"}","user_id":"00000000-0000-4000-8000-000000000001"},{"client_request_id":"00000000-0000-4000-8000-000000000152","completed_at":"2026-08-10T12:34:56.123456Z","created_at":"2026-08-10T12:34:56.123456Z","id":"00000000-0000-4000-8000-000000000141","operation":"log.update","request_fingerprint":"4444444444444444444444444444444444444444444444444444444444444444","resource_id":"00000000-0000-4000-8000-000000000100","response_snapshot":"{\"destination_logged_date\":\"2026-08-09\",\"kind\":\"log.update\",\"result\":{\"amount_quantity\":\"1.000000\",\"amount_unit\":\"serving\",\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"edit_block_reason\":null,\"food_item_id\":\"00000000-0000-4000-8000-000000000013\",\"food_name_snapshot\":\"Nested Recipe\",\"gram_amount\":\"100.000000\",\"id\":\"00000000-0000-4000-8000-000000000100\",\"is_editable\":true,\"logged_date\":\"2026-08-09\",\"meal_type\":\"dinner\",\"notes\":\"history\",\"serving_definition_id\":null,\"source_food_available\":true,\"updated_at\":\"2026-08-10T12:34:56.123456Z\"},\"source_logged_date\":\"2026-08-08\"}","user_id":"00000000-0000-4000-8000-000000000001"},{"client_request_id":"00000000-0000-4000-8000-000000000150","completed_at":"2026-08-10T12:34:56.123456Z","created_at":"2026-08-10T12:34:56.123456Z","id":"4d1e8758-17dc-52c2-88bb-c67f6c627c2e","operation":"log.create","request_fingerprint":"1111111111111111111111111111111111111111111111111111111111111111","resource_id":"00000000-0000-4000-8000-000000000100","response_snapshot":"{\"amount_quantity\":\"1.000000\",\"amount_unit\":\"serving\",\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"edit_block_reason\":null,\"food_item_id\":\"00000000-0000-4000-8000-000000000013\",\"food_name_snapshot\":\"Nested Recipe\",\"gram_amount\":\"100.000000\",\"id\":\"00000000-0000-4000-8000-000000000100\",\"is_editable\":true,\"logged_date\":\"2026-08-09\",\"meal_type\":\"dinner\",\"notes\":\"history\",\"serving_definition_id\":null,\"source_food_available\":true,\"updated_at\":\"2026-08-10T12:34:56.123456Z\"}","user_id":"00000000-0000-4000-8000-000000000001"}]}],"source":{"alembic_revision":"0027_serving_reference_measurement","postgres_major":"16","schema_contract":"e2-15.pg-0027.v2","schema_contract_digest":"c8a5159bef65998808d886ed31eec7abc709e3db12557db58ef541bf30fcb1a7"},"target":{"migration_ids":["001_initial_runtime_schema","002_food_nutrient_integrity","003_serving_reference_measurement"],"sqlite_schema_version":3}}
+{
+  "codec_version": "e2-02.v1",
+  "exported_at": "2026-08-10T12:34:56.123456Z",
+  "format": "nutrition-personal-transfer",
+  "format_version": "3",
+  "idempotency_policy": {
+    "copied_portable_count": 1,
+    "excluded_log_delete_count": 1,
+    "reconstructed_log_create_count": 1,
+    "translated_log_update_count": 1,
+    "version": "e2-15.idempotency.v1"
+  },
+  "nutrient_catalog_digest": "37c17b248dfb08fb180ef477511c8e2e240a781a7288c30f30881cc1d06f0bc1",
+  "owner_id": "00000000-0000-4000-8000-000000000001",
+  "qualification": {
+    "daily_totals": {
+      "count": 2,
+      "digest": "4cfe91e41f6aeb29c47ca177d8bdbd747675d4689589132bba4f261d2c287e3c",
+      "name": "daily_totals",
+      "records": [
+        {
+          "amount_estimated": "0",
+          "amount_known": "200.000000",
+          "has_unknown_contributors": false,
+          "logged_date": "2026-08-09",
+          "nutrient_id": "calories",
+          "unit": "kcal",
+          "unknown_contributor_count": 0
+        },
+        {
+          "amount_estimated": "0",
+          "amount_known": "0",
+          "has_unknown_contributors": true,
+          "logged_date": "2026-08-10",
+          "nutrient_id": "calories",
+          "unit": "kcal",
+          "unknown_contributor_count": 1
+        }
+      ]
+    }
+  },
+  "sections": [
+    {
+      "count": 1,
+      "name": "users",
+      "records": [
+        {
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "display_name": "Transfer Owner",
+          "email": "owner@example.invalid",
+          "id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "ae5a0f641b8981cb528bbf7c09e029514020f84efe956e1ffb73c7fb9777db20"
+    },
+    {
+      "count": 1,
+      "name": "user_profiles",
+      "records": [
+        {
+          "activity_level": "moderate",
+          "authoritative_time_zone": "America/Los_Angeles",
+          "biological_sex_for_reference_calculations": "female",
+          "birth_date": "1990-02-28",
+          "calendar_revision": 2,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "energy_estimation_context": "general_adult",
+          "height_cm": "170.000",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001",
+          "weight_kg": "70.000"
+        }
+      ],
+      "digest": "5d89a305880b17c34e827efb18ad404f29d954453a0ebed025b5109e6aeb1a45"
+    },
+    {
+      "count": 4,
+      "name": "food_items",
+      "records": [
+        {
+          "brand": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "deleted_at": null,
+          "id": "00000000-0000-4000-8000-000000000010",
+          "is_recipe": false,
+          "name": "USDA Apple",
+          "notes": "Unicode crème 🍎",
+          "recipe_publication_revision_id": null,
+          "source_id": "171688",
+          "source_type": "usda",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "brand": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "deleted_at": "2026-08-10T12:34:56.123456Z",
+          "id": "00000000-0000-4000-8000-000000000011",
+          "is_recipe": false,
+          "name": "Deleted Food",
+          "notes": null,
+          "recipe_publication_revision_id": null,
+          "source_id": null,
+          "source_type": "manual",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "brand": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "deleted_at": null,
+          "id": "00000000-0000-4000-8000-000000000012",
+          "is_recipe": true,
+          "name": "Republished Base",
+          "notes": null,
+          "recipe_publication_revision_id": "00000000-0000-4000-8000-000000000061",
+          "source_id": "00000000-0000-4000-8000-000000000050",
+          "source_type": "recipe",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "brand": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "deleted_at": null,
+          "id": "00000000-0000-4000-8000-000000000013",
+          "is_recipe": true,
+          "name": "Nested Recipe",
+          "notes": null,
+          "recipe_publication_revision_id": "00000000-0000-4000-8000-000000000062",
+          "source_id": "00000000-0000-4000-8000-000000000051",
+          "source_type": "recipe",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "2202ec5532cc193cbf212b4c4d1e90975fb159b8da3a29488242a5392a9fb128"
+    },
+    {
+      "count": 1,
+      "name": "food_sources",
+      "records": [
+        {
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "external_id": "171688",
+          "food_item_id": "00000000-0000-4000-8000-000000000010",
+          "id": "00000000-0000-4000-8000-000000000040",
+          "metadata": "{\"retrieved\":\"offline-fixture\"}",
+          "raw_payload": "{\"description\":\"Apple, raw\",\"unicode\":\"🍎\"}",
+          "source_type": "usda"
+        }
+      ],
+      "digest": "2e179492d7ea84ba4a4d017c7a58043b4d3c111e34b93aec1226c60ff4ab9655"
+    },
+    {
+      "count": 3,
+      "name": "food_nutrients",
+      "records": [
+        {
+          "amount": "100.000000",
+          "basis": "per_serving",
+          "confidence": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "data_status": "known",
+          "food_item_id": "00000000-0000-4000-8000-000000000010",
+          "id": "00000000-0000-4000-8000-000000000030",
+          "is_user_confirmed": true,
+          "nutrient_id": "calories",
+          "original_amount": null,
+          "original_text": null,
+          "original_unit": null,
+          "source": "usda",
+          "unit": "kcal",
+          "updated_at": "2026-08-10T12:34:56.123456Z"
+        },
+        {
+          "amount": "100.000000",
+          "basis": "per_serving",
+          "confidence": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "data_status": "known",
+          "food_item_id": "00000000-0000-4000-8000-000000000012",
+          "id": "00000000-0000-4000-8000-000000000031",
+          "is_user_confirmed": true,
+          "nutrient_id": "calories",
+          "original_amount": null,
+          "original_text": null,
+          "original_unit": null,
+          "source": "recipe",
+          "unit": "kcal",
+          "updated_at": "2026-08-10T12:34:56.123456Z"
+        },
+        {
+          "amount": "200.000000",
+          "basis": "per_serving",
+          "confidence": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "data_status": "known",
+          "food_item_id": "00000000-0000-4000-8000-000000000013",
+          "id": "00000000-0000-4000-8000-000000000032",
+          "is_user_confirmed": true,
+          "nutrient_id": "calories",
+          "original_amount": null,
+          "original_text": null,
+          "original_unit": null,
+          "source": "recipe",
+          "unit": "kcal",
+          "updated_at": "2026-08-10T12:34:56.123456Z"
+        }
+      ],
+      "digest": "de01a9bf4ea1c8d3a0efdce6fdfb45856b135b43aa99aabfe333ac1b10688986"
+    },
+    {
+      "count": 3,
+      "name": "serving_definitions",
+      "records": [
+        {
+          "confidence": null,
+          "food_item_id": "00000000-0000-4000-8000-000000000010",
+          "gram_weight": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000020",
+          "is_default": true,
+          "is_user_confirmed": true,
+          "label": "1 serving",
+          "quantity": "1.000000",
+          "reference_gram_weight": "100.000000",
+          "reference_quantity": "1.000000",
+          "reference_unit": "cup",
+          "source": "usda",
+          "unit": "serving"
+        },
+        {
+          "confidence": null,
+          "food_item_id": "00000000-0000-4000-8000-000000000012",
+          "gram_weight": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000021",
+          "is_default": true,
+          "is_user_confirmed": true,
+          "label": "1 serving",
+          "quantity": "1.000000",
+          "reference_gram_weight": null,
+          "reference_quantity": null,
+          "reference_unit": null,
+          "source": "recipe",
+          "unit": "serving"
+        },
+        {
+          "confidence": null,
+          "food_item_id": "00000000-0000-4000-8000-000000000013",
+          "gram_weight": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000022",
+          "is_default": true,
+          "is_user_confirmed": true,
+          "label": "1 serving",
+          "quantity": "1.000000",
+          "reference_gram_weight": null,
+          "reference_quantity": null,
+          "reference_unit": null,
+          "source": "recipe",
+          "unit": "serving"
+        }
+      ],
+      "digest": "c291c79c63be608ab33537cb69e2d795eb608d4cf84c0fafb6881f775fcaa70b"
+    },
+    {
+      "count": 1,
+      "name": "food_favorites",
+      "records": [
+        {
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "food_item_id": "00000000-0000-4000-8000-000000000010",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "f7f038715f2052f2d4709cfb262fd00f6d36af0b29f6f86da5924f7e81714d26"
+    },
+    {
+      "count": 2,
+      "name": "recipes",
+      "records": [
+        {
+          "active_publication_revision_id": "00000000-0000-4000-8000-000000000061",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "deleted_at": null,
+          "final_cooked_weight_display_quantity": null,
+          "final_cooked_weight_display_unit": null,
+          "final_cooked_weight_grams": null,
+          "id": "00000000-0000-4000-8000-000000000050",
+          "name": "Republished Base",
+          "needs_republish": false,
+          "notes": null,
+          "published_food_item_id": "00000000-0000-4000-8000-000000000012",
+          "serving_count_yield": "1.000000",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "active_publication_revision_id": "00000000-0000-4000-8000-000000000062",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "deleted_at": null,
+          "final_cooked_weight_display_quantity": null,
+          "final_cooked_weight_display_unit": null,
+          "final_cooked_weight_grams": null,
+          "id": "00000000-0000-4000-8000-000000000051",
+          "name": "Nested Recipe",
+          "needs_republish": false,
+          "notes": null,
+          "published_food_item_id": "00000000-0000-4000-8000-000000000013",
+          "serving_count_yield": "1.000000",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "fbf89d0b5fad26a752e64d0dea2f83e21a7708bddfa3a3985c7608e559156e17"
+    },
+    {
+      "count": 2,
+      "name": "recipe_ingredients",
+      "records": [
+        {
+          "amount_display_quantity": "1.000000",
+          "amount_display_unit": "serving",
+          "amount_quantity": "1.000000",
+          "amount_unit": "serving",
+          "food_item_id": "00000000-0000-4000-8000-000000000010",
+          "id": "00000000-0000-4000-8000-000000000090",
+          "position": 0,
+          "preparation_note": null,
+          "recipe_id": "00000000-0000-4000-8000-000000000050",
+          "resolved_gram_amount": "100.000000",
+          "serving_definition_id": "00000000-0000-4000-8000-000000000020",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "amount_display_quantity": "1.000000",
+          "amount_display_unit": "serving",
+          "amount_quantity": "1.000000",
+          "amount_unit": "serving",
+          "food_item_id": "00000000-0000-4000-8000-000000000012",
+          "id": "00000000-0000-4000-8000-000000000091",
+          "position": 0,
+          "preparation_note": "nested",
+          "recipe_id": "00000000-0000-4000-8000-000000000051",
+          "resolved_gram_amount": "100.000000",
+          "serving_definition_id": "00000000-0000-4000-8000-000000000021",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "b653a769214e8356ef2d76a9b508cbadf6c1ed551b6956febecdb779e14258d9"
+    },
+    {
+      "count": 3,
+      "name": "recipe_publication_revisions",
+      "records": [
+        {
+          "content_digest": "3428341e081fe63eaa2702de6f08fbf943efdf45bb2c3821a0cc987b5fa3516c",
+          "creation_origin": "normal_publication",
+          "id": "00000000-0000-4000-8000-000000000060",
+          "provenance_confidence": "complete",
+          "published_at": "2026-08-10T12:34:56.123456Z",
+          "published_name": "Base v1",
+          "published_notes": null,
+          "recipe_id": "00000000-0000-4000-8000-000000000050",
+          "revision_number": 1,
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "content_digest": "ee9f880aa6b3505b1532bb20de0992e2cfa9e797af1b11416d41cf0bfcf31a25",
+          "creation_origin": "explicit_republish",
+          "id": "00000000-0000-4000-8000-000000000061",
+          "provenance_confidence": "complete",
+          "published_at": "2026-08-10T12:34:56.123456Z",
+          "published_name": "Republished Base",
+          "published_notes": null,
+          "recipe_id": "00000000-0000-4000-8000-000000000050",
+          "revision_number": 2,
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "content_digest": "64c358c072978fe4e31ec9106d13bc68d7ca9da4bc6abe6cd5e3f9811c28b656",
+          "creation_origin": "normal_publication",
+          "id": "00000000-0000-4000-8000-000000000062",
+          "provenance_confidence": "complete",
+          "published_at": "2026-08-10T12:34:56.123456Z",
+          "published_name": "Nested Recipe",
+          "published_notes": null,
+          "recipe_id": "00000000-0000-4000-8000-000000000051",
+          "revision_number": 1,
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "cc17895c04fd323a5abcdf5dd9fa6e994e2940e12e1d89ed9730be3b3f335740"
+    },
+    {
+      "count": 3,
+      "name": "recipe_publication_amount_definitions",
+      "records": [
+        {
+          "conversion_metadata": null,
+          "display_label": "1 serving",
+          "display_order": 0,
+          "display_quantity": "1.000000",
+          "display_unit": "serving",
+          "gram_equivalent": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000070",
+          "is_default": true,
+          "revision_id": "00000000-0000-4000-8000-000000000060",
+          "semantic_mode": "serving"
+        },
+        {
+          "conversion_metadata": null,
+          "display_label": "1 serving",
+          "display_order": 0,
+          "display_quantity": "1.000000",
+          "display_unit": "serving",
+          "gram_equivalent": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000071",
+          "is_default": true,
+          "revision_id": "00000000-0000-4000-8000-000000000061",
+          "semantic_mode": "serving"
+        },
+        {
+          "conversion_metadata": null,
+          "display_label": "1 serving",
+          "display_order": 0,
+          "display_quantity": "1.000000",
+          "display_unit": "serving",
+          "gram_equivalent": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000072",
+          "is_default": true,
+          "revision_id": "00000000-0000-4000-8000-000000000062",
+          "semantic_mode": "serving"
+        }
+      ],
+      "digest": "47de582c2f9c14300dc28ca444633d5217b44f9ce4075132698cba93d5464ff0"
+    },
+    {
+      "count": 3,
+      "name": "recipe_publication_nutrients",
+      "records": [
+        {
+          "amount": "90.000000",
+          "basis": "per_serving",
+          "data_status": "known",
+          "diagnostic_provenance": null,
+          "id": "00000000-0000-4000-8000-000000000080",
+          "nutrient_id": "calories",
+          "revision_id": "00000000-0000-4000-8000-000000000060",
+          "unit": "kcal"
+        },
+        {
+          "amount": "100.000000",
+          "basis": "per_serving",
+          "data_status": "known",
+          "diagnostic_provenance": null,
+          "id": "00000000-0000-4000-8000-000000000081",
+          "nutrient_id": "calories",
+          "revision_id": "00000000-0000-4000-8000-000000000061",
+          "unit": "kcal"
+        },
+        {
+          "amount": "200.000000",
+          "basis": "per_serving",
+          "data_status": "known",
+          "diagnostic_provenance": null,
+          "id": "00000000-0000-4000-8000-000000000082",
+          "nutrient_id": "calories",
+          "revision_id": "00000000-0000-4000-8000-000000000062",
+          "unit": "kcal"
+        }
+      ],
+      "digest": "48bdbf3c93aaf0793c17eb95deb7b36f7209a72b1cf73ec4d6d9b08b6c1ea293"
+    },
+    {
+      "count": 2,
+      "name": "daily_logs",
+      "records": [
+        {
+          "amount_quantity": "1.000000",
+          "amount_unit": "serving",
+          "client_request_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+          "client_request_id": "00000000-0000-4000-8000-000000000150",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "food_item_id": "00000000-0000-4000-8000-000000000013",
+          "food_name_snapshot": "Nested Recipe",
+          "gram_amount": "100.000000",
+          "id": "00000000-0000-4000-8000-000000000100",
+          "logged_date": "2026-08-09",
+          "meal_type": "dinner",
+          "notes": "history",
+          "package_fraction": null,
+          "recipe_publication_amount_definition_id": "00000000-0000-4000-8000-000000000072",
+          "recipe_publication_revision_id": "00000000-0000-4000-8000-000000000062",
+          "serving_definition_id": null,
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "amount_quantity": "1.000000",
+          "amount_unit": "serving",
+          "client_request_fingerprint": null,
+          "client_request_id": null,
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "food_item_id": "00000000-0000-4000-8000-000000000011",
+          "food_name_snapshot": "Deleted Food",
+          "gram_amount": null,
+          "id": "00000000-0000-4000-8000-000000000101",
+          "logged_date": "2026-08-10",
+          "meal_type": null,
+          "notes": null,
+          "package_fraction": null,
+          "recipe_publication_amount_definition_id": null,
+          "recipe_publication_revision_id": null,
+          "serving_definition_id": null,
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "00a2f4e634ca3d463262c91bbc78d5476b7aae6f9f2fb53ab2e946d639bde2b6"
+    },
+    {
+      "count": 2,
+      "name": "daily_log_nutrient_snapshots",
+      "records": [
+        {
+          "amount": "200.000000",
+          "calculation_metadata": "{\"authority\":\"immutable\"}",
+          "consumed_amount_quantity": "1.000000",
+          "consumed_amount_unit": "serving",
+          "consumed_gram_amount": "100.000000",
+          "consumed_package_fraction": null,
+          "daily_log_id": "00000000-0000-4000-8000-000000000100",
+          "data_status": "known",
+          "id": "00000000-0000-4000-8000-000000000110",
+          "nutrient_id": "calories",
+          "serving_definition_id": null,
+          "source_food_item_id": "00000000-0000-4000-8000-000000000013",
+          "source_food_nutrient_id": "00000000-0000-4000-8000-000000000032",
+          "unit": "kcal"
+        },
+        {
+          "amount": null,
+          "calculation_metadata": null,
+          "consumed_amount_quantity": "1.000000",
+          "consumed_amount_unit": "serving",
+          "consumed_gram_amount": null,
+          "consumed_package_fraction": null,
+          "daily_log_id": "00000000-0000-4000-8000-000000000101",
+          "data_status": "unknown",
+          "id": "00000000-0000-4000-8000-000000000111",
+          "nutrient_id": "calories",
+          "serving_definition_id": null,
+          "source_food_item_id": "00000000-0000-4000-8000-000000000011",
+          "source_food_nutrient_id": null,
+          "unit": "kcal"
+        }
+      ],
+      "digest": "09044d44848fc9f8fb2126681deeb4f243975f32c14341b7cee8a641b80effbd"
+    },
+    {
+      "count": 1,
+      "name": "daily_log_day_completions",
+      "records": [
+        {
+          "user_id": "00000000-0000-4000-8000-000000000001",
+          "logged_date": "2026-08-09",
+          "completed_at": "2026-08-10T12:34:56.123456Z"
+        }
+      ],
+      "digest": "3ad20ea59323c0ab550b6b035dce4a1679b7fe1f51398b3e03a1383a4c0d44b2"
+    },
+    {
+      "count": 1,
+      "name": "ocr_nutrition_confirmation_traces",
+      "records": [
+        {
+          "client_request_id": "00000000-0000-4000-8000-000000000153",
+          "confirmed_at": "2026-08-10T12:34:56.123456Z",
+          "food_item_id": "00000000-0000-4000-8000-000000000010",
+          "id": "00000000-0000-4000-8000-000000000120",
+          "image_source_type": "camera",
+          "parser_version": "nutrition_label_v1",
+          "request_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "schema_version": "ocr_nutrition_confirmation_v1",
+          "trace_snapshot": "{\"field_decisions\":[{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"OCR Food\",\"decision\":\"accepted\",\"field_key\":\"food.name\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"OCR Food\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"0\",\"confirmed_value\":null,\"decision\":\"omitted\",\"field_key\":\"food.brand\",\"nutrient_id\":null,\"parse_status\":\"missing\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":null,\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"0\",\"confirmed_value\":null,\"decision\":\"omitted\",\"field_key\":\"food.notes\",\"nutrient_id\":null,\"parse_status\":\"missing\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":null,\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"1 serving\",\"decision\":\"accepted\",\"field_key\":\"serving.display\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"1 serving\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"1\",\"decision\":\"accepted\",\"field_key\":\"serving.quantity\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"1\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"serving\",\"decision\":\"accepted\",\"field_key\":\"serving.unit\",\"nutrient_id\":null,\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"serving\",\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"0\",\"confirmed_value\":null,\"decision\":\"omitted\",\"field_key\":\"serving.gram_weight\",\"nutrient_id\":null,\"parse_status\":\"missing\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":null,\"unit\":null,\"warning_codes\":[]},{\"comparison\":null,\"confidence\":\"1\",\"confirmed_value\":\"100\",\"decision\":\"accepted\",\"field_key\":\"nutrient.calories\",\"nutrient_id\":\"calories\",\"parse_status\":\"parsed\",\"resolution\":null,\"source_observation_ids\":[],\"source_text\":\"\",\"suggested_value\":\"100\",\"unit\":\"kcal\",\"warning_codes\":[]}],\"parser_warning_codes\":[],\"schema_version\":\"ocr_nutrition_confirmation_v1\",\"unknown_nutrients\":[]}",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "c05b9b90bb4a8d46d726cf1000d32cdff774e5eb947a59736a42f271cf1d6aaf"
+    },
+    {
+      "count": 1,
+      "name": "nutrition_targets",
+      "records": [
+        {
+          "basis": "daily",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "id": "00000000-0000-4000-8000-000000000130",
+          "max_amount": null,
+          "metadata": "{\"note\":\"exact\"}",
+          "min_amount": null,
+          "nutrient_id": "calories",
+          "source": "manual",
+          "target_amount": "2000.000000",
+          "target_type": "nutrient",
+          "unit": "kcal",
+          "updated_at": "2026-08-10T12:34:56.123456Z",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "e4c126c9a48edad6caaad4c7d014cf405961ea893413b6daf3ca9378dcead55d"
+    },
+    {
+      "count": 3,
+      "name": "create_operation_idempotency",
+      "records": [
+        {
+          "client_request_id": "00000000-0000-4000-8000-000000000151",
+          "completed_at": "2026-08-10T12:34:56.123456Z",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "id": "00000000-0000-4000-8000-000000000140",
+          "operation": "food.create_manual",
+          "request_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+          "resource_id": "00000000-0000-4000-8000-000000000011",
+          "response_snapshot": "{\"brand\":null,\"can_favorite\":true,\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"id\":\"00000000-0000-4000-8000-000000000011\",\"is_favorite\":false,\"is_recipe\":false,\"name\":\"Deleted Food\",\"notes\":null,\"nutrients\":[],\"serving_definitions\":[],\"source_id\":null,\"source_kind\":\"manual\",\"source_label\":\"Manual\",\"source_type\":\"manual\",\"updated_at\":\"2026-08-10T12:34:56.123456Z\"}",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "client_request_id": "00000000-0000-4000-8000-000000000152",
+          "completed_at": "2026-08-10T12:34:56.123456Z",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "id": "00000000-0000-4000-8000-000000000141",
+          "operation": "log.update",
+          "request_fingerprint": "4444444444444444444444444444444444444444444444444444444444444444",
+          "resource_id": "00000000-0000-4000-8000-000000000100",
+          "response_snapshot": "{\"destination_logged_date\":\"2026-08-09\",\"kind\":\"log.update\",\"result\":{\"amount_quantity\":\"1.000000\",\"amount_unit\":\"serving\",\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"edit_block_reason\":null,\"food_item_id\":\"00000000-0000-4000-8000-000000000013\",\"food_name_snapshot\":\"Nested Recipe\",\"gram_amount\":\"100.000000\",\"id\":\"00000000-0000-4000-8000-000000000100\",\"is_editable\":true,\"logged_date\":\"2026-08-09\",\"meal_type\":\"dinner\",\"notes\":\"history\",\"serving_definition_id\":null,\"source_food_available\":true,\"updated_at\":\"2026-08-10T12:34:56.123456Z\"},\"source_logged_date\":\"2026-08-08\"}",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "client_request_id": "00000000-0000-4000-8000-000000000150",
+          "completed_at": "2026-08-10T12:34:56.123456Z",
+          "created_at": "2026-08-10T12:34:56.123456Z",
+          "id": "4d1e8758-17dc-52c2-88bb-c67f6c627c2e",
+          "operation": "log.create",
+          "request_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+          "resource_id": "00000000-0000-4000-8000-000000000100",
+          "response_snapshot": "{\"amount_quantity\":\"1.000000\",\"amount_unit\":\"serving\",\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"edit_block_reason\":null,\"food_item_id\":\"00000000-0000-4000-8000-000000000013\",\"food_name_snapshot\":\"Nested Recipe\",\"gram_amount\":\"100.000000\",\"id\":\"00000000-0000-4000-8000-000000000100\",\"is_editable\":true,\"logged_date\":\"2026-08-09\",\"meal_type\":\"dinner\",\"notes\":\"history\",\"serving_definition_id\":null,\"source_food_available\":true,\"updated_at\":\"2026-08-10T12:34:56.123456Z\"}",
+          "user_id": "00000000-0000-4000-8000-000000000001"
+        }
+      ],
+      "digest": "16b25ec2acc31983e0990867bd753fbb5a599c76af005d52f5a6e6cb389f5437"
+    }
+  ],
+  "source": {
+    "postgres_major": "16",
+    "alembic_revision": "0033_complete_runtime_authority",
+    "schema_contract": "e2-15.pg-0033.v3",
+    "schema_contract_digest": "dc35adea53445eb4fc05941e5476016f8a1abd0fe06f3049c67cf519e63935ba"
+  },
+  "target": {
+    "sqlite_schema_version": 7,
+    "migration_ids": [
+      "001_initial_runtime_schema",
+      "002_food_nutrient_integrity",
+      "003_serving_reference_measurement",
+      "004_duplicate_food_source_identity",
+      "005_expand_nutrient_catalog",
+      "006_total_omega_3_nutrient",
+      "007_daily_log_complete_state"
+    ]
+  },
+  "overall_digest": "dbc094cadeecb396f475f24235282a25a05499ef0dbe510286a7052632dccf3d"
+}

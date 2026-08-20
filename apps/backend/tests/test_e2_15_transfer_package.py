@@ -42,12 +42,12 @@ def test_shared_contract_fixes_the_approved_package_boundary() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     assert contract["format"] == "nutrition-personal-transfer"
-    assert contract["format_version"] == "2"
+    assert contract["format_version"] == "3"
     assert contract["codec_version"] == "e2-02.v1"
     assert contract["maximum_bytes"] == 64 * 1024 * 1024 == MAXIMUM_TRANSFER_BYTES
     assert tuple(section["name"] for section in contract["sections"]) == SECTION_NAMES
-    assert len(SECTION_NAMES) == 17
-    assert len(contract["source"]["expected_public_tables"]) == 31
+    assert len(SECTION_NAMES) == 18
+    assert len(contract["source"]["expected_public_tables"]) == 32
 
 
 def test_section_digest_uses_only_count_name_and_records() -> None:
@@ -461,6 +461,56 @@ def test_representative_cross_runtime_package_covers_the_approved_owner_graph() 
         "log.create",
         "log.update",
     }
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate_row", "code"),
+    [
+        (
+            "cross-owner",
+            lambda row: row.update(
+                user_id="00000000-0000-4000-8000-000000000002"
+            ),
+            "owner_graph_invalid",
+        ),
+        (
+            "orphan-date",
+            lambda row: row.update(logged_date="2026-08-11"),
+            "owner_graph_invalid",
+        ),
+        (
+            "malformed-date",
+            lambda row: row.update(logged_date="2026-02-30"),
+            "invalid_record_value",
+        ),
+        (
+            "malformed-completion-time",
+            lambda row: row.update(
+                completed_at="2026-08-10T12:34:56"
+            ),
+            "invalid_record_value",
+        ),
+    ],
+)
+def test_v3_complete_evidence_fails_closed(
+    label: str,
+    mutate_row,
+    code: str,
+) -> None:
+    def mutate(_package, sections) -> None:
+        row = sections[
+            "daily_log_day_completions"
+        ]["records"][0]
+        mutate_row(row)
+
+    with pytest.raises(
+        TransferPackageError
+    ) as failure:
+        validate_transfer_package(
+            _resigned_representative(mutate)
+        )
+
+    assert failure.value.code == code, label
 
 
 def _resigned_representative(mutator) -> bytes:

@@ -1,6 +1,6 @@
 {
-  "descriptor_version": "e2-15.sqlite-v7.schema.v4",
-  "user_version": 7,
+  "descriptor_version": "e2-15.sqlite-v4.schema.v3",
+  "user_version": 4,
   "objects": [
     {
       "type": "index",
@@ -127,12 +127,6 @@
       "name": "create_operation_idempotency",
       "tbl_name": "create_operation_idempotency",
       "sql": "CREATE TABLE \"create_operation_idempotency\" (\n    \"id\" TEXT PRIMARY KEY NOT NULL,\n    \"user_id\" TEXT NOT NULL,\n    \"operation\" TEXT NOT NULL,\n    \"client_request_id\" TEXT NOT NULL,\n    \"request_fingerprint\" TEXT NOT NULL,\n    \"resource_id\" TEXT NOT NULL,\n    \"response_snapshot\" TEXT,\n    \"completed_at\" TEXT,\n    \"created_at\" TEXT NOT NULL DEFAULT (CASE WHEN substr(strftime('%f','now'),4,3) = '000' THEN strftime('%Y-%m-%dT%H:%M:%SZ','now') ELSE strftime('%Y-%m-%dT%H:%M:%S','now') || '.' || substr(strftime('%f','now'),4,3) || '000Z' END),\n    CONSTRAINT \"uq_create_idempotency_user_operation_request\"\n      UNIQUE (\"user_id\", \"operation\", \"client_request_id\"),\n    CONSTRAINT \"ck_create_idempotency_completion_paired\"\n      CHECK ((\"response_snapshot\" IS NULL AND \"completed_at\" IS NULL)\n        OR (\"response_snapshot\" IS NOT NULL AND \"completed_at\" IS NOT NULL)),\n    FOREIGN KEY (\"user_id\") REFERENCES \"users\" (\"id\")\n  )"
-    },
-    {
-      "type": "table",
-      "name": "daily_log_day_completions",
-      "tbl_name": "daily_log_day_completions",
-      "sql": "CREATE TABLE \"daily_log_day_completions\" (\n    \"logged_date\" TEXT PRIMARY KEY NOT NULL,\n    \"completed_at\" TEXT NOT NULL\n  )"
     },
     {
       "type": "table",
@@ -430,29 +424,6 @@
           "match": "NONE"
         }
       ]
-    },
-    "daily_log_day_completions": {
-      "columns": [
-        {
-          "cid": 0,
-          "name": "logged_date",
-          "type": "TEXT",
-          "notnull": 1,
-          "default": null,
-          "primary_key_position": 1,
-          "hidden": 0
-        },
-        {
-          "cid": 1,
-          "name": "completed_at",
-          "type": "TEXT",
-          "notnull": 1,
-          "default": null,
-          "primary_key_position": 0,
-          "hidden": 0
-        }
-      ],
-      "foreign_keys": []
     },
     "daily_log_nutrient_snapshots": {
       "columns": [

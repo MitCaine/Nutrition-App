@@ -14,18 +14,22 @@ import {
 
 test("the mobile package boundary consumes the fixed shared contract", () => {
   expect(contract.format).toBe("nutrition-personal-transfer");
-  expect(contract.format_version).toBe("2");
+  expect(contract.format_version).toBe("3");
   expect(contract.codec_version).toBe("e2-02.v1");
   expect(E2_15_MAXIMUM_TRANSFER_BYTES).toBe(64 * 1024 * 1024);
   expect(E2_15_SECTION_NAMES).toEqual(contract.sections.map((section) => section.name));
-  expect(E2_15_SECTION_NAMES).toHaveLength(17);
-  expect(contract.source.expected_public_tables).toHaveLength(31);
+  expect(E2_15_SECTION_NAMES).toHaveLength(18);
+  expect(contract.source.expected_public_tables).toHaveLength(32);
   expect(contract.target).toEqual({
-    sqlite_schema_version: 3,
+    sqlite_schema_version: 7,
     migration_ids: [
       "001_initial_runtime_schema",
       "002_food_nutrient_integrity",
       "003_serving_reference_measurement",
+      "004_duplicate_food_source_identity",
+      "005_expand_nutrient_catalog",
+      "006_total_omega_3_nutrient",
+      "007_daily_log_complete_state",
     ],
   });
 });
