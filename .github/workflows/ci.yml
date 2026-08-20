@@ -84,7 +84,7 @@ jobs:
           version = connection.execute(text('SHOW server_version')).scalar_one();
           connection.close(); engine.dispose();
           assert version.split('.')[0] == '16', f'expected PostgreSQL 16, found {version}'"
-      - name: Runtime contention and idempotency contracts
+      - name: Runtime and completed Epic 4 PostgreSQL contracts
         run: >-
           pytest -q --strict-markers
           tests/test_postgres_test_support.py
@@ -92,15 +92,21 @@ jobs:
           tests/test_graph_restart_idempotency_postgres.py
           tests/test_food_nutrient_integrity_postgres.py
           tests/test_food_nutrient_integrity_migration_postgres.py
+          tests/test_e4_01_complete_persistence_postgres.py
+          tests/test_e4_02_complete_mutation_postgres.py
+          tests/test_e4_03_complete_invalidation_postgres.py
+          tests/test_e4_04_history_range_postgres.py
       - name: Verify isolated schema cleanup
         if: ${{ always() && steps.install.outcome == 'success' }}
         run: >-
           python -c "from sqlalchemy import create_engine, text; import os;
           engine = create_engine(os.environ['NUTRITION_TEST_POSTGRES_URL']);
           connection = engine.connect();
-          residual = connection.execute(text(\"SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'test_pg_support_%' OR schema_name LIKE 'test_phase3n_%' OR schema_name LIKE 'test_graph_restart_idem_%' OR schema_name LIKE 'test_food_nutrient_integrity_%'\")).scalars().all();
+          residual_schemas = connection.execute(text(\"SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'test_pg_support_%' OR schema_name LIKE 'test_phase3n_%' OR schema_name LIKE 'test_graph_restart_idem_%' OR schema_name LIKE 'test_food_nutrient_integrity_%' OR starts_with(schema_name, 'e4_02_complete_') OR starts_with(schema_name, 'e4_03_') OR starts_with(schema_name, 'e4_04_history_range_')\")).scalars().all();
+          residual_databases = connection.execute(text(\"SELECT datname FROM pg_catalog.pg_database WHERE starts_with(datname, 'test_e4_01_complete_persistence_')\")).scalars().all();
           connection.close(); engine.dispose();
-          assert not residual, f'residual PostgreSQL test schemas: {residual}'"
+          assert not residual_schemas, f'residual PostgreSQL test schemas: {residual_schemas}';
+          assert not residual_databases, f'residual PostgreSQL test databases: {residual_databases}'"
 
   mobile:
     name: Mobile baseline
