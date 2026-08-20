@@ -5,7 +5,7 @@
 
 ## Release boundary
 
-The current active development head is `0031_daily_log_complete_state`; the Version 1.0
+The current active development head is `0032_qualifier_complete_read`; the Version 1.0
 release boundary below remains pinned to its historical application head.
 
 The application migration head is `0021_target_activation_execution`; the control migration head

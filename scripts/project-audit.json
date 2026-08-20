@@ -1,7 +1,7 @@
 {
   "control_revision_max_length": 32,
   "expected_application_heads": [
-    "0031_daily_log_complete_state"
+    "0032_qualifier_complete_read"
   ],
   "expected_control_heads": [
     "ops_0011_phase5c4_recovery_audit"

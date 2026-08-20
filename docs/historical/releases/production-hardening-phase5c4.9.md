@@ -14,7 +14,7 @@ Phase 5C4.9 changes no application or control migration head. The authoritative
 heads remain:
 
 Subsequent active development now continues from application head
-`0031_daily_log_complete_state`; predecessor `0030_total_omega_3_nutrient`,
+`0032_qualifier_complete_read`; predecessor `0030_total_omega_3_nutrient`,
 `0029_expand_nutrient_catalog`,
 `0028_duplicate_food_source_identity`, `0027_serving_reference_measurement`,
 `0026_food_nutrient_integrity`, predecessor

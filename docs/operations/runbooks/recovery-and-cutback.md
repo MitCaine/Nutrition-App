@@ -29,7 +29,7 @@ durable intent and proven by independent observations.
 
 Phase 5C4.8 starts from:
 
-The current active application migration head is now `0031_daily_log_complete_state`; the historical
+The current active application migration head is now `0032_qualifier_complete_read`; the historical
 cutback boundary below remains intentionally pinned to `0021_target_activation_execution`.
 
 - application schema `0021_target_activation_execution`;
