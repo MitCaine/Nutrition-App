@@ -82,8 +82,8 @@ const usdaFood: Food = {
 test("USDA food detail helpers render known zero and unknown nutrients distinctly", () => {
   const nutrients = Object.fromEntries(usdaFood.nutrients.map((nutrient) => [nutrient.nutrient_id, nutrient]));
 
-  expect(formatNutrientAmount(nutrients.calories)).toBe("300kcal");
-  expect(formatNutrientAmount(nutrients.cholesterol)).toBe("0mg");
+  expect(formatNutrientAmount(nutrients.calories)).toBe("300 kcal");
+  expect(formatNutrientAmount(nutrients.cholesterol)).toBe("0 mg");
   expect(formatNutrientAmount(nutrients.vitamin_d)).toBe("unknown");
   expect(formatFoodNutrientLabel(nutrients.vitamin_d)).toBe("Vitamin D");
 });
@@ -124,7 +124,7 @@ const resolvedAmounts: ResolvedFoodAmount[] = [
 
 test("food detail formats backend-resolved nutrients without scaling raw basis values", () => {
   expect(formatResolvedFoodAmount(resolvedAmounts[0])).toBe("1 bar (50 g)");
-  expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[0])).toBe("150kcal");
+  expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[0])).toBe("150 kcal");
   expect(formatResolvedFoodNutrient(resolvedAmounts[0].nutrients[1])).toBe("unknown");
 });
 
@@ -145,7 +145,7 @@ test("food detail amount selection uses resolved options and keeps count-only se
   expect(countOnly?.resolved_grams).toBeNull();
   expect(countOnly?.nutrients[0].data_status).toBe("estimated");
   expect(formatResolvedFoodAmount(countOnly!)).toBe("1 serving");
-  expect(formatResolvedFoodNutrient(countOnly!.nutrients[0])).toBe("240kcal");
+  expect(formatResolvedFoodNutrient(countOnly!.nutrients[0])).toBe("240 kcal");
 });
 
 test("collapsed food detail amounts keep the selected choice visible within a bounded row", () => {
@@ -199,5 +199,5 @@ test("manual food detail helpers keep existing serving and nutrient behavior", (
   };
 
   expect(primaryServingLabel(manualFood)).toBe("1 cup");
-  expect(formatNutrientAmount(manualFood.nutrients[0])).toBe("20g");
+  expect(formatNutrientAmount(manualFood.nutrients[0])).toBe("20 g");
 });

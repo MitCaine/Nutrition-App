@@ -23,7 +23,10 @@ import { foodDetailLoadState } from "../utils/foodDetailState";
 import { foodDetailActions, isRevisionBackedRecipeDetail } from "../utils/foodOwnership";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { BackButton } from "../../../shared/components/BackButton";
-import { RouteScreenHeader } from "../../../shared/components/RouteScreenHeader";
+import {
+  RouteHeaderAction,
+  RouteScreenHeader,
+} from "../../../shared/components/RouteScreenHeader";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import {
   foodDetailLogInitialAmount,
@@ -150,7 +153,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     return (
       <View style={styles.container}>
         <RouteScreenHeader
-          title="Food details"
+          title="Food"
           titleStyle={styles.title}
           leading={(
             <BackButton
@@ -182,7 +185,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
     return (
       <View style={styles.container}>
         <RouteScreenHeader
-          title={food.data.name}
+          title="Food"
           titleStyle={styles.title}
           leading={(
             <BackButton
@@ -222,7 +225,7 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
   return (
     <View style={styles.container}>
       <RouteScreenHeader
-        title={food.data.name}
+        title="Food"
         titleStyle={styles.title}
         leading={(
           <BackButton
@@ -230,9 +233,32 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
             onPress={onBack}
           />
         )}
+        trailing={(
+          <View style={styles.headerActions}>
+            <RouteHeaderAction
+              accessibilityLabel="Log food"
+              label="Log"
+              onPress={() =>
+                onLog(
+                  foodDetailLogInitialAmount(
+                    selectedAmount,
+                  ),
+                )
+              }
+            />
+            {actions.canEdit ? (
+              <RouteHeaderAction
+                accessibilityLabel="Edit food"
+                label="Edit"
+                onPress={onEdit}
+              />
+            ) : null}
+          </View>
+        )}
       />
 
       <ScrollView
+        testID="food-detail-scroll"
         contentContainerStyle={styles.screen}
         scrollIndicatorInsets={{ right: 1 }}
       >
@@ -240,97 +266,260 @@ export function FoodDetailsScreen({ foodId, onBack, onDeleted, onEdit, onLog }: 
           message={successMessage}
           onExpired={clearSuccessMessage}
         />
-      {brand ? <Text style={styles.brand}>{brand}</Text> : null}
-      {managedByRecipe ? (
-        <Text style={styles.publishedContext}>Current published Recipe nutrition</Text>
-      ) : null}
-      {selectedAmount ? (
-        <View style={styles.servingSection}>
-          <Text style={styles.servingHeading}>Amount</Text>
-          <View accessibilityLabel="Amount" accessibilityRole="radiogroup" style={[styles.servingOptions, amountsExpanded && styles.servingOptionsExpanded]}>
-            {displayedAmounts.map((amount) => {
-              const selected = amount.amount_definition_id === selectedAmount.amount_definition_id;
-              const formattedAmount = formatResolvedFoodAmount(amount);
-              return (
-                <Pressable
-                  key={amount.amount_definition_id}
-                  accessibilityHint="Updates nutrition values below"
-                  accessibilityLabel={formattedAmount}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: selected, selected }}
-                  onPress={() => setSelectedAmountId(amount.amount_definition_id)}
-                  style={[styles.servingOption, selected && styles.servingOptionSelected]}
-                >
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.servingOptionText, selected && styles.servingOptionTextSelected]}>{formattedAmount}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          {hasHiddenAmounts ? (
-            <AccessiblePressable
-              accessibilityHint={amountsExpanded ? "Collapses the serving amount choices" : "Shows more serving amount choices"}
-              accessibilityLabel={amountsExpanded ? "Show fewer serving amounts" : "Show more serving amounts"}
-              accessibilityState={{ expanded: amountsExpanded }}
-              onPress={() => setAmountsExpanded((expanded) => !expanded)}
-              style={styles.servingDisclosure}
-            >
-              <Text style={styles.servingDisclosureText}>{amountsExpanded ? "Fewer serving amounts" : "More serving amounts"}</Text>
-            </AccessiblePressable>
-          ) : null}
-        </View>
-      ) : null}
-      <View style={styles.actions}>
-        <Pressable
-          onPress={() => onLog(foodDetailLogInitialAmount(selectedAmount))}
-          style={styles.primaryButton}
+
+        <Text
+          accessibilityRole="header"
+          testID="food-detail-name"
+          style={styles.foodName}
         >
-          <Text style={styles.primaryText}>Log</Text>
-        </Pressable>
-        {actions.canEdit ? (
-          <Pressable onPress={onEdit} style={styles.secondaryButton}>
-            <Text style={styles.text}>Edit</Text>
-          </Pressable>
+          {food.data.name}
+        </Text>
+
+        {brand ? (
+          <Text style={styles.brand}>
+            {brand}
+          </Text>
         ) : null}
-        <Pressable
+
+        {managedByRecipe ? (
+          <Text style={styles.publishedContext}>
+            Current published Recipe nutrition
+          </Text>
+        ) : null}
+
+        {selectedAmount ? (
+          <View style={styles.servingSection}>
+            <Text style={styles.servingHeading}>
+              Amount
+            </Text>
+
+            <View
+              accessibilityLabel="Amount"
+              accessibilityRole="radiogroup"
+              style={[
+                styles.servingOptions,
+                amountsExpanded
+                  && styles.servingOptionsExpanded,
+              ]}
+            >
+              {displayedAmounts.map(
+                (amount) => {
+                  const selected =
+                    amount.amount_definition_id
+                    === selectedAmount.amount_definition_id;
+
+                  const formattedAmount =
+                    formatResolvedFoodAmount(
+                      amount,
+                    );
+
+                  return (
+                    <Pressable
+                      key={
+                        amount.amount_definition_id
+                      }
+                      accessibilityHint="Updates nutrition values below"
+                      accessibilityLabel={
+                        formattedAmount
+                      }
+                      accessibilityRole="radio"
+                      accessibilityState={{
+                        checked: selected,
+                        selected,
+                      }}
+                      onPress={() =>
+                        setSelectedAmountId(
+                          amount.amount_definition_id,
+                        )
+                      }
+                      style={[
+                        styles.servingOption,
+                        selected
+                          && styles.servingOptionSelected,
+                      ]}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                        style={[
+                          styles.servingOptionText,
+                          selected
+                            && styles.servingOptionTextSelected,
+                        ]}
+                      >
+                        {formattedAmount}
+                      </Text>
+                    </Pressable>
+                  );
+                },
+              )}
+            </View>
+
+            {hasHiddenAmounts ? (
+              <AccessiblePressable
+                accessibilityHint={
+                  amountsExpanded
+                    ? "Collapses the serving amount choices"
+                    : "Shows more serving amount choices"
+                }
+                accessibilityLabel={
+                  amountsExpanded
+                    ? "Show fewer serving amounts"
+                    : "Show more serving amounts"
+                }
+                accessibilityState={{
+                  expanded: amountsExpanded,
+                }}
+                onPress={() =>
+                  setAmountsExpanded(
+                    (expanded) => !expanded,
+                  )
+                }
+                style={styles.servingDisclosure}
+              >
+                <Text
+                  style={
+                    styles.servingDisclosureText
+                  }
+                >
+                  {amountsExpanded
+                    ? "Fewer serving amounts"
+                    : "More serving amounts"}
+                </Text>
+              </AccessiblePressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View
+          testID="food-detail-secondary-actions"
+          style={styles.actions}
+        >
+          <Pressable
             accessibilityRole="button"
             accessibilityLabel="Duplicate food"
             accessibilityState={{
-              disabled: mutations.duplicateFood.isPending,
-              busy: mutations.duplicateFood.isPending,
+              disabled:
+                mutations.duplicateFood.isPending,
+              busy:
+                mutations.duplicateFood.isPending,
             }}
-            disabled={mutations.duplicateFood.isPending}
+            disabled={
+              mutations.duplicateFood.isPending
+            }
             onPress={duplicate}
             style={styles.secondaryButton}
-        >
-          <Text style={styles.text}>
-            {mutations.duplicateFood.isPending ? "Duplicating…" : "Duplicate"}
-          </Text>
-        </Pressable>
-        {food.data.can_favorite ? <Pressable accessibilityRole="button" accessibilityLabel={food.data.is_favorite ? "Unfavorite food" : "Favorite food"} accessibilityState={{ selected: food.data.is_favorite, disabled: favoritePending, busy: favoritePending }} disabled={favoritePending} onPress={toggleFavorite} style={styles.secondaryButton}><Text style={styles.text}>{favoritePending ? "Updating…" : food.data.is_favorite ? "Unfavorite" : "Favorite"}</Text></Pressable> : null}
-        {actions.canDelete ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Delete food" accessibilityState={{ disabled: deletePending, busy: deletePending }} disabled={deletePending} onPress={confirmDelete} style={styles.deleteButton}>
-            <Text style={styles.deleteText}>{deletePending ? "Deleting..." : "Delete"}</Text>
+          >
+            <Text style={styles.text}>
+              {mutations.duplicateFood.isPending
+                ? "Duplicating…"
+                : "Duplicate"}
+            </Text>
           </Pressable>
-        ) : null}
-      </View>
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <FoodDeleteDependencyModal
-        dependency={dependency}
-        error={error}
-        isDeleting={deletePending}
-        onCancel={() => setDependency(null)}
-        onConfirm={() => requestDelete(true)}
-      />
-      {sortNutrientsByDisplayOrder(
-        visibleResolvedFoodNutrients(selectedAmount?.nutrients ?? []),
-        (nutrient) => nutrient.nutrient_id,
-        () => false,
-      ).map((nutrient) => (
-        <View key={nutrient.nutrient_id} style={styles.nutrientRow}>
-          <Text style={styles.nutrientName}>{formatFoodNutrientLabel(nutrient)}</Text>
-          <Text style={styles.nutrientValue}>{formatResolvedFoodNutrient(nutrient)}</Text>
+
+          {food.data.can_favorite ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                food.data.is_favorite
+                  ? "Unfavorite food"
+                  : "Favorite food"
+              }
+              accessibilityState={{
+                selected:
+                  food.data.is_favorite,
+                disabled:
+                  favoritePending,
+                busy:
+                  favoritePending,
+              }}
+              disabled={favoritePending}
+              onPress={toggleFavorite}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.text}>
+                {favoritePending
+                  ? "Updating…"
+                  : food.data.is_favorite
+                    ? "Unfavorite"
+                    : "Favorite"}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {actions.canDelete ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete food"
+              accessibilityState={{
+                disabled: deletePending,
+                busy: deletePending,
+              }}
+              disabled={deletePending}
+              onPress={confirmDelete}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteText}>
+                {deletePending
+                  ? "Deleting..."
+                  : "Delete"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
-      ))}
+
+        {error ? (
+          <Text
+            accessibilityRole="alert"
+            style={styles.error}
+          >
+            {error}
+          </Text>
+        ) : null}
+
+        <FoodDeleteDependencyModal
+          dependency={dependency}
+          error={error}
+          isDeleting={deletePending}
+          onCancel={() =>
+            setDependency(null)
+          }
+          onConfirm={() =>
+            requestDelete(true)
+          }
+        />
+
+        {sortNutrientsByDisplayOrder(
+          visibleResolvedFoodNutrients(
+            selectedAmount?.nutrients
+              ?? [],
+          ),
+          (nutrient) =>
+            nutrient.nutrient_id,
+          () => false,
+        ).map(
+          (nutrient) => (
+            <View
+              key={nutrient.nutrient_id}
+              style={styles.nutrientRow}
+            >
+              <Text
+                style={styles.nutrientName}
+              >
+                {formatFoodNutrientLabel(
+                  nutrient,
+                )}
+              </Text>
+              <Text
+                style={styles.nutrientValue}
+              >
+                {formatResolvedFoodNutrient(
+                  nutrient,
+                )}
+              </Text>
+            </View>
+          ),
+        )}
       </ScrollView>
     </View>
   );
@@ -399,6 +588,16 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   container: {
     backgroundColor: theme.colors.background,
     flex: 1,
+  },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  foodName: {
+    color: theme.colors.text,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 30,
   },
   deleteButton: { borderColor: theme.colors.destructive, borderRadius: 6, borderWidth: 1, padding: 10 },
   deleteText: { color: theme.colors.destructive }, error: { color: theme.colors.errorText, fontWeight: "600" },

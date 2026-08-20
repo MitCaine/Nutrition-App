@@ -27,6 +27,25 @@ export function formatAmountWithUnit(
   return formattedAmount === "unknown" ? "unknown" : `${formattedAmount}${unit}`;
 }
 
+export function formatNutrientAmountWithUnit(
+  amount: string | number | null | undefined,
+  unit: string,
+  options?: {
+    maxFractionDigits?: number;
+    useGrouping?: boolean;
+  },
+): string {
+  const formattedAmount =
+    formatDisplayNumber(
+      amount,
+      options,
+    );
+
+  return formattedAmount === "unknown"
+    ? "unknown"
+    : `${formattedAmount} ${unit}`;
+}
+
 export function formatNutrientLabel(nutrientId: string, displayName?: string | null): string {
   if (displayName?.trim()) {
     return displayName.trim();
@@ -54,7 +73,7 @@ export function isUnknownOnlyAggregatedTotal(total: AggregatedNutrientTotal): bo
 }
 
 export function formatAggregatedTotal(total: AggregatedNutrientTotal): string {
-  const known = formatAmountWithUnit(total.amountKnown, total.unit);
+  const known = formatNutrientAmountWithUnit(total.amountKnown, total.unit);
   const estimatedAmount = formatDisplayNumber(total.amountEstimated);
   const estimated = estimatedAmount === "0" ? "" : ` + ${estimatedAmount} estimated`;
   const unknown = total.hasUnknownContributors

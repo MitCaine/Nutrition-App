@@ -1,5 +1,5 @@
 import type { UsdaNutrientCandidate, UsdaSearchResult } from "../api/types";
-import { formatAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
+import { formatNutrientAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
 
 export type UsdaSearchStateInput = {
   query: string;
@@ -46,7 +46,7 @@ export function formatUsdaNutrient(nutrient: UsdaNutrientCandidate): string {
   if (nutrient.data_status === "unknown") {
     return "unknown";
   }
-  return formatAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
+  return formatNutrientAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
 }
 
 export function formatUsdaNutrientLabel(nutrient: UsdaNutrientCandidate): string {

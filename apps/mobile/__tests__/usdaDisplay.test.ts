@@ -68,7 +68,7 @@ test("USDA search messages cover empty loading no-result and error states", () =
 test("USDA result formatting includes brand and useful nutrient preview", () => {
   expect(usdaResultMeta(searchResult)).toBe("Branded - Example Foods");
   expect(formatUsdaNutrientPreview(searchResult.nutrient_preview)).toBe(
-    "Calories: 300kcal - Cholesterol: 0mg",
+    "Calories: 300 kcal - Cholesterol: 0 mg",
   );
   expect(formatUsdaNutrient(searchResult.nutrient_preview[2])).toBe("unknown");
 });
@@ -90,7 +90,7 @@ test("USDA nutrient formatting trims raw decimals and formats raw ids", () => {
       data_status: "known",
       source: "usda_fdc",
     }),
-  ).toBe("2.35g");
+  ).toBe("2.35 g");
   expect(
     formatUsdaNutrientLabel({
       nutrient_id: "total_carbohydrate",

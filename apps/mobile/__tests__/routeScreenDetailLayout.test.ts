@@ -177,7 +177,7 @@ test("#108 Food Detail keeps Back and its route title outside detail scrolling",
 
   const header = expectFixedRouteHeader(
     renderer.root,
-    "Layout Food",
+    "Food",
   );
 
   expect(

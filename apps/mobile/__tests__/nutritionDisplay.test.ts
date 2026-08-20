@@ -2,6 +2,7 @@ import {
   formatAggregatedTotal,
   formatAmountWithUnit,
   formatDisplayNumber,
+  formatNutrientAmountWithUnit,
   formatNutrientLabel,
 } from "../src/shared/nutrition/display";
 
@@ -17,7 +18,18 @@ test("formats amounts with units without trailing zeroes", () => {
   expect(formatAmountWithUnit("24.000000", "mg")).toBe("24mg");
   expect(formatAmountWithUnit("12.000000", "kcal")).toBe("12kcal");
   expect(formatAmountWithUnit("1.270000", "mg")).toBe("1.27mg");
+  expect(formatAmountWithUnit("1200.000000", "mg")).toBe("1,200mg");
+  expect(formatAmountWithUnit("0.000000", "g")).toBe("0g");
   expect(formatAmountWithUnit(null, "g")).toBe("unknown");
+});
+
+test("formats nutrient amounts with readable number/unit spacing", () => {
+  expect(formatNutrientAmountWithUnit("24.000000", "mg")).toBe("24 mg");
+  expect(formatNutrientAmountWithUnit("12.000000", "kcal")).toBe("12 kcal");
+  expect(formatNutrientAmountWithUnit("1.270000", "mg")).toBe("1.27 mg");
+  expect(formatNutrientAmountWithUnit("1200.000000", "mg")).toBe("1,200 mg");
+  expect(formatNutrientAmountWithUnit("0.000000", "g")).toBe("0 g");
+  expect(formatNutrientAmountWithUnit(null, "g")).toBe("unknown");
 });
 
 test("formats nutrient labels from catalog names or ids", () => {
@@ -38,7 +50,7 @@ test("formats unknown contributors separately from known amount", () => {
       hasUnknownContributors: true,
       unknownContributorCount: 2,
     }),
-  ).toBe("100mg + 25 estimated + unknown from 2 items");
+  ).toBe("100 mg + 25 estimated + unknown from 2 items");
 });
 
 test("formats unknown-only daily totals without implying zero", () => {
@@ -64,7 +76,7 @@ test("formats known daily totals with unknown contributors", () => {
       hasUnknownContributors: true,
       unknownContributorCount: 1,
     }),
-  ).toBe("24mg + unknown from 1 item");
+  ).toBe("24 mg + unknown from 1 item");
 });
 
 test("formats daily totals with rounded known and estimated amounts", () => {
@@ -77,5 +89,5 @@ test("formats daily totals with rounded known and estimated amounts", () => {
       hasUnknownContributors: false,
       unknownContributorCount: 0,
     }),
-  ).toBe("312kcal");
+  ).toBe("312 kcal");
 });

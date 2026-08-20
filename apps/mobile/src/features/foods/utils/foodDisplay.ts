@@ -1,5 +1,5 @@
 import type { Food, FoodNutrient, ResolvedFoodAmount, ResolvedFoodNutrient, ServingDefinition } from "../api/types";
-import { formatAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
+import { formatNutrientAmountWithUnit, formatNutrientLabel } from "../../../shared/nutrition/display";
 import { formatServingGramForDisplay, formatServingLabelForDisplay } from "./amountForm";
 
 export function defaultServing(servings: ServingDefinition[]): ServingDefinition | undefined {
@@ -10,7 +10,7 @@ export function formatNutrientAmount(nutrient: FoodNutrient): string {
   if (nutrient.data_status === "unknown") {
     return "unknown";
   }
-  return formatAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
+  return formatNutrientAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
 }
 
 export function selectedResolvedFoodAmount(
@@ -54,7 +54,7 @@ export function formatResolvedFoodNutrient(nutrient: ResolvedFoodNutrient): stri
   if (nutrient.data_status === "unknown") {
     return "unknown";
   }
-  return formatAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
+  return formatNutrientAmountWithUnit(nutrient.amount ?? "0", nutrient.unit);
 }
 
 /** Food summaries surface measured information only.

@@ -434,7 +434,7 @@ test("recipe preview formatting preserves known zero and unknown contributors", 
       hasUnknownContributors: false,
       unknownContributorCount: 0,
     }),
-  ).toBe("0g");
+  ).toBe("0 g");
   expect(
     formatRecipeTotal({
       nutrientId: "vitamin_d",
@@ -454,7 +454,7 @@ test("recipe preview formatting preserves known zero and unknown contributors", 
       hasUnknownContributors: true,
       unknownContributorCount: 1,
     }),
-  ).toBe("24mg + unknown from 1 item");
+  ).toBe("24 mg + unknown from 1 item");
 });
 
 // ISSUE_104_RECIPE_YIELD_TESTS
