@@ -215,7 +215,7 @@ test("#108 Recipe Detail keeps Back, Edit, and its route title outside detail sc
 
   const header = expectFixedRouteHeader(
     renderer.root,
-    "Layout Recipe",
+    "Recipe",
   );
 
   expect(

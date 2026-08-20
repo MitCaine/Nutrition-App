@@ -131,7 +131,7 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
   return (
     <View style={styles.screen}>
       <RouteScreenHeader
-        title={recipe.name}
+        title="Recipe"
         titleStyle={styles.title}
         leading={(
           <BackButton
@@ -140,19 +140,44 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
           />
         )}
         trailing={(
-          <RouteHeaderAction
-            accessibilityLabel="Edit Recipe"
-            disabled={Boolean(editBlockedMessage)}
-            label="Edit"
-            onPress={onEdit}
-          />
+          <View style={styles.headerActions}>
+            <RouteHeaderAction
+              accessibilityLabel={
+                recipe.published_food_item_id
+                  ? "Republish Recipe food"
+                  : "Publish Recipe as food"
+              }
+              busy={publishPending}
+              disabled={publishDisabled}
+              label={
+                recipe.published_food_item_id
+                  ? "Republish"
+                  : "Publish"
+              }
+              onPress={publish}
+            />
+            <RouteHeaderAction
+              accessibilityLabel="Edit Recipe"
+              disabled={Boolean(editBlockedMessage)}
+              label="Edit"
+              onPress={onEdit}
+            />
+          </View>
         )}
       />
 
       <ScrollView
+        testID="recipe-detail-scroll"
         contentContainerStyle={styles.content}
         scrollIndicatorInsets={{ right: 1 }}
       >
+        <Text
+          accessibilityRole="header"
+          testID="recipe-detail-name"
+          style={styles.recipeName}
+        >
+          {recipe.name}
+        </Text>
         {recipe.notes ? <Text style={styles.meta}>{recipe.notes}</Text> : null}
         <View style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>Yield</Text>
@@ -225,18 +250,6 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
           </>
         ) : null}
         {republishMessage ? <Text style={styles.warning}>{republishMessage}</Text> : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={recipe.published_food_item_id ? "Republish Recipe food" : "Publish Recipe as food"}
-          accessibilityState={{ disabled: publishDisabled, busy: publishPending }}
-          onPress={publish}
-          disabled={publishDisabled}
-          style={[styles.primaryButton, publishDisabled && styles.disabledButton]}
-        >
-          <Text style={styles.primaryText}>
-            {publishPending ? "Publishing…" : recipe.published_food_item_id ? "Republish Food" : "Publish as Food"}
-          </Text>
-        </Pressable>
         {deleteError ? <Text accessibilityRole="alert" style={styles.error}>{deleteError}</Text> : null}
         <Pressable
           accessibilityRole="button"
@@ -362,6 +375,16 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   disabledButton: { opacity: 0.55 },
   error: { color: theme.colors.errorText },
   header: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16 },
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  recipeName: {
+    color: theme.colors.text,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 30,
+  },
   ingredientLine: { gap: 3 },
   legacyCompatibility: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, gap: 4, padding: 12 },
   meta: { color: theme.colors.secondaryText },
