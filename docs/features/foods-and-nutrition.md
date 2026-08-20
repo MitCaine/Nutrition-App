@@ -95,6 +95,26 @@ transaction. Duplication produces a new user-owned Food and preserves bounded li
 making the copy depend on later source edits. Duplicate naming is collision-aware: generated names
 advance through `Copy`, `Copy 2`, and later ordinals rather than creating an active-name collision.
 
+Manual create and edit keep serving information before nutrient entry and present the conventional
+Nutrition Facts core by default, in this order: Calories; Total Fat; Saturated Fat; Trans Fat;
+Cholesterol; Sodium; Total Carbohydrate; Dietary Fiber; Total Sugars; Added Sugars; Protein; Vitamin
+D; Calcium; Iron; and Potassium. This is presentation organization only: the complete canonical
+nutrient collection remains in the existing form and mutation model.
+
+`More nutrients` exposes remaining extended canonical nutrients through the shared grouped
+discovery interaction: Vitamins, Minerals, Fatty Acids, and a trailing canonical Other group when
+needed to preserve full-catalog reachability. New Food and Edit Food use the same interaction.
+Already-populated extended nutrients remain visible on edit and are excluded from duplicate
+candidate choices; adding an extended nutrient reveals its existing form value as unknown until the
+user enters an amount. Omitting it returns it to unknown and makes it discoverable again. There is no
+separate persisted selected-nutrient state and no giant Show All authority.
+
+Blank, absent, cleared, or undisclosed values remain unknown. An explicit typed `0` retains exact
+zero semantics, and existing known/estimated/zero values retain their canonical identity, unit,
+basis, amount, and status unless changed. The organization does not infer zero from missing label
+content or a `not a significant source` statement and does not make the app a regulatory label-
+authoring tool.
+
 Food views omit unresolved/unknown nutrient rows from ordinary presentation where no meaningful
 amount is available while preserving explicit zero and other authoritative statuses in the model.
 
@@ -219,7 +239,7 @@ with `create_idempotency_result_unavailable` rather than creating a replacement.
 
 | Concern | Backend | Mobile | Tests |
 | --- | --- | --- | --- |
-| Food CRUD and serving rules | `app/services/food_service.py`, `app/nutrition/serving_resolution.py`, `app/schemas/food.py` | `src/features/foods` | `test_stage2_foods.py`, `foodForm.test.ts`, serving transition tests |
+| Food CRUD, serving rules, and manual authoring presentation | `app/services/food_service.py`, `app/nutrition/serving_resolution.py`, `app/schemas/food.py` | `src/features/foods`, `foodAuthoringNutrients.ts`, `NutrientEntryList.tsx` | `test_stage2_foods.py`, E4-13/E4-14 Food-form tests, `foodForm.test.ts`, serving transition tests |
 | Nutrient catalog, units, and aggregation | `app/catalog/nutrients.py`, `app/nutrition`, `app/domain/nutrition.py` | `src/shared/nutrition` | `test_nutrient_catalog.py`, `test_nutrition_resolution.py`, `test_aggregation.py`, `nutrientSections.test.ts` |
 | USDA | `app/integrations/usda`, `app/services/usda_service.py` | `src/features/usda`, `src/runtime/local/localUsdaRuntime.ts` | `test_stage3_usda_*`, `localUsdaRuntime.test.ts`, `usda*.test.ts` |
 | Favorites and recents | `food_service.py`, Food/log repositories | Food hooks/discovery utilities | Food discovery tests |

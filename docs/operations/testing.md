@@ -66,6 +66,7 @@ claim that depends on those native behaviors.
 | USDA expanded mapping | `test_stage3_usda_*`, `localUsdaRuntime.test.ts`, USDA mobile tests |
 | Recipe publication/history | `test_recipe_*`, publication/revision tests, Recipe serving/yield tests |
 | Daily Logs | stage-2 Log tests, revision Log tests, local Daily Log tests, logging integration/display tests |
+| Complete and Nutrition History | E4-01–E4-06 contracts, E4-09–E4-12 presentation, E4-15 durability, E4-16 local/PostgreSQL/shared-projection parity |
 | DRI and target resolution | `test_dri_recommendations.py`, `test_targets.py`, `test_target_tracking_preferences.py`, `driRecommendations.test.ts`, `localTargetsRuntime.test.ts`, `target*.test.ts` |
 | OCR parser/confirmation | `test_ocr_parser.py`, golden fixtures, `test_ocr_confirmation.py`, local OCR parser/runtime tests, confirmation tests |
 | Guided OCR capture/quality | `nutritionScanAccessibility.test.ts`, `ocrImageQuality.test.ts`, native Swift image-quality tests |
@@ -136,6 +137,37 @@ prove safe replacement of the real local authority.
 For OCR native changes, run the Swift test target under `modules/nutrition-ocr/ios-tests` in addition
 to TypeScript OCR tests. Image-quality inspection is intentionally best-effort; tests must preserve
 the contract that an unavailable/failing inspector does not convert into a recognition failure.
+
+## Epic 4 History release qualification
+
+Ordinary backend/mobile baselines remain necessary for broad regression confidence, but they are not
+the consolidated release claim for Complete and Nutrition History. Use the retained E4-16 harness:
+
+```bash
+./scripts/run-e4-16-qualification.sh
+```
+
+The harness deliberately combines:
+
+- local SQLite Complete/History semantics and difficult-state evidence;
+- physical PostgreSQL 16 persistence, ownership, mutation, range, and transfer contracts, including
+  the required E4-01 through E4-04 selections;
+- the shared History projection over equivalent local/remote evidence;
+- relevant completed E4-03 through E4-15 mutation, range, cache, UI, and durability suites; and
+- the E4-16 fixture covering no-Log gaps, known, estimated, explicit zero, numeric-plus-unknown,
+  unknown-only, Complete/unconfirmed, one-usable-day, exact-decimal, and authority-isolation states.
+
+Final E4-16 evidence also includes physical target-iPhone P-1 through P-12: logging-first Daily Log,
+secondary History navigation, readable four-card overview, exact 7-day selection, all-observation
+30-day horizontal scrolling, gap-versus-zero distinction, usable Nutrition Details and focused
+History, exact Daily Log navigation, and preserved return context. That completed physical evidence
+is retained in `engineering/capsules/completed/E4-16.md`; the script does not recreate a human device
+observation by itself.
+
+This is distinct from unrelated historical opt-in PostgreSQL, MinIO, Phase 5C performance,
+destructive recovery, and native OCR suites. It does not authorize skipping ordinary affected
+baselines during new implementation work, and it does not turn #148 viewport alignment into an Epic
+4 acceptance gate.
 
 ## Issue 17 isolated Phase 5C clone
 
@@ -249,7 +281,7 @@ is not production-vendor certification.
 
 The preserved Version 1.0 release boundary remains application
 `0021_target_activation_execution` and control `ops_0011_phase5c4_recovery_audit`. Current remote
-application development has advanced to `0030_total_omega_3_nutrient`; this does not rewrite the
+application development has advanced to `0033_complete_runtime_authority`; this does not rewrite the
 historical release head.
 
 The frozen initial-migration replay comparison remains part of that qualification boundary:
@@ -302,6 +334,7 @@ shared or production object store.
 | Local backup/restore | Backup validation/activation/settings/start gate + native/file-backed SQLite for actual replacement/restart claims |
 | OCR camera/quality | Scan/accessibility + quality policy + native Swift tests when native metrics/capture change |
 | Route header/draft guard/accessibility | Shared header/draft/Dynamic Type tests plus each affected screen flow |
+| Complete/History semantics or UI | Relevant E4 focused suites plus `scripts/run-e4-16-qualification.sh`; repeat physical device evidence when the changed claim is physical |
 | E2 transfer contract | Backend/mobile E2-15 tests + versioned shared-contract fixtures |
 | Control contract | Python canonical/tamper tests and cross-language PostgreSQL parity |
 | Control routine/grant | Complete control PostgreSQL, role, qualification, replay, concurrency, downgrade suites |

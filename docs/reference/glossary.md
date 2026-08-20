@@ -301,7 +301,7 @@ SQLite.
 ### Application Migration Stream
 
 The Alembic history under `apps/backend/app/migrations`, applied only to the **remote application
-PostgreSQL** database. The current head is `0030_total_omega_3_nutrient`. The stream preserves the
+PostgreSQL** database. The current head is `0033_complete_runtime_authority`. The stream preserves the
 remote migration lineage, historical conversion metadata, and production prerequisites. It is not
 the local SQLite migration mechanism.
 

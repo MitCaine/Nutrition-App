@@ -64,7 +64,7 @@ screen and navigation
 | --- | --- | --- |
 | Navigation and screens | User flow, shared fixed route headers, draft-exit protection, accessibility, loading/error/success presentation | `src/app`, `src/features/*/screens`, `src/shared/navigation`, `src/shared/components` |
 | Hooks | Authority-scoped queries, mutations, and cache invalidation | `src/features/*/hooks` |
-| Feature utilities | Form state, display policy, validation, error mapping | `src/features/*/utils`, `validation`, `confirmation` |
+| Feature utilities | Form state, display policy, validation, History projection, error mapping | `src/features/*/utils`, `src/features/history`, `validation`, `confirmation` |
 | Runtime boundary | One composed local or remote application-data authority | `src/runtime` |
 | Feature/runtime boundary | Authority-neutral request/response contracts consumed through `NutritionRuntime` | `src/features/*/api`, `src/runtime/NutritionRuntime.ts` |
 | Shared nutrition reference/model | Canonical nutrient presentation, qualified units, DRI data/parity helpers | `src/shared/nutrition` |
@@ -158,7 +158,7 @@ model; the shared backend USDA credential is never embedded in the mobile app.
 | `/api/v1/nutrients` | Canonical nutrient catalog |
 | `/api/v1/foods` | Saved Foods, servings/reference measurements, favorites, recents, duplication, resolution |
 | `/api/v1/recipes` | Recipe authoring, calculation, publication, deletion |
-| `/api/v1/logs` | Daily Log creation, editing, deletion, mutation status, and summaries |
+| `/api/v1/logs` | Daily Log creation, editing, deletion, Complete mutation/recovery, bounded History evidence, and summaries |
 | `/api/v1/usda` | USDA search, preview, and import |
 | `/api/v1/ocr/nutrition-label` | Pure parsing and confirmed Food creation |
 | `/api/v1/targets` | Profiles, tracking preferences, manual overrides, DRI/FDA references, effective targets, and daily comparison |
@@ -179,12 +179,36 @@ The durable model includes mutable definitions and immutable historical facts:
 - Foods, serving/reference measurements, and authored Recipes are mutable definitions.
 - Recipe publication revisions are immutable snapshots.
 - Daily Log nutrient snapshots are historical facts.
+- Daily Log Complete assertions are explicit positive owner/date state alongside those facts; absence is not inferred `Incomplete` state.
 - OCR confirmation traces are append-only creation provenance.
 - Target profile/manual override/tracking-preference state is mutable configuration and never
   rewrites historical nutrition.
 - Create-idempotency rows bind retry identifiers to exact payloads and response snapshots.
 
 The [domain guides](../features/foods-and-nutrition.md) explain those relationships in user terms.
+
+#### Complete and bounded History
+
+Complete persistence is keyed by owner and authoritative Daily Log calendar date. It is created only
+by an explicit user assertion on a non-empty date; migration, Log presence, nutrient values, older
+transfer formats, and unconfirmed dates never infer it. Nutrition-changing Log mutations clear
+Complete for the affected date or dates inside the same authoritative transaction. Metadata-only or
+exact snapshot-preserving edits may preserve it, and later source Food/Recipe edits do not rewrite
+historical snapshots or their Complete state.
+
+History remains a read operation inside the Daily Logs capability. Local SQLite or remote
+FastAPI/PostgreSQL—whichever authority was selected at bootstrap—returns one bounded inclusive
+range of immutable daily evidence, Complete metadata, and earliest-log bounds. The evidence contract
+accepts at most 30 calendar dates and preserves gaps, explicit zero, estimated contribution,
+numeric-plus-unknown contribution, and unknown-only unavailability. Product presentation uses 7-
+and 30-day ranges ending yesterday.
+
+Authority-specific code retrieves equivalent daily evidence;
+`apps/mobile/src/features/history/historyProjection.ts` is the shared projection authority for
+Complete-day/Logged-day averages,
+nutrient-specific usable-day counts, exact-decimal division, chart gaps, and grouped rows. Current
+Targets remain a separate presentation lens. History adds no fallback, synchronization, dual read,
+mixed-authority result, historical target stream, or separate persistent cache authority.
 
 #### Local SQLite authority
 
@@ -238,7 +262,7 @@ Persistence evolution has three deliberately separate mechanisms:
 
 [Current State](../project/current-state.md) owns the active PostgreSQL heads. The remote
 application lineage includes the specially authorized `0021_target_activation_execution`
-activation revision and currently extends through `0030_total_omega_3_nutrient`; the current
+activation revision and currently extends through `0033_complete_runtime_authority`; the current
 control migration head is `ops_0011_phase5c4_recovery_audit`. Application and control migration
 streams must never be pointed at each other's database, and Phase 5/control-plane infrastructure
 must not leak into the local SQLite schema.
@@ -286,6 +310,9 @@ screen by screen:
 - feature forms report dirty/busy state upward so navigation cannot race an in-flight mutation;
 - shared accessibility primitives carry focus restoration, status announcement, busy/disabled
   semantics, and recovery behavior.
+- Daily Log remains logging-first; Nutrition History is a secondary route under it, with four macro
+  overview cards, distinct Nutrition Details/focused nutrient surfaces, and all-observation 30-day
+  horizontal scrolling rather than another bottom tab.
 
 These helpers own navigation/presentation policy. They do not become nutrition or persistence
 authority.
@@ -307,6 +334,9 @@ Tests are layered to match the claim being made:
 - MinIO tests prove exact object-version and retention behavior;
 - qualification tests deliberately tamper with security-critical objects to prevent false-green
   manifests.
+- the E4-16 qualification harness combines local SQLite semantics, physical PostgreSQL 16 contracts,
+  shared History projections, relevant prior E4 suites, and final target-iPhone P-1 through P-12
+  evidence for the Complete/History release boundary.
 
 See the [Testing Guide](../operations/testing.md) for commands and suite boundaries.
 

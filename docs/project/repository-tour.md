@@ -46,7 +46,7 @@ The iOS-first Expo/React Native client and primary local-first application runti
 
 ```text
 src/app/                  Navigation, providers, settings, theme
-src/features/             Foods, Recipes, Logging, USDA, OCR, Targets, Calendar-facing UI
+src/features/             Foods, Recipes, Logging, History, USDA, OCR, Targets, Calendar-facing UI
 src/runtime/              NutritionRuntime plus local and remote authority adapters
 src/storage/sqlite/       Local semantic schema, schema-version migrations, SQLite foundation
 src/storage/backup/       Validated local backup/export, staged restore, activation/rollback
@@ -88,7 +88,7 @@ app/models/               SQLAlchemy persistence model
 app/schemas/              Public request and response contracts
 app/integrations/usda/    FoodData Central HTTP and expanded nutrient mapping
 app/ocr/                  Pure parser and confirmation persistence
-app/migrations/           Application-database Alembic stream; current head 0030
+app/migrations/           Application-database Alembic stream; current head 0033_complete_runtime_authority
 app/operators/            Offline conversion, qualification, control-plane clients
 app/control_migrations/   Independent control-database Alembic stream
 scripts/                  Explicit operator, transfer, and audit entry points
@@ -102,10 +102,12 @@ Some small services query SQLAlchemy directly when another repository would not 
 ### `packages/shared-contracts`
 
 This directory contains retained machine-readable cross-runtime/transfer contracts from completed
-Epic 2 plus a small nutrition type reference. It is not a generated API SDK and is not the source of
-truth for backend Pydantic schemas.
+Epic 2, Epic 4 History evidence/projection/qualification fixtures, and a small nutrition type
+reference. It is not a generated API SDK and is not the source of truth for backend Pydantic
+schemas.
 
-Current retained contract areas include `e2-02`, `e2-05`, `e2-07`, `e2-08`, `e2-09`, and `e2-15`.
+Current retained contract areas include `e2-02`, `e2-05`, `e2-07`, `e2-08`, `e2-09`, `e2-15`,
+`e4-04`, `e4-05`, and `e4-16`.
 The E2-15 directory contains versioned source-schema, target-schema, transfer-contract, and
 representative-package artifacts used by PostgreSQL-to-SQLite transfer qualification. Treat these
 as bounded regression/compatibility evidence. Do not reinterpret an existing version silently when
@@ -152,7 +154,7 @@ is operations-only. A local backup is not a concurrent authority. Local SQLite i
 remote PostgreSQL, and PostgreSQL Alembic history is not mechanically replayed into SQLite.
 
 Current PostgreSQL heads are canonical in [Current State](current-state.md): remote application
-`0030_total_omega_3_nutrient` and control `ops_0011_phase5c4_recovery_audit`. The specially
+`0033_complete_runtime_authority` and control `ops_0011_phase5c4_recovery_audit`. The specially
 authorized `0021_target_activation_execution` boundary remains part of remote operational history;
 it is not the current feature-development head.
 
@@ -183,7 +185,10 @@ serving generation or Food nutrition changes.
 Read [Recipes and Nutrition History](../features/recipes-and-logging.md). Recipe behavior begins in
 `apps/mobile/src/features/recipes` and `app/services/recipe_service.py`; Log behavior begins in
 `apps/mobile/src/features/logging` and `app/services/log_service.py`. Read publication/revision
-resolution before changing historical behavior. For navigation changes, also read the shared draft
+resolution before changing historical behavior. Complete mutation/recovery adds
+`app/services/log_day_completion_service.py` and local `localDailyLogCompleteState.ts`; bounded
+History evidence flows through the Logs service/local runtime into `apps/mobile/src/features/history`,
+whose projection is shared across authorities. For navigation changes, also read the shared draft
 guard and route-header components.
 
 ### If you're working on Targets and DRI/FDA references
@@ -259,7 +264,9 @@ best-effort nature of image-quality inspection.
 
 Start at Log service/local Log runtime and snapshot/revision resolution. Preserve totals derived
 from snapshots, exact Recipe revision/amount bindings, owner scope, atomic mutation, and explicit
-confirmed-versus-unresolved results.
+confirmed-versus-unresolved results. Complete is explicit owner/date state and must be invalidated
+atomically when stored nutrition changes. History stays a bounded Daily Logs read with a shared
+projection, current Targets only as a presentation lens, and no local/remote fallback or mixing.
 
 ### Extending USDA import
 
@@ -320,6 +327,8 @@ semantics.
 - Native/file-backed local SQLite lifecycle claims: the documented Expo/native SQLite qualification
   harnesses.
 - Transfer contract parity: backend/mobile E2-15 tests plus `packages/shared-contracts/e2-15`.
+- Epic 4 Complete/History release parity: `scripts/run-e4-16-qualification.sh` plus E4-16 shared,
+  backend/PostgreSQL, and mobile evidence.
 - Control/WORM/production hardening: Phase 5C4 PostgreSQL/MinIO/qualification suites.
 
 Use the [Testing Guide](../operations/testing.md) to choose the minimum proof for a change.

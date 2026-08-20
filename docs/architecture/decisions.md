@@ -20,6 +20,9 @@ deployment-profile record remains decision provenance; the current boundary is m
 ### Application and nutrition
 
 - [Immutable Daily Log nutrition](#immutable-daily-log-nutrition)
+- [Complete is explicit date-owned state](#complete-is-explicit-date-owned-state)
+- [History is a bounded projection over Daily Log evidence](#history-is-a-bounded-projection-over-daily-log-evidence)
+- [History projection is shared across selected authorities](#history-projection-is-shared-across-selected-authorities)
 - [Immutable Recipe revisions](#immutable-recipe-revisions)
 - [Recipe Food compatibility projections](#recipe-food-compatibility-projections)
 - [Revision-backed nutrition logging](#revision-backed-nutrition-logging)
@@ -62,6 +65,48 @@ rebuilds that Log's snapshots.
 
 **Read more:** [Recipes and Nutrition History](../features/recipes-and-logging.md#daily-log-creation) and
 [Project Invariants](../project/invariants.md#why-immutable-nutrition-history)
+
+### Complete is explicit date-owned state
+
+**Decision:** Complete is a persisted positive assertion owned by the user and authoritative Daily
+Log calendar date. It is never inferred from Log presence or nutrient evidence. Nutrition-changing
+Log mutations invalidate it atomically; metadata-only and exactly snapshot-preserving edits may
+preserve it.
+
+**Consequence:** Absence means not confirmed complete, not a stored negative classification.
+Migration performs no backfill, while supported backup/restore and one-time transfer preserve
+explicit assertions without inferring them for older formats or introducing synchronization.
+
+**Read more:** [Complete day state](../features/recipes-and-logging.md#complete-day-state) and
+[Architecture Overview](overview.md#complete-and-bounded-history)
+
+### History is a bounded projection over Daily Log evidence
+
+**Decision:** History reads an inclusive, owner-scoped range of immutable Daily Log snapshot
+evidence and Complete metadata through the existing Daily Logs capability. Product presentation is
+limited to 7/30-day ranges ending yesterday; the evidence contract is bounded to at most 30 dates.
+
+**Consequence:** Missing dates remain gaps, explicit zero remains a usable zero, estimated and mixed-
+unknown numeric evidence remains numerical with provenance, and unknown-only evidence remains
+unavailable. Current Foods and Recipes cannot rewrite the range, and current Targets remain a
+separately labeled lens rather than reconstructed historical goal state.
+
+**Read more:** [Nutrition History and Trends](../features/recipes-and-logging.md#nutrition-history-and-trends)
+and [Architecture Overview](overview.md#complete-and-bounded-history)
+
+### History projection is shared across selected authorities
+
+**Decision:** Local SQLite and remote FastAPI/PostgreSQL retrieve equivalent daily evidence, while
+one shared client projection owns Complete-day/Logged-day averages, nutrient-specific denominators,
+exact arithmetic, gaps, and grouped History rows.
+
+**Consequence:** Selecting an authority changes evidence transport and concurrency, not History
+meaning. Remote failures do not fall back to SQLite; cache entries and results never synchronize,
+dual-read, or mix across authorities.
+
+**Read more:** [Nutrition History and Trends](../features/recipes-and-logging.md#nutrition-history-and-trends),
+[Architecture Overview](overview.md#complete-and-bounded-history), and
+[Testing Guide](../operations/testing.md#epic-4-history-release-qualification)
 
 ### Immutable Recipe revisions
 

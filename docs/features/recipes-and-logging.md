@@ -6,9 +6,10 @@ Recipes connect mutable authoring with immutable use. An author can keep editing
 published revision preserves exactly what was available when someone logged it. Daily Logs then
 snapshot resolved nutrient amounts so later Food or Recipe changes cannot rewrite history.
 
-“Nutrition history” in this guide means retained immutable Recipe revisions and Daily Log nutrition
-snapshots. The current application does not implement a separate multi-day trends/analytics
-subsystem merely because historical nutrition is retained.
+This guide distinguishes two related layers. Immutable Recipe revisions and Daily Log nutrient
+snapshots are the historical substrate. The implemented Nutrition History and Trends experience is
+a bounded multi-day presentation and projection over that substrate; it does not create another
+historical authority.
 
 ## Authored Recipes
 
@@ -157,6 +158,20 @@ Current mobile Log flows preserve authoritative amount/serving meaning while usi
 serving presentation. Mutation results are surfaced explicitly; success state is not inferred only
 from navigation or cache refresh.
 
+## Complete day state
+
+`Complete` is an explicit durable assertion that logging is finished for one authoritative Daily
+Log calendar date. It belongs to the date, not an individual Log, and it is never inferred from Log
+presence, nutrient values, older backup/transfer formats, or historical data. An absent assertion
+means not confirmed complete; it is not a persisted `Incomplete` classification.
+
+Nutrition-changing Log mutations invalidate Complete for every affected date in the same selected-
+authority transaction. Moves invalidate source and destination dates. Note-only and meal-label-only
+edits preserve Complete, as does a serving/amount edit whose resulting immutable nutrient snapshot
+is exactly unchanged. Later Food or Recipe edits do not invalidate historical Complete because they
+do not rewrite stored Log snapshots. Supported local backup/restore and one-time transfer preserve
+explicit Complete state without introducing synchronization or inferring it where absent.
+
 ## Daily summaries
 
 Daily summaries aggregate `daily_log_nutrient_snapshots` only. They never join current
@@ -170,6 +185,39 @@ Daily summaries aggregate `daily_log_nutrient_snapshots` only. They never join c
 
 Target comparison consumes this same summary, which keeps target/profile/tracking-preference changes
 outside the historical record.
+
+## Nutrition History and Trends
+
+History is a secondary analysis route owned by Daily Log, not a fourth tab or a separate runtime
+capability. The product exposes 7-day and 30-day calendar ranges ending yesterday. The underlying
+Daily Logs contract accepts bounded 1–30-date evidence reads; the product UI offers only 7/30-day
+ranges. Today remains the in-progress Daily Log date.
+
+One selected authority returns an inclusive record for every requested date plus the earliest logged
+date. Local SQLite and remote FastAPI/PostgreSQL expose equivalent evidence, and one shared mobile
+projection calculates Complete-day and Logged-day averages, usable-day counts, chart points, gaps,
+and grouped nutrient rows. A remote failure never falls back to SQLite, and range/cache evidence is
+never mixed across authorities.
+
+History preserves the stored evidence distinctions:
+
+- a date with no Logs is a gap, not zero intake;
+- explicit numerical zero is a usable zero observation;
+- estimated evidence remains numerical with estimated provenance;
+- numeric evidence with unknown contributors remains usable while retaining uncertainty; and
+- unknown-only nutrient evidence is unavailable and does not enter that nutrient's denominator.
+
+Complete-day mode includes only Complete dates with usable numerical evidence for the selected
+nutrient; Logged-day mode uses logged dates with usable numerical evidence. Exact stored decimals
+are summed before division and final presentation rounding. Current Target/reference values are a
+separately labeled present-day lens and are never reconstructed as historical goal state.
+
+The Daily Log remains logging-first, with History one interaction away and a compact four-macro
+summary. History presents four overview cards (Calories, Protein, Carbohydrate, and Fat), a distinct
+grouped Nutrition Details surface, and focused nutrient History with exact daily values. Thirty-day
+charts retain all daily observations through horizontal scrolling. Daily rows navigate to the exact
+Daily Log date, and returning preserves the History context. Automatic coaching, adherence scores,
+prior-period judgments, and 90-day/custom ranges are not implemented.
 
 ## Deletion and retention
 
@@ -203,6 +251,9 @@ snapshot semantics.
 | Publication snapshots | `app/publication/recipe_revision.py`, publication repository/models | `test_recipe_publication_*`, `test_recipe_revision_publication.py` |
 | Projection integrity | `app/domain/recipe_projection.py`, Food/Recipe services | `test_recipe_projection_ownership.py`, `test_food_recipe_serving_integrity.py` |
 | Logging and editing | `app/services/log_service.py`, `app/nutrition/revision_resolution.py` | `test_stage2_logs.py`, `test_recipe_revision_logging.py`, `test_recipe_revision_log_editing.py` |
+| Complete persistence and mutation | `app/services/log_day_completion_service.py`, `app/repositories/log_repository.py`, local `localDailyLogCompleteState.ts` | E4-01 through E4-03 Complete suites |
+| History evidence and shared projection | `app/services/log_service.py`, Logs history-range API, `src/runtime/local/localDailyLogsRuntime.ts`, `src/features/history/historyProjection.ts` | E4-04 through E4-06 and E4-16 History suites |
+| History presentation | `apps/mobile/src/features/history`, Daily Log navigation | E4-09 through E4-12 and E4-16 mobile suites |
 | Mobile Recipe/yield/serving flow | `apps/mobile/src/features/recipes`, `src/shared/navigation/draftGuard.ts` | `recipe*.test.ts`, `recipeServingChoice.test.ts`, `recipeServingUnitPicker.test.ts`, `draftGuard.test.ts` |
 | Mobile Log flow | `apps/mobile/src/features/logging` | `log*.test.ts`, `dailyLog*.test.ts`, logging integration tests |
 
@@ -219,4 +270,4 @@ snapshot semantics.
 
 - [Architecture Decision Index](../architecture/decisions.md) for revision and projection decisions
 - [OCR, Search, and Offline Behavior](ocr-search-and-offline.md) for another immutable provenance flow
-- [Testing Guide](../operations/testing.md) for publication, logging, local parity, and PostgreSQL concurrency coverage
+- [Testing Guide](../operations/testing.md) for publication, logging, Complete/History parity, E4-16 qualification, and PostgreSQL concurrency coverage

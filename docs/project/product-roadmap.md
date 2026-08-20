@@ -9,7 +9,7 @@ Nutrition App now uses the following Epic sequence:
 | Epic 1 | Daily Logging Flow | Complete | Implemented and qualified as Version 1.1 Epic 1. |
 | Epic 2 | Local-First SQLite Runtime | Complete | Inserted as the technical/local-first Epic and implemented through the completed Epic 2 program. |
 | Epic 3 | Nutrition Label Capture Confidence | Complete | Originally planned as product Epic 4; later absorbed and completed through Epic 2 OCR work and post-Epic-2 OCR/camera issues and physical-device qualification. |
-| Epic 4 | Nutrition History and Trends | Implementation authorized; GitHub backlog active | Research/Grill, Feature PRD, architecture/data contracts, backlog, repository gates, and GitHub issue creation are complete; application implementation has not yet landed. |
+| Epic 4 | Nutrition History and Trends | Complete | Implemented through E4-01–E4-15 and qualified across local SQLite, physical PostgreSQL 16, shared projections, and the target iPhone by E4-16. |
 | Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope | Originally planned as product Epic 3. Considerable Recipe authoring, serving, publication, and navigation work already exists, but the remaining reuse/discovery outcome has not been completed as an Epic. |
 
 ## Epic 3 — Nutrition Label Capture Confidence
@@ -39,13 +39,13 @@ The following historical/post-program issues provide important completion eviden
 
 Epic 4 is the current name for the product work originally described as Version 1.1 product Epic 2.
 
-The application already has the required trustworthy substrate: immutable Daily Log nutrient snapshots, exact daily summaries, explicit unknown-versus-zero semantics, target/reference context, and stable date-scoped Daily Logs. That substrate is not itself the History and Trends product feature.
+The delivered capability builds on immutable Daily Log nutrient snapshots, exact daily summaries, explicit unknown-versus-zero semantics, target/reference context, and stable date-scoped Daily Logs.
 
-The accepted Epic 4 outcome is a user-facing multi-day interpretation layer with explicit Complete-day/Logged-day denominator semantics, 7-day and 30-day calendar ranges, fixed macro overview charts, grouped additional nutrition detail, focused nutrient History, current-reference context, and navigation from a period result back to contributing Daily Log dates. It must continue to derive historical values only from immutable Daily Log snapshots and must not silently treat missing, unknown, or partially logged periods as zero intake.
+The implemented History surface provides explicit Complete-day/Logged-day denominator semantics, 7-day and 30-day calendar ranges ending yesterday, fixed macro overview charts, grouped Nutrition Details, focused nutrient History, current-reference context, and navigation from exact daily values back to the contributing Daily Log date. Historical values derive only from immutable Daily Log snapshots: missing dates remain gaps, explicit zero remains zero, and unknown-only evidence remains unavailable rather than becoming invented intake.
 
-The frozen planning package is indexed in [Version 1.2 Epic 4](version-1.2/epic-4/README.md). It contains the research record, completed Grill decisions, Feature PRD, architecture/data contracts, and bounded implementation backlog.
+The frozen package is indexed in [Version 1.2 Epic 4](version-1.2/epic-4/README.md). It retains the research record, completed Grill decisions, Feature PRD, architecture/data contracts, bounded implementation backlog, and delivery sequence as point-in-time planning and closure provenance.
 
-The finalized package passed repository documentation validation, the pre-commit project audit, and the repository issue-creator dry run at commit `df66941`. GitHub Epic [#113](https://github.com/MitCaine/Nutrition-App/issues/113) now owns delivery through E4-01–E4-17 ([#114](https://github.com/MitCaine/Nutrition-App/issues/114) through [#130](https://github.com/MitCaine/Nutrition-App/issues/130)) across six milestones. Epic 4 implementation is therefore authorized. No Epic 4 application implementation has landed yet; delivery must follow those approved issue boundaries rather than reopening product scope during implementation.
+The finalized package passed repository documentation validation, the pre-commit project audit, and the repository issue-creator dry run at commit `df66941`, then bounded delivery proceeded through E4-01–E4-17 ([#114](https://github.com/MitCaine/Nutrition-App/issues/114) through [#130](https://github.com/MitCaine/Nutrition-App/issues/130)). E4-16 supplied final automated and physical release evidence. Separate follow-ups #144, #147, and #148 cover documentation-validation hardening, Expo patch compatibility, and parallel-chart selected-date viewport alignment; none is unfinished Epic 4 acceptance scope.
 
 ## Epic 5 — Recipe Reuse and Discovery
 
@@ -74,4 +74,4 @@ This remapping is intentional. It reflects the completed insertion of SQLite as 
 
 Epic numbers in new issues, PRDs, architecture reviews, project boards, and conversation should use this current sequence. Historical records should not be rewritten to pretend this numbering existed when they were authored; where historical material is reused, translate through the mapping above.
 
-An Epic being listed here does not itself authorize implementation. Epic 4 is authorized because its frozen planning package passed the repository gates and was translated into the active GitHub delivery backlog #113–#130. Epic 5 remains planned and requires re-scope plus the normal Grill, PRD, architecture review, implementation backlog, validation, and GitHub issue workflow before code changes begin.
+An Epic being listed here does not itself authorize implementation. Epic 4 is complete because its approved package was delivered and qualified through the bounded GitHub backlog. Epic 5 remains planned and requires re-scope plus the normal Grill, PRD, architecture review, implementation backlog, validation, and GitHub issue workflow before code changes begin.

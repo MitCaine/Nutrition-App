@@ -20,11 +20,10 @@ For a new feature that has completed planning, follow the [GitHub Implementation
 to translate approved scope into implementation artifacts. Do not treat completed Version 1.1/Epic 2
 backlogs or closed issues as current work simply because their records remain in the repository.
 
-Epic 4 is now an active implementation program. Its Version 1.2 planning package is frozen, the repository
-validation/audit and issue-creator gates have passed, and GitHub Epic #113 with E4-01–E4-17 (#114–#130)
-owns delivery. Use the [Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md) for the
-approved scope and issue sequence. Current feature guides still describe implemented behavior until
-Epic 4 work lands and is qualified.
+Epic 4 — Nutrition History and Trends is implemented and qualified. Current feature, architecture,
+project, and testing guides own the delivered behavior. The frozen
+[Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md) remains easy to reach as
+point-in-time research, decision, architecture, backlog, delivery, and closure provenance.
 
 Historical records are not part of the default implementation context. Open them only when a
 current guide links to a specific record or the task concerns provenance, migration history,
@@ -56,7 +55,7 @@ planning may govern an explicitly active Epic before its behavior is promoted in
 | [`reference/`](reference/glossary.md) | Stable lookup material | As needed |
 | [`historical/`](historical/README.md) | Stage chronology, production-hardening records, release evidence, learning routes | No, unless provenance is relevant |
 | [`project/version-1.1/`](project/version-1.1/version-1.1-roadmap.md) | Completed Version 1.1/Epic 1/Epic 2 planning, implementation, and closure records | No, unless reviewing that program or retained compatibility evidence |
-| [`project/version-1.2/epic-4/`](project/version-1.2/epic-4/README.md) | Frozen Epic 4 planning package plus active GitHub delivery index | For Epic 4 implementation work |
+| [`project/version-1.2/epic-4/`](project/version-1.2/epic-4/README.md) | Frozen Epic 4 planning, architecture, backlog, delivery, and closure provenance | Only for Epic 4 provenance or retained acceptance evidence |
 
 ## Current canonical project knowledge
 
@@ -65,9 +64,9 @@ planning may govern an explicitly active Epic before its behavior is promoted in
   dependency-maintenance boundary.
 - [Current Product Roadmap](project/product-roadmap.md): canonical current Epic numbering, completion
   and implementation status, and the mapping from historical Version 1.1 product numbering.
-- [Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md): frozen Nutrition History and Trends
-  research/Grill, Feature PRD, data/runtime contracts, architecture review, implementation backlog,
-  and active GitHub delivery links.
+- [Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md): frozen Nutrition History
+  and Trends research/Grill, Feature PRD, data/runtime contracts, architecture review,
+  implementation backlog, and delivery links retained as planning and closure provenance.
 - [Project Constitution](project/constitution.md): enduring purpose, scope, non-goals, quality standards,
   deployment model, and priorities.
 - [Project Invariants](project/invariants.md): canonical cross-cutting technical invariants and rationale,
@@ -89,10 +88,13 @@ planning may govern an explicitly active Epic before its behavior is promoted in
 Version 1.1 and the technical Epic 2 program are complete. Subsequent implementation issue/PR work
 represented before Epic 4 is also closed. Nutrition Label Capture Confidence is completed Epic 3.
 
-Epic 4 — Nutrition History and Trends has a frozen Version 1.2 planning package and an active GitHub
-implementation backlog. The finalized package passed documentation validation, project audit, and the
-repository issue-creator dry run at commit `df66941`. Parent Epic #113 and E4-01–E4-17 (#114–#130)
-are open across six milestones. No Epic 4 application implementation has landed yet.
+Epic 4 — Nutrition History and Trends is complete. E4-01 through E4-15 delivered explicit date-owned
+Complete state, bounded History evidence/shared projections, logging-first Daily Log and Daily
+Nutrition surfaces, 7/30-day History analysis, Food-authoring refinements, and Complete durability.
+E4-16 qualified local SQLite, physical PostgreSQL 16, shared-projection, failure, and target-iPhone
+behavior. Separate #144 documentation-validation hardening, #147 Expo patch maintenance, and #148
+30-day selected-date viewport alignment remain non-blocking follow-ups rather than unfinished Epic 4
+acceptance scope.
 
 Epic 5 — Recipe Reuse and Discovery remains planned and requires re-scope.
 
@@ -106,10 +108,10 @@ The remaining known maintenance constraint is dependency-security cleanup that r
 Expo-compatible upstream fixes. Current documentation must not describe closed issues/PRs as the
 active implementation backlog.
 
-## Current Version 1.2 planning and delivery records
+## Retained Version 1.2 Epic 4 planning and delivery records
 
-Epic 4's frozen package is current implementation authority for approved future scope, not proof that
-the feature already exists:
+Epic 4's frozen package records the approved plan and delivery sequence that produced the current
+implementation. It is retained provenance, not the current behavior authority:
 
 - [Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md).
 - [Epic 4 Research Record](project/version-1.2/epic-4/planning.md).
@@ -118,10 +120,10 @@ the feature already exists:
 - [Epic 4 Data and Runtime Contracts](project/version-1.2/epic-4/data-contracts.md).
 - [Epic 4 Architecture Review](project/version-1.2/epic-4/architecture-review.md).
 - [Epic 4 Implementation Backlog](project/version-1.2/epic-4/implementation-backlog.md).
-- [GitHub Epic #113](https://github.com/MitCaine/Nutrition-App/issues/113): active delivery index for E4-01–E4-17.
+- [GitHub Epic #113](https://github.com/MitCaine/Nutrition-App/issues/113): retained delivery index for E4-01–E4-17.
 
-These artifacts govern active Epic 4 scope. Current feature guides remain authoritative for what the
-application actually does until implementation and qualification are complete.
+These artifacts preserve point-in-time scope, acceptance, and delivery provenance. Current feature,
+architecture, project, and operations guides own what the application now does.
 
 ## Completed planning and implementation records
 
@@ -162,8 +164,9 @@ alternate/reference authority. The two application-data authorities do not synch
 fail over, or silently mix. A local backup is a validated replacement artifact, not a second live
 authority.
 
-Epic 4's approved pre-implementation architecture is versioned within its active planning package and
-must not be mistaken for already-implemented current architecture.
+Epic 4's approved pre-implementation architecture remains versioned as closure provenance. The
+current Architecture Overview and Decision Index describe the implemented Complete/History
+boundaries.
 
 ## Feature guides
 
@@ -171,8 +174,8 @@ must not be mistaken for already-implemented current architecture.
   serving/reference measurements, Foods, USDA, discovery, DRI/FDA Targets, and per-nutrient tracking
   policy.
 - [Recipes and Nutrition History](features/recipes-and-logging.md): authoring/yields/serving choices,
-  immutable publication, revisions, projections, Daily Logs, and current guarded mobile authoring
-  behavior. “History” currently means retained exact nutrition/revisions, not the not-yet-implemented Epic 4 trends surface.
+  immutable publication, revisions, projections, Daily Logs, explicit Complete state, bounded 7/30-
+  day Nutrition History, shared projection semantics, and current guarded mobile behavior.
 - [OCR, Search, Offline Behavior, and Local Backup](features/ocr-search-and-offline.md): guided native
   camera capture, Apple Vision recognition, conservative quality hints, parsing/provenance, search
   composition, local/remote offline boundaries, and validated local SQLite backup/restore.
@@ -209,8 +212,9 @@ repository state.
 - [Current Product Roadmap](project/product-roadmap.md) owns current Epic numbering and product-Epic status.
 - [Project Invariants](project/invariants.md) owns cross-cutting invariants and rationale.
 - Current architecture, feature, and operations guides own their respective implemented guidance.
-- An explicitly active versioned planning package may own approved implementation scope before the behavior exists;
-  it does not override current guides about what is already implemented.
+- An explicitly active versioned planning package may own approved implementation scope before a
+  behavior exists; a completed frozen package remains provenance and does not override current
+  guides about implemented behavior.
 - Versioned completed planning directories and historical/evidence records preserve point-in-time context;
   correct present-day guidance in current docs rather than rewriting history.
 - A closed historical issue/roadmap entry is not current unfinished work merely because its document remains.

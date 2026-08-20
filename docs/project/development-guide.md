@@ -53,10 +53,12 @@ role profile runs migrations separately as `nutrition_migrator` and the API as
 `nutrition_runtime`. The root `scripts/start-backend.sh` implements only that qualified runtime
 launch: it verifies the exact runtime database role and deliberately does not run Alembic.
 
-The current remote application migration head is `0030_total_omega_3_nutrient`. Revisions after the
-special 0021 activation boundary include immutable provenance/integrity hardening, serving reference
-measurements, duplicate-source identity, the expanded nutrient catalog, and canonical total
-Omega-3. [Current State](current-state.md) owns the authoritative current head.
+The current remote application migration head is `0033_complete_runtime_authority`. Revisions after
+the special 0021 activation boundary include immutable provenance/integrity hardening, serving
+reference measurements, duplicate-source identity, the expanded nutrient catalog, canonical total
+Omega-3, date-owned Complete persistence, qualifier read authority, and integration of Complete
+state with the current PostgreSQL runtime authority. [Current State](current-state.md) owns the
+authoritative current head.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
 Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented
@@ -120,6 +122,12 @@ semantics, and explicit physical amount authority. Serving reference measurement
 physical anchor. Cross-dimension unit edits must preserve gram equivalence or require review rather
 than guess.
 
+Manual Food authoring is a presentation over the full canonical nutrient/form model. Keep the
+conventional fifteen Nutrition Facts fields as the immediate baseline, use the shared grouped `More
+nutrients` interaction for extended Vitamins/Minerals/Fatty Acids and canonical Other reachability,
+and preserve populated extended values on edit. Do not add another nutrient-value state authority or
+infer zero from blank/absent fields.
+
 Check effects on dependent Recipes and mutable-Food Log snapshot locking. Relevant late remote
 migrations are:
 
@@ -170,6 +178,30 @@ Preserve the rule that summaries aggregate snapshot rows only. Decide explicitly
 uses a mutable Food or immutable Recipe revision. Target/profile changes must never alter snapshot
 rows. Run standard Log tests plus PostgreSQL log concurrency and Recipe-revision editing tests when
 lock or snapshot behavior changes, and local Daily Log parity/recovery tests for local changes.
+
+Complete and History remain Daily Logs responsibilities:
+
+- remote Complete mutation/recovery begins in `app/services/log_day_completion_service.py`, with
+  owner/date persistence and invalidation support in the Log repository/service;
+- remote History evidence is exposed by the Logs router/service bounded range operation;
+- local Complete and History behavior lives in `src/runtime/local/localDailyLogCompleteState.ts` and
+  `localDailyLogsRuntime.ts` over the SQLite schema/migrations;
+- authority-neutral contracts remain on `NutritionRuntime.dailyLogs`; and
+- shared projection, query/cache identity, range/session behavior, and UI live under
+  `apps/mobile/src/features/history`.
+
+Preserve explicit positive date-owned Complete state, atomic invalidation with nutrition-changing
+Log mutations, exact-snapshot-preserving exceptions, bounded 1–30-date evidence behavior, 7/30 product
+UI, missing/zero/unknown distinctions, current-target-only presentation, and exactly one selected
+authority with no fallback. Changes to any of these contracts should run the relevant E4 suites and
+the consolidated [E4-16 qualification](../operations/testing.md#epic-4-history-release-qualification).
+
+Relevant current remote migrations are:
+
+- `0031_daily_log_complete_state` — additive owner/date Complete persistence with no backfill;
+- `0032_qualifier_complete_read` — read authority for qualification; and
+- `0033_complete_runtime_authority` — forward-only integration with the current PostgreSQL runtime
+  authority.
 
 ## If you need to modify USDA
 
@@ -359,6 +391,9 @@ Before finishing any feature change:
 - determine whether historical snapshots or revisions are involved;
 - distinguish target/reference configuration from historical nutrition;
 - preserve physical serving meaning when unit presentation changes;
+- preserve explicit Complete state and atomically invalidate it whenever authoritative Daily Log
+  nutrition changes;
+- keep History bounded, snapshot-derived, target-history-free, and single-authority;
 - update local and remote contracts together when the change is a parity contract;
 - add a migration only for persistent schema change;
 - update retained Epic 2 transfer/parity artifacts only when their bounded contract is actually affected;
