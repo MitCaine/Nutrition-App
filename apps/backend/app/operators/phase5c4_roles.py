@@ -15,6 +15,16 @@ from typing import Any, Iterable, Literal, Mapping
 
 from sqlalchemy import Connection, Engine, text
 
+from app.migrations.runtime_authority_0033_contracts import (
+    COMPLETE_RELATION,
+    CURRENT_AUTHORITY_SYNC_FUNCTION,
+    CURRENT_AUTHORITY_SYNC_TRIGGER,
+    CURRENT_CANARY_RELATIONS,
+    CURRENT_PUBLIC_RELATIONS,
+    CURRENT_RUNTIME_AUTHORITY_REVISION,
+    CURRENT_RUNTIME_RELATIONS,
+    CURRENT_RUNTIME_WRITE_PRIVILEGES,
+)
 from app.operators import phase5c_contracts as canonical
 from app.operators.immutable_provenance_contracts import (
     CURRENT_RUNTIME_SCHEMA_REVISION as IMMUTABLE_PROVENANCE_REVISION,
@@ -155,10 +165,25 @@ class RevisionRolePolicy:
     routines: tuple[RoutineSurface, ...]
     triggers: tuple[TriggerSurface, ...]
     restore_allowed: bool
+    current_public_relations: tuple[str, ...] | None = None
+    current_runtime_relations: tuple[str, ...] | None = None
+    current_canary_relations: tuple[str, ...] | None = None
 
     @property
     def runtime_writes(self) -> dict[str, tuple[str, ...]]:
         return dict(self.runtime_write_privileges)
+
+    @property
+    def public_relations(self) -> tuple[str, ...]:
+        return self.current_public_relations or PUBLIC_RELATIONS
+
+    @property
+    def runtime_relations(self) -> tuple[str, ...]:
+        return self.current_runtime_relations or RUNTIME_RELATIONS
+
+    @property
+    def canary_relations(self) -> tuple[str, ...]:
+        return self.current_canary_relations or CANARY_RELATIONS
 
 
 EXPECTED_MEMBERSHIPS = frozenset(
@@ -863,6 +888,72 @@ def _revision_role_policy(revision: str) -> RevisionRolePolicy:
             ),
             False,
         )
+    if revision == CURRENT_RUNTIME_AUTHORITY_REVISION:
+        current_sync_routine = RoutineSurface(
+            MAINTENANCE_SCHEMA,
+            CURRENT_AUTHORITY_SYNC_FUNCTION,
+            "",
+            "trigger",
+            "plpgsql",
+            "v",
+            True,
+            False,
+            False,
+            ("pg_catalog", "pg_temp"),
+        )
+        current_triggers = (
+            TriggerSurface(
+                "public",
+                COMPLETE_RELATION,
+                "phase5c_write_fence_gate",
+                "public",
+                "phase5c_enforce_write_fence",
+                30,
+            ),
+            TriggerSurface(
+                "public",
+                "phase5c_write_fence_state",
+                CURRENT_AUTHORITY_SYNC_TRIGGER,
+                MAINTENANCE_SCHEMA,
+                CURRENT_AUTHORITY_SYNC_FUNCTION,
+                17,
+            ),
+        )
+        return RevisionRolePolicy(
+            revision,
+            (
+                *_PHASE5C_0018_PUBLIC_RELATIONS,
+                "phase5c_activation_schema_evidence",
+                "phase5c_activation_runtime_commands",
+            ),
+            _PHASE5C_0018_PUBLIC_SEQUENCES,
+            tuple(sorted(CURRENT_RUNTIME_WRITE_PRIVILEGES.items())),
+            tuple(
+                sorted(
+                    (
+                        *routines,
+                        _RESOURCE_MEMBERSHIP_ROUTINE,
+                        *_immutable_routine_surfaces(),
+                        *_activation_execution_routine_surfaces(),
+                        current_sync_routine,
+                    )
+                )
+            ),
+            tuple(
+                sorted(
+                    (
+                        *triggers,
+                        *_immutable_trigger_surfaces(),
+                        *_activation_execution_trigger_surfaces(),
+                        *current_triggers,
+                    )
+                )
+            ),
+            False,
+            CURRENT_PUBLIC_RELATIONS,
+            CURRENT_RUNTIME_RELATIONS,
+            CURRENT_CANARY_RELATIONS,
+        )
     raise Phase5C4RoleError(f"Unsupported role-policy revision: {revision}")
 
 
@@ -872,6 +963,7 @@ SUPPORTED_ROLE_POLICY_REVISIONS = (
     RESOURCE_MEMBERSHIP_REVISION,
     IMMUTABLE_PROVENANCE_REVISION,
     ACTIVATION_EXECUTION_REVISION,
+    CURRENT_RUNTIME_AUTHORITY_REVISION,
 )
 
 REASON_CODES = frozenset(
@@ -935,18 +1027,24 @@ def _is_sha256_digest(value: Any) -> bool:
     )
 
 
-def _relation_grants(name: str) -> list[dict[str, Any]]:
+def _relation_grants(
+    name: str,
+    profile: RevisionRolePolicy | None = None,
+) -> list[dict[str, Any]]:
+    runtime_relations = RUNTIME_RELATIONS if profile is None else profile.runtime_relations
+    runtime_writes = RUNTIME_WRITE_PRIVILEGES if profile is None else profile.runtime_writes
+    canary_relations = CANARY_RELATIONS if profile is None else profile.canary_relations
     grants: list[dict[str, Any]] = []
-    if name in RUNTIME_RELATIONS:
+    if name in runtime_relations:
         grants.append({"role": RUNTIME_READ_ROLE, "privileges": ["SELECT"]})
-    if name in RUNTIME_WRITE_PRIVILEGES:
+    if name in runtime_writes:
         grants.append(
             {
                 "role": RUNTIME_WRITE_ROLE,
-                "privileges": list(RUNTIME_WRITE_PRIVILEGES[name]),
+                "privileges": list(runtime_writes[name]),
             }
         )
-    if name in CANARY_RELATIONS:
+    if name in canary_relations:
         grants.append({"role": CANARY_READ_ROLE, "privileges": ["SELECT"]})
     grants.append({"role": QUALIFIER_ROLE, "privileges": ["SELECT"]})
     if name in OPS_INSPECTION_RELATIONS:
@@ -954,7 +1052,8 @@ def _relation_grants(name: str) -> list[dict[str, Any]]:
     return sorted(grants, key=lambda item: item["role"])
 
 
-def _unsigned_manifest() -> dict[str, Any]:
+def _unsigned_manifest(profile: RevisionRolePolicy | None = None) -> dict[str, Any]:
+    public_relations = PUBLIC_RELATIONS if profile is None else profile.public_relations
     return {
         "manifest_version": PRIVILEGE_MANIFEST_VERSION,
         "deployment_scope": DEPLOYMENT_SCOPE,
@@ -1000,9 +1099,9 @@ def _unsigned_manifest() -> dict[str, Any]:
                 "schema": "public",
                 "name": name,
                 "kind": "table",
-                "grants": _relation_grants(name),
+                "grants": _relation_grants(name, profile),
             }
-            for name in PUBLIC_RELATIONS
+            for name in public_relations
         ],
         "optional_relations": [
             {
@@ -1078,7 +1177,7 @@ def build_revision_privilege_manifest(revision: str) -> dict[str, Any]:
     if revision == EXPECTED_ALEMBIC_REVISION:
         return build_privilege_manifest()
 
-    payload = _unsigned_manifest()
+    payload = _unsigned_manifest(profile)
     payload["manifest_version"] = TRANSITIONAL_PRIVILEGE_MANIFEST_VERSION
     runtime_writes = profile.runtime_writes
     for relation in payload["relations"]:
@@ -1412,7 +1511,7 @@ def _expected_relation_names(
     archive_schemas: Iterable[str],
     profile: RevisionRolePolicy,
 ) -> set[tuple[str, str]]:
-    names = {("public", name) for name in PUBLIC_RELATIONS}
+    names = {("public", name) for name in profile.public_relations}
     names.update(("public", name) for name in profile.required_public_relations)
     names.update(("public", name) for name in profile.required_public_sequences)
     names.update((schema, name) for schema in archive_schemas for name in ARCHIVE_RELATIONS)
@@ -1714,15 +1813,15 @@ def _expected_relation_acls(
     optional_present: Iterable[str] = (),
 ) -> set[tuple[str, str, str, str, bool]]:
     expected: set[tuple[str, str, str, str, bool]] = set()
-    for name in PUBLIC_RELATIONS:
-        if name in RUNTIME_RELATIONS:
+    for name in profile.public_relations:
+        if name in profile.runtime_relations:
             expected.add(("public", name, RUNTIME_READ_ROLE, "SELECT", False))
         if state == "normal":
             expected.update(
                 ("public", name, RUNTIME_WRITE_ROLE, privilege, False)
                 for privilege in profile.runtime_writes.get(name, ())
             )
-        if name in CANARY_RELATIONS:
+        if name in profile.canary_relations:
             expected.add(("public", name, CANARY_READ_ROLE, "SELECT", False))
         expected.add(("public", name, QUALIFIER_ROLE, "SELECT", False))
         if name in OPS_INSPECTION_RELATIONS:
@@ -2504,7 +2603,7 @@ def _maintenance_state_expression(
     relations = [
         ("public", name)
         for name in (
-            *PUBLIC_RELATIONS,
+            *profile.public_relations,
             *profile.required_public_relations,
             *sorted(optional_present),
         )
@@ -2523,7 +2622,7 @@ def _maintenance_state_expression(
         ):
             expected = (
                 schema == "public"
-                and name in RUNTIME_RELATIONS
+                and name in profile.runtime_relations
                 and (
                     privilege == "SELECT"
                     or (state == "normal" and privilege in profile.runtime_writes.get(name, ()))

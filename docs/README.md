@@ -154,6 +154,8 @@ plans do not mention it.
 - [Architecture Decision Index](architecture/decisions.md): accepted implemented decisions including
   explicit application-data authority, serving/reference authority, reference-derived Targets, and
   validated local backup replacement.
+- [PostgreSQL Runtime-Authority Evolution](engineering/postgresql-runtime-authority.md): forward
+  relation classification, exact privilege decisions, write-fence integration, and PG16 proof.
 
 The default application-data authority is local SQLite. FastAPI/PostgreSQL remains a preserved
 alternate/reference authority. The two application-data authorities do not synchronize, dual-write,

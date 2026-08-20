@@ -1,6 +1,6 @@
 {
   "application_heads": [
-    "0032_qualifier_complete_read"
+    "0033_complete_runtime_authority"
   ],
   "authorization_contract_constants": [
     {
@@ -497,7 +497,7 @@
   "control_heads": [
     "ops_0011_phase5c4_recovery_audit"
   ],
-  "inventory_sha256": "e3864cbadbf69c5400c74b85d8f427e4d4ea3f8370f23aaf11c68c38b37d8b33",
+  "inventory_sha256": "be98edce20e8f1be959b11de18e950883c2e6a90723d4dda1f4bffda78d914b5",
   "roles": [
     "nutrition_canary",
     "nutrition_canary_read",
