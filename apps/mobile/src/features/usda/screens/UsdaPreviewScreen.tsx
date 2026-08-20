@@ -76,7 +76,7 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
   return (
     <View style={styles.screen}>
       <RouteScreenHeader
-        title={preview.data.name}
+        title="USDA food details"
         titleRef={headingRef}
         titleStyle={styles.title}
         leading={(
@@ -91,10 +91,18 @@ export function UsdaPreviewScreen({ fdcId, onBack, onImported }: Props) {
       />
 
       <ScrollView
+        testID="usda-preview-scroll"
         contentContainerStyle={styles.content}
         scrollIndicatorInsets={{ right: 1 }}
       >
         <View style={styles.header}>
+          <Text
+            accessibilityRole="header"
+            testID="usda-preview-name"
+            style={styles.foodName}
+          >
+            {preview.data.name}
+          </Text>
           <Text style={styles.meta}>
             USDA {preview.data.data_type}
             {preview.data.brand ? ` - ${preview.data.brand}` : ""}
@@ -153,6 +161,12 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
     paddingRight: 28,
   },
   error: { color: theme.colors.errorText },
+  foodName: {
+    color: theme.colors.text,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 30,
+  },
   header: { gap: 6 },
   loadingContent: {
     padding: 16,

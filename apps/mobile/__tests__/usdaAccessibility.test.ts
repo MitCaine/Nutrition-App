@@ -114,7 +114,7 @@ test("#108 USDA Preview keeps its busy Back action and title outside scrolling",
 
   const header = expectFixedRouteHeader(
     renderer.root,
-    "Example Protein Bar",
+    "USDA food details",
   );
 
   const back = header
