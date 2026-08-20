@@ -20,6 +20,11 @@ export const CONVENTIONAL_NUTRITION_FACTS_NUTRIENT_IDS = [
   "potassium",
 ] as const;
 
+const CONVENTIONAL_NUTRITION_FACTS_NUTRIENT_ID_SET =
+  new Set<string>(
+    CONVENTIONAL_NUTRITION_FACTS_NUTRIENT_IDS,
+  );
+
 export function conventionalNutritionFactsNutrients(
   nutrients:
     readonly NutrientDefinition[],
@@ -46,5 +51,26 @@ export function conventionalNutritionFactsNutrients(
           ? [nutrient]
           : [];
       },
+    );
+}
+
+export function extendedFoodAuthoringNutrients(
+  nutrients:
+    readonly NutrientDefinition[],
+): NutrientDefinition[] {
+  return [...nutrients]
+    .filter(
+      (nutrient) =>
+        !CONVENTIONAL_NUTRITION_FACTS_NUTRIENT_ID_SET.has(
+          nutrient.id,
+        ),
+    )
+    .sort(
+      (left, right) =>
+        left.display_order
+        - right.display_order
+        || left.id.localeCompare(
+          right.id,
+        ),
     );
 }

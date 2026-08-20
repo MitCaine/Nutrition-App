@@ -22,6 +22,7 @@ type Props = {
   validationTarget?: string | null;
   validationError?: string | null;
   hideUnknownByDefault?: boolean;
+  alwaysVisibleNutrientIds?: readonly string[];
 };
 
 export function foodFormVisibleNutrients(
@@ -29,12 +30,20 @@ export function foodFormVisibleNutrients(
   values: readonly FoodNutrientInput[],
   revealedUnknownIds: ReadonlySet<string>,
   hideUnknownByDefault: boolean,
+  alwaysVisibleNutrientIds:
+    ReadonlySet<string> = new Set<string>(),
 ): NutrientDefinition[] {
   if (!hideUnknownByDefault) return [...nutrients];
   const byId = new Map(values.map((value) => [value.nutrient_id, value]));
   return nutrients.filter((nutrient) => {
+    if (alwaysVisibleNutrientIds.has(nutrient.id)) {
+      return true;
+    }
     const value = byId.get(nutrient.id);
-    return Boolean(value) && (value!.data_status !== "unknown" || revealedUnknownIds.has(nutrient.id));
+    return Boolean(value) && (
+      value!.data_status !== "unknown"
+      || revealedUnknownIds.has(nutrient.id)
+    );
   });
 }
 
@@ -42,10 +51,13 @@ export function foodFormHiddenNutrients(
   nutrients: readonly NutrientDefinition[],
   values: readonly FoodNutrientInput[],
   revealedUnknownIds: ReadonlySet<string>,
+  alwaysVisibleNutrientIds:
+    ReadonlySet<string> = new Set<string>(),
 ): NutrientDefinition[] {
   const byId = new Map(values.map((value) => [value.nutrient_id, value]));
   return nutrients.filter((nutrient) => (
-    byId.get(nutrient.id)?.data_status === "unknown"
+    !alwaysVisibleNutrientIds.has(nutrient.id)
+    && byId.get(nutrient.id)?.data_status === "unknown"
     && !revealedUnknownIds.has(nutrient.id)
   ));
 }
@@ -59,19 +71,30 @@ export function NutrientEntryList({
   validationTarget,
   validationError,
   hideUnknownByDefault = false,
+  alwaysVisibleNutrientIds = [],
 }: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const [revealedUnknownIds, setRevealedUnknownIds] = useState<Set<string>>(() => new Set());
   const [showMissingNutrients, setShowMissingNutrients] = useState(false);
   const byId = new Map(values.map((value) => [value.nutrient_id, value]));
+  const alwaysVisibleNutrientIdSet =
+    new Set<string>(
+      alwaysVisibleNutrientIds,
+    );
   const visibleNutrients = foodFormVisibleNutrients(
     nutrients,
     values,
     revealedUnknownIds,
     hideUnknownByDefault,
+    alwaysVisibleNutrientIdSet,
   );
   const hiddenNutrients = hideUnknownByDefault
-    ? foodFormHiddenNutrients(nutrients, values, revealedUnknownIds)
+    ? foodFormHiddenNutrients(
+        nutrients,
+        values,
+        revealedUnknownIds,
+        alwaysVisibleNutrientIdSet,
+      )
     : [];
 
   const visibleSections =
@@ -133,7 +156,11 @@ export function NutrientEntryList({
       };
     });
     onChange(next);
-    if (hideUnknownByDefault && next.find((value) => value.nutrient_id === nutrientId)?.data_status === "unknown") {
+    if (
+      hideUnknownByDefault
+      && !alwaysVisibleNutrientIdSet.has(nutrientId)
+      && next.find((value) => value.nutrient_id === nutrientId)?.data_status === "unknown"
+    ) {
       setRevealedUnknownIds((current) => {
         if (!current.has(nutrientId)) return current;
         const nextIds = new Set(current);
@@ -291,18 +318,37 @@ export function NutrientEntryList({
       ))}
       {hideUnknownByDefault && hiddenNutrients.length > 0 ? (
         <AccessiblePressable
-          accessibilityLabel="Add missing nutrient"
+          accessibilityLabel="More nutrients"
+          accessibilityHint="Shows additional canonical nutrients grouped by type"
           accessibilityState={{ expanded: showMissingNutrients }}
           disabled={disabled}
           onPress={() => setShowMissingNutrients((current) => !current)}
           style={styles.addNutrientButton}
         >
-          <Text style={styles.addNutrientText}>Add missing nutrient</Text>
+          <Text style={styles.addNutrientText}>More nutrients</Text>
         </AccessiblePressable>
       ) : null}
       {hideUnknownByDefault && showMissingNutrients ? (
-        <View style={styles.picker}>
-          <Text accessibilityRole="header" style={styles.pickerHeading}>Choose a nutrient</Text>
+        <View
+          testID="more-nutrients-picker"
+          style={styles.picker}
+        >
+          <View style={styles.pickerHeader}>
+            <Text
+              accessibilityRole="header"
+              style={styles.pickerHeading}
+            >
+              More nutrients
+            </Text>
+            <AccessiblePressable
+              accessibilityLabel="Cancel more nutrients"
+              disabled={disabled}
+              onPress={() => setShowMissingNutrients(false)}
+              style={styles.cancelNutrientButton}
+            >
+              <Text style={styles.cancelNutrientText}>Cancel</Text>
+            </AccessiblePressable>
+          </View>
           {hiddenSections.map((section) => (
             <View
               key={section.id}
@@ -381,6 +427,14 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
     color: theme.colors.accent,
     fontWeight: "700",
   },
+  cancelNutrientButton: {
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  cancelNutrientText: {
+    color: theme.colors.accent,
+    fontWeight: "700",
+  },
   nutrientSection: {
     gap: 10,
   },
@@ -412,6 +466,11 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
     borderWidth: 1,
     gap: 8,
     padding: 12,
+  },
+  pickerHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   pickerHeading: {
     color: theme.colors.text,

@@ -395,7 +395,7 @@ test(
       visibleText.join(
         " ",
       ),
-    ).not.toContain(
+    ).toContain(
       "More nutrients",
     );
 
