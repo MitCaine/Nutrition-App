@@ -22,6 +22,12 @@ export type LocalSQLiteFixtureDatabase = {
   asExpoDatabase(): SQLiteDatabase;
 };
 
+export type LocalSQLiteObservedOperation = Readonly<{
+  method: "exec" | "getFirst" | "getAll" | "run";
+  source: string;
+  params: readonly unknown[];
+}>;
+
 const { DatabaseSync } = require("node:sqlite") as {
   DatabaseSync: new (path: string) => SqliteDatabaseSync;
 };
@@ -31,6 +37,7 @@ export class LocalSQLiteTestDatabase {
   private transactionTail: Promise<void> = Promise.resolve();
   beforeNextExclusiveTransaction?: () => Promise<void> | void;
   exclusiveTransactionCount = 0;
+  operationObserver?: (operation: LocalSQLiteObservedOperation) => void;
 
   constructor(path = ":memory:") {
     this.native = new DatabaseSync(path);
@@ -48,18 +55,22 @@ export class LocalSQLiteTestDatabase {
   }
 
   async execAsync(source: string): Promise<void> {
+    this.operationObserver?.({ method: "exec", source, params: [] });
     this.native.exec(source);
   }
 
   async getFirstAsync<T>(source: string, params: readonly unknown[] = []): Promise<T | null> {
+    this.operationObserver?.({ method: "getFirst", source, params });
     return (this.native.prepare(source).get(...params) as T | undefined) ?? null;
   }
 
   async getAllAsync<T>(source: string, params: readonly unknown[] = []): Promise<T[]> {
+    this.operationObserver?.({ method: "getAll", source, params });
     return this.native.prepare(source).all(...params) as T[];
   }
 
   async runAsync(source: string, params: readonly unknown[] = []): Promise<unknown> {
+    this.operationObserver?.({ method: "run", source, params });
     return this.native.prepare(source).run(...params);
   }
 

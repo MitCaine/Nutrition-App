@@ -30,6 +30,7 @@ import {
   seedLocalOwner,
   seedPublishedRecipeProjection,
   type LocalSQLiteFixtureDatabase,
+  type LocalSQLiteObservedOperation,
 } from "./localSQLiteTestSupport";
 
 const OWNER = "00000000-0000-4000-8000-000000000001";
@@ -50,6 +51,22 @@ const PROJECTION_SERVING = "00000000-0000-4000-8000-00000000002f";
 const REVISION_2 = "00000000-0000-4000-8000-000000000025";
 const REVISION_2_AMOUNT = "00000000-0000-4000-8000-000000000026";
 const REVISION_2_NUTRIENT = "00000000-0000-4000-8000-000000000027";
+const DELETED_FOOD = "00000000-0000-4000-8000-000000000050";
+const DELETED_SERVING = "00000000-0000-4000-8000-000000000051";
+const DELETED_RECIPE = "00000000-0000-4000-8000-000000000060";
+const DELETED_PROJECTION = "00000000-0000-4000-8000-000000000061";
+const DELETED_REVISION = "00000000-0000-4000-8000-000000000062";
+const MISSING_REVISION_RECIPE = "00000000-0000-4000-8000-000000000070";
+const MISSING_REVISION_PROJECTION = "00000000-0000-4000-8000-000000000071";
+const MISSING_REVISION = "00000000-0000-4000-8000-000000000072";
+const ABSENT_REVISION = "00000000-0000-4000-8000-000000000073";
+const MALFORMED_PROJECTION = "00000000-0000-4000-8000-000000000081";
+const MALFORMED_PROJECTION_SERVING = "00000000-0000-4000-8000-00000000008f";
+const MISSING_RECIPE = "00000000-0000-4000-8000-000000000082";
+const MISSING_RECIPE_PROJECTION = "00000000-0000-4000-8000-000000000083";
+const MISSING_RECIPE_PROJECTION_SERVING = "00000000-0000-4000-8000-000000000084";
+const MISSING_FOOD = "00000000-0000-4000-8000-000000000090";
+const MISSING_SERVING = "00000000-0000-4000-8000-000000000091";
 
 const NOW = () => new Date("2026-08-09T12:00:00.000Z");
 
@@ -267,6 +284,65 @@ async function insertHistoricalLog(
   );
 }
 
+async function insertSourceStateListLog(
+  database: LocalSQLiteTestDatabase,
+  input: {
+    sequence: number;
+    foodId: string;
+    servingId: string;
+    loggedDate: string;
+    foodName: string;
+  },
+): Promise<string> {
+  const id = `00000000-0000-4000-8000-${String(700_000 + input.sequence).padStart(12, "0")}`;
+  const createdAt = `2026-08-09T12:00:${String(input.sequence).padStart(2, "0")}.000000Z`;
+  await database.runAsync(
+    `INSERT INTO "daily_logs"
+      ("id", "user_id", "food_item_id", "food_name_snapshot", "logged_date", "meal_type",
+       "amount_quantity", "amount_unit", "serving_definition_id", "gram_amount", "created_at", "updated_at")
+     VALUES (?, ?, ?, ?, ?, 'breakfast', '1.000000', 'serving', ?, '100.000000', ?, ?)`,
+    [
+      id,
+      OWNER,
+      input.foodId,
+      input.foodName,
+      input.loggedDate,
+      input.servingId,
+      createdAt,
+      createdAt,
+    ],
+  );
+  return id;
+}
+
+function observeSelects(database: LocalSQLiteTestDatabase): {
+  operations: LocalSQLiteObservedOperation[];
+  stop: () => void;
+} {
+  const operations: LocalSQLiteObservedOperation[] = [];
+  database.operationObserver = (operation) => {
+    if (/^\s*SELECT\b/i.test(operation.source)) operations.push(operation);
+  };
+  return {
+    operations,
+    stop: () => { database.operationObserver = undefined; },
+  };
+}
+
+function selectBreakdown(operations: readonly LocalSQLiteObservedOperation[]) {
+  const from = (table: string) => operations.filter(
+    ({ source }) => source.includes(`FROM "${table}"`),
+  ).length;
+  return {
+    total: operations.length,
+    profiles: from("user_profiles"),
+    logs: from("daily_logs"),
+    foods: from("food_items"),
+    recipes: from("recipes"),
+    revisions: from("recipe_publication_revisions"),
+  };
+}
+
 describe("E2-09 local Daily Logs", () => {
   let database: LocalSQLiteTestDatabase;
   const temporaryDirectories = new Set<string>();
@@ -316,6 +392,306 @@ describe("E2-09 local Daily Logs", () => {
     }]);
     await expect(runtime.getDailySummary("2026-08-09")).resolves.toMatchObject({
       totals: [{ nutrientId: "protein", amountKnown: "20.000000", amountEstimated: "0", unknownContributorCount: 0 }],
+    });
+  });
+
+  test("bounds repeated-source list SELECTs independently of Daily Log density", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    await insertSourceStateListLog(database, {
+      sequence: 1,
+      foodId: FOOD,
+      servingId: SERVING,
+      loggedDate: "2026-08-09",
+      foodName: "Oats",
+    });
+    const ordinarySmallObserver = observeSelects(database);
+    await runtime.list("2026-08-09");
+    ordinarySmallObserver.stop();
+    for (let sequence = 2; sequence <= 8; sequence += 1) {
+      await insertSourceStateListLog(database, {
+        sequence,
+        foodId: FOOD,
+        servingId: SERVING,
+        loggedDate: "2026-08-09",
+        foodName: "Oats",
+      });
+    }
+    const ordinaryDenseObserver = observeSelects(database);
+    await runtime.list("2026-08-09");
+    ordinaryDenseObserver.stop();
+
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: RECIPE,
+      projectionId: PROJECTION,
+      revisionId: REVISION,
+      name: "Published Bowl",
+    });
+    await insertSourceStateListLog(database, {
+      sequence: 11,
+      foodId: PROJECTION,
+      servingId: PROJECTION_SERVING,
+      loggedDate: "2026-08-08",
+      foodName: "Published Bowl",
+    });
+    const recipeSmallObserver = observeSelects(database);
+    await runtime.list("2026-08-08");
+    recipeSmallObserver.stop();
+    for (let sequence = 12; sequence <= 18; sequence += 1) {
+      await insertSourceStateListLog(database, {
+        sequence,
+        foodId: PROJECTION,
+        servingId: PROJECTION_SERVING,
+        loggedDate: "2026-08-08",
+        foodName: "Published Bowl",
+      });
+    }
+    const recipeDenseObserver = observeSelects(database);
+    await runtime.list("2026-08-08");
+    recipeDenseObserver.stop();
+
+    expect({
+      ordinarySmall: selectBreakdown(ordinarySmallObserver.operations),
+      ordinaryDense: selectBreakdown(ordinaryDenseObserver.operations),
+      recipeSmall: selectBreakdown(recipeSmallObserver.operations),
+      recipeDense: selectBreakdown(recipeDenseObserver.operations),
+    }).toEqual({
+      ordinarySmall: { total: 3, profiles: 1, logs: 1, foods: 1, recipes: 0, revisions: 0 },
+      ordinaryDense: { total: 3, profiles: 1, logs: 1, foods: 1, recipes: 0, revisions: 0 },
+      recipeSmall: { total: 5, profiles: 1, logs: 1, foods: 1, recipes: 1, revisions: 1 },
+      recipeDense: { total: 5, profiles: 1, logs: 1, foods: 1, recipes: 1, revisions: 1 },
+    });
+  });
+
+  test("bounds listFuture source reads and preserves empty and date early returns", async () => {
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    for (let sequence = 21; sequence <= 28; sequence += 1) {
+      await insertSourceStateListLog(database, {
+        sequence,
+        foodId: FOOD,
+        servingId: SERVING,
+        loggedDate: "2026-08-10",
+        foodName: "Oats",
+      });
+    }
+
+    const futureObserver = observeSelects(database);
+    await expect(runtime.listFuture("2026-08-10")).resolves.toHaveLength(8);
+    futureObserver.stop();
+    const emptyObserver = observeSelects(database);
+    await expect(runtime.list("2026-08-08")).resolves.toEqual([]);
+    emptyObserver.stop();
+    const rejectedFutureObserver = observeSelects(database);
+    await expect(runtime.list("2026-08-10")).resolves.toEqual([]);
+    rejectedFutureObserver.stop();
+    const rejectedPresentObserver = observeSelects(database);
+    await expect(runtime.listFuture("2026-08-09")).resolves.toEqual([]);
+    rejectedPresentObserver.stop();
+
+    expect(selectBreakdown(futureObserver.operations)).toEqual({
+      total: 3, profiles: 1, logs: 1, foods: 1, recipes: 0, revisions: 0,
+    });
+    expect(selectBreakdown(emptyObserver.operations)).toEqual({
+      total: 2, profiles: 1, logs: 1, foods: 0, recipes: 0, revisions: 0,
+    });
+    expect(selectBreakdown(rejectedFutureObserver.operations)).toEqual({
+      total: 1, profiles: 1, logs: 0, foods: 0, recipes: 0, revisions: 0,
+    });
+    expect(selectBreakdown(rejectedPresentObserver.operations)).toEqual({
+      total: 1, profiles: 1, logs: 0, foods: 0, recipes: 0, revisions: 0,
+    });
+  });
+
+  test("batch-classifies mixed current sources without changing ordering or historical names", async () => {
+    await seedLocalFood(database, {
+      id: DELETED_FOOD,
+      ownerId: OWNER,
+      name: "Deleted Food",
+      deletedAt: "2026-08-09T13:00:00.000000Z",
+      servingId: DELETED_SERVING,
+      gramWeight: "100.000000",
+    });
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: RECIPE,
+      projectionId: PROJECTION,
+      revisionId: REVISION,
+      name: "Active Recipe",
+    });
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: DELETED_RECIPE,
+      projectionId: DELETED_PROJECTION,
+      revisionId: DELETED_REVISION,
+      name: "Deleted Recipe",
+    });
+    await database.runAsync(
+      `UPDATE "recipes" SET "deleted_at" = '2026-08-09T13:00:00.000000Z' WHERE "id" = ?`,
+      [DELETED_RECIPE],
+    );
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: MISSING_REVISION_RECIPE,
+      projectionId: MISSING_REVISION_PROJECTION,
+      revisionId: MISSING_REVISION,
+      name: "Missing Revision Recipe",
+    });
+    await database.execAsync("PRAGMA foreign_keys = OFF");
+    await database.runAsync(
+      `UPDATE "recipes" SET "active_publication_revision_id" = ? WHERE "id" = ?`,
+      [ABSENT_REVISION, MISSING_REVISION_RECIPE],
+    );
+    await database.execAsync("PRAGMA foreign_keys = ON");
+    await database.runAsync(
+      `INSERT INTO "food_items"
+        ("id", "user_id", "name", "source_type", "source_id", "is_recipe", "created_at", "updated_at")
+       VALUES (?, ?, 'Malformed Recipe Source', 'recipe', 'not-a-uuid', 1,
+               '2026-01-01T00:00:00.000000Z', '2026-01-01T00:00:00.000000Z')`,
+      [MALFORMED_PROJECTION, OWNER],
+    );
+    await database.runAsync(
+      `INSERT INTO "serving_definitions"
+        ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+       VALUES (?, ?, '1 serving', '1.000000', 'serving', '100.000000', 1, 'recipe', 0)`,
+      [MALFORMED_PROJECTION_SERVING, MALFORMED_PROJECTION],
+    );
+    await database.runAsync(
+      `INSERT INTO "food_items"
+        ("id", "user_id", "name", "source_type", "source_id", "is_recipe", "created_at", "updated_at")
+       VALUES (?, ?, 'Missing Recipe Source', 'recipe', ?, 1,
+               '2026-01-01T00:00:00.000000Z', '2026-01-01T00:00:00.000000Z')`,
+      [MISSING_RECIPE_PROJECTION, OWNER, MISSING_RECIPE],
+    );
+    await database.runAsync(
+      `INSERT INTO "serving_definitions"
+        ("id", "food_item_id", "label", "quantity", "unit", "gram_weight", "is_default", "source", "is_user_confirmed")
+       VALUES (?, ?, '1 serving', '1.000000', 'serving', '100.000000', 1, 'recipe', 0)`,
+      [MISSING_RECIPE_PROJECTION_SERVING, MISSING_RECIPE_PROJECTION],
+    );
+
+    const expectedIds = [
+      await insertSourceStateListLog(database, {
+        sequence: 31, foodId: FOOD, servingId: SERVING, loggedDate: "2026-08-08", foodName: "Historical Oats",
+      }),
+      await insertSourceStateListLog(database, {
+        sequence: 32, foodId: DELETED_FOOD, servingId: DELETED_SERVING, loggedDate: "2026-08-08", foodName: "Historical Deleted Food",
+      }),
+      await insertSourceStateListLog(database, {
+        sequence: 33, foodId: PROJECTION, servingId: PROJECTION_SERVING, loggedDate: "2026-08-08", foodName: "Historical Active Recipe",
+      }),
+      await insertSourceStateListLog(database, {
+        sequence: 34, foodId: DELETED_PROJECTION, servingId: `${DELETED_PROJECTION.slice(0, -1)}f`, loggedDate: "2026-08-08", foodName: "Historical Deleted Recipe",
+      }),
+      await insertSourceStateListLog(database, {
+        sequence: 35, foodId: MISSING_REVISION_PROJECTION, servingId: `${MISSING_REVISION_PROJECTION.slice(0, -1)}f`, loggedDate: "2026-08-08", foodName: "Historical Missing Revision",
+      }),
+      await insertSourceStateListLog(database, {
+        sequence: 36, foodId: MALFORMED_PROJECTION, servingId: MALFORMED_PROJECTION_SERVING, loggedDate: "2026-08-08", foodName: "Historical Malformed Source",
+      }),
+      await insertSourceStateListLog(database, {
+        sequence: 37, foodId: MISSING_RECIPE_PROJECTION, servingId: MISSING_RECIPE_PROJECTION_SERVING, loggedDate: "2026-08-08", foodName: "Historical Missing Recipe",
+      }),
+    ];
+    await database.execAsync("PRAGMA foreign_keys = OFF");
+    expectedIds.push(await insertSourceStateListLog(database, {
+      sequence: 38, foodId: MISSING_FOOD, servingId: MISSING_SERVING, loggedDate: "2026-08-08", foodName: "Historical Missing Food",
+    }));
+    await database.execAsync("PRAGMA foreign_keys = ON");
+    await database.runAsync(`UPDATE "food_items" SET "name" = 'Renamed Oats' WHERE "id" = ?`, [FOOD]);
+
+    const observer = observeSelects(database);
+    const listed = await createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW })
+      .list("2026-08-08");
+    observer.stop();
+
+    expect(listed.map(({ id }) => id)).toEqual(expectedIds);
+    expect(listed).toMatchObject([
+      { food_name_snapshot: "Historical Oats", source_food_available: true, is_editable: true, edit_block_reason: null },
+      { food_name_snapshot: "Historical Deleted Food", source_food_available: false, is_editable: false, edit_block_reason: "source_food_deleted" },
+      { food_name_snapshot: "Historical Active Recipe", source_food_available: true, is_editable: true, edit_block_reason: null },
+      { food_name_snapshot: "Historical Deleted Recipe", source_food_available: false, is_editable: false, edit_block_reason: "source_food_deleted" },
+      { food_name_snapshot: "Historical Missing Revision", source_food_available: false, is_editable: false, edit_block_reason: "source_food_deleted" },
+      { food_name_snapshot: "Historical Malformed Source", source_food_available: false, is_editable: false, edit_block_reason: "source_food_deleted" },
+      { food_name_snapshot: "Historical Missing Recipe", source_food_available: false, is_editable: false, edit_block_reason: "source_food_deleted" },
+      { food_name_snapshot: "Historical Missing Food", source_food_available: false, is_editable: false, edit_block_reason: "source_food_deleted" },
+    ]);
+    expect(selectBreakdown(observer.operations)).toEqual({
+      total: 5, profiles: 1, logs: 1, foods: 1, recipes: 1, revisions: 1,
+    });
+    const sourceReads = observer.operations.filter(({ source }) => (
+      source.includes('FROM "food_items"')
+      || source.includes('FROM "recipes"')
+      || source.includes('FROM "recipe_publication_revisions"')
+    ));
+    expect(sourceReads).toHaveLength(3);
+    expect(sourceReads.every(({ params }) => params[0] === OWNER)).toBe(true);
+  });
+
+  test("listing after Recipe republication preserves the historical revision and nutrient snapshots", async () => {
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: RECIPE,
+      projectionId: PROJECTION,
+      revisionId: REVISION,
+      name: "Published Bowl",
+    });
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_amount_definitions"
+        ("id", "revision_id", "display_order", "display_label", "semantic_mode", "display_quantity", "display_unit", "gram_equivalent", "is_default")
+       VALUES (?, ?, 0, '1 serving', 'serving', '1.000000', 'serving', '100.000000', 1)`,
+      [REVISION_AMOUNT, REVISION],
+    );
+    await database.runAsync(
+      `INSERT INTO "recipe_publication_nutrients"
+        ("id", "revision_id", "nutrient_id", "amount", "unit", "basis", "data_status")
+       VALUES (?, ?, 'protein', '30.000000', 'g', 'per_serving', 'known')`,
+      [REVISION_NUTRIENT, REVISION],
+    );
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now: NOW });
+    const created = await runtime.create(createInput("00000000-0000-4000-8000-000000000199", {
+      food_item_id: PROJECTION,
+      amount_quantity: "1",
+      serving_definition_id: PROJECTION_SERVING,
+      source_food_updated_at: "2026-01-01T00:00:00.000000Z",
+      source_recipe_publication_revision_id: REVISION,
+    }));
+    const historicalLog = await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    );
+    const historicalSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    await seedRecipeRevision(database, {
+      revisionId: REVISION_2,
+      amountId: REVISION_2_AMOUNT,
+      nutrientRowId: REVISION_2_NUTRIENT,
+      revisionNumber: 2,
+      nutrientAmount: "40.000000",
+      activate: true,
+    });
+
+    await expect(runtime.list("2026-08-09")).resolves.toMatchObject([{
+      id: created.id,
+      food_name_snapshot: "Published Bowl",
+      source_food_available: true,
+      is_editable: true,
+    }]);
+    await expect(runtime.getDailySummary("2026-08-09")).resolves.toMatchObject({
+      totals: [{ nutrientId: "protein", amountKnown: "30.000000" }],
+    });
+    expect(await database.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_logs" WHERE "id" = ?`,
+      [created.id],
+    )).toEqual(historicalLog);
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots" WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(historicalSnapshots);
+    expect(historicalLog).toMatchObject({
+      recipe_publication_revision_id: REVISION,
+      recipe_publication_amount_definition_id: REVISION_AMOUNT,
     });
   });
 

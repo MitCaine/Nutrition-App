@@ -67,6 +67,7 @@ const CREATE_OPERATION = "log.create";
 const UPDATE_OPERATION = "log.update";
 const DELETE_OPERATION = "log.delete";
 const RECENT_ENTRY_LIMIT = 10;
+const SOURCE_STATE_BATCH_SIZE = 900;
 const MASS_UNITS = new Set(["g", "mg", "mcg"]);
 const NUTRIENT_BASES = new Set(["per_serving", "per_100g", "per_gram"]);
 const NUTRIENT_STATUSES = new Set(["known", "unknown", "estimated", "zero"]);
@@ -1260,13 +1261,14 @@ async function loadRevisionNutrients(transaction: SQLiteDatabase, revisionId: st
   );
 }
 
-async function loadSourceState(
-  transaction: SQLiteDatabase,
-  ownerId: string,
-  foodId: string,
-): Promise<SourceState> {
-  const food = await loadFood(transaction, foodId, ownerId);
-  if (!food) return { food: null, recipe: null, activeRevision: null, available: false, currentRevisionId: null };
+function classifySourceState(
+  food: FoodRow | null,
+  recipe: RecipeRow | null,
+  activeRevision: RevisionRow | null,
+): SourceState {
+  if (!food) {
+    return { food: null, recipe: null, activeRevision: null, available: false, currentRevisionId: null };
+  }
   if (food.is_recipe !== 1 && food.source_type !== "recipe") {
     return {
       food,
@@ -1275,6 +1277,28 @@ async function loadSourceState(
       available: food.deleted_at === null,
       currentRevisionId: null,
     };
+  }
+  const activeRevisionId = recipe?.active_publication_revision_id ?? null;
+  const available = food.deleted_at === null
+    && food.is_recipe === 1
+    && food.source_type === "recipe"
+    && recipe !== null
+    && recipe.deleted_at === null
+    && recipe.published_food_item_id === food.id
+    && recipe.active_publication_revision_id !== null
+    && food.recipe_publication_revision_id === recipe.active_publication_revision_id
+    && activeRevision !== null;
+  return { food, recipe, activeRevision, available, currentRevisionId: activeRevisionId };
+}
+
+async function loadSourceState(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  foodId: string,
+): Promise<SourceState> {
+  const food = await loadFood(transaction, foodId, ownerId);
+  if (!food || (food.is_recipe !== 1 && food.source_type !== "recipe")) {
+    return classifySourceState(food, null, null);
   }
   let recipe: RecipeRow | null = null;
   try {
@@ -1286,16 +1310,109 @@ async function loadSourceState(
   const activeRevision = activeRevisionId
     ? await loadRevision(transaction, activeRevisionId, ownerId)
     : null;
-  const available = food.deleted_at === null
-    && food.is_recipe === 1
-    && food.source_type === "recipe"
-    && recipe !== null
-    && recipe.deleted_at === null
-    && recipe.published_food_item_id === food.id
-    && recipe.active_publication_revision_id !== null
-    && food.recipe_publication_revision_id === recipe.active_publication_revision_id
-    && activeRevision !== null;
-  return { food, recipe, activeRevision, available, currentRevisionId: activeRevisionId };
+  return classifySourceState(food, recipe, activeRevision);
+}
+
+function distinctSorted(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function chunksOf<T>(values: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function loadFoodsForList(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  foodIds: readonly string[],
+): Promise<FoodRow[]> {
+  const rows: FoodRow[] = [];
+  for (const ids of chunksOf(distinctSorted(foodIds), SOURCE_STATE_BATCH_SIZE)) {
+    const placeholders = ids.map(() => "?").join(", ");
+    rows.push(...await transaction.getAllAsync<FoodRow>(
+      `SELECT "id", "user_id", "name", "source_type", "source_id",
+              "recipe_publication_revision_id", "is_recipe", "updated_at", "deleted_at"
+       FROM "food_items" WHERE "user_id" = ? AND "id" IN (${placeholders})`,
+      [ownerId, ...ids],
+    ));
+  }
+  return rows;
+}
+
+async function loadRecipesForList(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  recipeIds: readonly string[],
+): Promise<RecipeRow[]> {
+  const rows: RecipeRow[] = [];
+  for (const ids of chunksOf(distinctSorted(recipeIds), SOURCE_STATE_BATCH_SIZE)) {
+    const placeholders = ids.map(() => "?").join(", ");
+    rows.push(...await transaction.getAllAsync<RecipeRow>(
+      `SELECT "id", "user_id", "published_food_item_id", "active_publication_revision_id", "deleted_at"
+       FROM "recipes" WHERE "user_id" = ? AND "id" IN (${placeholders})`,
+      [ownerId, ...ids],
+    ));
+  }
+  return rows;
+}
+
+async function loadRevisionsForList(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  revisionIds: readonly string[],
+): Promise<RevisionRow[]> {
+  const rows: RevisionRow[] = [];
+  for (const ids of chunksOf(distinctSorted(revisionIds), SOURCE_STATE_BATCH_SIZE)) {
+    const placeholders = ids.map(() => "?").join(", ");
+    rows.push(...await transaction.getAllAsync<RevisionRow>(
+      `SELECT "id", "recipe_id", "user_id", "published_name"
+       FROM "recipe_publication_revisions" WHERE "user_id" = ? AND "id" IN (${placeholders})`,
+      [ownerId, ...ids],
+    ));
+  }
+  return rows;
+}
+
+async function loadSourceStatesForList(
+  transaction: SQLiteDatabase,
+  ownerId: string,
+  foodIds: readonly string[],
+): Promise<Map<string, SourceState>> {
+  const distinctFoodIds = distinctSorted(foodIds);
+  if (distinctFoodIds.length === 0) return new Map();
+  const foods = await loadFoodsForList(transaction, ownerId, distinctFoodIds);
+  const foodsById = new Map(foods.map((food) => [food.id, food]));
+  const recipeIdByFoodId = new Map<string, string>();
+  for (const food of foods) {
+    if (food.is_recipe !== 1 && food.source_type !== "recipe") continue;
+    try {
+      if (food.source_id) recipeIdByFoodId.set(food.id, parseUuid(food.source_id));
+    } catch {
+      // Match the singular source-state path: malformed source identity is unavailable, not fatal.
+    }
+  }
+  const recipes = await loadRecipesForList(transaction, ownerId, [...recipeIdByFoodId.values()]);
+  const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+  const revisions = await loadRevisionsForList(
+    transaction,
+    ownerId,
+    recipes.flatMap((recipe) => (
+      recipe.active_publication_revision_id ? [recipe.active_publication_revision_id] : []
+    )),
+  );
+  const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]));
+  return new Map(distinctFoodIds.map((foodId) => {
+    const food = foodsById.get(foodId) ?? null;
+    const recipeId = recipeIdByFoodId.get(foodId);
+    const recipe = recipeId ? recipesById.get(recipeId) ?? null : null;
+    const activeRevisionId = recipe?.active_publication_revision_id ?? null;
+    const activeRevision = activeRevisionId ? revisionsById.get(activeRevisionId) ?? null : null;
+    return [foodId, classifySourceState(food, recipe, activeRevision)];
+  }));
 }
 
 function amountFromServing(
@@ -1899,7 +2016,12 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
                   "id"`,
         [this.ownerId, loggedDate],
       );
-      return Promise.all(rows.map((row) => logResponse(this.database, this.ownerId, row)));
+      const sourceStates = await loadSourceStatesForList(
+        this.database,
+        this.ownerId,
+        rows.map((row) => row.food_item_id),
+      );
+      return rows.map((row) => rowToLog(row, sourceStates.get(row.food_item_id)!));
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
       throw readFailure();
@@ -1926,7 +2048,12 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
                   "id"`,
         [this.ownerId, loggedDate],
       );
-      return Promise.all(rows.map((row) => logResponse(this.database, this.ownerId, row)));
+      const sourceStates = await loadSourceStatesForList(
+        this.database,
+        this.ownerId,
+        rows.map((row) => row.food_item_id),
+      );
+      return rows.map((row) => rowToLog(row, sourceStates.get(row.food_item_id)!));
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
       throw readFailure();
