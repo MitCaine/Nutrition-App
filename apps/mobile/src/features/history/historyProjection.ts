@@ -19,7 +19,6 @@ import type {
   NutrientUnit,
 } from "../../shared/nutrition/types";
 import type {
-  HistoryDailyValueState,
   HistoryProjectedDailyValue,
   HistoryProjectedNutrient,
   HistoryProjection,

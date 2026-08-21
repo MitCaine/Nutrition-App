@@ -515,7 +515,7 @@ test(
     const mutate =
       jest.fn(
         (
-          fdcId: number,
+          _fdcId: number,
           options: {
             onSuccess:
               (food: Food) => void;

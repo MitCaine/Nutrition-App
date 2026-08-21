@@ -18,7 +18,6 @@ import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 import {
   buildCustomServingDefinition,
   buildRecipePayload,
-  formatLegacyCookedWeight,
   formatServingChoiceLabel,
   moveIngredient,
   switchIngredientMode,

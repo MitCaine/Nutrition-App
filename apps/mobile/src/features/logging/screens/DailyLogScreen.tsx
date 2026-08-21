@@ -204,7 +204,6 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const [completeSubmitting, setCompleteSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [successAnnouncementKey, setSuccessAnnouncementKey] = useState<string | null>(null);
-  const announce = useAccessibilityAnnouncement();
   const deleteSubmittingRef = useRef(false);
   const deleteSeparateActionAcknowledgmentRef = useRef<string | null>(null);
   const logsQuery = useDailyLogs(date, !legacyFuture);

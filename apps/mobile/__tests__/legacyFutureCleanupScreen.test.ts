@@ -12,7 +12,6 @@ let mockSummary: Record<string, unknown>;
 let mockCalendar: Record<string, unknown>;
 
 jest.mock("../src/shared/components/RootScreenHeader", () => ({ RootScreenHeader: () => null }));
-jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: () => null }));
 jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
   ...jest.requireActual("../src/features/targets/hooks/useDailyTargetComparison"),
   useTargetConfiguration: () => ({

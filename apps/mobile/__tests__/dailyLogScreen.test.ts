@@ -12,7 +12,6 @@ let mockLogs: Record<string, unknown>;
 let mockSummary: Record<string, unknown>;
 let mockCalendar: Record<string, unknown>;
 let mockDeleteMutation: { mutateAsync: jest.Mock; isPending: boolean; projectDelete: jest.Mock; refreshDate: jest.Mock };
-let mockTargetProgressProps: Record<string, unknown> | null = null;
 let mockTargetConfiguration: Record<string, unknown>;
 let mockTargetComparison: Record<string, unknown>;
 let mockRootHeaderProps: Record<string, any> | null = null;
@@ -28,7 +27,6 @@ jest.mock("../src/shared/accessibility/focus", () => ({
   ...jest.requireActual("../src/shared/accessibility/focus"),
   focusAccessibilityElement: (target: unknown, options: unknown) => mockAccessibilityFocus(target, options),
 }));
-jest.mock("../src/features/targets/TargetProgressSection", () => ({ TargetProgressSection: (props: Record<string, unknown>) => { mockTargetProgressProps = props; return null; } }));
 jest.mock("../src/features/targets/hooks/useDailyTargetComparison", () => ({
   useTargetConfiguration: () =>
     mockTargetConfiguration,
@@ -144,7 +142,6 @@ beforeEach(() => {
     refetch: jest.fn(),
   };
   mockCalendar = { data: { is_established: true, authoritative_time_zone: "UTC", calendar_revision: 4, today: "2026-07-14" } };
-  mockTargetProgressProps = null;
   mockTargetConfiguration = {
     data: {
       trackingPreferences: {},
