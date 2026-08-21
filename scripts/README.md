@@ -30,6 +30,8 @@ requires a lower-level audit subcommand.
 | `./scripts/start-project.sh` | Starts the qualified backend path plus an iOS development build in a named simulator on macOS/Xcode. |
 | `./scripts/stop-project.sh` | Stops processes recorded by `start-project.sh`, shuts down a simulator started by that script, and removes its local runtime state. |
 
+Process records written by `start-project.sh` are versioned ownership records rather than bare PID files. Each record captures the launched PID, normalized process start identity, service command contract, and observed command. `stop-project.sh` revalidates start identity and command contract before TERM and again before any forced KILL; malformed, legacy, exited, or mismatched records never authorize a signal. Descendant shutdown likewise captures child start identity before signaling. The local project launcher is a macOS/Xcode workflow; its process identity contract uses the `ps` `lstart`, `ppid`, `stat`, and `command` fields, which are covered by disposable-process regression tests.
+
 These scripts are not substitutes for initial environment setup or migration procedures. Ordinary
 development setup is documented in the
 [Development Guide](../docs/project/development-guide.md#configuration-and-startup). Target

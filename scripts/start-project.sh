@@ -3,6 +3,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+source "$ROOT_DIR/scripts/lib/project-process.sh"
 MOBILE_DIR="$ROOT_DIR/apps/mobile"
 RUNTIME_DIR="$ROOT_DIR/.project-runtime"
 
@@ -28,22 +30,37 @@ process_is_running() {
 
 remove_stale_pid_file() {
   local pid_file="$1"
-  local service_name="$2"
+  local service="$2"
+  local service_name="$3"
 
-  if [[ ! -f "$pid_file" ]]; then
-    return
+  project_process_prepare_start_record \
+    "$pid_file" \
+    "$service" \
+    "$service_name"
+}
+
+record_started_process() {
+  local pid_file="$1"
+  local service="$2"
+  local pid="$3"
+  local service_name="$4"
+
+  if project_process_write_record \
+      "$pid_file" \
+      "$service" \
+      "$pid"
+  then
+    return 0
   fi
 
-  local pid
-  pid="$(cat "$pid_file")"
+  echo \
+    "Error: Could not establish safe process identity for $service_name PID $pid." \
+    >&2
+  echo \
+    "No cleanup signal will be sent because process ownership was not established." \
+    >&2
 
-  if process_is_running "$pid"; then
-    echo "Error: $service_name is already running with PID $pid."
-    echo "Run scripts/stop-project.sh first."
-    exit 1
-  fi
-
-  rm -f "$pid_file"
+  return 1
 }
 
 find_simulator_udid() {
@@ -129,8 +146,8 @@ cleanup_failed_start() {
 
 trap cleanup_failed_start ERR
 
-remove_stale_pid_file "$BACKEND_PID_FILE" "Backend"
-remove_stale_pid_file "$EXPO_PID_FILE" "Expo"
+remove_stale_pid_file "$BACKEND_PID_FILE" backend "Backend"
+remove_stale_pid_file "$EXPO_PID_FILE" expo "Expo"
 
 if [[ ! -x "$ROOT_DIR/scripts/start-backend.sh" ]]; then
   echo "Error: scripts/start-backend.sh is missing or not executable."
@@ -202,7 +219,12 @@ nohup "$ROOT_DIR/scripts/start-backend.sh" \
   >"$BACKEND_LOG" 2>&1 &
 
 backend_pid=$!
-printf '%s\n' "$backend_pid" >"$BACKEND_PID_FILE"
+
+record_started_process \
+  "$BACKEND_PID_FILE" \
+  backend \
+  "$backend_pid" \
+  "Backend"
 
 wait_for_log_pattern \
   "$backend_pid" \
@@ -224,7 +246,12 @@ nohup npx expo run:ios \
   >"$EXPO_LOG" 2>&1 &
 
 expo_pid=$!
-printf '%s\n' "$expo_pid" >"$EXPO_PID_FILE"
+
+record_started_process \
+  "$EXPO_PID_FILE" \
+  expo \
+  "$expo_pid" \
+  "Expo"
 
 wait_for_log_pattern \
   "$expo_pid" \
