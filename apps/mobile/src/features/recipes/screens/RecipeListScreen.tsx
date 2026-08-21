@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
+import type { RecentFood } from "../../foods/api/types";
+import { useRecentFoods } from "../../foods/hooks/useFoods";
+import { formatRecentUse } from "../../foods/utils/foodDiscovery";
+import type { Recipe } from "../api/types";
 import { useRecipes } from "../hooks/useRecipes";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
@@ -20,10 +24,55 @@ type Props = {
 };
 
 const IOS_KEYBOARD_VERTICAL_OFFSET = 48;
+
+export function recipePublicationStatus(recipe: Recipe): "Draft" | "Published/current" | "Update Needed" {
+  if (!recipe.published_food_item_id) return "Draft";
+  return recipe.needs_republish ? "Update Needed" : "Published/current";
+}
+
+export function recentRecipeRows(
+  recipes: Recipe[] | undefined,
+  recentFoods: RecentFood[] | undefined,
+  query: string,
+): Array<{ recipe: Recipe; lastUsedAt: string }> {
+  if (query.trim()) return [];
+
+  const byPublishedFoodId = new Map<string, Recipe>();
+  for (const recipe of recipes ?? []) {
+    if (recipe.published_food_item_id) {
+      byPublishedFoodId.set(recipe.published_food_item_id, recipe);
+    }
+  }
+
+  const seen = new Set<string>();
+  const result: Array<{ recipe: Recipe; lastUsedAt: string }> = [];
+
+  for (const recent of recentFoods ?? []) {
+    if (
+      !recent.food.is_recipe
+      || recent.food.source_type !== "recipe"
+      || recent.food.source_kind !== "recipe"
+    ) {
+      continue;
+    }
+    const recipe = byPublishedFoodId.get(recent.food.id);
+    if (!recipe || seen.has(recipe.id)) continue;
+    seen.add(recipe.id);
+    result.push({ recipe, lastUsedAt: recent.last_used_at });
+  }
+
+  return result;
+}
+
 export function RecipeListScreen({ query, setQuery, onCreate, onOpenRecipe, message, onMessageExpired, initialScrollOffset, onScrollSessionChange, onOpenSettings }: Props) {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const recipes = useRecipes(query);
+  const recentFoods = useRecentFoods();
+  const recentRecipes = useMemo(
+    () => recentRecipeRows(recipes.data, recentFoods.data, query),
+    [query, recentFoods.data, recipes.data],
+  );
   const listRef = useRef<ScrollView>(null);
   const restoredRef = useRef(false);
 
@@ -63,22 +112,46 @@ export function RecipeListScreen({ query, setQuery, onCreate, onOpenRecipe, mess
         {recipes.isLoading ? <AccessibilityStatus kind="loading" message="Loading recipes…" /> : null}
         {recipes.isError ? <AccessibilityStatus kind="retryable-failure" message="Could not load recipes." retryContext="recipes" onRetry={() => { void recipes.refetch(); }} messageStyle={styles.error} /> : null}
         {!recipes.isLoading && !recipes.isError && recipes.data?.length === 0 ? <AccessibilityStatus kind="empty" message="No recipes yet." /> : null}
-        {recipes.data?.map((recipe) => (
-          <Pressable
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={`${recipe.name}, ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? "" : "s"}${recipe.published_food_item_id ? ", published" : ""}`}
-            key={recipe.id}
-            onPress={() => onOpenRecipe(recipe.id)}
-            style={styles.row}
-          >
-            <Text style={styles.name}>{recipe.name}</Text>
-            <Text style={styles.meta}>
-              {recipe.ingredients.length} ingredient{recipe.ingredients.length === 1 ? "" : "s"}
-              {recipe.published_food_item_id ? " - Published" : ""}
-            </Text>
-          </Pressable>
-        ))}
+        {recentRecipes.length > 0 ? (
+          <View testID="recent-recipes" style={styles.recentSection}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>Recent Recipes</Text>
+            {recentRecipes.map(({ recipe, lastUsedAt }) => {
+              const status = recipePublicationStatus(recipe);
+              const recentUse = formatRecentUse(lastUsedAt);
+              return (
+                <Pressable
+                  accessible
+                  accessibilityRole="button"
+                  accessibilityLabel={`${recipe.name}, recent Recipe, ${status}, ${recentUse}`}
+                  key={`recent-${recipe.id}`}
+                  onPress={() => onOpenRecipe(recipe.id)}
+                  style={styles.row}
+                >
+                  <Text style={styles.name}>{recipe.name}</Text>
+                  <Text style={styles.meta}>{status} · {recentUse}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        {recipes.data?.map((recipe) => {
+          const status = recipePublicationStatus(recipe);
+          return (
+            <Pressable
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={`${recipe.name}, ${recipe.ingredients.length} ingredient${recipe.ingredients.length === 1 ? "" : "s"}, ${status}`}
+              key={recipe.id}
+              onPress={() => onOpenRecipe(recipe.id)}
+              style={styles.row}
+            >
+              <Text style={styles.name}>{recipe.name}</Text>
+              <Text style={styles.meta}>
+                {recipe.ingredients.length} ingredient{recipe.ingredients.length === 1 ? "" : "s"} · {status}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
       <View style={styles.bottomControls}>
         <Pressable
@@ -156,8 +229,10 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   listScroller: { flex: 1, minHeight: 0 },
   meta: { color: theme.colors.secondaryText },
   name: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
+  recentSection: { gap: 2, marginBottom: 8 },
   row: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
   screen: { backgroundColor: theme.colors.background, flex: 1, gap: 12, minHeight: 0, paddingHorizontal: 16, paddingTop: 16 },
+  sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700", paddingTop: 4 },
   search: { color: theme.colors.text, flex: 1, paddingHorizontal: 12, paddingVertical: 11 },
   searchContainer: { paddingBottom: 8, paddingTop: 10 },
   searchRow: { alignItems: "center", backgroundColor: theme.colors.searchInputSurface, borderColor: theme.colors.searchInputBorder, borderRadius: 8, borderWidth: 1, flexDirection: "row" },

@@ -76,6 +76,12 @@ type RecipeLinkRow = {
   active_publication_revision_id: string | null;
   deleted_at: string | null;
 };
+type DailyLogRow = {
+  id: string;
+  user_id: string;
+  food_item_id: string;
+  created_at: string;
+};
 type SourceRow = {
   id: string;
   food_item_id: string;
@@ -91,6 +97,7 @@ type State = {
   nutrients: NutrientRow[];
   receipts: ReceiptRow[];
   recipes: RecipeLinkRow[];
+  logs: DailyLogRow[];
   sources: SourceRow[];
   favorites: Array<{ user_id: string; food_item_id: string; created_at: string }>;
 };
@@ -106,13 +113,23 @@ function cloneState(state: State): State {
     nutrients: state.nutrients.map((row) => ({ ...row })),
     receipts: state.receipts.map((row) => ({ ...row })),
     recipes: state.recipes.map((row) => ({ ...row })),
+    logs: state.logs.map((row) => ({ ...row })),
     sources: state.sources.map((row) => ({ ...row })),
     favorites: state.favorites.map((row) => ({ ...row })),
   };
 }
 
 class FoodSQLiteFake {
-  state: State = { foods: [], servings: [], nutrients: [], receipts: [], recipes: [], sources: [], favorites: [] };
+  state: State = {
+    foods: [],
+    servings: [],
+    nutrients: [],
+    receipts: [],
+    recipes: [],
+    logs: [],
+    sources: [],
+    favorites: [],
+  };
 
   async execAsync(_source: string): Promise<void> {}
 
@@ -163,6 +180,53 @@ class FoodSQLiteFake {
   }
 
   async getAllAsync<T>(source: string, params: readonly unknown[] = []): Promise<T[]> {
+    if (source.includes('JOIN "daily_logs"')) {
+      const owner = String(params[0]);
+      const limit = Number(params[1]);
+      const rows = this.state.foods
+        .filter((food) => food.user_id === owner && food.deleted_at === null)
+        .flatMap((food) => {
+          const ordinaryBacklink = this.state.recipes.some(
+            (recipe) => recipe.user_id === owner && recipe.published_food_item_id === food.id,
+          );
+          const ordinary = food.is_recipe === 0
+            && food.source_type !== "recipe"
+            && food.recipe_publication_revision_id === null
+            && !ordinaryBacklink;
+          const linkedRecipe = this.state.recipes.find(
+            (recipe) => recipe.id === food.source_id
+              && recipe.user_id === owner
+              && recipe.deleted_at === null
+              && recipe.published_food_item_id === food.id
+              && recipe.active_publication_revision_id === food.recipe_publication_revision_id,
+          );
+          const managed = food.is_recipe === 1
+            && food.source_type === "recipe"
+            && food.recipe_publication_revision_id !== null
+            && linkedRecipe !== undefined;
+          if (!ordinary && !managed) return [];
+
+          const latest = this.state.logs
+            .filter((log) => log.user_id === owner && log.food_item_id === food.id)
+            .sort(
+              (left, right) => right.created_at.localeCompare(left.created_at)
+                || right.id.localeCompare(left.id),
+            )[0];
+          return latest
+            ? [{
+              ...food,
+              last_used_at: latest.created_at,
+              last_used_sort_key: latest.created_at,
+            }]
+            : [];
+        })
+        .sort(
+          (left, right) => right.last_used_sort_key.localeCompare(left.last_used_sort_key)
+            || left.id.localeCompare(right.id),
+        )
+        .slice(0, limit);
+      return rows as T[];
+    }
     if (source.includes('FROM "food_favorites"')) {
       const owner = String(params[0]);
       return this.state.favorites
@@ -399,6 +463,18 @@ function appendSimpleFood(
     is_default: 1,
     source: input.sourceType === "recipe" ? "recipe" : "manual",
     is_user_confirmed: input.sourceType === "recipe" ? 0 : 1,
+  });
+}
+
+function appendRecentLog(
+  fake: FoodSQLiteFake,
+  input: { id: string; foodId: string; createdAt: string; owner?: string },
+): void {
+  fake.state.logs.push({
+    id: input.id,
+    user_id: input.owner ?? OWNER,
+    food_item_id: input.foodId,
+    created_at: input.createdAt,
   });
 }
 
@@ -1008,6 +1084,181 @@ describe("E2-05 local Foods runtime", () => {
       gram_weight: "50",
       is_default: false,
     })).rejects.toMatchObject({ code: "recipe_projection_read_only" });
+  });
+
+  test("includes coherent managed Recipe projections in recents without widening saved or favorite authority", async () => {
+    const fake = new FoodSQLiteFake();
+    const ordinaryId = "00000000-0000-4000-8000-000000000221";
+    const projectionId = "00000000-0000-4000-8000-000000000231";
+    const recipeId = "00000000-0000-4000-8000-000000000232";
+    const revisionId = "00000000-0000-4000-8000-000000000233";
+
+    appendSimpleFood(fake, { id: ordinaryId });
+    appendSimpleFood(fake, {
+      id: projectionId,
+      sourceType: "recipe",
+      sourceId: recipeId,
+      isRecipe: 1,
+    });
+    fake.state.foods.find(
+      (row) => row.id === projectionId,
+    )!.recipe_publication_revision_id = revisionId;
+    fake.state.recipes.push({
+      id: recipeId,
+      user_id: OWNER,
+      published_food_item_id: projectionId,
+      active_publication_revision_id: revisionId,
+      deleted_at: null,
+    });
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000234",
+      foodId: ordinaryId,
+      createdAt: "2026-04-01T08:00:00.000000Z",
+    });
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000235",
+      foodId: projectionId,
+      createdAt: "2026-04-02T08:00:00.000000Z",
+    });
+
+    const runtime = createLocalFoodsRuntime(database(fake), OWNER);
+
+    await expect(runtime.listRecent(10)).resolves.toMatchObject([
+      {
+        food: {
+          id: projectionId,
+          source_kind: "recipe",
+          source_label: "Recipe",
+          is_recipe: true,
+          can_favorite: false,
+        },
+        last_used_at: "2026-04-02T08:00:00Z",
+      },
+      {
+        food: { id: ordinaryId },
+        last_used_at: "2026-04-01T08:00:00Z",
+      },
+    ]);
+
+    await expect(runtime.list(undefined, "saved")).resolves.toMatchObject([
+      { id: ordinaryId },
+    ]);
+    await expect(runtime.setFavorite(projectionId, true)).rejects.toMatchObject({
+      code: "food_not_found",
+    });
+  });
+
+  test("rejects invalid Recipe-like recent candidates before applying the result limit", async () => {
+    const fake = new FoodSQLiteFake();
+    const validId = "00000000-0000-4000-8000-000000000241";
+    const malformedId = "00000000-0000-4000-8000-000000000242";
+    const staleId = "00000000-0000-4000-8000-000000000243";
+    const staleRecipeId = "00000000-0000-4000-8000-000000000244";
+    const staleRevisionId = "00000000-0000-4000-8000-000000000245";
+    const deletedId = "00000000-0000-4000-8000-000000000246";
+    const deletedRecipeId = "00000000-0000-4000-8000-000000000247";
+    const deletedRevisionId = "00000000-0000-4000-8000-000000000248";
+    const foreignId = "00000000-0000-4000-8000-000000000249";
+    const foreignRecipeId = "00000000-0000-4000-8000-000000000250";
+    const foreignRevisionId = "00000000-0000-4000-8000-000000000251";
+
+    appendSimpleFood(fake, { id: validId });
+
+    appendSimpleFood(fake, {
+      id: malformedId,
+      sourceType: "recipe",
+      sourceId: "not-a-uuid",
+      isRecipe: 1,
+    });
+
+    appendSimpleFood(fake, {
+      id: staleId,
+      sourceType: "recipe",
+      sourceId: staleRecipeId,
+      isRecipe: 1,
+    });
+    fake.state.foods.find(
+      (row) => row.id === staleId,
+    )!.recipe_publication_revision_id = staleRevisionId;
+    fake.state.recipes.push({
+      id: staleRecipeId,
+      user_id: OWNER,
+      published_food_item_id: staleId,
+      active_publication_revision_id: "00000000-0000-4000-8000-000000000252",
+      deleted_at: null,
+    });
+
+    appendSimpleFood(fake, {
+      id: deletedId,
+      sourceType: "recipe",
+      sourceId: deletedRecipeId,
+      isRecipe: 1,
+    });
+    fake.state.foods.find(
+      (row) => row.id === deletedId,
+    )!.recipe_publication_revision_id = deletedRevisionId;
+    fake.state.recipes.push({
+      id: deletedRecipeId,
+      user_id: OWNER,
+      published_food_item_id: deletedId,
+      active_publication_revision_id: deletedRevisionId,
+      deleted_at: "2026-04-03T00:00:00.000000Z",
+    });
+
+    appendSimpleFood(fake, {
+      id: foreignId,
+      sourceType: "recipe",
+      sourceId: foreignRecipeId,
+      isRecipe: 1,
+    });
+    fake.state.foods.find(
+      (row) => row.id === foreignId,
+    )!.recipe_publication_revision_id = foreignRevisionId;
+    fake.state.recipes.push({
+      id: foreignRecipeId,
+      user_id: OTHER_OWNER,
+      published_food_item_id: foreignId,
+      active_publication_revision_id: foreignRevisionId,
+      deleted_at: null,
+    });
+
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000261",
+      foodId: validId,
+      createdAt: "2026-04-01T08:00:00.000000Z",
+    });
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000262",
+      foodId: foreignId,
+      createdAt: "2026-04-02T08:00:00.000000Z",
+    });
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000263",
+      foodId: deletedId,
+      createdAt: "2026-04-03T08:00:00.000000Z",
+    });
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000264",
+      foodId: staleId,
+      createdAt: "2026-04-04T08:00:00.000000Z",
+    });
+    appendRecentLog(fake, {
+      id: "00000000-0000-4000-8000-000000000265",
+      foodId: malformedId,
+      createdAt: "2026-04-05T08:00:00.000000Z",
+    });
+
+    const runtime = createLocalFoodsRuntime(database(fake), OWNER);
+
+    await expect(runtime.listRecent(1)).resolves.toMatchObject([
+      {
+        food: { id: validId },
+        last_used_at: "2026-04-01T08:00:00Z",
+      },
+    ]);
+    await expect(runtime.listRecent(20)).resolves.toMatchObject([
+      { food: { id: validId } },
+    ]);
   });
 
   test("presents only canonical, owner-scoped duplicate provenance", async () => {

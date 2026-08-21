@@ -1094,13 +1094,31 @@ export class LocalFoodsRuntime implements FoodsRuntime {
           AND "daily_logs"."user_id" = "food_items"."user_id"
          WHERE "food_items"."user_id" = ?
            AND "food_items"."deleted_at" IS NULL
-           AND "food_items"."is_recipe" = 0
-           AND "food_items"."source_type" != 'recipe'
-           AND "food_items"."recipe_publication_revision_id" IS NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM "recipes" AS "saved_recipe"
-             WHERE "saved_recipe"."published_food_item_id" = "food_items"."id"
-               AND "saved_recipe"."user_id" = "food_items"."user_id"
+           AND (
+             (
+               "food_items"."is_recipe" = 0
+               AND "food_items"."source_type" != 'recipe'
+               AND "food_items"."recipe_publication_revision_id" IS NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM "recipes" AS "saved_recipe"
+                 WHERE "saved_recipe"."published_food_item_id" = "food_items"."id"
+                   AND "saved_recipe"."user_id" = "food_items"."user_id"
+               )
+             )
+             OR (
+               "food_items"."is_recipe" = 1
+               AND "food_items"."source_type" = 'recipe'
+               AND "food_items"."recipe_publication_revision_id" IS NOT NULL
+               AND EXISTS (
+                 SELECT 1 FROM "recipes" AS "recent_recipe"
+                 WHERE "recent_recipe"."id" = "food_items"."source_id"
+                   AND "recent_recipe"."user_id" = "food_items"."user_id"
+                   AND "recent_recipe"."deleted_at" IS NULL
+                   AND "recent_recipe"."published_food_item_id" = "food_items"."id"
+                   AND "recent_recipe"."active_publication_revision_id"
+                     = "food_items"."recipe_publication_revision_id"
+               )
+             )
            )
          GROUP BY "food_items"."id"
          ORDER BY "last_used_sort_key" DESC, "food_items"."id"

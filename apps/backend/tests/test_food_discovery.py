@@ -189,6 +189,56 @@ def test_recents_tie_break_limit_soft_delete_and_bounded_query_count(client, db_
     assert len(statements) <= 8
 
 
+def test_recents_include_current_recipe_projection_without_widening_favorite_authority(client):
+    _recipe_id, projection = _published(client)
+    _log(client, projection)
+
+    recent = client.get("/api/v1/foods/recent", params={"limit": 10})
+    assert recent.status_code == 200, recent.text
+
+    matching = [
+        row
+        for row in recent.json()["foods"]
+        if row["food"]["id"] == projection["id"]
+    ]
+    assert len(matching) == 1
+    assert matching[0]["food"]["source_kind"] == "recipe"
+    assert matching[0]["food"]["source_label"] == "Recipe"
+    assert matching[0]["food"]["is_recipe"] is True
+    assert matching[0]["food"]["can_favorite"] is False
+
+    # Discovery broadens only the read-side recent set. Managed projections
+    # remain outside favorite mutation authority.
+    assert client.put(f"/api/v1/foods/{projection['id']}/favorite").status_code == 404
+
+
+def test_recents_reject_invalid_recipe_markers_before_limit(client, db_session: Session):
+    valid = create_food(client, "Valid older recent")
+    invalid = create_food(client, "Invalid newer Recipe marker")
+
+    _insert_log_at(
+        db_session,
+        valid,
+        created_at=datetime(2026, 3, 1, 8, tzinfo=timezone.utc),
+    )
+    _insert_log_at(
+        db_session,
+        invalid,
+        created_at=datetime(2026, 3, 2, 8, tzinfo=timezone.utc),
+    )
+
+    invalid_row = db_session.get(FoodItem, UUID(invalid["id"]))
+    assert invalid_row is not None
+    invalid_row.is_recipe = True
+    invalid_row.source_type = "recipe"
+    invalid_row.source_id = "not-a-uuid"
+    db_session.commit()
+
+    recent = client.get("/api/v1/foods/recent", params={"limit": 1})
+    assert recent.status_code == 200, recent.text
+    assert [row["food"]["id"] for row in recent.json()["foods"]] == [valid["id"]]
+
+
 def test_source_classification_matrix_and_invalid_recipe_markers(client, db_session: Session):
     manual = create_food(client, "Manual Kind")
     duplicate = client.post(f"/api/v1/foods/{manual['id']}/duplicate").json()

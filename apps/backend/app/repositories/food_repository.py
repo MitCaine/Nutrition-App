@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import Text, and_, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.food import FoodFavorite, FoodItem
@@ -210,10 +210,38 @@ class FoodRepository:
                 Recipe.user_id == user_id,
             )
         )
+        managed_recipe = exists(
+            select(Recipe.id).where(
+                Recipe.user_id == user_id,
+                Recipe.deleted_at.is_(None),
+                cast(Recipe.id, Text) == FoodItem.source_id,
+                Recipe.published_food_item_id == FoodItem.id,
+                Recipe.active_publication_revision_id
+                == FoodItem.recipe_publication_revision_id,
+            )
+        )
+        recent_visibility = or_(
+            and_(
+                FoodItem.is_recipe.is_(False),
+                FoodItem.source_type != "recipe",
+                FoodItem.recipe_publication_revision_id.is_(None),
+                ~recipe_backlink,
+            ),
+            and_(
+                FoodItem.is_recipe.is_(True),
+                FoodItem.source_type == "recipe",
+                FoodItem.recipe_publication_revision_id.is_not(None),
+                managed_recipe,
+            ),
+        )
         statement = (
             select(FoodItem, last_use.c.last_used_at)
             .join(last_use, last_use.c.food_item_id == FoodItem.id)
-            .where(*self._saved_predicates(user_id, recipe_backlink))
+            .where(
+                FoodItem.user_id == user_id,
+                FoodItem.deleted_at.is_(None),
+                recent_visibility,
+            )
             .options(
                 selectinload(FoodItem.nutrients),
                 selectinload(FoodItem.serving_definitions),

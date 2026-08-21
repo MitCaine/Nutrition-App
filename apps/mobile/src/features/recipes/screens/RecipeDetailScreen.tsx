@@ -166,8 +166,8 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
             <RouteHeaderAction
               accessibilityLabel={
                 recipe.published_food_item_id
-                  ? "Republish Recipe food"
-                  : "Publish Recipe as food"
+                  ? "Republish Recipe"
+                  : "Publish Recipe"
               }
               busy={publishPending}
               disabled={publishDisabled}
@@ -254,11 +254,11 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
             <View style={styles.publishedActions}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="View published Recipe food"
+                accessibilityLabel="View published Recipe nutrition"
                 onPress={() => onOpenFood(recipe.published_food_item_id as string)}
                 style={[styles.secondaryButton, styles.publishedAction]}
               >
-                <Text style={styles.text}>View Published Food</Text>
+                <Text style={styles.text}>View Published Nutrition</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"

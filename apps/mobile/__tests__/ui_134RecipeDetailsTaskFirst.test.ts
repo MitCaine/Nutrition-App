@@ -414,7 +414,7 @@ test(
     const publish =
       pressableByLabel(
         header,
-        "Publish Recipe as food",
+        "Publish Recipe",
       );
 
     expect(
@@ -479,7 +479,7 @@ test(
     expect(
       pressablesByLabel(
         scroll,
-        "Publish Recipe as food",
+        "Publish Recipe",
       ),
     ).toHaveLength(
       0,
@@ -581,7 +581,7 @@ test(
     const republish =
       pressableByLabel(
         header,
-        "Republish Recipe food",
+        "Republish Recipe",
       );
 
     expect(
@@ -601,7 +601,7 @@ test(
     expect(
       pressablesByLabel(
         scroll,
-        "Republish Recipe food",
+        "Republish Recipe",
       ),
     ).toHaveLength(
       0,
@@ -610,10 +610,26 @@ test(
     expect(
       pressablesByLabel(
         scroll,
-        "View published Recipe food",
+        "View published Recipe nutrition",
       ),
     ).toHaveLength(
       1,
+    );
+
+    expect(
+      allText(
+        scroll,
+      ),
+    ).toContain(
+      "View Published Nutrition",
+    );
+
+    expect(
+      allText(
+        scroll,
+      ),
+    ).not.toContain(
+      "View Published Food",
     );
 
     expect(
@@ -638,7 +654,7 @@ test(
       async () => {
         pressableByLabel(
           scroll,
-          "View published Recipe food",
+          "View published Recipe nutrition",
         ).props.onPress();
       },
     );
@@ -723,7 +739,7 @@ test(
     const publish =
       pressableByLabel(
         header,
-        "Publish Recipe as food",
+        "Publish Recipe",
       );
 
     expect(
@@ -818,7 +834,7 @@ test(
           testID:
             "route-screen-header",
         }),
-        "Publish Recipe as food",
+        "Publish Recipe",
       );
 
     expect(
