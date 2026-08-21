@@ -46,6 +46,78 @@ function wireToRuntime(response: HistoryRangeResponse): HistoryRangeEvidence {
   };
 }
 
+function historyResponse(): HistoryRangeResponse {
+  return JSON.parse(JSON.stringify(fixture.expected)) as HistoryRangeResponse;
+}
+
+const malformedHistoryCases: Array<[
+  string,
+  (value: HistoryRangeResponse) => unknown,
+]> = [
+  ["missing required top-level field", ({ start_date: _startDate, ...value }) => value],
+  ["wrong top-level primitive", () => "history"],
+  ["malformed nested day object", (value) => ({ ...value, days: [null] })],
+  ["malformed nested nutrient item", (value) => ({
+    ...value,
+    days: value.days.map((day, index) => index === 1
+      ? { ...day, nutrients: ["bad"] }
+      : day),
+  })],
+  ["decimal supplied as a JSON number", (value) => ({
+    ...value,
+    days: value.days.map((day, index) => index === 1
+      ? {
+          ...day,
+          nutrients: day.nutrients.map((nutrient, nutrientIndex) => nutrientIndex === 0
+            ? { ...nutrient, amount_known: 0 }
+            : nutrient),
+        }
+      : day),
+  })],
+  ["invalid decimal text", (value) => ({
+    ...value,
+    days: value.days.map((day, index) => index === 1
+      ? {
+          ...day,
+          nutrients: day.nutrients.map((nutrient, nutrientIndex) => nutrientIndex === 0
+            ? { ...nutrient, amount_estimated: "1e3" }
+            : nutrient),
+        }
+      : day),
+  })],
+  ["wrong finite nutrient unit", (value) => ({
+    ...value,
+    days: value.days.map((day, index) => index === 1
+      ? {
+          ...day,
+          nutrients: day.nutrients.map((nutrient, nutrientIndex) => nutrientIndex === 0
+            ? { ...nutrient, unit: "oz" }
+            : nutrient),
+        }
+      : day),
+  })],
+  ["null mismatch", (value) => ({ ...value, start_date: null })],
+  ["invalid date-only text", (value) => ({ ...value, end_date: "2026-02-30" })],
+  ["non-integer contributor count", (value) => ({
+    ...value,
+    days: value.days.map((day, index) => index === 1
+      ? {
+          ...day,
+          nutrients: day.nutrients.map((nutrient, nutrientIndex) => nutrientIndex === 0
+            ? { ...nutrient, unknown_contributor_count: 0.5 }
+            : nutrient),
+        }
+      : day),
+  })],
+  ["unexpected top-level field", (value) => ({ ...value, unexpected: true })],
+  ["unexpected nested field", (value) => ({
+    ...value,
+    days: value.days.map((day, index) => index === 0
+      ? { ...day, unexpected: true }
+      : day),
+  })],
+];
+
 async function prepareDatabase(): Promise<LocalSQLiteTestDatabase> {
   const database = new LocalSQLiteTestDatabase();
   await database.initialize();
@@ -278,5 +350,69 @@ describe("E4-04 bounded History range", () => {
     );
     expect(capabilities).toHaveLength(8);
     expect(capabilities).toContain("dailyLogs");
+  });
+
+  test.each(malformedHistoryCases)(
+    "remote runtime rejects History response with %s before mapping",
+    async (_label, mutate) => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mutate(historyResponse()),
+    });
+
+    await expect(
+      remoteNutritionRuntime.dailyLogs.getHistoryRange(
+        "2026-08-06",
+        "2026-08-08",
+      ),
+    ).rejects.toMatchObject({
+      kind: "invalid_response",
+      retryable: false,
+      mutationOutcome: "not_applicable",
+    });
+    },
+  );
+
+  test("remote runtime keeps malformed Complete success unresolved and non-retryable", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        logged_date: "2026-08-08",
+        completed_at: 123,
+      }),
+    });
+
+    await expect(
+      remoteNutritionRuntime.dailyLogs.markDayComplete({
+        client_request_id: "00000000-0000-4000-8000-000000000201",
+        calendar_revision: 1,
+        logged_date: "2026-08-08",
+      }),
+    ).rejects.toMatchObject({
+      kind: "invalid_response",
+      retryable: false,
+      mutationOutcome: "unresolved",
+    });
+  });
+
+  test("remote runtime keeps malformed Recipe publication success unresolved and non-retryable", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ recipe: 1, food: null }),
+    });
+
+    await expect(
+      remoteNutritionRuntime.recipes.publish({
+        recipeId: "00000000-0000-4000-8000-000000000301",
+        clientRequestId: "00000000-0000-4000-8000-000000000302",
+      }),
+    ).rejects.toMatchObject({
+      kind: "invalid_response",
+      retryable: false,
+      mutationOutcome: "unresolved",
+    });
   });
 });

@@ -111,3 +111,27 @@ test("transport fallback text never exposes HTTP status or raw response JSON", (
   expect(opaque.message).toBe("The request conflicts with current data.");
   expect(opaque.message).not.toContain("private");
 });
+
+test.each([
+  [400, "validation", false],
+  [422, "validation", false],
+  [401, "unauthorized", false],
+  [403, "forbidden", false],
+  [404, "not_found", false],
+  [409, "conflict", false],
+  [408, "unavailable", true],
+  [500, "unavailable", true],
+] as const)(
+  "ordinary HTTP %i retains %s classification",
+  (status, kind, retryable) => {
+    expect(mapRemoteError(new ApiError({
+      status,
+      body: { detail: "ordinary failure" },
+      message: "ordinary failure",
+    }), "read")).toEqual(expect.objectContaining({
+      kind,
+      retryable,
+      mutationOutcome: "not_applicable",
+    }));
+  },
+);

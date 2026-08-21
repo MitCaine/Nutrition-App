@@ -127,12 +127,23 @@ test("imported USDA food can be logged with default serving and refreshes daily 
       ok: true,
       status: 201,
       json: async () => ({
-        id: "log-1",
-        food_item_id: "food-usda",
+        id: "00000000-0000-4000-8000-000000000101",
+        food_item_id: "00000000-0000-4000-8000-000000000102",
+        food_name_snapshot: "Example Protein Bar",
+        is_editable: true,
+        source_food_available: true,
+        edit_block_reason: null,
         logged_date: "2026-07-08",
+        meal_type: null,
         amount_quantity: "1",
         amount_unit: "serving",
-        serving_definition_id: "serving-bar",
+        serving_definition_id: "00000000-0000-4000-8000-000000000103",
+        gram_amount: "50.000000",
+        package_fraction: null,
+        notes: null,
+        created_at: "2026-07-08T09:00:00Z",
+        updated_at: "2026-07-08T09:00:00Z",
+        snapshots: [],
       }),
     })
     .mockResolvedValueOnce({
@@ -140,6 +151,7 @@ test("imported USDA food can be logged with default serving and refreshes daily 
       status: 200,
       json: async () => ({
         logged_date: "2026-07-08",
+        is_complete: false,
         totals: [
           {
             nutrient_id: "calories",

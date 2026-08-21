@@ -437,10 +437,13 @@ test("an uncertain delete reconciles before projecting confirmed removal", async
     status: 200,
     json: async () => ({
       operation: "delete",
-      client_request_id: "reconciled-by-server",
+      client_request_id: "00000000-0000-4000-8000-000000000901",
       status: "confirmed_success",
-      log_id: "log-breakfast",
+      log_id: null,
+      source_logged_date: "2026-07-14",
+      destination_logged_date: null,
       result: null,
+      completion: null,
     }),
   });
   const rendered = await render();

@@ -1,4 +1,5 @@
 import { apiRequest } from "../../../shared/api/client";
+import { parseRecipePublishResponse } from "./recipeResponseSchemas";
 import type {
   Recipe,
   RecipeCreateInput,
@@ -71,9 +72,9 @@ export async function getRecipeNutrition(recipeId: string): Promise<RecipeNutrit
   };
 }
 
-export function publishRecipe({ recipeId, clientRequestId }: { recipeId: string; clientRequestId: string }): Promise<RecipePublishResponse> {
-  return apiRequest<RecipePublishResponse>(`/recipes/${recipeId}/publish`, {
+export async function publishRecipe({ recipeId, clientRequestId }: { recipeId: string; clientRequestId: string }): Promise<RecipePublishResponse> {
+  return parseRecipePublishResponse(await apiRequest<unknown>(`/recipes/${recipeId}/publish`, {
     method: "POST",
     body: JSON.stringify({ client_request_id: clientRequestId }),
-  });
+  }));
 }

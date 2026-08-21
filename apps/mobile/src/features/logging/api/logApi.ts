@@ -1,4 +1,12 @@
 import { apiRequest } from "../../../shared/api/client";
+import {
+  parseDailyLogCompletion,
+  parseDailyLog,
+  parseDailyLogList,
+  parseDailyLogMutationStatus,
+  parseDailySummaryResponse,
+  parseHistoryRangeResponse,
+} from "./logResponseSchemas";
 import type {
   DailyLog,
   DailyLogCompleteInput,
@@ -9,22 +17,18 @@ import type {
   DailyLogMutationStatus,
   DailyLogUpdateInput,
   DailySummary,
-  DailySummaryResponse,
   HistoryRangeEvidence,
-  HistoryRangeResponse,
   RecentEntry,
 } from "./types";
 
 export async function listLogs(date: string): Promise<DailyLog[]> {
-  const response = await apiRequest<{ logs: DailyLog[] }>(`/logs?date=${encodeURIComponent(date)}`);
-  return response.logs;
+  return parseDailyLogList(await apiRequest<unknown>(`/logs?date=${encodeURIComponent(date)}`));
 }
 
 export async function listFutureEntries(date: string): Promise<DailyLog[]> {
-  const response = await apiRequest<{ logs: DailyLog[] }>(
+  return parseDailyLogList(await apiRequest<unknown>(
     `/logs/future-entries?date=${encodeURIComponent(date)}`,
-  );
-  return response.logs;
+  ));
 }
 
 export async function listRecentEntries(): Promise<RecentEntry[]> {
@@ -32,12 +36,18 @@ export async function listRecentEntries(): Promise<RecentEntry[]> {
   return response.entries;
 }
 
-export function createLog(input: DailyLogCreateInput): Promise<DailyLog> {
-  return apiRequest<DailyLog>("/logs", { method: "POST", body: JSON.stringify(input) });
+export async function createLog(input: DailyLogCreateInput): Promise<DailyLog> {
+  return parseDailyLog(await apiRequest<unknown>("/logs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }));
 }
 
-export function updateLog(logId: string, input: Partial<DailyLogUpdateInput>): Promise<DailyLog> {
-  return apiRequest<DailyLog>(`/logs/${logId}`, { method: "PATCH", body: JSON.stringify(input) });
+export async function updateLog(logId: string, input: Partial<DailyLogUpdateInput>): Promise<DailyLog> {
+  return parseDailyLog(await apiRequest<unknown>(`/logs/${logId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }));
 }
 
 export function getLogEditContext(logId: string): Promise<DailyLogEditContext> {
@@ -52,28 +62,30 @@ export function deleteLog(logId: string, input: DailyLogDeleteInput = {}): Promi
   return apiRequest<void>(`/logs/${logId}`, options);
 }
 
-export function markDayComplete(input: DailyLogCompleteInput): Promise<DailyLogCompletion> {
-  return apiRequest<DailyLogCompletion>("/logs/complete", {
+export async function markDayComplete(input: DailyLogCompleteInput): Promise<DailyLogCompletion> {
+  return parseDailyLogCompletion(await apiRequest<unknown>("/logs/complete", {
     method: "POST",
     body: JSON.stringify(input),
-  });
+  }));
 }
 
-export function getLogMutationStatus(
+export async function getLogMutationStatus(
   clientRequestId: string,
   operation?: DailyLogMutationStatus["operation"],
 ): Promise<DailyLogMutationStatus> {
   const suffix = operation ? `?operation=${encodeURIComponent(operation)}` : "";
-  return apiRequest<DailyLogMutationStatus>(`/logs/mutations/${clientRequestId}${suffix}`);
+  return parseDailyLogMutationStatus(
+    await apiRequest<unknown>(`/logs/mutations/${clientRequestId}${suffix}`),
+  );
 }
 
 export async function getHistoryRange(
   startDate: string,
   endDate: string,
 ): Promise<HistoryRangeEvidence> {
-  const response = await apiRequest<HistoryRangeResponse>(
+  const response = parseHistoryRangeResponse(await apiRequest<unknown>(
     `/logs/history-range?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`,
-  );
+  ));
   return {
     startDate: response.start_date,
     endDate: response.end_date,
@@ -97,9 +109,9 @@ export async function getHistoryRange(
 }
 
 export async function getDailySummary(date: string): Promise<DailySummary> {
-  const response = await apiRequest<DailySummaryResponse>(
+  const response = parseDailySummaryResponse(await apiRequest<unknown>(
     `/logs/daily-summary?date=${encodeURIComponent(date)}`,
-  );
+  ));
   return {
     logged_date: response.logged_date,
     is_complete: response.is_complete,

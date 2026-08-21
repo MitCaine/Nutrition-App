@@ -142,6 +142,18 @@ test("remote capability calls use the central application-data HTTP path and nev
     if (target.includes("/targets/daily-comparison?")) return successfulResponse(comparisonResponse());
     if (target.endsWith("/ocr/nutrition-label/parse")) return successfulResponse(parsedNutritionLabelResponse());
     if (target.includes("/logs?date=")) return successfulResponse({ logs: [] });
+    if (target.includes("/logs/mutations/")) {
+      return successfulResponse({
+        operation: "create",
+        client_request_id: "00000000-0000-4000-8000-000000000901",
+        status: "confirmed_non_commit",
+        log_id: null,
+        source_logged_date: null,
+        destination_logged_date: null,
+        result: null,
+        completion: null,
+      });
+    }
     return successfulResponse({});
   });
 
@@ -150,7 +162,10 @@ test("remote capability calls use the central application-data HTTP path and nev
   await remoteNutritionRuntime.foods.getResolvedNutrition("food-1");
   await remoteNutritionRuntime.recipes.get("recipe-1");
   await remoteNutritionRuntime.dailyLogs.list("2026-08-13");
-  await remoteNutritionRuntime.dailyLogs.getMutationStatus("request-1", "create");
+  await remoteNutritionRuntime.dailyLogs.getMutationStatus(
+    "00000000-0000-4000-8000-000000000901",
+    "create",
+  );
   await remoteNutritionRuntime.targets.getDailyComparison("2026-08-13");
   await remoteNutritionRuntime.ocr.parseNutritionLabel({
     fullText: "Nutrition Facts",
@@ -171,7 +186,7 @@ test("remote capability calls use the central application-data HTTP path and nev
     { target: "http://localhost:8000/api/v1/foods/food-1/resolved-nutrition", method: "GET" },
     { target: "http://localhost:8000/api/v1/recipes/recipe-1", method: "GET" },
     { target: "http://localhost:8000/api/v1/logs?date=2026-08-13", method: "GET" },
-    { target: "http://localhost:8000/api/v1/logs/mutations/request-1?operation=create", method: "GET" },
+    { target: "http://localhost:8000/api/v1/logs/mutations/00000000-0000-4000-8000-000000000901?operation=create", method: "GET" },
     { target: "http://localhost:8000/api/v1/targets/daily-comparison?date=2026-08-13", method: "GET" },
     { target: "http://localhost:8000/api/v1/ocr/nutrition-label/parse", method: "POST" },
     { target: "http://localhost:8000/api/v1/usda/foods/search?query=beans&page_size=20", method: "GET" },
