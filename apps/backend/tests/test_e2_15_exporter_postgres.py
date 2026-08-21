@@ -23,7 +23,7 @@ from app.models.recipe_publication import (
     RecipePublicationRevision,
 )
 from app.publication.recipe_revision import revision_content_digest
-from app.transfer.e2_15 import CONTRACT, validate_transfer_package
+from app.transfer.e2_15 import CONTRACT, canonical_transfer_json, validate_transfer_package
 from app.transfer.e2_15_exporter import (
     export_personal_transfer,
     qualify_export_session,
@@ -406,6 +406,9 @@ def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutatin
     amount_json_null_id = "00000000-0000-4000-8000-000000000013"
     target_sql_null_id = "00000000-0000-4000-8000-000000000014"
     target_json_null_id = "00000000-0000-4000-8000-000000000015"
+    duplicate_recipe_id = "00000000-0000-4000-8000-000000000016"
+    duplicate_receipt_id = "00000000-0000-4000-8000-000000000017"
+    duplicate_request_id = "00000000-0000-4000-8000-000000000018"
     selected_food_id = "00000000-0000-4000-8000-000000000020"
     other_food_id = "00000000-0000-4000-8000-000000000021"
     complete_log_id = "00000000-0000-4000-8000-000000000022"
@@ -417,6 +420,23 @@ def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutatin
     complete_date = date(2026, 8, 18)
     unconfirmed_date = date(2026, 8, 19)
     completed_at = datetime(2026, 8, 20, 12, 34, 56, 123456, tzinfo=timezone.utc)
+    duplicate_snapshot = canonical_transfer_json(
+        {
+            "id": duplicate_recipe_id,
+            "user_id": owner_id,
+            "published_food_item_id": None,
+            "name": "JSON transfer fixture Copy",
+            "notes": None,
+            "serving_count_yield": "1.000000",
+            "final_cooked_weight_grams": None,
+            "final_cooked_weight_display_quantity": None,
+            "final_cooked_weight_display_unit": None,
+            "needs_republish": False,
+            "created_at": "2026-08-20T12:34:56.123456Z",
+            "updated_at": "2026-08-20T12:34:56.123456Z",
+            "ingredients": [],
+        }
+    )
     fixture_revision = RecipePublicationRevision(
         id=UUID(revision_id),
         recipe_id=UUID(recipe_id),
@@ -480,10 +500,36 @@ def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutatin
             connection.execute(
                 text(
                     "INSERT INTO public.recipes "
-                    "(id, user_id, name, needs_republish) "
-                    "VALUES (:recipe_id, :owner_id, 'JSON transfer fixture', false)"
+                    "(id, user_id, name, serving_count_yield, needs_republish, created_at, updated_at) "
+                    "VALUES (:recipe_id, :owner_id, 'JSON transfer fixture', NULL, false, "
+                    ":completed_at, :completed_at), "
+                    "(:duplicate_recipe_id, :owner_id, 'JSON transfer fixture Copy', 1.000000, "
+                    "false, :completed_at, :completed_at)"
                 ),
-                {"recipe_id": recipe_id, "owner_id": owner_id},
+                {
+                    "recipe_id": recipe_id,
+                    "duplicate_recipe_id": duplicate_recipe_id,
+                    "owner_id": owner_id,
+                    "completed_at": completed_at,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO public.create_operation_idempotency "
+                    "(id, user_id, operation, client_request_id, request_fingerprint, "
+                    "resource_id, response_snapshot, completed_at, created_at) VALUES "
+                    "(:receipt_id, :owner_id, 'recipe.duplicate', :request_id, :fingerprint, "
+                    ":resource_id, CAST(:snapshot AS json), :completed_at, :completed_at)"
+                ),
+                {
+                    "receipt_id": duplicate_receipt_id,
+                    "owner_id": owner_id,
+                    "request_id": duplicate_request_id,
+                    "fingerprint": "5" * 64,
+                    "resource_id": duplicate_recipe_id,
+                    "snapshot": duplicate_snapshot,
+                    "completed_at": completed_at,
+                },
             )
             connection.execute(
                 text(
@@ -679,7 +725,7 @@ def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutatin
         for section in package["sections"]
     }
     assert result.overall_digest == package["overall_digest"]
-    assert package["format_version"] == "3"
+    assert package["format_version"] == "4"
     assert package["source"] == {
         "postgres_major": "16",
         "alembic_revision": "0033_complete_runtime_authority",
@@ -699,6 +745,13 @@ def test_pg_0033_data_bearing_transfer_is_owner_scoped_read_only_and_non_mutatin
             "completed_at": "2026-08-20T12:34:56.123456Z",
         }
     ]
+    duplicate_receipt = next(
+        row
+        for row in records["create_operation_idempotency"]
+        if row["operation"] == "recipe.duplicate"
+    )
+    assert duplicate_receipt["resource_id"] == duplicate_recipe_id
+    assert duplicate_receipt["response_snapshot"] == duplicate_snapshot
     assert unconfirmed_date.isoformat() not in {
         row["logged_date"] for row in records["daily_log_day_completions"]
     }

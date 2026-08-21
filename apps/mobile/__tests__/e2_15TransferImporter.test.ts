@@ -1,5 +1,6 @@
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
+import v3RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v3.json";
 import v2RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v2.json";
 import v1RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
 
@@ -184,6 +185,25 @@ test("preserves frozen v2 serving measurements without inferring Complete", asyn
     await expect(database.getFirstAsync<{ count: number }>(
       `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions"`,
     )).resolves.toEqual({ count: 0 });
+  } finally {
+    database.close();
+  }
+});
+
+test("imports the frozen v3 package with its historical receipt policy", async () => {
+  const database = await migratedDatabase();
+  try {
+    await importPersonalTransfer(
+      database.asExpoDatabase(),
+      canonicalTransferJson(v3RepresentativePackage),
+    );
+    await expect(database.getAllAsync<{ operation: string }>(
+      `SELECT "operation" FROM "create_operation_idempotency" ORDER BY "operation"`,
+    )).resolves.toEqual([
+      { operation: "food.create_manual" },
+      { operation: "log.create" },
+      { operation: "log.update" },
+    ]);
   } finally {
     database.close();
   }
@@ -507,12 +527,12 @@ test("representative package preserves full owner graph, history, receipts, and 
     const result = await importPersonalTransfer(database.asExpoDatabase(), document);
     expect(result.sectionCounts).toMatchObject({
       food_items: 4,
-      recipes: 2,
+      recipes: 3,
       recipe_publication_revisions: 3,
       daily_logs: 2,
       daily_log_nutrient_snapshots: 2,
       daily_log_day_completions: 1,
-      create_operation_idempotency: 3,
+      create_operation_idempotency: 4,
     });
     await expect(database.getAllAsync<{
       logged_date: string;
@@ -607,7 +627,24 @@ test("representative package preserves full owner graph, history, receipts, and 
       { operation: "food.create_manual" },
       { operation: "log.create" },
       { operation: "log.update" },
+      { operation: "recipe.duplicate" },
     ]);
+    const importedDuplicate = await database.getFirstAsync<{
+      operation: string;
+      resource_id: string;
+      response_snapshot: string;
+    }>(
+      `SELECT "operation", "resource_id", "response_snapshot"
+         FROM "create_operation_idempotency"
+        WHERE "operation" = 'recipe.duplicate'`,
+    );
+    expect(importedDuplicate?.operation).toBe("recipe.duplicate");
+    expect(importedDuplicate?.resource_id).toBe("00000000-0000-4000-8000-000000000052");
+    expect(JSON.parse(importedDuplicate!.response_snapshot)).toMatchObject({
+      id: importedDuplicate?.resource_id,
+      user_id: OWNER,
+      name: "Republished Base Copy",
+    });
   } finally {
     try { database.close(); } catch { /* already closed during reopen */ }
     rmSync(directory, { recursive: true, force: true });

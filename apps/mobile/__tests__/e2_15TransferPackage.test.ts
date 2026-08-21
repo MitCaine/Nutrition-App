@@ -14,7 +14,9 @@ import {
 
 test("the mobile package boundary consumes the fixed shared contract", () => {
   expect(contract.format).toBe("nutrition-personal-transfer");
-  expect(contract.format_version).toBe("3");
+  expect(contract.format_version).toBe("4");
+  expect(contract.contract_version).toBe("e2-15.v4");
+  expect(contract.idempotency.copied_operations).toContain("recipe.duplicate");
   expect(contract.codec_version).toBe("e2-02.v1");
   expect(E2_15_MAXIMUM_TRANSFER_BYTES).toBe(64 * 1024 * 1024);
   expect(E2_15_SECTION_NAMES).toEqual(contract.sections.map((section) => section.name));

@@ -1,7 +1,7 @@
 {
-  "contract_version": "e2-15.v4",
+  "contract_version": "e2-15.v3",
   "format": "nutrition-personal-transfer",
-  "format_version": "4",
+  "format_version": "3",
   "codec_version": "e2-02.v1",
   "maximum_bytes": 67108864,
   "nutrient_catalog_digest": "37c17b248dfb08fb180ef477511c8e2e240a781a7288c30f30881cc1d06f0bc1",
@@ -93,7 +93,6 @@
       "food.create_manual",
       "food.duplicate",
       "recipe.create",
-      "recipe.duplicate",
       "recipe.publish"
     ],
     "translated_operations": [
@@ -1006,7 +1005,6 @@
       "log.create",
       "log.update",
       "recipe.create",
-      "recipe.duplicate",
       "recipe.publish"
     ],
     "image_source_type": [

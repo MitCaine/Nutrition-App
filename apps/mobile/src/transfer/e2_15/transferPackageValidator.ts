@@ -2,6 +2,8 @@ import * as Crypto from "expo-crypto";
 
 import contractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import sourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema.json";
+import v3ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v3.json";
+import v3SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v3.json";
 import v2ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v2.json";
 import v2SourceSchema from "../../../../../packages/shared-contracts/e2-15/source-schema-v2.json";
 import v1ContractJson from "../../../../../packages/shared-contracts/e2-15/transfer-contract-v1.json";
@@ -67,6 +69,7 @@ type TransferContract = Readonly<{
 }>;
 
 const CONTRACT = contractJson as unknown as TransferContract;
+const V3_CONTRACT = v3ContractJson as unknown as TransferContract;
 const V2_CONTRACT = v2ContractJson as unknown as TransferContract;
 const V1_CONTRACT = v1ContractJson as unknown as TransferContract;
 const NUTRIENT_IDS = new Set(SQLITE_NUTRIENT_SEED_ROWS.map(([id]) => id));
@@ -113,7 +116,11 @@ function pythonAsciiJsonByteLength(value: unknown): number {
   return bytes;
 }
 
-function validateScalar(kindValue: string, value: unknown): void {
+function validateScalar(
+  kindValue: string,
+  value: unknown,
+  enums: Readonly<Record<string, readonly string[]>> = CONTRACT.enums,
+): void {
   let kind = kindValue;
   if (kind.startsWith("nullable_")) {
     if (value === null) return;
@@ -144,8 +151,8 @@ function validateScalar(kindValue: string, value: unknown): void {
       if (typeof value !== "string" || !SHA256.test(value)) throw new Error();
     } else if (kind === "nutrient_id") {
       if (typeof value !== "string" || !NUTRIENT_IDS.has(value)) throw new Error();
-    } else if (kind in CONTRACT.enums) {
-      if (typeof value !== "string" || !CONTRACT.enums[kind].includes(value)) throw new Error();
+    } else if (kind in enums) {
+      if (typeof value !== "string" || !enums[kind].includes(value)) throw new Error();
     } else if (kind === "text") {
       if (typeof value !== "string") throw new Error();
     } else {
@@ -160,12 +167,13 @@ async function validateRecords(
   recordsValue: unknown,
   columns: readonly (readonly [string, string])[],
   primaryKey: readonly string[],
+  enums: Readonly<Record<string, readonly string[]>>,
 ): Promise<JsonRecord[]> {
   if (!Array.isArray(recordsValue)) invalid("invalid_record_shape", "Section records must be an array.");
   const keys = columns.map(([name]) => name);
   const records = recordsValue.map((value) => exactKeys(value, keys, "invalid_record_shape"));
   for (const record of records) {
-    for (const [name, kind] of columns) validateScalar(kind, record[name]);
+    for (const [name, kind] of columns) validateScalar(kind, record[name], enums);
   }
   const sorted = sortTransferRecords(records, primaryKey);
   if (canonicalJsonStringify(records) !== canonicalJsonStringify(sorted)) {
@@ -179,12 +187,21 @@ async function validateRecords(
   return records;
 }
 
-async function validateSection(value: unknown, expected: SectionContract): Promise<JsonRecord> {
+async function validateSection(
+  value: unknown,
+  expected: SectionContract,
+  enums: Readonly<Record<string, readonly string[]>>,
+): Promise<JsonRecord> {
   const section = exactKeys(value, ["count", "digest", "name", "records"]);
   if (section.name !== expected.name || typeof section.count !== "number" || !Number.isSafeInteger(section.count) || section.count < 0) {
     invalid("section_count_invalid", "Transfer section metadata is invalid.");
   }
-  const records = await validateRecords(section.records, expected.columns, expected.primary_key);
+  const records = await validateRecords(
+    section.records,
+    expected.columns,
+    expected.primary_key,
+    enums,
+  );
   if (section.count !== records.length) invalid("section_count_invalid", "Transfer section count is invalid.");
   if (typeof section.digest !== "string" || !SHA256.test(section.digest)) invalid("section_digest_invalid", "Transfer section digest is invalid.");
   const digest = await sha256CanonicalValue({ count: section.count, name: section.name, records });
@@ -693,13 +710,13 @@ function validatePortableReceipt(
     return;
   }
 
-  if (receipt.operation === "recipe.create") {
+  if (["recipe.create", "recipe.duplicate"].includes(receipt.operation as string)) {
     const response = validateRecipeResponse(snapshot);
     const recipe = recipes.get(response.id);
     if (
       receipt.resource_id !== response.id || response.user_id !== ownerId
       || recipe === undefined || recipe.created_at !== response.created_at
-    ) invalid("idempotency_policy_invalid", "Recipe create receipt resource is invalid.");
+    ) invalid("idempotency_policy_invalid", "Recipe result receipt resource is invalid.");
     return;
   }
 
@@ -812,6 +829,8 @@ export async function parseAndValidateTransferPackage(document: string): Promise
   const packageValue = exactKeys(parsed, TOP_LEVEL_KEYS);
   const contract = packageValue.format_version === CONTRACT.format_version
     ? CONTRACT
+    : packageValue.format_version === V3_CONTRACT.format_version
+    ? V3_CONTRACT
     : packageValue.format_version === V2_CONTRACT.format_version
     ? V2_CONTRACT
     : packageValue.format_version === V1_CONTRACT.format_version
@@ -819,6 +838,8 @@ export async function parseAndValidateTransferPackage(document: string): Promise
     : null;
   const installedSourceSchema = contract === CONTRACT
     ? sourceSchema
+    : contract === V3_CONTRACT
+    ? v3SourceSchema
     : contract === V2_CONTRACT
     ? v2SourceSchema
     : v1SourceSchema;
@@ -849,7 +870,11 @@ export async function parseAndValidateTransferPackage(document: string): Promise
   if (!Array.isArray(packageValue.sections) || packageValue.sections.length !== contract.sections.length) invalid("section_order_invalid", "Transfer section order is invalid.");
   const sections: JsonRecord[] = [];
   for (let index = 0; index < contract.sections.length; index += 1) {
-    sections.push(await validateSection(packageValue.sections[index], contract.sections[index]));
+    sections.push(await validateSection(
+      packageValue.sections[index],
+      contract.sections[index],
+      contract.enums,
+    ));
   }
   packageValue.sections = sections;
 
@@ -859,7 +884,11 @@ export async function parseAndValidateTransferPackage(document: string): Promise
     columns: contract.qualification.daily_totals_columns,
     primary_key: contract.qualification.daily_totals_primary_key,
   };
-  qualification.daily_totals = await validateSection(qualification.daily_totals, totalsContract);
+  qualification.daily_totals = await validateSection(
+    qualification.daily_totals,
+    totalsContract,
+    contract.enums,
+  );
   validateOwnerGraph(packageValue);
   validateOcrPrivacy(packageValue);
   await validateIdempotencyPolicy(packageValue, contract);

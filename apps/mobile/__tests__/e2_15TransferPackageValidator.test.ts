@@ -1,5 +1,7 @@
 import * as contract from "../../../packages/shared-contracts/e2-15/transfer-contract.json";
 import representativePackage from "../../../packages/shared-contracts/e2-15/representative-package.json";
+import v3Contract from "../../../packages/shared-contracts/e2-15/transfer-contract-v3.json";
+import v3RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v3.json";
 import v2RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v2.json";
 import v1RepresentativePackage from "../../../packages/shared-contracts/e2-15/representative-package-v1.json";
 
@@ -131,6 +133,13 @@ test("continues to validate the frozen v2 transfer package for legacy one-time i
     canonicalTransferJson(v2RepresentativePackage),
   );
   expect(validated.format_version).toBe("2");
+});
+
+test("continues to validate the frozen v3 transfer package for legacy one-time imports", async () => {
+  const validated = await parseAndValidateTransferPackage(
+    canonicalTransferJson(v3RepresentativePackage),
+  );
+  expect(validated.format_version).toBe("3");
 });
 
 test("rejects noncanonical, tampered, unsupported, and duplicate-key documents", async () => {
@@ -302,8 +311,10 @@ function portableReceiptMutation(operation: string, tamper?: ReceiptTamper) {
           is_user_confirmed: true,
         }],
       );
-    } else if (operation === "recipe.create") {
-      receipt.resource_id = "00000000-0000-4000-8000-000000000050";
+    } else if (["recipe.create", "recipe.duplicate"].includes(operation)) {
+      receipt.resource_id = operation === "recipe.create"
+        ? "00000000-0000-4000-8000-000000000050"
+        : "00000000-0000-4000-8000-000000000052";
       snapshot = recipeResponse(recipes.get(receipt.resource_id as string)!);
     } else {
       expect(operation).toBe("recipe.publish");
@@ -326,11 +337,11 @@ function portableReceiptMutation(operation: string, tamper?: ReceiptTamper) {
   };
 }
 
-test("v3 representative carries one explicit Complete date and one unconfirmed logged date", async () => {
+test("v4 representative carries one explicit Complete date and one unconfirmed logged date", async () => {
   const validated = await parseAndValidateTransferPackage(
     canonicalTransferJson(representativePackage),
   );
-  expect(validated.format_version).toBe("3");
+  expect(validated.format_version).toBe("4");
 
   const sections = new Map(
     (validated.sections as Record<string, unknown>[]).map(
@@ -553,6 +564,9 @@ test.each([
   ["recipe.create", (_receipt: Record<string, unknown>, snapshot: Record<string, unknown>) => {
     snapshot.user_id = "00000000-0000-4000-8000-000000000002";
   }],
+  ["recipe.duplicate", (receipt: Record<string, unknown>) => {
+    receipt.resource_id = "00000000-0000-4000-8000-000000000050";
+  }],
   ["recipe.publish", (receipt: Record<string, unknown>) => {
     receipt.resource_id = "00000000-0000-4000-8000-000000000062";
   }],
@@ -563,6 +577,76 @@ test.each([
   await expect(parseAndValidateTransferPackage(
     await mutatedRepresentative(portableReceiptMutation(operation, tamper)),
   )).rejects.toMatchObject({ code: "idempotency_policy_invalid" });
+});
+
+test("validates recipe.duplicate from only its independent result Recipe", async () => {
+  const value = JSON.parse(
+    JSON.stringify(await minimalDocument()),
+  ) as Record<string, unknown>;
+  const sections = new Map(
+    (value.sections as Record<string, unknown>[]).map(
+      (section) => [section.name as string, section],
+    ),
+  );
+  const recipe = {
+    id: "00000000-0000-4000-8000-000000000052",
+    user_id: OWNER,
+    published_food_item_id: null,
+    active_publication_revision_id: null,
+    name: "Independent Copy",
+    notes: null,
+    serving_count_yield: "1.000000",
+    final_cooked_weight_grams: null,
+    final_cooked_weight_display_quantity: null,
+    final_cooked_weight_display_unit: null,
+    needs_republish: false,
+    created_at: INSTANT,
+    updated_at: INSTANT,
+    deleted_at: null,
+  };
+  const receipt = {
+    id: "00000000-0000-4000-8000-000000000142",
+    user_id: OWNER,
+    operation: "recipe.duplicate",
+    client_request_id: "00000000-0000-4000-8000-000000000154",
+    request_fingerprint: "5".repeat(64),
+    resource_id: recipe.id,
+    response_snapshot: canonicalTransferJson(recipeResponse(recipe)),
+    completed_at: INSTANT,
+    created_at: INSTANT,
+  };
+  sections.set("recipes", await buildTransferSection("recipes", [recipe]));
+  sections.set(
+    "create_operation_idempotency",
+    await buildTransferSection("create_operation_idempotency", [receipt]),
+  );
+  value.sections = await Promise.all(
+    contract.sections.map(({ name }) => sections.get(name)),
+  );
+  (value.idempotency_policy as Record<string, unknown>).copied_portable_count = 1;
+
+  await expect(parseAndValidateTransferPackage(
+    canonicalTransferJson(await withOverallDigest(value)),
+  )).resolves.toBeDefined();
+});
+
+test("keeps recipe.duplicate unsupported in frozen v3", async () => {
+  const value = JSON.parse(JSON.stringify(v3RepresentativePackage)) as Record<string, unknown>;
+  const sections = new Map(
+    (value.sections as Record<string, unknown>[]).map(
+      (section) => [section.name as string, section],
+    ),
+  );
+  const receipts = sections.get("create_operation_idempotency")!.records as Record<string, unknown>[];
+  receipts[0].operation = "recipe.duplicate";
+  value.sections = await Promise.all(v3Contract.sections.map(async ({ name }) => {
+    const section = sections.get(name)!;
+    return buildTransferSection(name, section.records as Record<string, unknown>[]);
+  }));
+
+  await expect(parseAndValidateTransferPackage(
+    canonicalTransferJson(await withOverallDigest(value)),
+  )).rejects.toMatchObject({ code: "invalid_record_value" });
 });
 
 test("accepts pre-0027 Food receipts whose serving snapshots have no reference keys", async () => {

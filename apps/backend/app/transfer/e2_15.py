@@ -1045,7 +1045,7 @@ def validate_portable_receipt(
             raise _invalid("idempotency_policy_invalid", "Duplicate Food provenance is invalid.")
         return
 
-    if operation == "recipe.create":
+    if operation in {"recipe.create", "recipe.duplicate"}:
         response = _exact_response_snapshot(snapshot, RecipeResponse)
         recipe = recipes.get(response["id"])
         if (
@@ -1054,7 +1054,10 @@ def validate_portable_receipt(
             or recipe is None
             or recipe["created_at"] != response["created_at"]
         ):
-            raise _invalid("idempotency_policy_invalid", "Recipe create receipt resource is invalid.")
+            raise _invalid(
+                "idempotency_policy_invalid",
+                "Recipe result receipt resource is invalid.",
+            )
         return
 
     if operation == "recipe.publish":

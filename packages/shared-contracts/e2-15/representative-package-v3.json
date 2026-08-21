@@ -2,9 +2,9 @@
   "codec_version": "e2-02.v1",
   "exported_at": "2026-08-10T12:34:56.123456Z",
   "format": "nutrition-personal-transfer",
-  "format_version": "4",
+  "format_version": "3",
   "idempotency_policy": {
-    "copied_portable_count": 2,
+    "copied_portable_count": 1,
     "excluded_log_delete_count": 1,
     "reconstructed_log_create_count": 1,
     "translated_log_update_count": 1,
@@ -275,7 +275,7 @@
       "digest": "f7f038715f2052f2d4709cfb262fd00f6d36af0b29f6f86da5924f7e81714d26"
     },
     {
-      "count": 3,
+      "count": 2,
       "name": "recipes",
       "records": [
         {
@@ -309,25 +309,9 @@
           "serving_count_yield": "1.000000",
           "updated_at": "2026-08-10T12:34:56.123456Z",
           "user_id": "00000000-0000-4000-8000-000000000001"
-        },
-        {
-          "active_publication_revision_id": null,
-          "created_at": "2026-08-10T12:34:56.123456Z",
-          "deleted_at": null,
-          "final_cooked_weight_display_quantity": null,
-          "final_cooked_weight_display_unit": null,
-          "final_cooked_weight_grams": null,
-          "id": "00000000-0000-4000-8000-000000000052",
-          "name": "Republished Base Copy",
-          "needs_republish": false,
-          "notes": null,
-          "published_food_item_id": null,
-          "serving_count_yield": "1.000000",
-          "updated_at": "2026-08-10T12:34:56.123456Z",
-          "user_id": "00000000-0000-4000-8000-000000000001"
         }
       ],
-      "digest": "3640cac8966f714b737ed446b4ddc7dda9c9ad8c8b55d55a7339b3c0e83a72cf"
+      "digest": "fbf89d0b5fad26a752e64d0dea2f83e21a7708bddfa3a3985c7608e559156e17"
     },
     {
       "count": 2,
@@ -627,7 +611,7 @@
       "digest": "e4c126c9a48edad6caaad4c7d014cf405961ea893413b6daf3ca9378dcead55d"
     },
     {
-      "count": 4,
+      "count": 3,
       "name": "create_operation_idempotency",
       "records": [
         {
@@ -653,17 +637,6 @@
           "user_id": "00000000-0000-4000-8000-000000000001"
         },
         {
-          "client_request_id": "00000000-0000-4000-8000-000000000154",
-          "completed_at": "2026-08-10T12:34:56.123456Z",
-          "created_at": "2026-08-10T12:34:56.123456Z",
-          "id": "00000000-0000-4000-8000-000000000142",
-          "operation": "recipe.duplicate",
-          "request_fingerprint": "5555555555555555555555555555555555555555555555555555555555555555",
-          "resource_id": "00000000-0000-4000-8000-000000000052",
-          "response_snapshot": "{\"created_at\":\"2026-08-10T12:34:56.123456Z\",\"final_cooked_weight_display_quantity\":null,\"final_cooked_weight_display_unit\":null,\"final_cooked_weight_grams\":null,\"id\":\"00000000-0000-4000-8000-000000000052\",\"ingredients\":[],\"name\":\"Republished Base Copy\",\"needs_republish\":false,\"notes\":null,\"published_food_item_id\":null,\"serving_count_yield\":\"1.000000\",\"updated_at\":\"2026-08-10T12:34:56.123456Z\",\"user_id\":\"00000000-0000-4000-8000-000000000001\"}",
-          "user_id": "00000000-0000-4000-8000-000000000001"
-        },
-        {
           "client_request_id": "00000000-0000-4000-8000-000000000150",
           "completed_at": "2026-08-10T12:34:56.123456Z",
           "created_at": "2026-08-10T12:34:56.123456Z",
@@ -675,7 +648,7 @@
           "user_id": "00000000-0000-4000-8000-000000000001"
         }
       ],
-      "digest": "3ef5cf2f270463614775833c2454f852ae999ab3ccf47092f8ee55c469fb0c96"
+      "digest": "16b25ec2acc31983e0990867bd753fbb5a599c76af005d52f5a6e6cb389f5437"
     }
   ],
   "source": {
@@ -696,5 +669,5 @@
       "007_daily_log_complete_state"
     ]
   },
-  "overall_digest": "6075f5cecfb3420e8cfa5d5bc7ae1948a6333bc9b11422a6fc78d446855575e8"
+  "overall_digest": "dbc094cadeecb396f475f24235282a25a05499ef0dbe510286a7052632dccf3d"
 }

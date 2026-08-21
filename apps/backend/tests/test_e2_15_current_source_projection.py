@@ -17,9 +17,9 @@ def _current_tables() -> dict:
     return deepcopy(SOURCE_SCHEMA["tables"])
 
 
-def test_current_0033_source_uses_the_v3_pg_0033_contract_without_projection() -> None:
+def test_current_0033_source_uses_the_v4_pg_0033_contract_without_projection() -> None:
     assert CURRENT_EXPORT_SOURCE_REVISION == "0033_complete_runtime_authority"
-    assert CONTRACT["format_version"] == "3"
+    assert CONTRACT["format_version"] == "4"
     assert CONTRACT["source"]["alembic_revision"] == "0033_complete_runtime_authority"
     assert SOURCE_SCHEMA["alembic_revision"] == "0033_complete_runtime_authority"
     serving_columns = [

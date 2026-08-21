@@ -495,6 +495,7 @@ def test_incomplete_unknown_and_source_log_create_receipts_are_rejected() -> Non
         "food.duplicate",
         "food.add_serving",
         "recipe.create",
+        "recipe.duplicate",
         "recipe.publish",
         "unknown",
         "log.create",
@@ -583,6 +584,35 @@ def test_exporter_accepts_only_a_complete_portable_receipt_snapshot() -> None:
     )
 
     assert copied[0]["response_snapshot"] == receipt["response_snapshot"]
+    assert counts["copied_portable_count"] == 1
+
+
+def test_exporter_accepts_completed_recipe_duplicate_without_source_recipe() -> None:
+    fixture_path = (
+        Path(__file__).resolve().parents[3]
+        / "packages/shared-contracts/e2-15/representative-package.json"
+    )
+    package = json.loads(fixture_path.read_text(encoding="utf-8"))
+    sections = {section["name"]: section["records"] for section in package["sections"]}
+    receipt = next(
+        row
+        for row in sections["create_operation_idempotency"]
+        if row["operation"] == "recipe.duplicate"
+    )
+    result_recipe = next(
+        row for row in sections["recipes"] if row["id"] == receipt["resource_id"]
+    )
+    copied, counts = target_ready_idempotency(
+        [{**receipt, "response_snapshot": json.loads(receipt["response_snapshot"])}],
+        [],
+        [],
+        [result_recipe],
+        [],
+        [],
+        owner_id=OWNER,
+    )
+    assert copied[0]["operation"] == "recipe.duplicate"
+    assert copied[0]["resource_id"] == result_recipe["id"]
     assert counts["copied_portable_count"] == 1
 
 

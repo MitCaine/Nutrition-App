@@ -36,18 +36,47 @@ FIXTURE_PATH = (
 REPRESENTATIVE_PATH = (
     ROOT / "packages" / "shared-contracts" / "e2-15" / "representative-package.json"
 )
+HISTORICAL_CONTRACT_ROOT = ROOT / "packages" / "shared-contracts" / "e2-15"
 
 
 def test_shared_contract_fixes_the_approved_package_boundary() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     assert contract["format"] == "nutrition-personal-transfer"
-    assert contract["format_version"] == "3"
+    assert contract["format_version"] == "4"
+    assert contract["contract_version"] == "e2-15.v4"
+    assert "recipe.duplicate" in contract["idempotency"]["copied_operations"]
+    assert "recipe.duplicate" in contract["enums"]["idempotency_operation"]
     assert contract["codec_version"] == "e2-02.v1"
     assert contract["maximum_bytes"] == 64 * 1024 * 1024 == MAXIMUM_TRANSFER_BYTES
     assert tuple(section["name"] for section in contract["sections"]) == SECTION_NAMES
     assert len(SECTION_NAMES) == 18
     assert len(contract["source"]["expected_public_tables"]) == 32
+
+
+def test_historical_contract_artifacts_remain_byte_exact() -> None:
+    expected = {
+        "transfer-contract-v1.json": "5718f6ad821a637fa1e2fbe11893e1c4ffa6fa81697d037cb6a16eadb6da090f",
+        "source-schema-v1.json": "ffca3a3405a4e65e13aa992ccb7c57e92e4167a9588629ad0d242c37d5a4c223",
+        "target-schema-v1.json": "1fc6cca4b0b27c61b08fc458ebaca7bc7109e7afcb2b1efc20663d16ff3c1772",
+        "representative-package-v1.json": "5be395008899920704119cffcabb70cda80a357aa96b2ffb533a76d5985efb79",
+        "transfer-contract-v2.json": "eaf508a7264898bc616682c949d2fcf249b0359f6df332e7eff06f908e86b52f",
+        "source-schema-v2.json": "b74df441d484bb09a54ffb514123b3acc329237996ca2e990b565525b88dc4d5",
+        "target-schema-v2.json": "fb8c24beefda15b3a4735a3e72443bcc6f438c7dbd94d1386ad833167d7ee697",
+        "representative-package-v2.json": "f1bedf2cad4e71a540c39d7e38e8fd68542d3280018b36c1ecd7ea4c9acf8537",
+        "transfer-contract-v3.json": "92062ada0d384dc9bc996252ac0f32dc1e6e416469e2fede53598cf957f91395",
+        "source-schema-v3.json": "6e25248fcace9b6d5a874a8715cc5757250bafd94eeadd673c5e4da3c3d4073d",
+        "target-schema-v3.json": "84fe934c42c087a96ed10a813e36234c90b901c7a01e9b47f8c16f2b2f2a501c",
+        "representative-package-v3.json": "c9c6ee70d4999e9c6ec3199ffa0c2c0a66e00699f81059f5818df8528e79406e",
+    }
+    for name, digest in expected.items():
+        assert hashlib.sha256((HISTORICAL_CONTRACT_ROOT / name).read_bytes()).hexdigest() == digest
+
+    frozen_v3 = json.loads(
+        (HISTORICAL_CONTRACT_ROOT / "transfer-contract-v3.json").read_text(encoding="utf-8")
+    )
+    assert frozen_v3["format_version"] == "3"
+    assert "recipe.duplicate" not in frozen_v3["idempotency"]["copied_operations"]
 
 
 def test_section_digest_uses_only_count_name_and_records() -> None:
@@ -452,7 +481,7 @@ def test_representative_cross_runtime_package_covers_the_approved_owner_graph() 
     assert len(sections["food_items"]) == 4
     assert any(row["deleted_at"] is not None for row in sections["food_items"])
     assert len(sections["recipe_publication_revisions"]) == 3
-    assert len(sections["recipes"]) == 2
+    assert len(sections["recipes"]) == 3
     assert len(sections["daily_log_nutrient_snapshots"]) == 2
     assert len(sections["ocr_nutrition_confirmation_traces"]) == 1
     assert len(sections["nutrition_targets"]) == 1
@@ -460,6 +489,7 @@ def test_representative_cross_runtime_package_covers_the_approved_owner_graph() 
         "food.create_manual",
         "log.create",
         "log.update",
+        "recipe.duplicate",
     }
 
 
@@ -631,8 +661,12 @@ def _portable_receipt_mutation(operation: str, tamper=None):
                     }
                 ],
             )
-        elif operation == "recipe.create":
-            receipt["resource_id"] = "00000000-0000-4000-8000-000000000050"
+        elif operation in {"recipe.create", "recipe.duplicate"}:
+            receipt["resource_id"] = (
+                "00000000-0000-4000-8000-000000000050"
+                if operation == "recipe.create"
+                else "00000000-0000-4000-8000-000000000052"
+            )
             snapshot = _recipe_response(recipes[receipt["resource_id"]])
         else:
             assert operation == "recipe.publish"
@@ -675,6 +709,12 @@ def _portable_receipt_mutation(operation: str, tamper=None):
             ),
         ),
         (
+            "recipe.duplicate",
+            lambda receipt, _snapshot: receipt.update(
+                resource_id="00000000-0000-4000-8000-000000000050"
+            ),
+        ),
+        (
             "recipe.publish",
             lambda receipt, _snapshot: receipt.update(
                 resource_id="00000000-0000-4000-8000-000000000062"
@@ -695,6 +735,52 @@ def test_portable_receipts_validate_exact_shapes_and_reject_operation_tampering(
         )
 
     assert failure.value.code == "idempotency_policy_invalid"
+
+
+def test_recipe_duplicate_receipt_requires_only_the_independent_result_recipe() -> None:
+    document = _minimal_document()
+    sections = {section["name"]: section for section in document["sections"]}
+    recipe = {
+        "id": "00000000-0000-4000-8000-000000000052",
+        "user_id": OWNER_ID,
+        "published_food_item_id": None,
+        "active_publication_revision_id": None,
+        "name": "Independent Copy",
+        "notes": None,
+        "serving_count_yield": "1.000000",
+        "final_cooked_weight_grams": None,
+        "final_cooked_weight_display_quantity": None,
+        "final_cooked_weight_display_unit": None,
+        "needs_republish": False,
+        "created_at": INSTANT,
+        "updated_at": INSTANT,
+        "deleted_at": None,
+    }
+    response = _recipe_response(recipe)
+    receipt = {
+        "id": "00000000-0000-4000-8000-000000000142",
+        "user_id": OWNER_ID,
+        "operation": "recipe.duplicate",
+        "client_request_id": "00000000-0000-4000-8000-000000000154",
+        "request_fingerprint": "5" * 64,
+        "resource_id": recipe["id"],
+        "response_snapshot": canonical_transfer_json(response),
+        "completed_at": INSTANT,
+        "created_at": INSTANT,
+    }
+    sections["recipes"] = build_section("recipes", [recipe])
+    sections["create_operation_idempotency"] = build_section(
+        "create_operation_idempotency", [receipt]
+    )
+    document["sections"] = [sections[name] for name in SECTION_NAMES]
+    document["idempotency_policy"]["copied_portable_count"] = 1
+
+    validated = validate_transfer_package(serialize_transfer_document(document))
+    records = {
+        section["name"]: section["records"] for section in validated["sections"]
+    }
+    assert records["recipes"] == [recipe]
+    assert records["create_operation_idempotency"][0]["operation"] == "recipe.duplicate"
 
 
 def test_pre_0027_food_receipt_without_reference_keys_remains_portable() -> None:
