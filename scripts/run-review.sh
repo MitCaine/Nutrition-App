@@ -443,8 +443,8 @@ backend_compileall() {
 }
 
 backend_pytest() {
-    cd "$REPO_ROOT/apps/backend"
-    "$BACKEND_PYTHON" -m pytest
+    NUTRITION_BACKEND_PYTHON="$BACKEND_PYTHON" \
+        "$REPO_ROOT/scripts/run-backend-baseline.sh"
 }
 
 mobile_typecheck() {
@@ -535,6 +535,13 @@ compose_validate() {
 
 session_end_validate() {
     cd "$REPO_ROOT"
+
+    if [[ -x "$BACKEND_PYTHON" ]]; then
+        PATH="$(dirname "$BACKEND_PYTHON"):$PATH" \
+            ./scripts/session-end.sh
+        return
+    fi
+
     ./scripts/session-end.sh
 }
 
@@ -587,7 +594,7 @@ if [[ $RUN_BACKEND -eq 1 ]]; then
         "backend-pytest" \
         "Backend Pytest" \
         "critical" \
-        "cd apps/backend && .venv/bin/python -m pytest" \
+        "./scripts/run-backend-baseline.sh" \
         backend_pytest
 fi
 

@@ -15,10 +15,17 @@ object-retention behavior.
 ```bash
 cd apps/backend
 source .venv/bin/activate
-pytest
+../../scripts/run-backend-baseline.sh
 ruff check .
 python -m compileall -q app tests scripts
 ```
+
+The canonical ordinary backend baseline is `scripts/run-backend-baseline.sh`. It excludes the
+registered PostgreSQL concurrency, Phase 5C T0 performance, Phase 5C4 control-PostgreSQL, MinIO,
+and Docker-integration marker families. Those suites remain explicit qualification and must be
+selected directly when their claims are in scope. Do not replace the ordinary runner with bare
+`pytest`, because infrastructure availability must not change which tests belong to the ordinary
+regression baseline.
 
 The default test configuration selects test deployment mode and in-memory SQLite where a test does
 not explicitly require PostgreSQL. This is appropriate for calculations, DRI/reference data,

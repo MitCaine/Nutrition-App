@@ -35,7 +35,7 @@ jobs:
       - name: Ruff
         run: ruff check .
       - name: Pytest
-        run: pytest
+        run: ../../scripts/run-backend-baseline.sh
       - name: Repository session contract
         run: ../../scripts/session-end.sh
 
