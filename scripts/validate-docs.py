@@ -37,13 +37,6 @@ SESSION_LINK_SOURCES = [
 QUALIFICATION_DOCUMENT = (
     ROOT / "docs" / "operations" / "version-1.0-release-qualification.md"
 )
-RELEASE_DOCUMENT = (
-    ROOT
-    / "docs"
-    / "historical"
-    / "releases"
-    / "production-hardening-phase5c4.9.md"
-)
 CURRENT_STATE_DOCUMENT = ROOT / "docs" / "project" / "current-state.md"
 INDEX_DIRECT_LINKS = [
     CURRENT_STATE_DOCUMENT,
@@ -53,6 +46,40 @@ INDEX_DIRECT_LINKS = [
     ROOT / "docs" / "historical" / "README.md",
     ROOT / "docs" / "reference" / "glossary.md",
 ]
+
+CURRENT_MIGRATION_HEAD_CONTRACTS: dict[str, tuple[str, ...]] = {
+    "docs/architecture/overview.md": ("application", "control"),
+    "docs/operations/control-plane.md": ("control",),
+    "docs/operations/runbooks/recovery-and-cutback.md": (
+        "application",
+        "control",
+    ),
+    "docs/operations/runbooks/target-activation.md": ("application",),
+    "docs/operations/testing.md": ("application",),
+    "docs/operations/version-1.0-release-qualification.md": ("application",),
+    "docs/project/current-state.md": ("application", "control"),
+    "docs/project/development-guide.md": ("application",),
+    "docs/project/repository-tour.md": ("application", "control"),
+    "docs/reference/glossary.md": ("application", "control"),
+}
+
+CURRENT_STATUS_CONTRACTS: dict[str, tuple[str, ...]] = {
+    "docs/README.md": (
+        "current Version 1.2 product line",
+        "Epic 4 — Nutrition History and Trends is implemented and qualified.",
+        "Epic 5 — Recipe Reuse and Discovery remains planned and requires re-scope.",
+    ),
+    "docs/project/current-state.md": (
+        "Version 1.2 is the current product line.",
+        "Epic 4 — Nutrition History and Trends is implemented and qualified.",
+        "Epic 5 remains planned and requires re-scope.",
+    ),
+    "docs/project/product-roadmap.md": (
+        "# Current product roadmap",
+        "| Epic 4 | Nutrition History and Trends | Complete |",
+        "| Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope |",
+    ),
+}
 
 
 def _visible_markdown(text: str) -> str:
@@ -186,6 +213,80 @@ def _expected_migration_heads() -> tuple[str, str]:
     return application[0], control[0]
 
 
+def _current_migration_contract_errors(
+    application_head: str,
+    control_head: str,
+    *,
+    root: Path = ROOT,
+    contracts: dict[str, tuple[str, ...]] | None = None,
+) -> list[str]:
+    contracts = (
+        CURRENT_MIGRATION_HEAD_CONTRACTS
+        if contracts is None
+        else contracts
+    )
+    heads = {
+        "application": application_head,
+        "control": control_head,
+    }
+    errors: list[str] = []
+
+    for relative, authorities in contracts.items():
+        path = root / relative
+        if not path.is_file():
+            errors.append(
+                f"{relative}: current migration-head contract document is missing"
+            )
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        for authority in authorities:
+            if authority not in heads:
+                raise ValueError(
+                    f"unsupported migration authority {authority!r} "
+                    f"for {relative}"
+                )
+            head = heads[authority]
+            if head not in text:
+                errors.append(
+                    f"{relative}: missing current {authority} migration head "
+                    f"{head!r}"
+                )
+
+    return errors
+
+
+def _current_status_contract_errors(
+    *,
+    root: Path = ROOT,
+    contracts: dict[str, tuple[str, ...]] | None = None,
+) -> list[str]:
+    contracts = (
+        CURRENT_STATUS_CONTRACTS
+        if contracts is None
+        else contracts
+    )
+    errors: list[str] = []
+
+    for relative, required_statements in contracts.items():
+        path = root / relative
+        if not path.is_file():
+            errors.append(
+                f"{relative}: current status contract document is missing"
+            )
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        for statement in required_statements:
+            if statement not in text:
+                errors.append(
+                    f"{relative}: missing current product/status assertion "
+                    f"{statement!r}"
+                )
+
+    return errors
+
+
 def main() -> int:
     errors: list[str] = []
     documents: dict[Path, tuple[str, set[str]]] = {}
@@ -288,28 +389,20 @@ def main() -> int:
     try:
         application_head, control_head = _expected_migration_heads()
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        errors.append(f"scripts/project-audit.json: cannot resolve migration heads: {exc}")
-    else:
-        for path in [
-            CURRENT_STATE_DOCUMENT,
-            QUALIFICATION_DOCUMENT,
-            ROOT / "docs" / "operations" / "runbooks" / "recovery-and-cutback.md",
-            RELEASE_DOCUMENT,
-        ]:
-            text = path.read_text(encoding="utf-8")
-            for head in [application_head, control_head]:
-                if head not in text:
-                    errors.append(
-                        f"{path.relative_to(ROOT)}: missing current migration/control head {head!r}"
-                    )
-        target_activation = (
-            ROOT / "docs" / "operations" / "runbooks" / "target-activation.md"
+        errors.append(
+            f"scripts/project-audit.json: cannot resolve migration heads: {exc}"
         )
-        if application_head not in target_activation.read_text(encoding="utf-8"):
-            errors.append(
-                f"{target_activation.relative_to(ROOT)}: missing current application head "
-                f"{application_head!r}"
+    else:
+        errors.extend(
+            _current_migration_contract_errors(
+                application_head,
+                control_head,
             )
+        )
+
+    errors.extend(
+        _current_status_contract_errors()
+    )
 
     qualification_text = QUALIFICATION_DOCUMENT.read_text(encoding="utf-8")
     required_qualification_tokens = [

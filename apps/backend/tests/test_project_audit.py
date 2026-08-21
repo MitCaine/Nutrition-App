@@ -378,3 +378,140 @@ def test_non_capsule_front_matter_remains_in_executable_documentation(
         "scripts/required-now.py"
         in DOCS_VALIDATOR._executable_reference_text(document)
     )
+
+
+def _write_document_fixture(
+    root: Path,
+    relative: str,
+    text: str,
+) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_current_document_contract_inventory_is_semantically_bounded() -> None:
+    assert DOCS_VALIDATOR.CURRENT_MIGRATION_HEAD_CONTRACTS == {
+        "docs/architecture/overview.md": ("application", "control"),
+        "docs/operations/control-plane.md": ("control",),
+        "docs/operations/runbooks/recovery-and-cutback.md": (
+            "application",
+            "control",
+        ),
+        "docs/operations/runbooks/target-activation.md": ("application",),
+        "docs/operations/testing.md": ("application",),
+        "docs/operations/version-1.0-release-qualification.md": (
+            "application",
+        ),
+        "docs/project/current-state.md": ("application", "control"),
+        "docs/project/development-guide.md": ("application",),
+        "docs/project/repository-tour.md": ("application", "control"),
+        "docs/reference/glossary.md": ("application", "control"),
+    }
+
+    assert set(DOCS_VALIDATOR.CURRENT_STATUS_CONTRACTS) == {
+        "docs/README.md",
+        "docs/project/current-state.md",
+        "docs/project/product-roadmap.md",
+    }
+
+
+def test_current_document_contract_detects_application_and_control_head_drift(
+    tmp_path: Path,
+) -> None:
+    _write_document_fixture(
+        tmp_path,
+        "docs/current.md",
+        "application stale_app\ncontrol stale_control\n",
+    )
+
+    errors = DOCS_VALIDATOR._current_migration_contract_errors(
+        "app_head",
+        "control_head",
+        root=tmp_path,
+        contracts={
+            "docs/current.md": (
+                "application",
+                "control",
+            )
+        },
+    )
+
+    assert errors == [
+        "docs/current.md: missing current application migration head 'app_head'",
+        "docs/current.md: missing current control migration head 'control_head'",
+    ]
+
+
+def test_current_document_contract_detects_project_status_drift(
+    tmp_path: Path,
+) -> None:
+    _write_document_fixture(
+        tmp_path,
+        "docs/status.md",
+        "Version 1.1 is current.\nEpic 4 is unfinished.\n",
+    )
+
+    errors = DOCS_VALIDATOR._current_status_contract_errors(
+        root=tmp_path,
+        contracts={
+            "docs/status.md": (
+                "Version 1.2 is the current product line.",
+                "Epic 4 is complete.",
+                "Epic 5 remains planned.",
+            )
+        },
+    )
+
+    assert errors == [
+        "docs/status.md: missing current product/status assertion "
+        "'Version 1.2 is the current product line.'",
+        "docs/status.md: missing current product/status assertion "
+        "'Epic 4 is complete.'",
+        "docs/status.md: missing current product/status assertion "
+        "'Epic 5 remains planned.'",
+    ]
+
+
+def test_current_document_contract_ignores_historical_and_pinned_predecessors(
+    tmp_path: Path,
+) -> None:
+    _write_document_fixture(
+        tmp_path,
+        "docs/current.md",
+        "current app_head\n"
+        "pinned application 0021_target_activation_execution\n"
+        "historical control ops_0010_phase5c4_activation\n",
+    )
+    _write_document_fixture(
+        tmp_path,
+        "docs/project/version-1.2/epic-4/data-contracts.md",
+        "current head at planning time: 0030_total_omega_3_nutrient\n",
+    )
+    _write_document_fixture(
+        tmp_path,
+        "docs/historical/phase.md",
+        "historical control head: ops_0007_recovery_validation\n",
+    )
+
+    errors = DOCS_VALIDATOR._current_migration_contract_errors(
+        "app_head",
+        "control_head",
+        root=tmp_path,
+        contracts={
+            "docs/current.md": ("application",),
+        },
+    )
+
+    assert errors == []
+
+
+def test_current_document_contracts_accept_reconciled_repository_guides() -> None:
+    application_head, control_head = DOCS_VALIDATOR._expected_migration_heads()
+
+    assert DOCS_VALIDATOR._current_migration_contract_errors(
+        application_head,
+        control_head,
+    ) == []
+
+    assert DOCS_VALIDATOR._current_status_contract_errors() == []
