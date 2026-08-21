@@ -927,6 +927,8 @@ export function HistoryScreen({
                                 styles.rangeText
                               }
                             >
+                              Average{" "}
+                              ·{" "}
                               {card.statistic}
                             </Text>
 
@@ -989,7 +991,7 @@ export function HistoryScreen({
                                 accessibilityLabel={
                                   `${
                                     card.label
-                                  } selected ${
+                                  } selected day ${
                                     selectedChartDate
                                   } ${
                                     selectedValue
@@ -1000,6 +1002,8 @@ export function HistoryScreen({
                                   styles.summaryText
                                 }
                               >
+                                Selected day{" "}
+                                ·{" "}
                                 {
                                   formatReadableDate(
                                     selectedChartDate,

@@ -1,4 +1,9 @@
 import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
   Pressable,
   ScrollView,
   StyleSheet,
@@ -229,6 +234,84 @@ export function historyDailyBarGeometry(
   };
 }
 
+export function historySelectedDateScrollTarget(
+  geometry:
+    HistoryDailyBarGeometry,
+  selectedDate:
+    string | null,
+  currentOffset:
+    number,
+  viewportWidth:
+    number = geometry.viewportWidth,
+): number | null {
+  if (
+    !geometry.isScrollable
+    || selectedDate === null
+    || !Number.isFinite(
+      viewportWidth,
+    )
+    || viewportWidth <= 0
+  ) {
+    return null;
+  }
+
+  const selectedPoint =
+    geometry.points.find(
+      (point) =>
+        point.date
+        === selectedDate,
+    );
+
+  if (!selectedPoint) {
+    return null;
+  }
+
+  const maxOffset =
+    Math.max(
+      0,
+      geometry.width
+      - viewportWidth,
+    );
+
+  const normalizedOffset =
+    Number.isFinite(
+      currentOffset,
+    )
+      ? Math.min(
+          maxOffset,
+          Math.max(
+            0,
+            currentOffset,
+          ),
+        )
+      : 0;
+
+  const selectedCenter =
+    selectedPoint.slotX
+    + selectedPoint.slotWidth / 2;
+
+  const targetOffset =
+    Math.min(
+      maxOffset,
+      Math.max(
+        0,
+        selectedCenter
+        - viewportWidth / 2,
+      ),
+    );
+
+  if (
+    Math.abs(
+      targetOffset
+      - normalizedOffset,
+    ) <= 0.5
+  ) {
+    return null;
+  }
+
+  return targetOffset;
+}
+
 type Props = {
   days:
     readonly HistoryProjectedDailyValue[];
@@ -259,6 +342,80 @@ export function HistoryDailyBarChart({
       days,
       referenceValue,
     );
+
+  const scrollViewRef =
+    useRef<ScrollView>(null);
+
+  const scrollOffsetRef =
+    useRef(0);
+
+  const [
+    viewportWidth,
+    setViewportWidth,
+  ] = useState<number | null>(
+    null,
+  );
+
+  const rememberHorizontalOffset = (
+    offset: number,
+  ) => {
+    if (
+      !Number.isFinite(
+        offset,
+      )
+    ) {
+      return;
+    }
+
+    const maxOffset =
+      Math.max(
+        0,
+        geometry.width
+        - geometry.viewportWidth,
+      );
+
+    scrollOffsetRef.current =
+      Math.min(
+        maxOffset,
+        Math.max(
+          0,
+          offset,
+        ),
+      );
+  };
+
+  const selectedDateScrollTarget =
+    viewportWidth === null
+      ? null
+      : historySelectedDateScrollTarget(
+          geometry,
+          selectedDate,
+          scrollOffsetRef.current,
+          viewportWidth,
+        );
+
+  useEffect(() => {
+    if (
+      selectedDateScrollTarget
+      === null
+    ) {
+      return;
+    }
+
+    scrollOffsetRef.current =
+      selectedDateScrollTarget;
+
+    scrollViewRef.current
+      ?.scrollTo?.({
+        animated: true,
+        x:
+          selectedDateScrollTarget,
+        y: 0,
+      });
+  }, [
+    selectedDate,
+    selectedDateScrollTarget,
+  ]);
 
   const plot = (
     <View
@@ -435,10 +592,54 @@ export function HistoryDailyBarChart({
 
   return (
     <ScrollView
+      ref={scrollViewRef}
       accessibilityLabel={
         `${seriesLabel} 30-day History chart`
       }
       horizontal
+      onLayout={(
+        event,
+      ) => {
+        const measuredWidth =
+          event.nativeEvent
+            .layout.width;
+
+        if (
+          !Number.isFinite(
+            measuredWidth,
+          )
+          || measuredWidth <= 0
+        ) {
+          return;
+        }
+
+        setViewportWidth(
+          (current) =>
+            current !== null
+            && Math.abs(
+              current
+              - measuredWidth,
+            ) <= 0.5
+              ? current
+              : measuredWidth,
+        );
+      }}
+      onMomentumScrollEnd={(
+        event,
+      ) =>
+        rememberHorizontalOffset(
+          event.nativeEvent
+            .contentOffset.x,
+        )
+      }
+      onScrollEndDrag={(
+        event,
+      ) =>
+        rememberHorizontalOffset(
+          event.nativeEvent
+            .contentOffset.x,
+        )
+      }
       showsHorizontalScrollIndicator
       style={
         styles.scroll

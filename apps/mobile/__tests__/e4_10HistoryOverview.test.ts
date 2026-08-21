@@ -59,6 +59,7 @@ import {
 } from "../src/features/history/historyOverview";
 import {
   historyDailyBarGeometry,
+  historySelectedDateScrollTarget,
 } from "../src/features/history/components/HistoryDailyBarChart";
 import {
   freshHistorySession,
@@ -924,6 +925,23 @@ test(
       },
     );
 
+    const selectedScreenText =
+      screenText(
+        renderer,
+      );
+
+    expect(
+      selectedScreenText,
+    ).toContain(
+      "Average · 400 kcal",
+    );
+
+    expect(
+      selectedScreenText,
+    ).toContain(
+      "Selected day · Tue, Aug 18, 2026 · 700 kcal",
+    );
+
     const selectedLabels =
       renderer.root
         .findAllByType(
@@ -937,7 +955,7 @@ test(
             && node.props
               .accessibilityLabel
               .includes(
-                "selected 2026-08-18",
+                "selected day 2026-08-18",
               ),
         );
 
@@ -1040,5 +1058,196 @@ test(
         renderer.unmount();
       },
     );
+  },
+);
+
+test(
+  "30-day selected date scroll target centers an offscreen slot",
+  () => {
+    const days =
+      projectedDays(
+        30,
+      );
+
+    const geometry =
+      historyDailyBarGeometry(
+        days,
+      );
+
+    const selectedDate =
+      days[15].date;
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        selectedDate,
+        0,
+      ),
+    ).toBe(532);
+  },
+);
+
+test(
+  "30-day selected date scroll target clamps first and last slots to chart bounds",
+  () => {
+    const days =
+      projectedDays(
+        30,
+      );
+
+    const geometry =
+      historyDailyBarGeometry(
+        days,
+      );
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[0].date,
+        500,
+      ),
+    ).toBe(0);
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[29].date,
+        0,
+      ),
+    ).toBe(1020);
+  },
+);
+
+test(
+  "30-day selected date aligns to one deterministic target even when merely visible",
+  () => {
+    const days =
+      projectedDays(
+        30,
+      );
+
+    const geometry =
+      historyDailyBarGeometry(
+        days,
+      );
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[15].date,
+        0,
+        300,
+      ),
+    ).toBe(532);
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[15].date,
+        532,
+        300,
+      ),
+    ).toBeNull();
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[5].date,
+        0,
+        300,
+      ),
+    ).toBe(92);
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[5].date,
+        92,
+        300,
+      ),
+    ).toBeNull();
+  },
+);
+
+test(
+  "30-day selected date target uses the measured chart viewport",
+  () => {
+    const days =
+      projectedDays(
+        30,
+      );
+
+    const geometry =
+      historyDailyBarGeometry(
+        days,
+      );
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[15].date,
+        0,
+        360,
+      ),
+    ).toBe(502);
+
+    expect(
+      historySelectedDateScrollTarget(
+        geometry,
+        days[15].date,
+        502,
+        360,
+      ),
+    ).toBeNull();
+  },
+);
+
+test(
+  "selected-date visibility ignores null absent and non-scrollable selections",
+  () => {
+    const thirtyDay =
+      historyDailyBarGeometry(
+        projectedDays(
+          30,
+        ),
+      );
+
+    expect(
+      historySelectedDateScrollTarget(
+        thirtyDay,
+        null,
+        0,
+      ),
+    ).toBeNull();
+
+    expect(
+      historySelectedDateScrollTarget(
+        thirtyDay,
+        "1999-01-01",
+        0,
+      ),
+    ).toBeNull();
+
+    const sevenDays =
+      projectedDays(
+        7,
+      );
+
+    const sevenDay =
+      historyDailyBarGeometry(
+        sevenDays,
+      );
+
+    expect(
+      sevenDay.isScrollable,
+    ).toBe(false);
+
+    expect(
+      historySelectedDateScrollTarget(
+        sevenDay,
+        sevenDays[6].date,
+        0,
+      ),
+    ).toBeNull();
   },
 );
