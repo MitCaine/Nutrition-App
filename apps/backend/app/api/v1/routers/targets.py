@@ -68,7 +68,7 @@ def get_targets(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> TargetConfigurationResponse:
     return TargetConfigurationResponse.model_validate(
-        _service(db).configuration(user.id, date.today())
+        _service(db).configuration(user.id)
     )
 
 
@@ -79,7 +79,7 @@ def update_targets(
     user: User = Depends(get_current_user),
 ) -> TargetConfigurationResponse:
     try:
-        result = _service(db).update(user.id, payload, date.today())
+        result = _service(db).update(user.id, payload)
     except TargetDomainError as exc:
         raise _domain_error(exc) from exc
     return TargetConfigurationResponse.model_validate(result)
@@ -92,7 +92,7 @@ def reset_target_override(
     user: User = Depends(get_current_user),
 ) -> TargetConfigurationResponse:
     try:
-        result = _service(db).reset_override(user.id, nutrient_id, date.today())
+        result = _service(db).reset_override(user.id, nutrient_id)
     except TargetDomainError as exc:
         raise _domain_error(exc) from exc
     return TargetConfigurationResponse.model_validate(result)

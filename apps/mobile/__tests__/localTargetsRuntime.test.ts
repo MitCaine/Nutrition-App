@@ -52,7 +52,11 @@ function targetInput(overrides: Partial<{
   };
 }
 
-async function seedProfile(database: LocalSQLiteFixtureDatabase, ownerId: string, timeZone = "UTC") {
+async function seedProfile(
+  database: LocalSQLiteFixtureDatabase,
+  ownerId: string,
+  timeZone: string | null = "UTC",
+) {
   await database.runAsync(
     `INSERT INTO "user_profiles"
       ("user_id", "authoritative_time_zone", "calendar_revision")
@@ -1769,6 +1773,198 @@ test(
       ).toEqual(before);
     } finally {
       database.close();
+    }
+  },
+);
+
+type TargetCalendarParityCase = {
+  name: string;
+  now_utc: string;
+  authoritative_time_zone: string | null;
+  expected_date: string;
+  profile: DriParityProfile;
+  expected: {
+    age: number;
+    maintenance_calories: string;
+    magnesium: string;
+  };
+};
+
+const TARGET_CALENDAR_PARITY_CASES =
+  JSON.parse(
+    readFileSync(
+      join(
+        __dirname,
+        "../../../engineering/reference-data/target_calendar_parity_cases.json",
+      ),
+      "utf8",
+    ),
+  ) as TargetCalendarParityCase[];
+
+function expectTargetCalendarCase(
+  configuration: Awaited<
+    ReturnType<
+      LocalTargetsRuntime["getConfiguration"]
+    >
+  >,
+  testCase: TargetCalendarParityCase,
+) {
+  expect(
+    configuration
+      .estimatedMaintenanceCalories
+      .amount,
+  ).toBe(
+    testCase.expected
+      .maintenance_calories,
+  );
+
+  expect(
+    byId(
+      configuration.effectiveTargets,
+      "magnesium",
+    ),
+  ).toMatchObject({
+    amount:
+      testCase.expected.magnesium,
+    authority: "dri",
+  });
+
+  const magnesium =
+    configuration
+      .driRecommendations
+      .find(
+        (item) =>
+          item.nutrientId
+          === "magnesium",
+      );
+
+  expect(magnesium).toBeDefined();
+  expect(magnesium?.age).toBe(
+    testCase.expected.age,
+  );
+}
+
+test(
+  "current Target date matches shared owner-calendar local/remote parity cases",
+  async () => {
+    for (
+      const testCase
+      of TARGET_CALENDAR_PARITY_CASES
+    ) {
+      const database =
+        new LocalSQLiteTestDatabase();
+
+      try {
+        await database.initialize();
+        await seedLocalOwner(
+          database,
+          OWNER,
+        );
+        await ensureLocalNutrientCatalog(
+          database.asExpoDatabase(),
+        );
+        await seedProfile(
+          database,
+          OWNER,
+          testCase
+            .authoritative_time_zone,
+        );
+
+        const targets = runtime(
+          database,
+          {
+            now: () =>
+              new Date(
+                testCase.now_utc,
+              ),
+          },
+        );
+
+        const updated =
+          await targets
+            .updateConfiguration({
+              profile:
+                testCase.profile,
+              manual_overrides: {
+                calories: "2400",
+                protein: null,
+                total_carbohydrate:
+                  null,
+                total_fat: null,
+              },
+            });
+
+        expectTargetCalendarCase(
+          updated,
+          testCase,
+        );
+
+        const current =
+          await targets
+            .getConfiguration();
+
+        expectTargetCalendarCase(
+          current,
+          testCase,
+        );
+
+        const reset =
+          await targets
+            .resetOverride(
+              "calories",
+            );
+
+        expectTargetCalendarCase(
+          reset,
+          testCase,
+        );
+
+        expect(
+          byId(
+            reset.effectiveTargets,
+            "calories",
+          ),
+        ).toMatchObject({
+          amount:
+            testCase.expected
+              .maintenance_calories,
+          authority:
+            "calculated_estimate",
+        });
+
+        const expectedDateParts =
+          testCase.expected_date
+            .split("-")
+            .map(Number);
+
+        const birthDateParts =
+          testCase.profile
+            .birth_date
+            .split("-")
+            .map(Number);
+
+        const expectedAge =
+          expectedDateParts[0]
+          - birthDateParts[0]
+          - (
+            expectedDateParts[1]
+              < birthDateParts[1]
+            || (
+              expectedDateParts[1]
+                === birthDateParts[1]
+              && expectedDateParts[2]
+                < birthDateParts[2]
+            )
+              ? 1
+              : 0
+          );
+
+        expect(expectedAge).toBe(
+          testCase.expected.age,
+        );
+      } finally {
+        database.close();
+      }
     }
   },
 );

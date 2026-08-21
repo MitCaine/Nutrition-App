@@ -597,8 +597,8 @@ function hasTargetProfileValues(profile: NormalizedProfile | null): boolean {
 
 function targetDate(profile: NormalizedProfile | null, now: Date): string {
   if (profile?.authoritativeTimeZone) return todayInTimeZone(profile.authoritativeTimeZone, now);
-  // Remote mode uses the server date before a local authoritative zone exists.
-  // UTC is the deterministic local equivalent until E2-04 calendar setup is confirmed.
+  // Local and remote current Target calculations use explicit UTC only while
+  // the owner has no established authoritative calendar time zone.
   return todayInTimeZone("UTC", now);
 }
 

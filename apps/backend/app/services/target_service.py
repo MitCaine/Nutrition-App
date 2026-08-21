@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -11,6 +11,7 @@ from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.models.target import NutritionTarget
 from app.models.user import User, UserProfile
 from app.schemas.target import TargetConfigurationUpdate
+from app.services.calendar_service import CalendarService
 from app.services.log_service import LogService
 from app.targets.comparison import EffectiveTarget, compare_daily_totals
 from app.targets.daily_values import (
@@ -71,6 +72,25 @@ class TargetDomainError(ValueError):
 class TargetService:
     def __init__(self, db: Session):
         self.db = db
+
+    def _current_utc_instant(self) -> datetime:
+        """Return the UTC instant used to resolve one current Target date."""
+
+        return datetime.now(timezone.utc)
+
+    def _current_target_date(self, user_id: UUID) -> date:
+        """Resolve current Target date from owner calendar authority."""
+
+        profile = self._profile(user_id)
+        time_zone = (
+            "UTC"
+            if profile is None or profile.authoritative_time_zone is None
+            else profile.authoritative_time_zone
+        )
+        return CalendarService.today_in_zone(
+            time_zone,
+            self._current_utc_instant(),
+        )
 
     def _profile(self, user_id: UUID) -> UserProfile | None:
         return self.db.get(UserProfile, user_id)
@@ -302,11 +322,29 @@ class TargetService:
                         f"{nutrient_id}",
                     )
 
-    def update(self, user_id: UUID, payload: TargetConfigurationUpdate, as_of: date):
+    def update(
+        self,
+        user_id: UUID,
+        payload: TargetConfigurationUpdate,
+        as_of: date | None = None,
+    ):
         """Own one serialized Target update transaction for this user."""
-        self._validate_update(payload, as_of)
+
+        if as_of is not None:
+            self._validate_update(payload, as_of)
+
         try:
             self._lock_target_owner(user_id)
+            effective_as_of = (
+                as_of
+                if as_of is not None
+                else self._current_target_date(user_id)
+            )
+            if as_of is None:
+                self._validate_update(
+                    payload,
+                    effective_as_of,
+                )
             profile = self._profile(user_id)
             if profile is None:
                 profile = UserProfile(user_id=user_id)
@@ -469,15 +507,21 @@ class TargetService:
             self.db.flush()
             self._after_target_update_flush(user_id)
             self.db.expire_all()
-            result = self.configuration(user_id, as_of)
+            result = self.configuration(user_id, effective_as_of)
             self.db.commit()
             return result
         except Exception:
             self.db.rollback()
             raise
 
-    def reset_override(self, user_id: UUID, nutrient_id: str, as_of: date):
+    def reset_override(
+        self,
+        user_id: UUID,
+        nutrient_id: str,
+        as_of: date | None = None,
+    ):
         """Own one serialized Target reset transaction for this user."""
+
         if nutrient_id not in MANUAL_TARGET_UNITS:
             raise TargetDomainError(
                 "target_unit_invalid",
@@ -486,6 +530,11 @@ class TargetService:
             )
         try:
             self._lock_target_owner(user_id)
+            effective_as_of = (
+                as_of
+                if as_of is not None
+                else self._current_target_date(user_id)
+            )
             row = self.db.scalars(
                 select(NutritionTarget).where(
                     NutritionTarget.user_id == user_id,
@@ -498,7 +547,7 @@ class TargetService:
             self.db.flush()
             self._after_target_reset_flush(user_id, nutrient_id)
             self.db.expire_all()
-            result = self.configuration(user_id, as_of)
+            result = self.configuration(user_id, effective_as_of)
             self.db.commit()
             return result
         except Exception:
@@ -810,10 +859,18 @@ class TargetService:
     def configuration(
         self,
         user_id: UUID,
-        as_of: date,
+        as_of: date | None = None,
     ) -> dict:
+        effective_as_of = (
+            as_of
+            if as_of is not None
+            else self._current_target_date(user_id)
+        )
         profile = self._profile(user_id)
-        estimate = self._estimate(profile, as_of)
+        estimate = self._estimate(
+            profile,
+            effective_as_of,
+        )
         overrides = self._overrides(user_id)
         tracking_preferences = (
             self._tracking_preferences(
@@ -822,7 +879,7 @@ class TargetService:
         )
         dri_recommendations = self._dri_recommendations(
             profile,
-            as_of,
+            effective_as_of,
         )
 
         return {
@@ -880,7 +937,7 @@ class TargetService:
                 item.__dict__
                 for item in self.effective_targets(
                     user_id,
-                    as_of,
+                    effective_as_of,
                 )
             ],
             "daily_value_catalog_version": (

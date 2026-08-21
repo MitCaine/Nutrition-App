@@ -1,0 +1,86 @@
+[
+  {
+    "name": "kiritimati_after_birthday",
+    "now_utc": "2026-07-14T10:30:00.000Z",
+    "authoritative_time_zone": "Pacific/Kiritimati",
+    "expected_date": "2026-07-15",
+    "profile": {
+      "birth_date": "1995-07-14",
+      "sex_for_equation": "male",
+      "height_cm": "175",
+      "height_unit": "cm",
+      "weight_kg": "70",
+      "weight_unit": "kg",
+      "activity_level": "sedentary",
+      "energy_estimation_context": "general_adult"
+    },
+    "expected": {
+      "age": 31,
+      "maintenance_calories": "2301",
+      "magnesium": "420.000000"
+    }
+  },
+  {
+    "name": "pago_pago_before_birthday",
+    "now_utc": "2026-07-14T10:30:00.000Z",
+    "authoritative_time_zone": "Pacific/Pago_Pago",
+    "expected_date": "2026-07-13",
+    "profile": {
+      "birth_date": "1995-07-14",
+      "sex_for_equation": "male",
+      "height_cm": "175",
+      "height_unit": "cm",
+      "weight_kg": "70",
+      "weight_unit": "kg",
+      "activity_level": "sedentary",
+      "energy_estimation_context": "general_adult"
+    },
+    "expected": {
+      "age": 30,
+      "maintenance_calories": "2308",
+      "magnesium": "400.000000"
+    }
+  },
+  {
+    "name": "utc_on_birthday",
+    "now_utc": "2026-07-14T10:30:00.000Z",
+    "authoritative_time_zone": "UTC",
+    "expected_date": "2026-07-14",
+    "profile": {
+      "birth_date": "1995-07-14",
+      "sex_for_equation": "male",
+      "height_cm": "175",
+      "height_unit": "cm",
+      "weight_kg": "70",
+      "weight_unit": "kg",
+      "activity_level": "sedentary",
+      "energy_estimation_context": "general_adult"
+    },
+    "expected": {
+      "age": 31,
+      "maintenance_calories": "2301",
+      "magnesium": "420.000000"
+    }
+  },
+  {
+    "name": "pre_calendar_explicit_utc_fallback",
+    "now_utc": "2026-07-14T10:30:00.000Z",
+    "authoritative_time_zone": null,
+    "expected_date": "2026-07-14",
+    "profile": {
+      "birth_date": "1995-07-14",
+      "sex_for_equation": "male",
+      "height_cm": "175",
+      "height_unit": "cm",
+      "weight_kg": "70",
+      "weight_unit": "kg",
+      "activity_level": "sedentary",
+      "energy_estimation_context": "general_adult"
+    },
+    "expected": {
+      "age": 31,
+      "maintenance_calories": "2301",
+      "magnesium": "420.000000"
+    }
+  }
+]
