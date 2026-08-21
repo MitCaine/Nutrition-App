@@ -24,6 +24,7 @@ jest.mock("../src/features/recipes/api/recipeApi", () => ({
   createRecipe: jest.fn(async () => ({ marker: "recipe-create" })),
   updateRecipe: jest.fn(async () => ({ marker: "recipe-update" })),
   deleteRecipe: jest.fn(async () => undefined),
+  duplicateRecipe: jest.fn(async () => ({ marker: "recipe-duplicate" })),
   getRecipeNutrition: jest.fn(async () => ({ marker: "recipe-nutrition" })),
   publishRecipe: jest.fn(async () => ({ marker: "recipe-publish" })),
 }));
@@ -85,6 +86,7 @@ const mockGetRecipe = recipeApi.getRecipe as jest.Mock;
 const mockCreateRecipe = recipeApi.createRecipe as jest.Mock;
 const mockUpdateRecipe = recipeApi.updateRecipe as jest.Mock;
 const mockDeleteRecipe = recipeApi.deleteRecipe as jest.Mock;
+const mockDuplicateRecipe = recipeApi.duplicateRecipe as jest.Mock;
 const mockGetRecipeNutrition = recipeApi.getRecipeNutrition as jest.Mock;
 const mockPublishRecipe = recipeApi.publishRecipe as jest.Mock;
 const mockListLogs = logApi.listLogs as jest.Mock;
@@ -136,7 +138,7 @@ test("one composed runtime exposes every approved feature interface", () => {
     "createServingDefinition",
   ]);
   expect(Object.keys(remoteNutritionRuntime.recipes)).toEqual([
-    "list", "get", "create", "update", "delete", "getNutrition", "publish",
+    "list", "get", "create", "update", "delete", "duplicate", "getNutrition", "publish",
   ]);
   expect(Object.keys(remoteNutritionRuntime.dailyLogs)).toEqual([
     "list", "listFuture", "listRecentEntries", "create", "update",
@@ -235,6 +237,7 @@ test("every remote runtime operation delegates to its remote feature API exactly
     remoteNutritionRuntime.recipes.create(recipeInput),
     remoteNutritionRuntime.recipes.update("recipe-1", recipeUpdate),
     remoteNutritionRuntime.recipes.delete({ recipeId: "recipe-1", removeFromRecipes: true }),
+    remoteNutritionRuntime.recipes.duplicate({ recipeId: "recipe-1", clientRequestId: "request-duplicate" }),
     remoteNutritionRuntime.recipes.getNutrition("recipe-1"),
     remoteNutritionRuntime.recipes.publish({ recipeId: "recipe-1", clientRequestId: "request-5" }),
     remoteNutritionRuntime.dailyLogs.list("2026-08-13"),
@@ -264,13 +267,14 @@ test("every remote runtime operation delegates to its remote feature API exactly
     mockListFavoriteFoods, mockListRecentFoods, mockSetFoodFavorite, mockGetFoodResolvedNutrition,
     mockCreateFood, mockUpdateFood, mockDeleteFood, mockDuplicateFood, mockCreateFoodServing,
     mockListRecipes, mockGetRecipe, mockCreateRecipe, mockUpdateRecipe, mockDeleteRecipe,
+    mockDuplicateRecipe,
     mockGetRecipeNutrition, mockPublishRecipe, mockListLogs, mockListFutureEntries,
     mockListRecentEntries, mockCreateLog, mockUpdateLog, mockGetLogEditContext, mockDeleteLog,
     mockMarkDayComplete, mockGetLogMutationStatus, mockGetDailySummary, mockGetTargets, mockUpdateTargets,
     mockResetTargetOverride, mockGetDailyTargetComparison, mockParseNutritionLabel,
     mockConfirmNutritionLabel, mockSearchUsdaFoods, mockGetUsdaFoodPreview, mockImportUsdaFood,
   ];
-  expect(delegatedOperations).toHaveLength(42);
+  expect(delegatedOperations).toHaveLength(43);
   for (const operation of delegatedOperations) expect(operation).toHaveBeenCalledTimes(1);
 
   expect(mockEstablishCalendarTimeZone).toHaveBeenCalledWith("UTC");
@@ -278,6 +282,10 @@ test("every remote runtime operation delegates to its remote feature API exactly
   expect(mockConfirmCalendarTimeZoneChange).toHaveBeenCalledWith(calendarConfirmation);
   expect(mockListFoods).toHaveBeenCalledWith("query", "saved");
   expect(mockGetFood).toHaveBeenCalledWith("food-1");
+  expect(mockDuplicateRecipe).toHaveBeenCalledWith({
+    recipeId: "recipe-1",
+    clientRequestId: "request-duplicate",
+  });
   expect(mockListRecentFoods).toHaveBeenCalledWith(5);
   expect(mockSetFoodFavorite).toHaveBeenCalledWith("food-1", true);
   expect(mockCreateFood).toHaveBeenCalledWith(foodInput);

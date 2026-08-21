@@ -151,6 +151,10 @@ class RecipePublishRequest(BaseModel):
     client_request_id: UUID | None = None
 
 
+class RecipeDuplicateRequest(BaseModel):
+    client_request_id: UUID
+
+
 class RecipeUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1)
     notes: str | None = None

@@ -22,6 +22,7 @@ import {
 import {
   createRecipe,
   deleteRecipe,
+  duplicateRecipe,
   getRecipe,
   getRecipeNutrition,
   listRecipes,
@@ -97,6 +98,7 @@ const runtime: NutritionRuntime = {
     create: (input) => mutate(() => createRecipe(input)),
     update: (recipeId, input) => mutate(() => updateRecipe(recipeId, input)),
     delete: (input) => mutate(() => deleteRecipe(input)),
+    duplicate: (input) => mutate(() => duplicateRecipe(input)),
     getNutrition: (recipeId) => read(() => getRecipeNutrition(recipeId)),
     publish: (input) => mutate(() => publishRecipe(input)),
   },

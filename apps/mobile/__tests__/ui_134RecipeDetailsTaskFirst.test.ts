@@ -24,8 +24,17 @@ const mockPublishRecipe =
 const mockDeleteRecipe =
   jest.fn();
 
+const mockDuplicateRecipe =
+  jest.fn();
+
+const mockCreateClientRequestId =
+  jest.fn(() => "ui-134-request");
+
 let mockPublishPending = false;
 let mockPublishError:
+  unknown = null;
+let mockDuplicatePending = false;
+let mockDuplicateError:
   unknown = null;
 
 jest.mock(
@@ -57,6 +66,16 @@ jest.mock(
         mutateAsync:
           mockDeleteRecipe,
       },
+      duplicateRecipe: {
+        isPending:
+          mockDuplicatePending,
+        isError:
+          mockDuplicateError !== null,
+        error:
+          mockDuplicateError,
+        mutateAsync:
+          mockDuplicateRecipe,
+      },
     }),
   }),
 );
@@ -65,7 +84,7 @@ jest.mock(
   "../src/features/logging/utils/clientRequestId",
   () => ({
     createClientRequestId: () =>
-      "ui-134-request",
+      mockCreateClientRequestId(),
   }),
 );
 
@@ -219,8 +238,103 @@ function pressableByLabel(
 beforeEach(() => {
   mockPublishPending = false;
   mockPublishError = null;
+  mockDuplicatePending = false;
+  mockDuplicateError = null;
   mockPublishRecipe.mockReset();
   mockDeleteRecipe.mockReset();
+  mockDuplicateRecipe.mockReset();
+  mockCreateClientRequestId.mockReset();
+  mockCreateClientRequestId.mockReturnValue("ui-134-request");
+});
+
+test(
+  "Recipe duplication keeps one request id across retry and opens the returned copy",
+  async () => {
+    const duplicatedRecipe = recipe({ id: "recipe-copy", name: "Recipe Copy" });
+    const onDuplicated = jest.fn();
+    mockDuplicateRecipe
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(duplicatedRecipe);
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(RecipeDetailScreen, {
+          recipe: recipe(),
+          onBack: jest.fn(),
+          onEdit: jest.fn(),
+          onOpenFood: jest.fn(),
+          onLogFood: jest.fn(),
+          onDeleted: jest.fn(),
+          onDuplicated,
+        }),
+      );
+    });
+
+    const duplicate = pressableByLabel(renderer.root, "Duplicate Recipe");
+    await act(async () => { await duplicate.props.onPress(); });
+    await act(async () => { await duplicate.props.onPress(); });
+
+    expect(mockCreateClientRequestId).toHaveBeenCalledTimes(1);
+    expect(mockDuplicateRecipe).toHaveBeenNthCalledWith(1, {
+      recipeId: "recipe-ui-134",
+      clientRequestId: "ui-134-request",
+    });
+    expect(mockDuplicateRecipe).toHaveBeenNthCalledWith(2, {
+      recipeId: "recipe-ui-134",
+      clientRequestId: "ui-134-request",
+    });
+    expect(onDuplicated).toHaveBeenCalledWith("recipe-copy");
+
+    await act(async () => renderer.unmount());
+  },
+);
+
+test("pending Recipe duplication is busy and activation-blocked", async () => {
+  mockDuplicatePending = true;
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(RecipeDetailScreen, {
+        recipe: recipe(),
+        onBack: jest.fn(),
+        onEdit: jest.fn(),
+        onOpenFood: jest.fn(),
+        onLogFood: jest.fn(),
+        onDeleted: jest.fn(),
+        onDuplicated: jest.fn(),
+      }),
+    );
+  });
+
+  const duplicate = pressableByLabel(renderer.root, "Duplicate Recipe");
+  expect(duplicate.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
+  expect(duplicate.props.onPress).toBeUndefined();
+
+  await act(async () => renderer.unmount());
+});
+
+test("Recipe duplication failure renders a deterministic accessible error", async () => {
+  mockDuplicateError = new Error("transport details must not leak");
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(RecipeDetailScreen, {
+        recipe: recipe(),
+        onBack: jest.fn(),
+        onEdit: jest.fn(),
+        onOpenFood: jest.fn(),
+        onLogFood: jest.fn(),
+        onDeleted: jest.fn(),
+        onDuplicated: jest.fn(),
+      }),
+    );
+  });
+
+  const alert = renderer.root.findByProps({ accessibilityRole: "alert" });
+  expect(textContent(alert)).toBe("Could not duplicate recipe.");
+
+  await act(async () => renderer.unmount());
 });
 
 test(
@@ -257,6 +371,8 @@ test(
                 onLogFood:
                   jest.fn(),
                 onDeleted:
+                  jest.fn(),
+                onDuplicated:
                   jest.fn(),
               },
             ),
@@ -448,6 +564,8 @@ test(
                 onLogFood,
                 onDeleted:
                   jest.fn(),
+                onDuplicated:
+                  jest.fn(),
               },
             ),
           );
@@ -586,6 +704,8 @@ test(
                   jest.fn(),
                 onDeleted:
                   jest.fn(),
+                onDuplicated:
+                  jest.fn(),
                 editBlockedMessage:
                   "Editing is blocked.",
               },
@@ -683,6 +803,8 @@ test(
                 onLogFood:
                   jest.fn(),
                 onDeleted:
+                  jest.fn(),
+                onDuplicated:
                   jest.fn(),
               },
             ),

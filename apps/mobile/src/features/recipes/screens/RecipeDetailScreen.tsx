@@ -43,17 +43,20 @@ type Props = {
   onOpenFood: (foodId: string) => void;
   onLogFood: (foodId: string) => void;
   onDeleted: () => void;
+  onDuplicated?: (recipeId: string) => void;
   ingredientFoods?: Food[];
   editBlockedMessage?: string | null;
 };
 
-export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFood, onDeleted, ingredientFoods = [], editBlockedMessage }: Props) {
+export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFood, onDeleted, onDuplicated, ingredientFoods = [], editBlockedMessage }: Props) {
   const theme = useAppTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const nutrition = useRecipeNutrition(recipe.id);
   const mutations = useRecipeMutations();
+  const duplicateMutation = mutations.duplicateRecipe;
   const [deleteDependency, setDeleteDependency] = useState<RecipeDeleteDependency | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const publishRequestRef = useRef<{ recipeId: string; requestId: string } | null>(null);
+  const duplicateRequestRef = useRef<{ recipeId: string; requestId: string } | null>(null);
   const nutritionPreview = visibleRecipeNutrition(nutrition.data, nutrition.isError);
   const canPublish = canPublishRecipe({
     servingCountYield: recipe.serving_count_yield ?? "",
@@ -96,6 +99,25 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
         return;
       }
       setDeleteError(recipeDeleteErrorMessage(error));
+    }
+  }
+
+  async function duplicateRecipe() {
+    if (!duplicateMutation || duplicateMutation.isPending) {
+      return;
+    }
+    try {
+      if (duplicateRequestRef.current?.recipeId !== recipe.id) {
+        duplicateRequestRef.current = { recipeId: recipe.id, requestId: createClientRequestId() };
+      }
+      const duplicated = await duplicateMutation.mutateAsync({
+        recipeId: recipe.id,
+        clientRequestId: duplicateRequestRef.current.requestId,
+      });
+      duplicateRequestRef.current = null;
+      onDuplicated?.(duplicated.id);
+    } catch {
+      // Preserve the request identity for a deterministic retry; mutation state renders the error.
     }
   }
 
@@ -250,7 +272,33 @@ export function RecipeDetailScreen({ recipe, onBack, onEdit, onOpenFood, onLogFo
           </>
         ) : null}
         {republishMessage ? <Text style={styles.warning}>{republishMessage}</Text> : null}
+        {duplicateMutation?.isError ? (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {recipeNutritionErrorMessage(
+              duplicateMutation.error,
+              "Could not duplicate recipe.",
+            )}
+          </Text>
+        ) : null}
         {deleteError ? <Text accessibilityRole="alert" style={styles.error}>{deleteError}</Text> : null}
+        {duplicateMutation ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Duplicate Recipe"
+            accessibilityHint="Creates an independent unpublished copy and opens it"
+            accessibilityState={{
+              disabled: duplicateMutation.isPending,
+              busy: duplicateMutation.isPending,
+            }}
+            onPress={duplicateMutation.isPending ? undefined : duplicateRecipe}
+            disabled={duplicateMutation.isPending}
+            style={[styles.secondaryButton, duplicateMutation.isPending && styles.disabledButton]}
+          >
+            <Text style={styles.text}>
+              {duplicateMutation.isPending ? "Duplicating..." : "Duplicate Recipe"}
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Delete Recipe"

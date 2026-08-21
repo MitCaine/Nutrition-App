@@ -691,6 +691,7 @@ export function AppNavigator() {
           setRecipeMessage("Recipe deleted");
           setRoute({ name: "recipes" });
         }}
+        onDuplicated={(recipeId) => setRoute({ name: "recipe-detail", recipeId })}
       />
     );
   } else if (route.name === "edit-recipe") {
@@ -960,6 +961,7 @@ function RecipeDetailRoute({
   onOpenFood,
   onLogFood,
   onDeleted,
+  onDuplicated,
 }: {
   recipeId: string;
   onBack: () => void;
@@ -967,6 +969,7 @@ function RecipeDetailRoute({
   onOpenFood: (foodId: string) => void;
   onLogFood: (foodId: string) => void;
   onDeleted: () => void;
+  onDuplicated: (recipeId: string) => void;
 }) {
   const runtime = useNutritionRuntime();
   const recipe = useRecipe(recipeId);
@@ -1001,6 +1004,7 @@ function RecipeDetailRoute({
       onOpenFood={onOpenFood}
       onLogFood={onLogFood}
       onDeleted={onDeleted}
+      onDuplicated={onDuplicated}
       ingredientFoods={loadedFoods}
       editBlockedMessage={
         canEdit

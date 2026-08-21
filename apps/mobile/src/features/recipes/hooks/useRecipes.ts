@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
-import type { RecipeMutationInput } from "../api/types";
+import type { Recipe, RecipeMutationInput } from "../api/types";
 import { useNutritionRuntime } from "../../../runtime/NutritionRuntimeContext";
 
 export function useRecipes(query: string) {
@@ -39,6 +39,11 @@ export function removeDeletedRecipeCaches(queryClient: QueryClient, recipeId: st
   invalidateRecipeCaches(queryClient);
 }
 
+export function cacheDuplicatedRecipe(queryClient: QueryClient, recipe: Recipe) {
+  queryClient.setQueryData(["recipes", recipe.id], recipe);
+  invalidateRecipeCaches(queryClient);
+}
+
 export function useRecipeMutations() {
   const runtime = useNutritionRuntime();
   const queryClient = useQueryClient();
@@ -59,6 +64,11 @@ export function useRecipeMutations() {
       mutationFn: (input: Parameters<typeof runtime.recipes.delete>[0]) =>
         runtime.recipes.delete(input),
       onSuccess: (_data, { recipeId }) => removeDeletedRecipeCaches(queryClient, recipeId),
+    }),
+    duplicateRecipe: useMutation({
+      mutationFn: (input: Parameters<typeof runtime.recipes.duplicate>[0]) =>
+        runtime.recipes.duplicate(input),
+      onSuccess: (recipe) => cacheDuplicatedRecipe(queryClient, recipe),
     }),
     publishRecipe: useMutation({
       mutationFn: (input: Parameters<typeof runtime.recipes.publish>[0]) =>

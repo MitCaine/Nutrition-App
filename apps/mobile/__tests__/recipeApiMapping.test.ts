@@ -1,4 +1,10 @@
-import { createRecipe, getRecipeNutrition, listRecipes, publishRecipe } from "../src/features/recipes/api/recipeApi";
+import {
+  createRecipe,
+  duplicateRecipe,
+  getRecipeNutrition,
+  listRecipes,
+  publishRecipe,
+} from "../src/features/recipes/api/recipeApi";
 
 test("recipe list uses the full list for an empty query and filters non-empty queries", async () => {
   global.fetch = jest.fn().mockResolvedValue({
@@ -134,6 +140,24 @@ test("recipe publish posts to publish endpoint", async () => {
     expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ client_request_id: "request-1" }),
+    }),
+  );
+});
+
+test("recipe duplicate posts only the client request id to the duplicate endpoint", async () => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 201,
+    json: async () => ({ id: "recipe-copy", name: "Soup Copy", ingredients: [] }),
+  });
+
+  await duplicateRecipe({ recipeId: "recipe-1", clientRequestId: "request-2" });
+
+  expect(global.fetch).toHaveBeenCalledWith(
+    "http://localhost:8000/api/v1/recipes/recipe-1/duplicate",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ client_request_id: "request-2" }),
     }),
   );
 });

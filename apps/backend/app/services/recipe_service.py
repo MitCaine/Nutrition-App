@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.domain.nutrition import AggregatedNutrientTotal, NutrientSnapshot
+from app.domain.food_duplicate_name import allocate_duplicate_food_name
 from app.domain.recipe_nutrition_validation import RecipeNutritionValidationError
 from app.domain.recipe_projection import (
     RecipeProjectionKind,
@@ -199,6 +200,103 @@ class RecipeService:
         except LookupError as exc:
             raise CreateOperationResultUnavailableError() from exc
         return RecipeResponse.model_validate(self.create_idempotency.replay_snapshot(receipt))
+
+    def duplicate_recipe(
+        self,
+        user_id: UUID,
+        recipe_id: UUID,
+        client_request_id: UUID,
+    ) -> RecipeResponse:
+        fingerprint = create_fingerprint(
+            None,
+            context={"recipe_id": str(recipe_id)},
+        )
+        receipt = self.create_idempotency.find(
+            user_id,
+            "recipe.duplicate",
+            client_request_id,
+            fingerprint,
+        )
+        if receipt is not None:
+            return self._replay_recipe_response(user_id, receipt)
+
+        duplicate_id = uuid4()
+        try:
+            # Match create-like duplication lock order: owner serialization must
+            # precede receipt reservation because the receipt references users.
+            self._lock_recipe_graph_owner(user_id)
+            receipt = self.create_idempotency.reserve(
+                user_id,
+                "recipe.duplicate",
+                client_request_id,
+                fingerprint,
+                duplicate_id,
+            )
+            source = self.recipes.get_for_update(recipe_id, user_id)
+            ingredient_inputs = [
+                RecipeIngredientInput(
+                    food_item_id=ingredient.food_item_id,
+                    position=ingredient.position,
+                    amount_quantity=ingredient.amount_quantity,
+                    amount_unit=ingredient.amount_unit,
+                    serving_definition_id=ingredient.serving_definition_id,
+                    preparation_note=ingredient.preparation_note,
+                    amount_display_quantity=ingredient.amount_display_quantity,
+                    amount_display_unit=ingredient.amount_display_unit,
+                )
+                for ingredient in source.ingredients
+            ]
+            duplicate_name = allocate_duplicate_food_name(
+                source.name,
+                (recipe.name for recipe in self.recipes.list(user_id)),
+                source_is_duplicate=True,
+            )
+            locked_foods = self._lock_ingredient_foods(user_id, ingredient_inputs)
+            duplicate = Recipe(
+                id=duplicate_id,
+                user_id=user_id,
+                name=duplicate_name,
+                notes=source.notes,
+                serving_count_yield=source.serving_count_yield,
+                final_cooked_weight_grams=source.final_cooked_weight_grams,
+                final_cooked_weight_display_quantity=(
+                    source.final_cooked_weight_display_quantity
+                ),
+                final_cooked_weight_display_unit=source.final_cooked_weight_display_unit,
+                needs_republish=False,
+            )
+            duplicate.ingredients.extend(
+                self._build_ingredients(
+                    user_id,
+                    duplicate,
+                    ingredient_inputs,
+                    locked_foods=locked_foods,
+                )
+            )
+            created = self.recipes.add(duplicate)
+            response = self._recipe_response(user_id, created)
+            self.create_idempotency.complete(
+                receipt,
+                response.model_dump(mode="json"),
+            )
+            self.db.commit()
+            return response
+        except IntegrityError as exc:
+            self.db.rollback()
+            if not is_create_idempotency_conflict(exc):
+                raise
+            receipt = self.create_idempotency.find(
+                user_id,
+                "recipe.duplicate",
+                client_request_id,
+                fingerprint,
+            )
+            if receipt is None:
+                raise
+            return self._replay_recipe_response(user_id, receipt)
+        except Exception:
+            self.db.rollback()
+            raise
 
     def _recipe_response(self, user_id: UUID, recipe: Recipe) -> RecipeResponse:
         self.db.flush()

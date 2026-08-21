@@ -13,6 +13,7 @@ import type {
 import type { NutrientBasis } from "../../features/foods/api/types";
 import type { AggregatedNutrientTotal, NutrientDataStatus, NutrientUnit } from "../../shared/nutrition/types";
 import { massToGrams, type MassUnit } from "../../features/recipes/utils/massUnits";
+import { allocateDuplicateFoodName } from "../../features/foods/utils/foodDuplicateName";
 import {
   canonicalJsonStringify,
   parseCanonicalJson,
@@ -551,7 +552,13 @@ export class LocalRecipesRuntime implements RecipesRuntime {
     return this.mutate(async (transaction) => {
       const repository = new LocalRecipeRepository(transaction, this.ownerId);
       if (normalized.client_request_id && requestFingerprint) {
-        const replay = await this.replayReceipt(repository, transaction, normalized.client_request_id, requestFingerprint);
+        const replay = await this.replayReceipt(
+          repository,
+          transaction,
+          "recipe.create",
+          normalized.client_request_id,
+          requestFingerprint,
+        );
         if (replay) return replay;
       }
       const recipeId = generatedId();
@@ -586,6 +593,62 @@ export class LocalRecipesRuntime implements RecipesRuntime {
           [canonicalJsonStringify(response), now, this.ownerId, normalized.client_request_id],
         );
       }
+      return response;
+    });
+  }
+
+  async duplicate(input: { recipeId: string; clientRequestId: string }): Promise<Recipe> {
+    const sourceId = canonicalId(input.recipeId, "mutation");
+    const clientRequestId = canonicalId(input.clientRequestId, "mutation");
+    const requestFingerprint = await fingerprint({
+      context: { recipe_id: sourceId },
+      payload: {},
+    });
+    return this.mutate(async (transaction) => {
+      const repository = new LocalRecipeRepository(transaction, this.ownerId);
+      const replay = await this.replayReceipt(
+        repository,
+        transaction,
+        "recipe.duplicate",
+        clientRequestId,
+        requestFingerprint,
+      );
+      if (replay) return replay;
+
+      const source = await repository.get(sourceId);
+      if (!source) throw recipeNotFound("mutation");
+      const sourceResponse = await this.response(repository, source, "mutation");
+      const ingredients = sourceResponse.ingredients.map(normalizeIngredient);
+      const duplicateId = generatedId();
+      await transaction.runAsync(
+        `INSERT INTO "create_operation_idempotency"
+          ("id", "user_id", "operation", "client_request_id", "request_fingerprint", "resource_id")
+         VALUES (?, ?, 'recipe.duplicate', ?, ?, ?)`,
+        [generatedId(), this.ownerId, clientRequestId, requestFingerprint, duplicateId],
+      );
+      const activeNames = (await repository.list()).map((recipe) => recipe.name);
+      const duplicateName = allocateDuplicateFoodName(source.name, activeNames, true);
+      const now = canonicalNow(this.now);
+      await transaction.runAsync(
+        `INSERT INTO "recipes"
+          ("id", "user_id", "name", "notes", "serving_count_yield", "final_cooked_weight_grams",
+           "final_cooked_weight_display_quantity", "final_cooked_weight_display_unit", "needs_republish", "created_at", "updated_at")
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        [duplicateId, this.ownerId, duplicateName, source.notes, source.serving_count_yield,
+          source.final_cooked_weight_grams, source.final_cooked_weight_display_quantity,
+          source.final_cooked_weight_display_unit, now, now],
+      );
+      await this.stage("after_recipe");
+      await this.replaceIngredients(repository, transaction, duplicateId, ingredients);
+      await this.stage("after_ingredients");
+      const row = await repository.get(duplicateId);
+      if (!row) throw recipeNotFound("mutation");
+      const response = await this.response(repository, row, "mutation");
+      await transaction.runAsync(
+        `UPDATE "create_operation_idempotency" SET "response_snapshot" = ?, "completed_at" = ?
+         WHERE "user_id" = ? AND "operation" = 'recipe.duplicate' AND "client_request_id" = ?`,
+        [canonicalJsonStringify(response), now, this.ownerId, clientRequestId],
+      );
       return response;
     });
   }
@@ -1592,14 +1655,15 @@ export class LocalRecipesRuntime implements RecipesRuntime {
   private async replayReceipt(
     repository: LocalRecipeRepository,
     transaction: SQLiteDatabase,
+    operation: "recipe.create" | "recipe.duplicate",
     clientRequestId: string,
     requestFingerprint: string,
   ): Promise<Recipe | null> {
     const receipt = await transaction.getFirstAsync<ReceiptRow>(
       `SELECT "request_fingerprint", "resource_id", "response_snapshot"
        FROM "create_operation_idempotency"
-       WHERE "user_id" = ? AND "operation" = 'recipe.create' AND "client_request_id" = ?`,
-      [this.ownerId, clientRequestId],
+       WHERE "user_id" = ? AND "operation" = ? AND "client_request_id" = ?`,
+      [this.ownerId, operation, clientRequestId],
     );
     if (!receipt) return null;
     if (receipt.request_fingerprint !== requestFingerprint) {

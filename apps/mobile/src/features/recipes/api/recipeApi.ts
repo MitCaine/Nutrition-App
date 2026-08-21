@@ -49,6 +49,19 @@ export function deleteRecipe({
   return apiRequest<void>(`/recipes/${recipeId}${suffix}`, { method: "DELETE" });
 }
 
+export function duplicateRecipe({
+  recipeId,
+  clientRequestId,
+}: {
+  recipeId: string;
+  clientRequestId: string;
+}): Promise<Recipe> {
+  return apiRequest<Recipe>(`/recipes/${recipeId}/duplicate`, {
+    method: "POST",
+    body: JSON.stringify({ client_request_id: clientRequestId }),
+  });
+}
+
 export async function getRecipeNutrition(recipeId: string): Promise<RecipeNutritionResponse> {
   const response = await apiRequest<RecipeNutritionApiResponse>(`/recipes/${recipeId}/nutrition`);
   return {

@@ -84,6 +84,7 @@ export interface RecipesRuntime {
   list(query?: string): Promise<Recipe[]>;
   get(recipeId: string): Promise<Recipe>;
   create(input: RecipeCreateInput): Promise<Recipe>;
+  duplicate(input: { recipeId: string; clientRequestId: string }): Promise<Recipe>;
   update(recipeId: string, input: RecipeMutationInput): Promise<Recipe>;
   delete(input: { recipeId: string; removeFromRecipes?: boolean }): Promise<void>;
   getNutrition(recipeId: string): Promise<RecipeNutritionResponse>;

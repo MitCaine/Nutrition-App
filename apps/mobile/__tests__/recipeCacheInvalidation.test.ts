@@ -1,9 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import {
+  cacheDuplicatedRecipe,
   invalidateRecipeCaches,
   removeDeletedRecipeCaches,
 } from "../src/features/recipes/hooks/useRecipes";
+import type { Recipe } from "../src/features/recipes/api/types";
 
 test("publication invalidation refreshes Recipe and generated Food Detail caches", () => {
   const invalidateQueries = jest.fn();
@@ -25,6 +27,21 @@ test("successful Recipe deletion removes child caches and refreshes parent/Food 
   expect(removeQueries).toHaveBeenCalledWith({
     queryKey: ["recipes", "child-recipe", "nutrition"],
   });
+  expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["recipes"] });
+  expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["foods"] });
+});
+
+test("successful duplication seeds the detail cache and refreshes Recipe lists", () => {
+  const duplicate = { id: "recipe-copy", name: "Soup Copy" } as Recipe;
+  const setQueryData = jest.fn();
+  const invalidateQueries = jest.fn();
+
+  cacheDuplicatedRecipe(
+    { invalidateQueries, setQueryData } as unknown as QueryClient,
+    duplicate,
+  );
+
+  expect(setQueryData).toHaveBeenCalledWith(["recipes", "recipe-copy"], duplicate);
   expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["recipes"] });
   expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["foods"] });
 });

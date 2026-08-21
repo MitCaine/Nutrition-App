@@ -12,6 +12,7 @@ from app.domain.recipe_projection import RecipeProjectionMutationError
 from app.models.user import User
 from app.schemas.recipe import (
     RecipeCreateRequest,
+    RecipeDuplicateRequest,
     RecipeListResponse,
     RecipeNutritionResponse,
     RecipePublishResponse,
@@ -54,6 +55,35 @@ def create_recipe(
     except CreateOperationResultUnavailableError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
     except (LookupError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{recipe_id}/duplicate",
+    response_model=RecipeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def duplicate_recipe(
+    recipe_id: UUID,
+    payload: RecipeDuplicateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> RecipeResponse:
+    try:
+        return _service(db).duplicate_recipe(
+            user.id,
+            recipe_id,
+            payload.client_request_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RecipeGraphCycleError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationIdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except CreateOperationResultUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail()) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

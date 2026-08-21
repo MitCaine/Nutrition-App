@@ -463,6 +463,168 @@ describe("E2-07 local Recipe authoring", () => {
     });
   });
 
+  test("duplicates one independent unpublished authored Recipe", async () => {
+    const runtime = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER, {
+      now: () => new Date("2026-08-20T12:00:00.000Z"),
+    });
+    const source = await runtime.create({
+      name: "Local Chili",
+      notes: "Simmer gently",
+      serving_count_yield: "4",
+      final_cooked_weight_grams: "453.592370",
+      final_cooked_weight_display_quantity: "1",
+      final_cooked_weight_display_unit: "lb",
+      ingredients: [{
+        food_item_id: FOOD,
+        position: 0,
+        amount_quantity: "2",
+        amount_unit: "serving",
+        serving_definition_id: SERVING,
+        preparation_note: "drained",
+      }],
+    });
+
+    const duplicate = await runtime.duplicate({
+      recipeId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000091",
+    });
+
+    expect(duplicate).toMatchObject({
+      name: "Local Chili Copy",
+      notes: source.notes,
+      serving_count_yield: source.serving_count_yield,
+      final_cooked_weight_grams: source.final_cooked_weight_grams,
+      final_cooked_weight_display_quantity: source.final_cooked_weight_display_quantity,
+      final_cooked_weight_display_unit: source.final_cooked_weight_display_unit,
+      published_food_item_id: null,
+      needs_republish: false,
+    });
+    expect(duplicate.id).not.toBe(source.id);
+    expect(duplicate.ingredients[0]!.id).not.toBe(source.ingredients[0]!.id);
+    expect({ ...duplicate.ingredients[0], id: null, recipe_id: null }).toEqual({
+      ...source.ingredients[0],
+      id: null,
+      recipe_id: null,
+    });
+    await expect(runtime.get(source.id)).resolves.toEqual(source);
+  });
+
+  test("allocates one active Copy family and replays the exact retained result after source deletion", async () => {
+    const runtime = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER);
+    const source = await runtime.create(recipeInput("Soup"));
+    const requestId = "00000000-0000-4000-8000-000000000092";
+    const transactionsBeforeDuplicate = database.exclusiveTransactionCount;
+
+    const first = await runtime.duplicate({ recipeId: source.id, clientRequestId: requestId });
+    expect(first.name).toBe("Soup Copy");
+    expect(database.exclusiveTransactionCount).toBe(transactionsBeforeDuplicate + 1);
+    await runtime.create(recipeInput("Soup Copy 2"));
+    const third = await runtime.duplicate({
+      recipeId: first.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000093",
+    });
+    expect(third.name).toBe("Soup Copy 3");
+
+    await runtime.delete({ recipeId: source.id });
+    await expect(runtime.duplicate({ recipeId: source.id, clientRequestId: requestId }))
+      .resolves.toEqual(first);
+    await runtime.delete({ recipeId: first.id });
+    await expect(runtime.duplicate({ recipeId: source.id, clientRequestId: requestId }))
+      .rejects.toMatchObject({
+        code: "create_idempotency_result_unavailable",
+        mutationOutcome: "confirmed_non_commit",
+      });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "recipes" WHERE "name" LIKE 'Soup Copy%' AND "deleted_at" IS NULL`,
+    )).toEqual({ count: 2 });
+  });
+
+  test("rejects a duplicate request reused for another source without creating another copy", async () => {
+    const runtime = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER);
+    const source = await runtime.create(recipeInput("First"));
+    const other = await runtime.create(recipeInput("Second"));
+    const requestId = "00000000-0000-4000-8000-000000000094";
+    await runtime.duplicate({ recipeId: source.id, clientRequestId: requestId });
+
+    await expect(runtime.duplicate({ recipeId: other.id, clientRequestId: requestId }))
+      .rejects.toMatchObject({
+        code: "create_idempotency_payload_conflict",
+        mutationOutcome: "confirmed_non_commit",
+      });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "recipes" WHERE "name" = 'First Copy'`,
+    )).toEqual({ count: 1 });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "recipes" WHERE "name" = 'Second Copy'`,
+    )).toEqual({ count: 0 });
+  });
+
+  test("rolls back the duplicate and receipt when an ingredient authority becomes invalid", async () => {
+    const runtime = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER);
+    const source = await runtime.create(recipeInput("Invalid dependency", [{
+      food_item_id: FOOD,
+      position: 0,
+    }]));
+    await database.runAsync(
+      `UPDATE "food_items" SET "deleted_at" = '2026-08-20T00:00:00.000000Z' WHERE "id" = ?`,
+      [FOOD],
+    );
+
+    await expect(runtime.duplicate({
+      recipeId: source.id,
+      clientRequestId: "00000000-0000-4000-8000-000000000095",
+    })).rejects.toMatchObject({ code: "food_not_found", mutationOutcome: "confirmed_non_commit" });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "recipes" WHERE "name" = 'Invalid dependency Copy'`,
+    )).toEqual({ count: 0 });
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "create_operation_idempotency"
+       WHERE "operation" = 'recipe.duplicate' AND "client_request_id" = ?`,
+      ["00000000-0000-4000-8000-000000000095"],
+    )).toEqual({ count: 0 });
+  });
+
+  test("duplicates a published source without copying publication history or republish state", async () => {
+    const published = {
+      recipe: "00000000-0000-4000-8000-000000000070",
+      food: "00000000-0000-4000-8000-000000000071",
+      revision: "00000000-0000-4000-8000-000000000072",
+    };
+    await seedPublishedRecipeProjection(database, {
+      ownerId: OWNER,
+      recipeId: published.recipe,
+      projectionId: published.food,
+      revisionId: published.revision,
+      name: "Published source",
+    });
+    await database.runAsync(
+      `UPDATE "recipes" SET "needs_republish" = 1 WHERE "id" = ?`,
+      [published.recipe],
+    );
+    const runtime = createLocalRecipesRuntime(database.asExpoDatabase(), OWNER);
+    const before = await database.getFirstAsync<{ revisions: number; projections: number }>(
+      `SELECT
+        (SELECT COUNT(*) FROM "recipe_publication_revisions") AS "revisions",
+        (SELECT COUNT(*) FROM "food_items" WHERE "source_type" = 'recipe') AS "projections"`,
+    );
+
+    const duplicate = await runtime.duplicate({
+      recipeId: published.recipe,
+      clientRequestId: "00000000-0000-4000-8000-000000000096",
+    });
+
+    expect(duplicate).toMatchObject({
+      name: "Published source Copy",
+      published_food_item_id: null,
+      needs_republish: false,
+    });
+    expect(await database.getFirstAsync<{ revisions: number; projections: number }>(
+      `SELECT
+        (SELECT COUNT(*) FROM "recipe_publication_revisions") AS "revisions",
+        (SELECT COUNT(*) FROM "food_items" WHERE "source_type" = 'recipe') AS "projections"`,
+    )).toEqual(before);
+  });
+
   test("keeps foreign-owner Recipes non-observable for reads and mutations", async () => {
     await seedLocalOwner(database, OTHER_OWNER);
     const otherRuntime = createLocalRecipesRuntime(database.asExpoDatabase(), OTHER_OWNER);
