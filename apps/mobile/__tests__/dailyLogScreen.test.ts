@@ -4,6 +4,7 @@ import TestRenderer, { act } from "react-test-renderer";
 
 import type { DailyLog } from "../src/features/logging/api/types";
 import { DailyLogScreen } from "../src/features/logging/screens/DailyLogScreen";
+import { LIGHT_THEME } from "../src/app/theme/AppTheme";
 import { AccessibilityStatus } from "../src/shared/accessibility/AccessibilityStatus";
 import { AccessibleModal } from "../src/shared/accessibility/AccessibleModal";
 import { withNutritionRuntime } from "./nutritionRuntimeTestSupport";
@@ -58,6 +59,74 @@ function textContent(node: TestRenderer.ReactTestInstance | string): string {
 
 function screenText(root: TestRenderer.ReactTestInstance): string {
   return root.findAllByType(Text).map(textContent).join(" ");
+}
+
+function expectCompactNutritionMarkers(
+  root: TestRenderer.ReactTestInstance,
+): void {
+  const expected = [
+    {
+      testID: "daily-log-nutrition-marker-calories",
+      color: LIGHT_THEME.colors.nutritionCaloriesSeries,
+    },
+    {
+      testID: "daily-log-nutrition-marker-protein",
+      color: LIGHT_THEME.colors.nutritionProteinSeries,
+    },
+    {
+      testID: "daily-log-nutrition-marker-total_carbohydrate",
+      color: LIGHT_THEME.colors.nutritionCarbohydrateSeries,
+    },
+    {
+      testID: "daily-log-nutrition-marker-total_fat",
+      color: LIGHT_THEME.colors.nutritionFatSeries,
+    },
+  ];
+
+  const markers = root.findAllByType(View).filter(
+    (node) =>
+      typeof node.props.testID === "string"
+      && node.props.testID.startsWith(
+        "daily-log-nutrition-marker-",
+      ),
+  );
+
+  expect(markers).toHaveLength(4);
+
+  expect(
+    markers.map((marker) => {
+      const style = StyleSheet.flatten(
+        marker.props.style,
+      ) as {
+        backgroundColor?: string;
+        borderRadius?: number;
+        height?: number;
+        width?: number;
+      };
+
+      return {
+        testID: marker.props.testID,
+        color: style.backgroundColor,
+      };
+    }),
+  ).toEqual(expected);
+
+  for (const marker of markers) {
+    const style = StyleSheet.flatten(
+      marker.props.style,
+    ) as {
+      backgroundColor?: string;
+      borderRadius?: number;
+      height?: number;
+      width?: number;
+    };
+
+    expect(style.width).toBe(10);
+    expect(style.height).toBe(10);
+    expect(style.borderRadius).toBe(5);
+    expect(marker.props.accessible).toBe(false);
+    expect(marker.props.accessibilityLabel).toBeUndefined();
+  }
 }
 
 function log(meal_type: string | null): DailyLog {
@@ -234,6 +303,7 @@ test("E4-07 Daily Log is logging-first with centered History and compact nutriti
   expect(text).toContain("45 g");
   expect(text).toContain("20 / 70 g");
   expect(text).not.toMatch(/\d+(?:\.\d+)?%/);
+  expectCompactNutritionMarkers(root);
 
   const previous = root
     .findAllByType(Pressable)
@@ -334,7 +404,8 @@ test("E4-09 History entry is disabled until an authoritative calendar is availab
 
 test("E4-07 empty date disables Complete and shows four neutral zero rows", async () => {
   const rendered = await render();
-  const text = screenText(rendered.renderer.root);
+  const root = rendered.renderer.root;
+  const text = screenText(root);
 
   expect(mockRootHeaderProps?.action).toEqual(
     expect.objectContaining({
@@ -347,6 +418,28 @@ test("E4-07 empty date disables Complete and shows four neutral zero rows", asyn
   expect(
     text.match(/0 logged/g)?.length,
   ).toBe(4);
+  expectCompactNutritionMarkers(root);
+
+  await act(async () => rendered.renderer.unmount());
+});
+
+test("GH-132-P5 compact nutrient markers remain category identity when values are unavailable", async () => {
+  mockLogs = {
+    data: undefined,
+    isLoading: true,
+    isFetching: true,
+    isError: false,
+    refetch: jest.fn(),
+  };
+
+  const rendered = await render();
+  const root = rendered.renderer.root;
+  const text = screenText(root);
+
+  expect(
+    text.match(/Unavailable/g)?.length,
+  ).toBe(4);
+  expectCompactNutritionMarkers(root);
 
   await act(async () => rendered.renderer.unmount());
 });

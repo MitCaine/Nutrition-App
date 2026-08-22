@@ -193,6 +193,12 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
   const runtime = useNutritionRuntime();
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const compactNutritionSeriesColors: Readonly<Record<string, string>> = {
+    calories: theme.colors.nutritionCaloriesSeries,
+    protein: theme.colors.nutritionProteinSeries,
+    total_carbohydrate: theme.colors.nutritionCarbohydrateSeries,
+    total_fat: theme.colors.nutritionFatSeries,
+  };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draftDate, setDraftDate] = useState(parseLocalDateString(date) ?? new Date());
   const [clock, setClock] = useState(() => new Date());
@@ -1157,9 +1163,22 @@ export function DailyLogScreen({ date, setDate, legacyFuture = false, onAddFood,
             key={row.nutrientId}
             style={styles.totalRow}
           >
-            <Text style={styles.text}>
-              {row.label}
-            </Text>
+            <View style={styles.compactNutritionLabel}>
+              <View
+                accessible={false}
+                testID={`daily-log-nutrition-marker-${row.nutrientId}`}
+                style={[
+                  styles.compactNutritionSeriesMarker,
+                  {
+                    backgroundColor:
+                      compactNutritionSeriesColors[row.nutrientId],
+                  },
+                ]}
+              />
+              <Text style={styles.text}>
+                {row.label}
+              </Text>
+            </View>
             <Text style={styles.text}>
               {row.value}
             </Text>
@@ -1666,5 +1685,7 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   screen: { gap: 12, paddingBottom: 16, paddingHorizontal: 16 },
   secondaryButton: { borderColor: theme.colors.border, borderRadius: 6, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "700" },
+  compactNutritionLabel: { alignItems: "center", flexDirection: "row", gap: 6 },
+  compactNutritionSeriesMarker: { borderRadius: 5, height: 10, width: 10 },
   totalRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, justifyContent: "space-between" },
 }); }
