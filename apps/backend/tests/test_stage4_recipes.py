@@ -10,25 +10,10 @@ from sqlalchemy.orm import Session
 from app.dependencies.user import ensure_dev_user
 from app.nutrition.resolution import resolve_nutrition
 from app.repositories.food_repository import FoodRepository
-from tests.support.foods import create_food, food_payload
+from tests.support.foods import create_food
+from tests.support.recipes import per_100g_food as _per_100g_food
 
 recipe_display_units_migration = import_module("app.migrations.versions.0005_recipe_display_units")
-
-
-def _per_100g_food(client: TestClient, name: str = "Cooked Rice") -> dict:
-    payload = food_payload(name)
-    payload["serving_definitions"] = [
-        {"label": "100 g", "quantity": "100", "unit": "g", "gram_weight": "100", "is_default": True}
-    ]
-    payload["nutrients"] = [
-        {"nutrient_id": "calories", "amount": "130", "unit": "kcal", "basis": "per_100g", "data_status": "known"},
-        {"nutrient_id": "protein", "amount": "2.5", "unit": "g", "basis": "per_100g", "data_status": "known"},
-        {"nutrient_id": "added_sugars", "unit": "g", "basis": "per_100g", "data_status": "zero"},
-        {"nutrient_id": "vitamin_d", "unit": "mcg", "basis": "per_100g", "data_status": "unknown"},
-    ]
-    response = client.post("/api/v1/foods", json=payload)
-    assert response.status_code == 201, response.text
-    return response.json()
 
 
 def _recipe_payload(gram_food: dict, serving_food: dict) -> dict:

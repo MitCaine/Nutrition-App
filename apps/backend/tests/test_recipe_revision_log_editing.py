@@ -16,7 +16,8 @@ from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
-from tests.test_recipe_revision_logging import _post_log, _published, _stored_log
+from tests.test_recipe_revision_logging import _post_log, _stored_log
+from tests.support.recipes import published_recipe as _published
 
 
 def _default_serving(food: dict) -> dict:

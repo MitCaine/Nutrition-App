@@ -18,8 +18,9 @@ from app.repositories.food_repository import FoodRepository
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.schemas.log import DailyLogCreateRequest
 from app.services.log_service import LogService
-from tests.test_recipe_revision_publication import _create_recipe, _history, _publish
+from tests.support.recipes import publication_history as _history, publish_recipe as _publish
 from tests.support.foods import create_food
+from tests.support.recipes import published_recipe as _published
 
 
 def _post_log(
@@ -41,11 +42,6 @@ def _post_log(
             "serving_definition_id": serving_definition_id,
         },
     )
-
-
-def _published(client: TestClient, **kwargs) -> tuple[UUID, dict]:
-    recipe_id = _create_recipe(client, **kwargs)
-    return recipe_id, _publish(client, recipe_id)["food"]
 
 
 def _stored_log(db: Session, response) -> DailyLog:

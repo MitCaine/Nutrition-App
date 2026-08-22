@@ -20,8 +20,8 @@ from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from app.models.user import User
 from app.schemas.log import DailyLogCreateRequest
 from app.services.log_service import LogService
-from tests.test_recipe_revision_logging import _published
-from tests.test_recipe_revision_publication import _publish
+from tests.support.recipes import published_recipe as _published
+from tests.support.recipes import publish_recipe as _publish
 from tests.support.foods import create_food
 from tests.time_zone_test_support import establish_test_time_zone
 

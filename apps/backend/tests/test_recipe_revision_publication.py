@@ -27,50 +27,10 @@ from app.publication.recipe_revision import (
     revision_content_digest,
     validate_revision_resolver_input,
 )
-from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.repositories.recipe_repository import RecipeRepository
 from app.services.recipe_service import RecipeService
 from tests.test_recipe_revision_capture import _published_recipe as _legacy_published_recipe
-from tests.test_stage4_recipes import _per_100g_food
-
-
-def _create_recipe(
-    client: TestClient,
-    *,
-    name: str = "Managed Recipe",
-    serving_count: str | None = "2",
-    cooked_grams: str | None = "400",
-) -> UUID:
-    ingredient = _per_100g_food(client, name=f"{name} ingredient")
-    response = client.post(
-        "/api/v1/recipes",
-        json={
-            "name": name,
-            "notes": "managed notes",
-            "serving_count_yield": serving_count,
-            "final_cooked_weight_grams": cooked_grams,
-            "ingredients": [
-                {
-                    "food_item_id": ingredient["id"],
-                    "position": 0,
-                    "amount_quantity": "200",
-                    "amount_unit": "g",
-                }
-            ],
-        },
-    )
-    assert response.status_code == 201, response.text
-    return UUID(response.json()["id"])
-
-
-def _publish(client: TestClient, recipe_id: UUID) -> dict:
-    response = client.post(f"/api/v1/recipes/{recipe_id}/publish")
-    assert response.status_code == 200, response.text
-    return response.json()
-
-
-def _history(db: Session, recipe: Recipe) -> list[RecipePublicationRevision]:
-    return RecipePublicationRepository(db).list_for_recipe(recipe.id, recipe.user_id)
+from tests.support.recipes import create_recipe as _create_recipe, publication_history as _history, publish_recipe as _publish
 
 
 def _revision_snapshot(revision: RecipePublicationRevision) -> tuple:

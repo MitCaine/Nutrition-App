@@ -17,7 +17,7 @@ from app.models.user import User
 from app.nutrition.revision_resolution import resolve_revision_nutrition
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.services.food_service import FoodService
-from tests.test_recipe_revision_logging import _published
+from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 
 
