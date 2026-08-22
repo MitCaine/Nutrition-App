@@ -1,11 +1,12 @@
 import React from "react";
-import { Dimensions, Pressable, StyleSheet, View } from "react-native";
+import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { BottomNavigation } from "../src/app/navigation/BottomNavigation";
-import { LIGHT_THEME } from "../src/app/theme/AppTheme";
+import { DARK_THEME, LIGHT_THEME } from "../src/app/theme/AppTheme";
 
 let mockBottomInset = 34;
+let mockThemeMode: "light" | "dark" = "light";
 
 const SCREEN_HEIGHT = 874;
 const PREVIOUS_DOCK_HEIGHT = 54;
@@ -53,18 +54,29 @@ jest.mock("../src/app/theme/AppTheme", () => {
   const actual = jest.requireActual("../src/app/theme/AppTheme");
   return {
     ...actual,
-    useAppTheme: () => ({
-      ...actual.LIGHT_THEME,
-      effectiveScheme: "light",
-      preference: "system",
-      setPreference: jest.fn(),
-    }),
+    useAppTheme: () => {
+      const selectedTheme = mockThemeMode === "dark"
+        ? actual.DARK_THEME
+        : actual.LIGHT_THEME;
+
+      return {
+        ...selectedTheme,
+        effectiveScheme: mockThemeMode,
+        preference: "system",
+        setPreference: jest.fn(),
+      };
+    },
   };
 });
 
-async function renderNavigation(activeTab: "foods" | "daily-log" | "recipes" = "daily-log") {
+async function renderNavigation(
+  activeTab: "foods" | "daily-log" | "recipes" = "daily-log",
+  themeMode: "light" | "dark" = "light",
+) {
   const onSelect = jest.fn();
   let renderer!: TestRenderer.ReactTestRenderer;
+
+  mockThemeMode = themeMode;
 
   Dimensions.set({
     screen: { fontScale: 1, height: 874, scale: 3, width: 402 },
@@ -81,6 +93,7 @@ async function renderNavigation(activeTab: "foods" | "daily-log" | "recipes" = "
 
 afterEach(() => {
   mockBottomInset = 34;
+  mockThemeMode = "light";
 });
 
 test("preserves tab semantics, selection, routing, and 44 point targets", async () => {
@@ -307,13 +320,40 @@ test("lower contour is deterministic, mirrored, and concentric at a sixteen poin
 });
 
 test.each([
-  ["foods", 0, 1, [370 / 3]],
-  ["daily-log", 1, 1, [370 / 3, 370 * 2 / 3]],
-  ["recipes", 2, 1, [370 * 2 / 3]],
+  ["light", LIGHT_THEME, "foods", 0, 1, [370 / 3], "restaurant"],
+  [
+    "light",
+    LIGHT_THEME,
+    "daily-log",
+    1,
+    1,
+    [370 / 3, 370 * 2 / 3],
+    "calendar",
+  ],
+  ["light", LIGHT_THEME, "recipes", 2, 1, [370 * 2 / 3], "book"],
+  ["dark", DARK_THEME, "foods", 0, 1, [370 / 3], "restaurant"],
+  [
+    "dark",
+    DARK_THEME,
+    "daily-log",
+    1,
+    1,
+    [370 / 3, 370 * 2 / 3],
+    "calendar",
+  ],
+  ["dark", DARK_THEME, "recipes", 2, 1, [370 * 2 / 3], "book"],
 ] as const)(
-  "%s selection owns one exact dock third with the existing selected colors",
-  async (activeTab, thirdIndex, expectedStrokeWidth, expectedDividers) => {
-    const { renderer } = await renderNavigation(activeTab);
+  "%s %s selection owns one exact dock third with universal Daily Log identity",
+  async (
+    themeMode,
+    expectedTheme,
+    activeTab,
+    thirdIndex,
+    expectedStrokeWidth,
+    expectedDividers,
+    expectedActiveIcon,
+  ) => {
+    const { renderer } = await renderNavigation(activeTab, themeMode);
     const decoration = renderer.root.findByProps({
       testID: "bottom-navigation-decoration",
     });
@@ -330,7 +370,19 @@ test.each([
       (node) => typeof node.props.testID === "string"
         && node.props.testID.startsWith("bottom-navigation-selected-divider-"),
     );
+    const tabs = renderer.root.findAllByType(Pressable).filter(
+      (node) => node.props.accessibilityRole === "tab",
+    );
+    const selectedTab = tabs[thirdIndex];
+    const selectedIcon = selectedTab.findAll(
+      (node) => typeof node.props.name === "string" && node.props.size === 18,
+    )[0];
+    const selectedLabel = selectedTab.findByType(Text);
     const tabWidth = 370 / 3;
+    const expectedColors = {
+      background: expectedTheme.colors.dailyLogBackground,
+      foreground: expectedTheme.colors.dailyLogForeground,
+    };
 
     expect(decoration.props.pointerEvents).toBe("none");
     expect(selectedClip.props).toMatchObject({
@@ -344,8 +396,8 @@ test.each([
     );
     expect(selectedSurface.props).toMatchObject({
       d: dockSurface.props.d,
-      fill: LIGHT_THEME.colors.selectedNavigationBackground,
-      stroke: LIGHT_THEME.colors.primaryActionBorder,
+      fill: expectedColors.background,
+      stroke: expectedColors.foreground,
       strokeWidth: expectedStrokeWidth,
     });
     expect(selectedDividers.map((divider) => divider.props.x1)).toEqual(
@@ -353,11 +405,46 @@ test.each([
     );
     selectedDividers.forEach((divider) => {
       expect(divider.props).toMatchObject({
-        stroke: LIGHT_THEME.colors.primaryActionBorder,
+        stroke: expectedColors.foreground,
         strokeWidth: expectedStrokeWidth,
         x2: divider.props.x1,
         y1: 0,
         y2: COMPACT_DOCK_HEIGHT,
+      });
+    });
+
+    expect(selectedTab.props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(selectedIcon).toBeDefined();
+    expect(selectedIcon.props).toMatchObject({
+      color: expectedColors.foreground,
+      name: expectedActiveIcon,
+      size: 18,
+    });
+    expect(StyleSheet.flatten(selectedLabel.props.style)).toMatchObject({
+      color: expectedColors.foreground,
+      fontWeight: "700",
+    });
+
+    tabs.forEach((tab, index) => {
+      if (index === thirdIndex) {
+        return;
+      }
+
+      const inactiveIcon = tab.findAll(
+        (node) => typeof node.props.name === "string" && node.props.size === 18,
+      )[0];
+      const inactiveLabel = tab.findByType(Text);
+
+      expect(tab.props.accessibilityState).toEqual({
+        selected: false,
+      });
+      expect(inactiveIcon.props.color).toBe(
+        expectedTheme.colors.inactiveForeground,
+      );
+      expect(StyleSheet.flatten(inactiveLabel.props.style)).toMatchObject({
+        fontWeight: "500",
       });
     });
 
@@ -404,4 +491,34 @@ test("uses explicit safe-area geometry without core React Native SafeAreaView", 
   expect(source).toContain("outerCornerExtent - OUTER_GAP");
   expect(source).toContain("useSafeAreaInsets");
   expect(source).not.toContain("SafeAreaView");
+});
+
+test("selected navigation consumes only the universal Daily Log semantic pair", () => {
+  const source = jest.requireActual("fs").readFileSync(
+    "src/app/navigation/BottomNavigation.tsx",
+    "utf8",
+  );
+
+  expect(source.match(/theme\.colors\.dailyLogBackground/g)).toHaveLength(1);
+  expect(source.match(/theme\.colors\.dailyLogForeground/g)).toHaveLength(4);
+
+  [
+    "selectedNavigationBackground",
+    "selectedNavigationForeground",
+    "primaryActionBorder",
+    "foodsBackground",
+    "foodsForeground",
+    "recipesBackground",
+    "recipesForeground",
+    "historyBackground",
+    "historyForeground",
+    "encouragementBackground",
+    "encouragementForeground",
+    "nutritionCaloriesSeries",
+    "nutritionProteinSeries",
+    "nutritionCarbohydrateSeries",
+    "nutritionFatSeries",
+  ].forEach((token) => {
+    expect(source).not.toContain(`theme.colors.${token}`);
+  });
 });
