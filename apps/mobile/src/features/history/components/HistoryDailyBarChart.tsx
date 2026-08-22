@@ -321,7 +321,7 @@ type Props = {
     date: string,
   ) => void;
   barColor: string;
-  selectedBarColor: string;
+  selectedMarkerColor: string;
   referenceValue?:
     number | null;
   referenceLineColor?: string;
@@ -333,7 +333,7 @@ export function HistoryDailyBarChart({
   selectedDate,
   onSelectDate,
   barColor,
-  selectedBarColor,
+  selectedMarkerColor,
   referenceValue,
   referenceLineColor,
 }: Props) {
@@ -482,10 +482,7 @@ export function HistoryDailyBarChart({
                   `bar-${point.date}`
                 }
                 fill={
-                  selectedDate
-                    === point.date
-                    ? selectedBarColor
-                    : barColor
+                  barColor
                 }
                 height={
                   height
@@ -510,8 +507,6 @@ export function HistoryDailyBarChart({
             if (
               selectedDate
                 !== point.date
-              || point.state
-                === "numeric"
             ) {
               return null;
             }
@@ -526,11 +521,19 @@ export function HistoryDailyBarChart({
                   + point.slotWidth / 2
                 }
                 cy={
-                  geometry.baseline
-                  - 4
+                  point.state
+                    === "numeric"
+                  && point.numericValue
+                    !== null
+                    ? Math.max(
+                        PLOT_TOP + 3,
+                        point.barY - 5,
+                      )
+                    : geometry.baseline
+                      - 4
                 }
                 fill={
-                  selectedBarColor
+                  selectedMarkerColor
                 }
                 r={3}
               />

@@ -45,6 +45,9 @@ import TestRenderer, {
 } from "react-test-renderer";
 
 import {
+  LIGHT_THEME,
+} from "../src/app/theme/AppTheme";
+import {
   addCalendarDays,
 } from "../src/features/logging/utils/dailyLogDisplay";
 import type {
@@ -58,6 +61,7 @@ import {
   buildHistoryOverviewCards,
 } from "../src/features/history/historyOverview";
 import {
+  HistoryDailyBarChart,
   historyDailyBarGeometry,
   historySelectedDateScrollTarget,
 } from "../src/features/history/components/HistoryDailyBarChart";
@@ -1249,5 +1253,226 @@ test(
         0,
       ),
     ).toBeNull();
+  },
+);
+
+test(
+  "History overview renders the four canonical series with their semantic nutrition colors",
+  () => {
+    mockUseHistoryRange
+      .mockReturnValue(
+        successfulQuery(
+          evidence(),
+        ),
+      );
+
+    mockUseTargetConfiguration
+      .mockReturnValue({
+        data:
+          undefined,
+      });
+
+    let renderer:
+      TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer =
+        TestRenderer.create(
+          React.createElement(
+            HistoryScreen,
+            {
+              session:
+                freshHistorySession(
+                  "2026-08-19",
+                ),
+              onSessionChange:
+                jest.fn(),
+              onFirstLoggedDateChange:
+                jest.fn(),
+              onBack:
+                jest.fn(),
+            },
+          ),
+        );
+    });
+
+    const rects =
+      renderer!.root.findAll(
+        (node) =>
+          String(node.type)
+            === "Rect",
+      );
+
+    const fills =
+      rects.map(
+        (node) =>
+          node.props.fill,
+      );
+
+    expect(
+      fills,
+    ).toHaveLength(
+      28,
+    );
+
+    expect(
+      fills.slice(
+        0,
+        7,
+      ),
+    ).toEqual(
+      Array(7).fill(
+        LIGHT_THEME.colors
+          .nutritionCaloriesSeries,
+      ),
+    );
+
+    expect(
+      fills.slice(
+        7,
+        14,
+      ),
+    ).toEqual(
+      Array(7).fill(
+        LIGHT_THEME.colors
+          .nutritionProteinSeries,
+      ),
+    );
+
+    expect(
+      fills.slice(
+        14,
+        21,
+      ),
+    ).toEqual(
+      Array(7).fill(
+        LIGHT_THEME.colors
+          .nutritionCarbohydrateSeries,
+      ),
+    );
+
+    expect(
+      fills.slice(
+        21,
+        28,
+      ),
+    ).toEqual(
+      Array(7).fill(
+        LIGHT_THEME.colors
+          .nutritionFatSeries,
+      ),
+    );
+  },
+);
+
+test.each([
+  [
+    "numeric",
+    projectedDay(
+      "2026-08-12",
+      "numeric",
+      "10",
+    ),
+    true,
+  ],
+  [
+    "explicit zero",
+    projectedDay(
+      "2026-08-12",
+      "numeric",
+      "0",
+      true,
+    ),
+    true,
+  ],
+  [
+    "gap",
+    projectedDay(
+      "2026-08-12",
+      "gap",
+    ),
+    false,
+  ],
+  [
+    "unavailable",
+    projectedDay(
+      "2026-08-12",
+      "unavailable",
+    ),
+    false,
+  ],
+])(
+  "selected %s date uses the common marker without replacing series bar color",
+  (
+    _name,
+    day,
+    hasNumericBar,
+  ) => {
+    let renderer:
+      TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer =
+        TestRenderer.create(
+          React.createElement(
+            HistoryDailyBarChart,
+            {
+              days: [
+                day,
+              ],
+              seriesLabel:
+                "Test series",
+              selectedDate:
+                day.date,
+              onSelectDate:
+                jest.fn(),
+              barColor:
+                "series-color",
+              selectedMarkerColor:
+                "marker-color",
+            },
+          ),
+        );
+    });
+
+    const rects =
+      renderer!.root.findAll(
+        (node) =>
+          String(node.type)
+            === "Rect",
+      );
+
+    const circles =
+      renderer!.root.findAll(
+        (node) =>
+          String(node.type)
+            === "Circle",
+      );
+
+    expect(
+      circles,
+    ).toHaveLength(1);
+
+    expect(
+      circles[0].props.fill,
+    ).toBe(
+      "marker-color",
+    );
+
+    if (hasNumericBar) {
+      expect(
+        rects,
+      ).toHaveLength(1);
+
+      expect(
+        rects[0].props.fill,
+      ).toBe(
+        "series-color",
+      );
+    } else {
+      expect(
+        rects,
+      ).toHaveLength(0);
+    }
   },
 );
