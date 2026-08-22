@@ -174,8 +174,8 @@ export function BottomNavigation({
           <G clipPath={`url(#${SELECTED_CLIP_ID})`}>
             <Path
               d={dockPath}
-              fill={theme.colors.selectedNavigationBackground}
-              stroke={theme.colors.primaryActionBorder}
+              fill={theme.colors.dailyLogBackground}
+              stroke={theme.colors.dailyLogForeground}
               strokeWidth={SELECTED_BORDER_WIDTH}
               testID="bottom-navigation-selected-surface"
               transform={selectedPathTransform}
@@ -184,7 +184,7 @@ export function BottomNavigation({
           {selectedDividerXs.map((dividerX, index) => (
             <Line
               key={dividerX}
-              stroke={theme.colors.primaryActionBorder}
+              stroke={theme.colors.dailyLogForeground}
               strokeWidth={SELECTED_BORDER_WIDTH}
               testID={`bottom-navigation-selected-divider-${index}`}
               x1={dividerX}
@@ -221,7 +221,7 @@ export function BottomNavigation({
                 size={18}
                 color={
                   selected
-                    ? theme.colors.selectedNavigationForeground
+                    ? theme.colors.dailyLogForeground
                     : theme.colors.inactiveForeground
                 }
               />
@@ -245,7 +245,7 @@ export function BottomNavigation({
 function createStyles(theme: ReturnType<typeof useAppTheme>) {
   return StyleSheet.create({
     activeLabel: {
-      color: theme.colors.selectedNavigationForeground,
+      color: theme.colors.dailyLogForeground,
       fontWeight: "700",
     },
 
