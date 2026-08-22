@@ -372,3 +372,86 @@ def test_t0_full_path_uses_real_cli_migrations_and_deterministic_fixture(
     if password:
         assert password not in completed.stdout
         assert password not in completed.stderr
+
+
+def test_fixture_generator_v1_is_bounded_to_frozen_0003_nutrients() -> None:
+    from pathlib import Path
+
+    from app.operators import historical_recipe_performance_fixtures as fixture_module
+
+    frozen_ids = (
+        "calories",
+        "total_fat",
+        "saturated_fat",
+        "trans_fat",
+        "cholesterol",
+        "sodium",
+        "total_carbohydrate",
+        "dietary_fiber",
+        "total_sugars",
+        "added_sugars",
+        "protein",
+        "vitamin_d",
+        "calcium",
+        "iron",
+        "potassium",
+        "magnesium",
+    )
+
+    module_source = Path(fixture_module.__file__).read_text(
+        encoding="utf-8",
+    )
+
+    assert "NUTRIENT_CATALOG" not in module_source
+
+    for tier_id in ("T0", "T1", "T2", "T3"):
+        profile = fixture_module.performance_fixture_profile(
+            tier_id
+        )
+        assert profile.nutrients_per_food == len(frozen_ids)
+
+    reduced = fixture_module.performance_fixture_profile(
+        fixture_module.INTERNAL_REDUCED_TIER,
+        allow_internal=True,
+    )
+    assert reduced.nutrients_per_food == 4
+
+    t0 = fixture_module.build_performance_fixture_blueprint(
+        "T0",
+        17,
+    )
+
+    generated_ids = tuple(
+        dict.fromkeys(
+            row["nutrient_id"]
+            for row in fixture_module._nutrient_rows(t0)
+        )
+    )
+
+    assert generated_ids == frozen_ids
+
+    reduced_blueprint = fixture_module.build_performance_fixture_blueprint(
+        fixture_module.INTERNAL_REDUCED_TIER,
+        17,
+        allow_internal=True,
+    )
+
+    reduced_ids = tuple(
+        dict.fromkeys(
+            row["nutrient_id"]
+            for row in fixture_module._nutrient_rows(
+                reduced_blueprint
+            )
+        )
+    )
+
+    assert reduced_ids == frozen_ids[:4]
+
+    snapshot_ids = {
+        row["nutrient_id"]
+        for row in fixture_module._daily_snapshot_rows(
+            reduced_blueprint
+        )
+    }
+
+    assert snapshot_ids == {"calories"}

@@ -4,7 +4,6 @@ import re
 
 import pytest
 
-from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.operators.historical_recipe_performance_fixtures import (
     INTERNAL_REDUCED_TIER,
     PERFORMANCE_FIXTURE_PROFILES,
@@ -71,7 +70,7 @@ def test_tier_blueprints_have_exact_dimensions_and_dispositions(
     assert blueprint.dimensions["ingredients_per_recipe"]["p50"] == p50
     assert blueprint.dimensions["ingredients_per_recipe"]["p95"] == p95
     assert blueprint.dimensions["dispositions"] == dispositions
-    assert blueprint.dimensions["max_nutrients_per_food"] == len(NUTRIENT_CATALOG)
+    assert blueprint.dimensions["max_nutrients_per_food"] == 16
 
 
 def test_reduced_fixture_is_internal_and_logically_deterministic() -> None:
