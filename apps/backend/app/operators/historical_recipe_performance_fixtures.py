@@ -13,7 +13,6 @@ from uuid import UUID, uuid5
 
 from sqlalchemy import Connection, Engine, text
 
-from app.catalog.nutrients import NUTRIENT_CATALOG
 from app.operators.phase5c_contracts import canonical_digest, canonical_json
 from app.operators.phase5c_performance_contracts import FIXTURE_GENERATOR_VERSION
 
@@ -70,6 +69,41 @@ class PerformanceFixtureError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class _FrozenSourceNutrient:
+    id: str
+    default_unit: str
+    display_order: int
+
+
+# Fixture-generator v1 is intentionally frozen to the nutrient authority
+# present at its supported 0003 source revision. Do not derive this historical
+# surface from the current runtime nutrient catalog.
+_FROZEN_SOURCE_NUTRIENTS: tuple[_FrozenSourceNutrient, ...] = (
+    _FrozenSourceNutrient("calories", "kcal", 10),
+    _FrozenSourceNutrient("total_fat", "g", 20),
+    _FrozenSourceNutrient("saturated_fat", "g", 21),
+    _FrozenSourceNutrient("trans_fat", "g", 22),
+    _FrozenSourceNutrient("cholesterol", "mg", 30),
+    _FrozenSourceNutrient("sodium", "mg", 40),
+    _FrozenSourceNutrient("total_carbohydrate", "g", 50),
+    _FrozenSourceNutrient("dietary_fiber", "g", 51),
+    _FrozenSourceNutrient("total_sugars", "g", 52),
+    _FrozenSourceNutrient("added_sugars", "g", 53),
+    _FrozenSourceNutrient("protein", "g", 60),
+    _FrozenSourceNutrient("vitamin_d", "mcg", 70),
+    _FrozenSourceNutrient("calcium", "mg", 80),
+    _FrozenSourceNutrient("iron", "mg", 90),
+    _FrozenSourceNutrient("potassium", "mg", 100),
+    _FrozenSourceNutrient("magnesium", "mg", 110),
+)
+
+_FROZEN_SOURCE_NUTRIENT_IDS = tuple(
+    nutrient.id
+    for nutrient in _FROZEN_SOURCE_NUTRIENTS
+)
+
+
+@dataclass(frozen=True)
 class PerformanceFixtureProfile:
     tier_id: str
     recipe_count: int
@@ -121,7 +155,7 @@ class PerformanceFixtureProfile:
             raise ValueError("Ingredient percentile targets are invalid")
         if not 0 < self.servings_per_food:
             raise ValueError("Performance fixture Foods require serving definitions")
-        if not 0 < self.nutrients_per_food <= len(NUTRIENT_CATALOG):
+        if not 0 < self.nutrients_per_food <= len(_FROZEN_SOURCE_NUTRIENTS):
             raise ValueError(
                 "Performance fixture nutrients must use only catalog nutrient identities"
             )
@@ -168,7 +202,7 @@ _PROFILE_VALUES = {
         graph_depth=3,
         graph_breadth=2,
         servings_per_food=4,
-        nutrients_per_food=len(NUTRIENT_CATALOG),
+        nutrients_per_food=len(_FROZEN_SOURCE_NUTRIENTS),
     ),
     "T1": PerformanceFixtureProfile(
         tier_id="T1",
@@ -184,7 +218,7 @@ _PROFILE_VALUES = {
         graph_depth=5,
         graph_breadth=3,
         servings_per_food=6,
-        nutrients_per_food=len(NUTRIENT_CATALOG),
+        nutrients_per_food=len(_FROZEN_SOURCE_NUTRIENTS),
     ),
     "T2": PerformanceFixtureProfile(
         tier_id="T2",
@@ -200,7 +234,7 @@ _PROFILE_VALUES = {
         graph_depth=8,
         graph_breadth=5,
         servings_per_food=8,
-        nutrients_per_food=len(NUTRIENT_CATALOG),
+        nutrients_per_food=len(_FROZEN_SOURCE_NUTRIENTS),
     ),
     "T3": PerformanceFixtureProfile(
         tier_id="T3",
@@ -216,7 +250,7 @@ _PROFILE_VALUES = {
         graph_depth=8,
         graph_breadth=5,
         servings_per_food=8,
-        nutrients_per_food=len(NUTRIENT_CATALOG),
+        nutrients_per_food=len(_FROZEN_SOURCE_NUTRIENTS),
     ),
     INTERNAL_REDUCED_TIER: PerformanceFixtureProfile(
         tier_id=INTERNAL_REDUCED_TIER,
@@ -809,7 +843,7 @@ def _serving_rows(blueprint: PerformanceFixtureBlueprint) -> Iterator[dict[str, 
 
 
 def _nutrient_rows(blueprint: PerformanceFixtureBlueprint) -> Iterator[dict[str, Any]]:
-    definitions = NUTRIENT_CATALOG[: blueprint.profile.nutrients_per_food]
+    definitions = _FROZEN_SOURCE_NUTRIENTS[: blueprint.profile.nutrients_per_food]
     for food_index in range(blueprint.profile.food_count):
         is_recipe = food_index < blueprint.profile.recipe_count
         for nutrient_index, definition in enumerate(definitions):
@@ -912,7 +946,7 @@ def _daily_log_rows(blueprint: PerformanceFixtureBlueprint) -> Iterator[dict[str
 def _daily_snapshot_rows(
     blueprint: PerformanceFixtureBlueprint,
 ) -> Iterator[dict[str, Any]]:
-    calories = NUTRIENT_CATALOG[0]
+    calories = _FROZEN_SOURCE_NUTRIENTS[0]
     for record_index in range(blueprint.profile.daily_log_count):
         food_index = _owner_manual_food_index(blueprint, record_index)
         yield {
@@ -1008,9 +1042,7 @@ def _require_clean_legacy_source(connection: Connection) -> None:
     catalog_ids = tuple(
         connection.scalars(text("SELECT id FROM nutrients ORDER BY display_order, id")).all()
     )
-    expected_catalog_ids = tuple(
-        row.id for row in sorted(NUTRIENT_CATALOG, key=lambda item: (item.display_order, item.id))
-    )
+    expected_catalog_ids = _FROZEN_SOURCE_NUTRIENT_IDS
     if catalog_ids != expected_catalog_ids:
         raise PerformanceFixtureError("Performance fixture nutrient catalog is unsupported")
     populated = [
