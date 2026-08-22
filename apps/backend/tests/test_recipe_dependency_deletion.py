@@ -22,7 +22,7 @@ from app.services.recipe_service import (
     RECIPE_DELETE_DEPENDENCY_RESTART_LIMIT,
     RecipeService,
 )
-from tests.test_recipe_revision_logging import _post_log
+from tests.support.daily_logs import post_log as _post_log
 from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 

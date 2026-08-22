@@ -12,7 +12,7 @@ from app.models.food import FoodItem
 from app.models.log import DailyLog
 from app.schemas.log import DailyLogUpdateRequest
 from app.services.log_service import LogService
-from tests.test_recipe_revision_logging import _post_log, _stored_log
+from tests.support.daily_logs import post_log as _post_log, stored_log as _stored_log
 from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 

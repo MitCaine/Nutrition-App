@@ -21,7 +21,7 @@ from app.services.retention_audit_service import (
     RetentionCategory,
 )
 from tests.test_recipe_revision_capture import _published_recipe as _legacy_published_recipe
-from tests.test_recipe_revision_logging import _post_log
+from tests.support.daily_logs import post_log as _post_log
 from tests.support.recipes import published_recipe as _published
 
 

@@ -16,19 +16,16 @@ from app.models.user import User
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.schemas.log import DailyLogCreateRequest, DailyLogUpdateRequest
 from app.services.log_service import LogService
-from tests.test_recipe_revision_logging import _post_log, _stored_log
+from tests.support.daily_logs import (
+    create_serving_log as _create_serving_log,
+    post_log as _post_log,
+    stored_log as _stored_log,
+)
 from tests.support.recipes import published_recipe as _published
 
 
-def _default_serving(food: dict) -> dict:
-    return next(value for value in food["serving_definitions"] if value["is_default"])
 
 
-def _create_serving_log(client: TestClient, db: Session, **published_kwargs) -> tuple[UUID, dict, DailyLog]:
-    recipe_id, food = _published(client, **published_kwargs)
-    response = _post_log(client, food, serving_definition_id=_default_serving(food)["id"])
-    assert response.status_code == 201, response.text
-    return recipe_id, food, _stored_log(db, response)
 
 
 def _snapshot_state(log: DailyLog) -> tuple:

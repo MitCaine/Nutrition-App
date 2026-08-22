@@ -21,34 +21,11 @@ from app.services.log_service import LogService
 from tests.support.recipes import publication_history as _history, publish_recipe as _publish
 from tests.support.foods import create_food
 from tests.support.recipes import published_recipe as _published
+from tests.support.daily_logs import post_log as _post_log, stored_log as _stored_log
 
 
-def _post_log(
-    client: TestClient,
-    food: dict,
-    *,
-    amount_quantity: str = "1",
-    amount_unit: str = "serving",
-    serving_definition_id: str | None = None,
-    logged_date: str = "2026-07-13",
-):
-    return client.post(
-        "/api/v1/logs",
-        json={
-            "food_item_id": food["id"],
-            "logged_date": logged_date,
-            "amount_quantity": amount_quantity,
-            "amount_unit": amount_unit,
-            "serving_definition_id": serving_definition_id,
-        },
-    )
 
 
-def _stored_log(db: Session, response) -> DailyLog:
-    db.expire_all()
-    log = db.get(DailyLog, UUID(response.json()["id"]))
-    assert log is not None
-    return log
 
 
 def test_manual_food_logging_path_and_snapshots_are_unchanged(
