@@ -12,7 +12,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.models.food import FoodItem
 from app.models.recipe import Recipe
 from app.services.food_service import FoodService
-from tests.test_recipe_revision_logging import _post_log
+from tests.support.daily_logs import post_log as _post_log
 from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 

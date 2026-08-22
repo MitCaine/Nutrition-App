@@ -26,7 +26,7 @@ from app.services.recipe_revision_capture_service import (
     CaptureCategory,
     RecipeRevisionCaptureService,
 )
-from tests.test_recipe_revision_log_editing import _create_serving_log
+from tests.support.daily_logs import create_serving_log as _create_serving_log
 from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 
