@@ -13,7 +13,7 @@ from app.dependencies.user import TEST_USER_ID
 from app.models.log import DailyLogDayCompletion
 from app.services.calendar_service import CalendarService
 from app.services.log_service import HistoryRangeError, LogService
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 from tests.time_zone_test_support import establish_test_time_zone
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from tests.test_stage2_foods import food_payload
+from tests.support.foods import food_payload
 
 
 FIXTURE = json.loads(

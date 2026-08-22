@@ -16,7 +16,7 @@ from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User
 from app.dependencies.user import ensure_dev_user
 from app.services.recipe_service import RecipeService
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _create_authored_recipe(client: TestClient, *, name: str = "Chili") -> dict:

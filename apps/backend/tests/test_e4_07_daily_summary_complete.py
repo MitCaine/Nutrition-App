@@ -9,7 +9,7 @@ from tests.test_e4_03_complete_invalidation import (
     _patch_log,
     _set_complete,
 )
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _summary(client: TestClient) -> dict:

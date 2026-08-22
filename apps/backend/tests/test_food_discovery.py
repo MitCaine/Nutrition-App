@@ -17,7 +17,7 @@ from app.models.user import User
 from app.services.food_service import FoodService, _is_favorite_identity_conflict
 from tests.test_ocr_confirmation import confirmation_payload
 from tests.test_recipe_revision_logging import _published
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _log(client, food: dict, logged_date: str = "2020-01-01"):

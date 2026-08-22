@@ -18,7 +18,7 @@ from app.models.user import User
 from app.schemas.food import FoodCreateRequest
 from app.services.create_idempotency import create_fingerprint, is_create_idempotency_conflict
 from app.services.food_service import FoodService
-from tests.test_stage2_foods import food_payload
+from tests.support.foods import food_payload
 
 
 

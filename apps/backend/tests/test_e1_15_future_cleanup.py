@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.log import DailyLog
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 FUTURE_DATE = "2030-01-01"

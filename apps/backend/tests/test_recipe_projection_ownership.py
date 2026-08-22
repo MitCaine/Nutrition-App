@@ -13,7 +13,7 @@ from app.models.food import FoodItem
 from app.models.recipe import Recipe
 from app.services.food_service import FoodService
 from tests.test_recipe_revision_logging import _post_log, _published
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _projection_state(food: FoodItem) -> tuple:

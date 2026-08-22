@@ -32,7 +32,7 @@ from app.targets.estimation import (
     height_to_cm,
     weight_to_kg,
 )
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def configuration_payload(**overrides):

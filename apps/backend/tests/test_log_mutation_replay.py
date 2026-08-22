@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _create_log(client: TestClient) -> tuple[dict, dict]:

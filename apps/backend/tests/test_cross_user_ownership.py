@@ -28,7 +28,7 @@ from app.services.recipe_revision_capture_service import (
 )
 from tests.test_recipe_revision_log_editing import _create_serving_log
 from tests.test_recipe_revision_logging import _published
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _other_user(db: Session, label: str) -> User:
@@ -437,7 +437,7 @@ def test_foreign_source_marker_is_not_disclosed_by_projection_error(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    from tests.test_stage2_foods import create_food
+    from tests.support.foods import create_food
 
     food = create_food(client, "Owned inconsistent marker")
     foreign_recipe_id = uuid4()

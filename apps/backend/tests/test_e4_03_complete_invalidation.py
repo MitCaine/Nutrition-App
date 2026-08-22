@@ -15,7 +15,7 @@ from app.models.log import DailyLog, DailyLogDayCompletion
 from app.schemas.log import DailyLogUpdateRequest
 from app.services.log_service import LogService
 from tests.test_recipe_revision_publication import _create_recipe, _publish
-from tests.test_stage2_foods import create_food, food_payload
+from tests.support.foods import create_food, food_payload
 from tests.test_targets import configuration_payload
 
 

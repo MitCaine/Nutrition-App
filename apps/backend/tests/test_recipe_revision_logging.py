@@ -19,7 +19,7 @@ from app.repositories.recipe_publication_repository import RecipePublicationRepo
 from app.schemas.log import DailyLogCreateRequest
 from app.services.log_service import LogService
 from tests.test_recipe_revision_publication import _create_recipe, _history, _publish
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _post_log(

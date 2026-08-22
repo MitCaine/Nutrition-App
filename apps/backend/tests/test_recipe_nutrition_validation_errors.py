@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.food import FoodNutrient
 from app.models.recipe import Recipe
 from app.services.recipe_service import RecipeService
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 from tests.test_stage4_recipes import _per_100g_food
 
 

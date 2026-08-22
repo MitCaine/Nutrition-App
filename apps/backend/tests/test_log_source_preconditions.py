@@ -11,7 +11,7 @@ from app.models.food import FoodItem
 from app.models.log import DailyLog, DailyLogNutrientSnapshot
 from tests.test_recipe_revision_logging import _published
 from tests.test_recipe_revision_publication import _publish
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _payload(

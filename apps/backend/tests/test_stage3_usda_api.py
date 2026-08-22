@@ -9,7 +9,7 @@ from app.main import app
 from app.services.usda_service import UsdaService
 from tests.test_stage3_usda_import import FakeUsdaClient
 from tests.test_stage3_usda_mapper import usda_banana_payload
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 class MissingKeyService:

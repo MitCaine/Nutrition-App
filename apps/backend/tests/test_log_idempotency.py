@@ -22,7 +22,7 @@ from app.schemas.log import DailyLogCreateRequest
 from app.services.log_service import LogService
 from tests.test_recipe_revision_logging import _published
 from tests.test_recipe_revision_publication import _publish
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 from tests.time_zone_test_support import establish_test_time_zone
 
 

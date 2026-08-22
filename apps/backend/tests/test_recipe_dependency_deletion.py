@@ -23,7 +23,7 @@ from app.services.recipe_service import (
     RecipeService,
 )
 from tests.test_recipe_revision_logging import _post_log, _published
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _parent_recipe(

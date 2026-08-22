@@ -8,7 +8,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.dependencies.user import ensure_dev_user
 from app.models.log import DailyLog
 from app.repositories.log_repository import LogRepository
-from tests.test_stage2_foods import create_food, food_payload
+from tests.support.foods import create_food, food_payload
 
 
 def create_food_with_distinct_servings(client: TestClient) -> dict:

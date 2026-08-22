@@ -18,7 +18,7 @@ from app.nutrition.revision_resolution import resolve_revision_nutrition
 from app.repositories.recipe_publication_repository import RecipePublicationRepository
 from app.services.food_service import FoodService
 from tests.test_recipe_revision_logging import _published
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def _managed_detail(client: TestClient, food_id: str) -> dict:

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.dependencies.user import ensure_dev_user
 from app.nutrition.resolution import resolve_nutrition
 from app.repositories.food_repository import FoodRepository
-from tests.test_stage2_foods import create_food, food_payload
+from tests.support.foods import create_food, food_payload
 
 recipe_display_units_migration = import_module("app.migrations.versions.0005_recipe_display_units")
 

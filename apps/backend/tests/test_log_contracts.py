@@ -12,7 +12,7 @@ from app.domain.log_contracts import (
     project_meal,
 )
 from app.models.log import DailyLog
-from tests.test_stage2_foods import create_food
+from tests.support.foods import create_food
 
 
 def test_meal_contract_accepts_only_supported_assignments_or_absence() -> None:
