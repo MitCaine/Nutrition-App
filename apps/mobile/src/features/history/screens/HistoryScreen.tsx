@@ -41,6 +41,7 @@ import {
 import {
   buildHistoryOverviewCards,
   selectedHistoryValueLabel,
+  type HistoryOverviewCard,
 } from "../historyOverview";
 import {
   buildHistoryNutritionDetailSections,
@@ -101,6 +102,34 @@ function modeLabel(
   return mode === "complete_days"
     ? "Complete days"
     : "Logged days";
+}
+
+function historyOverviewSeriesColor(
+  theme: ReturnType<
+    typeof useAppTheme
+  >,
+  nutrientId:
+    HistoryOverviewCard["nutrientId"],
+): string {
+  switch (nutrientId) {
+    case "calories":
+      return theme.colors
+        .nutritionCaloriesSeries;
+    case "protein":
+      return theme.colors
+        .nutritionProteinSeries;
+    case "total_carbohydrate":
+      return theme.colors
+        .nutritionCarbohydrateSeries;
+    case "total_fat":
+      return theme.colors
+        .nutritionFatSeries;
+  }
+
+  const unreachable:
+    never = nutrientId;
+
+  return unreachable;
 }
 
 const HISTORY_MONTH_LABELS = [
@@ -957,8 +986,10 @@ export function HistoryScreen({
 
                             <HistoryDailyBarChart
                               barColor={
-                                theme.colors
-                                  .accent
+                                historyOverviewSeriesColor(
+                                  theme,
+                                  card.nutrientId,
+                                )
                               }
                               days={
                                 card.days
@@ -973,7 +1004,7 @@ export function HistoryScreen({
                                   ),
                                 )
                               }
-                              selectedBarColor={
+                              selectionColor={
                                 theme.colors
                                   .text
                               }
@@ -1315,7 +1346,7 @@ export function HistoryScreen({
                           ?.numericValue
                         ?? null
                       }
-                      selectedBarColor={
+                      selectionColor={
                         theme.colors.text
                       }
                       selectedDate={

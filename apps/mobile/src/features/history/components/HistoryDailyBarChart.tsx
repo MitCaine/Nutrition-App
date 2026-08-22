@@ -10,7 +10,6 @@ import {
   View,
 } from "react-native";
 import Svg, {
-  Circle,
   Line,
   Rect,
 } from "react-native-svg";
@@ -321,7 +320,7 @@ type Props = {
     date: string,
   ) => void;
   barColor: string;
-  selectedBarColor: string;
+  selectionColor: string;
   referenceValue?:
     number | null;
   referenceLineColor?: string;
@@ -333,7 +332,7 @@ export function HistoryDailyBarChart({
   selectedDate,
   onSelectDate,
   barColor,
-  selectedBarColor,
+  selectionColor,
   referenceValue,
   referenceLineColor,
 }: Props) {
@@ -484,8 +483,20 @@ export function HistoryDailyBarChart({
                 fill={
                   selectedDate
                     === point.date
-                    ? selectedBarColor
+                    ? selectionColor
                     : barColor
+                }
+                stroke={
+                  selectedDate
+                    === point.date
+                    ? barColor
+                    : undefined
+                }
+                strokeWidth={
+                  selectedDate
+                    === point.date
+                    ? 2
+                    : undefined
                 }
                 height={
                   height
@@ -516,23 +527,34 @@ export function HistoryDailyBarChart({
               return null;
             }
 
+            const centerX =
+              point.slotX
+              + point.slotWidth / 2;
+
             return (
-              <Circle
+              <Line
                 key={
-                  `selected-marker-${point.date}`
+                  `selected-dash-${point.date}`
                 }
-                cx={
-                  point.slotX
-                  + point.slotWidth / 2
+                stroke={
+                  selectionColor
                 }
-                cy={
+                strokeLinecap="round"
+                strokeWidth={3}
+                x1={
+                  centerX - 8
+                }
+                x2={
+                  centerX + 8
+                }
+                y1={
                   geometry.baseline
                   - 4
                 }
-                fill={
-                  selectedBarColor
+                y2={
+                  geometry.baseline
+                  - 4
                 }
-                r={3}
               />
             );
           },
