@@ -1806,7 +1806,7 @@ test.each([
 );
 
 test(
-  "selected crossing caret keeps coincident contrast layers anchored to the selected bar top",
+  "selected crossing caret uses neutral inner contrast while remaining anchored to the selected bar top",
   () => {
     const day =
       projectedDay(
@@ -1895,7 +1895,7 @@ test(
       lines.filter(
         (node) =>
           node.props.stroke
-            === "selection-color"
+            === "reference-color"
           && node.props.strokeWidth
             === 2
           && node.props.strokeLinecap

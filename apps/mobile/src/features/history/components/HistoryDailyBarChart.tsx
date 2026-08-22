@@ -563,6 +563,12 @@ export function HistoryDailyBarChart({
                     geometry.baseline
                     - height;
 
+                  const innerCaretColor =
+                    selectedDate
+                      === point.date
+                      ? referenceLineColor
+                      : selectionColor;
+
                   return [
                     <Line
                       key={
@@ -615,7 +621,7 @@ export function HistoryDailyBarChart({
                         `reference-crossing-left-inner-${point.date}`
                       }
                       stroke={
-                        selectionColor
+                        innerCaretColor
                       }
                       strokeLinecap="round"
                       strokeWidth={2}
@@ -638,7 +644,7 @@ export function HistoryDailyBarChart({
                         `reference-crossing-right-inner-${point.date}`
                       }
                       stroke={
-                        selectionColor
+                        innerCaretColor
                       }
                       strokeLinecap="round"
                       strokeWidth={2}
