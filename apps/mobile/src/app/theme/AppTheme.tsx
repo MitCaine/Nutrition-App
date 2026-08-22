@@ -25,6 +25,13 @@ export type AppTheme = {
     listDivider: string;
     primaryActionBackground: string; primaryActionForeground: string; primaryActionBorder: string;
     selectedNavigationBackground: string; selectedNavigationForeground: string;
+    dailyLogForeground: string; dailyLogBackground: string;
+    foodsForeground: string; foodsBackground: string;
+    recipesForeground: string; recipesBackground: string;
+    historyForeground: string; historyBackground: string;
+    encouragementForeground: string; encouragementBackground: string;
+    nutritionCaloriesSeries: string; nutritionProteinSeries: string;
+    nutritionCarbohydrateSeries: string; nutritionFatSeries: string;
   };
 };
 
@@ -42,6 +49,13 @@ const lightColors: AppTheme["colors"] = {
   listDivider: "#dfe3e8",
   primaryActionBackground: "#1f6fb2", primaryActionForeground: "#ffffff", primaryActionBorder: "#1f6fb2",
   selectedNavigationBackground: "#dbeafe", selectedNavigationForeground: "#1f6fb2",
+  dailyLogForeground: "#1f6fb2", dailyLogBackground: "#eaf3fb",
+  foodsForeground: "#0b7285", foodsBackground: "#e8f6f8",
+  recipesForeground: "#7a3e9d", recipesBackground: "#f5ecfa",
+  historyForeground: "#4f46a5", historyBackground: "#eef0ff",
+  encouragementForeground: "#0f766e", encouragementBackground: "#e7f7f4",
+  nutritionCaloriesSeries: "#1f6fb2", nutritionProteinSeries: "#0b7285",
+  nutritionCarbohydrateSeries: "#9a5b00", nutritionFatSeries: "#7a3e9d",
 };
 
 const darkColors: AppTheme["colors"] = {
@@ -58,6 +72,13 @@ const darkColors: AppTheme["colors"] = {
   listDivider: "#465361",
   primaryActionBackground: "#194170", primaryActionForeground: "#ffffff", primaryActionBorder: "#4b84bf",
   selectedNavigationBackground: "#194170", selectedNavigationForeground: "#65aef2",
+  dailyLogForeground: "#65aef2", dailyLogBackground: "#173d5d",
+  foodsForeground: "#67d4e2", foodsBackground: "#17363d",
+  recipesForeground: "#c4a0f5", recipesBackground: "#342642",
+  historyForeground: "#a5b4fc", historyBackground: "#292d4f",
+  encouragementForeground: "#5eead4", encouragementBackground: "#153b37",
+  nutritionCaloriesSeries: "#65aef2", nutritionProteinSeries: "#67d4e2",
+  nutritionCarbohydrateSeries: "#f0b35b", nutritionFatSeries: "#c4a0f5",
 };
 
 export const LIGHT_THEME: AppTheme = { mode: "light", colors: lightColors };
