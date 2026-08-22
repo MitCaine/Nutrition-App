@@ -1004,7 +1004,7 @@ export function HistoryScreen({
                                   ),
                                 )
                               }
-                              selectedMarkerColor={
+                              selectionColor={
                                 theme.colors
                                   .text
                               }
@@ -1346,7 +1346,7 @@ export function HistoryScreen({
                           ?.numericValue
                         ?? null
                       }
-                      selectedMarkerColor={
+                      selectionColor={
                         theme.colors.text
                       }
                       selectedDate={

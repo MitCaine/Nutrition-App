@@ -11,7 +11,7 @@ jest.mock(
     __esModule: true,
     default: "Svg",
     Svg: "Svg",
-    Circle: "Circle",
+    Line: "Line",
     Rect: "Rect",
   }),
 );
@@ -1402,7 +1402,7 @@ test.each([
     false,
   ],
 ])(
-  "selected %s date uses the common marker without replacing series bar color",
+  "selected %s date uses the stronger phone-scale selection affordance",
   (
     _name,
     day,
@@ -1428,8 +1428,8 @@ test.each([
                 jest.fn(),
               barColor:
                 "series-color",
-              selectedMarkerColor:
-                "marker-color",
+              selectionColor:
+                "selection-color",
             },
           ),
         );
@@ -1442,22 +1442,12 @@ test.each([
             === "Rect",
       );
 
-    const circles =
+    const lines =
       renderer!.root.findAll(
         (node) =>
           String(node.type)
-            === "Circle",
+            === "Line",
       );
-
-    expect(
-      circles,
-    ).toHaveLength(1);
-
-    expect(
-      circles[0].props.fill,
-    ).toBe(
-      "marker-color",
-    );
 
     if (hasNumericBar) {
       expect(
@@ -1467,12 +1457,57 @@ test.each([
       expect(
         rects[0].props.fill,
       ).toBe(
+        "selection-color",
+      );
+
+      expect(
+        rects[0].props.stroke,
+      ).toBe(
         "series-color",
       );
+
+      expect(
+        rects[0].props.strokeWidth,
+      ).toBe(2);
+
+      expect(
+        lines,
+      ).toHaveLength(0);
     } else {
       expect(
         rects,
       ).toHaveLength(0);
+
+      expect(
+        lines,
+      ).toHaveLength(1);
+
+      expect(
+        lines[0].props.stroke,
+      ).toBe(
+        "selection-color",
+      );
+
+      expect(
+        lines[0].props.strokeWidth,
+      ).toBe(3);
+
+      expect(
+        lines[0].props.strokeLinecap,
+      ).toBe(
+        "round",
+      );
+
+      expect(
+        lines[0].props.x2
+          - lines[0].props.x1,
+      ).toBe(16);
+
+      expect(
+        lines[0].props.y1,
+      ).toBe(
+        lines[0].props.y2,
+      );
     }
   },
 );

@@ -10,7 +10,6 @@ import {
   View,
 } from "react-native";
 import Svg, {
-  Circle,
   Line,
   Rect,
 } from "react-native-svg";
@@ -321,7 +320,7 @@ type Props = {
     date: string,
   ) => void;
   barColor: string;
-  selectedMarkerColor: string;
+  selectionColor: string;
   referenceValue?:
     number | null;
   referenceLineColor?: string;
@@ -333,7 +332,7 @@ export function HistoryDailyBarChart({
   selectedDate,
   onSelectDate,
   barColor,
-  selectedMarkerColor,
+  selectionColor,
   referenceValue,
   referenceLineColor,
 }: Props) {
@@ -482,7 +481,22 @@ export function HistoryDailyBarChart({
                   `bar-${point.date}`
                 }
                 fill={
-                  barColor
+                  selectedDate
+                    === point.date
+                    ? selectionColor
+                    : barColor
+                }
+                stroke={
+                  selectedDate
+                    === point.date
+                    ? barColor
+                    : undefined
+                }
+                strokeWidth={
+                  selectedDate
+                    === point.date
+                    ? 2
+                    : undefined
                 }
                 height={
                   height
@@ -507,35 +521,40 @@ export function HistoryDailyBarChart({
             if (
               selectedDate
                 !== point.date
+              || point.state
+                === "numeric"
             ) {
               return null;
             }
 
+            const centerX =
+              point.slotX
+              + point.slotWidth / 2;
+
             return (
-              <Circle
+              <Line
                 key={
-                  `selected-marker-${point.date}`
+                  `selected-dash-${point.date}`
                 }
-                cx={
-                  point.slotX
-                  + point.slotWidth / 2
+                stroke={
+                  selectionColor
                 }
-                cy={
-                  point.state
-                    === "numeric"
-                  && point.numericValue
-                    !== null
-                    ? Math.max(
-                        PLOT_TOP + 3,
-                        point.barY - 5,
-                      )
-                    : geometry.baseline
-                      - 4
+                strokeLinecap="round"
+                strokeWidth={3}
+                x1={
+                  centerX - 8
                 }
-                fill={
-                  selectedMarkerColor
+                x2={
+                  centerX + 8
                 }
-                r={3}
+                y1={
+                  geometry.baseline
+                  - 4
+                }
+                y2={
+                  geometry.baseline
+                  - 4
+                }
               />
             );
           },
