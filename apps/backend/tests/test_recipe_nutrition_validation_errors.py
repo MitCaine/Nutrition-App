@@ -12,7 +12,7 @@ from app.models.food import FoodNutrient
 from app.models.recipe import Recipe
 from app.services.recipe_service import RecipeService
 from tests.support.foods import create_food
-from tests.test_stage4_recipes import _per_100g_food
+from tests.support.recipes import per_100g_food as _per_100g_food
 
 
 def _serving_recipe(client: TestClient, food: dict, name: str = "Validation Recipe") -> UUID:

@@ -19,7 +19,7 @@ from app.repositories.recipe_publication_repository import RecipePublicationRepo
 from app.repositories.recipe_repository import RecipeRepository
 from app.services.recipe_service import RecipeService
 from tests.test_recipe_dependency_deletion import _projection_state
-from tests.test_recipe_revision_logging import _published
+from tests.support.recipes import published_recipe as _published
 
 
 def _serving(food: dict, *, default: bool) -> dict:

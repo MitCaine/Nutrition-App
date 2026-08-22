@@ -13,7 +13,7 @@ from app.models.food import FoodItem
 from app.models.recipe import Recipe
 from app.models.user import User
 from app.repositories.food_repository import FoodRepository
-from tests.test_recipe_revision_logging import _published
+from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 
 

@@ -21,7 +21,8 @@ from app.services.retention_audit_service import (
     RetentionCategory,
 )
 from tests.test_recipe_revision_capture import _published_recipe as _legacy_published_recipe
-from tests.test_recipe_revision_logging import _post_log, _published
+from tests.test_recipe_revision_logging import _post_log
+from tests.support.recipes import published_recipe as _published
 
 
 def _record(report, entity_type: str, entity_id: UUID | str):

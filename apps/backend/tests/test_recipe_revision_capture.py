@@ -30,7 +30,7 @@ from app.services.recipe_revision_capture_service import (
 )
 from app.services.recipe_service import RecipeService
 from scripts import capture_recipe_publication_revisions as capture_cli
-from tests.test_stage4_recipes import _per_100g_food
+from tests.support.recipes import per_100g_food as _per_100g_food
 
 
 def _published_recipe(

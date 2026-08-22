@@ -16,7 +16,7 @@ from app.models.log import DailyLog
 from app.models.user import User
 from app.services.food_service import FoodService, _is_favorite_identity_conflict
 from tests.test_ocr_confirmation import confirmation_payload
-from tests.test_recipe_revision_logging import _published
+from tests.support.recipes import published_recipe as _published
 from tests.support.foods import create_food
 
 
