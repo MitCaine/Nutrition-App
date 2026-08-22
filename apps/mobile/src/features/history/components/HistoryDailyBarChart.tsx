@@ -436,9 +436,6 @@ export function HistoryDailyBarChart({
     selectedDateScrollTarget,
   ]);
 
-  const referenceCrossingY =
-    geometry.referenceY;
-
   const plot = (
     <View
       style={[
@@ -540,7 +537,7 @@ export function HistoryDailyBarChart({
         )}
 
         {referenceLineColor
-          && referenceCrossingY
+          && geometry.referenceY
             !== null
             ? geometry.points.map(
                 (point) => {
@@ -556,6 +553,15 @@ export function HistoryDailyBarChart({
                   const centerX =
                     point.slotX
                     + point.slotWidth / 2;
+
+                  const height =
+                    point.barHeight > 0
+                      ? point.barHeight
+                      : 2;
+
+                  const barTopY =
+                    geometry.baseline
+                    - height;
 
                   return [
                     <Line
@@ -574,12 +580,11 @@ export function HistoryDailyBarChart({
                         centerX
                       }
                       y1={
-                        referenceCrossingY
-                        + 3.5
+                        barTopY
+                        + 7
                       }
                       y2={
-                        referenceCrossingY
-                        - 3.5
+                        barTopY
                       }
                     />,
                     <Line
@@ -598,12 +603,11 @@ export function HistoryDailyBarChart({
                         centerX + 6
                       }
                       y1={
-                        referenceCrossingY
-                        - 3.5
+                        barTopY
                       }
                       y2={
-                        referenceCrossingY
-                        + 3.5
+                        barTopY
+                        + 7
                       }
                     />,
                   ];

@@ -1675,6 +1675,20 @@ test.each([
     );
 
     if (expectedCrossing) {
+      const rects =
+        renderer!.root.findAll(
+          (node) =>
+            String(node.type)
+              === "Rect",
+        );
+
+      expect(
+        rects,
+      ).toHaveLength(1);
+
+      const barTopY =
+        rects[0].props.y;
+
       const xCoordinates =
         caretLines.flatMap(
           (node) => [
@@ -1708,7 +1722,139 @@ test.each([
           ...yCoordinates,
         ),
       ).toBeCloseTo(7);
+
+      expect(
+        Math.min(
+          ...yCoordinates,
+        ),
+      ).toBeCloseTo(
+        barTopY,
+      );
+
+      expect(
+        Math.max(
+          ...yCoordinates,
+        ),
+      ).toBeCloseTo(
+        barTopY + 7,
+      );
     }
+
+    act(() => {
+      renderer!.unmount();
+    });
+  },
+);
+
+
+test(
+  "selected crossing caret apex remains anchored to the selected numeric bar top",
+  () => {
+    const day =
+      projectedDay(
+        "2026-08-12",
+        "numeric",
+        "2301",
+      );
+
+    let renderer:
+      TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer =
+        TestRenderer.create(
+          React.createElement(
+            HistoryDailyBarChart,
+            {
+              days: [
+                day,
+              ],
+              seriesLabel:
+                "Sodium",
+              selectedDate:
+                day.date,
+              onSelectDate:
+                jest.fn(),
+              barColor:
+                "series-color",
+              selectionColor:
+                "selection-color",
+              referenceValue:
+                2300,
+              referenceLineColor:
+                "reference-color",
+            },
+          ),
+        );
+    });
+
+    const rects =
+      renderer!.root.findAll(
+        (node) =>
+          String(node.type)
+            === "Rect",
+      );
+
+    expect(
+      rects,
+    ).toHaveLength(1);
+
+    expect(
+      rects[0].props.fill,
+    ).toBe(
+      "selection-color",
+    );
+
+    expect(
+      rects[0].props.stroke,
+    ).toBe(
+      "series-color",
+    );
+
+    const caretLines =
+      renderer!.root
+        .findAll(
+          (node) =>
+            String(node.type)
+              === "Line",
+        )
+        .filter(
+          (node) =>
+            node.props.stroke
+              === "reference-color"
+            && node.props.strokeWidth
+              === 2
+            && node.props.strokeLinecap
+              === "round",
+        );
+
+    expect(
+      caretLines,
+    ).toHaveLength(2);
+
+    const yCoordinates =
+      caretLines.flatMap(
+        (node) => [
+          node.props.y1,
+          node.props.y2,
+        ],
+      );
+
+    expect(
+      Math.min(
+        ...yCoordinates,
+      ),
+    ).toBeCloseTo(
+      rects[0].props.y,
+    );
+
+    expect(
+      Math.max(
+        ...yCoordinates,
+      ),
+    ).toBeCloseTo(
+      rects[0].props.y + 7,
+    );
 
     act(() => {
       renderer!.unmount();
