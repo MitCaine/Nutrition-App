@@ -311,6 +311,26 @@ export function historySelectedDateScrollTarget(
   return targetOffset;
 }
 
+function historyPointIsAboveReference(
+  geometry:
+    HistoryDailyBarGeometry,
+  point:
+    HistoryDailyBarGeometryPoint,
+): boolean {
+  return (
+    geometry.referenceValue
+      !== null
+    && geometry.referenceY
+      !== null
+    && point.state
+      === "numeric"
+    && point.numericValue
+      !== null
+    && point.numericValue
+      > geometry.referenceValue
+  );
+}
+
 type Props = {
   days:
     readonly HistoryProjectedDailyValue[];
@@ -516,6 +536,137 @@ export function HistoryDailyBarChart({
           },
         )}
 
+        {referenceLineColor
+          && geometry.referenceY
+            !== null
+            ? geometry.points.map(
+                (point) => {
+                  if (
+                    !historyPointIsAboveReference(
+                      geometry,
+                      point,
+                    )
+                  ) {
+                    return null;
+                  }
+
+                  const centerX =
+                    point.slotX
+                    + point.slotWidth / 2;
+
+                  const height =
+                    point.barHeight > 0
+                      ? point.barHeight
+                      : 2;
+
+                  const barTopY =
+                    geometry.baseline
+                    - height;
+
+                  const innerCaretColor =
+                    selectedDate
+                      === point.date
+                      ? referenceLineColor
+                      : selectionColor;
+
+                  return [
+                    <Line
+                      key={
+                        `reference-crossing-left-outer-${point.date}`
+                      }
+                      stroke={
+                        barColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={4}
+                      x1={
+                        centerX - 6
+                      }
+                      x2={
+                        centerX
+                      }
+                      y1={
+                        barTopY
+                        + 7
+                      }
+                      y2={
+                        barTopY
+                      }
+                    />,
+                    <Line
+                      key={
+                        `reference-crossing-right-outer-${point.date}`
+                      }
+                      stroke={
+                        barColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={4}
+                      x1={
+                        centerX
+                      }
+                      x2={
+                        centerX + 6
+                      }
+                      y1={
+                        barTopY
+                      }
+                      y2={
+                        barTopY
+                        + 7
+                      }
+                    />,
+                    <Line
+                      key={
+                        `reference-crossing-left-inner-${point.date}`
+                      }
+                      stroke={
+                        innerCaretColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={2}
+                      x1={
+                        centerX - 6
+                      }
+                      x2={
+                        centerX
+                      }
+                      y1={
+                        barTopY
+                        + 7
+                      }
+                      y2={
+                        barTopY
+                      }
+                    />,
+                    <Line
+                      key={
+                        `reference-crossing-right-inner-${point.date}`
+                      }
+                      stroke={
+                        innerCaretColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={2}
+                      x1={
+                        centerX
+                      }
+                      x2={
+                        centerX + 6
+                      }
+                      y1={
+                        barTopY
+                      }
+                      y2={
+                        barTopY
+                        + 7
+                      }
+                    />,
+                  ];
+                },
+              )
+            : null}
+
         {geometry.points.map(
           (point) => {
             if (
@@ -574,7 +725,14 @@ export function HistoryDailyBarChart({
                 `hit-${point.date}`
               }
               accessibilityLabel={
-                `Select ${seriesLabel} History date ${point.date}`
+                `Select ${seriesLabel} History date ${point.date}${
+                  historyPointIsAboveReference(
+                    geometry,
+                    point,
+                  )
+                    ? " above reference"
+                    : ""
+                }`
               }
               accessibilityRole="button"
               accessibilityState={{

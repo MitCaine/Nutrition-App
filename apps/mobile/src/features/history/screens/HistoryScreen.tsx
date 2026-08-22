@@ -48,6 +48,7 @@ import {
 } from "../historyNutritionDetails";
 import {
   buildHistoryFocusedNutrient,
+  focusedHistoryAboveReferenceLabel,
   focusedHistoryDayForDate,
 } from "../historyFocusedNutrient";
 import {
@@ -434,6 +435,15 @@ export function HistoryScreen({
       ? focusedHistoryDayForDate(
           focusedModel,
           selectedChartDate,
+        )
+      : null;
+
+  const selectedFocusedAboveReference =
+    focusedModel
+    && selectedFocusedDay
+      ? focusedHistoryAboveReferenceLabel(
+          focusedModel,
+          selectedFocusedDay,
         )
       : null;
 
@@ -1382,7 +1392,11 @@ export function HistoryScreen({
                       ? (
                       <Text
                         accessibilityLabel={
-                          `${focusedModel.label} selected ${selectedChartDate} ${selectedFocusedDay.value}`
+                          `${focusedModel.label} selected ${selectedChartDate} ${selectedFocusedDay.value}${
+                            selectedFocusedAboveReference
+                              ? ` ${selectedFocusedAboveReference}`
+                              : ""
+                          }`
                         }
                         style={
                           styles.focusedSelection
@@ -1397,6 +1411,11 @@ export function HistoryScreen({
                         {
                           selectedFocusedDay
                             .value
+                        }
+                        {
+                          selectedFocusedAboveReference
+                            ? ` · ${selectedFocusedAboveReference}`
+                            : ""
                         }
                       </Text>
                     ) : null}

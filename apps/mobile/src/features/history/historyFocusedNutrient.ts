@@ -22,6 +22,7 @@ import type {
 export type HistoryFocusedReference =
   Readonly<{
     numericValue: number;
+    amount: string;
     amountLabel: string;
     context: string;
     lineLabel: string;
@@ -33,6 +34,7 @@ export type HistoryFocusedDailyRow =
     state:
       HistoryProjectedDailyValue["state"];
     value: string;
+    numericAmount: string | null;
     hasLogs: boolean;
     isComplete: boolean;
     includesEstimated: boolean;
@@ -176,6 +178,8 @@ function currentReference(
   return {
     numericValue:
       Number(target.amount),
+    amount:
+      target.amount,
     amountLabel,
     context: [
       `Current ${authorityLabel}`,
@@ -213,6 +217,10 @@ function focusedDailyRow(
     state:
       day.state,
     value,
+    numericAmount:
+      day.state === "numeric"
+        ? day.numericAmount
+        : null,
     hasLogs:
       day.hasLogs,
     isComplete:
@@ -282,6 +290,297 @@ buildHistoryFocusedNutrient(
         nutrient,
       ),
   };
+}
+
+type HistoryDecimalDigits =
+  Readonly<{
+    digits: string;
+    scale: number;
+  }>;
+
+function historyDecimalDigits(
+  value: string,
+): HistoryDecimalDigits | null {
+  const match =
+    /^(\d+)(?:\.(\d+))?$/
+      .exec(
+        value,
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  const whole =
+    match[1].replace(
+      /^0+(?=\d)/,
+      "",
+    );
+
+  const fraction =
+    match[2] ?? "";
+
+  const digits =
+    `${whole}${fraction}`
+      .replace(
+        /^0+(?=\d)/,
+        "",
+      );
+
+  return {
+    digits,
+    scale:
+      fraction.length,
+  };
+}
+
+function historyScaledDecimalDigits(
+  value: HistoryDecimalDigits,
+  scale: number,
+): string {
+  return (
+    value.digits
+    + "0".repeat(
+      scale
+      - value.scale,
+    )
+  ).replace(
+    /^0+(?=\d)/,
+    "",
+  );
+}
+
+function compareHistoryDigitStrings(
+  left: string,
+  right: string,
+): number {
+  const width =
+    Math.max(
+      left.length,
+      right.length,
+    );
+
+  const normalizedLeft =
+    left.padStart(
+      width,
+      "0",
+    );
+
+  const normalizedRight =
+    right.padStart(
+      width,
+      "0",
+    );
+
+  if (
+    normalizedLeft
+      === normalizedRight
+  ) {
+    return 0;
+  }
+
+  return normalizedLeft
+    > normalizedRight
+      ? 1
+      : -1;
+}
+
+function subtractHistoryDigitStrings(
+  left: string,
+  right: string,
+): string {
+  const width =
+    Math.max(
+      left.length,
+      right.length,
+    );
+
+  const normalizedLeft =
+    left.padStart(
+      width,
+      "0",
+    );
+
+  const normalizedRight =
+    right.padStart(
+      width,
+      "0",
+    );
+
+  let borrow = 0;
+  let result = "";
+
+  for (
+    let index = width - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    let difference =
+      Number(
+        normalizedLeft[index],
+      )
+      - borrow
+      - Number(
+        normalizedRight[index],
+      );
+
+    if (difference < 0) {
+      difference += 10;
+      borrow = 1;
+    } else {
+      borrow = 0;
+    }
+
+    result =
+      String(
+        difference,
+      )
+      + result;
+  }
+
+  return result.replace(
+    /^0+(?=\d)/,
+    "",
+  );
+}
+
+function formatHistoryExactDecimal(
+  digits: string,
+  scale: number,
+): string {
+  const padded =
+    digits.padStart(
+      scale + 1,
+      "0",
+    );
+
+  let whole =
+    scale === 0
+      ? padded
+      : padded.slice(
+          0,
+          -scale,
+        );
+
+  const fraction =
+    scale === 0
+      ? ""
+      : padded
+          .slice(
+            -scale,
+          )
+          .replace(
+            /0+$/,
+            "",
+          );
+
+  whole =
+    whole.replace(
+      /^0+(?=\d)/,
+      "",
+    );
+
+  const grouped =
+    whole.replace(
+      /\B(?=(\d{3})+(?!\d))/g,
+      ",",
+    );
+
+  return fraction
+    ? `${grouped}.${fraction}`
+    : grouped;
+}
+
+function exactPositiveHistoryDifference(
+  left: string,
+  right: string,
+): string | null {
+  const parsedLeft =
+    historyDecimalDigits(
+      left,
+    );
+
+  const parsedRight =
+    historyDecimalDigits(
+      right,
+    );
+
+  if (
+    parsedLeft === null
+    || parsedRight === null
+  ) {
+    return null;
+  }
+
+  const scale =
+    Math.max(
+      parsedLeft.scale,
+      parsedRight.scale,
+    );
+
+  const leftDigits =
+    historyScaledDecimalDigits(
+      parsedLeft,
+      scale,
+    );
+
+  const rightDigits =
+    historyScaledDecimalDigits(
+      parsedRight,
+      scale,
+    );
+
+  if (
+    compareHistoryDigitStrings(
+      leftDigits,
+      rightDigits,
+    ) <= 0
+  ) {
+    return null;
+  }
+
+  return formatHistoryExactDecimal(
+    subtractHistoryDigitStrings(
+      leftDigits,
+      rightDigits,
+    ),
+    scale,
+  );
+}
+
+export function
+focusedHistoryAboveReferenceLabel(
+  model:
+    HistoryFocusedNutrient,
+  day:
+    HistoryFocusedDailyRow,
+): string | null {
+  if (
+    model.currentReference
+      === null
+    || day.state
+      !== "numeric"
+    || day.numericAmount
+      === null
+  ) {
+    return null;
+  }
+
+  const difference =
+    exactPositiveHistoryDifference(
+      day.numericAmount,
+      model.currentReference
+        .amount,
+    );
+
+  if (difference === null) {
+    return null;
+  }
+
+  return (
+    `${difference} ${model.unit} `
+    + "above reference"
+  );
 }
 
 export function focusedHistoryDayForDate(
