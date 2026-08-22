@@ -72,6 +72,7 @@ import {
   nextHistorySession,
   previousHistorySession,
   withHistoryDenominatorPreference,
+  withHistoryFocusedNutrient,
   withHistoryRangeLength,
   withHistorySelectedChartDate,
   withHistorySurface,
@@ -1509,5 +1510,312 @@ test.each([
         lines[0].props.y2,
       );
     }
+  },
+);
+test.each([
+  [
+    "above",
+    projectedDay(
+      "2026-08-12",
+      "numeric",
+      "2301",
+    ),
+    2300,
+    true,
+    true,
+  ],
+  [
+    "equal",
+    projectedDay(
+      "2026-08-12",
+      "numeric",
+      "2300",
+    ),
+    2300,
+    false,
+    true,
+  ],
+  [
+    "below",
+    projectedDay(
+      "2026-08-12",
+      "numeric",
+      "2299",
+    ),
+    2300,
+    false,
+    true,
+  ],
+  [
+    "gap",
+    projectedDay(
+      "2026-08-12",
+      "gap",
+    ),
+    2300,
+    false,
+    true,
+  ],
+  [
+    "unavailable",
+    projectedDay(
+      "2026-08-12",
+      "unavailable",
+    ),
+    2300,
+    false,
+    true,
+  ],
+  [
+    "no reference",
+    projectedDay(
+      "2026-08-12",
+      "numeric",
+      "2301",
+    ),
+    null,
+    false,
+    false,
+  ],
+])(
+  "focused chart reference-crossing cue handles %s",
+  (
+    _name,
+    day,
+    referenceValue,
+    expectedCrossing,
+    expectedReferenceLine,
+  ) => {
+    let renderer:
+      TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer =
+        TestRenderer.create(
+          React.createElement(
+            HistoryDailyBarChart,
+            {
+              days: [
+                day,
+              ],
+              seriesLabel:
+                "Sodium",
+              selectedDate:
+                null,
+              onSelectDate:
+                jest.fn(),
+              barColor:
+                "series-color",
+              selectionColor:
+                "selection-color",
+              referenceValue,
+              referenceLineColor:
+                "reference-color",
+            },
+          ),
+        );
+    });
+
+    const lines =
+      renderer!.root.findAll(
+        (node) =>
+          String(node.type)
+            === "Line",
+      );
+
+    const caretLines =
+      lines.filter(
+        (node) =>
+          node.props.stroke
+            === "reference-color"
+          && node.props.strokeWidth
+            === 2
+          && node.props.strokeLinecap
+            === "round",
+      );
+
+    expect(
+      caretLines,
+    ).toHaveLength(
+      expectedCrossing
+        ? 2
+        : 0,
+    );
+
+    const referenceLines =
+      lines.filter(
+        (node) =>
+          node.props.strokeWidth
+            === 1.5,
+      );
+
+    expect(
+      referenceLines,
+    ).toHaveLength(
+      expectedReferenceLine
+        ? 1
+        : 0,
+    );
+
+    const dateControl =
+      renderer!.root
+        .findAllByType(
+          Pressable,
+        )[0];
+
+    expect(
+      String(
+        dateControl.props
+          .accessibilityLabel,
+      ).includes(
+        "above reference",
+      ),
+    ).toBe(
+      expectedCrossing,
+    );
+
+    if (expectedCrossing) {
+      const xCoordinates =
+        caretLines.flatMap(
+          (node) => [
+            node.props.x1,
+            node.props.x2,
+          ],
+        );
+
+      const yCoordinates =
+        caretLines.flatMap(
+          (node) => [
+            node.props.y1,
+            node.props.y2,
+          ],
+        );
+
+      expect(
+        Math.max(
+          ...xCoordinates,
+        )
+        - Math.min(
+          ...xCoordinates,
+        ),
+      ).toBeCloseTo(12);
+
+      expect(
+        Math.max(
+          ...yCoordinates,
+        )
+        - Math.min(
+          ...yCoordinates,
+        ),
+      ).toBeCloseTo(7);
+    }
+
+    act(() => {
+      renderer!.unmount();
+    });
+  },
+);
+
+test(
+  "focused selected day exposes exact above-reference delta visibly and accessibly",
+  () => {
+    mockUseHistoryRange
+      .mockReturnValue(
+        successfulQuery(
+          evidence(),
+        ),
+      );
+
+    mockUseTargetConfiguration
+      .mockReturnValue({
+        data: {
+          effectiveTargets: [
+            {
+              nutrientId:
+                "calories",
+              amount:
+                "699",
+              unit:
+                "kcal",
+              authority:
+                "manual_override",
+              direction:
+                "target",
+              trackingMode:
+                "recommended",
+            },
+          ],
+        } as unknown as
+          TargetConfiguration,
+      });
+
+    const session =
+      withHistorySelectedChartDate(
+        withHistoryFocusedNutrient(
+          freshHistorySession(
+            "2026-08-19",
+          ),
+          "calories",
+        ),
+        "2026-08-18",
+      );
+
+    let renderer:
+      TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer =
+        TestRenderer.create(
+          React.createElement(
+            HistoryScreen,
+            {
+              session,
+              onSessionChange:
+                jest.fn(),
+              onFirstLoggedDateChange:
+                jest.fn(),
+              onBack:
+                jest.fn(),
+            },
+          ),
+        );
+    });
+
+    expect(
+      screenText(
+        renderer!,
+      ),
+    ).toContain(
+      "700 kcal · 1 kcal above reference",
+    );
+
+    const selectedLabel =
+      renderer!.root
+        .findAllByType(
+          Text,
+        )
+        .map(
+          (node) =>
+            node.props
+              .accessibilityLabel,
+        )
+        .find(
+          (value) =>
+            typeof value
+              === "string"
+            && value.includes(
+              "Calories selected 2026-08-18",
+            ),
+        );
+
+    expect(
+      selectedLabel,
+    ).toBe(
+      "Calories selected 2026-08-18 700 kcal 1 kcal above reference",
+    );
+
+    act(() => {
+      renderer!.unmount();
+    });
   },
 );

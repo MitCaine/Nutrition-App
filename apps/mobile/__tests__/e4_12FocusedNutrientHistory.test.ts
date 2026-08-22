@@ -7,6 +7,7 @@ import {
 } from "../src/features/history/components/HistoryDailyBarChart";
 import {
   buildHistoryFocusedNutrient,
+  focusedHistoryAboveReferenceLabel,
   focusedHistoryDayForDate,
 } from "../src/features/history/historyFocusedNutrient";
 import {
@@ -304,6 +305,8 @@ describe(
         ).toEqual({
           numericValue:
             15,
+          amount:
+            "15",
           amountLabel:
             "15 mg",
           context:
@@ -1049,5 +1052,116 @@ describe(
       },
     );
 
+
+    test(
+      "reports strict above-reference differences with exact decimal-string subtraction",
+      () => {
+        const integerModel =
+          buildHistoryFocusedNutrient(
+            focusedNutrient([
+              numericDay(
+                "2026-08-12",
+                "2301",
+              ),
+              numericDay(
+                "2026-08-13",
+                "2300",
+              ),
+              numericDay(
+                "2026-08-14",
+                "2299",
+              ),
+            ]),
+            "logged_days",
+            targetConfiguration(
+              target({
+                amount:
+                  "2300",
+              }),
+            ),
+          );
+
+        const above =
+          focusedHistoryDayForDate(
+            integerModel,
+            "2026-08-12",
+          );
+
+        const equal =
+          focusedHistoryDayForDate(
+            integerModel,
+            "2026-08-13",
+          );
+
+        const below =
+          focusedHistoryDayForDate(
+            integerModel,
+            "2026-08-14",
+          );
+
+        expect(above).not.toBeNull();
+        expect(equal).not.toBeNull();
+        expect(below).not.toBeNull();
+
+        expect(
+          focusedHistoryAboveReferenceLabel(
+            integerModel,
+            above!,
+          ),
+        ).toBe(
+          "1 mg above reference",
+        );
+
+        expect(
+          focusedHistoryAboveReferenceLabel(
+            integerModel,
+            equal!,
+          ),
+        ).toBeNull();
+
+        expect(
+          focusedHistoryAboveReferenceLabel(
+            integerModel,
+            below!,
+          ),
+        ).toBeNull();
+
+        const fractionalModel =
+          buildHistoryFocusedNutrient(
+            focusedNutrient([
+              numericDay(
+                "2026-08-12",
+                "0.3",
+              ),
+            ]),
+            "logged_days",
+            targetConfiguration(
+              target({
+                amount:
+                  "0.2",
+              }),
+            ),
+          );
+
+        const fractionalDay =
+          focusedHistoryDayForDate(
+            fractionalModel,
+            "2026-08-12",
+          );
+
+        expect(
+          fractionalDay,
+        ).not.toBeNull();
+
+        expect(
+          focusedHistoryAboveReferenceLabel(
+            fractionalModel,
+            fractionalDay!,
+          ),
+        ).toBe(
+          "0.1 mg above reference",
+        );
+      },
+    );
   },
 );

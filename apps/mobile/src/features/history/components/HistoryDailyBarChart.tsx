@@ -311,6 +311,26 @@ export function historySelectedDateScrollTarget(
   return targetOffset;
 }
 
+function historyPointIsAboveReference(
+  geometry:
+    HistoryDailyBarGeometry,
+  point:
+    HistoryDailyBarGeometryPoint,
+): boolean {
+  return (
+    geometry.referenceValue
+      !== null
+    && geometry.referenceY
+      !== null
+    && point.state
+      === "numeric"
+    && point.numericValue
+      !== null
+    && point.numericValue
+      > geometry.referenceValue
+  );
+}
+
 type Props = {
   days:
     readonly HistoryProjectedDailyValue[];
@@ -416,6 +436,9 @@ export function HistoryDailyBarChart({
     selectedDateScrollTarget,
   ]);
 
+  const referenceCrossingY =
+    geometry.referenceY;
+
   const plot = (
     <View
       style={[
@@ -516,6 +539,78 @@ export function HistoryDailyBarChart({
           },
         )}
 
+        {referenceLineColor
+          && referenceCrossingY
+            !== null
+            ? geometry.points.map(
+                (point) => {
+                  if (
+                    !historyPointIsAboveReference(
+                      geometry,
+                      point,
+                    )
+                  ) {
+                    return null;
+                  }
+
+                  const centerX =
+                    point.slotX
+                    + point.slotWidth / 2;
+
+                  return [
+                    <Line
+                      key={
+                        `reference-crossing-left-${point.date}`
+                      }
+                      stroke={
+                        referenceLineColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={2}
+                      x1={
+                        centerX - 6
+                      }
+                      x2={
+                        centerX
+                      }
+                      y1={
+                        referenceCrossingY
+                        + 3.5
+                      }
+                      y2={
+                        referenceCrossingY
+                        - 3.5
+                      }
+                    />,
+                    <Line
+                      key={
+                        `reference-crossing-right-${point.date}`
+                      }
+                      stroke={
+                        referenceLineColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={2}
+                      x1={
+                        centerX
+                      }
+                      x2={
+                        centerX + 6
+                      }
+                      y1={
+                        referenceCrossingY
+                        - 3.5
+                      }
+                      y2={
+                        referenceCrossingY
+                        + 3.5
+                      }
+                    />,
+                  ];
+                },
+              )
+            : null}
+
         {geometry.points.map(
           (point) => {
             if (
@@ -574,7 +669,14 @@ export function HistoryDailyBarChart({
                 `hit-${point.date}`
               }
               accessibilityLabel={
-                `Select ${seriesLabel} History date ${point.date}`
+                `Select ${seriesLabel} History date ${point.date}${
+                  historyPointIsAboveReference(
+                    geometry,
+                    point,
+                  )
+                    ? " above reference"
+                    : ""
+                }`
               }
               accessibilityRole="button"
               accessibilityState={{
