@@ -249,9 +249,16 @@ class ServingDefinition(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 6))
     unit: Mapped[str] = mapped_column(Text)
     gram_weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
-    reference_quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
-    reference_unit: Mapped[Optional[str]] = mapped_column(Text)
-    reference_gram_weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 6))
+    # These fields postdate the frozen 0017 Phase 5C converter schema.
+    # Deferred loading keeps historical reads on the 0017 column surface while
+    # current 0027+ runtimes still load the persisted values when accessed.
+    reference_quantity: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(14, 6), deferred=True
+    )
+    reference_unit: Mapped[Optional[str]] = mapped_column(Text, deferred=True)
+    reference_gram_weight: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(14, 6), deferred=True
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[str] = mapped_column(Text)
     confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
