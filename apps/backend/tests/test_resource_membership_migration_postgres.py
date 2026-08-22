@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from importlib import import_module
+from types import SimpleNamespace
 
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
@@ -54,14 +55,23 @@ pytestmark = pytest.mark.postgres_concurrency
 
 _POST_0019_METADATA_COLUMNS = frozenset(
     {
+        ("serving_definitions", "reference_gram_weight"),
+        ("serving_definitions", "reference_quantity"),
+        ("serving_definitions", "reference_unit"),
         ("user_profiles", "authoritative_time_zone"),
         ("user_profiles", "calendar_revision"),
     }
 )
 _POST_0019_METADATA_TABLES = frozenset(
     {
+        "daily_log_day_completions",
         "phase5c_activation_runtime_commands",
         "phase5c_activation_schema_evidence",
+    }
+)
+_POST_0019_METADATA_UNIQUE_CONSTRAINTS = frozenset(
+    {
+        ("food_nutrients", "uq_food_nutrients_food_nutrient_basis"),
     }
 )
 
@@ -84,6 +94,11 @@ def _include_0019_schema_object(
         table = getattr(object_, "table", None)
         identity = (getattr(table, "name", None), name)
         if identity in _POST_0019_METADATA_COLUMNS:
+            return False
+    if type_ == "unique_constraint" and not reflected:
+        table = getattr(object_, "table", None)
+        identity = (getattr(table, "name", None), name)
+        if identity in _POST_0019_METADATA_UNIQUE_CONSTRAINTS:
             return False
     return True
 
@@ -1438,6 +1453,148 @@ def test_clean_0018_to_0019_runs_through_real_alembic_entrypoint(
             assert connection.scalar(
                 text("SELECT version_num FROM public.alembic_version")
             ) == CURRENT_RUNTIME_SCHEMA_REVISION
+
+
+def test_0019_metadata_projection_is_explicit_and_typed() -> None:
+    assert _POST_0019_METADATA_TABLES == {
+        "daily_log_day_completions",
+        "phase5c_activation_runtime_commands",
+        "phase5c_activation_schema_evidence",
+    }
+    assert _POST_0019_METADATA_COLUMNS == {
+        ("serving_definitions", "reference_gram_weight"),
+        ("serving_definitions", "reference_quantity"),
+        ("serving_definitions", "reference_unit"),
+        ("user_profiles", "authoritative_time_zone"),
+        ("user_profiles", "calendar_revision"),
+    }
+    assert _POST_0019_METADATA_UNIQUE_CONSTRAINTS == {
+        ("food_nutrients", "uq_food_nutrients_food_nutrient_basis"),
+    }
+
+    table_object = SimpleNamespace()
+
+    assert not _include_0019_schema_object(
+        table_object,
+        "daily_log_day_completions",
+        "table",
+        False,
+        None,
+    )
+    assert not _include_0019_schema_object(
+        table_object,
+        "phase5c_activation_runtime_commands",
+        "table",
+        False,
+        None,
+    )
+    assert _include_0019_schema_object(
+        table_object,
+        "unlisted_current_table",
+        "table",
+        False,
+        None,
+    )
+    assert not _include_0019_schema_object(
+        table_object,
+        "phase5c_conversion_clone_marker",
+        "table",
+        True,
+        None,
+    )
+    assert _include_0019_schema_object(
+        table_object,
+        "daily_log_day_completions",
+        "table",
+        True,
+        None,
+    )
+
+    serving_column = SimpleNamespace(
+        table=SimpleNamespace(name="serving_definitions")
+    )
+    user_profile_column = SimpleNamespace(
+        table=SimpleNamespace(name="user_profiles")
+    )
+
+    for column_name in (
+        "reference_quantity",
+        "reference_unit",
+        "reference_gram_weight",
+    ):
+        assert not _include_0019_schema_object(
+            serving_column,
+            column_name,
+            "column",
+            False,
+            None,
+        )
+
+    assert not _include_0019_schema_object(
+        user_profile_column,
+        "authoritative_time_zone",
+        "column",
+        False,
+        None,
+    )
+    assert _include_0019_schema_object(
+        serving_column,
+        "unlisted_current_column",
+        "column",
+        False,
+        None,
+    )
+    assert _include_0019_schema_object(
+        serving_column,
+        "reference_quantity",
+        "column",
+        True,
+        None,
+    )
+
+    food_nutrient_constraint = SimpleNamespace(
+        table=SimpleNamespace(name="food_nutrients")
+    )
+    other_constraint = SimpleNamespace(
+        table=SimpleNamespace(name="recipes")
+    )
+
+    assert not _include_0019_schema_object(
+        food_nutrient_constraint,
+        "uq_food_nutrients_food_nutrient_basis",
+        "unique_constraint",
+        False,
+        None,
+    )
+    assert _include_0019_schema_object(
+        food_nutrient_constraint,
+        "unlisted_current_unique_constraint",
+        "unique_constraint",
+        False,
+        None,
+    )
+    assert _include_0019_schema_object(
+        other_constraint,
+        "uq_food_nutrients_food_nutrient_basis",
+        "unique_constraint",
+        False,
+        None,
+    )
+    assert _include_0019_schema_object(
+        food_nutrient_constraint,
+        "uq_food_nutrients_food_nutrient_basis",
+        "unique_constraint",
+        True,
+        None,
+    )
+
+    assert _include_0019_schema_object(
+        table_object,
+        "unlisted_current_index",
+        "index",
+        False,
+        None,
+    )
 
 
 def test_0019_sqlalchemy_metadata_has_no_domain_drift(
