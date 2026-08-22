@@ -13,7 +13,8 @@ from app.repositories.food_repository import FoodRepository
 from app.schemas.log import DailyLogCreateRequest
 from app.services.log_service import LogService
 from app.services.usda_service import UsdaService
-from tests.test_stage3_usda_mapper import (
+from tests.support.usda import (
+    FakeUsdaClient,
     usda_banana_payload,
     usda_branded_bar_payload,
     usda_branded_full_macro_payload,
@@ -21,27 +22,6 @@ from tests.test_stage3_usda_mapper import (
 from tests.time_zone_test_support import establish_test_time_zone
 
 
-class FakeUsdaClient:
-    def __init__(self, payload: dict):
-        self.payload = payload
-        self.detail_calls = 0
-
-    def search_foods(self, query: str, *, page_size: int = 25, page_number: int = 1) -> dict:
-        return {
-            "totalHits": 1,
-            "foods": [
-                {
-                    "fdcId": self.payload["fdcId"],
-                    "description": self.payload["description"],
-                    "dataType": self.payload["dataType"],
-                }
-            ],
-        }
-
-    def get_food(self, fdc_id: int) -> dict:
-        self.detail_calls += 1
-        assert fdc_id == self.payload["fdcId"]
-        return self.payload
 
 
 def test_usda_import_persists_source_metadata_and_prevents_active_duplicates(

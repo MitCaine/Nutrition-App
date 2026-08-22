@@ -23,8 +23,7 @@ from app.services.log_service import LogService
 from app.services.recipe_service import RecipeService
 from app.services.target_service import TargetService
 from app.services.usda_service import UsdaService
-from tests.test_stage3_usda_import import FakeUsdaClient
-from tests.test_stage3_usda_mapper import usda_banana_payload
+from tests.support.usda import FakeUsdaClient, usda_banana_payload
 from tests.time_zone_test_support import establish_test_time_zone
 
 

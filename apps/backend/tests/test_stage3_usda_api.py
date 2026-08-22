@@ -7,8 +7,7 @@ from app.api.v1.routers.usda import get_usda_service
 from app.integrations.usda.client import UsdaConfigurationError, UsdaUpstreamError
 from app.main import app
 from app.services.usda_service import UsdaService
-from tests.test_stage3_usda_import import FakeUsdaClient
-from tests.test_stage3_usda_mapper import usda_banana_payload
+from tests.support.usda import FakeUsdaClient, usda_banana_payload
 from tests.support.foods import create_food
 
 
