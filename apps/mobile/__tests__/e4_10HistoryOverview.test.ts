@@ -1623,11 +1623,22 @@ test.each([
             === "Line",
       );
 
-    const caretLines =
+    const outerCaretLines =
       lines.filter(
         (node) =>
           node.props.stroke
-            === "reference-color"
+            === "series-color"
+          && node.props.strokeWidth
+            === 4
+          && node.props.strokeLinecap
+            === "round",
+      );
+
+    const innerCaretLines =
+      lines.filter(
+        (node) =>
+          node.props.stroke
+            === "selection-color"
           && node.props.strokeWidth
             === 2
           && node.props.strokeLinecap
@@ -1635,7 +1646,15 @@ test.each([
       );
 
     expect(
-      caretLines,
+      outerCaretLines,
+    ).toHaveLength(
+      expectedCrossing
+        ? 2
+        : 0,
+    );
+
+    expect(
+      innerCaretLines,
     ).toHaveLength(
       expectedCrossing
         ? 2
@@ -1645,7 +1664,9 @@ test.each([
     const referenceLines =
       lines.filter(
         (node) =>
-          node.props.strokeWidth
+          node.props.stroke
+            === "reference-color"
+          && node.props.strokeWidth
             === 1.5,
       );
 
@@ -1686,11 +1707,49 @@ test.each([
         rects,
       ).toHaveLength(1);
 
+      expect(
+        rects[0].props.fill,
+      ).toBe(
+        "series-color",
+      );
+
+      expect(
+        rects[0].props.stroke,
+      ).toBeUndefined();
+
       const barTopY =
         rects[0].props.y;
 
+      expect(
+        outerCaretLines.map(
+          (node) => ({
+            x1:
+              node.props.x1,
+            x2:
+              node.props.x2,
+            y1:
+              node.props.y1,
+            y2:
+              node.props.y2,
+          }),
+        ),
+      ).toEqual(
+        innerCaretLines.map(
+          (node) => ({
+            x1:
+              node.props.x1,
+            x2:
+              node.props.x2,
+            y1:
+              node.props.y1,
+            y2:
+              node.props.y2,
+          }),
+        ),
+      );
+
       const xCoordinates =
-        caretLines.flatMap(
+        innerCaretLines.flatMap(
           (node) => [
             node.props.x1,
             node.props.x2,
@@ -1698,7 +1757,7 @@ test.each([
         );
 
       const yCoordinates =
-        caretLines.flatMap(
+        innerCaretLines.flatMap(
           (node) => [
             node.props.y1,
             node.props.y2,
@@ -1746,9 +1805,8 @@ test.each([
   },
 );
 
-
 test(
-  "selected crossing caret apex remains anchored to the selected numeric bar top",
+  "selected crossing caret keeps coincident contrast layers anchored to the selected bar top",
   () => {
     const day =
       projectedDay(
@@ -1811,34 +1869,108 @@ test(
       "series-color",
     );
 
-    const caretLines =
-      renderer!.root
-        .findAll(
-          (node) =>
-            String(node.type)
-              === "Line",
-        )
-        .filter(
-          (node) =>
-            node.props.stroke
-              === "reference-color"
-            && node.props.strokeWidth
-              === 2
-            && node.props.strokeLinecap
-              === "round",
-        );
+    expect(
+      rects[0].props.strokeWidth,
+    ).toBe(2);
+
+    const lines =
+      renderer!.root.findAll(
+        (node) =>
+          String(node.type)
+            === "Line",
+      );
+
+    const outerCaretLines =
+      lines.filter(
+        (node) =>
+          node.props.stroke
+            === "series-color"
+          && node.props.strokeWidth
+            === 4
+          && node.props.strokeLinecap
+            === "round",
+      );
+
+    const innerCaretLines =
+      lines.filter(
+        (node) =>
+          node.props.stroke
+            === "selection-color"
+          && node.props.strokeWidth
+            === 2
+          && node.props.strokeLinecap
+            === "round",
+      );
 
     expect(
-      caretLines,
+      outerCaretLines,
     ).toHaveLength(2);
 
+    expect(
+      innerCaretLines,
+    ).toHaveLength(2);
+
+    expect(
+      outerCaretLines.map(
+        (node) => ({
+          x1:
+            node.props.x1,
+          x2:
+            node.props.x2,
+          y1:
+            node.props.y1,
+          y2:
+            node.props.y2,
+        }),
+      ),
+    ).toEqual(
+      innerCaretLines.map(
+        (node) => ({
+          x1:
+            node.props.x1,
+          x2:
+            node.props.x2,
+          y1:
+            node.props.y1,
+          y2:
+            node.props.y2,
+        }),
+      ),
+    );
+
+    const xCoordinates =
+      innerCaretLines.flatMap(
+        (node) => [
+          node.props.x1,
+          node.props.x2,
+        ],
+      );
+
     const yCoordinates =
-      caretLines.flatMap(
+      innerCaretLines.flatMap(
         (node) => [
           node.props.y1,
           node.props.y2,
         ],
       );
+
+    expect(
+      Math.max(
+        ...xCoordinates,
+      )
+      - Math.min(
+        ...xCoordinates,
+      ),
+    ).toBeCloseTo(12);
+
+    expect(
+      Math.max(
+        ...yCoordinates,
+      )
+      - Math.min(
+        ...yCoordinates,
+      ),
+    ).toBeCloseTo(7);
 
     expect(
       Math.min(

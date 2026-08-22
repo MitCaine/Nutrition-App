@@ -566,10 +566,56 @@ export function HistoryDailyBarChart({
                   return [
                     <Line
                       key={
-                        `reference-crossing-left-${point.date}`
+                        `reference-crossing-left-outer-${point.date}`
                       }
                       stroke={
-                        referenceLineColor
+                        barColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={4}
+                      x1={
+                        centerX - 6
+                      }
+                      x2={
+                        centerX
+                      }
+                      y1={
+                        barTopY
+                        + 7
+                      }
+                      y2={
+                        barTopY
+                      }
+                    />,
+                    <Line
+                      key={
+                        `reference-crossing-right-outer-${point.date}`
+                      }
+                      stroke={
+                        barColor
+                      }
+                      strokeLinecap="round"
+                      strokeWidth={4}
+                      x1={
+                        centerX
+                      }
+                      x2={
+                        centerX + 6
+                      }
+                      y1={
+                        barTopY
+                      }
+                      y2={
+                        barTopY
+                        + 7
+                      }
+                    />,
+                    <Line
+                      key={
+                        `reference-crossing-left-inner-${point.date}`
+                      }
+                      stroke={
+                        selectionColor
                       }
                       strokeLinecap="round"
                       strokeWidth={2}
@@ -589,10 +635,10 @@ export function HistoryDailyBarChart({
                     />,
                     <Line
                       key={
-                        `reference-crossing-right-${point.date}`
+                        `reference-crossing-right-inner-${point.date}`
                       }
                       stroke={
-                        referenceLineColor
+                        selectionColor
                       }
                       strokeLinecap="round"
                       strokeWidth={2}
