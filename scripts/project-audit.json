@@ -8,6 +8,7 @@
   ],
   "focused_audit_tests": [
     "apps/backend/tests/test_project_audit.py",
+    "apps/backend/tests/test_repository_script_contracts.py",
     "apps/backend/tests/test_task_capsule_validator.py",
     "apps/backend/tests/test_task_handoff_renderer.py",
     "apps/backend/tests/test_toolchain_report.py"

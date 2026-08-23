@@ -6,6 +6,12 @@ Status: **frozen design and operating contract for application revision
 `0020_immutable_provenance_enforcement` and control revision
 `ops_0006_immutable_provenance`**
 
+When this retained schema-0020 boundary requires independent requalification, run
+`apps/backend/scripts/qualify_immutable_provenance.py` from `apps/backend` with
+`.venv/bin/python` and an explicit `NUTRITION_DATABASE_URL`. Admission additionally requires the
+separate control-database authority and the CLI's `--admit` flag. This is specialist operations
+qualification, not part of ordinary local-first development.
+
 This stage closes a specific enforcement gap. At revision 0019 the PostgreSQL runtime role could
 only insert Recipe publication rows and OCR confirmation traces, and the normal repositories did
 not expose mutation methods for them. Those were useful least-privilege and service conventions,

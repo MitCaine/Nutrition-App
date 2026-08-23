@@ -49,15 +49,38 @@ The review workflow records repository state before and after verification, dete
 drift, packages only the verified source tree, and produces both human-readable and machine-readable
 evidence suitable for implementation review.
 
-## Qualification
+## Baselines and specialist qualification
 
 | Entry point | Responsibility |
 | --- | --- |
+| `./scripts/run-backend-baseline.sh` | Runs the canonical ordinary backend pytest selection while excluding explicitly opt-in PostgreSQL/concurrency, Phase 5C performance, MinIO, and Docker qualification markers. |
+| `./scripts/run-e4-16-qualification.sh` | Retained Epic 4 release-parity qualifier covering the bounded E4-16 backend/mobile evidence contract. It is specialist regression tooling, not the ordinary development baseline. |
+| `./scripts/run-issue17-phase5c-clone.sh` | Retained historical PostgreSQL clone/conversion qualification entry point used when the Phase 5C compatibility boundary itself must be exercised. |
 | `./scripts/qualify-phase5c4-infrastructure.sh` | Runs destructive, disposable Phase 5C4 infrastructure qualification after an exact confirmation value is supplied. |
 
-The infrastructure qualifier is intentionally specialized and fail-closed. Follow the
-[Testing Guide](../docs/operations/testing.md#phase-5c48-bounded-recovery-qualification) rather than
-discovering its environment contract by trial and error.
+The specialist qualifiers remain deliberately separate from the ordinary baseline. Follow the
+[Testing Guide](../docs/operations/testing.md) for their prerequisites and exact selection
+contracts. The Phase 5C4 infrastructure qualifier is destructive and fail-closed.
+
+## Retained backend operator tools
+
+Backend operator implementations live under `apps/backend/scripts/` and normally run from
+`apps/backend` with `.venv/bin/python`. They are not automatically obsolete when their originating
+Epic or production-hardening stage is complete; several remain compatibility, transfer, or
+operations authorities.
+
+| Tool | Retained responsibility |
+| --- | --- |
+| `apps/backend/scripts/export_personal_transfer.py` | One-time E2-15 PostgreSQL-to-SQLite personal-transfer export retained for the compatibility boundary described in the [Repository Tour](../docs/project/repository-tour.md). |
+| `apps/backend/scripts/manage_phase5c4_authorization.py` | Manages the schema-0020 Target Activation Authorization retained and consumed by the current [target-activation sequence](../docs/operations/runbooks/target-activation.md). |
+| `apps/backend/scripts/qualify_immutable_provenance.py` | Independently qualifies the retained schema-0020 immutable-provenance boundary described by the [immutable-provenance runbook](../docs/operations/runbooks/immutable-provenance.md). |
+
+These tools intentionally remain separate. In particular, purpose-specific authorization CLIs are
+not combined merely because they share signing-envelope or control-database plumbing; their
+authority, accepted inputs, side effects, and failure contracts remain distinct.
+
+`scripts/project-audit.py` is likewise intentionally treated as the implementation behind the
+stable `./scripts/project-audit.sh` entry point rather than as a second public repository command.
 
 ## GitHub planning automation
 

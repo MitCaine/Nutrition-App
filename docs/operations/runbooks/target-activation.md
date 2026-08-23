@@ -9,6 +9,12 @@ Authorization still authorizes route switching only, and the existing
 schema-0020 Target Activation Authorization still authorizes activation only;
 neither authorizes application migration 0021.
 
+The retained schema-0020 Target Activation Authorization is managed by
+`apps/backend/scripts/manage_phase5c4_authorization.py`. Run that signerless CLI from
+`apps/backend` with `.venv/bin/python` when the existing authorization boundary itself must be
+exported, assembled, verified, admitted, bootstrapped, or revoked. It does not replace the
+separate execution-authorization CLI introduced for schema 0021.
+
 ## Authority and schema boundary
 
 The executable schema authority is
