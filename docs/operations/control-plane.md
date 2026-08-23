@@ -232,9 +232,10 @@ not rollback of a live ledger. A nonempty database fails closed because removing
 would destroy evidence or authority that cannot be reconstructed safely.
 
 The application and control Alembic streams use different configuration files, environment
-variables, credentials, databases, and ownership assumptions.
-Their current heads are `0021_target_activation_execution` and
-`ops_0011_phase5c4_recovery_audit`, respectively.
+variables, credentials, databases, and ownership assumptions. The current preserved remote
+application head is `0033_complete_runtime_authority`, and the current control head is
+`ops_0011_phase5c4_recovery_audit`. The target-activation procedure remains intentionally
+pinned to its separately authorized `0021_target_activation_execution` boundary.
 
 ## Current runtime boundary
 

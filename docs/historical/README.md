@@ -23,6 +23,12 @@ implementation, and migrations define present behavior.
 - [Version 1.2 Epic 4 Planning and Delivery Index](programs/version-1.2/epic-4/README.md)
 - [Implementation Lessons](engineering/implementation-lessons.md)
 
+Additional retained implementation records:
+
+- [E1-17 Accessibility Remediation Stage 1](programs/version-1.1/epic-1/accessibility-remediation-stage-1.md)
+- [E1-17 Accessibility Remediation Stage 2](programs/version-1.1/epic-1/accessibility-remediation-stage-2.md)
+- [Issue #108 Sticky Navigation Header Inventory](programs/version-1.1/issue-108-sticky-header-inventory.md)
+
 These packages retain their original point-in-time assertions. Current feature,
 architecture, project, and operations guides own present behavior.
 

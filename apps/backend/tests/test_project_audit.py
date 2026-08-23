@@ -393,24 +393,21 @@ def _write_document_fixture(
 def test_current_document_contract_inventory_is_semantically_bounded() -> None:
     assert DOCS_VALIDATOR.CURRENT_MIGRATION_HEAD_CONTRACTS == {
         "docs/architecture/overview.md": ("application", "control"),
-        "docs/operations/control-plane.md": ("control",),
+        "docs/operations/control-plane.md": ("application", "control"),
         "docs/operations/runbooks/recovery-and-cutback.md": (
             "application",
             "control",
         ),
         "docs/operations/runbooks/target-activation.md": ("application",),
-        "docs/operations/testing.md": ("application",),
         "docs/operations/postgresql-to-sqlite-transfer.md": (
             "application",
         ),
         "docs/project/current-state.md": ("application", "control"),
         "docs/project/development-guide.md": ("application",),
-        "docs/project/repository-tour.md": ("application", "control"),
         "docs/reference/glossary.md": ("application", "control"),
     }
 
     assert set(DOCS_VALIDATOR.CURRENT_STATUS_CONTRACTS) == {
-        "docs/README.md",
         "docs/project/current-state.md",
         "docs/project/product-roadmap.md",
     }

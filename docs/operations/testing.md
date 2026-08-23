@@ -147,36 +147,17 @@ the contract that an unavailable/failing inspector does not convert into a recog
 
 ## Epic 4 History release qualification
 
-Ordinary backend/mobile baselines remain necessary for broad regression confidence, but they are not
-the consolidated release claim for Complete and Nutrition History. Use the retained E4-16 harness:
+The completed E4-16 harness remains available as a retained regression
+qualifier for Complete/History behavior:
 
 ```bash
 ./scripts/run-e4-16-qualification.sh
 ```
 
-The harness deliberately combines:
-
-- local SQLite Complete/History semantics and difficult-state evidence;
-- physical PostgreSQL 16 persistence, ownership, mutation, range, and transfer contracts, including
-  the required E4-01 through E4-04 selections;
-- the shared History projection over equivalent local/remote evidence;
-- relevant completed E4-03 through E4-15 mutation, range, cache, UI, and durability suites; and
-- the E4-16 fixture covering no-Log gaps, known, estimated, explicit zero, numeric-plus-unknown,
-  unknown-only, Complete/unconfirmed, one-usable-day, exact-decimal, and authority-isolation states.
-
-Final E4-16 evidence also includes physical target-iPhone P-1 through P-12: logging-first Daily Log,
-secondary History navigation, readable four-card overview, exact 7-day selection, all-observation
-30-day horizontal scrolling, gap-versus-zero distinction, usable Nutrition Details and focused
-History, exact Daily Log navigation, and preserved return context. That completed physical evidence
-is indexed in `engineering/capsules/HISTORY.md`, which records the exact Git recovery locator and
-SHA-256 for the full historical E4-16 capsule; the script does not recreate a human device
-observation by itself.
-
-This is distinct from unrelated historical opt-in PostgreSQL, MinIO, Phase 5C performance,
-destructive recovery, and native OCR suites. It does not authorize skipping ordinary affected
-baselines during new implementation work, and it does not turn #148 viewport alignment into an Epic
-4 acceptance gate.
-
+Use it when a change crosses that qualified boundary; it is not the current
+release-state authority and does not replace affected baseline or focused
+tests. Historical device/release evidence is retained in
+`engineering/capsules/HISTORY.md` and the historical Epic 4 package.
 ## Issue 17 isolated Phase 5C clone
 
 This retained workflow exists for historical/application-path qualification that specifically needs
@@ -287,22 +268,21 @@ is not production-vendor certification.
 
 ### Phase 5C4.9 Version 1.0 release gate
 
-The preserved Version 1.0 release boundary remains application
-`0021_target_activation_execution` and control `ops_0011_phase5c4_recovery_audit`. Current remote
-application development has advanced to `0033_complete_runtime_authority`; this does not rewrite the
-historical release head.
+Version 1.0 qualification is historical. Its frozen command/evidence manifest
+is the
+[Version 1.0 PostgreSQL Release Qualification](../historical/releases/version-1.0-release-qualification.md).
 
-The frozen initial-migration replay comparison remains part of that qualification boundary:
+The initial-migration replay test remains useful when migration replay
+compatibility changes:
 
 ```bash
 REQUIRE_POSTGRES_TESTS=1 \
   pytest -q tests/test_initial_migration_replay_postgres.py
 ```
 
-The authoritative frozen command/evidence manifest is
-[Version 1.0 PostgreSQL Release Qualification](../historical/releases/version-1.0-release-qualification.md). Developer
-convenience commands in this guide do not substitute for that release manifest.
-
+Current application and control migration identities are owned by
+[Current State](../project/current-state.md), not by the frozen Version 1.0
+release boundary.
 ## MinIO object-lock integration
 
 Use only the disposable loopback profile and explicit confirmation variables:
