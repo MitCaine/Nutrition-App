@@ -1,0 +1,2527 @@
+# Task capsule history
+
+> **Document role: Engineering Process / Historical Index.**
+> This file is the durable current-tree record for terminal task capsules.
+> Full terminal capsules remain recoverable from immutable Git history through
+> the exact recovery commit and path recorded in each entry.
+
+## History format
+
+History format version: **1**.
+
+Each terminal task appears exactly once as a level-three heading followed by a
+fixed set of labeled fields. `MERGED`, `RETROSPECTED`, and `CANCELLED` are
+terminal outcomes. Task IDs are permanent and may never be recycled.
+
+Full schema-v1 capsules remain under `engineering/capsules/active/` only while
+work is active. Terminal closeout records the final task information here and
+removes the full active capsule in the same closeout change. A per-task
+`engineering/capsules/completed/` archive is not part of the continuing
+workflow.
+
+For the initial migration, every full historical capsule is recoverable from
+commit `8fead7f4eefd0a494ecab55dc6a13463f4169494` at its recorded historical
+`engineering/capsules/completed/` path. That historical locator remains valid
+after those files are removed from the current tree.
+
+Legacy records are preserved rather than silently repaired. A field that was
+not present in the original terminal capsule is explicitly marked as not
+recorded. Cancelled tasks retain their actual acceptance-checkbox result rather
+than being rewritten as successful verification.
+
+## Initial migration
+
+- **Migration source commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Migrated records:** 69
+- **MERGED:** 56
+- **CANCELLED:** 13
+- **RETROSPECTED:** 0
+- **Source completed-capsule payload:** 1,783,785 bytes
+- **Git-history rewrite:** None
+- **Historical object deletion:** None
+
+## Terminal task records
+
+### E4-01 - Add date-owned Complete persistence for local and remote authorities
+
+- **ID:** `E4-01`
+- **Title:** Add date-owned Complete persistence for local and remote authorities
+- **Final state:** `MERGED`
+- **Capsule revision:** 9
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/114
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** 6e7de718a9f6aaab24638e0c4d55ff80b1eca435
+- **Task branch:** e4-01-complete-persistence
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** ChatGPT GPT-5.6 Sol review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** da186c906c5c16bf92036d2826cc213d898eba70
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** `a2f03bc8782cdd3dd51e9f6dcc5be9808c01ee87` on `main`.
+- **Integration-related commit reference(s):** `a2f03bc8782cdd3dd51e9f6dcc5be9808c01ee87`, `da186c906c5c16bf92036d2826cc213d898eba70`
+- **Acceptance result:** 9/9 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS; AC-1 through AC-9 satisfied with no blocking architecture, ownership, migration, or scope finding.
+- **Verification summary:** Focused backend persistence/audit tests passed (`21 passed`); backend full baseline passed (`1714 passed, 429 skipped, 2 warnings`) and Ruff passed; mobile typecheck passed; focused Complete/SQLite tests and E2-15 compatibility tests passed; full mobile baseline passed (`1537 passed, 1 skipped`); docs and capsule validators passed; deterministic project audit passed after generated inventory refresh; Nutrition Review baseline completed with 13/13 checks passed and zero critical/advisory failures.
+- **Specialized qualification:** PostgreSQL 16 migration qualification passed for `0030_total_omega_3_nutrient → 0031_daily_log_complete_state → 0030_total_omega_3_nutrient → 0031_daily_log_complete_state`, including no-backfill, owner/date uniqueness, `completed_at`, snapshot preservation, downgrade, and replay. Local SQLite v6→v7 qualification passed with existing Daily Logs, no Complete backfill, and unchanged nutrient snapshots.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 occurrences in backend baseline); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`.
+- **Deferred work/follow-up IDs:** E4-02 owns deterministic mark-Complete mutation/API/reconciliation; E4-03 owns automatic Complete invalidation from nutrition-changing Log mutations; E4-15 owns backup/restore and one-time-transfer propagation of Complete state.
+- **Retrospective:** No task-specific retrospective required before integration.
+- **Referenced commits:** `6e7de718a9f6aaab24638e0c4d55ff80b1eca435`, `da186c906c5c16bf92036d2826cc213d898eba70`, `a2f03bc8782cdd3dd51e9f6dcc5be9808c01ee87`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-01.md`
+- **Historical capsule SHA-256:** `bbe2f6cd0f2c918af9760821f4ba801ba57dffc486700436585e2df3d8bfbb20`
+
+### E4-02 - Make Complete assertion deterministic and mutation-recoverable
+
+- **ID:** `E4-02`
+- **Title:** Make Complete assertion deterministic and mutation-recoverable
+- **Final state:** `MERGED`
+- **Capsule revision:** 5
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/115
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** d320f1f73a73dcb435c6f101ef4ae429cebcb3e5
+- **Task branch:** e4-02-complete-mutation
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** c886cb5aee4153413bd879cc33267dbb2c53e14a
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** `d3a5e15f4dfa22bc9ac95f6d375e3c14cfa12216` on `main`.
+- **Integration-related commit reference(s):** `d3a5e15f4dfa22bc9ac95f6d375e3c14cfa12216`, `c886cb5aee4153413bd879cc33267dbb2c53e14a`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS; AC-1 through AC-11 satisfied with no blocking architecture, ownership, persistence, recovery, or scope finding.
+- **Verification summary:** Focused backend qualification passed (`7 passed`) and targeted Ruff passed; mobile typecheck passed and focused mobile qualification passed (`9` suites, `164` tests). Full backend baseline passed (`1718 passed, 431 skipped, 2 warnings`) and Ruff passed. Full mobile baseline passed (`155` suites passed, `1` skipped; `1546` tests passed, `1` skipped). Documentation validation passed (`96` Markdown files, `555` local links); capsule validation and repository pre-commit audit passed; Nutrition Review baseline completed with `13/13` checks passed, zero critical/advisory failures, and a clean repository fingerprint.
+- **Specialized qualification:** PostgreSQL 16 Complete concurrency qualification passed (`2 passed in 0.42s`), proving concurrent identical intents converge on one date-owned Complete assertion/receipt and remain owner-scoped. Recovery-journal v2→v3 compatibility is covered by focused recovery qualification: existing unresolved create/update/delete records load as recoverable v3 state and are preserved through the next durable write.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 occurrences in backend baseline); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`. The baseline review runner correctly did not claim opt-in PostgreSQL/control/MinIO/performance/native-OCR suites; E4-02's required PostgreSQL 16 concurrency gate was run separately and passed.
+- **Deferred work/follow-up IDs:** E4-03 owns atomic Complete invalidation from nutrition-changing Log mutations; E4-07 owns the user-facing Complete control/workflow; E4-15 owns backup/restore and one-time-transfer propagation of Complete state.
+- **Retrospective:** No task-specific retrospective required before integration.
+- **Referenced commits:** `a2f03bc8782cdd3dd51e9f6dcc5be9808c01ee87`, `d320f1f73a73dcb435c6f101ef4ae429cebcb3e5`, `c886cb5aee4153413bd879cc33267dbb2c53e14a`, `d3a5e15f4dfa22bc9ac95f6d375e3c14cfa12216`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-02.md`
+- **Historical capsule SHA-256:** `3eb1ef022e26985c8f3c02768cf9bb693e57397b9df24ce53b5a15820f141d7f`
+
+### E4-03 - Atomically invalidate Complete on nutrition-changing Log mutations
+
+- **ID:** `E4-03`
+- **Title:** Atomically invalidate Complete on nutrition-changing Log mutations
+- **Final state:** `MERGED`
+- **Capsule revision:** 5
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/116
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** 2c485ccc78d5dea90bad3652be7665d62318f07e
+- **Task branch:** e4-03-complete-invalidation
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 1d620dd9d242374520bcb411b8c60c103c37d2ea
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** `dd91ee15fda176253210d738cfa09f7b08660f56` on `main`.
+- **Integration-related commit reference(s):** `dd91ee15fda176253210d738cfa09f7b08660f56`, `1d620dd9d242374520bcb411b8c60c103c37d2ea`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS; AC-1 through AC-12 are satisfied with no blocking architecture, ownership, transaction, replay, persistence, concurrency, or scope finding.
+- **Verification summary:** Latest focused backend qualification passed (`16 passed`) and targeted Ruff passed. Earlier focused mobile qualification passed (`4` suites, `111` tests) and TypeScript passed; the final exact-commit review reran the complete mobile baseline successfully (`156` suites passed, `1` skipped; `1552` tests passed, `1` skipped). Full backend baseline at the reviewed commit passed (`1727 passed, 437 skipped, 2 warnings`) and Ruff passed. Documentation validation passed (`97` Markdown files, `555` local links); capsule validation passed (`4` capsules, `0` failures/warnings); repository pre-commit audit passed; Nutrition Review completed with `13/13` checks passed, zero critical/advisory failures, and stable repository fingerprint `de2c7fcb010ee5c5219155a7ed867dfe3cb2ed6d17a2a8dc193d877035f7c735`.
+- **Specialized qualification:** PostgreSQL 16 transaction/concurrency qualification passed (`6 passed in 1.35s`) at `2feb67d938a20107c5c6497a686768fc763e439f`; the only later change was backend verification tests, so the production/concurrency result remains applicable to the reviewed commit. The PostgreSQL suite proves rollback atomicity and valid serialization between mark-Complete and create/update/delete/move, including both Complete→update and update→Complete orderings. Local SQLite failure injection proves the exclusive transaction rolls back Log mutation, mutation receipt, and all required Complete invalidations together. Exact snapshot preservation compares the canonical persisted nutrient-snapshot generation; note-only/meal-only edits and exactly unchanged generations preserve Complete, while any persisted snapshot semantic change invalidates it.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 occurrences in backend baseline); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`. The standard review runner correctly did not claim opt-in PostgreSQL/control/MinIO/performance/native-OCR suites; E4-03's required PostgreSQL 16 gate was run separately and passed.
+- **Deferred work/follow-up IDs:** E4-07 owns user-facing Complete controls/layout; E4-15 owns backup/restore and one-time-transfer propagation of Complete state. Subsequent Epic 4 tasks own History reads/projections/presentation and must consume this mutation invariant without duplicating invalidation authority.
+- **Retrospective:** No task-specific retrospective required before integration.
+- **Referenced commits:** `2c485ccc78d5dea90bad3652be7665d62318f07e`, `1d620dd9d242374520bcb411b8c60c103c37d2ea`, `dd91ee15fda176253210d738cfa09f7b08660f56`, `2feb67d938a20107c5c6497a686768fc763e439f`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-03.md`
+- **Historical capsule SHA-256:** `b40db71e69bc69a3e0543d2dca4bc30b38c42bbc70fca86bb473b7e742f39b51`
+
+### E4-03-C1 - Restore row-scoped PostgreSQL Log locking after E4-03
+
+- **ID:** `E4-03-C1`
+- **Title:** Restore row-scoped PostgreSQL Log locking after E4-03
+- **Final state:** `MERGED`
+- **Capsule revision:** 5
+- **Task type:** correction
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/116
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** 4e90b9c3a16fb672a08253b5747b596da739888e
+- **Task branch:** e4-03-ci-lock-correction
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 9c28d875d2afc95e571d9d24991ba178a7317fad
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 9b3dbd29a02fcdc495edb3f42406fde3ad6af8ab
+- **Integration-related commit reference(s):** `9b3dbd29a02fcdc495edb3f42406fde3ad6af8ab`, `9c28d875d2afc95e571d9d24991ba178a7317fad`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for the bounded E4-03-C1 correction. Row-scoped concurrency is restored without weakening Complete serialization, AC-1 through AC-10 are satisfied, and the reviewed correction has been squash-merged to `main`.
+- **Verification summary:** Final backend baseline at the reviewed commit passed (`1727 passed, 439 skipped, 2 warnings`) and full Ruff passed. The exact-commit Nutrition Review baseline passed all 13 checks, including backend, TypeScript, Expo configuration, mobile Jest (`156` suites passed, `1` skipped; `1552` tests passed, `1` skipped), documentation validation (`98` Markdown files, `555` local links), repository session/audit, and zero repository drift. Working tree remained clean.
+- **Specialized qualification:** PostgreSQL 16 targeted correction/E4-03 command passed `9` tests total: the different-row concurrency contract plus all `8` E4-03 Complete rollback/race tests, including both legacy/no-revision orderings. The exact GitHub PostgreSQL CI contract set passed `69 passed in 20.20s` with no required-test skips. Earlier teardown deadlock disappeared once the blocked different-row worker regression was corrected.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 backend occurrences); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`. Ordinary review correctly did not claim opt-in PostgreSQL/control/MinIO/performance/native-OCR suites; E4-03-C1's required PostgreSQL 16 gates were run separately and passed.
+- **Deferred work/follow-up IDs:** No new correction follow-up. Epic 4 delivery proceeds to E4-04/#117; #116 remains closed because this is post-merge corrective bookkeeping for E4-03.
+- **Retrospective:** No task-specific retrospective required before integration.
+- **Referenced commits:** `dd91ee15fda176253210d738cfa09f7b08660f56`, `4e90b9c3a16fb672a08253b5747b596da739888e`, `9c28d875d2afc95e571d9d24991ba178a7317fad`, `9b3dbd29a02fcdc495edb3f42406fde3ad6af8ab`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-03-C1.md`
+- **Historical capsule SHA-256:** `ac2668fbd19de4ebde1f09f8d5345398b6933c33bf04e13266e3fadcd47bc338`
+
+### E4-04 - Add the bounded Daily Logs History range contract
+
+- **ID:** `E4-04`
+- **Title:** Add the bounded Daily Logs History range contract
+- **Final state:** `MERGED`
+- **Capsule revision:** 5
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/117
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** 90667d2c91407f7d16fb768bf7bebe9e725be6a0
+- **Task branch:** e4-04-history-range-contract
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 0ab2cd6a4248040cc25127f1c89d122b405c3066
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 2cab4d0410c3705cdef5ab352dc09ebda5e94972
+- **Integration-related commit reference(s):** `2cab4d0410c3705cdef5ab352dc09ebda5e94972`, `0ab2cd6a4248040cc25127f1c89d122b405c3066`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-04. AC-1 through AC-12 are satisfied, no remaining blocking review findings remain, and the reviewed implementation has been squash-merged to `main`.
+- **Verification summary:** Exact-commit baseline review passed all 13 checks with zero failures. Backend passed `1737 passed, 440 skipped, 2 warnings`; Ruff and compileall passed. Mobile TypeScript/Expo configuration passed; Jest passed `157` suites with `1` skipped and `1556` tests with `1` skipped. Documentation validated `99` Markdown files and `555` local links. Repository pre-commit audit passed `39` focused audit tests, task capsules passed `6/6`, `git diff --check` passed, and repository drift remained zero/clean.
+- **Specialized qualification:** PostgreSQL 16 E4-04 shared-fixture/owner-isolation qualification passed `1/1`; exact GitHub CI PostgreSQL contract set passed `69/69`. The shared fixture proves local SQLite and remote PostgreSQL exact evidence parity, including `1250.000000 mg -> 1.250000000 g`, Complete state, owner-scoped `firstLoggedDate`, no-Log gaps, known/estimated/explicit-zero/known-zero/unknown semantics. Remote delegation proves one `getHistoryRange` call issues exactly one `/api/v1/logs/history-range?start_date=...&end_date=...` HTTP request and preserves the existing eight-capability runtime boundary. Focused mobile passed `4/4`, including canonical Gregorian years below 0100 after the independent-review correction.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 backend occurrences); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`. The ordinary baseline correctly reports opt-in PostgreSQL/control/MinIO/performance/native-OCR suites as not run; E4-04's required PostgreSQL 16 qualification and exact CI PostgreSQL contract suite were run separately and passed.
+- **Deferred work/follow-up IDs:** E4-05/#118 owns shared History projections; E4-06/#119 owns range cache identity/invalidation/stale-response behavior; E4-09/#122 owns History route/range paging/coverage-mode UI.
+- **Retrospective:** No task-specific retrospective required after integration.
+- **Referenced commits:** `90667d2c91407f7d16fb768bf7bebe9e725be6a0`, `6ec750711fa06a0ee93002a9629cd8804ae97102`, `0ab2cd6a4248040cc25127f1c89d122b405c3066`, `2cab4d0410c3705cdef5ab352dc09ebda5e94972`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-04.md`
+- **Historical capsule SHA-256:** `9774830f354de90deede32344f5e1eba9b3d07ac2bf2b0ecfdf76980ec9fc05e`
+
+### E4-05 - Implement one shared History calculation/projection layer
+
+- **ID:** `E4-05`
+- **Title:** Implement one shared History calculation/projection layer
+- **Final state:** `MERGED`
+- **Capsule revision:** 5
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/118
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** f1dafa179de8a233f4eceb72ddb402d63805fb8c
+- **Task branch:** e4-05-history-projection
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 091df19a9854b00dc710cfc1e90f54c2df9c13d8
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 05f3373c7b0d92bba44d30f5bb82e21b021c96bb
+- **Integration-related commit reference(s):** `05f3373c7b0d92bba44d30f5bb82e21b021c96bb`, `091df19a9854b00dc710cfc1e90f54c2df9c13d8`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-05. AC-1 through AC-12 are satisfied, no remaining blocking review findings remain, and the reviewed implementation has been squash-merged to `main`.
+- **Verification summary:** Exact-commit Nutrition Review passed all 13 checks with zero failures. Backend passed `1737 passed, 440 skipped, 2 warnings`; Ruff and compileall passed. Mobile TypeScript/Expo configuration passed; Jest passed `158` suites with `1` skipped and `1563` tests with `1` skipped. Documentation validated `100` Markdown files and `555` local links. Repository pre-commit audit passed `39` focused audit tests, task capsules passed `7/7`, `git diff --check` passed, and repository drift remained stable/clean.
+- **Specialized qualification:** Focused E4-05 projection qualification passed `7/7`; E4-04 range regression passed `4/4`. The shared fixture proves byte-for-byte local/remote-equivalent projection output in both denominator modes with Protein `0.875` over 2 usable Complete days and `1` over 3 usable Logged days. Exact arithmetic proves `1 / 3 = 0.3333333333333333333333333333` under the shared 28-digit response-decimal convention, explicit zero remains a usable zero, unknown-only/no-Log remain nonnumeric, contradictory canonical units fail explicitly, every canonical nutrient row remains structurally available, and child evidence does not synthesize parent nutrition.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 backend occurrences); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`. Ordinary baseline correctly reports opt-in PostgreSQL/control/MinIO/performance suites as not run; E4-05 is a pure shared projection task and requires no new PostgreSQL qualification.
+- **Deferred work/follow-up IDs:** E4-06/#119 owns History query identity/cache invalidation/stale-response behavior; E4-09/#122 and later History UI issues own presentation and navigation.
+- **Retrospective:** No task-specific retrospective required after integration.
+- **Referenced commits:** `f1dafa179de8a233f4eceb72ddb402d63805fb8c`, `eb5efae2d146696dfd4e2879363bcefb561a75ff`, `091df19a9854b00dc710cfc1e90f54c2df9c13d8`, `05f3373c7b0d92bba44d30f5bb82e21b021c96bb`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-05.md`
+- **Historical capsule SHA-256:** `84a576c0fc2f86d56496b9808cfbdec05b34d3c9f87f9b1ebf1a165afd45d9c9`
+
+### E4-06 - Add History query identity, cache invalidation, and stale-response protection
+
+- **ID:** `E4-06`
+- **Title:** Add History query identity, cache invalidation, and stale-response protection
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/119
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** 94b551a1b3d4fb1746f24de0e43847516cad028b
+- **Task branch:** e4-06-history-query-coherence
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `aef25f7f1272ec63b7557dd492e33e9561a14915`, `3383fe7ed530b4061aeebbfa06178f7dad6a70c8`, `c4570cf109279d6be0b4c3d3184ffa81a5897014`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** aef25f7f1272ec63b7557dd492e33e9561a14915
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 3383fe7ed530b4061aeebbfa06178f7dad6a70c8
+- **Integration-related commit reference(s):** `3383fe7ed530b4061aeebbfa06178f7dad6a70c8`, `aef25f7f1272ec63b7557dd492e33e9561a14915`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-06. AC-1 through AC-12 are satisfied, no remaining blocking review findings remain, and the reviewed implementation has been squash-merged to `main`.
+- **Verification summary:** Exact-commit Nutrition Review passed all 13 checks with zero failures. Backend passed `1737 passed, 440 skipped, 2 warnings`; Ruff and compileall passed. Mobile TypeScript/Expo configuration passed; Jest passed `159` suites with `1` skipped and `1572` tests with `1` skipped. Documentation validated `101` Markdown files and `555` local links. Repository pre-commit audit passed `39` focused audit tests, task capsules passed `8/8`, `git diff --check` passed, and repository drift remained stable at `6163ab4fc6ffafff53988cb83a497e3847a18dc514328767c62bc066ddca00b1`.
+- **Specialized qualification:** Focused E4-04/E4-05/E4-06 qualification passed `20/20`. Exact key partitioning proves raw evidence identity is `history-range` + authority kind + recovery scope + exact inclusive start/end only. Deferred A→B→C requests prove superseded keys cannot become current visible evidence. Same-range refresh failure retains only same-range evidence with explicit retry/error state; new-range and authority failures expose no foreign cached data. Inclusive overlap invalidation is same-authority scoped and covers create/delete/update, move source+destination, and Complete first assertion/reassertion. Raw E4-04 evidence is never patched locally, and projection/target state does not contaminate evidence identity.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning (2 backend occurrences); existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning in `ops_0004_phase5c4_admission.py`. Ordinary baseline correctly reports opt-in PostgreSQL/control/MinIO/performance suites as not run; E4-06 is a mobile query-coherence task and requires no new PostgreSQL qualification.
+- **Deferred work/follow-up IDs:** E4-07/#120 owns the visible Daily Log Complete control; E4-09/#122 and later History UI issues own range navigation and presentation.
+- **Retrospective:** No task-specific retrospective required after integration.
+- **Referenced commits:** `94b551a1b3d4fb1746f24de0e43847516cad028b`, `aef25f7f1272ec63b7557dd492e33e9561a14915`, `3383fe7ed530b4061aeebbfa06178f7dad6a70c8`, `c4570cf109279d6be0b4c3d3184ffa81a5897014`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-06.md`
+- **Historical capsule SHA-256:** `65437cf8ee93924e2ed2b1b08d30406714c52a517c972f18094e21178b02b221`
+
+### E4-07 - Reorder Daily Log around logging and add Complete control
+
+- **ID:** `E4-07`
+- **Title:** Reorder Daily Log around logging and add Complete control
+- **Final state:** `MERGED`
+- **Capsule revision:** 8
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/120
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** fc93b35a7b6a4b06a1a007c8e4d47aaa3957f7c8
+- **Task branch:** e4-07-daily-log-complete-shell
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `c433a257845d9de4272f1aea98da2cb28bf98d3c`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** c433a257845d9de4272f1aea98da2cb28bf98d3c
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** e4db803844be5cce46301a1c5d0b263db9ce02c4
+- **Integration-related commit reference(s):** `e4db803844be5cce46301a1c5d0b263db9ce02c4`, `c433a257845d9de4272f1aea98da2cb28bf98d3c`
+- **Acceptance result:** 14/14 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-07. AC-1 through AC-14 are satisfied, no remaining blocking review findings remain, and the reviewed implementation has been squash-merged to `main`.
+- **Verification summary:** Final exact-commit Nutrition Review passed all 13 checks with zero failures. Backend passed `1742 passed, 440 skipped, 2 warnings`; Ruff and compileall passed. Mobile TypeScript and Expo configuration passed; Jest passed `160` suites with `1` skipped and `1580` tests with `1` skipped. Documentation validated `103` Markdown files and `555` local links. Repository session-end passed `43` focused audit tests, task capsules passed `10/10`, `git diff --check` passed, and repository drift remained stable at `62022859f4cfe1704a9e49d4d12f8f6ac75cd4119f6c8488ea39b2e5535a7645`.
+- **Specialized qualification:** PASS — selected-date Complete read is authoritative for local and remote runtimes without changing History semantics; Complete success/non-commit/unresolved behavior preserves one reviewed intent; confirmed authority cannot be downgraded by recovery cleanup failure; Daily Log remains logging-first with exactly four compact nutrients and no progress bars/percentages; History and Daily Nutrition remain Daily-Log-owned seams under exactly three bottom tabs.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation and `DOMAIN_TOKEN_IN_OPS_MIGRATION` warnings are pre-existing and non-blocking.
+- **Deferred work/follow-up IDs:** E4-08 / #121 and E4-09 / #122 retain Daily Nutrition and History implementation respectively.
+- **Retrospective:** No task-specific retrospective required after integration.
+- **Referenced commits:** `fc93b35a7b6a4b06a1a007c8e4d47aaa3957f7c8`, `e4db803844be5cce46301a1c5d0b263db9ce02c4`, `c433a257845d9de4272f1aea98da2cb28bf98d3c`, `4e0bd33228bd976f0edf2da8d3d6faf1bb81384a`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-07.md`
+- **Historical capsule SHA-256:** `ef5c1b519507efe2ca9eb02ee5e572a743d75e9f0007b9e48045105835f4666c`
+
+### E4-08 - Consolidate Daily Nutrition into one exhaustive one-day surface
+
+- **ID:** `E4-08`
+- **Title:** Consolidate Daily Nutrition into one exhaustive one-day surface
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/121
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** 53f20253272a262072108082ba9c1be0e8d11fa9
+- **Task branch:** e4-08-daily-nutrition-surface
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 2f42a06d43a76a39e0d9f1a9ec037dcf50fef20f
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 88a01870743a806f4bd3214bbfe6aeeab8db5ae8
+- **Integration-related commit reference(s):** `88a01870743a806f4bd3214bbfe6aeeab8db5ae8`, `2f42a06d43a76a39e0d9f1a9ec037dcf50fef20f`
+- **Acceptance result:** 14/14 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-08. AC-1 through AC-14 are satisfied, no blocking independent-review findings remain, and the reviewed implementation has been squash-merged to `main`.
+- **Verification summary:** Final exact-commit Nutrition Review at `2f42a06d43a76a39e0d9f1a9ec037dcf50fef20f` passed all 13 checks with zero failures. Backend passed `1742 passed, 440 skipped, 2 warnings`; Ruff and compileall passed. Mobile TypeScript and Expo configuration passed; Jest passed `161` suites with `1` skipped and `1583` tests with `1` skipped. Documentation validated `104` Markdown files and `555` local links. Repository session-end passed `43` focused audit tests, task capsules passed `11/11`, git diff checks passed, and repository drift remained stable at `e80c215a004ee2764ce785a5c722c2500190cf5816504fd1b52056fe2ae49abb`. Review evidence: `/Users/mipoo/nutrition-app-review-output/runs/20260818-230744-e4-08`; uploadable bundle: `/Users/mipoo/nutrition-app-review-output/nutrition-app-e4-08-20260818-230744.zip`.
+- **Specialized qualification:** PASS — Daily Nutrition inherits and restores the selected Daily Log date with no independent date owner; Nutrition targets returns to that same date and existing target saves invalidate target-comparison caches; canonical grouping/order/hierarchy is reused; sections are session-persistent and fresh-launch-expanded; recommended/custom, limit, amount-only, ignored, unavailable, and unknown-contributor semantics conform to the frozen PRD; and no backend, API, runtime, storage, History, synchronization, fallback, or new-tab expansion occurred.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation and `DOMAIN_TOKEN_IN_OPS_MIGRATION` warnings remain pre-existing and non-blocking.
+- **Deferred work/follow-up IDs:** E4-09 / #122 retains multi-day History implementation.
+- **Retrospective:** No task-specific retrospective required after integration.
+- **Referenced commits:** `53f20253272a262072108082ba9c1be0e8d11fa9`, `88a01870743a806f4bd3214bbfe6aeeab8db5ae8`, `2f42a06d43a76a39e0d9f1a9ec037dcf50fef20f`, `bddd9a8fee4d50cb1a738aa5973172ac14aa737b`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-08.md`
+- **Historical capsule SHA-256:** `7dfb342b929f818170b15e4a8100d80f293c97ccefe659a3cc33f8b1d5bb2293`
+
+### E4-09 - Build History route, range controls, paging, and coverage mode
+
+- **ID:** `E4-09`
+- **Title:** Build History route, range controls, paging, and coverage mode
+- **Final state:** `MERGED`
+- **Capsule revision:** 12
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/122
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 9b2aa90d019b2c936047824aee3828ef880a3269
+- **Task branch:** e4-09-history-route-range-controls
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 532aa53e7738f03cfbae288d01d22a6f78a0f045
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 12cf33c1fa7fd643ece2bf347c0e81544a69dc7a
+- **Integration-related commit reference(s):** `12cf33c1fa7fd643ece2bf347c0e81544a69dc7a`, `532aa53e7738f03cfbae288d01d22a6f78a0f045`
+- **Acceptance result:** 16/16 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-09. AC-1 through AC-16 are satisfied, no blocking independent-review findings remain, and the reviewed implementation has been squash-merged to `main` as `12cf33c1fa7fd643ece2bf347c0e81544a69dc7a`.
+- **Verification summary:** PASS — final exact-commit Nutrition Review of `532aa53e7738f03cfbae288d01d22a6f78a0f045` passed 13/13 checks with backend 1742 passed/440 skipped, mobile 1598 passed/1 skipped, documentation validation 105 Markdown files/555 local links, and session-end 43/43 focused audit-tooling tests. Repository fingerprint `46eb08a193532803b8d99dbe0688a290a1e154a0a1f0b1cadf6b935e62b67e40` remained stable. Evidence: `/Users/mipoo/nutrition-app-review-output/runs/20260819-001919-e4-09-final`. Bundle: `/Users/mipoo/nutrition-app-review-output/nutrition-app-e4-09-final-20260819-001919.zip`.
+- **Specialized qualification:** PASS — 7/30 LocalDate paging, yesterday cap, rapid backward paging using retained authority-global `firstLoggedDate`, earliest/no-history boundaries, Complete/Logged denominator behavior over unchanged E4-05 evidence, authoritative-only fresh History launch, exact Daily Log return context, three-tab ownership, and negative backend/runtime/storage/chart/detail scope all qualified.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation and `DOMAIN_TOKEN_IN_OPS_MIGRATION` warnings remain pre-existing and non-blocking.
+- **Deferred work/follow-up IDs:** E4-10 / #123 owns overview cards and mini charts; E4-11 / #124 owns Nutrition Details; E4-12 / #125 owns focused nutrient History.
+- **Retrospective:** no — evaluate after implementation/review if task-specific workflow evidence warrants one.
+- **Referenced commits:** `9b2aa90d019b2c936047824aee3828ef880a3269`, `12cf33c1fa7fd643ece2bf347c0e81544a69dc7a`, `532aa53e7738f03cfbae288d01d22a6f78a0f045`, `fb05c6352b4a50706e6c605ca4e4fab1c01d6eca`, `292ad60547a9e2d5333e5b746d4428ca882e8736`, `c40af9ec0e179cd7d8cda3656263038f98f90384`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-09.md`
+- **Historical capsule SHA-256:** `72838987c3b44da395b6611cdfae4e953f9f79c98ead1d93ec5b5f7f433903dd`
+
+### E4-10 - Add the four-card History overview and daily mini charts
+
+- **ID:** `E4-10`
+- **Title:** Add the four-card History overview and daily mini charts
+- **Final state:** `MERGED`
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/123
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 78699b6349dd7b1da9dc6a54fcc80e93aa04f486
+- **Task branch:** e4-10-history-overview-mini-charts
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 3fe86053d9224f0eaa8dfe893bc9bd2584434732
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 391f2630fe3e248aae12b0957a56f58299a9a5d5
+- **Integration-related commit reference(s):** `391f2630fe3e248aae12b0957a56f58299a9a5d5`, `3fe86053d9224f0eaa8dfe893bc9bd2584434732`
+- **Acceptance result:** 14/14 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-10. AC-1 through AC-14 are satisfied, no blocking independent-review findings remain, and the reviewed implementation has been squash-merged to `main` as `391f2630fe3e248aae12b0957a56f58299a9a5d5`.
+- **Verification summary:** PASS — exact-commit Nutrition Review passed 13/13 checks with backend 1742 passed/440 skipped, mobile 1604 passed/1 skipped, documentation 106 Markdown files/555 local links, session-end 43/43 focused audit-tooling tests, and stable fingerprint 43b711ab21c8587e5a82ed60eda020cb5f80a6e79f907d8663c6445b82bf8921. Evidence: `/Users/mipoo/nutrition-app-review-output/runs/20260819-090417-e4-10`. Bundle: `/Users/mipoo/nutrition-app-review-output/nutrition-app-e4-10-20260819-090417.zip`.
+- **Specialized qualification:** PASS — four-card identity/order, selected-denominator statistics, usable-day counts, no-Log gaps, unavailable values, explicit-zero identity, exact-date selection, current-only target context, and overview/details session preservation qualified. Native iPhone-sized testing demonstrated the static 30-day interaction was too compressed; the accepted 44-point horizontal-scroll adaptation was implemented and requalified without aggregation or dropped dates.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation and `DOMAIN_TOKEN_IN_OPS_MIGRATION`; neither is introduced by E4-10. Repository Dependabot findings remain unrelated. Final physical-iPhone release qualification remains owned by E4-16.
+- **Deferred work/follow-up IDs:** E4-11 / #124 owns actual Nutrition Details content; E4-12 / #125 owns focused nutrient History.
+- **Retrospective:** no — evaluate after implementation/review if task-specific workflow evidence warrants one.
+- **Referenced commits:** `78699b6349dd7b1da9dc6a54fcc80e93aa04f486`, `391f2630fe3e248aae12b0957a56f58299a9a5d5`, `3fe86053d9224f0eaa8dfe893bc9bd2584434732`, `ae7f9f45a32a74f11b53d9d552a5e8e7af65cb3f`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-10.md`
+- **Historical capsule SHA-256:** `2897b332df72cb9947bd58fa3890199e232f4f92bba850e91c472169596ac854`
+
+### E4-11 - Add Nutrition Details sheet and grouped nutrient browsing
+
+- **ID:** `E4-11`
+- **Title:** Add Nutrition Details sheet and grouped nutrient browsing
+- **Final state:** `MERGED`
+- **Capsule revision:** 15
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/124
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** cced3e8e006c18d014c3163367ec4b7ac200414f
+- **Task branch:** e4-11-nutrition-details
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** f9ca1e2a61876dcabdefe0759aba932f83e52d20
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** a7df6f40a6a22a308ad2251b4666e72ad457a129
+- **Integration-related commit reference(s):** `a7df6f40a6a22a308ad2251b4666e72ad457a129`, `f9ca1e2a61876dcabdefe0759aba932f83e52d20`
+- **Acceptance result:** 18/18 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-11. AC-1 through AC-18 are satisfied, no blocking independent-review findings remain, and the reviewed implementation has been squash-merged to `main` as `a7df6f40a6a22a308ad2251b4666e72ad457a129`.
+- **Verification summary:** PASS — exact-commit Nutrition Review passed 13/13 checks with backend 1742 passed/440 skipped, mobile 1609 passed/1 skipped, documentation 107 Markdown files/555 local links, session-end 43/43 focused audit-tooling tests, and stable fingerprint 06cf6d29074b065c21098112c5623103c5402f66355bca59c9eb19b74d709ba0. Evidence: `/Users/mipoo/nutrition-app-review-output/runs/20260819-141909-e4-11`. Bundle: `/Users/mipoo/nutrition-app-review-output/nutrition-app-e4-11-20260819-141909.zip`.
+- **Specialized qualification:** PASS — native iPhone-sized qualification confirmed the distinct Nutrition Details surface, canonical hierarchy and group defaults, Other/Choline structural presence, neutral unavailable rows, compact row density, accordion state preservation, scroll restoration through focused drill-down, contextual header Back, Close-to-overview behavior, paging/range context preservation, consolidated History period chrome, and absence of any E4-12 focused chart/daily-row implementation. Automated tests confirm surface/focus changes retain the same E4-06 range identity without another History read.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation and `DOMAIN_TOKEN_IN_OPS_MIGRATION`; neither is introduced by E4-11. Repository Dependabot findings remain unrelated. Final physical-device release qualification remains owned by E4-16.
+- **Deferred work/follow-up IDs:** E4-12 / #125 owns focused nutrient charts and exact daily rows; E4-13+ remain subsequent Epic 4 work.
+- **Retrospective:** no — evaluate after implementation/review if task-specific workflow evidence warrants one.
+- **Referenced commits:** `cced3e8e006c18d014c3163367ec4b7ac200414f`, `a7df6f40a6a22a308ad2251b4666e72ad457a129`, `f9ca1e2a61876dcabdefe0759aba932f83e52d20`, `fd300aba9f5059ac8d37e003cb601270da8e01b8`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-11.md`
+- **Historical capsule SHA-256:** `f5d7a90ac52705a638cabb284feca102315bf7a53c7c8fe13f25d1e86cb28ca5`
+
+### E4-12 - Add focused nutrient History and exact daily rows
+
+- **ID:** `E4-12`
+- **Title:** Add focused nutrient History and exact daily rows
+- **Final state:** `MERGED`
+- **Capsule revision:** 11
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/125
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 31ec3a3966708a1b6d600b2216083f49ae57769a
+- **Task branch:** e4-12-focused-nutrient-history
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `cb3e1945160e7af3ba4387208ca93601cfa87d13`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** cb3e1945160e7af3ba4387208ca93601cfa87d13
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 76d88e0588d2d4fe001919e1f7e1505bd4aec2ea
+- **Integration-related commit reference(s):** `cb3e1945160e7af3ba4387208ca93601cfa87d13`, `76d88e0588d2d4fe001919e1f7e1505bd4aec2ea`
+- **Acceptance result:** 24/24 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-12. AC-1 through AC-24 are satisfied, exact-commit and independent review have no blocking findings, and the reviewed implementation was squash-merged to `main` as `76d88e0588d2d4fe001919e1f7e1505bd4aec2ea`.
+- **Verification summary:** PASS — TypeScript passed; dedicated E4-12 15/15; cumulative History/AppNavigator 74/74; full mobile 1624 passed/1 skipped across 165 passing executed suites; backend 1742 passed/440 skipped; documentation 108 Markdown files/555 local links; all 15 task capsules validated; session-end audit tooling 43/43; exact-commit baseline review 13/13; repository fingerprint e066311823557901f4964bea94525eadb3ad30796bd4ca56881b7ac257f4934b.
+- **Specialized qualification:** PASS — human native iPhone-sized qualification confirmed focused nutrient identity/unit, true-zero chart behavior, meaningful current-reference line, exact chart-date selection, 7-day expanded Daily values, 30-day collapsed Daily values, all thirty calendar observations, retained collapsed selection, exact Daily Log date navigation, retained History return context, Nutrition Details Back restoration, same-nutrient period paging, and distinct No logs / unavailable / explicit-zero / Complete states. No deviation or repair was required.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation warning; existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository warning; GitHub Dependabot reports 2 high and 1 moderate vulnerabilities on the default branch. None were introduced by E4-12 and none block this bounded task.
+- **Deferred work/follow-up IDs:** E4-16 / #129 retains final cross-authority/failure/physical chart qualification.
+- **Retrospective:** no — standard Epic 4 implementation task unless execution discovers a new architecture/process issue.
+- **Referenced commits:** `31ec3a3966708a1b6d600b2216083f49ae57769a`, `76d88e0588d2d4fe001919e1f7e1505bd4aec2ea`, `cb3e1945160e7af3ba4387208ca93601cfa87d13`, `d3e796bd2325184bfbcee189c5f01b5aa27120c1`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-12.md`
+- **Historical capsule SHA-256:** `ba7af35d1a28b200e3ad4fc015ab6d9c9d10f4755c4594375762197ef4ed6dce`
+
+### E4-13 - Restrict default Food form to conventional Nutrition Facts fields
+
+- **ID:** `E4-13`
+- **Title:** Restrict default Food form to conventional Nutrition Facts fields
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/126
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** c43a01a8dd69a785fdcb63f12aa76bf1ddf6c2ba
+- **Task branch:** e4-13-food-form-density
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `ef3b818c50b174c429929a9f6e8bbce68e096862`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** ef3b818c50b174c429929a9f6e8bbce68e096862
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 8758eccbc1bab2562d69ca36c68f7a15e050353a
+- **Integration-related commit reference(s):** `ef3b818c50b174c429929a9f6e8bbce68e096862`, `8758eccbc1bab2562d69ca36c68f7a15e050353a`
+- **Acceptance result:** 16/16 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-13. AC-1 through AC-16 are satisfied, exact-commit and independent review have no blocking findings, and the reviewed implementation was squash-merged to `main` without deviation.
+- **Verification summary:** PASS — TypeScript passed; dedicated E4-13 6/6; focused Food-form regressions 43/43 at final qualification; full mobile 1630 passed/1 skipped across 166 passing executed suites; backend 1742 passed/440 skipped; documentation 109 Markdown files/555 links; all 16 task capsules validated; session-end 43/43; exact-commit baseline review 13/13; repository fingerprint bc722ac9f61808ea6e8c0ef419f1cbcfef62c4ab52cca07f472ab36a153c0c4e.
+- **Specialized qualification:** PASS — native iPhone-sized qualification confirmed New Food renders only the accepted fifteen conventional Nutrition Facts fields after serving information, the fresh bundle excludes extended catalog fields from the default create surface, populated extended nutrition remains visible on saved-Food edit, and Save/Cancel/scroll behavior remains normal. Automated E4-13 qualification covers equivalent `ocr_confirmed` and `usda` populated-extended preservation.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation warning and existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository warning. Initial native inspection used a stale Expo/Metro bundle and was repeated successfully against a fresh bundle. None block E4-13.
+- **Deferred work/follow-up IDs:** E4-14 / #127 owns grouped `More nutrients` authoring for extended canonical fields; #133 owns the separately accepted Food Details sticky task chrome and spaced nutrient-unit typography.
+- **Retrospective:** no — standard bounded Epic 4 presentation task unless execution uncovers a new workflow or architecture issue.
+- **Referenced commits:** `c43a01a8dd69a785fdcb63f12aa76bf1ddf6c2ba`, `8758eccbc1bab2562d69ca36c68f7a15e050353a`, `ef3b818c50b174c429929a9f6e8bbce68e096862`, `d44fef0c7cac305e9d33c10f40c035fa435c7584`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-13.md`
+- **Historical capsule SHA-256:** `ca74ca328b07eb40d33edff117b11adc70eb9812e1fdc495dd5ebb6326ed6763`
+
+### E4-14 - Add grouped More nutrients authoring for extended catalog fields
+
+- **ID:** `E4-14`
+- **Title:** Add grouped More nutrients authoring for extended catalog fields
+- **Final state:** `MERGED`
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/127
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 05fd2d9c5cdbcc3c38558ab918cae36279a2dd95
+- **Task branch:** e4-14-more-nutrients-authoring
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `3b11c159c82f60dd1f8d352585208b87f6011fae`, `5bc22e10eb4c7b0bd124291b43f19195c20965d3`, `050f7cb0a592e0479b5f85cbabcbbd40cf04eac0`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 5bc22e10eb4c7b0bd124291b43f19195c20965d3
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 3b11c159c82f60dd1f8d352585208b87f6011fae
+- **Integration-related commit reference(s):** `3b11c159c82f60dd1f8d352585208b87f6011fae`, `5bc22e10eb4c7b0bd124291b43f19195c20965d3`
+- **Acceptance result:** 20/20 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** TypeScript PASS; dedicated E4-14 6/6; focused Food-authoring 65/65; full mobile 1648 passed / 1 skipped; all 20 task capsules valid; git diff check PASS; session-end focused audit tooling 43/43.
+- **Specialized qualification:** PASS — native iPhone-sized New Food/Edit Food confirmed collapsed grouped More nutrients discovery, Vitamins → Minerals → Fatty Acids → Other ordering, blank/unknown initialization, explicit zero, cancel/reopen, duplicate prevention, populated extended visibility, omit/re-add, and usable scrolling/save behavior.
+- **Known warnings:** Initial READY capsule validation failed because `Interaction contract` was not a schema-v1 section and required `Owned surface` was missing; revision 2 repaired the schema before implementation. Existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository warning only. PostgreSQL, MinIO, Docker, migration, and performance opt-in suites were not required.
+- **Deferred work/follow-up IDs:** E4-15 / #128 remains durability/transfer work; #132 remains separate semantic-color polish.
+- **Retrospective:** no — bounded Food-authoring presentation refinement unless execution reveals a new authority problem.
+- **Referenced commits:** `05fd2d9c5cdbcc3c38558ab918cae36279a2dd95`, `3b11c159c82f60dd1f8d352585208b87f6011fae`, `5bc22e10eb4c7b0bd124291b43f19195c20965d3`, `050f7cb0a592e0479b5f85cbabcbbd40cf04eac0`, `6b2825afff4611cceca3697d5b9384ca9888b8cf`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-14.md`
+- **Historical capsule SHA-256:** `ae346161c5a718be3ee68436a38802590725fd602fd555a049d8ad26a1dc5389`
+
+### E4-15 - Extend backup restore and one-time transfer for Complete state
+
+- **ID:** `E4-15`
+- **Title:** Extend backup restore and one-time transfer for Complete state
+- **Final state:** `MERGED`
+- **Capsule revision:** 16
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/128
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 011fd122af75146f1fe3ff034a02cd341b0f16a7
+- **Task branch:** e4-15-complete-durability-transfer
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `02c4dd0fbe83a6f7013894fe0d3190167bc2e934`, `b813e9d989002c02a95c7ff1fe6fb0daacfc2261`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 02c4dd0fbe83a6f7013894fe0d3190167bc2e934
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** b813e9d989002c02a95c7ff1fe6fb0daacfc2261
+- **Integration-related commit reference(s):** `b813e9d989002c02a95c7ff1fe6fb0daacfc2261`, `f54ae8b135f5b8d3cea2184f9ad51784698bdfdb`, `063584c3df59855632954bb18f42e731d4ed6ab8`, `1545dcf5f6f840aa0857e8600beca967f0fcf426`, `a1b1472cbdef2e4bbb61ecc75da5e7ab220a58fd`, `34cd3a72cbd0592fe273f6e91cedd4cca50bb2a3`, `c988eae12aec45d0dae05d9839759080e09c6cc0`, `ea1ac2b85972b035d5629720939107dd425c9cf1`, `02c4dd0fbe83a6f7013894fe0d3190167bc2e934`
+- **Acceptance result:** 20/20 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** Exact implementation commit `02c4dd0fbe83a6f7013894fe0d3190167bc2e934` independently verified on 2026-08-20. Current-v3 identities and frozen v1/v2 byte identity passed; Ruff passed; focused backend passed 86/86; PostgreSQL 16 exporter passed 18/18; E4-01 PostgreSQL regression passed 1/1; ordinary backend passed 1,736 with 464 opt-ins deselected and two existing warnings; the exact physical PostgreSQL export was consumed by the full Node 24 mobile run, which passed 1,662/1,662 across 172 suites; TypeScript, docs, capsule validation, session-end, `git diff --check`, exact branch identity, and clean-worktree postconditions all passed. Independent review passed with no blocking findings.
+- **Specialized qualification:** PostgreSQL 16.14 guarded 0018→0033 source/export passed 18/18; exact physical package import/rollback/reopen passed 32/32.
+- **Known warnings:** Two existing Starlette HTTP 422 deprecation warnings; stale nonexistent capsule parity-test path; existing `run-review.sh` baseline-selection defect remains out of scope; cross-test helper coupling observed in PostgreSQL qualification remains tracked by #142 and is non-blocking.
+- **Deferred work/follow-up IDs:** E4-16 / #129 owns the broader local/remote parity and physical qualification matrix; E4-17 / #130 owns final Epic 4 documentation/closure.
+- **Retrospective:** no — unless execution exposes a transfer-version or source-authority defect requiring architecture reconsideration.
+- **Referenced commits:** `011fd122af75146f1fe3ff034a02cd341b0f16a7`, `ea1ac2b85972b035d5629720939107dd425c9cf1`, `f54ae8b135f5b8d3cea2184f9ad51784698bdfdb`, `b0e2a908a6dc7c44df46f9ae34aea28901b3d808`, `b813e9d989002c02a95c7ff1fe6fb0daacfc2261`, `02c4dd0fbe83a6f7013894fe0d3190167bc2e934`, `063584c3df59855632954bb18f42e731d4ed6ab8`, `1545dcf5f6f840aa0857e8600beca967f0fcf426`, `a1b1472cbdef2e4bbb61ecc75da5e7ab220a58fd`, `34cd3a72cbd0592fe273f6e91cedd4cca50bb2a3`, `c988eae12aec45d0dae05d9839759080e09c6cc0`, `41000841893ac3dc5f7ee829231a2caca6fb1ef9`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-15.md`
+- **Historical capsule SHA-256:** `1ebee07682a2d6ff9eba9656d9c46035735194ddbcdd02187d0384e9680c42e8`
+
+### E4-16 - Qualify History parity, failure behavior, and physical chart usability
+
+- **ID:** `E4-16`
+- **Title:** Qualify History parity, failure behavior, and physical chart usability
+- **Final state:** `MERGED`
+- **Capsule revision:** 8
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/129
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 49f21f9ff47e11ecba13df3f78f8402d40b96fef
+- **Task branch:** e4-16-history-parity-qualification
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** Codex bounded qualification executor
+- **Reviewer:** Independent review pass
+- **Delegation:** bounded
+- **Implementation commit(s):** `85e6affc905583089fc26aa670d0d7b101a1747e`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 85e6affc905583089fc26aa670d0d7b101a1747e
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 7186e78cb3472e8b07d6b30a8aaa129616884a46
+- **Integration-related commit reference(s):** `7186e78cb3472e8b07d6b30a8aaa129616884a46`, `85e6affc905583089fc26aa670d0d7b101a1747e`
+- **Acceptance result:** 41/41 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-16. AC-1 through AC-41 are satisfied; exact automated and physical qualification have no blocking findings, and #148 is explicitly deferred as non-blocking follow-up usability work.
+- **Verification summary:** PASS — exact implementation commit `85e6affc905583089fc26aa670d0d7b101a1747e` requalified under Python 3.12.13 and Node 24.19.0. E4-16 harness: 106 ordinary backend passed, 164 mobile passed/1 existing gated skip, 31 PostgreSQL 16.14 passed/0 skipped, residual schemas/databases empty. Ordinary backend baseline: 1738 passed/465 deselected/2 existing warnings. Full mobile: 172 suites passed/1 opt-in suite skipped, 1662 tests passed/2 existing gated skips. Ruff, TypeScript, docs 119 Markdown/556 links, capsule validation 25/25, session-end 43/43, whitespace, exact branch/HEAD/origin identity, and clean postconditions passed. Human target-iPhone P-1 through P-12 also passed.
+- **Specialized qualification:** PASS — PostgreSQL 16.14 exact qualification passed 31/31 with zero skips and empty residual schema/database checks. Human target-iPhone qualification passed P-1 through P-12 across Daily Log hierarchy, four-card overview, 7-day exact selection, all-observation 30-day horizontal scrolling, gap-versus-zero distinction, Nutrition Details long groups, focused nutrient chart/Daily values, exact Daily Log navigation, History return context, and final integrated E4-10 regression. Parallel 30-day chart viewport alignment after selecting an offscreen date is deferred as non-blocking follow-up #148.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation warnings; existing `DOMAIN_TOKEN_IN_OPS_MIGRATION`; known `run-review.sh` baseline-selection defect; #142 existing cross-test helper coupling. Session-start used host Python 3.9.6 and Node 26.7.0, while substantive qualification used repository Python 3.12.13 and Node 24.19.0. The focused/full mobile runs intentionally skipped the existing environment-gated physical E4-15 export/import test without `NUTRITION_E2_15_PHYSICAL_EXPORT_PATH`; the full baseline also skipped the existing physical PostgreSQL-transfer E2E suite without its output path. The initial missing-fixture red test and one incorrect npm CLI path attempt are recorded in revision 4.
+- **Deferred work/follow-up IDs:** #139 remains broader remote runtime response-validation work. #147 remains unrelated Expo SDK 57 patch-version maintenance. #148 tracks parallel 30-day selected-date viewport alignment. E4-17/#130 owns final Epic 4 documentation and closure.
+- **Retrospective:** no — unless qualification exposes an architecture or accepted-invariant defect.
+- **Referenced commits:** `49f21f9ff47e11ecba13df3f78f8402d40b96fef`, `92479b1f6ec43b18d075d71711d311d457917503`, `45f48eca03d074f3d185361005d222019344659f`, `7186e78cb3472e8b07d6b30a8aaa129616884a46`, `85e6affc905583089fc26aa670d0d7b101a1747e`, `15ea35d5d914e002c5c0007c3a3a5f47d3d61c0b`, `fe81251f8fff375ed1e5d55a9d971170a9b82819`, `f01158aebd2e5a04d398327aba78c8206d339aee`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-16.md`
+- **Historical capsule SHA-256:** `0225e85beea6d2d3e1e1f36429e8bd8d4e2c9f11ed5129945126a1bb70624544`
+
+### E4-17 - Reconcile current documentation and close Epic 4
+
+- **ID:** `E4-17`
+- **Title:** Reconcile current documentation and close Epic 4
+- **Final state:** `MERGED`
+- **Capsule revision:** 9
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/130
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 151cca2e805a840a91beccaa2c9a73a5a9d683ea
+- **Task branch:** e4-17-documentation-closure
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** Codex bounded documentation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** bounded
+- **Implementation commit(s):** `33c649117d44ce38a6f4c29280019cca8fd2f119`, `ee70a88da8fb201aa21e271c6d480851265b66a2`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 33c649117d44ce38a6f4c29280019cca8fd2f119
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** a9178a7170a9e481720c3df36eed465ffa35226d
+- **Integration-related commit reference(s):** `a9178a7170a9e481720c3df36eed465ffa35226d`, `33c649117d44ce38a6f4c29280019cca8fd2f119`
+- **Acceptance result:** 16/16 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for E4-17. AC-1 through AC-16 are satisfied; the exact documentation implementation accurately reconciles current Epic 4 behavior and migration authority, preserves frozen planning/history, and has no blocking review finding.
+- **Verification summary:** PASS — exact implementation commit `33c649117d44ce38a6f4c29280019cca8fd2f119`, tree `ee70a88da8fb201aa21e271c6d480851265b66a2`, passed the full E4-17 documentation verification under repository Python 3.12.13: current-guide stale-claim search, protected historical/versioned integrity, 120 Markdown files / 568 local links, project audit including 26/26 capsules and 43/43 focused audit-tooling tests, explicit capsule validation, session-end, and `git diff --check`. The existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning remains unrelated.
+- **Specialized qualification:** None beyond completed E4-16 evidence; E4-17 is documentation-only.
+- **Known warnings:** Session-start reported host Python 3.9.6 versus repository 3.12 and Node 26.7.0 versus repository 24. Existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` remains unrelated. One reconnaissance command requested nonexistent `0032_history_range_read.py`; inspection immediately identified and read the actual `0032_qualifier_complete_read_authority.py`. One multi-hunk Development Guide patch failed exact-context verification without changing files and was reapplied successfully in bounded hunks. One broad-search attempt placed backtick-delimited migration text inside a double-quoted shell expression, causing `zsh:1: command not found: 0030_total_omega_3_nutrient`; it changed no files and was immediately rerun with a single-quoted expression. One protected-history check used an incorrectly transcribed preparation object `151cca5385c7d9be02b92650962019392f06c5be` and returned `fatal: bad object`; it changed no files and was immediately rerun successfully with the capsule's authoritative base `151cca2e805a840a91beccaa2c9a73a5a9d683ea`.
+- **Deferred work/follow-up IDs:** #144 docs-validator hardening; #147 Expo SDK 57 patch compatibility; #148 30-day selected-date viewport alignment. Epic 5 remains separately planned/re-scoped.
+- **Retrospective:** no — unless documentation reconciliation exposes an implementation/architecture contradiction.
+- **Referenced commits:** `151cca2e805a840a91beccaa2c9a73a5a9d683ea`, `069d4aa89b00b0a4bffd56f43026a5f0e82b8727`, `a9178a7170a9e481720c3df36eed465ffa35226d`, `33c649117d44ce38a6f4c29280019cca8fd2f119`, `ee70a88da8fb201aa21e271c6d480851265b66a2`, `094e4cff08002afb6a31bf55234b71792d5ffd56`, `151cca5385c7d9be02b92650962019392f06c5be`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/E4-17.md`
+- **Historical capsule SHA-256:** `ade7b4622f4087660f3f6265ceb75a3bc7e1da3d04c4e133d030b2a2ee125970`
+
+### GH-132-P1 - Establish semantic color foundation
+
+- **ID:** `GH-132-P1`
+- **Title:** Establish semantic color foundation
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 9108a7cb03783cfe8cac35da9f621bef6907b635
+- **Task branch:** gh-132-p1-semantic-color-foundation
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `1aa69dcff3ff6b5e6641ad9f7215ac3eb3be146f`, `d16d97edaf459c9754c4e58b4c6a478ddcb62c73`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 1aa69dcff3ff6b5e6641ad9f7215ac3eb3be146f
+- **Reviewed task/checkpoint commit(s):** `f953b9e8c8c0f48aa094aff078c5546d6b9e85ad`
+- **Integration/merged commit:** f953b9e8c8c0f48aa094aff078c5546d6b9e85ad
+- **Integration-related commit reference(s):** `1aa69dcff3ff6b5e6641ad9f7215ac3eb3be146f`, `f953b9e8c8c0f48aa094aff078c5546d6b9e85ad`
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** APPROVED
+- **Verification summary:** MERGED — all seven acceptance criteria were independently verified and review disposition is APPROVED. The exact reviewed checkpoint was fast-forwarded to `origin/main`; default-branch focused theme tests pass 15/15, mobile TypeScript passes, project audit passes with 48/48 focused audit-tooling tests, and implementation objects remain unchanged.
+- **Specialized qualification:** Not applicable — token-only foundation produces no visible UI change.
+- **Known warnings:** 19 existing hard-coded colors in five OCR/runtime/transfer files are classified and outside P1.
+- **Deferred work/follow-up IDs:** GH-132 later slices — navigation/feature identity application, History/nutrition visualization, non-color chart selection treatment, and physical light/dark/accessibility qualification.
+- **Retrospective:** no — evaluate after the full GH-132 visual system rather than token foundation alone.
+- **Referenced commits:** `9108a7cb03783cfe8cac35da9f621bef6907b635`, `f4006265e4c9d1bea4c102214d751c062c68b8c7`, `4b3a0fe5e17deeeb283dc83d76def2c9b25ee93f`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `1ee8554909e5fc2d1e7debae22e011a092665a73`, `1aa69dcff3ff6b5e6641ad9f7215ac3eb3be146f`, `2d99bc6de96a629b3d1433d015b48c05295a0af7`, `d16d97edaf459c9754c4e58b4c6a478ddcb62c73`, `f953b9e8c8c0f48aa094aff078c5546d6b9e85ad`, `ac4dd0c5ce734e905553d5d453db17c32cc2f4be`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P1.md`
+- **Historical capsule SHA-256:** `e644f2ae04dc6bdfc02b45a3e9aff1431ff8fbfea3a879345d71a41d0cd8bb4f`
+
+### GH-132-P2 - Apply semantic feature identity to bottom navigation
+
+- **ID:** `GH-132-P2`
+- **Title:** Apply semantic feature identity to bottom navigation
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 7d951633046affb30268c343b530151490d2ba28
+- **Task branch:** gh-132-p2-navigation-feature-identity
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `0ef8a2ac6c18c573717d434474f6dfd8b2f8f52d`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — P2 was cancelled during mandatory physical qualification before VERIFIED or formal review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — the rejected navigation implementation was not integrated into default branch.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — physical qualification rejected the semantic design before formal review.
+- **Verification summary:** CANCELLED — mechanical implementation qualification passed, but mandatory physical review rejected feature-specific navigation hues as redundant. Successor GH-132-P2R1 will use the Daily Log blue selected treatment for all three destinations.
+- **Specialized qualification:** FAIL — the feature-specific navigation colors rendered correctly, but the human owner rejected their semantics. Navigation selection already has sufficient highlight/non-color cues; all selected tabs should share the Daily Log blue treatment.
+- **Known warnings:** No implementation defect was identified. The failure is design-semantic: the rejected P2 branch must not be merged. P1 palette values remain valid and unchanged.
+- **Deferred work/follow-up IDs:** GH-132-P2R1 — universal Daily Log blue selected-navigation treatment; subsequent GH-132 discovery will apply semantic colors only where co-present information benefits from differentiation.
+- **Retrospective:** no — evaluate after the full GH-132 visual system.
+- **Referenced commits:** `7d951633046affb30268c343b530151490d2ba28`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `93d63925d42ed3ec596a89764dd31395a5a25660`, `99e5e62247aa9cbd3d075622bbf7ee297e18eeec`, `a9a9fb59cc5c39c41e4d1a2db7e2f3c0cbc60dc6`, `1ee8554909e5fc2d1e7debae22e011a092665a73`, `2e1072d3fd065d9a482e7ef5e0ef8facfd645378`, `c0fec6df4f33d3b519a48b70e931f2a7ceba4abc`, `d6a10ba6a2d7050df9cc82fe78073f99068d559c`, `0ef8a2ac6c18c573717d434474f6dfd8b2f8f52d`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P2.md`
+- **Historical capsule SHA-256:** `82114e98fd2aa1bce1d5720ea40a8ea09d791d13e4bfd6945c450e55a3177efe`
+
+### GH-132-P2R1 - Use one universal blue selected-navigation treatment
+
+- **ID:** `GH-132-P2R1`
+- **Title:** Use one universal blue selected-navigation treatment
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** dc97e3985f3ecf3980e15accdd94221fde38288a
+- **Task branch:** gh-132-p2r1-universal-selected-navigation
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `b3b190b454f21fabe38b98454236b23e553aefde`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** b3b190b454f21fabe38b98454236b23e553aefde
+- **Reviewed task/checkpoint commit(s):** `9c213523ca6053b9110f547eafff51bead23257b`, `6e64b9d9740f21d3d064b9c6a68182a1d2bd6c70`, `5d31b98f0f0cff8850e1ac0b7edc73494680f9ad`, `b3b190b454f21fabe38b98454236b23e553aefde`
+- **Integration/merged commit:** 9c213523ca6053b9110f547eafff51bead23257b
+- **Integration-related commit reference(s):** `b3b190b454f21fabe38b98454236b23e553aefde`, `9c213523ca6053b9110f547eafff51bead23257b`
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** APPROVED
+- **Verification summary:** MERGED and default-branch qualified — exact integration `9c213523ca6053b9110f547eafff51bead23257b` / tree `6e64b9d9740f21d3d064b9c6a68182a1d2bd6c70` preserves the reviewed tree and qualified navigation source/test objects. All seven required GitHub checks passed on that exact SHA: Analyze (actions) `97074002974`, Analyze (javascript-typescript) `97074002777`, Analyze (python) `97074002960`, Backend PostgreSQL 16 contracts `97074001218`, Backend baseline `97074001070`, Mobile baseline `97074001178`, and Repository validation `97074001257`. Frozen check evidence SHA-256 is `f3bc73759f7cf0cd469d7b1d1c4551f81750dbfe68066933eb6e1fa74e029654` and check summary SHA-256 is `2712df071935fb78bf47770f3a5763033a61e3ca628bab1bb0e31161ee011866`.
+- **Specialized qualification:** PASS — human physical iPhone-sized review accepted the universal blue selected treatment for Foods, Daily Log, and Recipes before integration; the exact reviewed implementation objects are preserved on default branch.
+- **Known warnings:** None identified for P2R1 during mechanical qualification, physical qualification, review, integration, or exact-SHA default-branch qualification.
+- **Deferred work/follow-up IDs:** GH-132 subsequent main-surface and History/nutrition visualization slices.
+- **Retrospective:** no — evaluate after the complete GH-132 visual system.
+- **Referenced commits:** `dc97e3985f3ecf3980e15accdd94221fde38288a`, `99e5e62247aa9cbd3d075622bbf7ee297e18eeec`, `a9a9fb59cc5c39c41e4d1a2db7e2f3c0cbc60dc6`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `f238f437674b5d3a7bef87d0c9b7b346f03b41e5`, `a9acd561f52433a4423d00ffc1700deb64141adc`, `fb082e25a3609c80b733e4569687663f37110c5b`, `10f867fdac59dbf5f2dd323ab515c8ab4f238c3e`, `b3b190b454f21fabe38b98454236b23e553aefde`, `8ce4211c846d425bec6f4bb9d41f776b828a9d23`, `9c213523ca6053b9110f547eafff51bead23257b`, `6e64b9d9740f21d3d064b9c6a68182a1d2bd6c70`, `5d31b98f0f0cff8850e1ac0b7edc73494680f9ad`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P2R1.md`
+- **Historical capsule SHA-256:** `622e3d4f494f5037a288871b01d194e208aa36464acea99fb9b87fce9fc4512a`
+
+### GH-132-P3 - Differentiate History nutrition series and selected dates
+
+- **ID:** `GH-132-P3`
+- **Title:** Differentiate History nutrition series and selected dates
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 43e3640edb4f3ac3c9ffa447bfae227b89e967fd
+- **Task branch:** gh-132-p3-history-nutrition-series
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — P3 was cancelled during mandatory physical qualification before VERIFIED or formal review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — P3 is not independently integrated; its accepted semantic-series implementation is retained only as the predecessor/base for GH-132-P3R1.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — physical qualification requested a bounded selected-date design correction before formal review.
+- **Verification summary:** CANCELLED — all mechanical qualification passed and the semantic-series treatment passed physical light/dark review, but the selected-date circular marker was rejected as too small/subtle for phone-scale use.
+- **Specialized qualification:** FAIL — series identity, light/dark contrast, focused arbitrary-nutrient treatment, 7/30-day behavior, and existing chart semantics passed. The 3-point circular selected-date marker did not meet the desired physical affordance and is replaced by GH-132-P3R1.
+- **Known warnings:** No P3 production/data defect was identified. The correction is visual-affordance-only. The previously recorded single repository-audit migration warning remains nonblocking and unrelated.
+- **Deferred work/follow-up IDs:** GH-132-P3R1 — strengthen the History selected-date affordance while preserving the accepted P3 semantic-series implementation.
+- **Retrospective:** no — evaluate after the complete GH-132 semantic-color system.
+- **Referenced commits:** `43e3640edb4f3ac3c9ffa447bfae227b89e967fd`, `fbc92e0dac1331b9af1fe76536d628525cd22fc1`, `05ce23cc39b95c1f4ec8c5380a810b8b34cf8a75`, `923e540ed7ce59a7a31cc963d2644ff7b915ab34`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `2ecd0a5416df46376af188d06ebd546a0497065f`, `4ed827a8c508b61f5bdc9d0ae4133c8bd5f8232a`, `87f14677409440f9fe3a14a84da74fbc6b01caf8`, `1f89ab8c406bbfe898afa383d112c091c0e25cec`, `8bd78572305422be32e001c95f02671f8a2cea0b`, `cdcbe9b1592cda8c664dbfc9cfcf018b608f7d91`, `27c824403399a82b852ee8c086c46f959f200aaf`, `37366072d58b2bf79bd3c22600afa6c92db2ba3b`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P3.md`
+- **Historical capsule SHA-256:** `11dfd2988f37198e4e81d94c098e636f793ae06dc67275e2122d7f7f05205ec8`
+
+### GH-132-P3R1 - Strengthen History selected-date affordance
+
+- **ID:** `GH-132-P3R1`
+- **Title:** Strengthen History selected-date affordance
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 60f457afef0fffa3c848fca8c15795ee18790dfc
+- **Task branch:** gh-132-p3r1-history-selection-affordance
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `21e61a64fca77a6ac4d3af2afff75134f01826a6`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 21e61a64fca77a6ac4d3af2afff75134f01826a6
+- **Reviewed task/checkpoint commit(s):** `10806873b533a5aed5adc1924287afda6abc7a5f`, `324026a3c566aae94209eeaa5d9e850d737589cf`, `fb499f1641d968b822349b5d65e2f4b0b03d6f21`
+- **Integration/merged commit:** 10806873b533a5aed5adc1924287afda6abc7a5f
+- **Integration-related commit reference(s):** `21e61a64fca77a6ac4d3af2afff75134f01826a6`, `10806873b533a5aed5adc1924287afda6abc7a5f`
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** APPROVED
+- **Verification summary:** MERGED and default-branch qualified — exact integration `10806873b533a5aed5adc1924287afda6abc7a5f` / tree `324026a3c566aae94209eeaa5d9e850d737589cf` preserves the reviewed tree and qualified History source/test objects. All seven required GitHub checks passed on that exact integration SHA. Frozen check summary SHA-256 is `2ba6a4aa2f9c7e0af0cc9bf4e61b756b7fb62ccc3426c978706f607d103978cc` and check-run JSON SHA-256 is `cc29c402c53ef399909ba52a23c056587112366fa95d95974c326bff3d432ff8`.
+- **Specialized qualification:** PASS — human physical review accepted the stronger selected-date treatment in light and dark appearance, including numeric, explicit-zero, gap/unavailable, focused nutrient, 7-day, and 30-day behavior.
+- **Known warnings:** Repository pre-commit audit passed with 1 WARN line(s); any warning is preserved in `/Users/mipoo/nutrition-app-task-output/GH-132-P3R1-implementation-20260822-131551/project-audit.log` and is not classified as a P3R1 product failure.
+- **Deferred work/follow-up IDs:** Later GH-132 semantic-color slices after P3R1.
+- **Retrospective:** no — evaluate after the complete GH-132 semantic-color system.
+- **Referenced commits:** `60f457afef0fffa3c848fca8c15795ee18790dfc`, `8bd78572305422be32e001c95f02671f8a2cea0b`, `cdcbe9b1592cda8c664dbfc9cfcf018b608f7d91`, `27c824403399a82b852ee8c086c46f959f200aaf`, `923e540ed7ce59a7a31cc963d2644ff7b915ab34`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `4ed827a8c508b61f5bdc9d0ae4133c8bd5f8232a`, `31b9a7787ac852e7c384839e59dc524d8b4d980b`, `d3834299c7777c29c7ac24a4c10e460ef5c7fe60`, `e09b94f65e712b3a692f88d57951bda9e1f3251d`, `664f2a275f01c5e25ee8a50b4a374c78703bfd48`, `4f85eb0877a810c882674d1c9635c5d3e7a4e72c`, `21e61a64fca77a6ac4d3af2afff75134f01826a6`, `6e21c428f2b671267413c9ed354b9b2012116977`, `10806873b533a5aed5adc1924287afda6abc7a5f`, `324026a3c566aae94209eeaa5d9e850d737589cf`, `fb499f1641d968b822349b5d65e2f4b0b03d6f21`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P3R1.md`
+- **Historical capsule SHA-256:** `5ef0293bff64b1fed897ba29eb538b13049c159ebde11e3c8af6ddc34c705a5e`
+
+### GH-132-P4 - Clarify focused History reference crossings
+
+- **ID:** `GH-132-P4`
+- **Title:** Clarify focused History reference crossings
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** be2ab37733e202d85864f3ad2fa533a1c1e92b90
+- **Task branch:** gh-132-p4-history-reference-crossing
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — P4 was cancelled during mandatory physical qualification before VERIFIED or formal review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — P4 is not independently integrated; its mechanically qualified implementation is retained as the predecessor/base for GH-132-P4R1.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — physical qualification requested a bounded caret-placement correction before formal review.
+- **Verification summary:** CANCELLED — all seven P4 acceptance criteria have mechanical evidence and the crossing semantics/text were accepted physically, but the reference-line-centered caret placement was rejected because near-reference columns can make the cue appear visually detached.
+- **Specialized qualification:** FAIL — neutral strict-crossing semantics, exact delta text, reference treatment, selected-bar behavior, and general chart behavior were accepted. Caret placement failed physical review. GH-132-P4R1 will anchor the caret apex directly to the rendered numeric bar top.
+- **Known warnings:** No P4 nutrition, target, data, accessibility, or runtime defect was identified. The correction is presentation-placement-only. The previously recorded repository-audit migration warning remains nonblocking and unrelated.
+- **Deferred work/follow-up IDs:** GH-132-P4R1 — anchor the focused History strict-crossing caret to the exact rendered bar top while preserving accepted P4 semantics and geometry.
+- **Retrospective:** no — evaluate after the complete GH-132 visual system.
+- **Referenced commits:** `be2ab37733e202d85864f3ad2fa533a1c1e92b90`, `69ad50eca7aca12f8821f57315ce27bc7d48ed84`, `e09b94f65e712b3a692f88d57951bda9e1f3251d`, `664f2a275f01c5e25ee8a50b4a374c78703bfd48`, `dd96fe3c64c576ea9569ed69fd30c3a9bd7e3bdc`, `4f85eb0877a810c882674d1c9635c5d3e7a4e72c`, `4ed827a8c508b61f5bdc9d0ae4133c8bd5f8232a`, `3fc6b13b70c6f943b1798d128c21a42c81b93cbd`, `66948aa2a88ef9c73bbe9ff4c9378b2de0092325`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `923e540ed7ce59a7a31cc963d2644ff7b915ab34`, `a43732138593426dd6cf7fb0e958ad5d9293d7ce`, `19f9a2bc94113378e75086393d65109f246bdcf1`, `1955638cf434fa5c5cb4509bf6cb24807f4f6a67`, `930b6f370785d0ef8fb031a679fbf10d3eaef4e3`, `d306bd014d3921607d341fc8bec21b12dc91269f`, `a7561dfaed90e88ca1b5308fa98c6e97a68254ac`, `826a964cea2ff72c56179b20c55f898c487deed0`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P4.md`
+- **Historical capsule SHA-256:** `ddff357aa7cc15d9e315e6651dee1a6fd6833dda2dd7f4e4b22fe7bd1f0aaa32`
+
+### GH-132-P4R1 - Anchor History crossing caret to bar top
+
+- **ID:** `GH-132-P4R1`
+- **Title:** Anchor History crossing caret to bar top
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 78c8e31a9e3d8d68f91a71c0e7870d0b306415d1
+- **Task branch:** gh-132-p4r1-history-caret-anchor
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — P4R1 was cancelled during mandatory physical qualification before VERIFIED or formal review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — P4R1 is not independently integrated; its accepted bar-top placement is retained as the predecessor/base for GH-132-P4R2.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — physical qualification requested a bounded caret-contrast correction before formal review.
+- **Verification summary:** CANCELLED — all six P4R1 acceptance criteria have mechanical evidence and the bar-top placement passed physical review, but caret contrast against blue bars did not.
+- **Specialized qualification:** FAIL — bar-top anchoring, selected and unselected placement, strict-crossing behavior, exact text, reference treatment, and chart interactions passed. Caret contrast against blue bars was insufficient and moves to GH-132-P4R2.
+- **Known warnings:** No P4R1 geometry, nutrition, target, data, accessibility, or runtime defect was identified. The successor is caret-stroke-contrast-only. The existing unrelated repository-audit migration warning remains nonblocking.
+- **Deferred work/follow-up IDs:** GH-132-P4R2 — preserve the exact accepted P4R1 caret geometry while increasing local contrast on both selected and unselected numeric bars.
+- **Retrospective:** no — evaluate after the complete GH-132 visual system.
+- **Referenced commits:** `78c8e31a9e3d8d68f91a71c0e7870d0b306415d1`, `a7bd3900987f6833bcecc9deaaf6e53f20a2d10d`, `19f9a2bc94113378e75086393d65109f246bdcf1`, `d306bd014d3921607d341fc8bec21b12dc91269f`, `1955638cf434fa5c5cb4509bf6cb24807f4f6a67`, `930b6f370785d0ef8fb031a679fbf10d3eaef4e3`, `a7561dfaed90e88ca1b5308fa98c6e97a68254ac`, `3fc6b13b70c6f943b1798d128c21a42c81b93cbd`, `66948aa2a88ef9c73bbe9ff4c9378b2de0092325`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `923e540ed7ce59a7a31cc963d2644ff7b915ab34`, `21651d36d239dd72cbb3047b638d80fbebd4dae8`, `5d657d4cc7c0014b7f67cfa3daf7d29983af83b3`, `e6831faabb75596aba1fd9fe01b8363fab0a43b3`, `d12d73ff60dfe8086b7fba04e8301e756c09da0c`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P4R1.md`
+- **Historical capsule SHA-256:** `815ec287a660f296cd5e652812d1cedba700031ad261d2bc2bc9b2e6c6873d04`
+
+### GH-132-P4R2 - Increase History crossing-caret contrast
+
+- **ID:** `GH-132-P4R2`
+- **Title:** Increase History crossing-caret contrast
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 8925b7bf42c7c0c3d029f7c7dbc965e86ded0704
+- **Task branch:** gh-132-p4r2-history-caret-contrast
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — P4R2 was cancelled during mandatory physical qualification before VERIFIED or formal review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — P4R2 is not independently integrated; its accepted unselected contrast treatment and P4R1 geometry are retained as the predecessor/base for GH-132-P4R3.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — physical qualification requested a bounded selected-caret contrast correction before formal review.
+- **Verification summary:** CANCELLED — all six P4R2 acceptance criteria have mechanical evidence. Physical review accepted unselected crossing contrast and all frozen geometry, but selected crossing contrast remained insufficient.
+- **Specialized qualification:** FAIL — unselected blue crossing bars are now legible and caret placement remains correct. The selected crossing still lacks sufficient visual separation because its inner `selectionColor` stroke merges into the selected fill.
+- **Known warnings:** No P4R2 crossing, geometry, target, data, accessibility, or runtime defect was identified. GH-132-P4R3 is selected-caret-contrast-only. The existing unrelated repository-audit migration warning remains nonblocking.
+- **Deferred work/follow-up IDs:** GH-132-P4R3 — retain P4R2 unselected contrast and use the existing neutral reference-line color for the selected caret's inner stroke.
+- **Retrospective:** no — evaluate after the complete GH-132 visual system.
+- **Referenced commits:** `8925b7bf42c7c0c3d029f7c7dbc965e86ded0704`, `50c17835384bf9f71cab05607778cb2019939f57`, `5d657d4cc7c0014b7f67cfa3daf7d29983af83b3`, `e6831faabb75596aba1fd9fe01b8363fab0a43b3`, `1955638cf434fa5c5cb4509bf6cb24807f4f6a67`, `930b6f370785d0ef8fb031a679fbf10d3eaef4e3`, `a7561dfaed90e88ca1b5308fa98c6e97a68254ac`, `3fc6b13b70c6f943b1798d128c21a42c81b93cbd`, `66948aa2a88ef9c73bbe9ff4c9378b2de0092325`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `923e540ed7ce59a7a31cc963d2644ff7b915ab34`, `2554fe0629a205e93b10e95bc3c9363d246beb75`, `7fea76bdb57a365ed4c7664cbac15a708d05757d`, `d4f4b74754af3a52471beca7a431fb836014d30f`, `6a601cd28cbe205b2d937a9bb9953d6f76cfb0e2`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P4R2.md`
+- **Historical capsule SHA-256:** `15366b222c443c9f81f5fa9a5d99a59e8281025346de25c7fc3c3833643f520a`
+
+### GH-132-P4R3 - Clarify selected History crossing caret
+
+- **ID:** `GH-132-P4R3`
+- **Title:** Clarify selected History crossing caret
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** b0c7c5d49e83a835da7e37a3e28c50b811cc23f0
+- **Task branch:** gh-132-p4r3-selected-caret-contrast
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 00eae3353f2040be0458fff0a2fb3dd482bf18db
+- **Reviewed task/checkpoint commit(s):** `91e761b72f2af709a761a0b93b0fc2ed9e375549`, `ec520de5ef5595fe5cef1df402059a2a6823125f`, `4b800e9bccc372d60ae6ffa4338051d532b847e9`, `00eae3353f2040be0458fff0a2fb3dd482bf18db`
+- **Integration/merged commit:** 91e761b72f2af709a761a0b93b0fc2ed9e375549
+- **Integration-related commit reference(s):** `00eae3353f2040be0458fff0a2fb3dd482bf18db`, `91e761b72f2af709a761a0b93b0fc2ed9e375549`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED
+- **Verification summary:** MERGED and default-branch qualified — exact integration `91e761b72f2af709a761a0b93b0fc2ed9e375549` / tree `ec520de5ef5595fe5cef1df402059a2a6823125f` preserves the reviewed tree and qualified History source/test objects. All seven required GitHub checks passed on that exact integration SHA. Frozen check summary SHA-256 is `c298aa52c26c259b995179d11e726eefb05cad087edb189dc3b99a95c81a6ce7` and check-run JSON SHA-256 is `1b6382001ba08bcdd60e254160b030c5d0ce3cf682b3550e5d1b298e66221690`.
+- **Specialized qualification:** PASS — human native review accepted the final caret placement and contrast. Unselected crossings remain clear; selected crossings retain a distinct neutral inner stroke; the caret remains anchored to the bar top and visually separate from the selected bar outline.
+- **Known warnings:** Repository pre-commit audit passed with 1 WARN line(s); audit evidence is preserved at `/Users/mipoo/nutrition-app-task-output/GH-132-P4R3-recovery-20260822-145555/project-audit.log`. No warning is classified as a P4R3 product failure.
+- **Deferred work/follow-up IDs:** Later GH-132 polish slices, if any, after P4R3 qualification.
+- **Retrospective:** no — evaluate after the complete GH-132 visual system.
+- **Referenced commits:** `b0c7c5d49e83a835da7e37a3e28c50b811cc23f0`, `99484552070d221f3377994394ec8b64c24ff4ab`, `7fea76bdb57a365ed4c7664cbac15a708d05757d`, `d4f4b74754af3a52471beca7a431fb836014d30f`, `1955638cf434fa5c5cb4509bf6cb24807f4f6a67`, `930b6f370785d0ef8fb031a679fbf10d3eaef4e3`, `a7561dfaed90e88ca1b5308fa98c6e97a68254ac`, `3fc6b13b70c6f943b1798d128c21a42c81b93cbd`, `66948aa2a88ef9c73bbe9ff4c9378b2de0092325`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `923e540ed7ce59a7a31cc963d2644ff7b915ab34`, `4979b66a7914c2349aff36da85341b933fe643a2`, `3493dfa13e1527fd01b09337f6a8c0b64cb044ed`, `51b6b1afd14eb370054ed50de19794d9d88493c2`, `00eae3353f2040be0458fff0a2fb3dd482bf18db`, `c96781f2ca4362a6d1895c43ee439b67a96b254d`, `91e761b72f2af709a761a0b93b0fc2ed9e375549`, `ec520de5ef5595fe5cef1df402059a2a6823125f`, `4b800e9bccc372d60ae6ffa4338051d532b847e9`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P4R3.md`
+- **Historical capsule SHA-256:** `af66b3453a0f066b304faffeaae9a0613dcb128eba32ad15d642b99056efb6d2`
+
+### GH-132-P5 - Differentiate Daily Log compact nutrient categories
+
+- **ID:** `GH-132-P5`
+- **Title:** Differentiate Daily Log compact nutrient categories
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 1bbf22831b178076d420fb48a4079ac3005a3b3e
+- **Task branch:** gh-132-p5-daily-log-nutrient-markers
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** b1793896305cf53f3b56fff30ed5084a8b7b9360
+- **Reviewed task/checkpoint commit(s):** `768d8af7d1c9ffa331933a8fe6f1761ccad1d2e6`, `ee5baebd3c00e074a6af20dc37178c42be27da27`, `c03753e577217c19b2b0dd2b48f282f23906e1fd`, `b1793896305cf53f3b56fff30ed5084a8b7b9360`
+- **Integration/merged commit:** 768d8af7d1c9ffa331933a8fe6f1761ccad1d2e6
+- **Integration-related commit reference(s):** `b1793896305cf53f3b56fff30ed5084a8b7b9360`, `768d8af7d1c9ffa331933a8fe6f1761ccad1d2e6`
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** APPROVED
+- **Verification summary:** MERGED and default-branch qualified — exact integration `768d8af7d1c9ffa331933a8fe6f1761ccad1d2e6` / tree `ee5baebd3c00e074a6af20dc37178c42be27da27` preserves the reviewed tree and qualified Daily Log source/test objects. All seven required GitHub checks passed on that exact integration SHA. Frozen check summary SHA-256 is `0b80125b740802b13fe6370ccc164ba90e543caea35265837ba9f9b129a9f5ea` and check-run JSON SHA-256 is `bff686a78aea9c45efdd7b99a34532e02e83cd6a25a94c2efd19b86123482399`.
+- **Specialized qualification:** PASS — human owner accepted light mode, dark mode, populated-date, and empty-date category-marker treatment on exact implementation `b1793896305cf53f3b56fff30ed5084a8b7b9360`.
+- **Known warnings:** Project audit retained one pre-existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning unrelated to P5. No P5 physical qualification warning remains.
+- **Deferred work/follow-up IDs:** remaining GH-132 consumers outside P5
+- **Retrospective:** no — bounded low-risk presentation slice
+- **Referenced commits:** `1bbf22831b178076d420fb48a4079ac3005a3b3e`, `408e20da296ee46cbfabae260eaefab8ca027564`, `09f33097e60d19977ca4e3bf54ff577efd6d4b9d`, `6c0624340d39bcc1e6b5dcdabd3530b394621ba1`, `f071054362ab3d15ec8458e851ea72e2374ebf27`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `1ee8554909e5fc2d1e7debae22e011a092665a73`, `40dd89f11dd61930e56519b7c91ca86fbc3dad42`, `8e0811c7ed0ee529d0323f23a8029845fb514293`, `1f38ab16055d73101724ec27978dae9733ed2e27`, `077092f8d51509a2b3623da8744d31ee839e72f8`, `3ff2d44199e94fe53168301475ed43c94675b605`, `b1793896305cf53f3b56fff30ed5084a8b7b9360`, `ef8aa2080e0390501970fb05dddd95d058cab988`, `768d8af7d1c9ffa331933a8fe6f1761ccad1d2e6`, `ee5baebd3c00e074a6af20dc37178c42be27da27`, `c03753e577217c19b2b0dd2b48f282f23906e1fd`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P5.md`
+- **Historical capsule SHA-256:** `4de6ff5422eebcc4ea25fa15ca3fe5c1a25cf4c16271e0cc72af8784e0f2a1f5`
+
+### GH-132-P6 - Differentiate persisted Food and Recipe identities in Saved Foods
+
+- **ID:** `GH-132-P6`
+- **Title:** Differentiate persisted Food and Recipe identities in Saved Foods
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/132
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** bc55fde726a40fbc925dbed991c3c035285861d0
+- **Task branch:** gh-132-p6-saved-food-identity-badges
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `e469eb48d2933937c6293690ca3ecf88e1f77160`, `68b522c4cad041aa8b16e8433efe66998e917b31`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** e469eb48d2933937c6293690ca3ecf88e1f77160
+- **Reviewed task/checkpoint commit(s):** `f40aa6dd23a11be0b785ba52af916a86a1c32d9b`, `7853a99f9ecb017d02dc6f33b0023a320ec572ad`, `bc55fde726a40fbc925dbed991c3c035285861d0`, `30d67782a8c141027414e7ac466f7ab332439de8`, `e469eb48d2933937c6293690ca3ecf88e1f77160`
+- **Integration/merged commit:** f40aa6dd23a11be0b785ba52af916a86a1c32d9b
+- **Integration-related commit reference(s):** `e469eb48d2933937c6293690ca3ecf88e1f77160`, `f40aa6dd23a11be0b785ba52af916a86a1c32d9b`
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** APPROVED
+- **Verification summary:** MERGED and default-branch qualified — exact integration `f40aa6dd23a11be0b785ba52af916a86a1c32d9b` / tree `7853a99f9ecb017d02dc6f33b0023a320ec572ad` preserves reviewed checkpoint `30d67782a8c141027414e7ac466f7ab332439de8`, reviewed implementation `e469eb48d2933937c6293690ca3ecf88e1f77160`, production blob `0fe4e295ee807b2e0959ca4b61b4ba7c0fc8e140`, and direct-test blob `f7564f863bb6678c1276eca0f42c030edcdfa1d6`. All seven required GitHub checks passed on that exact integration SHA. Frozen check summary SHA-256 is `92f6900bfde5aa80754d20649a903bd57350c83fe5ca364c3d6385352230f0d5` and check-run JSON SHA-256 is `1f509fb8e5ab90dbc7f9ee46287c387ae80724f2ee899dc9f27c067aa4cc5f7b`.
+- **Specialized qualification:** PASS — human owner accepted the iPhone-sized Saved Foods identity treatment in light and dark appearance. Food and Recipe identities remain legible and subordinate; all three persisted contexts are consistent; metadata hierarchy remains intact; USDA reference results remain neutral; and the treatment conveys category identity rather than status, quality, adherence, warning, success, or failure.
+- **Known warnings:** Project audit retained the pre-existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning unrelated to P6. Long-title wrapping is accepted P6 behavior, not a P6 warning or defect.
+- **Deferred work/follow-up IDs:** GH-132 post-P6 remaining-scope audit; no P6 corrective follow-up. A separate future UX issue may be created if a Saved Foods title-length/truncation policy is desired.
+- **Retrospective:** no — evaluate after the full GH-132 visual system.
+- **Referenced commits:** `bc55fde726a40fbc925dbed991c3c035285861d0`, `b7a4b48940de061b23e9fca36ed61fefe2ab87b9`, `a088b0772f5d51c4757e4c89f7f13da06525424d`, `cc09fbafb4a1162044b572eaeeeb0a211a97097c`, `4317e7a7b20f7d8fa413dba5fffc7ff2792920da`, `b46d505aa1d17f29d7a709b1009abc52c10b66f7`, `8cc83b981688013e6d5fc9864f624f1ae7b290aa`, `f0612836776d6322fd6901f2334dadcb0c376679`, `0fe4e295ee807b2e0959ca4b61b4ba7c0fc8e140`, `f7564f863bb6678c1276eca0f42c030edcdfa1d6`, `e469eb48d2933937c6293690ca3ecf88e1f77160`, `68b522c4cad041aa8b16e8433efe66998e917b31`, `f40aa6dd23a11be0b785ba52af916a86a1c32d9b`, `7853a99f9ecb017d02dc6f33b0023a320ec572ad`, `30d67782a8c141027414e7ac466f7ab332439de8`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-132-P6.md`
+- **Historical capsule SHA-256:** `0ff3fc2673d03cef73b155b8f4d2c09c01eaa2062df1a2c628d73effb417592a`
+
+### GH-136 - Qualify nutrition_qualifier read access to Daily Log Complete state
+
+- **ID:** `GH-136`
+- **Title:** Qualify nutrition_qualifier read access to Daily Log Complete state
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** correction
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/136
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 011fd122af75146f1fe3ff034a02cd341b0f16a7
+- **Task branch:** issue-136-qualifier-complete-read
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `32373a7fad9b917d669b18d9682547c5b9e35efe`, `1fb5f0eb7b63544bec0a462dd40ee3487a8dcf92`, `f8dab2d8ab421fbab333958f18847c1a3062b958`, `8fd31729ac456fac75236a16125d07e18d66340c`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 1fb5f0eb7b63544bec0a462dd40ee3487a8dcf92
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 32373a7fad9b917d669b18d9682547c5b9e35efe
+- **Integration-related commit reference(s):** `1fb5f0eb7b63544bec0a462dd40ee3487a8dcf92`, `32373a7fad9b917d669b18d9682547c5b9e35efe`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** PASS — exact implementation commit `1fb5f0eb7b63544bec0a462dd40ee3487a8dcf92`; 13/13 baseline checks; backend 1721 passed / 462 documented opt-in deselected; mobile 1648 passed / 1 skipped; docs 114 files / 555 links; session-end focused tooling 43/43; stable repository fingerprint `d80c4bc204f4682e831e827b1a8160c3b120c1f20edc25d0ee81f647c19ebf49`; bundle `nutrition-app-gh-136-r3-20260819-222730.zip`.
+- **Specialized qualification:** PASS — disposable PostgreSQL 16 proved explicit `nutrition_qualifier` SELECT on `daily_log_day_completions`, no write/schema/ownership widening, retained read-only settings and role topology, exact ACL delta, repeat-upgrade safety, downgrade removal, and re-upgrade restoration.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation and existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository warning. Initial unfiltered review exposed pre-existing opt-in Phase 5C/performance/0019 failures; R2 had a marker-expression quoting error with zero affected tests collected; R3 passed the documented ordinary baseline.
+- **Deferred work/follow-up IDs:** E4-15 / #128 may resume from its preserved checkpoint; the required post-integration source-authority reprobe passed on integrated main.
+- **Retrospective:** no — bounded prerequisite correction unless execution exposes a reusable workflow lesson
+- **Referenced commits:** `011fd122af75146f1fe3ff034a02cd341b0f16a7`, `32373a7fad9b917d669b18d9682547c5b9e35efe`, `1fb5f0eb7b63544bec0a462dd40ee3487a8dcf92`, `f8dab2d8ab421fbab333958f18847c1a3062b958`, `8fd31729ac456fac75236a16125d07e18d66340c`, `4004fea6a093c1f3893ebac52b03b0e1641ccb83`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-136.md`
+- **Historical capsule SHA-256:** `9c89f139248a816efea93e4ace2713ba32ef2d8c78b99193954c9a38ae835e34`
+
+### GH-137 - Prevent project shutdown from signaling recycled PIDs
+
+- **ID:** `GH-137`
+- **Title:** Prevent project shutdown from signaling recycled PIDs
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/137
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 1185d3d94d6cbfcf498fe53004881870f9318274
+- **Task branch:** gh-137-safe-process-identity
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** `239082530feda3cdb77e276bfaee97cb549d800b`, `04f0b66509f6d086c6bdaa11aace46390c7525f9`, `f1a98967da426305ff7ca7a2e764ef91a6a862d1`
+- **Reviewed source commit:** 239082530feda3cdb77e276bfaee97cb549d800b
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** cd1129d34e90bd9c022e5beec22a7fffdb5a8e3c
+- **Integration-related commit reference(s):** `239082530feda3cdb77e276bfaee97cb549d800b`, `cd1129d34e90bd9c022e5beec22a7fffdb5a8e3c`, `04f0b66509f6d086c6bdaa11aace46390c7525f9`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS. Exact implementation `239082530feda3cdb77e276bfaee97cb549d800b` / tree `04f0b66509f6d086c6bdaa11aace46390c7525f9` was independently reviewed, verified, and squash-integrated as `cd1129d34e90bd9c022e5beec22a7fffdb5a8e3c` with reviewed tree `1c69dd4ff111d4108bc7f399a4a563c1f58fb01f` preserved exactly. Default-branch CI run `32440575324` subsequently passed all four required jobs.
+- **Verification summary:** VERIFIED and MERGED — exact implementation `239082530feda3cdb77e276bfaee97cb549d800b` passed all 14 focused process-lifecycle tests and the canonical backend review from a clean worktree; macOS disposable-process qualification passed; independent review found no blocking findings; integration `cd1129d34e90bd9c022e5beec22a7fffdb5a8e3c` preserved reviewed tree `1c69dd4ff111d4108bc7f399a4a563c1f58fb01f` exactly; and default-branch GitHub Actions run `32440575324` passed all four required jobs.
+- **Specialized qualification:** PASS — supported macOS `ps` start/parent/command identity was stable and non-empty for disposable processes; graceful, forced, mismatch-refusal, and descendant shutdown qualification passed. Default-branch CI run `32440575324` subsequently passed.
+- **Known warnings:** Existing unrelated repository/toolchain and Dependabot warnings remain outside GH-137. Independent review additionally notes that macOS `ps lstart` provides second-resolution start identity and userspace identity-check-to-signal sequencing retains a narrow theoretical TOCTOU window; combined PID/start/command verification and immediate signal-path revalidation satisfy the scoped GH-137 contract.
+- **Deferred work/follow-up IDs:** None currently.
+- **Retrospective:** no — bounded local-tooling safety correction unless execution exposes a broader lifecycle contract defect.
+- **Referenced commits:** `1185d3d94d6cbfcf498fe53004881870f9318274`, `1c69dd4ff111d4108bc7f399a4a563c1f58fb01f`, `cd1129d34e90bd9c022e5beec22a7fffdb5a8e3c`, `239082530feda3cdb77e276bfaee97cb549d800b`, `04f0b66509f6d086c6bdaa11aace46390c7525f9`, `f1a98967da426305ff7ca7a2e764ef91a6a862d1`, `d0c9dd6494e6a025231d63c33b4d282bc2772300`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-137.md`
+- **Historical capsule SHA-256:** `dad56d49a7978c6388c0b39b92588d62962889aa7475bedf0d4eb8d6eda95f4f`
+
+### GH-138 - Align remote Target current date to owner calendar authority
+
+- **ID:** `GH-138`
+- **Title:** Align remote Target current date to owner calendar authority
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/138
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 39ec5e43299f3649e96893700f9570a6888fe1f5
+- **Task branch:** gh-138-owner-calendar-target-date
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `3abeb7cd1a8a38e93ea53f7350a3edea7908001b`, `03afd90a95ccfffeed07fce63c0fa6555f325e90`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 3abeb7cd1a8a38e93ea53f7350a3edea7908001b
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 9d96a98f36ee2c6024d72e11a9b52d634f631490
+- **Integration-related commit reference(s):** `e7cb27b1fe93318e302023e7f94f0a6f907937ad`, `9d96a98f36ee2c6024d72e11a9b52d634f631490`, `3abeb7cd1a8a38e93ea53f7350a3edea7908001b`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS. Exact implementation `3abeb7cd1a8a38e93ea53f7350a3edea7908001b` was independently reviewed and its reviewed branch tree was squash-integrated as `9d96a98f36ee2c6024d72e11a9b52d634f631490`. Default-branch CI run `32444783624` subsequently passed Backend baseline, Backend PostgreSQL 16 contracts, Mobile baseline, and Repository validation.
+- **Verification summary:** VERIFIED at exact implementation commit `3abeb7cd1a8a38e93ea53f7350a3edea7908001b` / tree `03afd90a95ccfffeed07fce63c0fa6555f325e90`. Focused GH-138 8/8, Targets/time-zone regression 43/43, Node 24 local Target 27/27, ordinary backend 1767 passed / 465 deselected, mobile typecheck, mobile Jest 1668 passed / 2 skipped, task-capsule validation 31/31, documentation validation 125 Markdown files / 568 links, session-end/audit 43/43 focused tooling tests, and backend review profile 9/9 checks all passed. Commit/tree identity and clean-worktree state were unchanged after verification.
+- **Specialized qualification:** PASS on the exact implementation commit — fixed-instant Kiritimati/Pago Pago opposite-edge owner dates, birthday-sensitive age/maintenance/magnesium behavior, explicit UTC pre-calendar fallback, malformed established-zone failure, post-owner-lock mutation date resolution, explicit selected-date `daily-comparison`, and shared remote/local SQLite fixture parity all passed.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation warnings and historical `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning remain nonblocking and outside GH-138. An initial session-end invocation resolved host Python 3.14 without pytest; the unchanged gate passed under the repository backend Python 3.12 virtualenv. PostgreSQL 16, MinIO, Docker/provider recovery, and Phase 5C performance suites remain explicitly opt-in and were not required for GH-138 pre-commit qualification.
+- **Deferred work/follow-up IDs:** None currently.
+- **Retrospective:** no — bounded current-date authority correction unless execution exposes a broader calendar/Target serialization defect.
+- **Referenced commits:** `39ec5e43299f3649e96893700f9570a6888fe1f5`, `e7cb27b1fe93318e302023e7f94f0a6f907937ad`, `9d96a98f36ee2c6024d72e11a9b52d634f631490`, `3abeb7cd1a8a38e93ea53f7350a3edea7908001b`, `03afd90a95ccfffeed07fce63c0fa6555f325e90`, `595302c309fff872734d912cb95a542e18e6b511`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-138.md`
+- **Historical capsule SHA-256:** `a9ac7557458d8186b23c9440dca700485523f34943e29246f6e69b507e32a9f1`
+
+### GH-139 - Validate high-risk remote API responses before use
+
+- **ID:** `GH-139`
+- **Title:** Validate high-risk remote API responses before use
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/139
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-21
+- **Base commit:** b1890bd0e9144c8a468321b28dcec11bf2f2425a
+- **Task branch:** gh-139-remote-response-validation
+- **Controller:** User-provided GH-139 controller brief
+- **Executor:** Codex bounded implementation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 1cd8557d39a99678d44e6eda1169bfdc2ebbc053
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 6d222a9597f6699c1d367e123f26be2f99415402
+- **Integration-related commit reference(s):** `6d222a9597f6699c1d367e123f26be2f99415402`, `32f80e539ee43eb723401d99d082356d0c10493c`, `1cd8557d39a99678d44e6eda1169bfdc2ebbc053`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved, integrated, and default-branch qualified. Exact integration `6d222a9597f6699c1d367e123f26be2f99415402` preserved the independently reviewed tree; CI run `32457421243` and CodeQL run `32457421126` succeeded on that exact commit. GH-139 is complete.
+- **Verification summary:** PASS — exact committed implementation `1cd8557d39a99678d44e6eda1169bfdc2ebbc053` / tree `52d0aa3f2b0d2eac1e13ae3d653471d1c1eaf8b6` verified without mutation. Exact committed scope and forbidden-authority immutability passed; toolchains were Python 3.12.13 / pytest 9.1.1 and Node 24.19.0 / npm 11.17.0; focused high-risk remote contracts 188/188 across 16 suites; TypeScript and Expo passed; complete mobile 1,754 passed / 2 skipped; canonical no-package review passed 12/12 including ordinary backend 1,780 passed / 468 deselected, capsule 34/34, docs, shell, session/audit 43/43, whitespace, and drift checks.
+- **Specialized qualification:** Not applicable — GH-139 changes only the mobile remote response-contract boundary; no backend, PostgreSQL, SQLite, migration, transfer, native, or physical-device authority changed.
+- **Known warnings:** Host defaults are Python 3.9/Node 26; qualification pinned Python 3.12.13 and Node 24.19.0. The first sandboxed review invocation stopped before gates because Git fingerprinting could not write its temporary tree object; the correctly pinned unsandboxed rerun passed. Ordinary backend retained two existing Starlette deprecation warnings; session-end retained the existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning. PostgreSQL, MinIO, Docker/provider restart, performance/T0, and native/device suites were not run because no corresponding authority changed.
+- **Deferred work/follow-up IDs:** Recipe duplication validation and unrelated endpoints remain outside GH-139.
+- **Retrospective:** no — bounded contract hardening uses established repository precedent.
+- **Referenced commits:** `b1890bd0e9144c8a468321b28dcec11bf2f2425a`, `6d222a9597f6699c1d367e123f26be2f99415402`, `32f80e539ee43eb723401d99d082356d0c10493c`, `1cd8557d39a99678d44e6eda1169bfdc2ebbc053`, `52d0aa3f2b0d2eac1e13ae3d653471d1c1eaf8b6`, `4a605e2dad733c08189ccac9187075ec44dc5680`, `d6132d22e5de08e45b775d20c787db57c94f9078`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-139.md`
+- **Historical capsule SHA-256:** `c360cdd1d06913a4f43f6ac614cd1d438022b43057b370293c07ef9338e0c830`
+
+### GH-140 - Run completed Epic 4 PostgreSQL contract suites in CI
+
+- **ID:** `GH-140`
+- **Title:** Run completed Epic 4 PostgreSQL contract suites in CI
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/140
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 49f21f9ff47e11ecba13df3f78f8402d40b96fef
+- **Task branch:** gh-140-epic4-postgres-ci
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** Codex bounded implementation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** bounded
+- **Implementation commit(s):** `b5a246de7240f03de228571bd0c12c2616f43f8d`, `c60831222fdf0332ca56aa1960d5c421994672eb`, `1c10aad5f54a329534838dd4e0acf478250f8bd7`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** b5a246de7240f03de228571bd0c12c2616f43f8d
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 1c10aad5f54a329534838dd4e0acf478250f8bd7
+- **Integration-related commit reference(s):** `b5a246de7240f03de228571bd0c12c2616f43f8d`, `1c10aad5f54a329534838dd4e0acf478250f8bd7`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** Exact implementation commit `b5a246de7240f03de228571bd0c12c2616f43f8d` verified by the controller. Committed workflow structural assertions passed; physical PostgreSQL 16.14 E4-only qualification passed 12/12 with zero skips; the exact expanded nine-file PostgreSQL CI selection passed 81/81 with zero skips; residual schemas/databases were empty; task-capsule validation passed 24/24; session-end passed with 43/43 focused audit-tooling tests; `git diff --check`, exact branch/origin/parent identity, two-path delta, and clean postconditions passed.
+- **Specialized qualification:** PostgreSQL 16.14 was physically requalified from the exact implementation commit. E4-only selection passed 12/12 with 0 skipped in 4.66 seconds; exact expanded nine-file selection passed 81/81 with 0 skipped in 23.03 seconds; `residual_schemas=[]` and `residual_databases=[]`.
+- **Known warnings:** Existing `DOMAIN_TOKEN_IN_OPS_MIGRATION`; unrelated Dependabot findings; known `run-review.sh` baseline-selection defect is outside this workflow-only task. Session-start reported host Python 3.9.6 and Node 26.7.0 rather than repository Python 3.12 and Node 24; substantive Python checks used repository Python 3.12.13, and no Node check was required. The first PostgreSQL probe was blocked by sandbox permissions before succeeding with approved local-infrastructure access.
+- **Deferred work/follow-up IDs:** E4-16/#129 remains the broad Epic 4 parity and physical qualification task; #147 tracks unrelated Expo SDK 57 patch-version drift.
+- **Retrospective:** no.
+- **Referenced commits:** `49f21f9ff47e11ecba13df3f78f8402d40b96fef`, `8f22612c2d0eed4afd19ed1f3d3276c02d13cd54`, `1c10aad5f54a329534838dd4e0acf478250f8bd7`, `b5a246de7240f03de228571bd0c12c2616f43f8d`, `c60831222fdf0332ca56aa1960d5c421994672eb`, `02c445bfc5ea5c997cb71c291c6b0ac0ae92f3cf`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-140.md`
+- **Historical capsule SHA-256:** `df935a191b0bbfc33b410cb8939edc06252190969198f37c799182de6e3168bc`
+
+### GH-141 - Remove proven dead Target code and tighten unused-code gates
+
+- **ID:** `GH-141`
+- **Title:** Remove proven dead Target code and tighten unused-code gates
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/141
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** d5974d6cb965fadce732e92c904a18e09db3677f
+- **Task branch:** gh-141-cleanup-target-unused-gates
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 4424b276520d3b57abf00305e80889b733ce3efe
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** c9be5271ba242f7fbddbba91e20f49538940c052
+- **Integration-related commit reference(s):** `c9be5271ba242f7fbddbba91e20f49538940c052`, `d57e69229085ed1a51a985ec141dab316dcbfb29`, `4424b276520d3b57abf00305e80889b733ce3efe`
+- **Acceptance result:** 9/9 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — independent review found zero blocking findings on implementation `4424b276520d3b57abf00305e80889b733ce3efe` / tree `46b675f5758dc264ba635e54ca8830914221174b`. Human integration preserved the approved reviewed tree exactly as `c9be5271ba242f7fbddbba91e20f49538940c052` / tree `d57e69229085ed1a51a985ec141dab316dcbfb29`, and all required default-branch qualification gates passed.
+- **Verification summary:** PASS — exact committed implementation `4424b276520d3b57abf00305e80889b733ce3efe` was verified before review. Exact integration `c9be5271ba242f7fbddbba91e20f49538940c052` then passed CI `32518948957` with Repository validation, Backend baseline, Backend PostgreSQL 16 contracts, and Mobile baseline, plus CodeQL `32518949253` for actions, Python, and JavaScript/TypeScript. Required post-integration checks: 7/7 PASS. Pre-integration full qualification also passed focused mobile 18/18 suites and 167/167 tests, full mobile 1726 passed / 2 skipped, backend 1782 passed / 468 deselected, both Expo authority configurations, Ruff, compileall, task-capsule validation, and canonical review 12/12.
+- **Specialized qualification:** Not required — no PostgreSQL behavior, schema/migration, MinIO, control-plane, transfer, performance, authentication, or native runtime authority changed.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning and existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository-boundary warning only.
+- **Deferred work/follow-up IDs:** Conditional `Settings.cors_origins` and local-runtime/exact/SQLite barrel candidates remain intentionally deferred; they were not proven safe for deletion under GH-141.
+- **Retrospective:** no — low-risk bounded cleanup unless implementation exposes a reusable workflow failure
+- **Referenced commits:** `d5974d6cb965fadce732e92c904a18e09db3677f`, `c9be5271ba242f7fbddbba91e20f49538940c052`, `d57e69229085ed1a51a985ec141dab316dcbfb29`, `4424b276520d3b57abf00305e80889b733ce3efe`, `46b675f5758dc264ba635e54ca8830914221174b`, `e3bc7e2a2c528d4bfe0f6e0d3cbf1b0f78334b79`, `edd0b983dd53a8aef7c034647ce02494ae120d52`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-141.md`
+- **Historical capsule SHA-256:** `d66e04a27bcb8942a09c44872a4d506257185a48e62f2802268baf2ae64d02f0`
+
+### GH-142-P1 - Extract reusable Food test builders
+
+- **ID:** `GH-142-P1`
+- **Title:** Extract reusable Food test builders
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/142
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** 8b7dbcbce54458814b71f884bee64e5fc312686c
+- **Task branch:** gh-142-p1-food-test-support
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 7e9c044673e7fd4c9bd8c37909e845ccbb0bf77c
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 3ee5b5e3e88e7917500f7d6c4b5825ae76b1f9b3
+- **Integration-related commit reference(s):** `7e9c044673e7fd4c9bd8c37909e845ccbb0bf77c`, `3ee5b5e3e88e7917500f7d6c4b5825ae76b1f9b3`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking findings. Independent review proved all 25 consumer edits are exact Food import-authority replacements, both relocated helper ASTs are identical to base authority, `test_stage2_foods.py` is otherwise semantically unchanged, the support module introduces no extra executable behavior, and no forbidden product surface changed.
+- **Verification summary:** MERGED and default-branch qualified — exact integration `3ee5b5e3e88e7917500f7d6c4b5825ae76b1f9b3` preserves the reviewed tree and passed all seven required GitHub checks. Check runs: Analyze actions `96958859077`, Analyze javascript-typescript `96958858973`, Analyze python `96958859138`, Backend PostgreSQL 16 contracts `96958857331`, Backend baseline `96958857592`, Mobile baseline `96958857503`, Repository validation `96958857590`. CodeQL suite `88218621898`; CI suite `88218622188`. Earlier committed-tree verification proved helper AST identity, Food imports 26→0 from `tests.test_stage2_foods`, residual cross-test graph 39, pytest collection 2260, and affected suite 274 passed. No production changes.
+- **Specialized qualification:** P1-specific local opt-in PostgreSQL qualification was not required because P1 changes no database semantics; the repository's required default-branch `Backend PostgreSQL 16 contracts` check nevertheless passed on exact integration `3ee5b5e3e88e7917500f7d6c4b5825ae76b1f9b3`.
+- **Known warnings:** Established `DOMAIN_TOKEN_IN_OPS_MIGRATION` project-audit warning and two existing Starlette HTTP-422 deprecation warnings only.
+- **Deferred work/follow-up IDs:** GH-142-P2, GH-142-P3, GH-142-P4.
+- **Retrospective:** no — unless extraction exposes an unmodeled test-support dependency.
+- **Referenced commits:** `8b7dbcbce54458814b71f884bee64e5fc312686c`, `83e9ea1d3f12c88c5b44d8378cb3625f4b18ffd4`, `3ee5b5e3e88e7917500f7d6c4b5825ae76b1f9b3`, `7e9c044673e7fd4c9bd8c37909e845ccbb0bf77c`, `312567642b7a075813196f024dd6c48f35bef530`, `e140a23e72a1dbcda6dda85a01c2a7c372711f7b`, `74627e41bea8e1ecb7a32d5aa267f91327bd0563`, `73553a99a45e18ea125d22436654509b1eedd569`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-142-P1.md`
+- **Historical capsule SHA-256:** `5d3b8c0b20d7717ba70803d136a8008d9e5700e3aa66a3b6606c3a3b3f3c3189`
+
+### GH-142-P2 - Extract reusable Recipe construction and publication test builders
+
+- **ID:** `GH-142-P2`
+- **Title:** Extract reusable Recipe construction and publication test builders
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 7
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/142
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** ec6dbc8710e7c7beab0f58338fc1aef9db290ef4
+- **Task branch:** gh-142-p2-recipe-test-support
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — predecessor execution was cancelled before implementation review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — cancelled execution was not integrated as implementation.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/6 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — cancellation preserves the partial Recipe overlay for successor GH-142-P2R1.
+- **Verification summary:** Cancellation-only lifecycle result. The exact 20-file implementation overlay was preserved before the baseline rebase; current main independently reproduces the original 39-statement Recipe authority graph and now collects 2262 tests after the unrelated GH-152 additions.
+- **Specialized qualification:** Not applicable — predecessor was cancelled before implementation qualification; successor GH-142-P2R1 owns resumed qualification.
+- **Known warnings:** No implementation loss. The attempted IN_PROGRESS → DECOMPOSED transition was rejected mechanically and never committed.
+- **Deferred work/follow-up IDs:** GH-142-P2R1 resumes the exact Recipe-support implementation; GH-142-P3 remains Daily Log support; GH-142-P4 remains USDA/final residual classification.
+- **Retrospective:** no — the workflow lesson is captured directly in the cancellation/successor boundary.
+- **Referenced commits:** `ec6dbc8710e7c7beab0f58338fc1aef9db290ef4`, `88a5cda0f4643b513bddf08bd9bec82203f878f0`, `edfaeafbc7bc93b5ed8471402ca0517b794012f2`, `2536e61338e67de7d238a1d9f22262fb118c7e4f`, `c01cb869e33b93592b7f1761bb88d88ce75ee2ce`, `a3cc7b50960e89366fbc59f460b2cc01a65257d5`, `b2b2264be963ce22f038f09a9f0cee446f758761`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-142-P2.md`
+- **Historical capsule SHA-256:** `3cf59ca058e44e77df3764a5ef7d88d3a34feef6d2b31e5cfb4f9e16df21d896`
+
+### GH-142-P2R1 - Resume reusable Recipe construction and publication test builders
+
+- **ID:** `GH-142-P2R1`
+- **Title:** Resume reusable Recipe construction and publication test builders
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/142
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** 9a625c917d99b864c43920136edec4324c9033ef
+- **Task branch:** gh-142-p2r1-recipe-test-support
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 5fbe1b4f02576b36449833b36a5fd232df411106
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 8e1bc1d6e018da2613ce0e5f9a3069ddb7dd1184
+- **Integration-related commit reference(s):** `5fbe1b4f02576b36449833b36a5fd232df411106`, `8e1bc1d6e018da2613ce0e5f9a3069ddb7dd1184`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking findings and zero non-blocking findings. Independent review proved all five relocated Recipe helper ASTs are identical to current-main authority after only the intended name canonicalization; all 19 affected test modules are otherwise semantically identical outside import-authority changes and the five removed helper definitions; `tests.support.recipes` contains exactly the five approved public functions with no extra executable behavior or `test_*.py` dependency; residual cross-test graph is 23; the five Daily Log dependencies remain intentionally deferred; and no forbidden product surface changed.
+- **Verification summary:** MERGED and default-branch qualified — exact integration `8e1bc1d6e018da2613ce0e5f9a3069ddb7dd1184` / tree `63125273e11564cc5755732062a23947b56678df` preserves the reviewed tree and all 20 qualified Recipe implementation objects from manifest SHA-256 `5d7cd0cea6dae86607e52a61a329948252eb8a4d322727af19b48f1e57d40999`; support blob is `1c681dd6711196661d39e480113105de2ab63b4b`. All seven required GitHub checks passed: Analyze (actions) `96993318373`, Analyze (javascript-typescript) `96993318254`, Analyze (python) `96993318382`, Backend PostgreSQL 16 contracts `96993317231`, Backend baseline `96993317240`, Mobile baseline `96993317249`, and Repository validation `96993317210`. CodeQL workflow `32557261367` and CI workflow `32557261679` both completed successfully. Earlier committed-tree verification proved five-of-five Recipe helper AST equivalence, zero historical moved definitions/imports, five intentionally deferred Daily Log statements, residual cross-test graph 23, collection 2262, and affected suite 231 passed. Prior unrestricted backend qualification remains `2244 passed, 18 skipped, 3 warnings in 397.59s (0:06:37)`. No production changes.
+- **Specialized qualification:** P2R1-specific local specialized database qualification was not required because this slice changes only test-support authority and no database semantics. The repository-required Backend PostgreSQL 16 contracts check `96993317231` nevertheless passed on exact default-branch integration `8e1bc1d6e018da2613ce0e5f9a3069ddb7dd1184`.
+- **Known warnings:** Established `DOMAIN_TOKEN_IN_OPS_MIGRATION` project-audit warning only.
+- **Deferred work/follow-up IDs:** GH-142-P3 Daily Log support; GH-142-P4 USDA support and final residual classification. Parent GH-142 remains open until those slices and parent closure qualification complete.
+- **Retrospective:** no — unless resumed extraction exposes an unmodeled domain dependency.
+- **Referenced commits:** `a3cc7b50960e89366fbc59f460b2cc01a65257d5`, `9a625c917d99b864c43920136edec4324c9033ef`, `88a5cda0f4643b513bddf08bd9bec82203f878f0`, `edfaeafbc7bc93b5ed8471402ca0517b794012f2`, `2536e61338e67de7d238a1d9f22262fb118c7e4f`, `c01cb869e33b93592b7f1761bb88d88ce75ee2ce`, `e6c9dff6abdbe95b35d1acaf1340406e5aed3b6c`, `0ab65ba1fb87dccad08a53de2d36b679491d1e2c`, `1c681dd6711196661d39e480113105de2ab63b4b`, `5fbe1b4f02576b36449833b36a5fd232df411106`, `fb5209754bf51be760c04bbe30f93dbe7a0c9348`, `c8af465c33025dc2d9cabb5a15a1e4c647bde2bc`, `90d8daf01a77cec3f3ae08a8b035e55b2abb0c15`, `8e1bc1d6e018da2613ce0e5f9a3069ddb7dd1184`, `63125273e11564cc5755732062a23947b56678df`, `41386ac61e00cb87de9172af0393d66615126052`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-142-P2R1.md`
+- **Historical capsule SHA-256:** `dff965618628b643856b55fdc4cacf9442f4a149ab3fd82432f8bbd79003eea2`
+
+### GH-142-P3 - Extract reusable Daily Log test builders
+
+- **ID:** `GH-142-P3`
+- **Title:** Extract reusable Daily Log test builders
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/142
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 05bca638e68a6b1bd4bc1b8d608efa7f84808a72
+- **Task branch:** gh-142-p3-daily-log-test-support
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 8de888fada560925a3441d39cce8ebd9d96d27f8
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 44f82b1645714c597547329f69b9145003543bc2
+- **Integration-related commit reference(s):** `8de888fada560925a3441d39cce8ebd9d96d27f8`, `44f82b1645714c597547329f69b9145003543bc2`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking findings and zero non-blocking findings. Independent review proved all four relocated Daily Log helper ASTs preserve frozen authority after only intended name canonicalization; all seven affected tests retain identical non-import executable semantics; `tests.support.daily_logs` contains exactly the approved three public builders plus private `_default_serving`, no test-module dependency or extra executable behavior; all seven support-import consumer sets are exact; residual cross-test graph is 17; and explicitly deferred P4 authorities remain untouched.
+- **Verification summary:** MERGED and default-branch qualified — exact integration `44f82b1645714c597547329f69b9145003543bc2` / tree `06195963bbbfcd3c5c975c53c758aeb735a1602a` preserves the reviewed tree and all eight qualified Daily Log implementation objects from manifest SHA-256 `cf4dc2a45726ea85ca3af9e5059cef2e2f1c14d1ab8f0a7f66b86e357dae3ab8`; Daily Log support blob is `2fe18131f809643e24fa6f423b27e594de1bf61e`. All seven required GitHub checks passed: Analyze (actions) `96996515216`, Analyze (javascript-typescript) `96996515086`, Analyze (python) `96996515195`, Backend PostgreSQL 16 contracts `96996514739`, Backend baseline `96996514589`, Mobile baseline `96996514665`, and Repository validation `96996514659`. Analysis workflow `Push on main` `32558578286` and CI workflow `32558578741` both completed successfully. Earlier committed-tree verification proved four-of-four helper AST equivalence, seven-of-seven affected test-module semantic identity, zero historical moved definitions/imports, residual cross-test graph 17, collection 2262, and affected suite 101 passed. Prior unrestricted backend qualification remains `2244 passed, 18 skipped, 3 warnings in 401.01s (0:06:41)`. No production changes.
+- **Specialized qualification:** No additional local P3-specific database suite was required because P3 changes only test-support authority and no database semantics. Repository-required Backend PostgreSQL 16 contracts check `96996514739` passed on exact default-branch integration `44f82b1645714c597547329f69b9145003543bc2`.
+- **Known warnings:** Existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning for historical control migration `ops_0004_phase5c4_admission.py` is unrelated to P3.
+- **Deferred work/follow-up IDs:** GH-142-P4 — USDA builders and final residual cross-test classification. Parent GH-142 remains open until P4 and parent closure qualification complete.
+- **Retrospective:** no — unless P3 exposes an unmodeled shared Daily Log authority.
+- **Referenced commits:** `05bca638e68a6b1bd4bc1b8d608efa7f84808a72`, `86ca9d9045b5a289ce096e0427975156c838a0c3`, `7562b5a9338fca632c30c44f85977890f2a2e5b3`, `7a3ba8b7d6d93eaad35c4aab822051833770aefa`, `ee72d9b68a0b37526e30c58d6fa5435e7b583a22`, `2fe18131f809643e24fa6f423b27e594de1bf61e`, `8de888fada560925a3441d39cce8ebd9d96d27f8`, `d75589926b594fa1a01d16581970c193a17af5fe`, `fbc7d72d28e9c8b3e8963c4bfa1e3db6695d6f15`, `ba81dcacca1f0a67be15d8a736b3b29ac5e744e4`, `44f82b1645714c597547329f69b9145003543bc2`, `06195963bbbfcd3c5c975c53c758aeb735a1602a`, `b2a7bddddd366857dde3486d372bb425510f0a79`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-142-P3.md`
+- **Historical capsule SHA-256:** `7afb3bcca25b11fa30f6b192050d1879e8ff47dd76bfc469f119d4a01a691fe5`
+
+### GH-142-P4 - Extract reusable USDA test support and close residual audit
+
+- **ID:** `GH-142-P4`
+- **Title:** Extract reusable USDA test support and close residual audit
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/142
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 9f83b392da7236c4c7ffa85a727449cb7cc6c7fb
+- **Task branch:** gh-142-p4-usda-test-support
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 110fb6641f70505831aa445d2a2f442b9ea54970
+- **Reviewed task/checkpoint commit(s):** `297f9f478b2b1b4c2f76c8f6410e7dbc6cfdbd86`, `2a86738949eb9c187291f6fd10d3b19dcbfffad4`, `321ee1d1b8ad8d29c567dcf03ecd6590ab8e845d`, `110fb6641f70505831aa445d2a2f442b9ea54970`, `a039ac8fde6da9976058ba209ff5b895e8fc08a7`
+- **Integration/merged commit:** 297f9f478b2b1b4c2f76c8f6410e7dbc6cfdbd86
+- **Integration-related commit reference(s):** `110fb6641f70505831aa445d2a2f442b9ea54970`, `297f9f478b2b1b4c2f76c8f6410e7dbc6cfdbd86`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED WITH NON-BLOCKING WORKFLOW RECORD FINDING — zero implementation findings. AC-6 was checked before its future default-branch PostgreSQL component could run; history is preserved and exact-SHA default-branch qualification remains mandatory before MERGED and GH-142 closure.
+- **Verification summary:** MERGED — exact integration `297f9f478b2b1b4c2f76c8f6410e7dbc6cfdbd86` / tree `2a86738949eb9c187291f6fd10d3b19dcbfffad4` preserves the reviewed tree and all five qualified USDA implementation objects. Four-of-four relocated symbol ASTs and four-of-four affected test modules preserve audited semantics; historical moved definitions and USDA cross-test imports are zero; residual graph is exactly 12 with final 5/3/2/1/1 classification; collection remains 2262; affected suite passes 31 tests; unrestricted backend is `2244 passed, 18 skipped, 3 warnings in 388.49s (0:06:28)`. All seven required default-branch checks passed on the exact integration SHA, including PostgreSQL 16. The historical AC-6 premature-checkbox finding remains recorded and is now substantively resolved by that exact-SHA evidence.
+- **Specialized qualification:** PASS — exact default-branch integration `297f9f478b2b1b4c2f76c8f6410e7dbc6cfdbd86` passed `Backend PostgreSQL 16 contracts` check/job `97055218202` plus all six other required default-branch checks.
+- **Known warnings:** Existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning for historical control migration `ops_0004_phase5c4_admission.py` is unrelated to P4.
+- **Deferred work/follow-up IDs:** None required by GH-142. The final 12 cross-test statements are intentionally classified residual coupling: 5 Phase/PostgreSQL qualification, 3 recipe scenario-local, 2 Target-domain, 1 E4 continuation, and 1 OCR-domain. Reconsider only if future fanout turns one into shared infrastructure.
+- **Retrospective:** no — unless P4 exposes an unclassified reusable authority.
+- **Referenced commits:** `9f83b392da7236c4c7ffa85a727449cb7cc6c7fb`, `d2e67571b569811128c44bf443af0dddff23253d`, `60447db66b5e8c0e8eaac4eb76b0408cfd2796a1`, `01258f72e0dfe37405a5b3e7b8265a1cbdb01557`, `93fc70e9a7a5c67b616daba84c63dce31ba26b9c`, `6591061563983b3c016cc8e9812854a828f89c49`, `110fb6641f70505831aa445d2a2f442b9ea54970`, `a039ac8fde6da9976058ba209ff5b895e8fc08a7`, `a34c58e055664d8fd3ce2af26306223c2ce0f5ac`, `1ddfb0a7a1a290818e5c9ca044a0303c5bcdfc80`, `297f9f478b2b1b4c2f76c8f6410e7dbc6cfdbd86`, `2a86738949eb9c187291f6fd10d3b19dcbfffad4`, `321ee1d1b8ad8d29c567dcf03ecd6590ab8e845d`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-142-P4.md`
+- **Historical capsule SHA-256:** `a3079337f2af781c6db1fbd7c48945545f7a5faafc61c62ed0e8cc77002a6aa7`
+
+### GH-143 - Batch local Daily Log source-state reads
+
+- **ID:** `GH-143`
+- **Title:** Batch local Daily Log source-state reads
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/143
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** df02d21a98a33570d2a0716188c8b86f1190a821
+- **Task branch:** gh-143-batch-local-daily-log-source-state
+- **Controller:** User-provided GH-143 controller brief
+- **Executor:** Codex bounded implementation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 5dfcffb4508c2de96f0cf6b9d68d15c66b011e94
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 7aaa49c7109b229ae1f6380859c7ede2bd1e755b
+- **Integration-related commit reference(s):** `7aaa49c7109b229ae1f6380859c7ede2bd1e755b`, `793538ee03edebd93f3918fbd3cf771edc1ea86e`, `5dfcffb4508c2de96f0cf6b9d68d15c66b011e94`
+- **Acceptance result:** 13/13 checked in the terminal source capsule.
+- **Review disposition:** Approved, integrated, and default-branch qualified. Exact integration `7aaa49c7109b229ae1f6380859c7ede2bd1e755b` preserved the independently reviewed tree `793538ee03edebd93f3918fbd3cf771edc1ea86e`; CI run `32460511737` and CodeQL run `32460512055` succeeded on that exact commit. GH-143 is complete.
+- **Verification summary:** PASS — exact committed implementation `5dfcffb4508c2de96f0cf6b9d68d15c66b011e94` / tree `3f541bf28996581c96c76fde93339a3fc57a0348` verified without mutation. Exact four-path scope and forbidden-authority guards passed; local Daily Log runtime 102/102; repeated ordinary-source list counts remained 3 SELECTs for one or eight Logs; repeated Recipe-projection list counts remained 5 SELECTs for one or eight Logs; listFuture, empty/date early-return, mixed active/deleted/missing/malformed source, ordering, historical Food-name, Recipe-republication, historical revision, and nutrient-snapshot contracts passed; Node 24 TypeScript and both Expo authority configurations passed; complete mobile 1,758 passed / 2 skipped; canonical no-package review passed 12/12 including backend 1,780 passed / 468 deselected, capsule 35/35, documentation, shell/session, audit tooling 43/43, whitespace, and stable repository drift.
+- **Specialized qualification:** Not applicable — GH-143 changes only the local SQLite Daily Log read path and test-only SQLite operation observation. No schema, migration, native API boundary, backend, PostgreSQL authority, transfer format, or physical-device behavior changed. Default-branch PostgreSQL contract CI nevertheless passed on the exact integration commit.
+- **Known warnings:** Existing two Starlette HTTP-422 deprecation warnings and existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository-audit warning remain. PostgreSQL control/concurrency opt-in suites, MinIO, Docker/provider restart, Phase 5C T0/performance, and native/device suites were not run locally because no corresponding behavior changed.
+- **Deferred work/follow-up IDs:** None required by GH-143; unrelated remaining backlog issues retain their existing scope.
+- **Retrospective:** no — bounded local read-path performance optimization followed established runtime authority and verification patterns.
+- **Referenced commits:** `df02d21a98a33570d2a0716188c8b86f1190a821`, `7aaa49c7109b229ae1f6380859c7ede2bd1e755b`, `793538ee03edebd93f3918fbd3cf771edc1ea86e`, `5dfcffb4508c2de96f0cf6b9d68d15c66b011e94`, `3f541bf28996581c96c76fde93339a3fc57a0348`, `0674c0cdcb86f643d3327cec1dca389a0c7ba023`, `739a24b2366dc621732b04553e1aec2183453b1a`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-143.md`
+- **Historical capsule SHA-256:** `dc01dc3b3d86cd96ae2bc4bc7e6e997fc5fbe34df283324d38efe28327614b8a`
+
+### GH-144 - Extend validation for current migration and status drift
+
+- **ID:** `GH-144`
+- **Title:** Extend validation for current migration and status drift
+- **Final state:** `MERGED`
+- **Capsule revision:** 12
+- **Task type:** tooling
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/144
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** edc60c23a7ded7c25a410097cf4d068182470c89
+- **Task branch:** gh-144-doc-validation-drift
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** db19f63a8b4499f1dc6862ec48d84429deb302c2
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 024585a6a2831f5178399b8c5ea219cbcf3d09f5
+- **Integration-related commit reference(s):** `db19f63a8b4499f1dc6862ec48d84429deb302c2`, `024585a6a2831f5178399b8c5ea219cbcf3d09f5`
+- **Acceptance result:** 7/7 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking findings. Independent review found the bounded validator/test implementation consistent with GH-144, the corrected semantic current-authority model, historical/pinned exclusions, and all verification evidence.
+- **Verification summary:** PASS — exact reviewed tree integrated as `024585a6a2831f5178399b8c5ea219cbcf3d09f5`. Pre-integration qualification passed 5/5 GH-144 contract tests, 23/23 focused project-audit tests, 48/48 repository audit-tooling tests, documentation validation, project-audit pre-commit, and canonical review 12/12. Committed-tree verification subsequently passed. Exact default-branch qualification then passed 7/7 checks: Repository validation `96898763725`, Backend baseline `96898763458`, Backend PostgreSQL 16 contracts `96898763854`, Mobile baseline `96898763731`, CodeQL actions `96898766164`, CodeQL javascript-typescript `96898766104`, and CodeQL python `96898766134`. Check suites: CodeQL `88164735872`, CI `88164736880`. PostgreSQL 16 contract gate PASS.
+- **Specialized qualification:** Not applicable — documentation-validator/test tooling only.
+- **Known warnings:** Established `DOMAIN_TOKEN_IN_OPS_MIGRATION` project-audit warning and two existing Starlette HTTP-422 deprecation warnings only.
+- **Deferred work/follow-up IDs:** None identified by preparation.
+- **Retrospective:** no — low-risk bounded tooling unless implementation exposes a reusable workflow failure.
+- **Referenced commits:** `edc60c23a7ded7c25a410097cf4d068182470c89`, `024585a6a2831f5178399b8c5ea219cbcf3d09f5`, `db19f63a8b4499f1dc6862ec48d84429deb302c2`, `d52cd20ec164e6960b8b6c20ac7bf26f88c848da`, `8fda8c102dd830e52d31624ce901caa5c0881c92`, `177f7747731ff833d55514f70efcbeb7fdd13c04`, `318f6cc9037e7243b33a7252fed5e0d1bfe63373`, `0bc57f7c320ac213367a5dcb609d80f9162846c0`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-144.md`
+- **Historical capsule SHA-256:** `3d062a27899eb4420246159e4a4237c9d1d08722e88f9208d88f5b36a18cf531`
+
+### GH-145 - Add thin E2-15 transfer CLI boundary tests
+
+- **ID:** `GH-145`
+- **Title:** Add thin E2-15 transfer CLI boundary tests
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** tooling
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/145
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** ac1f8fb07c71d3b9e09b2c802eb835943231b9ec
+- **Task branch:** gh-145-transfer-cli-boundary-tests
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** ccc420b7997dc55157b2de5d364a6d2f7077c186
+- **Reviewed task/checkpoint commit(s):** `619bc3c6ae9f17dba9198aa2e76adbe406fa55c4`
+- **Integration/merged commit:** 619bc3c6ae9f17dba9198aa2e76adbe406fa55c4
+- **Integration-related commit reference(s):** `ccc420b7997dc55157b2de5d364a6d2f7077c186`, `619bc3c6ae9f17dba9198aa2e76adbe406fa55c4`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking findings. Independent review confirmed the five-test suite is thin, boundary-focused, preserves production transfer behavior, and satisfies required/invalid argument, exit behavior, success wiring, redaction, and compatibility constraints.
+- **Verification summary:** PASS — exact reviewed task tree integrated as `619bc3c6ae9f17dba9198aa2e76adbe406fa55c4`. Pre-integration qualification passed 5/5 new CLI tests, 92/92 combined non-PostgreSQL E2-15 tests, repository pre-commit audit, and canonical review 12/12. Committed-tree verification subsequently passed. Exact default-branch qualification then passed 7/7 checks: Repository validation `96905206043`, Backend baseline `96905205849`, Backend PostgreSQL 16 contracts `96905205631`, Mobile baseline `96905205895`, CodeQL actions `96905198958`, CodeQL javascript-typescript `96905199000`, and CodeQL python `96905199034`. Check suites: CodeQL `88170471239`, CI `88170478463`. PostgreSQL 16 contract gate PASS.
+- **Specialized qualification:** Not applicable — isolated test-only CLI boundary coverage.
+- **Known warnings:** Established `DOMAIN_TOKEN_IN_OPS_MIGRATION` project-audit warning and two existing Starlette HTTP-422 deprecation warnings only.
+- **Deferred work/follow-up IDs:** None identified by preparation.
+- **Retrospective:** no — bounded test-only task unless execution exposes a reusable workflow failure.
+- **Referenced commits:** `ac1f8fb07c71d3b9e09b2c802eb835943231b9ec`, `430acb2bdcea4a4012c93744d8bd0c02f1fc6f77`, `619bc3c6ae9f17dba9198aa2e76adbe406fa55c4`, `ccc420b7997dc55157b2de5d364a6d2f7077c186`, `bd87ff5d8a4af3dd5d6babe5d02a54545f2bc4a7`, `7cc238744c4112917f412ddd17ca69333b333169`, `6f7109646bb7c0b36aef6c3d7870389614ac9c87`, `7a5646f66ae1f0941c60b39cc459272e29bf8e7e`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-145.md`
+- **Historical capsule SHA-256:** `cdac1c8a0abd5e2f4e038ba3c02d57b8dc1fef2ee978eddeeeca91ed7fb1bd8f`
+
+### GH-146 - Integrate Daily Log Complete with PostgreSQL runtime authority
+
+- **ID:** `GH-146`
+- **Title:** Integrate Daily Log Complete with PostgreSQL runtime authority
+- **Final state:** `MERGED`
+- **Capsule revision:** 5
+- **Task type:** correction
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/146
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** a1b1472cbdef2e4bbb61ecc75da5e7ab220a58fd
+- **Task branch:** issue-146-complete-runtime-authority
+- **Controller:** ChatGPT GPT-5.6 Sol controller/architect
+- **Executor:** Codex bounded implementation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `92675df13228a84dcc93d3d720fd8ded1761e488`
+- **Verified commit reference(s):** `486ad8f0980c2a0c9826baba96fd241e53934fe3`, `97b3566cd925cd3cf5cdb64d44e1601612314818`
+- **Reviewed source commit:** 92675df13228a84dcc93d3d720fd8ded1761e488
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 97b3566cd925cd3cf5cdb64d44e1601612314818
+- **Integration-related commit reference(s):** `62416a34dfa754ecdf6d2f7b9202c358d531e7ab`, `92675df13228a84dcc93d3d720fd8ded1761e488`, `97b3566cd925cd3cf5cdb64d44e1601612314818`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** Exact commit `92675df13228a84dcc93d3d720fd8ded1761e488` requalified after commit: Ruff passed; focused authority/migration/audit tests passed; dedicated PostgreSQL 16 #146 qualification passed; ordinary backend baseline passed with documented opt-in markers excluded; docs, audit, inventory, capsules, session closeout, and whitespace passed.
+- **Specialized qualification:** PostgreSQL 16.14 dedicated #146 test passed; affected suite 6 passed and 7 retained isolated-cluster cases skipped.
+- **Known warnings:** Host Node 26.7.0 differs from project Node 24; two Starlette 422 deprecations; seven legacy role tests require a cluster without pre-existing managed roles.
+- **Deferred work/follow-up IDs:** E4-15 remains separately parked.
+- **Retrospective:** no — bounded correction unless review identifies a reusable lesson.
+- **Referenced commits:** `a1b1472cbdef2e4bbb61ecc75da5e7ab220a58fd`, `063584c3df59855632954bb18f42e731d4ed6ab8`, `92675df13228a84dcc93d3d720fd8ded1761e488`, `486ad8f0980c2a0c9826baba96fd241e53934fe3`, `97b3566cd925cd3cf5cdb64d44e1601612314818`, `62416a34dfa754ecdf6d2f7b9202c358d531e7ab`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-146.md`
+- **Historical capsule SHA-256:** `9db6ff07ec5df2db8f33bfe073c7d12d7216189e84f985cc3dc9afc132cb2c25`
+
+### GH-147 - Refresh Expo SDK 57 compatibility patch versions
+
+- **ID:** `GH-147`
+- **Title:** Refresh Expo SDK 57 compatibility patch versions
+- **Final state:** `MERGED`
+- **Capsule revision:** 9
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/147
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 98db03fa838d425476ec6e5d41f90804f525808a
+- **Task branch:** gh-147-expo-sdk57-patches
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `6eedd50df089a7d8e3340d206fc854c4f5e5dd6d`, `f1213b5d16b79495b8842a6064ff6fa6d96873f5`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 6eedd50df089a7d8e3340d206fc854c4f5e5dd6d
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 34537db78b53a5a2766e0d1e261443baa3327c77
+- **Integration-related commit reference(s):** `34537db78b53a5a2766e0d1e261443baa3327c77`, `2783879107a2724cd19901bac6e0bb4079b582af`, `6eedd50df089a7d8e3340d206fc854c4f5e5dd6d`
+- **Acceptance result:** 13/13 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS. The exact implementation satisfies AC-1 through AC-13 with no unauthorized direct dependency, runtime, native-project, CI, or application-source change. Default-branch Mobile CI remains required after merge before #147 closes.
+- **Verification summary:** PASS — exact implementation commit `6eedd50df089a7d8e3340d206fc854c4f5e5dd6d`, tree `f1213b5d16b79495b8842a6064ff6fa6d96873f5`, passed clean `npm ci`, both Expo configuration contracts, `expo install --check`, Expo Doctor, TypeScript, full mobile Jest, direct-manifest and resolved-version proof, exact three-path scope enforcement, and `git diff --check` under Node 24.19.0.
+- **Specialized qualification:** PASS — local CI-equivalent Mobile baseline passed under repository Node 24.19.0 and default-branch GitHub Actions run `32408980955` completed with `Mobile baseline` = `success`.
+- **Known warnings:** Expo/npm installation reported 16 dependency-audit findings (8 moderate, 8 high), the existing npm `allow-scripts` warning for optional `fsevents@2.3.3`, and deprecation notices from transitive packages including `inflight`, `glob@7`, and `uuid@7`. None required or authorized a #147 scope expansion; no `npm audit fix`, forced upgrade, script-approval mutation, React/React Native migration, or unrelated dependency update was performed.
+- **Deferred work/follow-up IDs:** None — no deferred GH-147 work; the recorded npm audit, transitive deprecation, and `fsevents` allow-scripts warnings remain outside this bounded compatibility task.
+- **Retrospective:** no — routine bounded dependency patch unless qualification reveals a workflow defect.
+- **Referenced commits:** `98db03fa838d425476ec6e5d41f90804f525808a`, `34537db78b53a5a2766e0d1e261443baa3327c77`, `2783879107a2724cd19901bac6e0bb4079b582af`, `6eedd50df089a7d8e3340d206fc854c4f5e5dd6d`, `f1213b5d16b79495b8842a6064ff6fa6d96873f5`, `25342fd512522d1209cc62d4c1ad409187ed0084`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-147.md`
+- **Historical capsule SHA-256:** `57cb02e0e3e9d935b7489de861e16452988860ef59fc550d9184beda23253b75`
+
+### GH-148 - Align 30-day History nutrient charts to selected date
+
+- **ID:** `GH-148`
+- **Title:** Align 30-day History nutrient charts to selected date
+- **Final state:** `MERGED`
+- **Capsule revision:** 13
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/148
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 58df7d09afdc32d0f70fbc124e294c4e02872925
+- **Task branch:** gh-148-history-chart-alignment
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review required
+- **Delegation:** none
+- **Implementation commit(s):** `bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7`, `203fc5b51e74401da4ece9039804e09177f6c9d7`, `10b91abba3a4b71eb41bc2d9baf11e644dba0f00`
+- **Verified commit reference(s):** `bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7`, `203fc5b51e74401da4ece9039804e09177f6c9d7`, `10b91abba3a4b71eb41bc2d9baf11e644dba0f00`
+- **Reviewed source commit:** bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** d6f943f3c966c7fdf808d767b7359fcdcc8de53c
+- **Integration-related commit reference(s):** `bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7`, `d6f943f3c966c7fdf808d767b7359fcdcc8de53c`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS. Exact implementation `bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7` was independently reviewed and squash-integrated as `d6f943f3c966c7fdf808d767b7359fcdcc8de53c` with reviewed tree `a0b2c3fbb674119a452051b4865aa67e7c405055` preserved exactly. Default-branch CI run `32437662513` subsequently passed all four required jobs.
+- **Verification summary:** VERIFIED and MERGED — exact implementation `bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7` passed focused E4-10/E4-12 tests and canonical mobile review from a clean Node 24.19.0 worktree; physical iPhone qualification passed against the same product tree; independent review found no blockers; and default-branch GitHub Actions run `32437662513` passed all four CI jobs after integration as `d6f943f3c966c7fdf808d767b7359fcdcc8de53c`.
+- **Specialized qualification:** PASS — physical iPhone confirmed deterministic selected-date alignment across parallel 30-day nutrient charts without raw-scroll synchronization, jitter, or feedback loops; explicit Average / Selected day labels and unchanged 7-day behavior were also confirmed. Default-branch CI run `32437662513` subsequently passed.
+- **Known warnings:** Historical `DOMAIN_TOKEN_IN_OPS_MIGRATION` remains nonblocking and outside GH-148. GitHub reports three separate default-branch Dependabot findings, also unrelated. Independent review noted that settled-offset clamping retains the 300-point model viewport rather than the measured viewport; native offsets on the physically qualified target remain within the stricter actual bounds, so this is not a GH-148 acceptance blocker.
+- **Deferred work/follow-up IDs:** None currently.
+- **Retrospective:** no — bounded mobile interaction correction unless execution exposes broader behavior.
+- **Referenced commits:** `58df7d09afdc32d0f70fbc124e294c4e02872925`, `a0b2c3fbb674119a452051b4865aa67e7c405055`, `d6f943f3c966c7fdf808d767b7359fcdcc8de53c`, `bf0a5b9c668a2a3eaaa1b5cc062ac0a1526e6bc7`, `203fc5b51e74401da4ece9039804e09177f6c9d7`, `10b91abba3a4b71eb41bc2d9baf11e644dba0f00`, `0b5a4cf51f5a4a046f13850a80177e5bb9cbf758`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-148.md`
+- **Historical capsule SHA-256:** `f588bc5f7dc4bdd5997e13410d67b864dd9f89a3e61865e9d4d067f7daca89de`
+
+### GH-149 - Finish first-class Recipe reuse and discovery
+
+- **ID:** `GH-149`
+- **Title:** Finish first-class Recipe reuse and discovery
+- **Final state:** `MERGED`
+- **Capsule revision:** 11
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/149
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** 9c53288a7f2aeb5507807cc9a28e50a0126345a3
+- **Task branch:** gh-149-recipe-reuse-discovery
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 0d0d4bd063dab62cd6af3c8639e0ff3c1652a5c2
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** a65a847ad9d60f1c506339a25307808561881719
+- **Integration-related commit reference(s):** `a65a847ad9d60f1c506339a25307808561881719`, `06cf7448711b1b77dff0e8874c1adc4e1f371fae`, `0d0d4bd063dab62cd6af3c8639e0ff3c1652a5c2`
+- **Acceptance result:** 15/15 checked in the terminal source capsule.
+- **Review disposition:** APPROVED, integrated, and default-branch qualified. Exact integration `a65a847ad9d60f1c506339a25307808561881719` / tree `06cf7448711b1b77dff0e8874c1adc4e1f371fae` preserves the independently approved reviewed tree; CI run `32515387502` and CodeQL run `32515387144` succeeded on that exact commit. GH-149 is complete.
+- **Verification summary:** PASS — corrected implementation `0d0d4bd063dab62cd6af3c8639e0ff3c1652a5c2` / tree `d9d4d50b00def92deb52163022b7a81bb3a97cb5` verified without mutation. Exact correction commit scope and final nine-object GH-149 implementation identity passed; source-issue presentation contract passed; focused backend 25/25; focused mobile 138/138; TypeScript; both Expo development authorities; complete mobile 1,763 passed / 2 skipped; canonical review 12/12 including backend 1,782 passed / 468 deselected, documentation 130/568, capsules 36/36, audit tooling 43/43, repository mechanics, and immutable repository fingerprint `f5439a52b7d8e9f6d0e59a20ab56ce386c089f83b59bd20b7db540683660ab2d` all passed. Verification bundle: `nutrition-app-review-20260821-114107.zip`.
+- **Specialized qualification:** PASS — default-branch CI run `32515387502` passed `Backend PostgreSQL 16 contracts` on exact integration `a65a847ad9d60f1c506339a25307808561881719`. No schema/migration, native boundary, transfer, synchronization, control-plane, MinIO, Docker/provider, or Phase 5C performance authority changed, so no additional specialized qualification was required.
+- **Known warnings:** Existing two Starlette HTTP-422 deprecation warnings and existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` repository-audit warning remain.
+- **Deferred work/follow-up IDs:** None required by GH-149. Remaining unrelated backlog retains its existing issue scope.
+- **Retrospective:** no — this bounded product implementation follows the established task-capsule workflow.
+- **Referenced commits:** `9c53288a7f2aeb5507807cc9a28e50a0126345a3`, `a65a847ad9d60f1c506339a25307808561881719`, `06cf7448711b1b77dff0e8874c1adc4e1f371fae`, `0d0d4bd063dab62cd6af3c8639e0ff3c1652a5c2`, `d9d4d50b00def92deb52163022b7a81bb3a97cb5`, `a26582e7d5e04c8b246a2a2cf60a5c05aca20d99`, `d268fcd3fc000bb7b0af59ad48769198ba96ae02`, `c232aeedb58954be0b1207539f82eb9c62f843d2`, `65958ce8482a74d00c0ca82c61b140616860b11a`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-149.md`
+- **Historical capsule SHA-256:** `91ed359d45d9f07d98c894143e4e1cc3552b7330c1082adae1f2ec3e15f47696`
+
+### GH-150 - Duplicate Recipes as independent editable Recipes
+
+- **ID:** `GH-150`
+- **Title:** Duplicate Recipes as independent editable Recipes
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/150
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 709e1217ecb98fe2d36bd1e465482ff6ac0e1ebc
+- **Task branch:** gh-150-recipe-duplication-v2
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** Codex bounded implementation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 055de4ef94d6caf5bc21dd5bba58b43e55027ee6
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 3b4979952541f21f962cd2830f27c904b0d0407b
+- **Integration-related commit reference(s):** `3b4979952541f21f962cd2830f27c904b0d0407b`, `080e399a460b5ed8abdfab130618a7a6ec9a4c93`, `055de4ef94d6caf5bc21dd5bba58b43e55027ee6`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved, integrated, and default-branch qualified. Exact integration `3b4979952541f21f962cd2830f27c904b0d0407b` preserved the independently reviewed tree; CI run `32453906592` and CodeQL run `32453906277` succeeded on that exact commit. GH-150 is complete.
+- **Verification summary:** PASS — exact committed implementation `055de4ef94d6caf5bc21dd5bba58b43e55027ee6` / tree `228f1f03d4699df068365b264ac901e75ffe0efb` verified without mutation. Exact committed scope and forbidden authority immutability passed; toolchains were Python 3.12.13 / pytest 9.1.1 and Node 24.19.0 / npm 11.17.0; focused backend Recipe/history 136 passed; mandatory PostgreSQL 16 duplication 3 passed with infrastructure required; focused mobile 45 passed; ordinary backend 1,780 passed / 468 deselected; ordinary mobile 1,683 passed / 2 skipped; canonical review runner 12/12 passed.
+- **Specialized qualification:** PASS — PostgreSQL 16 duplication qualification ran with `REQUIRE_POSTGRES_TESTS=1` and passed 3/3; local SQLite duplication/replay/rollback semantics were exercised in the focused Node 24 Recipe runtime suite; immutable publication/history and graph behavior were covered by the focused 136-test backend selection.
+- **Known warnings:** Host defaults are Python 3.9/Node 26; qualification pinned repository Python 3.12.13 and Homebrew Node 24.19.0. Ordinary backend emitted two existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warnings. Mobile emitted existing USDA credential diagnostics and two fixture-gated skips. The first sandboxed backend baseline could not let process-lifecycle tests inspect disposable child processes; the identical unsandboxed baseline passed. Expo config fails closed without explicit authority variables and passed with explicit documented values; the review runner resolved its existing remote/development localhost environment and also passed. Preparation push reported three existing dependency vulnerabilities (two high, one moderate); dependencies were out of scope and unchanged. Session closeout retained one existing phase-boundary warning for `daily_logs` in control migration `ops_0004`. Historical blocker commit is not locally reachable from current main, but its identity is preserved by controller authority; no historical branch mutation was permitted.
+- **Deferred work/follow-up IDs:** #139 remains separate; GH-150 remains open pending implementation verification/review/integration.
+- **Retrospective:** no — unless duplicate name-family or create-idempotency reuse yields a reusable lesson.
+- **Referenced commits:** `3a12252439fd22b62991f762f4c275071823be60`, `c1377435a1962e03df9882f10a0f71b50de0e909`, `958531792dbee975eb91a37ea4e461af9d83f248`, `709e1217ecb98fe2d36bd1e465482ff6ac0e1ebc`, `3b4979952541f21f962cd2830f27c904b0d0407b`, `080e399a460b5ed8abdfab130618a7a6ec9a4c93`, `055de4ef94d6caf5bc21dd5bba58b43e55027ee6`, `228f1f03d4699df068365b264ac901e75ffe0efb`, `a829be0b0119dccdcce3077abce33c469afaa20c`, `4f87791eb68a531465e89deaa8432d2fd3b64233`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-150.md`
+- **Historical capsule SHA-256:** `11987e39e7fed65753058b9aa8076a186d1f6ae8ee8b04066debf389ee23cef5`
+
+### GH-150-P1 - Extend E2-15 transfer for recipe.duplicate receipts
+
+- **ID:** `GH-150-P1`
+- **Title:** Extend E2-15 transfer for recipe.duplicate receipts
+- **Final state:** `MERGED`
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/150
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 450645b2c74a58c961fb140d0462ba147e05ff19
+- **Task branch:** gh-150-p1-transfer-recipe-duplicate
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** Codex bounded implementation executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `9788bd82ed8ab58e79599280226176ae178c59c4`, `1c0a812b54671f8663a8aebd6b8faf486dcc9dde`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 9788bd82ed8ab58e79599280226176ae178c59c4
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 958531792dbee975eb91a37ea4e461af9d83f248
+- **Integration-related commit reference(s):** `9788bd82ed8ab58e79599280226176ae178c59c4`, `958531792dbee975eb91a37ea4e461af9d83f248`
+- **Acceptance result:** 14/14 checked in the terminal source capsule.
+- **Review disposition:** Approved, integrated, and default-branch qualified. Exact integration `958531792dbee975eb91a37ea4e461af9d83f248` preserved the reviewed tree; CI run `32450488888` and CodeQL run `32450488580` succeeded. GH-150-P1 is complete.
+- **Verification summary:** PASS — exact committed object `9788bd82ed8ab58e79599280226176ae178c59c4` with tree `1c0a812b54671f8663a8aebd6b8faf486dcc9dde` verified without mutation. Frozen v3 contract/source/target/representative files exactly match the pre-task current v3 Git blobs; v1/v2 remain unchanged; current source and target schemas remain structurally and byte stable.
+- **Specialized qualification:** PASS — focused backend transfer 87 passed; PostgreSQL 16 exporter 18 passed with `REQUIRE_POSTGRES_TESTS=1`; focused mobile transfer 81 passed / 1 skipped; Node 24 typecheck passed; ordinary backend baseline 1,771 passed / 465 deselected; ordinary mobile baseline 172 suites passed / 1 skipped and 1,673 tests passed / 2 skipped; full exact-object review runner 12/12 checks passed.
+- **Known warnings:** Initial READY capsule validation identified the GH-150 capsule as a nonexistent authority path on this main branch; that reference was removed while the preserved blocker commit remained recorded, then all 32 capsules passed. One reconnaissance search used a malformed zsh pattern and failed without changing files; fixed-string searches were rerun successfully. The requested `apps/backend/tests/test_e2_15_parity_fixtures.py` path does not exist; established parity coverage is part of the transfer-package suites. The first representative regeneration attempt correctly failed validation because `recipe.duplicate` had been added to copied operations before its enum; validation occurred before writing, the enum was added, and regeneration then passed. The first focused mobile attempt found a test-fixture mutation and newest-contract enum dispatch leak (79 passed, 2 failed, 1 skipped); both were corrected and the final focused suite passed. The first PostgreSQL run under restricted localhost access passed 17 static tests but skipped the integration case; the authoritative run with localhost access passed all 18. The first ordinary backend run under restricted process visibility produced 9 unrelated lifecycle failures (1,762 passed, 465 deselected); the isolated lifecycle suite passed 14 tests with process-inspection permission, and the authoritative rerun passed. An extra full mobile run under default Node 26 passed but is non-authoritative; all reported mobile qualification was rerun under Node 24. Preparation push reported three existing default-branch dependency vulnerabilities; no dependency or GitHub security state changed.
+- **Deferred work/follow-up IDs:** GH-150 remains blocked until this prerequisite is implemented, verified, reviewed, and integrated; #139 and #149 remain separate.
+- **Retrospective:** no — unless version dispatch exposes a reusable transfer-contract evolution lesson.
+- **Referenced commits:** `c1377435a1962e03df9882f10a0f71b50de0e909`, `450645b2c74a58c961fb140d0462ba147e05ff19`, `958531792dbee975eb91a37ea4e461af9d83f248`, `995c42258c269fa0c3a17f515f5ea93b2dc1a4f3`, `9788bd82ed8ab58e79599280226176ae178c59c4`, `1c0a812b54671f8663a8aebd6b8faf486dcc9dde`, `6eea1115a42f68dac40f8b0a7b06a44100160df8`, `f22e17b64f008de12e03dcc8a919b16e52d5dd62`, `259d9611b67bc345bcc1e55784f919ec390e0aff`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-150-P1.md`
+- **Historical capsule SHA-256:** `9508c37a257c0122611594380f5cefa8d55d7f7814f07b0d796b78e6f45b6ddc`
+
+### GH-151 - Keep Phase 5C and 5C4 infrastructure opt-ins out of ordinary backend baseline
+
+- **ID:** `GH-151`
+- **Title:** Keep Phase 5C and 5C4 infrastructure opt-ins out of ordinary backend baseline
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/151
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-20
+- **Completed/updated:** 2026-08-20
+- **Base commit:** 3bea407a84e2e81eeb2668b0cffd1b286f3649ae
+- **Task branch:** gh-151-backend-baseline-selection
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `b925c41495e6b1bc8c5ec2d8bd7f7a62a639178c`, `d94cd48cb4668ae8ebc5fdc8ea804969544534ff`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** b925c41495e6b1bc8c5ec2d8bd7f7a62a639178c
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** ed1d2414ddebd27e9c5595f61053a3bd4d7aaf80
+- **Integration-related commit reference(s):** `b925c41495e6b1bc8c5ec2d8bd7f7a62a639178c`, `ed1d2414ddebd27e9c5595f61053a3bd4d7aaf80`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS. Exact implementation `b925c41495e6b1bc8c5ec2d8bd7f7a62a639178c` was independently reviewed and squash-integrated as `ed1d2414ddebd27e9c5595f61053a3bd4d7aaf80` with the reviewed tree preserved exactly. Default-branch CI run `32433372237` subsequently passed all four jobs, including the required Backend baseline and Backend PostgreSQL 16 contracts.
+- **Verification summary:** VERIFIED at exact implementation commit `b925c41495e6b1bc8c5ec2d8bd7f7a62a639178c` / tree `d94cd48cb4668ae8ebc5fdc8ea804969544534ff` — 7 focused selector tests passed; 2210 total tests collected, 1745 ordinary selected, 465 specialized deselected; all five specialized marker families remained explicitly selectable; complete ordinary backend, Ruff, compileall, docs, capsule, session-end/audit, shell syntax, and whitespace checks passed.
+- **Specialized qualification:** PASS — implementation verification confirmed all five infrastructure/performance marker families remain explicitly selectable, while the ordinary baseline excludes them. Post-merge GitHub Actions run `32433372237` additionally passed the Backend PostgreSQL 16 contracts job.
+- **Known warnings:** Existing Starlette HTTP 422 deprecation warnings and historical `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning remain nonblocking and outside GH-151. GitHub reports three separate default-branch Dependabot findings; those are unrelated to this test-selection correction.
+- **Deferred work/follow-up IDs:** #141 remains the separate broader repository/strict-marker maintenance task. No GH-151 implementation work is deferred.
+- **Retrospective:** no — bounded test-selection correction unless execution exposes a broader workflow defect.
+- **Referenced commits:** `3bea407a84e2e81eeb2668b0cffd1b286f3649ae`, `a9ef803e55945b09351e8a3e0faea4fa3cdddaa4`, `b925c41495e6b1bc8c5ec2d8bd7f7a62a639178c`, `d94cd48cb4668ae8ebc5fdc8ea804969544534ff`, `ed1d2414ddebd27e9c5595f61053a3bd4d7aaf80`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-151.md`
+- **Historical capsule SHA-256:** `4eb0bee2510a9e9d003e1a3d39e50745f10af79e6d3bbebfb7820a0be855d8b1`
+
+### GH-152-P1 - Restore frozen 0017 converter compatibility with serving-reference ORM growth
+
+- **ID:** `GH-152-P1`
+- **Title:** Restore frozen 0017 converter compatibility with serving-reference ORM growth
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/152
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** ec6dbc8710e7c7beab0f58338fc1aef9db290ef4
+- **Task branch:** gh-152-p1-phase5c-0017-compat
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 5fee905b8bbf214af8010ed8227c042c325ecee0
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** b1161d1667d28b51e64182e1515361ab3d5d821c
+- **Integration-related commit reference(s):** `5fee905b8bbf214af8010ed8227c042c325ecee0`, `b1161d1667d28b51e64182e1515361ab3d5d821c`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking or nonblocking findings. Exact implementation scope and normalized AST were reviewed; the only production semantic delta is deferred loading on the three post-0017 ServingDefinition reference fields.
+- **Verification summary:** MERGED and default-branch qualified — exact integration `b1161d1667d28b51e64182e1515361ab3d5d821c` preserves the reviewed tree and passed all seven required GitHub checks. Check runs: Analyze actions `96967250006`, Analyze javascript-typescript `96967250074`, Analyze python `96967250111`, Backend PostgreSQL 16 contracts `96967249184`, Backend baseline `96967249147`, Mobile baseline `96967249078`, Repository validation `96967249186`. Earlier committed-tree verification proved frozen-0017 compatibility at 4 absent / 0 eager / 4 deferred mappings, root regression PASS, 106 bridge-planner PostgreSQL tests PASS, and 167 current serving-reference tests PASS. The unrestricted backend run left exactly the separately bounded 2 P2 and 1 P3 failures.
+- **Specialized qualification:** PASSED — local PostgreSQL 16 frozen-0017 converter qualification passed before integration, and the repository's `Backend PostgreSQL 16 contracts` check `96967249184` passed on exact default-branch integration `b1161d1667d28b51e64182e1515361ab3d5d821c`.
+- **Known warnings:** Existing SQLAlchemy cyclic-FK warning in the historical 0019 metadata comparison is outside P1.
+- **Deferred work/follow-up IDs:** GH-152-P2 performance-fixture catalog compatibility; GH-152-P3 0019 metadata-comparison compatibility.
+- **Retrospective:** no — unless repair reveals an additional unmodeled post-0017 ORM dependency.
+- **Referenced commits:** `ec6dbc8710e7c7beab0f58338fc1aef9db290ef4`, `9e5e48b1cea24781ac34a21b655468770488b3a8`, `978db156be2370102d995c9c27466984613918f7`, `4827f60df13871d995293a9cb644f973acc7f943`, `c67893642ecf56f5f7dc43b58c65b52b0547f3e3`, `b1161d1667d28b51e64182e1515361ab3d5d821c`, `08eb50fcf2da5d24cb4f0dd1cc1fea75d814f740`, `4a558a6cd1fe1446dc88c3ec563566cc9513e5a9`, `5fee905b8bbf214af8010ed8227c042c325ecee0`, `4eebf800f1027667ce1f2e8f7436331ab323edaa`, `76c8a077a747da29c8f710d5e1aa298c6c4093be`, `49f1ad15ae5c0c8b40ff3799957e0d62e4d28922`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-152-P1.md`
+- **Historical capsule SHA-256:** `ec07bd78ae316ca220a4effa8314e9ac8583eecb9caa8aba5aebbf713ced5f05`
+
+### GH-152-P2 - Restore frozen 0003 performance-fixture nutrient authority
+
+- **ID:** `GH-152-P2`
+- **Title:** Restore frozen 0003 performance-fixture nutrient authority
+- **Final state:** `MERGED`
+- **Capsule revision:** 12
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/152
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** c42e6f629643a71f4bd1c4732d80ccfd19e4887e
+- **Task branch:** gh-152-p2-phase5c-0003-catalog-compat
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 9edc2479fd4fac9fc66bb9fbb77dafdc787b25b9
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** d25e32f5658e9f8b6c13b9ac9c14b75f876da94d
+- **Integration-related commit reference(s):** `9edc2479fd4fac9fc66bb9fbb77dafdc787b25b9`, `d25e32f5658e9f8b6c13b9ac9c14b75f876da94d`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking or nonblocking findings. Exact implementation scope and frozen historical-authority boundaries were reviewed; fixture admission and all generator-v1 nutrient-producing surfaces use the same explicit 16-entry authority while current runtime catalog and migrations remain unchanged.
+- **Verification summary:** MERGED and default-branch qualified — exact integration `d25e32f5658e9f8b6c13b9ac9c14b75f876da94d` preserves reviewed tree `ededfe98dd1a3151383ed60fe3450b49c9f9360e` and passed all seven required GitHub checks. Check runs: Analyze actions `96980654426`, Analyze javascript-typescript `96980654523`, Analyze python `96980654545`, Backend PostgreSQL 16 contracts `96980652734`, Backend baseline `96980652776`, Mobile baseline `96980652679`, Repository validation `96980652761`. Earlier committed-tree verification bound implementation `9edc2479fd4fac9fc66bb9fbb77dafdc787b25b9` / tree `dda6f720ddf9757152a7859a4149a29d48e63704` to the exact qualified fixture and regression-test blobs; fixture unit module passed 10 tests, PostgreSQL performance passed 4 tests with 1 skip, and unrestricted backend recorded 2242 passed / 18 skipped with only the separately bounded GH-152-P3 failure remaining. Project audit, capsule validation, diff check, canonical review, and review bundle integrity passed.
+- **Specialized qualification:** PASSED — local PostgreSQL 16 frozen-0003 Phase 5C performance-fixture qualification passed before integration, and repository check `Backend PostgreSQL 16 contracts` `96980652734` passed on exact default-branch integration `d25e32f5658e9f8b6c13b9ac9c14b75f876da94d`.
+- **Known warnings:** Established project warnings only; P3's SQLAlchemy cyclic-FK metadata-comparison warning remains outside this slice.
+- **Deferred work/follow-up IDs:** GH-152-P3 frozen-0019 metadata-comparison compatibility; suspended GH-142-P2 resumes only after this repair series restores the unrestricted backend baseline.
+- **Retrospective:** no — unless P2 exposes another unmodeled temporal dependency in the performance fixture.
+- **Referenced commits:** `c42e6f629643a71f4bd1c4732d80ccfd19e4887e`, `af9aa79fe993a5116df254c032bf11a215984798`, `8f9f12c882682584f627686f7f140eca94588889`, `21fb38db6fbf2708520901847dcefe67ee8f0e58`, `0a5d31dd2217fb8598992acaf2e484300d779425`, `43ba63e743d53f5e78d6f68b924774fa2be4e3bb`, `65101ac949d7c9a2d95ed61b46ce26d41b21409d`, `78e5f2581d977fce3128c3ce2ee376bc8412bf52`, `dc3cf0eededf2a8f1554bc46b8ef3ce1f6145df2`, `45e4a800457e425c9522cc6b8074ebb3e8641fb7`, `d25e32f5658e9f8b6c13b9ac9c14b75f876da94d`, `ededfe98dd1a3151383ed60fe3450b49c9f9360e`, `549558c9a4a9d6bc4959a7b7a2b3655dd62342e2`, `58b8f1b5ccd308072c0d6bcc6d4eee3d404e1032`, `5a70afeb53def3a8a77bc235171cee73fffaa12e`, `9edc2479fd4fac9fc66bb9fbb77dafdc787b25b9`, `dda6f720ddf9757152a7859a4149a29d48e63704`, `c875e4a36b0e5ba2f69096af26fdcda29ec0947a`, `1481dfff285c6d1d28a671cee2b8562ed80ee711`, `2037c114df1ad9e543c843ca85106d0325adf2e4`, `89b73e324535e1bb6224e44a35b237515357aa75`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-152-P2.md`
+- **Historical capsule SHA-256:** `d841774b65382874e87adabed85bdcbb90b6046c2227ab08ef17fd5295056d76`
+
+### GH-152-P3 - Restore frozen 0019 metadata-projection compatibility
+
+- **ID:** `GH-152-P3`
+- **Title:** Restore frozen 0019 metadata-projection compatibility
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/152
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-21
+- **Completed/updated:** 2026-08-21
+- **Base commit:** 8f15d2dd42782ccb3b9fcedecd20ff177eb717cd
+- **Task branch:** gh-152-p3-phase5c-0019-metadata-compat
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `2b8c7257688def402ffd6cb86296a8f86e0ec053`, `a0195871322123336d818099f1d29ddbd1f04567`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** ffecdc3a4be5e31156aa257bed2075d11574d074
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 69ac6ce4dea7da8f42be1b19362bc8cd918c5743
+- **Integration-related commit reference(s):** `ffecdc3a4be5e31156aa257bed2075d11574d074`, `69ac6ce4dea7da8f42be1b19362bc8cd918c5743`
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** APPROVED — zero blocking or nonblocking findings. The frozen-0019 projection is exact, typed, identity-specific, and preserves unlisted/reflected drift visibility; no production or migration authority was changed.
+- **Verification summary:** MERGED and default-branch qualified — exact integration `69ac6ce4dea7da8f42be1b19362bc8cd918c5743` / tree `52d7372fdd0861845372ba288b7488bc72ec04b5` preserves reviewed tree and qualified metadata-test blob `ceaa26efd62a9687f3307c6587c204ae3ddda6ba`. All seven required GitHub checks passed: Analyze (actions) `96985750528`, Analyze (javascript-typescript) `96985750590`, Analyze (python) `96985750446`, Backend PostgreSQL 16 contracts `96985747739`, Backend baseline `96985747754`, Mobile baseline `96985747798`, and Repository validation `96985747640`. Unrestricted backend from exact current main recorded `2244 passed, 18 skipped, 3 warnings in 411.66s (0:06:51)` with zero GH-152 failures. Earlier focused projection, full resource-membership PostgreSQL, project audit, 48 focused audit-tooling tests, capsule validation, diff check, canonical 12-check review, reviewed-patch identity, and bundle integrity also passed.
+- **Specialized qualification:** PASSED — PostgreSQL 16 frozen-0019 metadata-projection qualification passed before integration; Backend PostgreSQL 16 contracts `96985747739` passed on exact default-branch integration `69ac6ce4dea7da8f42be1b19362bc8cd918c5743`; unrestricted backend was rerun from that current-main SHA and passed with zero GH-152 failures.
+- **Known warnings:** Existing SQLAlchemy cyclic-FK warning during metadata comparison is established and may remain if the exact drift result is otherwise empty.
+- **Deferred work/follow-up IDs:** GH-142-P2 may resume after umbrella #152 is closed following this archive; resumption remains a separate task transition and must preserve its exact suspended 20-blob working state.
+- **Retrospective:** no — unless P3 reveals additional unmodeled post-0019 metadata categories.
+- **Referenced commits:** `8f15d2dd42782ccb3b9fcedecd20ff177eb717cd`, `d14be2abf0c0943921058e8e2e1d0c80b16c3ca5`, `b1f2f09ecab78c6530282349762a0cca606bb28a`, `307f23566341304e23eb0a9b9bfcd4cd3715ddcf`, `c67893642ecf56f5f7dc43b58c65b52b0547f3e3`, `f4e01b2867ce80e00663a4974890e2010817d97b`, `69ac6ce4dea7da8f42be1b19362bc8cd918c5743`, `52d7372fdd0861845372ba288b7488bc72ec04b5`, `ceaa26efd62a9687f3307c6587c204ae3ddda6ba`, `ffecdc3a4be5e31156aa257bed2075d11574d074`, `3218f23086bb166ccd099584c92e711fc3767157`, `929aac7b2fb7f6fd4bd51b86da574b9bcf11b4f0`, `7a40dfab8c6eca59f418c50ee14afb7e8466c1cb`, `2b8c7257688def402ffd6cb86296a8f86e0ec053`, `a0195871322123336d818099f1d29ddbd1f04567`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-152-P3.md`
+- **Historical capsule SHA-256:** `3d1905764bbcf4677fad0f198335443b5dd1e74fc9469b51bd270f810e5291ec`
+
+### GH-153 - Validate remaining supported remote API responses
+
+- **ID:** `GH-153`
+- **Title:** Validate remaining supported remote API responses
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/153
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** b4953e5ebf2bdfc4047b4b6fa94ef7ee7768312d
+- **Task branch:** gh-153-remaining-remote-response-validation
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — GH-153 was cancelled during required implementation baseline qualification before VERIFIED or independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — no GH-153 implementation source was integrated into default branch.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/12 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — cancellation occurred before the formal review gate.
+- **Verification summary:** CANCELLED — all 28 newly selected response-validation operations were implemented and focused qualification passed, but the required full mobile Jest baseline exposed a necessary canonical fixture repair outside the qualified allowed surface. Successor GH-153-R1 will requalify that bounded fixture-only scope.
+- **Specialized qualification:** Not applicable — GH-153 defines no specialized physical qualification.
+- **Known warnings:** The frozen 22-path implementation is not a merged or lifecycle-qualified implementation commit. It remains preserved only for controlled successor recovery after a new READY execution preflight. GitHub issue #153 remains open.
+- **Deferred work/follow-up IDs:** GH-153-R1 — requalify remaining remote-response validation with `e2_17RemoteRuntimeIsolation.test.ts` allowed only for canonical successful-response fixture repair, then recover and requalify the frozen implementation.
+- **Retrospective:** no — evaluate after issue #153 completes through its successor.
+- **Referenced commits:** `74a7412c3a878a0751a77796155a7539a5d40448`, `7dccebd71fbe3578158aa26527e03c65510127af`, `48b6be0d971dd4b82bb8f405b3f9f41d35703029`, `886e5343c77a9234419b95fccb925454f4f0ed39`, `98ea26575acfd4e68f34f29270e7138c3d5e159a`, `71d4c68919e591110496d6a05e3100e51bc4a5d7`, `1b7d7fe14443cb1f599ec6fa839c269230c5d62f`, `b4953e5ebf2bdfc4047b4b6fa94ef7ee7768312d`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-153.md`
+- **Historical capsule SHA-256:** `3c62f382a73a1f6ebfef2cc1e026913929c9d1a1165920ccfb2e22d95616d7db`
+
+### GH-153-R1 - Validate remaining supported remote API responses after fixture-scope correction
+
+- **ID:** `GH-153-R1`
+- **Title:** Validate remaining supported remote API responses after fixture-scope correction
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/153
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 96f594b340ebe93319cfbe6f28f626f7c28c47ae
+- **Task branch:** gh-153-r1-remaining-remote-response-validation
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `f789edb1c1de4b5d7de700b38da492572b08481a`, `886e5343c77a9234419b95fccb925454f4f0ed39`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — GH-153-R1 was cancelled during bounded implementation qualification before VERIFIED or independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — no GH-153-R1 implementation source was integrated into default branch.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/15 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — cancellation occurred before the formal review gate.
+- **Verification summary:** CANCELLED — exact 22-path predecessor recovery succeeded and the canonical Saved Foods fixture repair made all positive-path Saved Foods tests pass, but the remaining negative tests proved that the recovered strict Food parser changed an existing error-message compatibility surface. Correcting that requires semantic production work outside R1's qualified execution contract.
+- **Specialized qualification:** Not applicable — GH-153-R1 defines no specialized physical qualification.
+- **Known warnings:** The 23-path candidate is preserved only in stash `f789edb1c1de4b5d7de700b38da492572b08481a` and is not a merged or lifecycle-qualified implementation commit. The original 22-path stash `886e5343c77a9234419b95fccb925454f4f0ed39` is also retained separately. GitHub issue #153 remains open.
+- **Deferred work/follow-up IDs:** GH-153-R2 — freshly qualify the narrow Food error-compatibility repair while retaining strict Zod validation and Zod error identity, then complete the remote-isolation canonical fixture repair and full GH-153 qualification.
+- **Retrospective:** no — evaluate after issue #153 completes through its successor.
+- **Referenced commits:** `f49ff699730e06a03672a3df941aea6ba3f28b06`, `886e5343c77a9234419b95fccb925454f4f0ed39`, `955856f33a866d550e5964525246624dd2c6b76d`, `96f594b340ebe93319cfbe6f28f626f7c28c47ae`, `e06871201bedc151857458f3eda30e2e07e441b8`, `74a7412c3a878a0751a77796155a7539a5d40448`, `f789edb1c1de4b5d7de700b38da492572b08481a`, `a56353841b167eaae2dfd71731185a78a2754f9e`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-153-R1.md`
+- **Historical capsule SHA-256:** `318756b4859659baae15fbcd6ce9e8458876bf34d380bd676725ad2649b96c35`
+
+### GH-153-R2 - Complete remote response validation with Food error compatibility
+
+- **ID:** `GH-153-R2`
+- **Title:** Complete remote response validation with Food error compatibility
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/153
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 269feeb5586d59a13731085832a185020dc19232
+- **Task branch:** gh-153-r2-remaining-remote-response-validation
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `269feeb5586d59a13731085832a185020dc19232`, `48b6be0d971dd4b82bb8f405b3f9f41d35703029`, `097ad1d9cea05b502799afe1b0cf40e6cbc6a9ee`
+- **Verified commit reference(s):** `56a025dcd79c649bf515883411207ba53aa7999b`, `9afcc76924e004ad77c0d8860d5270dcd8c69711`
+- **Reviewed source commit:** 56a025dcd79c649bf515883411207ba53aa7999b
+- **Reviewed task/checkpoint commit(s):** `44c58fe0ee7d7ad2de93dd07e2880e661aa9a935`, `73fcc77d8593c4f9ded33a0f0c19b004469b9c4a`, `5f9f62a87e1fa5e13c1e328c49beca38ec81e1b2`
+- **Integration/merged commit:** `5f9f62a87e1fa5e13c1e328c49beca38ec81e1b2`.
+- **Integration-related commit reference(s):** `5f9f62a87e1fa5e13c1e328c49beca38ec81e1b2`, `73fcc77d8593c4f9ded33a0f0c19b004469b9c4a`, `74a7412c3a878a0751a77796155a7539a5d40448`, `56a025dcd79c649bf515883411207ba53aa7999b`
+- **Acceptance result:** 17/17 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review found no review-blocking defect. Review evidence SHA-256 is `796627e99968ba4c753155ff2167592b518325465874c81a25838a1e5f832b82`.
+- **Verification summary:** VERIFIED before integration; the exact REVIEWED tree was integrated without content change. Post-push integration qualification passed with SHA-256 `41dd97072a684f5f3a4bdbaa6c06960a359855a209e70ffd997710677f8483f8` and all seven GitHub checks succeeded.
+- **Specialized qualification:** Default-branch integration identity, two-parent topology, exact tree equality, GitHub remote identity, repository capsule validation, and whitespace qualification all passed.
+- **Known warnings:** Issue #153 remains open until this MERGED archive checkpoint is pushed and independently qualified. The primary 23-path and secondary 22-path stashes remain intentionally preserved as provenance evidence.
+- **Deferred work/follow-up IDs:** None within GH-153-R2.
+- **Retrospective:** no.
+- **Referenced commits:** `0c531f6e776d08082a4401e92199754372852af3`, `4fc86b6364f225ddc4fbf7238d1a83ea28bb47b0`, `8294f7ee015519ad6d842ec95d14beef24a88fa5`, `f789edb1c1de4b5d7de700b38da492572b08481a`, `886e5343c77a9234419b95fccb925454f4f0ed39`, `269feeb5586d59a13731085832a185020dc19232`, `74a7412c3a878a0751a77796155a7539a5d40448`, `44e88e1a1062ebb9dac2cc8bc445b26a1f7373a1`, `56a025dcd79c649bf515883411207ba53aa7999b`, `44c58fe0ee7d7ad2de93dd07e2880e661aa9a935`, `73fcc77d8593c4f9ded33a0f0c19b004469b9c4a`, `5f9f62a87e1fa5e13c1e328c49beca38ec81e1b2`, `9afcc76924e004ad77c0d8860d5270dcd8c69711`, `92d85000f762f2e6e95be33d7c20ecb0f76c87fd`, `296bbd64087f9f53fb857d23d55478bdb40aa8a6`, `ae4bcada0e1a0ad58b2b6e514516f5dff3782e69`, `06e8c70b67a289ac761b9290b355e9823d895c2c`, `9b612fd723a09abae7690cf4345a972f9f52f1ca`, `9fdff86b366a9172a76cce71f65ec79916497d23`, `79a5a09679a12d1ab7e34dd87cb6cc4d9f13aab9`, `dc819b98d96f16cd5bdcb52f346a987a6a7aeb11`, `48b6be0d971dd4b82bb8f405b3f9f41d35703029`, `097ad1d9cea05b502799afe1b0cf40e6cbc6a9ee`, `9d375a5d8c6788f64b74e67d1161c78a811a2676`, `493c85e2fbb2a42310d686b38f11b8399fa7f006`, `5d5d27a2d3a185a57eb2761003ae86ecfc666e55`, `5bc731cf77e8f5fab283e6731dc0cdf9da5accb2`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-153-R2.md`
+- **Historical capsule SHA-256:** `35f2d48f77ccb924aa30bef15406b0f4ca7723264dd7811e08902325f5b5d265`
+
+### GH-154 - Remove credential diagnostics and retire stale WF-003 authority
+
+- **ID:** `GH-154`
+- **Title:** Remove credential diagnostics and retire stale WF-003 authority
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 7
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/154
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 79898b71f7319b7b7892ef0fbe59617d1966fad5
+- **Task branch:** gh-154-pre-2-0-hygiene
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `79898b71f7319b7b7892ef0fbe59617d1966fad5`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — GH-154 was cancelled during implementation before independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable - no merged commit was recorded for this terminal task.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/10 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — execution authority became invalid when the specified WF-003 move removed a path still required by planning_artifacts.
+- **Verification summary:** GH-154-C passed focused Node-24 qualification. GH-154-W produced a valid revision-4 CANCELLED WF-003 candidate, after which ordinary capsule validation exposed the post-READY authority-path defect. The exact four-path candidate is preserved in stash `428dbc66bdd8e8d023be4c3af0e3e4231c3f772a` with path-manifest SHA-256 `81c77e96bcc1614d98be7811fc66b7accf45f738de071a53666b2ef82b0b156c` and combined-patch SHA-256 `e7b108e0c97140255db5ac23a097331e0277e0d946ef0b95fb996c0e8d222fee`.
+- **Specialized qualification:** Not applicable — cancellation occurred before cumulative GH-154-Q qualification.
+- **Known warnings:** The preserved candidate must not be applied or executed directly; successor GH-154-R1 must correct planning authority and pass a fresh READY execution gate first.
+- **Deferred work/follow-up IDs:** GH-154-R1 — recover the preserved candidate under corrected authority while GitHub issue #154 remains open.
+- **Retrospective:** no — bounded cancellation caused by a discovered execution-contract defect.
+- **Referenced commits:** `428dbc66bdd8e8d023be4c3af0e3e4231c3f772a`, `37cc6bae073a96f4d7a73697f0830ed78043115b`, `afbaa21295adea54e5dcb64fe1344f2b4c2a56cd`, `ef43f2ea41dbbb43fc6f3b4acb7a7c19f9ef65c3`, `e33ccdc9d78b23f7c3c5e66a63ef1cd8451705ac`, `79898b71f7319b7b7892ef0fbe59617d1966fad5`, `53d273f4f4a2378ef1460090d5fa293d97b6088c`, `0c78f5b62013180bdd6f864e599b6a5f6ce556ad`, `73fe43318699f15e7d15f308bb6d94bef731f80d`, `b5213368a45b08264c15d3bd4bd3c55f6d26596c`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-154.md`
+- **Historical capsule SHA-256:** `284cb4b30b83e0a8edc1a1eeb3c9f29763ec86aa1d14d145d5fbb367b8c46d0d`
+
+### GH-154-R1 - Recover pre-2.0 hygiene work under stable authority
+
+- **ID:** `GH-154-R1`
+- **Title:** Recover pre-2.0 hygiene work under stable authority
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/154
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 9e16616044edd1132cec15d668fb7aae247394cc
+- **Task branch:** gh-154-r1-pre-2-0-hygiene
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** `23f5b6f3c3e912f213d8ff0d1097a4fd0c83b78c`, `93e539cb1cb94f4c9420ed351dd50602f3e3ef9f`
+- **Reviewed source commit:** 23f5b6f3c3e912f213d8ff0d1097a4fd0c83b78c
+- **Reviewed task/checkpoint commit(s):** `93e539cb1cb94f4c9420ed351dd50602f3e3ef9f`, `5b5cf671932a892262edd5493b48ba3c7bca323e`, `6e752fc7677453479d3a9f8a5b7ac4eb0d2ca152`, `c8cb75cc84670e395bc907fb04d272513ec76b26`
+- **Integration/merged commit:** `c8cb75cc84670e395bc907fb04d272513ec76b26`.
+- **Integration-related commit reference(s):** `23f5b6f3c3e912f213d8ff0d1097a4fd0c83b78c`, `c8cb75cc84670e395bc907fb04d272513ec76b26`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review found no review-blocking defect. Review evidence SHA-256 is `2b0bbf3580e4759328b84255d7e06360d0c71eb86db3b6a9297764ddce23a7fa`.
+- **Verification summary:** VERIFIED before integration; exact REVIEWED task tree `5b5cf671932a892262edd5493b48ba3c7bca323e` was integrated without content change. Human-integration checkpoint SHA-256 is `7eecd503452237737a6945f9d7202699516428f77dbdb45e080100f6664e46ed` and all seven GitHub checks succeeded.
+- **Specialized qualification:** Default-branch integration identity, two-parent topology, exact REVIEWED-tree equality, exact implementation object identities, GitHub remote identity, task-capsule validation, and whitespace qualification passed.
+- **Known warnings:** Issue #154 remains open until this MERGED archive checkpoint is pushed and post-push archive qualification succeeds. The pre-existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` audit warning and existing dependency vulnerability alerts remain outside GH-154-R1 scope.
+- **Deferred work/follow-up IDs:** #155 — final 2.0 release coherence, outside GH-154-R1.
+- **Retrospective:** no.
+- **Referenced commits:** `467936f5ac11df36c67b4d944f7e5f13eef8cf67`, `428dbc66bdd8e8d023be4c3af0e3e4231c3f772a`, `67846789600adf1fd3738b24f1f016f40d9985e1`, `f06afbd6bbcba4966dc7bcc8f0fc77c062a9c295`, `989ae46fce6f889d2c38e2c0caafa1377126d7e0`, `37cc6bae073a96f4d7a73697f0830ed78043115b`, `23f5b6f3c3e912f213d8ff0d1097a4fd0c83b78c`, `93e539cb1cb94f4c9420ed351dd50602f3e3ef9f`, `5b5cf671932a892262edd5493b48ba3c7bca323e`, `6e752fc7677453479d3a9f8a5b7ac4eb0d2ca152`, `c8cb75cc84670e395bc907fb04d272513ec76b26`, `9ec3b11bf5d69813ee42e328638e2f9cc61f0ed9`, `4467c63b420347e7672cbd1790111153ce3af2b2`, `1b9624d79a788da9bef8758b809aeb3bb0f26494`, `8eb56a510db14dd55ac8e0b82dd13fb9e532b35a`, `ac1dcdb69b0b63bc48ae37c10a941d5b7c9ff259`, `7608170a6db8a1f4d05f2b2f76ca329815c52e64`, `45500f398c7772b1a8d6ae3cdce45d06483378a1`, `9e16616044edd1132cec15d668fb7aae247394cc`, `7ee93b6418e9c6bf9da6979625b1b2179069f91d`, `c96e6c953fe3eaba1051e00d9949b9d162192e25`, `73fe43318699f15e7d15f308bb6d94bef731f80d`, `8997d3c0fae0a2d6d1a4bfb6836623d5efdc7a72`, `bcfc25346a2215e9a8748dabbe0840d72fd031e0`, `8f7c81568a0da0ae9ac53b9e6c72481847c680a9`, `74ccf6f3dd79e86271185bc80733d6832c3e245d`, `7a47b812180503b82ec29260c000bcb6a2fb3b55`, `53d273f4f4a2378ef1460090d5fa293d97b6088c`, `0c78f5b62013180bdd6f864e599b6a5f6ce556ad`, `b5213368a45b08264c15d3bd4bd3c55f6d26596c`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-154-R1.md`
+- **Historical capsule SHA-256:** `4d87fa1f204e8f23a06e14dc75f6896ebc4e05e5b9a01b9f6f6d3f8856993f61`
+
+### GH-155 - Establish coherent Version 2.0 release authority
+
+- **ID:** `GH-155`
+- **Title:** Establish coherent Version 2.0 release authority
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** release
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/155
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** Not recorded in source capsule.
+- **Task branch:** gh-155-2-0-release-coherence
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — cancelled during planning before implementation, verification, or independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — no implementation or integration occurred.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/11 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — SPECIFIED contract cancelled after a lifecycle-ordering defect was proven before DECOMPOSED.
+- **Verification summary:** Planning validation had passed at SPECIFIED commit `1a31ba2be95ba47d0533dccfeb0578da3c52011a`, but lifecycle analysis proved AC-8, AC-9, and AC-10 cannot truthfully be checked by the required VERIFIED gate. Blocker evidence SHA-256 is `9ff485de95acbc453b662d7fc9db71a0d3064a085de03748ab5414f0acd9c69c`.
+- **Specialized qualification:** Not applicable — final release qualification, tag creation, and GitHub Release publication were never attempted.
+- **Known warnings:** No product/documentation/version implementation mutation occurred. Issue #155 remains open. The three known dependency alerts remain pre-existing release context. Frozen GH-155 planning evidence is historical only and must not be executed directly.
+- **Deferred work/follow-up IDs:** GH-155-R1 — successor capsule under GitHub issue #155 with corrected acceptance-versus-publication lifecycle ordering.
+- **Retrospective:** no — the successor must explicitly encode the corrected publication gate before READY.
+- **Referenced commits:** `56a025dcd79c649bf515883411207ba53aa7999b`, `3f67b45eea21750f8fc19ecb3e095a75beda60df`, `23f5b6f3c3e912f213d8ff0d1097a4fd0c83b78c`, `15026fdee443150e4f68343a8f36f8df6d87a7e8`, `1a31ba2be95ba47d0533dccfeb0578da3c52011a`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-155.md`
+- **Historical capsule SHA-256:** `d522ecb9f9769fbd00cfc21ed981061d8f7d398b153647ac69a6edcc9c8c2a32`
+
+### GH-155-R1 - Establish coherent Version 2.0 release authority
+
+- **ID:** `GH-155-R1`
+- **Title:** Establish coherent Version 2.0 release authority
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 6
+- **Task type:** release
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/155
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-22
+- **Base commit:** 71904b904ee67de17d1f42f442faabc930493986
+- **Task branch:** gh-155-r1-2-0-release-coherence
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — cancelled during implementation before an implementation commit, verification, or independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — no implementation was integrated.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/10 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — GH-155-R1 was cancelled after P2 proved that truthful Version 2.0 current documentation requires a validator change outside the frozen READY execution surface.
+- **Verification summary:** P1 release metadata passed focused structural qualification while uncommitted. P2 then reproduced two deterministic `scripts/validate-docs.py` failures because the validator still requires Version 1.2 current-status literals. Scope-blocker checkpoint SHA-256 is `d4cfab5759d694a16b4c6ab11933f23b72304bae1f73d48b66bc39a63957d9ff` and validator-failure SHA-256 is `b6d2b6979612e88a543bfa5ccb0b8aa372a6533dcfb2b7b78b02739ae6897fef`.
+- **Specialized qualification:** Not applicable — full source qualification, PostgreSQL qualification, independent review, integration qualification, tag creation, and GitHub Release publication were never reached.
+- **Known warnings:** No implementation commit was created. Qualified P1 work was preserved externally only, with tracked patch SHA-256 `245feb92b790bb46b76c1b92e0ee9e44192670edccbb68057e71c5ed999f5aa2` and VERSION SHA-256 `c28fcca53637bc88e124af1725df13cb98c69dedefd62fb3cdbe1cdb6b760624`. Issue #155 remains open. Existing dependency-alert context is unchanged.
+- **Deferred work/follow-up IDs:** GH-155-R2 — successor under issue #155. Replan the Version 2.0 release coherence task with `scripts/validate-docs.py` explicitly included in the governed mutation surface, then requalify before execution.
+- **Retrospective:** no — the successor must incorporate the newly discovered validator dependency before READY.
+- **Referenced commits:** `1a31ba2be95ba47d0533dccfeb0578da3c52011a`, `7563c7bf8b916baf41a1f82f499ec2ff38683d0e`, `e82b334736175b6309f177626fd735371e9b4424`, `15026fdee443150e4f68343a8f36f8df6d87a7e8`, `71904b904ee67de17d1f42f442faabc930493986`, `177f7747731ff833d55514f70efcbeb7fdd13c04`, `92e303e2cafa95153796508d598afa0cd40f0dee`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-155-R1.md`
+- **Historical capsule SHA-256:** `ac7c9f39e8e6435c099ee420e0f0643145a4b6044ae9ec1c61c5f8e1fee19f5d`
+
+### GH-155-R2 - Establish coherent Version 2.0 release authority
+
+- **ID:** `GH-155-R2`
+- **Title:** Establish coherent Version 2.0 release authority
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 6
+- **Task type:** release
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/155
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-22
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 05f0097677470b59bf73bccf7cb56cfc5d9ff624
+- **Task branch:** gh-155-r2-2-0-release-coherence
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — R2 was cancelled during IN_PROGRESS before verification or independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable — no R2 implementation was integrated.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/11 checked in the terminal source capsule.
+- **Review disposition:** Cancelled — the frozen one-path P3 package cannot satisfy the repository's mandatory documentation-reachability validator.
+- **Verification summary:** P1 and P2 qualified. The P3 release-record content qualified semantically, but repository documentation validation failed because `docs/project/version-2.0-release.md` was unreachable from root `README.md`. The exact 12-path uncommitted result was preserved externally and fully removed before cancellation.
+- **Specialized qualification:** Incomplete — complete pre-integration source qualification was not entered.
+- **Known warnings:** The Version 2.0 release record requires an inbound Markdown link from the already-reachable documentation graph. The successor must solve that dependency in planning rather than alter the frozen R2 execution contract.
+- **Deferred work/follow-up IDs:** `GH-155-R3` — successor for issue #155.
+- **Retrospective:** no.
+- **Referenced commits:** `1b013ec78ed29d9d8da83bdca9ad8311d235f84e`, `399307e73a3c854a617769480312f9300f91ee5d`, `aeb2eb95da91d794048a58fe6e02dd02e9d80900`, `177f7747731ff833d55514f70efcbeb7fdd13c04`, `15026fdee443150e4f68343a8f36f8df6d87a7e8`, `05f0097677470b59bf73bccf7cb56cfc5d9ff624`, `4e5ffafecbe2132931b2bde2df4d182caf2a3801`, `868f9ab91784fcda59dc5dd44296cc5809f10a0c`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-155-R2.md`
+- **Historical capsule SHA-256:** `77a9f8878ebf17066d59288e2cb282e506f46e5da6777832d0840074cb79deb9`
+
+### GH-155-R3 - Complete coherent Version 2.0 release authority
+
+- **ID:** `GH-155-R3`
+- **Title:** Complete coherent Version 2.0 release authority
+- **Final state:** `MERGED`
+- **Capsule revision:** 8
+- **Task type:** release
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/155
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 18acd253ffa15fdf88ed837f434370d0da40f9e4
+- **Task branch:** gh-155-r3-2-0-release-coherence
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `3aea43662e48c8af3f1be3f9717c8111c32e5ddf`, `0daee5e9aeeaedba5846868c55967abb4644046b`, `82d11587c94ee6f2c17477f0d92bb753a901204a`, `4016141de17c97e2fa91dc0e30eb26a01249811a`
+- **Verified commit reference(s):** `17cb48bcc8b2c290c96677300e7ca82bcbc495ff`, `ecf348b3b8a029683a34bdb74e385eff88ae6a74`, `1db5895070751490d6064762b8faeeacfa267fe6`
+- **Reviewed source commit:** 17cb48bcc8b2c290c96677300e7ca82bcbc495ff
+- **Reviewed task/checkpoint commit(s):** `1db5895070751490d6064762b8faeeacfa267fe6`
+- **Integration/merged commit:** d17c90a7da1f9fc9ff7d32122248847fecaece1e
+- **Integration-related commit reference(s):** `d17c90a7da1f9fc9ff7d32122248847fecaece1e`, `ce2973ce60ff87a8ddff01e11d5b53ad28219ae6`, `17cb48bcc8b2c290c96677300e7ca82bcbc495ff`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review found zero blocking findings.
+- **Verification summary:** PASS — exact integration commit `d17c90a7da1f9fc9ff7d32122248847fecaece1e` is byte-identical to the reviewed tree and passed complete integration qualification, security recheck, standard review, and 7-of-7 GitHub checks under checkpoint `0b0ebe7752b68d6c74ee51a108365e6c9e69d7262c1b9edf0edf354a0b5000ba`.
+- **Specialized qualification:** PASS — PostgreSQL 16 qualification is bound by checkpoint `c2a88318a6cf6589b6f945ad2a6928b6b57e61203480806da827b0327c059f27`; annotated tag and GitHub Release publication are bound by checkpoint `7a3497b15a4eeb08947440c1aaf8de77bcc40e82ead10ac5499eea2b7495b9d9`.
+- **Known warnings:** Pre-existing and non-blocking — DOMAIN_TOKEN_IN_OPS_MIGRATION, StarletteDeprecationWarning, PostgreSQL SQLAlchemy table-cycle warning, and npm audit snapshot of 17 findings (12 moderate, 5 high, 0 critical).
+- **Deferred work/follow-up IDs:** Not applicable — no new GH-155 follow-up issue IDs; accepted dependency findings remain tracked by Dependabot.
+- **Retrospective:** No — no separate retrospective is required for this release task.
+- **Referenced commits:** `3aea43662e48c8af3f1be3f9717c8111c32e5ddf`, `0daee5e9aeeaedba5846868c55967abb4644046b`, `15026fdee443150e4f68343a8f36f8df6d87a7e8`, `18acd253ffa15fdf88ed837f434370d0da40f9e4`, `82d11587c94ee6f2c17477f0d92bb753a901204a`, `4016141de17c97e2fa91dc0e30eb26a01249811a`, `17cb48bcc8b2c290c96677300e7ca82bcbc495ff`, `ecf348b3b8a029683a34bdb74e385eff88ae6a74`, `1db5895070751490d6064762b8faeeacfa267fe6`, `d17c90a7da1f9fc9ff7d32122248847fecaece1e`, `ce2973ce60ff87a8ddff01e11d5b53ad28219ae6`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-155-R3.md`
+- **Historical capsule SHA-256:** `f115a1a9821d29d4f8044587d9eecde7ffea929e5c9c1ceab139ae87eb588fde`
+
+### GH-156 - Harden repository script paths and inventory
+
+- **ID:** `GH-156`
+- **Title:** Harden repository script paths and inventory
+- **Final state:** `MERGED`
+- **Capsule revision:** 10
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/156
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 806d7faf06c5a3398f67ed51ef4abbfaa011acca
+- **Task branch:** gh-156-script-hygiene
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `8579ed1663880509a44137f1082f84c3cadbd4cf`
+- **Verified commit reference(s):** `1e15f462c0fb2f2a6626c62d1480fb0a75c8d5cf`
+- **Reviewed source commit:** 1e15f462c0fb2f2a6626c62d1480fb0a75c8d5cf
+- **Reviewed task/checkpoint commit(s):** `573fdb75252c64324fc76f76382cf4da6a3bd74b`, `5b62d5e5cd968ff0ea596f8f3c8f606a77b15ead`
+- **Integration/merged commit:** 5b62d5e5cd968ff0ea596f8f3c8f606a77b15ead
+- **Integration-related commit reference(s):** `573fdb75252c64324fc76f76382cf4da6a3bd74b`, `5b62d5e5cd968ff0ea596f8f3c8f606a77b15ead`, `1e15f462c0fb2f2a6626c62d1480fb0a75c8d5cf`
+- **Acceptance result:** 9/9 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent exact-source review found zero blocking findings.
+- **Verification summary:** PASS — all 9 acceptance criteria passed; the exact integration tree equals the reviewed task tree, the repository review profile passed from a linked/detached worktree, and all 7 GitHub checks passed under integration checkpoint `42558560df4b414862c3d9a5751d4bd707ce9423d65ecf7ddee0d8973e7d4a5c`.
+- **Specialized qualification:** PASS — linked/detached Git worktree repository-helper qualification and review-package `VERSION` membership/exclusion qualification both passed; the full repository profile also passed from the exact integration commit.
+- **Known warnings:** Pre-existing and non-blocking — `DOMAIN_TOKEN_IN_OPS_MIGRATION` for `ops_0004_phase5c4_admission.py` containing `daily_logs`.
+- **Deferred work/follow-up IDs:** None — the script inventory contains 48 retained entries, zero current-reference orphans, and no script deletion requiring follow-up.
+- **Retrospective:** No — bounded repository-tooling maintenance completed without architecture or application-runtime change.
+- **Referenced commits:** `806d7faf06c5a3398f67ed51ef4abbfaa011acca`, `8579ed1663880509a44137f1082f84c3cadbd4cf`, `27c209bd03172722ae65f6509b9cc5f918f80ef1`, `1e15f462c0fb2f2a6626c62d1480fb0a75c8d5cf`, `573fdb75252c64324fc76f76382cf4da6a3bd74b`, `5b62d5e5cd968ff0ea596f8f3c8f606a77b15ead`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-156.md`
+- **Historical capsule SHA-256:** `f77b2a95a154b2d1e73a38d2e5730698e56ecae8a59396c137d97e945b066185`
+
+### GH-157 - Document canonical local iOS rebuild and launch commands
+
+- **ID:** `GH-157`
+- **Title:** Document canonical local iOS rebuild and launch commands
+- **Final state:** `MERGED`
+- **Capsule revision:** 2
+- **Task type:** documentation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/157
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 66f22466f71872b1a4e52b5039d15fffb605191f
+- **Task branch:** gh-157-ios-rebuild-docs
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `de220a0b0467dd8f5eedd13c2c15a232f26c40a6`, `eec665d1db28203e8e4ae9f6c06139441b160dbd`, `6a3345265f7a229d81c7008d9a231872b8a6be99`
+- **Verified commit reference(s):** `9c610b6b8df9f7cbb24e688d06da8a6c8f90417f`
+- **Reviewed source commit:** 9c610b6b8df9f7cbb24e688d06da8a6c8f90417f
+- **Reviewed task/checkpoint commit(s):** `d5732f543d64548770e95e8b63679a724a6220d0`, `00b54fa2b157cc2d99028d0bf8fdc6450e3f5375`, `477a3c4830bdc26f47e572ce9f29f1a3795d0717`
+- **Integration/merged commit:** 00b54fa2b157cc2d99028d0bf8fdc6450e3f5375
+- **Integration-related commit reference(s):** `d5732f543d64548770e95e8b63679a724a6220d0`, `00b54fa2b157cc2d99028d0bf8fdc6450e3f5375`, `9c610b6b8df9f7cbb24e688d06da8a6c8f90417f`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent exact-source review found zero blocking findings.
+- **Verification summary:** PASS — all 10 acceptance criteria passed; the exact integration tree equals the reviewed task tree, primary and detached repository qualification passed, and all 7 GitHub checks passed on exact integration commit `00b54fa2b157cc2d99028d0bf8fdc6450e3f5375` under integration checkpoint `20845867ed158455ebc529e454229cbd2b5e92b839098f0dd311d67fb4516821`.
+- **Specialized qualification:** Not applicable — documentation-only change; the documented Expo and Xcode command surfaces were qualified under Node 24 / Expo 57, independently reviewed, and the complete repository profile passed again from the exact integration commit.
+- **Known warnings:** Pre-existing and non-blocking — `DOMAIN_TOKEN_IN_OPS_MIGRATION` for `ops_0004_phase5c4_admission.py` containing `daily_logs`.
+- **Deferred work/follow-up IDs:** None — verification and independent review identified no required follow-up.
+- **Retrospective:** No — bounded low-risk documentation work completed without application-runtime, schema, migration, dependency, toolchain, or architecture change.
+- **Referenced commits:** `66f22466f71872b1a4e52b5039d15fffb605191f`, `de220a0b0467dd8f5eedd13c2c15a232f26c40a6`, `eec665d1db28203e8e4ae9f6c06139441b160dbd`, `6a3345265f7a229d81c7008d9a231872b8a6be99`, `9c610b6b8df9f7cbb24e688d06da8a6c8f90417f`, `d5732f543d64548770e95e8b63679a724a6220d0`, `00b54fa2b157cc2d99028d0bf8fdc6450e3f5375`, `477a3c4830bdc26f47e572ce9f29f1a3795d0717`, `a4d46041357025686d5e24f83d6f8a744b2a4c35`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-157.md`
+- **Historical capsule SHA-256:** `8fa2a7d641438a059f8f8aaaa02e09ac0eed03c53b054856ac0a3c67d9495997`
+
+### UI-133 - Make Food Details task-first and space nutrient units
+
+- **ID:** `UI-133`
+- **Title:** Make Food Details task-first and space nutrient units
+- **Final state:** `MERGED`
+- **Capsule revision:** 15
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/133
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 1df8cc0e4457cd7e5e850b167a20c097fa3f40c9
+- **Task branch:** ui-133-food-details-task-first
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `671743f5e2fdd766a3abac9214c73ac9f70f7bd3`, `250fe9945acfac9789031f86b7fe8b54a313bc2d`, `3d09d837bcf32ecba5ad101dae8a257eeb0130a2`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 250fe9945acfac9789031f86b7fe8b54a313bc2d
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 671743f5e2fdd766a3abac9214c73ac9f70f7bd3
+- **Integration-related commit reference(s):** `671743f5e2fdd766a3abac9214c73ac9f70f7bd3`, `250fe9945acfac9789031f86b7fe8b54a313bc2d`
+- **Acceptance result:** 16/16 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** Automated qualification green before native review: TypeScript PASS; formatter-boundary 70/70; UI-133 focused 72/72 before the final header correction, followed by green dedicated/layout/logging/ownership/display regression and full mobile regression for the final single-header design; repository capsule/session-end checks PASS.
+- **Specialized qualification:** PASS — native iPhone review confirmed one standard sticky route header, long-name body wrapping, secondary-action scrolling, selected-serving nutrition/Log handoff, recipe-backed Edit/Delete ownership, and spaced nutrient units.
+- **Known warnings:** Existing session-end DOMAIN_TOKEN_IN_OPS_MIGRATION warning only; native launch initially required explicit local/development Expo environment configuration. Controller connector branch-ref deviation was repaired before implementation commit and is recorded above.
+- **Deferred work/follow-up IDs:** E4-14 / #127 remains separate Food-authoring discovery work.
+- **Retrospective:** no — bounded mobile presentation/typography refinement unless execution reveals a new authority issue.
+- **Referenced commits:** `1df8cc0e4457cd7e5e850b167a20c097fa3f40c9`, `671743f5e2fdd766a3abac9214c73ac9f70f7bd3`, `250fe9945acfac9789031f86b7fe8b54a313bc2d`, `3d09d837bcf32ecba5ad101dae8a257eeb0130a2`, `3fdf0e0ea451cdcf4a1e9b4db4c91671c6549f47`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/UI-133.md`
+- **Historical capsule SHA-256:** `4886c8c60c7801ba2ffe5b3bb68dce1807bbfa573eff6add951916554590e5bd`
+
+### UI-134 - Make Recipe Details task-first and keep header compact
+
+- **ID:** `UI-134`
+- **Title:** Make Recipe Details task-first and keep header compact
+- **Final state:** `MERGED`
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/134
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 55179f4223318c1c46e8d4d02a6e7b5e8d3e8d02
+- **Task branch:** ui-134-recipe-details-task-first
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `fdc0e06232d7e715226a801c240a3e7ac4799e0b`, `c32495e8cdf2824958b348be461e63bb450e6cf1`, `68b66613d990538e5d9f03d4577b568b43c5bcfc`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** c32495e8cdf2824958b348be461e63bb450e6cf1
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** fdc0e06232d7e715226a801c240a3e7ac4799e0b
+- **Integration-related commit reference(s):** `fdc0e06232d7e715226a801c240a3e7ac4799e0b`, `c32495e8cdf2824958b348be461e63bb450e6cf1`
+- **Acceptance result:** 17/17 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** TypeScript PASS; dedicated UI-134 4/4; focused Recipe/header regression 99/99; full mobile regression 1637 passed / 1 skipped; all 18 task capsules valid; git diff check PASS; session-end focused audit tooling 43/43.
+- **Specialized qualification:** PASS — native iPhone review confirmed one standard fixed Recipe header, Publish versus Republish state, long-name body wrapping, fixed-header scrolling, contextual/destructive body actions, and no duplicate body publish action.
+- **Known warnings:** Existing session-end DOMAIN_TOKEN_IN_OPS_MIGRATION warning only; expensive PostgreSQL, MinIO, Docker, and performance suites remain opt-in and were not required for this presentation-only task.
+- **Deferred work/follow-up IDs:** #135 owns the remaining USDA Food Details entity-derived fixed title; E4-14 / #127 remains separate Food-authoring discovery work.
+- **Retrospective:** no — bounded mobile presentation refinement unless execution reveals a new authority issue.
+- **Referenced commits:** `55179f4223318c1c46e8d4d02a6e7b5e8d3e8d02`, `fdc0e06232d7e715226a801c240a3e7ac4799e0b`, `c32495e8cdf2824958b348be461e63bb450e6cf1`, `68b66613d990538e5d9f03d4577b568b43c5bcfc`, `4a6d7a0f25bf50e8c205fca5a360d1ae76faf3e3`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/UI-134.md`
+- **Historical capsule SHA-256:** `b533c1d2a6644743087013fdc04b6fa42ca47144af39dbf76d8b6d597e86f0bc`
+
+### UI-135 - Keep USDA Food Details header generic and move food name into body
+
+- **ID:** `UI-135`
+- **Title:** Keep USDA Food Details header generic and move food name into body
+- **Final state:** `MERGED`
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/135
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-19
+- **Completed/updated:** 2026-08-19
+- **Base commit:** 122b144ed0a946ff85827311f68cb9af1f4cc2ae
+- **Task branch:** ui-135-usda-details-generic-header
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** `07613e146478939c888fd9497b3f5bf7abfb742e`, `1a65a44f09c903d4930c5d80bd0c485f27997586`, `7598340120d90bc43813fee95c49873f5d8ed621`
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 1a65a44f09c903d4930c5d80bd0c485f27997586
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** 07613e146478939c888fd9497b3f5bf7abfb742e
+- **Integration-related commit reference(s):** `07613e146478939c888fd9497b3f5bf7abfb742e`, `1a65a44f09c903d4930c5d80bd0c485f27997586`
+- **Acceptance result:** 13/13 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking findings.
+- **Verification summary:** TypeScript PASS; initial dedicated UI-135 attempt 2/5 passed and exposed a test-only recursive text-extraction defect; bounded harness repair succeeded; recovered dedicated UI-135 5/5; focused USDA/header 20/20; full mobile 1642 passed / 1 skipped; all 19 task capsules valid; git diff check PASS; session-end focused audit tooling 43/43.
+- **Specialized qualification:** PASS — native iPhone review confirmed stable `USDA food details` fixed chrome, complete long USDA description in naturally wrapping scrollable content, normal fixed-header height, scrolling metadata/servings/nutrients/import content, and unchanged Import Food behavior.
+- **Known warnings:** Initial dedicated qualification failure was a test-harness defect and is preserved in revision 3; bounded recursive rendered-text extraction repair recovered the suite without product changes. Existing session-end DOMAIN_TOKEN_IN_OPS_MIGRATION warning only; expensive PostgreSQL, MinIO, Docker, and performance suites were not required.
+- **Deferred work/follow-up IDs:** E4-14 / #127 remains separate Food nutrient-discovery work.
+- **Retrospective:** no — bounded presentation-only consistency correction.
+- **Referenced commits:** `122b144ed0a946ff85827311f68cb9af1f4cc2ae`, `07613e146478939c888fd9497b3f5bf7abfb742e`, `1a65a44f09c903d4930c5d80bd0c485f27997586`, `7598340120d90bc43813fee95c49873f5d8ed621`, `4f197e0de369c65527a5d21d0c74d1f9d79e3a41`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/UI-135.md`
+- **Historical capsule SHA-256:** `7c2b7a2156e7e1dd5c73f572a4d017aa8251605f7e065de8e95c99adba7807e3`
+
+### WF-003-implementation-result-artifacts - Generate durable implementation-result artifacts
+
+- **ID:** `WF-003-implementation-result-artifacts`
+- **Title:** Generate durable implementation-result artifacts
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 4
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** Not applicable — Workflow v3 experimental repository-automation trial
+- **Issue disposition:** Not applicable - source authority is not a GitHub issue.
+- **Created:** 2026-08-04
+- **Completed/updated:** 2026-08-22
+- **Base commit:** Not recorded in source capsule.
+- **Task branch:** main
+- **Controller:** ChatGPT Work — Sol-class accountable controller
+- **Executor:** Codex — Luna-class bounded executor
+- **Reviewer:** Independent ChatGPT architecture review
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** Not applicable — WF-003 was cancelled before implementation or independent review.
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** Not applicable - no merged commit was recorded for this terminal task.
+- **Integration-related commit reference(s):** None separately identified.
+- **Acceptance result:** 0/10 checked in the terminal source capsule.
+- **Review disposition:** Not applicable — cancellation was a planning/lifecycle disposition rather than implementation approval.
+- **Verification summary:** Revision 3 DECOMPOSED authority was rebound, issue #22 / E1-18 completion was confirmed, the historical handoff prohibition was preserved, and the revision 4 CANCELLED capsule is validated under the repository task-capsule validator.
+- **Specialized qualification:** Not applicable — no renderer, application, database, migration, infrastructure, CI, or deployment implementation occurred.
+- **Known warnings:** The historical WF-003 handoff remains intentionally non-executable and is retained only as historical Workflow v3 evidence.
+- **Deferred work/follow-up IDs:** Not applicable — no pre-2.0 follow-up is created by cancelling this experimental renderer task.
+- **Retrospective:** no — the task ended as a bounded cancellation without implementation.
+- **Referenced commits:** No 40-character commit references found in capsule body.
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/WF-003-implementation-result-artifacts.md`
+- **Historical capsule SHA-256:** `abff950bac219035cd75bdb36f7ec645ea47e100956ff254b0e8fcc7a57a20e4`
+
+### WF-004 - Make MERGED task-capsule validation squash-safe
+
+- **ID:** `WF-004`
+- **Title:** Make MERGED task-capsule validation squash-safe
+- **Final state:** `MERGED`
+- **Capsule revision:** 4
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/131
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-18
+- **Completed/updated:** 2026-08-18
+- **Base commit:** ff9757317473908bdc2174a4e1c7b4373614be2b
+- **Task branch:** wf-004-merged-capsule-validation
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** Independent review pass
+- **Delegation:** none
+- **Implementation commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Verified commit reference(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Reviewed source commit:** 9ccbd5771f241ac8ebd03ad19ff9155880be1817
+- **Reviewed task/checkpoint commit(s):** Not explicitly normalized in the source capsule; see Referenced commits and the full historical capsule.
+- **Integration/merged commit:** e28c21f030382c4f0aebbd7c9fd0d9354f2b5b60
+- **Integration-related commit reference(s):** `e28c21f030382c4f0aebbd7c9fd0d9354f2b5b60`, `9ccbd5771f241ac8ebd03ad19ff9155880be1817`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS for WF-004; AC-1 through AC-12 are satisfied with no blocking workflow, provenance, validation, regression, or scope finding.
+- **Verification summary:** Focused task-capsule validator qualification passed 12/12. Exact-commit Nutrition Review passed all 13 checks with zero critical or advisory failures. Backend passed 1741 tests with 440 skipped and 2 known warnings. Mobile passed 159 suites with 1 skipped and 1572 tests with 1 skipped. Repository capsule validation passed 9/9, focused audit tooling passed 43/43, git diff check passed, session-end passed, and repository fingerprint remained stable.
+- **Specialized qualification:** Temporary Git regression pruned the historical reviewed object while preserving a locally resolvable squash integration commit; MERGED and RETROSPECTED validation passed with truthful reviewed provenance. Missing, empty, malformed, and locally unresolvable merged evidence failed deterministically; malformed reviewed evidence failed; pre-merge local commit resolution remained strict. Existing completed Epic 4 capsule records were unchanged and no network lookup was introduced.
+- **Known warnings:** Existing Starlette HTTP_422_UNPROCESSABLE_ENTITY deprecation warning; existing non-blocking DOMAIN_TOKEN_IN_OPS_MIGRATION warning in ops_0004_phase5c4_admission.py.
+- **Deferred work/follow-up IDs:** E4-07 / GitHub #120 remains deferred until WF-004 is integrated by the human owner.
+- **Retrospective:** yes — retain the squash-merge provenance distinction as an explicit workflow invariant after integration.
+- **Referenced commits:** `ff9757317473908bdc2174a4e1c7b4373614be2b`, `8d341e2f2c8295a82503c5e28e907cb2b610975d`, `9ccbd5771f241ac8ebd03ad19ff9155880be1817`, `e28c21f030382c4f0aebbd7c9fd0d9354f2b5b60`
+- **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
+- **Full-capsule recovery path:** `engineering/capsules/completed/WF-004.md`
+- **Historical capsule SHA-256:** `57251876a7edc12ec932d9af105734828f0cb64667136c9e40e3f33e0c5567e5`
