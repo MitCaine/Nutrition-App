@@ -4,12 +4,12 @@
 > Version 1.1 product scope, defining intended user-visible outcomes and sequencing rather than
 > implementation design, feature requirements, or tasks. The Version 1.1 program is complete; this
 > roadmap is retained as historical planning evidence, not current planning state. See
-> [Current State](../current-state.md) for the current product line.
+> [Current State](../../../project/current-state.md) for the current product line.
 
 Version 1.1 is an evolutionary release built on the completed Version 1.0 baseline. Every Epic
-below is subordinate to the [Project Constitution](../constitution.md),
-[Project Invariants](../invariants.md), [Architecture Overview](../../architecture/overview.md), and
-[Architecture Decision Index](../../architecture/decisions.md). If later discovery shows that an Epic
+below is subordinate to the [Project Constitution](../../../project/constitution.md),
+[Project Invariants](../../../project/invariants.md), [Architecture Overview](../../../architecture/overview.md), and
+[Architecture Decision Index](../../../architecture/decisions.md). If later discovery shows that an Epic
 requires an architectural rewrite, technology migration, persistence redesign, public multi-user
 model, or weakened historical guarantee, that scope is not authorized by this roadmap.
 

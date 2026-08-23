@@ -302,7 +302,7 @@ mixing between the two runtimes.
 
 Contributors should start with [Contributing](CONTRIBUTING.md) and the [Engineering Workflow](engineering/README.md). Feature delivery uses approved planning artifacts and GitHub Epics/issues for implementation sequencing. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
 
-The completed Version 1.1 planning and local-first implementation material under `docs/project/version-1.1/` is retained as implementation history and qualification evidence. It should not be read as the current release state.
+The completed Version 1.1 planning and local-first implementation material under `docs/historical/programs/version-1.1/` is retained as implementation history and qualification evidence. It should not be read as the current release state.
 
 ## Documentation
 
@@ -321,8 +321,8 @@ Start at the [Documentation Index](docs/README.md). The most useful current docu
 | Review canonical invariants | [Project Invariants](docs/project/invariants.md) |
 | Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
 | Run qualification | [Testing Guide](docs/operations/testing.md) |
-| Review completed local-first implementation history | [Version 1.1 / Epic 2 backlog](docs/project/version-1.1/epic-2/implementation-backlog.md) |
-| Review historical PostgreSQL/control-plane qualification | [Version 1.0 PostgreSQL Release Qualification](docs/operations/version-1.0-release-qualification.md) |
+| Review completed local-first implementation history | [Version 1.1 / Epic 2 backlog](docs/historical/programs/version-1.1/epic-2/implementation-backlog.md) |
+| Review historical PostgreSQL/control-plane qualification | [Version 1.0 PostgreSQL Release Qualification](docs/historical/releases/version-1.0-release-qualification.md) |
 
 ## Core invariants
 

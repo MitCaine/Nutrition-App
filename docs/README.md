@@ -22,7 +22,7 @@ backlogs or closed issues as current work simply because their records remain in
 
 Epic 4 — Nutrition History and Trends is implemented and qualified. Current feature, architecture,
 project, and testing guides own the delivered behavior. The frozen
-[Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md) remains easy to reach as
+[Epic 4 Planning and Delivery Index](historical/programs/version-1.2/epic-4/README.md) remains easy to reach as
 point-in-time research, decision, architecture, backlog, delivery, and closure provenance.
 
 Historical records are not part of the default implementation context. Open them only when a
@@ -54,18 +54,17 @@ is retained historical provenance and does not govern current Version 2.0 implem
 | [`operations/`](operations/README.md) | Testing, session validation, transfer qualification, preserved remote/PostgreSQL operations, control-plane operation, release qualification, runbooks | Only for validation or operational work |
 | [`reference/`](reference/glossary.md) | Stable lookup material | As needed |
 | [`historical/`](historical/README.md) | Stage chronology, production-hardening records, release evidence, learning routes | No, unless provenance is relevant |
-| [`project/version-1.1/`](project/version-1.1/version-1.1-roadmap.md) | Completed Version 1.1/Epic 1/Epic 2 planning, implementation, and closure records | No, unless reviewing that program or retained compatibility evidence |
-| [`project/version-1.2/epic-4/`](project/version-1.2/epic-4/README.md) | Frozen Epic 4 planning, architecture, backlog, delivery, and closure provenance | Only for Epic 4 provenance or retained acceptance evidence |
+| [`historical/programs/version-1.1/`](historical/programs/version-1.1/version-1.1-roadmap.md) | Completed Version 1.1/Epic 1/Epic 2 planning, implementation, and closure records | No, unless reviewing that program or retained compatibility evidence |
+| [`historical/programs/version-1.2/epic-4/`](historical/programs/version-1.2/epic-4/README.md) | Frozen Epic 4 planning, architecture, backlog, delivery, and closure provenance | Only for Epic 4 provenance or retained acceptance evidence |
 
 ## Current canonical project knowledge
 
-- [Version 2.0 Release Record](project/version-2.0-release.md): canonical source/GitHub release identity, supported toolchains, runtime boundaries, qualification, known limitations, and post-review publication sequence.
 - [Current State](project/current-state.md): current Version 2.0 product line, completed Epics,
   local-first authority, preserved remote/reference runtime, current capabilities/limitations, and
   dependency-maintenance boundary.
 - [Current Product Roadmap](project/product-roadmap.md): canonical current Epic numbering, completion
   and implementation status, and the mapping from historical Version 1.1 product numbering.
-- [Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md): frozen Nutrition History
+- [Epic 4 Planning and Delivery Index](historical/programs/version-1.2/epic-4/README.md): frozen Nutrition History
   and Trends research/Grill, Feature PRD, data/runtime contracts, architecture review,
   implementation backlog, and delivery links retained as planning and closure provenance.
 - [Project Constitution](project/constitution.md): enduring purpose, scope, non-goals, quality standards,
@@ -79,8 +78,6 @@ is retained historical provenance and does not govern current Version 2.0 implem
   head, feature/backup/UI change paths, and change checklist.
 - [GitHub Implementation Workflow](project/github-workflow.md): planning-to-delivery flow and GitHub
   artifact responsibilities for future work.
-- [Implementation Lessons](project/implementation-lessons.md): retained engineering lessons from
-  completed implementation work.
 - [Future Product and Scalability Options](project/future-product-and-scale.md): non-roadmap idea register
   for deliberately deferred product, platform, accessibility, and scaling options.
 
@@ -116,13 +113,13 @@ active implementation backlog.
 Epic 4's frozen package records the approved plan and delivery sequence that produced the current
 implementation. It is retained provenance, not the current behavior authority:
 
-- [Epic 4 Planning and Delivery Index](project/version-1.2/epic-4/README.md).
-- [Epic 4 Research Record](project/version-1.2/epic-4/planning.md).
-- [Epic 4 Grill Decision Record](project/version-1.2/epic-4/accepted-decisions.md).
-- [Epic 4 Feature PRD](project/version-1.2/epic-4/feature-prd.md).
-- [Epic 4 Data and Runtime Contracts](project/version-1.2/epic-4/data-contracts.md).
-- [Epic 4 Architecture Review](project/version-1.2/epic-4/architecture-review.md).
-- [Epic 4 Implementation Backlog](project/version-1.2/epic-4/implementation-backlog.md).
+- [Epic 4 Planning and Delivery Index](historical/programs/version-1.2/epic-4/README.md).
+- [Epic 4 Research Record](historical/programs/version-1.2/epic-4/planning.md).
+- [Epic 4 Grill Decision Record](historical/programs/version-1.2/epic-4/accepted-decisions.md).
+- [Epic 4 Feature PRD](historical/programs/version-1.2/epic-4/feature-prd.md).
+- [Epic 4 Data and Runtime Contracts](historical/programs/version-1.2/epic-4/data-contracts.md).
+- [Epic 4 Architecture Review](historical/programs/version-1.2/epic-4/architecture-review.md).
+- [Epic 4 Implementation Backlog](historical/programs/version-1.2/epic-4/implementation-backlog.md).
 - [GitHub Epic #113](https://github.com/MitCaine/Nutrition-App/issues/113): retained delivery index for E4-01–E4-17.
 
 These artifacts preserve point-in-time scope, acceptance, and delivery provenance. Current feature,
@@ -133,19 +130,19 @@ architecture, project, and operations guides own what the application now does.
 The Version 1.1 planning and local-first implementation program is complete. Its files remain
 available as historical implementation/closure evidence rather than current planning state:
 
-- [Version 1.1 Product Roadmap](project/version-1.1/version-1.1-roadmap.md).
-- [Epic 1 Daily Logging Flow Grill](project/version-1.1/epic-1/grill.md).
-- [Epic 1 Feature PRD](project/version-1.1/epic-1/feature-prd.md).
-- [Epic 1 Architecture Review](project/version-1.1/epic-1/architecture-review.md).
-- [Epic 1 Implementation Backlog](project/version-1.1/epic-1/implementation-backlog.md).
-- [E1-17 Accessibility Remediation Stage 1](project/version-1.1/epic-1/accessibility-remediation-stage-1.md).
-- [E1-17 Accessibility Remediation Stage 2](project/version-1.1/epic-1/accessibility-remediation-stage-2.md).
-- [Epic 1 release qualification](project/version-1.1/epic-1/release-qualification.md).
-- [Epic 2 Local-First Runtime Implementation Backlog](project/version-1.1/epic-2/implementation-backlog.md).
-- [E2-15 Transfer Architecture and Runbook](project/version-1.1/epic-2/e2-15-transfer-architecture.md).
-- [E2-16 Closure Evidence](project/version-1.1/epic-2/e2-16-closure-evidence.md).
-- [E2-18 Release Qualification / Closure Evidence](project/version-1.1/epic-2/e2-18-closure-evidence.md).
-- [Issue #108 Sticky Navigation Header Inventory](project/version-1.1/issue-108-sticky-header-inventory.md).
+- [Version 1.1 Product Roadmap](historical/programs/version-1.1/version-1.1-roadmap.md).
+- [Epic 1 Daily Logging Flow Grill](historical/programs/version-1.1/epic-1/grill.md).
+- [Epic 1 Feature PRD](historical/programs/version-1.1/epic-1/feature-prd.md).
+- [Epic 1 Architecture Review](historical/programs/version-1.1/epic-1/architecture-review.md).
+- [Epic 1 Implementation Backlog](historical/programs/version-1.1/epic-1/implementation-backlog.md).
+- [E1-17 Accessibility Remediation Stage 1](historical/programs/version-1.1/epic-1/accessibility-remediation-stage-1.md).
+- [E1-17 Accessibility Remediation Stage 2](historical/programs/version-1.1/epic-1/accessibility-remediation-stage-2.md).
+- [Epic 1 release qualification](historical/programs/version-1.1/epic-1/release-qualification.md).
+- [Epic 2 Local-First Runtime Implementation Backlog](historical/programs/version-1.1/epic-2/implementation-backlog.md).
+- [E2-15 Transfer Architecture and Runbook](historical/programs/version-1.1/epic-2/e2-15-transfer-architecture.md).
+- [E2-16 Closure Evidence](historical/programs/version-1.1/epic-2/e2-16-closure-evidence.md).
+- [E2-18 Release Qualification / Closure Evidence](historical/programs/version-1.1/epic-2/e2-18-closure-evidence.md).
+- [Issue #108 Sticky Navigation Header Inventory](historical/programs/version-1.1/issue-108-sticky-header-inventory.md).
 
 These records preserve point-in-time plans, acceptance criteria, and closure evidence. A feature
 mentioned there as proposed/future is not a current capability unless current implementation and
@@ -205,6 +202,13 @@ Use the [Historical Knowledge Index](historical/README.md) for stage records,
 production-hardening chronology, release evidence, manual QA evidence, and guided learning paths.
 Historical records preserve their point-in-time assertions and are never the authority for current
 repository state.
+
+Key completed-program and release records include:
+
+- [Version 2.0 Release Record](historical/releases/version-2.0-release.md).
+- [Version 1.1 Product Roadmap](historical/programs/version-1.1/version-1.1-roadmap.md).
+- [Version 1.2 Epic 4 Planning and Delivery Index](historical/programs/version-1.2/epic-4/README.md).
+- [Implementation Lessons](historical/engineering/implementation-lessons.md).
 
 ## Canonicality rules
 

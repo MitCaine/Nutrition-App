@@ -108,13 +108,25 @@
       ],
       "forbidden": []
     },
-    "docs/operations/version-1.0-release-qualification.md": {
+    "docs/historical/releases/version-1.0-release-qualification.md": {
       "required": [
         "0021_target_activation_execution",
         "ops_0011_phase5c4_recovery_audit",
         "REQUIRE_POSTGRES_TESTS=1"
       ],
       "forbidden": []
+    },
+    "docs/operations/postgresql-to-sqlite-transfer.md": {
+      "required": [
+        "e2-15.v4",
+        "0033_complete_runtime_authority",
+        "target SQLite schema version: `7`",
+        "--acknowledge-frozen-writes",
+        "synchronize PostgreSQL and SQLite;"
+      ],
+      "forbidden": [
+        "0025_immutable_validator_head is the current"
+      ]
     }
   },
   "placeholder_scan_excludes": [

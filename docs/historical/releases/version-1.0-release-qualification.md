@@ -105,7 +105,7 @@ remain limitations; the local provider stand-in is not production-vendor certifi
 
 ## Developer convenience commands
 
-Focused commands in the [Testing Guide](testing.md) are appropriate while developing. Unless they
+Focused commands in the [Testing Guide](../../operations/testing.md) are appropriate while developing. Unless they
 use the full command above, they may skip when optional PostgreSQL, Docker, MinIO, provider,
 performance, or Apple infrastructure is absent. A focused pass or skip is not Version 1.0 release
 qualification and must not be reported as one.

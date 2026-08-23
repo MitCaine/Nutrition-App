@@ -248,7 +248,7 @@ dual writes, synchronization, cache sharing, recovery sharing, or data migration
 separate direct external integration and is not an application-data authority.
 
 **Read more:** [Architecture Overview](overview.md#system-boundaries) and the completed
-[Epic 2 implementation backlog](../project/version-1.1/epic-2/implementation-backlog.md)
+[Epic 2 implementation backlog](../historical/programs/version-1.1/epic-2/implementation-backlog.md)
 
 ### Local backup restore is validated replacement, not synchronization
 

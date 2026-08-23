@@ -6,6 +6,8 @@
 
 Version 2.0 is the current product line. Root `VERSION` is the canonical repository release authority with exact value `2.0.0`; current mobile, Expo, backend, and documentation metadata mirror it. Version 2.0 qualification uses Node 24 and Python 3.12.
 
+The finalized [Version 2.0 release record](../historical/releases/version-2.0-release.md) preserves the exact qualified integration, annotated tag, and GitHub Release publication evidence; this Current State document remains authoritative for what is true after that release.
+
 Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
 
 Epic 4 — Nutrition History and Trends is implemented and qualified. E4-01 through E4-15 delivered date-owned Complete state, bounded History evidence and shared projections, logging-first Daily Log and Daily Nutrition presentation, 7/30-day History surfaces, focused nutrient inspection, manual Food authoring refinements, and Complete durability. E4-16 then passed the consolidated local SQLite, physical PostgreSQL 16, shared-projection, and target-iPhone qualification matrix. The frozen Version 1.2 package remains retained planning, architecture, delivery, and closure provenance; current guides now own implemented behavior. Epic 5 remains planned and requires re-scope. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
@@ -52,9 +54,9 @@ The [Architecture Overview](../architecture/overview.md) owns the full current s
 - Daily target comparison with per-nutrient tracking preferences, manual overrides, DRI recommendations where supported, FDA Daily Value fallback/reference data, neutral amount-only tracking when no goal is established, and explicit unavailable states.
 - Personalized DRI recommendations for supported adult reference profiles, including supported pregnancy/lactation life stages; calorie estimation remains a separate general-adult Mifflin–St Jeor calculation.
 - Accessibility-focused navigation, shared fixed/sticky route headers, focus restoration, mutation/recovery semantics, unsaved-draft protection, and light/dark presentation.
-- One-time PostgreSQL-to-SQLite transfer tooling for installations migrating from the preserved remote authority.
+- One-time [PostgreSQL-to-SQLite personal transfer](../operations/postgresql-to-sqlite-transfer.md) tooling for installations migrating from the preserved remote authority.
 
-History derives from immutable Daily Log snapshots rather than current Foods or Recipes. No-Log dates remain gaps, explicit zero remains a usable zero, and unknown-only nutrient evidence remains unavailable. Current Targets are a presentation lens only; the app does not reconstruct historical target configuration. See [Recipes and Nutrition History](../features/recipes-and-logging.md) for the feature contract and the retained [Version 1.2 Epic 4 package](version-1.2/epic-4/README.md) for planning and closure provenance.
+History derives from immutable Daily Log snapshots rather than current Foods or Recipes. No-Log dates remain gaps, explicit zero remains a usable zero, and unknown-only nutrient evidence remains unavailable. Current Targets are a presentation lens only; the app does not reconstruct historical target configuration. See [Recipes and Nutrition History](../features/recipes-and-logging.md) for the feature contract and the retained [Version 1.2 Epic 4 package](../historical/programs/version-1.2/epic-4/README.md) for planning and closure provenance.
 
 ## Remote/reference migration heads
 
@@ -81,7 +83,7 @@ Historical Version 1.0 and Version 1.1 release/closure evidence remains availabl
 | --- | --- |
 | Current product line and supported boundaries | This document |
 | Current product Epic numbering and planning status | [Current Product Roadmap](product-roadmap.md) |
-| Version 1.2 Epic 4 retained planning/delivery/closure package | [Epic 4 Planning and Delivery Index](version-1.2/epic-4/README.md) |
+| Version 1.2 Epic 4 retained planning/delivery/closure package | [Epic 4 Planning and Delivery Index](../historical/programs/version-1.2/epic-4/README.md) |
 | Enduring purpose, scope, and priorities | [Project Constitution](constitution.md) |
 | Technical truths that changes must preserve | [Project Invariants](invariants.md) |
 | Minimum implementation or review context | [Project Onboarding](onboarding.md) |
@@ -89,7 +91,7 @@ Historical Version 1.0 and Version 1.1 release/closure evidence remains availabl
 | Accepted structural choices | [Architecture Decision Index](../architecture/decisions.md) |
 | Code ownership and change checklist | [Development Guide](development-guide.md) |
 | Testing, qualification, transfer, release, and recovery | [Operations Index](../operations/README.md) |
-| Completed Version 1.1 planning/implementation records | [Version 1.1 Product Roadmap](version-1.1/version-1.1-roadmap.md) |
+| Completed Version 1.1 planning/implementation records | [Version 1.1 Product Roadmap](../historical/programs/version-1.1/version-1.1-roadmap.md) |
 | Historical provenance and learning | [Historical Knowledge Index](../historical/README.md) |
 
 The [Documentation Index](../README.md) remains the authoritative navigation map for the full knowledge system.

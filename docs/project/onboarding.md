@@ -57,10 +57,10 @@ current guides.
 | Local SQLite schema/lifecycle/transaction or backup activation work | [Architecture Overview](../architecture/overview.md) plus the relevant local/native SQLite tests/qualification |
 | Navigation chrome, draft guards, Dynamic Type, accessibility infrastructure | [Repository Tour](repository-tour.md#cross-cutting-mobile-ui-paths), [Development Guide](development-guide.md#if-you-need-to-modify-navigation-route-headers-or-form-discard-behavior) |
 | Remote FastAPI/PostgreSQL parity or reference behavior | [Architecture Overview](../architecture/overview.md) plus the relevant backend tests |
-| E2-15 transfer or retained Epic 2 parity fixtures | [E2-15 Transfer Architecture](version-1.1/epic-2/e2-15-transfer-architecture.md), current transfer tests, and `packages/shared-contracts/e2-15` |
+| E2-15 transfer or retained Epic 2 parity fixtures | [PostgreSQL-to-SQLite Transfer](../operations/postgresql-to-sqlite-transfer.md), [historical E2-15 architecture](../historical/programs/version-1.1/epic-2/e2-15-transfer-architecture.md), current transfer tests, and `packages/shared-contracts/e2-15` |
 | Transfer, migration, role, qualification, release, recovery, or control-plane work | [Operations Index](../operations/README.md) |
 | Terminology lookup | [Glossary](../reference/glossary.md) |
-| Decision provenance or learning from project evolution | [Historical Knowledge Index](../historical/README.md) and, when relevant, completed `project/version-1.1/` records |
+| Decision provenance or learning from project evolution | [Historical Knowledge Index](../historical/README.md) and, when relevant, completed `historical/programs/version-1.1/` records |
 
 ## Architecture review path
 
@@ -104,6 +104,6 @@ Feature and operations guides are task-specific follow-up reading, not a prerequ
 
 Completed Version 1.1/Epic 2 planning/backlog material, historical stage documents,
 production-hardening chronology, release evidence, manual QA worksheets, and retained qualification
-manifests remain discoverable under `project/version-1.1/`, `historical/`, or evidence/contract
+manifests remain discoverable under `historical/programs/version-1.1/`, `historical/`, or evidence/contract
 directories. They are valuable for learning, audit, provenance, and versioned compatibility, but
 loading them by default increases context without improving most current implementation decisions.

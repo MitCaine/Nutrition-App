@@ -400,7 +400,7 @@ def test_current_document_contract_inventory_is_semantically_bounded() -> None:
         ),
         "docs/operations/runbooks/target-activation.md": ("application",),
         "docs/operations/testing.md": ("application",),
-        "docs/operations/version-1.0-release-qualification.md": (
+        "docs/operations/postgresql-to-sqlite-transfer.md": (
             "application",
         ),
         "docs/project/current-state.md": ("application", "control"),
@@ -485,7 +485,7 @@ def test_current_document_contract_ignores_historical_and_pinned_predecessors(
     )
     _write_document_fixture(
         tmp_path,
-        "docs/project/version-1.2/epic-4/data-contracts.md",
+        "docs/historical/programs/version-1.2/epic-4/data-contracts.md",
         "current head at planning time: 0030_total_omega_3_nutrient\n",
     )
     _write_document_fixture(

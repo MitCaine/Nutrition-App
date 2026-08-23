@@ -1,9 +1,9 @@
 # Version 2.0 release
 
-> **Document role: Release Record.** This document defines the Version 2.0
-> source/GitHub release content and release boundary. Exact integration, tag,
-> GitHub Release, and issue-state identities remain external Git/GitHub
-> evidence rather than claims established merely by this document.
+> **Document role: Historical Release Record.** This document preserves the
+> qualified Version 2.0 source/GitHub release boundary and its completed
+> publication identity. Current application state remains owned by the
+> [Current State](../../project/current-state.md) guide.
 
 ## Release identity
 
@@ -37,7 +37,7 @@ Version 2.0 does not weaken the repository's historical-data guarantees.
 Immutable Daily Log nutrition snapshots, immutable Recipe publication
 revisions, explicit runtime authority, nutrition/serving identity, and bounded
 OCR correction provenance remain governed by the current
-[Project Invariants](invariants.md).
+[Project Invariants](../../project/invariants.md).
 
 Historical Version 1.0, Version 1.1, and Version 1.2 planning and qualification
 records remain provenance. They are not rewritten as if Version 2.0 had been
@@ -54,8 +54,8 @@ excludes Python 3.13 from the supported range, and Ruff targets `py312`.
 The committed `.nvmrc` and `.python-version` pins remain unchanged. Dependency
 locks remain reproducibility authorities for their respective environments.
 
-See the [Development Guide](development-guide.md) and
-[Testing Guide](../operations/testing.md) for current setup and qualification
+See the [Development Guide](../../project/development-guide.md) and
+[Testing Guide](../../operations/testing.md) for current setup and qualification
 entry points.
 
 ## Runtime and remote-startup boundary
@@ -76,8 +76,8 @@ Current development guidance uses revision inspection to establish remote schema
 state. Version 2.0 does not introduce an unqualified `alembic upgrade head`
 convenience path and does not bypass the 0021 operational boundary.
 
-The [Current State](current-state.md) owns the current migration-head summary,
-and the [Operations Index](../operations/README.md) owns preserved remote
+The [Current State](../../project/current-state.md) owns the current migration-head summary,
+and the [Operations Index](../../operations/README.md) owns preserved remote
 operational procedures.
 
 ## Upgrade and backup guidance
@@ -122,7 +122,7 @@ security recheck; a material change in that disposition stops publication
 until it is reviewed.
 
 Other current product limitations remain documented in
-[Current State](current-state.md).
+[Current State](../../project/current-state.md).
 
 ## Qualification and publication
 
@@ -150,6 +150,27 @@ The required publication order is:
 10. close the governing release-coherence issue only after archive
     qualification.
 
-This source document defines that release procedure. Its presence does not by
-itself assert that integration, tag publication, GitHub Release publication,
-archive, or issue closure has already occurred.
+This source document defined the publication procedure before release. The
+completed publication evidence is recorded below.
+
+## Publication result
+
+Version 2.0 publication completed on 2026-08-23.
+
+- Qualified integration commit:
+  `d17c90a7da1f9fc9ff7d32122248847fecaece1e`.
+- Annotated release tag: `v2.0.0`.
+- Annotated tag object:
+  `ce2973ce60ff87a8ddff01e11d5b53ad28219ae6`.
+- The annotated tag peels exactly to the qualified integration commit
+  `d17c90a7da1f9fc9ff7d32122248847fecaece1e`.
+- GitHub Release name: `Nutrition App 2.0.0`.
+- GitHub Release publication time: `2026-08-23T17:37:01Z`.
+- GitHub Release state: published, non-draft, and non-prerelease.
+- Governing release task `GH-155-R3` reached `MERGED`; GitHub issue #155
+  reached `CLOSED / COMPLETED`.
+- Release publication qualification is bound by checkpoint
+  `7a3497b15a4eeb08947440c1aaf8de77bcc40e82ead10ac5499eea2b7495b9d9`.
+
+This file is therefore retained as historical Version 2.0 release evidence.
+It no longer serves as the current-state authority for later repository work.

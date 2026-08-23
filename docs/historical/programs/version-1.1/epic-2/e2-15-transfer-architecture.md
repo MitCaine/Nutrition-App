@@ -49,7 +49,7 @@ validator accepts only the runtime authority already established by migrations
 activation authority. Historical exact-0020 and exact-0024 definitions remain
 frozen and replayable.
 
-Authoritative evidence included the live implementation plus [Current State](../../current-state.md), [Epic 2 backlog](implementation-backlog.md), [E2-02 contract](e2-02-exact-value-contract.md), [E2-03 schema](e2-03-sqlite-schema.md), and the runtime/schema implementations.
+Authoritative evidence included the live implementation plus [Current State](../../../../project/current-state.md), [Epic 2 backlog](implementation-backlog.md), [E2-02 contract](e2-02-exact-value-contract.md), [E2-03 schema](e2-03-sqlite-schema.md), and the runtime/schema implementations.
 
 ## B. PostgreSQL table inclusion/exclusion matrix
 

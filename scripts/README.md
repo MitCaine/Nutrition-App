@@ -71,7 +71,7 @@ operations authorities.
 
 | Tool | Retained responsibility |
 | --- | --- |
-| `apps/backend/scripts/export_personal_transfer.py` | One-time E2-15 PostgreSQL-to-SQLite personal-transfer export retained for the compatibility boundary described in the [Repository Tour](../docs/project/repository-tour.md). |
+| `apps/backend/scripts/export_personal_transfer.py` | One-time E2-15 PostgreSQL-to-SQLite personal-transfer export retained for the compatibility boundary described in the [PostgreSQL-to-SQLite Transfer guide](../docs/operations/postgresql-to-sqlite-transfer.md). |
 | `apps/backend/scripts/manage_phase5c4_authorization.py` | Manages the schema-0020 Target Activation Authorization retained and consumed by the current [target-activation sequence](../docs/operations/runbooks/target-activation.md). |
 | `apps/backend/scripts/qualify_immutable_provenance.py` | Independently qualifies the retained schema-0020 immutable-provenance boundary described by the [immutable-provenance runbook](../docs/operations/runbooks/immutable-provenance.md). |
 

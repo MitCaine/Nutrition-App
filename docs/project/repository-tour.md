@@ -125,7 +125,7 @@ regeneration.
 The [Documentation Index](../README.md) separates current project knowledge, architecture, feature
 guides, operations, reference material, and historical records. Ordinary implementation begins in
 `project/` and the affected feature guide. Version 1.1/Epic 2 planning and closure material remains
-under its versioned directory as completed evidence, not an active backlog.
+under `docs/historical/programs/version-1.1/` as completed evidence, not an active backlog.
 
 ### Root Compose and scripts
 
@@ -221,10 +221,7 @@ hook. Search is a client composition of two sources, not a standalone backend su
 
 ### If you're working on Epic 2 transfer or parity fixtures
 
-Epic 2 is complete. Begin with the retained E2-15 architecture/runbook and the corresponding
-`packages/shared-contracts/e2-15` artifacts only when a current schema/transfer change crosses that
-compatibility boundary. Do not reopen completed Epic 2 planning merely because a regression fixture
-needs a new version.
+Epic 2 is complete. Begin with the current [PostgreSQL-to-SQLite Transfer](../operations/postgresql-to-sqlite-transfer.md) guide and the `packages/shared-contracts/e2-15` artifacts. Use the [historical E2-15 architecture record](../historical/programs/version-1.1/epic-2/e2-15-transfer-architecture.md) only for the original acceptance and design provenance. Do not reopen completed Epic 2 planning merely because a current compatibility fixture needs a new version.
 
 ### If you're working on Phase 5
 

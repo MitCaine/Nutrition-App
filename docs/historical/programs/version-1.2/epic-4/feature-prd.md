@@ -485,7 +485,7 @@ Initial Epic 4 excludes:
 - comprehensive accessibility-specific chart product requirements or dedicated accessibility settings; and
 - regulatory Nutrition Facts label authoring/certification.
 
-Deferred options remain in [Future Product and Scalability Options](../../future-product-and-scale.md).
+Deferred options remain in [Future Product and Scalability Options](../../../../project/future-product-and-scale.md).
 
 ## 18. Acceptance and qualification gates
 

@@ -300,7 +300,7 @@ REQUIRE_POSTGRES_TESTS=1 \
 ```
 
 The authoritative frozen command/evidence manifest is
-[Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md). Developer
+[Version 1.0 PostgreSQL Release Qualification](../historical/releases/version-1.0-release-qualification.md). Developer
 convenience commands in this guide do not substitute for that release manifest.
 
 ## MinIO object-lock integration

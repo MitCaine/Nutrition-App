@@ -27,7 +27,7 @@ Epic 4 implementation is therefore **authorized**. No Epic 4 application impleme
 
 The PRD is the product authority for implementation. The data contracts own the technical semantics that local and remote implementations must preserve. The backlog decomposes those accepted contracts; it must not silently expand them.
 
-New product ideas encountered during implementation belong in [Future Product and Scalability Options](../../future-product-and-scale.md) unless they are required to satisfy an accepted Epic 4 invariant or acceptance criterion.
+New product ideas encountered during implementation belong in [Future Product and Scalability Options](../../../../project/future-product-and-scale.md) unless they are required to satisfy an accepted Epic 4 invariant or acceptance criterion.
 
 ## Delivery sequence
 

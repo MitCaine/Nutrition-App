@@ -388,6 +388,8 @@ Continue with the [Control Plane Guide](../operations/control-plane.md) before e
 
 ## If you need to modify Epic 2 transfer/parity contracts
 
+Start with the current [PostgreSQL-to-SQLite Transfer](../operations/postgresql-to-sqlite-transfer.md) guide for the operator boundary and current executable contract.
+
 Epic 2 is complete. Its retained machine-readable fixtures under `packages/shared-contracts/e2-*`
 are regression/transfer evidence, not an active implementation backlog and not a generated public
 SDK. In particular, `e2-15` contains versioned source schema, target schema, transfer contract, and
