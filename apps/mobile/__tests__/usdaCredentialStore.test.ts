@@ -39,6 +39,22 @@ test("treats an absent or blank saved value as unconfigured", async () => {
   await expect(getStoredUsdaCredential()).resolves.toBeNull();
 });
 
+test("does not emit credential diagnostics during ordinary reads", async () => {
+  const consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+  try {
+    mockGetItemAsync.mockResolvedValue("  personal-key  ");
+    await expect(getStoredUsdaCredential()).resolves.toBe("personal-key");
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+
+    mockGetItemAsync.mockResolvedValue("   ");
+    await expect(getStoredUsdaCredential()).resolves.toBeNull();
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+  } finally {
+    consoleLogSpy.mockRestore();
+  }
+});
+
 test("stores only a trimmed non-empty USDA credential", async () => {
   await setStoredUsdaCredential("  personal-key  ");
 
