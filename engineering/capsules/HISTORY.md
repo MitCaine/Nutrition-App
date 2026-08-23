@@ -2355,7 +2355,7 @@ than being rewritten as successful verification.
 - **Task type:** tooling
 - **Risk:** medium
 - **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/158
-- **Issue disposition:** OPEN — GH-158 was cancelled for a qualified-scope correction; issue #158 continues under GH-158-R1.
+- **Issue disposition:** CLOSED / COMPLETED — GH-158 itself remained CANCELLED; GitHub issue #158 completed successfully under successor GH-158-R1.
 - **Created:** 2026-08-23
 - **Completed/updated:** 2026-08-23
 - **Base commit:** 8fead7f4eefd0a494ecab55dc6a13463f4169494
@@ -2391,7 +2391,7 @@ than being rewritten as successful verification.
 - **Task type:** tooling
 - **Risk:** medium
 - **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/158
-- **Issue disposition:** OPEN — repository integration is complete; final issue closure is pending successful remote qualification of this terminal-closeout commit.
+- **Issue disposition:** CLOSED / COMPLETED
 - **Created:** 2026-08-23
 - **Completed/updated:** 2026-08-23
 - **Base commit:** 31a3c7c3c1e0478537161eac41213fae6f4a21d1
@@ -2408,12 +2408,12 @@ than being rewritten as successful verification.
 - **Integration-related commit reference(s):** `3011f37857dfa4618c3fe0931c5febba15b56f5d`, `ccccaa8712a47a5ead6a06b13047a6183fb1ef19`, `4a32fc713e9c39c8acf0f459fd81338206917ece`
 - **Acceptance result:** 12/12 checked in the terminal source capsule.
 - **Review disposition:** Approved — independent review found zero blocking findings and approved exact source `4a32fc713e9c39c8acf0f459fd81338206917ece` for human integration.
-- **Verification summary:** PASS — exact integration commit `3011f37857dfa4618c3fe0931c5febba15b56f5d` is byte-identical to reviewed tree `5c39a4c6911f64b405e46a0889cf4ea134e756ce`; 22 focused capsule-validator tests, 5 handoff-renderer tests, strict READY regressions, canonical history validation, documentation validation, project audit, repository review profiles, and all 7 GitHub integration checks passed.
-- **Specialized qualification:** PASS — the original 69 migrated terminal IDs remain preserved, cancelled GH-158 is the unique 70th predecessor record, all 70 pre-closeout historical capsule locators resolve with matching SHA-256 and capsule identity, the legacy `completed/` tree is absent, and the permanent history-plus-active-removal closeout contract is mechanically enforced.
-- **Known warnings:** Pre-existing and non-blocking — `DOMAIN_TOKEN_IN_OPS_MIGRATION` remains outside GH-158-R1 scope. The integration push also reported 3 current Dependabot vulnerability alerts (2 high, 1 moderate); dependency remediation is outside this repository-workflow task.
+- **Verification summary:** PASS — exact integration commit `3011f37857dfa4618c3fe0931c5febba15b56f5d` is byte-identical to reviewed tree `5c39a4c6911f64b405e46a0889cf4ea134e756ce`; 22 focused capsule-validator tests, 5 handoff-renderer tests, strict READY regressions, canonical history validation, documentation validation, project audit, and repository review profiles passed. All 7 GitHub integration checks passed. Terminal closeout commit `b290bcca983083f260bac98652d79b8eb29db18d` then produced the canonical zero-active / 71-history / no-completed-tree state and independently passed all 7 GitHub closeout checks.
+- **Specialized qualification:** PASS — the original 69 migrated terminal IDs remain preserved, cancelled GH-158 is the unique 70th predecessor record, and GH-158-R1 is the unique 71st terminal record. All 71 historical full-capsule locators resolve with matching SHA-256 and capsule identity; zero active capsules remain, the legacy `completed/` tree is absent, and the permanent history-plus-active-removal closeout contract is mechanically enforced.
+- **Known warnings:** Pre-existing and non-blocking — `DOMAIN_TOKEN_IN_OPS_MIGRATION` remains outside GH-158-R1 scope. Both integration and terminal-closeout pushes reported the same 3 current Dependabot vulnerability alerts (2 high, 1 moderate); dependency remediation remains outside this repository-workflow task.
 - **Deferred work/follow-up IDs:** None identified for GH-158-R1.
 - **Retrospective:** yes — predecessor GH-158 demonstrated that workflow-policy tasks must inspect the end-to-end `engineering/workflow/WORKFLOW.md` authority before READY; GH-158-R1 corrected that scope defect without weakening lifecycle gates.
-- **Referenced commits:** `31a3c7c3c1e0478537161eac41213fae6f4a21d1`, `750f9e5d58ebb78f27db675d4e188513057bc65d`, `139e2ca8d2d4c290a7afb6308d239f7e4746541e`, `43f43d41efd6838eac1a3ff5a6ed0d0551a8df7b`, `ef77950359887f00179607173a83c19def45d6a4`, `3c1e41526697e6c3da40da6d73c372a441b79188`, `4a32fc713e9c39c8acf0f459fd81338206917ece`, `ccccaa8712a47a5ead6a06b13047a6183fb1ef19`, `3011f37857dfa4618c3fe0931c5febba15b56f5d`
+- **Referenced commits:** `31a3c7c3c1e0478537161eac41213fae6f4a21d1`, `750f9e5d58ebb78f27db675d4e188513057bc65d`, `139e2ca8d2d4c290a7afb6308d239f7e4746541e`, `43f43d41efd6838eac1a3ff5a6ed0d0551a8df7b`, `ef77950359887f00179607173a83c19def45d6a4`, `3c1e41526697e6c3da40da6d73c372a441b79188`, `4a32fc713e9c39c8acf0f459fd81338206917ece`, `ccccaa8712a47a5ead6a06b13047a6183fb1ef19`, `3011f37857dfa4618c3fe0931c5febba15b56f5d`, `b290bcca983083f260bac98652d79b8eb29db18d`
 - **Full-capsule recovery commit:** `3011f37857dfa4618c3fe0931c5febba15b56f5d`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-158-R1.md`
 - **Historical capsule SHA-256:** `0cccaa87ef7eb432decb12414cd5f892d4f70f7b63e2eeb65719378f39f19ac2`
