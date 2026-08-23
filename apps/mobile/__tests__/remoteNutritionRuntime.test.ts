@@ -38,6 +38,7 @@ jest.mock("../src/features/logging/api/logApi", () => ({
   deleteLog: jest.fn(async () => undefined),
   markDayComplete: jest.fn(async () => ({ marker: "log-complete" })),
   getLogMutationStatus: jest.fn(async () => ({ marker: "log-status" })),
+  getHistoryRange: jest.fn(async () => ({ marker: "log-history-range" })),
   getDailySummary: jest.fn(async () => ({ marker: "log-summary" })),
 }));
 jest.mock("../src/features/targets/api/targetApi", () => ({
@@ -56,6 +57,8 @@ jest.mock("../src/features/usda/api/usdaApi", () => ({
   importUsdaFood: jest.fn(async () => ({ marker: "usda-import" })),
 }));
 
+import { z } from "zod";
+
 import * as calendarApi from "../src/features/calendar/api/calendarApi";
 import * as foodApi from "../src/features/foods/api/foodApi";
 import * as recipeApi from "../src/features/recipes/api/recipeApi";
@@ -63,6 +66,7 @@ import * as logApi from "../src/features/logging/api/logApi";
 import * as targetApi from "../src/features/targets/api/targetApi";
 import * as ocrApi from "../src/features/ocr/api/ocrApi";
 import * as usdaApi from "../src/features/usda/api/usdaApi";
+import { RuntimeError } from "../src/runtime/RuntimeError";
 import { remoteNutritionRuntime } from "../src/runtime/remote/remoteNutritionRuntime";
 
 const mockGetCalendarState = calendarApi.getCalendarState as jest.Mock;
@@ -98,6 +102,7 @@ const mockGetLogEditContext = logApi.getLogEditContext as jest.Mock;
 const mockDeleteLog = logApi.deleteLog as jest.Mock;
 const mockMarkDayComplete = logApi.markDayComplete as jest.Mock;
 const mockGetLogMutationStatus = logApi.getLogMutationStatus as jest.Mock;
+const mockGetHistoryRange = logApi.getHistoryRange as jest.Mock;
 const mockGetDailySummary = logApi.getDailySummary as jest.Mock;
 const mockGetTargets = targetApi.getTargets as jest.Mock;
 const mockUpdateTargets = targetApi.updateTargets as jest.Mock;
@@ -249,6 +254,7 @@ test("every remote runtime operation delegates to its remote feature API exactly
     remoteNutritionRuntime.dailyLogs.delete("log-1", logDelete),
     remoteNutritionRuntime.dailyLogs.markDayComplete(completeInput),
     remoteNutritionRuntime.dailyLogs.getMutationStatus("request-1", "create"),
+    remoteNutritionRuntime.dailyLogs.getHistoryRange("2026-08-01", "2026-08-13"),
     remoteNutritionRuntime.dailyLogs.getDailySummary("2026-08-13"),
     remoteNutritionRuntime.targets.getConfiguration(),
     remoteNutritionRuntime.targets.updateConfiguration(targetInput),
@@ -270,11 +276,12 @@ test("every remote runtime operation delegates to its remote feature API exactly
     mockDuplicateRecipe,
     mockGetRecipeNutrition, mockPublishRecipe, mockListLogs, mockListFutureEntries,
     mockListRecentEntries, mockCreateLog, mockUpdateLog, mockGetLogEditContext, mockDeleteLog,
-    mockMarkDayComplete, mockGetLogMutationStatus, mockGetDailySummary, mockGetTargets, mockUpdateTargets,
+    mockMarkDayComplete, mockGetLogMutationStatus, mockGetHistoryRange, mockGetDailySummary,
+    mockGetTargets, mockUpdateTargets,
     mockResetTargetOverride, mockGetDailyTargetComparison, mockParseNutritionLabel,
     mockConfirmNutritionLabel, mockSearchUsdaFoods, mockGetUsdaFoodPreview, mockImportUsdaFood,
   ];
-  expect(delegatedOperations).toHaveLength(43);
+  expect(delegatedOperations).toHaveLength(44);
   for (const operation of delegatedOperations) expect(operation).toHaveBeenCalledTimes(1);
 
   expect(mockEstablishCalendarTimeZone).toHaveBeenCalledWith("UTC");
@@ -307,6 +314,7 @@ test("every remote runtime operation delegates to its remote feature API exactly
   expect(mockDeleteLog).toHaveBeenCalledWith("log-1", logDelete);
   expect(mockMarkDayComplete).toHaveBeenCalledWith(completeInput);
   expect(mockGetLogMutationStatus).toHaveBeenCalledWith("request-1", "create");
+  expect(mockGetHistoryRange).toHaveBeenCalledWith("2026-08-01", "2026-08-13");
   expect(mockGetDailySummary).toHaveBeenCalledWith("2026-08-13");
   expect(mockUpdateTargets).toHaveBeenCalledWith(targetInput);
   expect(mockResetTargetOverride).toHaveBeenCalledWith("protein");
@@ -330,3 +338,106 @@ test("remote adapter passes shared parity payloads without numeric coercion", as
   await expect(remoteNutritionRuntime.foods.list()).resolves.toEqual([food]);
   await expect(remoteNutritionRuntime.dailyLogs.list("2026-02-28")).resolves.toEqual([snapshot]);
 });
+
+
+function responseValidationFailure(): z.ZodError {
+  const result = z.object({
+    required: z.string(),
+  }).safeParse({});
+
+  if (result.success) {
+    throw new Error(
+      "Expected response validation failure.",
+    );
+  }
+
+  return result.error;
+}
+
+async function captureRuntimeError(
+  execute: () => Promise<unknown>,
+): Promise<RuntimeError> {
+  try {
+    await execute();
+  } catch (error) {
+    expect(
+      error,
+    ).toBeInstanceOf(RuntimeError);
+
+    return error as RuntimeError;
+  }
+
+  throw new Error(
+    "Expected remote runtime operation to reject.",
+  );
+}
+
+test(
+  "invalid successful read response becomes non-retryable invalid_response",
+  async () => {
+    mockGetCalendarState
+      .mockRejectedValueOnce(
+        responseValidationFailure(),
+      );
+
+    const error =
+      await captureRuntimeError(
+        () =>
+          remoteNutritionRuntime
+            .calendar
+            .getState(),
+      );
+
+    expect(error).toMatchObject({
+      name: "RuntimeError",
+      kind: "invalid_response",
+      code: null,
+      message:
+        "The remote runtime returned an invalid response.",
+      fieldErrors: [],
+      retryable: false,
+      mutationOutcome:
+        "not_applicable",
+    });
+
+    expect(error.details).toEqual({
+      reason: expect.any(String),
+    });
+  },
+);
+
+test(
+  "invalid successful mutation response becomes non-retryable invalid_response with unresolved outcome",
+  async () => {
+    mockCreateFood
+      .mockRejectedValueOnce(
+        responseValidationFailure(),
+      );
+
+    const error =
+      await captureRuntimeError(
+        () =>
+          remoteNutritionRuntime
+            .foods
+            .create(
+              {} as never,
+            ),
+      );
+
+    expect(error).toMatchObject({
+      name: "RuntimeError",
+      kind: "invalid_response",
+      code: null,
+      message:
+        "The remote runtime returned an invalid response.",
+      fieldErrors: [],
+      retryable: false,
+      mutationOutcome:
+        "unresolved",
+    });
+
+    expect(error.details).toEqual({
+      reason: expect.any(String),
+    });
+  },
+);

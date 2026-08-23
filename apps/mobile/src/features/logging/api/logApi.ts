@@ -4,8 +4,10 @@ import {
   parseDailyLog,
   parseDailyLogList,
   parseDailyLogMutationStatus,
+  parseDailyLogEditContext,
   parseDailySummaryResponse,
   parseHistoryRangeResponse,
+  parseRecentEntryList,
 } from "./logResponseSchemas";
 import type {
   DailyLog,
@@ -32,8 +34,9 @@ export async function listFutureEntries(date: string): Promise<DailyLog[]> {
 }
 
 export async function listRecentEntries(): Promise<RecentEntry[]> {
-  const response = await apiRequest<{ entries: RecentEntry[] }>("/logs/recent-entries");
-  return response.entries;
+  return parseRecentEntryList(
+    await apiRequest<unknown>("/logs/recent-entries"),
+  );
 }
 
 export async function createLog(input: DailyLogCreateInput): Promise<DailyLog> {
@@ -50,8 +53,10 @@ export async function updateLog(logId: string, input: Partial<DailyLogUpdateInpu
   }));
 }
 
-export function getLogEditContext(logId: string): Promise<DailyLogEditContext> {
-  return apiRequest<DailyLogEditContext>(`/logs/${logId}/edit-context`);
+export async function getLogEditContext(logId: string): Promise<DailyLogEditContext> {
+  return parseDailyLogEditContext(
+    await apiRequest<unknown>(`/logs/${logId}/edit-context`),
+  );
 }
 
 export function deleteLog(logId: string, input: DailyLogDeleteInput = {}): Promise<void> {

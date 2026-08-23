@@ -89,6 +89,56 @@ function comparisonResponse() {
   };
 }
 
+function calendarStateResponse() {
+  return {
+    is_established: false,
+    authoritative_time_zone: null,
+    calendar_revision: 0,
+    today: null,
+  };
+}
+
+function nutrientDefinitionListResponse() {
+  return [];
+}
+
+function resolvedNutritionResponse() {
+  return {
+    nutrition_authority: "food_item",
+    recipe_id: null,
+    recipe_publication_revision_id: null,
+    amounts: [],
+  };
+}
+
+function recipeResponse() {
+  return {
+    id: "00000000-0000-4000-8000-000000000801",
+    user_id: "00000000-0000-4000-8000-000000000802",
+    published_food_item_id: null,
+    name: "Remote Recipe",
+    notes: null,
+    serving_count_yield: null,
+    final_cooked_weight_grams: null,
+    final_cooked_weight_display_quantity: null,
+    final_cooked_weight_display_unit: null,
+    needs_republish: false,
+    created_at: "2026-08-13T12:00:00Z",
+    updated_at: "2026-08-13T12:00:00Z",
+    ingredients: [],
+  };
+}
+
+function usdaSearchResponse() {
+  return {
+    query: "beans",
+    page_number: 1,
+    page_size: 20,
+    total_hits: 0,
+    foods: [],
+  };
+}
+
 beforeEach(() => {
   (AsyncStorage.getItem as jest.Mock).mockClear();
   (AsyncStorage.setItem as jest.Mock).mockClear();
@@ -139,6 +189,30 @@ test("remote capability calls use the central application-data HTTP path and nev
     const target = String(input);
     const method = String(init?.method ?? "GET");
     requests.push({ target, method });
+    if (target.endsWith("/settings/calendar")) {
+      return successfulResponse(
+        calendarStateResponse(),
+      );
+    }
+    if (target.endsWith("/nutrients")) {
+      return successfulResponse(
+        nutrientDefinitionListResponse(),
+      );
+    }
+    if (
+      target.endsWith(
+        "/foods/food-1/resolved-nutrition",
+      )
+    ) {
+      return successfulResponse(
+        resolvedNutritionResponse(),
+      );
+    }
+    if (target.endsWith("/recipes/recipe-1")) {
+      return successfulResponse(
+        recipeResponse(),
+      );
+    }
     if (target.includes("/targets/daily-comparison?")) return successfulResponse(comparisonResponse());
     if (target.endsWith("/ocr/nutrition-label/parse")) return successfulResponse(parsedNutritionLabelResponse());
     if (target.includes("/logs?date=")) return successfulResponse({ logs: [] });
@@ -153,6 +227,15 @@ test("remote capability calls use the central application-data HTTP path and nev
         result: null,
         completion: null,
       });
+    }
+    if (
+      target.endsWith(
+        "/usda/foods/search?query=beans&page_size=20",
+      )
+    ) {
+      return successfulResponse(
+        usdaSearchResponse(),
+      );
     }
     return successfulResponse({});
   });

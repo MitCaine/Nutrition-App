@@ -5,9 +5,11 @@ import { NUTRIENT_UNITS } from "../../../shared/nutrition/types";
 import type {
   DailyLog,
   DailyLogCompletion,
+  DailyLogEditContext,
   DailyLogMutationStatus,
   DailySummaryResponse,
   HistoryRangeResponse,
+  RecentEntry,
 } from "./types";
 
 const exactDecimal = z.string().max(128).regex(/^\d+(?:\.\d+)?$/);
@@ -74,6 +76,61 @@ const dailyLogSchema = z.object({
 
 const dailyLogListSchema = z.object({
   logs: z.array(dailyLogSchema),
+}).strict();
+
+const recentEntrySchema = z.object({
+  id: uuid,
+  food_item_id: uuid,
+  food_name_snapshot: z.string().nullable(),
+  logged_date: dateOnly,
+  meal_type: z.string().nullable(),
+  amount_quantity: exactDecimal,
+  amount_unit: z.enum(["serving", "g"]),
+  serving_definition_id: uuid.nullable(),
+  recipe_publication_revision_id: uuid.nullable(),
+  recipe_publication_amount_definition_id: uuid.nullable(),
+  historical_serving_label: z.string().nullable(),
+  notes: z.string().nullable(),
+  note_present: z.boolean(),
+  note_reference: z.string().nullable(),
+  note_copy_allowed: z.boolean(),
+  created_at: instant,
+  source_food_updated_at: instant.nullable(),
+  source_recipe_publication_revision_id: uuid.nullable(),
+  current_source_loggable: z.boolean(),
+  current_amount_unit: z.enum(["serving", "g"]).nullable(),
+  current_amount_definition_id: uuid.nullable(),
+  current_amount_label: z.string().nullable(),
+  reuse_status: z.enum(["exact", "equivalent", "ambiguous", "unavailable"]),
+}).strict();
+
+const recentEntryListSchema = z.object({
+  entries: z.array(recentEntrySchema),
+}).strict();
+
+const dailyLogEditAmountSchema = z.object({
+  amount_definition_id: uuid,
+  display_label: z.string(),
+  semantic_mode: z.enum(["serving", "g"]),
+  display_quantity: exactDecimal.nullable(),
+  display_unit: z.string(),
+  gram_equivalent: exactDecimal.nullable(),
+  is_default: z.boolean(),
+  is_selected: z.boolean(),
+}).strict();
+
+const dailyLogEditContextSchema = z.object({
+  log_id: uuid,
+  source_food_available: z.boolean(),
+  is_revision_backed: z.boolean(),
+  recipe_publication_revision_id: uuid.nullable(),
+  selected_amount_definition_id: uuid.nullable(),
+  amount_choices: z.array(dailyLogEditAmountSchema),
+  current_source_food_updated_at: instant.optional(),
+  current_recipe_publication_revision_id: uuid.optional(),
+  current_source_loggable: z.boolean().optional(),
+  current_selected_amount_definition_id: uuid.optional(),
+  current_amount_choices: z.array(dailyLogEditAmountSchema).optional(),
 }).strict();
 
 const dailyLogMutationStatusSchema = z.object({
@@ -147,4 +204,12 @@ export function parseDailySummaryResponse(raw: unknown): DailySummaryResponse {
 
 export function parseDailyLogMutationStatus(raw: unknown): DailyLogMutationStatus {
   return dailyLogMutationStatusSchema.parse(raw);
+}
+
+export function parseRecentEntryList(raw: unknown): RecentEntry[] {
+  return recentEntryListSchema.parse(raw).entries;
+}
+
+export function parseDailyLogEditContext(raw: unknown): DailyLogEditContext {
+  return dailyLogEditContextSchema.parse(raw);
 }

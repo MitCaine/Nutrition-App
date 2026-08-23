@@ -1,39 +1,84 @@
 import { apiRequest } from "../../../shared/api/client";
-import type { CalendarImpactPreview, CalendarState } from "../types";
+import {
+  parseCalendarImpactPreviewResponse,
+  parseCalendarStateResponse,
+} from "./calendarResponseSchemas";
+import type {
+  CalendarImpactPreview,
+  CalendarState,
+} from "../types";
 
-export type { CalendarImpactEntry, CalendarImpactPreview, CalendarState } from "../types";
+export type {
+  CalendarImpactEntry,
+  CalendarImpactPreview,
+  CalendarState,
+} from "../types";
 
-export function getCalendarState(): Promise<CalendarState> {
-  return apiRequest<CalendarState>("/settings/calendar");
+export async function getCalendarState():
+Promise<CalendarState> {
+  const response = await apiRequest<unknown>(
+    "/settings/calendar",
+  );
+
+  return parseCalendarStateResponse(response);
 }
 
 /** Confirm the current client's proposed zone; the server remains authoritative. */
-export function establishCalendarTimeZone(timeZone: string): Promise<CalendarState> {
-  return apiRequest<CalendarState>("/settings/calendar", {
-    method: "PUT",
-    body: JSON.stringify({ time_zone: timeZone }),
-  });
+export async function establishCalendarTimeZone(
+  timeZone: string,
+): Promise<CalendarState> {
+  const response = await apiRequest<unknown>(
+    "/settings/calendar",
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        time_zone: timeZone,
+      }),
+    },
+  );
+
+  return parseCalendarStateResponse(response);
 }
 
-export function previewCalendarTimeZoneChange(timeZone: string): Promise<CalendarImpactPreview> {
-  return apiRequest<CalendarImpactPreview>("/settings/calendar/preview", {
-    method: "POST",
-    body: JSON.stringify({ time_zone: timeZone }),
-  });
+export async function previewCalendarTimeZoneChange(
+  timeZone: string,
+): Promise<CalendarImpactPreview> {
+  const response = await apiRequest<unknown>(
+    "/settings/calendar/preview",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        time_zone: timeZone,
+      }),
+    },
+  );
+
+  return parseCalendarImpactPreviewResponse(
+    response,
+  );
 }
 
-export function confirmCalendarTimeZoneChange(input: {
-  timeZone: string;
-  calendarRevision: number;
-  previewToken: string;
-}): Promise<CalendarState> {
-  return apiRequest<CalendarState>("/settings/calendar/confirm", {
-    method: "POST",
-    body: JSON.stringify({
-      time_zone: input.timeZone,
-      calendar_revision: input.calendarRevision,
-      confirm_impacts: true,
-      preview_token: input.previewToken,
-    }),
-  });
+export async function confirmCalendarTimeZoneChange(
+  input: {
+    timeZone: string;
+    calendarRevision: number;
+    previewToken: string;
+  },
+): Promise<CalendarState> {
+  const response = await apiRequest<unknown>(
+    "/settings/calendar/confirm",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        time_zone: input.timeZone,
+        calendar_revision:
+          input.calendarRevision,
+        confirm_impacts: true,
+        preview_token:
+          input.previewToken,
+      }),
+    },
+  );
+
+  return parseCalendarStateResponse(response);
 }
