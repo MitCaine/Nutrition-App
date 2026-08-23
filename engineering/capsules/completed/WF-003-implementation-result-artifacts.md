@@ -1,13 +1,13 @@
 +++
 schema_version = 1
-capsule_revision = 3
+capsule_revision = 4
 id = "WF-003-implementation-result-artifacts"
 title = "Generate durable implementation-result artifacts"
-state = "DECOMPOSED"
+state = "CANCELLED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-08-04"
-updated = "2026-08-06"
+updated = "2026-08-22"
 source_issue = "Not applicable — Workflow v3 experimental repository-automation trial"
 base_commit = ""
 branch = "main"
@@ -16,9 +16,9 @@ executor = "Codex — Luna-class bounded executor"
 reviewer = "Independent ChatGPT architecture review"
 delegation = "none"
 delegation_constraints = []
-blocked = true
-blocked_reason = "Deferred until Version 1.1 Epic 1 end-to-end release qualification is complete."
-blocked_since = "2026-08-06"
+blocked = false
+blocked_reason = ""
+blocked_since = ""
 dependencies = [
   "Mechanical task-capsule validation",
   "Validated task-handoff generation",
@@ -202,6 +202,21 @@ Stop and return to the controller when:
 
 ## Decisions and assumptions
 
+### Cancellation disposition
+
+- GitHub issue #22 / E1-18 completed, so the historical dependency that caused
+  the 2026-08-06 deferral is no longer open.
+- Completion of that dependency does not make the experimental
+  implementation-result renderer a pre-2.0 requirement.
+- Re-anchoring WF-003 would create new medium-risk, non-release-critical
+  repository-tooling scope during bounded pre-2.0 hygiene work.
+- WF-003 is therefore cancelled rather than returned to READY.
+- The previously generated handoff remains historical and must not be executed.
+- No renderer implementation, re-anchoring, new handoff, or historical-evidence
+  deletion is part of this cancellation.
+- The capsule is preserved under `engineering/capsules/completed` as historical
+  Workflow v3 evidence.
+
 - The structured executor result is explicit JSON rather than parsed conversational prose.
 - JSON is the machine interchange format for executor results and generated normalized evidence;
   the task capsule remains human-first Markdown with TOML front matter.
@@ -222,13 +237,14 @@ Stop and return to the controller when:
 | 2026-08-04 | SPECIFIED | DECOMPOSED | ChatGPT Work controller | One bounded tooling outcome with focused tests and documentation identified. |
 | 2026-08-04 | DECOMPOSED | READY | ChatGPT Work controller | Authority, exact base commit, branch, acceptance, verification, return evidence, and escalation completed. |
 | 2026-08-06 | READY | DECOMPOSED | ChatGPT Work controller | Execution deferred until Version 1.1 Epic 1 release qualification completes. The prior qualified handoff is historical; WF-003 must be re-anchored, revalidated, and rendered again before execution. |
+| 2026-08-22 | DECOMPOSED | CANCELLED | ChatGPT | Issue #22 / E1-18 is complete, but the experimental implementation-result renderer is not required for the pre-2.0 release boundary. Re-anchoring would introduce new non-release-critical tooling scope, so the task is terminally cancelled and archived while its historical handoff and prior workflow evidence remain preserved. |
 
 ## Completion record
 
-- **Reviewed commit:** Not applicable — task is not completed.
-- **Review disposition:** Not applicable — task is not completed.
-- **Verification summary:** Not applicable — task is not completed.
-- **Specialized qualification:** Not applicable — task is not completed.
-- **Known warnings:** Not applicable — task is not completed.
-- **Deferred work/follow-up IDs:** Not applicable — task is not completed.
-- **Retrospective required:** yes — this is the first real Workflow v3 capsule trial.
+- **Reviewed commit:** Not applicable — WF-003 was cancelled before implementation or independent review.
+- **Review disposition:** Not applicable — cancellation was a planning/lifecycle disposition rather than implementation approval.
+- **Verification summary:** Revision 3 DECOMPOSED authority was rebound, issue #22 / E1-18 completion was confirmed, the historical handoff prohibition was preserved, and the revision 4 CANCELLED capsule is validated under the repository task-capsule validator.
+- **Specialized qualification:** Not applicable — no renderer, application, database, migration, infrastructure, CI, or deployment implementation occurred.
+- **Known warnings:** The historical WF-003 handoff remains intentionally non-executable and is retained only as historical Workflow v3 evidence.
+- **Deferred work/follow-up IDs:** Not applicable — no pre-2.0 follow-up is created by cancelling this experimental renderer task.
+- **Retrospective required:** no — the task ended as a bounded cancellation without implementation.
