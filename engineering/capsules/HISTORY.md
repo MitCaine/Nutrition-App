@@ -2597,3 +2597,38 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`
 - **Full-capsule recovery path:** `engineering/capsules/completed/WF-004.md`
 - **Historical capsule SHA-256:** `57251876a7edc12ec932d9af105734828f0cb64667136c9e40e3f33e0c5567e5`
+### GH-159 - Reconcile and consolidate Version 2.0 documentation
+
+- **ID:** `GH-159`
+- **Title:** Reconcile and consolidate Version 2.0 documentation
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/159
+- **Issue disposition:** OPEN — this execution attempt was cancelled for a qualified capsule-scope correction; issue #159 continues under GH-159-R1.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** ebde52d7869f32c0842498c59cb61df23ed37266
+- **Task branch:** docs/version-2-documentation-reconciliation
+- **Controller:** Codex, then ChatGPT GPT-5.6 Sol for scope-gap disposition
+- **Executor:** Codex
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** None — no documentation implementation files were changed before cancellation.
+- **Verified commit reference(s):** Not applicable — cancellation occurred before implementation verification.
+- **Reviewed source commit:** Not applicable — cancelled before independent implementation review.
+- **Reviewed task/checkpoint commit(s):** `e3ffa70efc6c33d9b98b689f8883859aae55620d` qualified READY; `83ef66f75924fced51523e6b8dd20cc7f660a0c7` entered IN_PROGRESS before the scope gap was discovered.
+- **Integration/merged commit:** Not applicable — cancelled without integration.
+- **Integration-related commit reference(s):** Not applicable — cancelled before integration.
+- **Acceptance result:** 0/12 checked in the terminal source capsule.
+- **Review disposition:** Stop and replan — `apps/backend/tests/test_project_audit.py` is required to maintain the path-sensitive current-document contract inventory but was absent from machine-readable allowed scope.
+- **Verification summary:** The original capsule qualified READY and strict execution preflight passed. Execution stopped before documentation edits; the linked worktree remained clean when the scope omission was identified.
+- **Specialized qualification:** Not run — cancellation occurred before the three documentation passes or their qualification gates.
+- **Known warnings:** The linked worktree does not contain the ignored backend `.venv`; repository Python 3.12 from the primary checkout is required for validation there.
+- **Deferred work/follow-up IDs:** GH-159-R1 resumes GitHub issue #159 with the complete audit-test scope.
+- **Retrospective:** Successor GH-159-R1 must explicitly include path-sensitive project-audit regression coverage before READY.
+- **Referenced commits:** `ebde52d7869f32c0842498c59cb61df23ed37266`, `e3ffa70efc6c33d9b98b689f8883859aae55620d`, `83ef66f75924fced51523e6b8dd20cc7f660a0c7`, `10352bd329bfad3b55f515c3822235a0165f289c`
+- **Full-capsule recovery commit:** `10352bd329bfad3b55f515c3822235a0165f289c`
+- **Full-capsule recovery path:** `engineering/capsules/active/GH-159.md`
+- **Historical capsule SHA-256:** `e03e9dd0783761ff633a6c1ab0ce06c78c5e1042860264ca078bbf0c36fa3aa8`
