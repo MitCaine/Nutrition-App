@@ -41,8 +41,10 @@ work may not bypass them.
    manual accessibility qualification.
 7. **Review:** compare the capsule, authority, changed code, implementation return, and review
    bundle. Disposition is `approved`, `bounded correction`, or `stop and replan`.
-8. **Complete:** record reviewed commit, evidence, warnings, deferred work, and disposition; then
-   move the capsule to `completed/` after commit or merge.
+8. **Complete:** after successful integration or cancellation, write or update the task's unique
+   terminal record in `engineering/capsules/HISTORY.md` with final evidence and an exact
+   full-capsule Git recovery commit/path plus SHA-256; remove the active capsule in the same
+   closeout change. Do not move or copy the capsule into a per-task `completed/` archive.
 
 ## Exception paths
 

@@ -117,3 +117,11 @@ Provide only context a fresh executor needs; link rather than copy authority.
 - **Known warnings:**
 - **Deferred work/follow-up IDs:**
 - **Retrospective required:** yes/no — reason
+
+## Terminal closeout rule
+
+Keep this full capsule under `engineering/capsules/active/` through review. At successful
+integration or cancellation, write the unique terminal record to `engineering/capsules/HISTORY.md`
+with the final evidence and an exact Git recovery commit/path plus SHA-256 for this full capsule.
+Remove this active file in the same closeout change. Do not move or copy it into a per-task
+`completed/` archive.
