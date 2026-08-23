@@ -104,17 +104,138 @@ For layer responsibilities, persistence boundaries, and migration streams, read 
 
 ### Primary path: local SQLite authority
 
+The normal application runtime is local-first. Foods, Recipes, Daily Logs,
+Targets, OCR confirmation, and saved nutrition persist in authoritative
+on-device SQLite without FastAPI or PostgreSQL. USDA requires upstream network
+access and a configured personal credential. Native Apple Vision OCR requires
+an iOS native development or Release build and is not provided by Expo Go.
+
+Use Node 24 for the mobile project. On a fresh checkout, or whenever the locked
+JavaScript dependencies need to be reconciled, install them once:
+
 ```bash
 cd apps/mobile
 npm ci
-EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local \
-EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
-  npm start
 ```
 
-This is the normal application runtime. Foods, Recipes, Daily Logs, Targets, OCR confirmation, and saved nutrition persist in on-device SQLite without FastAPI or PostgreSQL. USDA requires upstream network access and a configured personal credential. Native Apple Vision OCR requires an iOS development or release build and is not provided by Expo Go.
+`npm ci` is setup/dependency reconciliation. It is not a required step before
+every Metro restart or native rebuild.
 
-For a self-contained Release build on a physical iPhone:
+#### Canonical local-iOS development commands
+
+Ordinary JavaScript/TypeScript-only changes do not require native
+recompilation when the appropriate development build is already installed.
+Start Metro and reload/relaunch the installed app.
+
+Changes to native modules, native dependencies, Expo/native configuration,
+config plugins, or other inputs that alter the generated iOS project require a
+fresh native generation/rebuild.
+
+All development commands below select local application-data authority
+explicitly.
+
+##### Destructive simulator reset and rebuild
+
+Use this when the simulator installation and its authoritative local data should
+be discarded deliberately:
+
+```bash
+cd apps/mobile
+export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
+export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
+unset EXPO_PUBLIC_NUTRITION_API_URL
+unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
+
+xcrun simctl uninstall booted com.portfolio.nutritionapp
+npx expo prebuild --clean --platform ios
+npx expo run:ios --no-build-cache
+```
+
+`simctl uninstall` removes the installed application before rebuilding. That
+deletes the simulator app sandbox, including the authoritative Nutrition App
+SQLite database. This is intentionally destructive.
+
+`expo prebuild --clean` deletes and regenerates the generated native iOS
+project. `expo run:ios --no-build-cache` clears native Derived Data/build cache
+before compiling and installing the new Debug build.
+
+##### Native simulator rebuild without intentionally clearing app data
+
+Use this when native/config/plugin/dependency changes require a fresh generated
+project and native binary, but the existing simulator app sandbox should be
+retained:
+
+```bash
+cd apps/mobile
+export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
+export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
+unset EXPO_PUBLIC_NUTRITION_API_URL
+unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
+
+npx expo prebuild --clean --platform ios
+npx expo run:ios --no-build-cache
+```
+
+This regenerates the ignored `apps/mobile/ios/` project and clears the native
+build cache, but it does not intentionally uninstall
+`com.portfolio.nutritionapp`. Installing the rebuilt app over the existing
+installation is therefore distinct from the destructive reset workflow above.
+
+##### Simulator launch without rebuilding
+
+For JS/TS iteration when a native Debug build is already installed, start Metro
+in one terminal:
+
+```bash
+cd apps/mobile
+export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
+export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
+unset EXPO_PUBLIC_NUTRITION_API_URL
+unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
+
+npx expo start --dev-client --host localhost
+```
+
+Then launch the already-installed simulator app without compiling it:
+
+```bash
+xcrun simctl launch booted com.portfolio.nutritionapp
+```
+
+No `expo prebuild` or `expo run:ios` is needed for ordinary JS/TS-only changes.
+
+##### Physical iPhone launch without rebuilding
+
+For an already-installed signed Debug/development build, keep the Mac and
+iPhone on a network where the phone can reach Metro, then start Metro in LAN
+mode:
+
+```bash
+cd apps/mobile
+export EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local
+export EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development
+unset EXPO_PUBLIC_NUTRITION_API_URL
+unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
+
+npx expo start --dev-client --host lan
+```
+
+Launch the already-installed app from the iPhone Home Screen, or launch it from
+the Mac without recompiling:
+
+```bash
+xcrun devicectl device process launch \
+  --device "<device-name-or-identifier>" \
+  com.portfolio.nutritionapp
+```
+
+This path requires an appropriate signed development build to have been
+installed previously. Starting Metro or relaunching that build does not itself
+recompile native code.
+
+##### Self-contained physical-iPhone Release install
+
+The Release workflow remains separate from development-build/Metro iteration:
 
 ```bash
 cd apps/mobile
@@ -126,7 +247,8 @@ unset EXPO_PUBLIC_NUTRITION_PRIVATE_AUTH_TOKEN
 npx expo run:ios --configuration Release --device
 ```
 
-A Release build bundles JavaScript into the installed application and does not require Metro after installation.
+A Release build bundles JavaScript into the installed application and does not
+require Metro after installation.
 
 ### Optional: preserved remote FastAPI/PostgreSQL authority
 
@@ -142,8 +264,10 @@ feature-parity startup.
 
 Revision `0021_target_activation_execution` remains an operations-only
 activation boundary. There is no ordinary-development convenience upgrade
-across it, and an unqualified `alembic` direct-to-latest-head shortcut is not a supported
-startup procedure.
+across it, and an unqualified `alembic` direct-to-latest-head shortcut is not a
+supported startup procedure. In particular, do not combine
+`docker compose down -v` with a direct Alembic upgrade to the latest head as an
+ordinary current-product reset/rebuild workflow.
 
 For an already qualified current remote database:
 

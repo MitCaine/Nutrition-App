@@ -88,15 +88,30 @@ pip-compile --strip-extras --all-build-deps --allow-unsafe --extra dev \
 
 Version 2.0 mobile development and qualification use Node 24. The package engine contract accepts the Node 24 line and excludes Node 25; `.nvmrc` remains the repository toolchain pin.
 
-Local-first development:
+On a fresh checkout, or when the lockfile/dependency installation needs to be
+reconciled:
 
 ```bash
 cd apps/mobile
 npm ci
+```
+
+`npm ci` is setup/dependency reconciliation, not a per-rebuild requirement.
+
+For ordinary local-first JS/TS development with an appropriate native
+development build already installed:
+
+```bash
+cd apps/mobile
 EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY=local \
 EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE=development \
-  npm start
+  npx expo start --dev-client
 ```
+
+The root README owns the canonical local-iOS command set for destructive
+simulator reset/rebuild, native rebuild without intentionally clearing installed
+data, simulator no-rebuild launch, physical-iPhone LAN/Metro no-rebuild launch,
+and the separate self-contained physical Release install.
 
 Remote/reference development:
 
@@ -115,7 +130,10 @@ HTTPS and an injected private bearer credential. Never put a real credential in 
 documentation.
 
 Apple Vision OCR, guided camera capture, and native image-quality inspection require an iOS native
-development/release build rather than Expo Go.
+development/release build rather than Expo Go. JS/TS-only changes generally require only Metro and
+reload/relaunch of that installed development build. Changes to native modules, native
+dependencies, app/native configuration, or config plugins require native regeneration/rebuild as
+applicable; generated `apps/mobile/ios/` remains intentionally untracked.
 
 For every feature change, determine whether the contract change is authority-neutral, local-only,
 remote-only, or a parity change before editing implementation.
