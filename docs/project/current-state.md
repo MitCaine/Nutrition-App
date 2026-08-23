@@ -4,7 +4,7 @@
 
 ## Release and product status
 
-Version 1.2 is the current product line.
+Version 2.0 is the current product line. Root `VERSION` is the canonical repository release authority with exact value `2.0.0`; current mobile, Expo, backend, and documentation metadata mirror it. Version 2.0 qualification uses Node 24 and Python 3.12.
 
 Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
 
@@ -60,6 +60,8 @@ History derives from immutable Daily Log snapshots rather than current Foods or 
 
 These heads describe the preserved PostgreSQL/control-plane streams. They do not govern the local SQLite schema-version migration engine.
 
+The current preserved remote application runtime requires PostgreSQL already provisioned and qualified at `0033_complete_runtime_authority`. Schema `0020_immutable_provenance_enforcement` is retained only as the `LIMITED_PREACTIVATION_OPERATIONS_SANDBOX`; it is not current feature-parity remote startup. `0021_target_activation_execution` remains an operations-only activation boundary, and ordinary development must not use an unqualified `alembic upgrade head` to cross it.
+
 | Authority | Current head |
 | --- | --- |
 | Remote application PostgreSQL migration | `0033_complete_runtime_authority` |
@@ -103,7 +105,8 @@ The [Documentation Index](../README.md) remains the authoritative navigation map
 - Some nutrients intentionally have no established DRI/FDA goal and therefore default to amount-only presentation instead of inventing a target. Per-nutrient preferences can also explicitly select amount-only or ignored tracking.
 - The independent control gate is not consumed by ordinary local application requests. Remote provider routing, infrastructure backup/restore, and readback remain bounded operator/provider responsibilities distinct from the local user backup feature.
 - Local infrastructure qualification proves only its documented disposable topology/provider stand-ins; it is not production-vendor certification.
-- Known dependency vulnerabilities that require versions outside the currently supported Expo compatibility envelope remain deferred until compatible upstream fixes are available; incompatible forced upgrades are not treated as a valid remediation.
+- Version 2.0 currently carries three accepted Dependabot warnings in the Expo/toolchain dependency graph: two high-severity `image-size` alerts and one moderate `uuid` alert. Compatible upstream remediation remains deferred; incompatible forced upgrades are not treated as valid remediation.
+- Version 2.0 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
 
 ## Authority and maintenance
 

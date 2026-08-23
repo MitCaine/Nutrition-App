@@ -1,9 +1,9 @@
 {
   "name": "nutrition-mobile",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=24 <25"
   },
   "scripts": {
     "start": "expo start",
