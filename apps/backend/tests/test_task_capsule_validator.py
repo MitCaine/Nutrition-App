@@ -546,3 +546,567 @@ def test_premerge_commit_resolution_remains_strict(
 
     assert result.returncode == 1
     assert "COMMIT_UNKNOWN" in error_codes(result)
+
+
+def history_error_codes(
+    result: subprocess.CompletedProcess[str],
+) -> set[str]:
+    document = json.loads(result.stdout)
+    history = document["history"]
+    assert history is not None
+    return {
+        item["code"]
+        for item in history["errors"]
+    }
+
+
+def make_historical_capsule(
+    repo: Path,
+    capsule_id: str,
+) -> tuple[str, Path, str]:
+    relative = Path(
+        f"engineering/capsules/active/{capsule_id}.md"
+    )
+    content = capsule_text(
+        capsule_id,
+        "DRAFT",
+        "",
+    )
+
+    (repo / relative).write_text(
+        content,
+        encoding="utf-8",
+    )
+
+    git(repo, "add", relative.as_posix())
+    git(
+        repo,
+        "commit",
+        "-m",
+        f"add historical capsule {capsule_id}",
+    )
+
+    source_commit = git(
+        repo,
+        "rev-parse",
+        "HEAD",
+    )
+
+    git(repo, "rm", relative.as_posix())
+    git(
+        repo,
+        "commit",
+        "-m",
+        f"remove historical capsule {capsule_id}",
+    )
+
+    return source_commit, relative, content
+
+
+def terminal_history_record(
+    capsule_id: str,
+    source_commit: str,
+    source_path: Path,
+    source_text: str,
+    *,
+    state: str = "MERGED",
+    acceptance: str = "1/1",
+) -> str:
+    import hashlib
+
+    digest = hashlib.sha256(
+        source_text.encode("utf-8")
+    ).hexdigest()
+
+    return f"""### {capsule_id} - Historical task
+
+- **ID:** `{capsule_id}`
+- **Title:** Historical task
+- **Final state:** `{state}`
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** low
+- **Source issue/authority:** github:#1
+- **Issue disposition:** CLOSED / COMPLETED
+- **Created:** 2026-08-04
+- **Completed/updated:** 2026-08-04
+- **Base commit:** {source_commit}
+- **Task branch:** main
+- **Controller:** Test controller
+- **Executor:** Test executor
+- **Reviewer:** Test reviewer
+- **Delegation:** none
+- **Implementation commit(s):** `{source_commit}`
+- **Verified commit reference(s):** `{source_commit}`
+- **Reviewed source commit:** {source_commit}
+- **Reviewed task/checkpoint commit(s):** `{source_commit}`
+- **Integration/merged commit:** `{source_commit}`
+- **Integration-related commit reference(s):** `{source_commit}`
+- **Acceptance result:** {acceptance} checked in the terminal source capsule.
+- **Review disposition:** Approved - test history.
+- **Verification summary:** Focused validation passed.
+- **Specialized qualification:** No external qualification required.
+- **Known warnings:** None observed.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** No task-specific retrospective required.
+- **Referenced commits:** `{source_commit}`
+- **Full-capsule recovery commit:** `{source_commit}`
+- **Full-capsule recovery path:** `{source_path.as_posix()}`
+- **Historical capsule SHA-256:** `{digest}`
+"""
+
+
+def terminal_history_document(
+    *records: str,
+) -> str:
+    return (
+        "# Task capsule history\n\n"
+        "History format version: **1**.\n\n"
+        "## Terminal task records\n\n"
+        + "\n".join(records)
+    )
+
+
+def write_terminal_history(
+    repo: Path,
+    content: str,
+) -> None:
+    (
+        repo
+        / "engineering/capsules/HISTORY.md"
+    ).write_text(
+        content,
+        encoding="utf-8",
+    )
+
+
+def test_terminal_history_validates_historical_capsule(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-HISTORY",
+        )
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(
+            terminal_history_record(
+                "WF-HISTORY",
+                source_commit,
+                source_path,
+                source_text,
+            )
+        ),
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 0, (
+        result.stdout + result.stderr
+    )
+
+    document = json.loads(result.stdout)
+    history = document["history"]
+
+    assert history is not None
+    assert history["valid"] is True
+    assert history["record_count"] == 1
+
+
+def test_terminal_history_allows_cancelled_unchecked_acceptance(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-CANCELLED",
+        )
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(
+            terminal_history_record(
+                "WF-CANCELLED",
+                source_commit,
+                source_path,
+                source_text,
+                state="CANCELLED",
+                acceptance="0/1",
+            )
+        ),
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 0, (
+        result.stdout + result.stderr
+    )
+
+
+def test_terminal_history_rejects_duplicate_ids(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-DUPLICATE",
+        )
+    )
+
+    record = terminal_history_record(
+        "WF-DUPLICATE",
+        source_commit,
+        source_path,
+        source_text,
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(
+            record,
+            record,
+        ),
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "HISTORY_ID_DUPLICATE"
+        in history_error_codes(result)
+    )
+
+
+def test_terminal_history_rejects_missing_required_field(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-MISSING",
+        )
+    )
+
+    record = terminal_history_record(
+        "WF-MISSING",
+        source_commit,
+        source_path,
+        source_text,
+    ).replace(
+        "- **Known warnings:** None observed.\n",
+        "",
+        1,
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(record),
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "HISTORY_FIELD_MISSING"
+        in history_error_codes(result)
+    )
+
+
+def test_terminal_history_rejects_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-HASH",
+        )
+    )
+
+    record = terminal_history_record(
+        "WF-HASH",
+        source_commit,
+        source_path,
+        source_text,
+    )
+
+    correct_hash = hashlib.sha256(
+        source_text.encode("utf-8")
+    ).hexdigest()
+
+    record = record.replace(
+        correct_hash,
+        "0" * 64,
+        1,
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(record),
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "HISTORY_SHA256_MISMATCH"
+        in history_error_codes(result)
+    )
+
+
+def test_terminal_history_rejects_bad_recovery_path(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-LOCATOR",
+        )
+    )
+
+    record = terminal_history_record(
+        "WF-LOCATOR",
+        source_commit,
+        source_path,
+        source_text,
+    ).replace(
+        (
+            "- **Full-capsule recovery path:** "
+            f"`{source_path.as_posix()}`"
+        ),
+        (
+            "- **Full-capsule recovery path:** "
+            "`docs/not-a-capsule.md`"
+        ),
+        1,
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(record),
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "HISTORY_RECOVERY_PATH_INVALID"
+        in history_error_codes(result)
+    )
+
+
+def test_all_rejects_current_tree_completed_capsules(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-STALE",
+        )
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(
+            terminal_history_record(
+                "WF-STALE",
+                source_commit,
+                source_path,
+                source_text,
+            )
+        ),
+    )
+
+    completed = (
+        repo
+        / "engineering/capsules/completed"
+    )
+    completed.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    (
+        completed
+        / "WF-OLD.md"
+    ).write_text(
+        "# obsolete terminal capsule\n",
+        encoding="utf-8",
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "COMPLETED_CAPSULES_PRESENT"
+        in history_error_codes(result)
+    )
+
+
+def test_terminal_history_id_cannot_be_reused_by_active_capsule(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+
+    source_commit, source_path, source_text = (
+        make_historical_capsule(
+            repo,
+            "WF-NOREUSE",
+        )
+    )
+
+    write_terminal_history(
+        repo,
+        terminal_history_document(
+            terminal_history_record(
+                "WF-NOREUSE",
+                source_commit,
+                source_path,
+                source_text,
+            )
+        ),
+    )
+
+    active_path = (
+        repo
+        / "engineering/capsules/active/WF-NOREUSE.md"
+    )
+
+    active_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    active_path.write_text(
+        capsule_text(
+            "WF-NOREUSE",
+            "DRAFT",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 1
+    assert (
+        "HISTORY_ID_ACTIVE_CONFLICT"
+        in history_error_codes(result)
+    )
+
+
+def test_authority_removed_by_bounded_task_resolves_from_base_commit(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+
+    relative = Path(
+        "engineering/capsules/active/WF-AUTHORITY-REMOVAL.md"
+    )
+
+    (repo / relative).write_text(
+        capsule_text(
+            "WF-AUTHORITY-REMOVAL",
+            "IN_PROGRESS",
+            base,
+        ),
+        encoding="utf-8",
+    )
+
+    (repo / "docs/spec.md").unlink()
+
+    result = run_validator(
+        repo,
+        relative.as_posix(),
+        "--json",
+    )
+
+    assert result.returncode == 0, (
+        result.stdout + result.stderr
+    )
+
+
+def test_authority_missing_from_current_and_base_is_rejected(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+
+    relative = Path(
+        "engineering/capsules/active/WF-AUTHORITY-MISSING.md"
+    )
+
+    (repo / relative).write_text(
+        capsule_text(
+            "WF-AUTHORITY-MISSING",
+            "IN_PROGRESS",
+            base,
+            planning_artifacts=(
+                '["docs/never-existed.md"]'
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_validator(
+        repo,
+        relative.as_posix(),
+        "--json",
+    )
+
+    assert result.returncode == 1
+
+    assert (
+        "AUTHORITY_PATH_MISSING"
+        in error_codes(result)
+    )

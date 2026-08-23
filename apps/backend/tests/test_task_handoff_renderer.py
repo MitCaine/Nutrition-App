@@ -30,7 +30,6 @@ def setup_repo(tmp_path: Path) -> tuple[Path, str]:
     (repo / "docs").mkdir()
     (repo / "docs/spec.md").write_text("# Spec\n", encoding="utf-8")
     (repo / "engineering/capsules/active").mkdir(parents=True)
-    (repo / "engineering/capsules/completed").mkdir(parents=True)
     git(repo, "add", ".")
     git(repo, "commit", "-m", "base")
     return repo, git(repo, "rev-parse", "HEAD")

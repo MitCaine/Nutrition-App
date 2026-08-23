@@ -34,6 +34,7 @@ def _reexec_with_supported_python() -> None:
 _reexec_with_supported_python()
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -167,6 +168,59 @@ NOT_APPLICABLE_PATTERN = re.compile(
     r"^not applicable\s*(?:—|–|-|:)\s*\S.{4,}$",
     re.IGNORECASE | re.DOTALL,
 )
+
+HISTORY_PATH = Path("engineering/capsules/HISTORY.md")
+HISTORY_FORMAT_MARKER = "History format version: **1**."
+HISTORY_ENTRY_PATTERN = re.compile(
+    r"(?m)^### ([A-Za-z0-9][A-Za-z0-9._-]*) - (.+?)$"
+)
+HISTORY_FIELD_PATTERN = re.compile(
+    r"(?m)^- \*\*(.+?):\*\* (.*)$"
+)
+HISTORY_ACCEPTANCE_PATTERN = re.compile(
+    r"^([0-9]+)/([0-9]+) checked in the terminal source capsule\.$"
+)
+HISTORY_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+HISTORY_RECOVERY_PREFIXES = (
+    "engineering/capsules/active/",
+    "engineering/capsules/completed/",
+)
+HISTORY_REQUIRED_FIELDS = (
+    "ID",
+    "Title",
+    "Final state",
+    "Capsule revision",
+    "Task type",
+    "Risk",
+    "Source issue/authority",
+    "Issue disposition",
+    "Created",
+    "Completed/updated",
+    "Base commit",
+    "Task branch",
+    "Controller",
+    "Executor",
+    "Reviewer",
+    "Delegation",
+    "Implementation commit(s)",
+    "Verified commit reference(s)",
+    "Reviewed source commit",
+    "Reviewed task/checkpoint commit(s)",
+    "Integration/merged commit",
+    "Integration-related commit reference(s)",
+    "Acceptance result",
+    "Review disposition",
+    "Verification summary",
+    "Specialized qualification",
+    "Known warnings",
+    "Deferred work/follow-up IDs",
+    "Retrospective",
+    "Referenced commits",
+    "Full-capsule recovery commit",
+    "Full-capsule recovery path",
+    "Historical capsule SHA-256",
+)
+
 PLACEHOLDER_PATTERNS = (
     re.compile(r"\bTASK-ID\b", re.IGNORECASE),
     re.compile(r"\bYYYY-MM-DD\b", re.IGNORECASE),
@@ -208,6 +262,36 @@ class CapsuleResult:
         self.warnings.append(Finding(code, message, field_name))
 
 
+@dataclass
+class HistoryResult:
+    path: str
+    valid: bool = True
+    record_count: int = 0
+    errors: list[Finding] = field(default_factory=list)
+    warnings: list[Finding] = field(default_factory=list)
+
+    def error(
+        self,
+        code: str,
+        message: str,
+        field_name: str | None = None,
+    ) -> None:
+        self.valid = False
+        self.errors.append(
+            Finding(code, message, field_name)
+        )
+
+    def warning(
+        self,
+        code: str,
+        message: str,
+        field_name: str | None = None,
+    ) -> None:
+        self.warnings.append(
+            Finding(code, message, field_name)
+        )
+
+
 class InvocationError(RuntimeError):
     """Repository inspection failed before capsule validation could run."""
 
@@ -247,20 +331,23 @@ def relative_path(repo: Path, path: Path) -> str:
         return str(path.resolve())
 
 
-def discover_capsules(repo: Path) -> list[Path]:
-    found: list[Path] = []
-    for directory in (
-        repo / "engineering" / "capsules" / "active",
-        repo / "engineering" / "capsules" / "completed",
-    ):
-        if directory.is_dir():
-            found.extend(
-                path
-                for path in sorted(directory.glob("*.md"))
-                if path.name not in {"README.md", "TEMPLATE.md"}
-            )
-    return found
 
+def discover_capsules(repo: Path) -> list[Path]:
+    directory = (
+        repo
+        / "engineering"
+        / "capsules"
+        / "active"
+    )
+
+    if not directory.is_dir():
+        return []
+
+    return [
+        path
+        for path in sorted(directory.glob("*.md"))
+        if path.name not in {"README.md", "TEMPLATE.md"}
+    ]
 
 def parse_document(path: Path, result: CapsuleResult) -> tuple[dict[str, Any], str] | None:
     try:
@@ -450,18 +537,31 @@ def validate_scope_paths(entries: Iterable[str], field_name: str, result: Capsul
             )
 
 
-def validate_authority_paths(repo: Path, entries: Iterable[str], result: CapsuleResult) -> None:
+def validate_authority_paths(
+    repo: Path,
+    entries: Iterable[str],
+    result: CapsuleResult,
+    base_commit: str,
+) -> None:
     for entry in entries:
         raw = entry.split("#", 1)[0].strip()
         candidate = Path(raw)
-        if not raw or candidate.is_absolute() or ".." in candidate.parts or "://" in raw:
+
+        if (
+            not raw
+            or candidate.is_absolute()
+            or ".." in candidate.parts
+            or "://" in raw
+        ):
             result.error(
                 "AUTHORITY_PATH_INVALID",
                 f"Authority path must be repository-relative: {entry}",
                 "planning_artifacts",
             )
             continue
+
         resolved = (repo / candidate).resolve()
+
         try:
             resolved.relative_to(repo.resolve())
         except ValueError:
@@ -471,12 +571,35 @@ def validate_authority_paths(repo: Path, entries: Iterable[str], result: Capsule
                 "planning_artifacts",
             )
             continue
-        if not resolved.is_file():
-            result.error(
-                "AUTHORITY_PATH_MISSING",
-                f"Authority artifact does not exist as a file: {entry}",
-                "planning_artifacts",
+
+        if resolved.is_file():
+            continue
+
+        historical_type = None
+
+        if COMMIT_PATTERN.fullmatch(base_commit):
+            historical = run_git(
+                repo,
+                "cat-file",
+                "-t",
+                f"{base_commit}:{raw}",
             )
+
+            if historical.returncode == 0:
+                historical_type = historical.stdout.strip()
+
+        if historical_type == "blob":
+            continue
+
+        result.error(
+            "AUTHORITY_PATH_MISSING",
+            (
+                "Authority artifact does not exist as a file "
+                "in the current tree or exact base_commit: "
+                f"{entry}"
+            ),
+            "planning_artifacts",
+        )
 
 
 def parse_state_history(
@@ -639,6 +762,585 @@ def validate_completion(repo: Path, state: str, content: str, result: CapsuleRes
             )
 
 
+def strip_history_code(value: str) -> str:
+    stripped = value.strip()
+
+    if (
+        len(stripped) >= 2
+        and stripped.startswith("`")
+        and stripped.endswith("`")
+    ):
+        return stripped[1:-1]
+
+    return stripped
+
+
+def historical_capsule_identity(
+    content: str,
+) -> tuple[int | None, str | None]:
+    lines = content.splitlines()
+
+    if not lines or lines[0].strip() != "+++":
+        return None, None
+
+    try:
+        end = next(
+            index
+            for index, line in enumerate(
+                lines[1:],
+                start=1,
+            )
+            if line.strip() == "+++"
+        )
+    except StopIteration:
+        return None, None
+
+    try:
+        metadata = tomllib.loads(
+            "\n".join(lines[1:end])
+        )
+    except tomllib.TOMLDecodeError:
+        return None, None
+
+    schema = metadata.get("schema_version")
+    capsule_id = metadata.get("id")
+
+    return (
+        schema if type(schema) is int else None,
+        capsule_id
+        if isinstance(capsule_id, str)
+        else None,
+    )
+
+
+def validate_history(
+    repo: Path,
+    active_ids: Iterable[str],
+) -> HistoryResult | None:
+    relative = HISTORY_PATH
+    path = repo / relative
+
+    completed_directory = (
+        repo
+        / "engineering"
+        / "capsules"
+        / "completed"
+    )
+
+    stale_completed: list[str] = []
+
+    if completed_directory.is_dir():
+        stale_completed = [
+            item.relative_to(repo).as_posix()
+            for item in sorted(
+                completed_directory.glob("*.md")
+            )
+        ]
+
+    if not path.is_file() and not stale_completed:
+        return None
+
+    result = HistoryResult(
+        path=relative.as_posix()
+    )
+
+    if stale_completed:
+        result.error(
+            "COMPLETED_CAPSULES_PRESENT",
+            (
+                "The current tree must not retain "
+                "terminal capsule files under "
+                "engineering/capsules/completed: "
+                + ", ".join(stale_completed)
+            ),
+        )
+
+    if not path.is_file():
+        result.error(
+            "HISTORY_MISSING",
+            (
+                "Terminal history is required when "
+                "legacy completed-capsule files exist."
+            ),
+        )
+        return result
+
+    try:
+        content = path.read_text(
+            encoding="utf-8"
+        )
+    except OSError as exc:
+        result.error(
+            "HISTORY_READ_FAILED",
+            str(exc),
+        )
+        return result
+
+    if HISTORY_FORMAT_MARKER not in content:
+        result.error(
+            "HISTORY_FORMAT_INVALID",
+            (
+                "HISTORY.md must declare "
+                "history format version 1."
+            ),
+        )
+
+    matches = list(
+        HISTORY_ENTRY_PATTERN.finditer(
+            content
+        )
+    )
+
+    result.record_count = len(matches)
+
+    if not matches:
+        result.error(
+            "HISTORY_ENTRY_MISSING",
+            (
+                "HISTORY.md must contain at least "
+                "one terminal task record."
+            ),
+        )
+        return result
+
+    seen_ids: set[str] = set()
+    active_id_set = set(active_ids)
+
+    for index, match in enumerate(matches):
+        capsule_id = match.group(1)
+        heading_title = match.group(2).strip()
+
+        if capsule_id in seen_ids:
+            result.error(
+                "HISTORY_ID_DUPLICATE",
+                (
+                    "Terminal history ID appears "
+                    f"more than once: {capsule_id}"
+                ),
+                capsule_id,
+            )
+
+        seen_ids.add(capsule_id)
+
+        if capsule_id in active_id_set:
+            result.error(
+                "HISTORY_ID_ACTIVE_CONFLICT",
+                (
+                    "A terminal task ID may not be "
+                    "reused by an active capsule: "
+                    f"{capsule_id}"
+                ),
+                capsule_id,
+            )
+
+        block_start = match.end()
+        block_end = (
+            matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(content)
+        )
+
+        block = content[
+            block_start:block_end
+        ]
+
+        field_matches = list(
+            HISTORY_FIELD_PATTERN.finditer(
+                block
+            )
+        )
+
+        field_names = [
+            item.group(1).strip()
+            for item in field_matches
+        ]
+
+        duplicate_fields = sorted(
+            {
+                name
+                for name in field_names
+                if field_names.count(name) > 1
+            }
+        )
+
+        for field_name in duplicate_fields:
+            result.error(
+                "HISTORY_FIELD_DUPLICATE",
+                (
+                    f"{capsule_id} contains duplicate "
+                    f"history field: {field_name}"
+                ),
+                capsule_id,
+            )
+
+        fields = {
+            item.group(1).strip():
+            item.group(2).strip()
+            for item in field_matches
+        }
+
+        missing_required = False
+
+        for field_name in HISTORY_REQUIRED_FIELDS:
+            if field_name not in fields:
+                result.error(
+                    "HISTORY_FIELD_MISSING",
+                    (
+                        f"{capsule_id} is missing "
+                        f"history field: {field_name}"
+                    ),
+                    capsule_id,
+                )
+                missing_required = True
+            elif not fields[field_name].strip():
+                result.error(
+                    "HISTORY_FIELD_INCOMPLETE",
+                    (
+                        f"{capsule_id} has an empty "
+                        f"history field: {field_name}"
+                    ),
+                    capsule_id,
+                )
+
+        if missing_required:
+            continue
+
+        recorded_id = strip_history_code(
+            fields["ID"]
+        )
+
+        if recorded_id != capsule_id:
+            result.error(
+                "HISTORY_ID_MISMATCH",
+                (
+                    f"Heading ID {capsule_id} does "
+                    f"not match ID field {recorded_id}."
+                ),
+                capsule_id,
+            )
+
+        if fields["Title"] != heading_title:
+            result.error(
+                "HISTORY_TITLE_MISMATCH",
+                (
+                    f"{capsule_id} heading title "
+                    "does not match its Title field."
+                ),
+                capsule_id,
+            )
+
+        state = strip_history_code(
+            fields["Final state"]
+        )
+
+        if state not in COMPLETED_STATES:
+            result.error(
+                "HISTORY_STATE_INVALID",
+                (
+                    f"{capsule_id} has non-terminal "
+                    f"history state: {state}"
+                ),
+                capsule_id,
+            )
+
+        try:
+            revision = int(
+                fields["Capsule revision"]
+            )
+        except ValueError:
+            revision = 0
+
+        if revision < 1:
+            result.error(
+                "HISTORY_REVISION_INVALID",
+                (
+                    f"{capsule_id} capsule revision "
+                    "must be a positive integer."
+                ),
+                capsule_id,
+            )
+
+        if fields["Task type"] not in TASK_TYPES:
+            result.error(
+                "HISTORY_TASK_TYPE_INVALID",
+                (
+                    f"{capsule_id} has invalid "
+                    "task type: "
+                    f"{fields['Task type']}"
+                ),
+                capsule_id,
+            )
+
+        if fields["Risk"] not in RISKS:
+            result.error(
+                "HISTORY_RISK_INVALID",
+                (
+                    f"{capsule_id} has invalid risk: "
+                    f"{fields['Risk']}"
+                ),
+                capsule_id,
+            )
+
+        acceptance = (
+            HISTORY_ACCEPTANCE_PATTERN.fullmatch(
+                fields["Acceptance result"]
+            )
+        )
+
+        if acceptance is None:
+            result.error(
+                "HISTORY_ACCEPTANCE_INVALID",
+                (
+                    f"{capsule_id} has malformed "
+                    "Acceptance result."
+                ),
+                capsule_id,
+            )
+        else:
+            checked = int(
+                acceptance.group(1)
+            )
+            total = int(
+                acceptance.group(2)
+            )
+
+            if checked > total:
+                result.error(
+                    "HISTORY_ACCEPTANCE_INVALID",
+                    (
+                        f"{capsule_id} records more "
+                        "checked acceptance criteria "
+                        "than total criteria."
+                    ),
+                    capsule_id,
+                )
+
+            if (
+                state in {"MERGED", "RETROSPECTED"}
+                and (
+                    total < 1
+                    or checked != total
+                )
+            ):
+                result.error(
+                    "HISTORY_ACCEPTANCE_UNVERIFIED",
+                    (
+                        f"{capsule_id} is {state} but "
+                        "its terminal acceptance result "
+                        "is not fully checked."
+                    ),
+                    capsule_id,
+                )
+
+        if (
+            state in {"MERGED", "RETROSPECTED"}
+            and not fields[
+                "Review disposition"
+            ].lower().startswith("approved")
+        ):
+            result.error(
+                "HISTORY_DISPOSITION_INVALID",
+                (
+                    f"{capsule_id} is {state} but "
+                    "does not record an Approved "
+                    "review disposition."
+                ),
+                capsule_id,
+            )
+
+        if state in {"MERGED", "RETROSPECTED"}:
+            merged_commit = (
+                extract_commit_reference(
+                    fields[
+                        "Integration/merged commit"
+                    ],
+                    "Integration/merged commit",
+                    result,
+                )
+            )
+
+            if merged_commit is not None:
+                validate_commit(
+                    repo,
+                    merged_commit,
+                    "Integration/merged commit",
+                    result,
+                )
+
+        recovery_commit = strip_history_code(
+            fields[
+                "Full-capsule recovery commit"
+            ]
+        )
+
+        commit_valid = True
+
+        if not COMMIT_PATTERN.fullmatch(
+            recovery_commit
+        ):
+            result.error(
+                "HISTORY_RECOVERY_COMMIT_INVALID",
+                (
+                    f"{capsule_id} recovery commit "
+                    "must be an exact lowercase "
+                    "40-character commit hash."
+                ),
+                capsule_id,
+            )
+            commit_valid = False
+        else:
+            resolved = run_git(
+                repo,
+                "rev-parse",
+                f"{recovery_commit}^{{commit}}",
+            )
+
+            if (
+                resolved.returncode
+                or resolved.stdout.strip()
+                != recovery_commit
+            ):
+                result.error(
+                    "HISTORY_RECOVERY_COMMIT_UNKNOWN",
+                    (
+                        f"{capsule_id} recovery commit "
+                        "does not resolve in this "
+                        "repository."
+                    ),
+                    capsule_id,
+                )
+                commit_valid = False
+
+        recovery_path = strip_history_code(
+            fields[
+                "Full-capsule recovery path"
+            ]
+        )
+
+        candidate = Path(recovery_path)
+
+        path_valid = not (
+            candidate.is_absolute()
+            or ".." in candidate.parts
+            or "\\" in recovery_path
+            or not recovery_path.endswith(".md")
+            or not recovery_path.startswith(
+                HISTORY_RECOVERY_PREFIXES
+            )
+        )
+
+        if not path_valid:
+            result.error(
+                "HISTORY_RECOVERY_PATH_INVALID",
+                (
+                    f"{capsule_id} has invalid "
+                    "full-capsule recovery path: "
+                    f"{recovery_path}"
+                ),
+                capsule_id,
+            )
+        elif candidate.stem != capsule_id:
+            result.error(
+                "HISTORY_RECOVERY_ID_MISMATCH",
+                (
+                    f"{capsule_id} recovery path "
+                    "filename does not match its ID."
+                ),
+                capsule_id,
+            )
+            path_valid = False
+
+        expected_hash = strip_history_code(
+            fields[
+                "Historical capsule SHA-256"
+            ]
+        )
+
+        hash_valid = bool(
+            HISTORY_SHA256_PATTERN.fullmatch(
+                expected_hash
+            )
+        )
+
+        if not hash_valid:
+            result.error(
+                "HISTORY_SHA256_INVALID",
+                (
+                    f"{capsule_id} historical "
+                    "capsule SHA-256 is malformed."
+                ),
+                capsule_id,
+            )
+
+        if commit_valid and path_valid:
+            historical = run_git(
+                repo,
+                "show",
+                (
+                    f"{recovery_commit}:"
+                    f"{recovery_path}"
+                ),
+            )
+
+            if historical.returncode:
+                result.error(
+                    "HISTORY_RECOVERY_LOCATOR_INVALID",
+                    (
+                        f"{capsule_id} full capsule "
+                        "cannot be recovered from "
+                        "its recorded commit/path."
+                    ),
+                    capsule_id,
+                )
+            else:
+                schema, historical_id = (
+                    historical_capsule_identity(
+                        historical.stdout
+                    )
+                )
+
+                if schema != SCHEMA_VERSION:
+                    result.error(
+                        "HISTORY_RECOVERY_SCHEMA_INVALID",
+                        (
+                            f"{capsule_id} recovery "
+                            "target is not a supported "
+                            "full task capsule."
+                        ),
+                        capsule_id,
+                    )
+
+                if historical_id != capsule_id:
+                    result.error(
+                        "HISTORY_RECOVERY_CAPSULE_ID_MISMATCH",
+                        (
+                            f"{capsule_id} recovery "
+                            "target records capsule ID "
+                            f"{historical_id!r}."
+                        ),
+                        capsule_id,
+                    )
+
+                if hash_valid:
+                    actual_hash = hashlib.sha256(
+                        historical.stdout.encode(
+                            "utf-8"
+                        )
+                    ).hexdigest()
+
+                    if actual_hash != expected_hash:
+                        result.error(
+                            "HISTORY_SHA256_MISMATCH",
+                            (
+                                f"{capsule_id} historical "
+                                "capsule content does not "
+                                "match its recorded SHA-256."
+                            ),
+                            capsule_id,
+                        )
+
+    return result
+
 def json_safe(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -758,7 +1460,9 @@ def validate_capsule(
     if relative.parent == Path("engineering/capsules/active") and state in COMPLETED_STATES:
         result.error(
             "STATE_LOCATION_MISMATCH",
-            f"{state} capsules belong in engineering/capsules/completed.",
+            "Terminal states are recorded in "
+            "engineering/capsules/HISTORY.md; "
+            "remove the full active capsule during closeout.",
             "state",
         )
     if relative.parent == Path("engineering/capsules/completed") and state in ACTIVE_STATES:
@@ -800,7 +1504,18 @@ def validate_capsule(
     forbidden_paths = validate_string_list(metadata, "forbidden_paths", result)
     validate_string_list(metadata, "specialized_qualification", result)
     del dependencies
-    validate_authority_paths(repo, planning_artifacts, result)
+    authority_base = (
+        metadata.get("base_commit", "")
+        if isinstance(metadata.get("base_commit"), str)
+        else ""
+    )
+
+    validate_authority_paths(
+        repo,
+        planning_artifacts,
+        result,
+        authority_base,
+    )
     for key, entries in (
         ("owned_paths", owned_paths),
         ("allowed_paths", allowed_paths),
@@ -956,112 +1671,360 @@ def validate_capsule(
     return result
 
 
+
 def result_document(
-    context: dict[str, Any], results: list[CapsuleResult], mode: str
+    context: dict[str, Any],
+    results: list[CapsuleResult],
+    mode: str,
+    history: HistoryResult | None = None,
 ) -> dict[str, Any]:
-    failed = sum(not result.valid for result in results)
-    warning_count = sum(len(result.warnings) for result in results)
+    capsule_failures = sum(
+        not result.valid
+        for result in results
+    )
+
+    history_failures = int(
+        history is not None
+        and not history.valid
+    )
+
+    failed = (
+        capsule_failures
+        + history_failures
+    )
+
+    warning_count = sum(
+        len(result.warnings)
+        for result in results
+    )
+
+    if history is not None:
+        warning_count += len(
+            history.warnings
+        )
+
+    total = (
+        len(results)
+        + (1 if history is not None else 0)
+    )
+
+    history_document = None
+
+    if history is not None:
+        history_document = {
+            **asdict(history),
+            "errors": [
+                asdict(item)
+                for item in history.errors
+            ],
+            "warnings": [
+                asdict(item)
+                for item in history.warnings
+            ],
+        }
+
     return {
         "validation_schema_version": 1,
-        "capsule_schema_versions_supported": [SCHEMA_VERSION],
-        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "capsule_schema_versions_supported": [
+            SCHEMA_VERSION
+        ],
+        "history_format_versions_supported": [1],
+        "generated_at": (
+            datetime.now(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        ),
         "mode": mode,
         "repository": context,
         "summary": {
-            "total": len(results),
-            "passed": len(results) - failed,
+            "total": total,
+            "passed": total - failed,
             "failed": failed,
             "warnings": warning_count,
-            "status": "passed" if failed == 0 else "failed",
+            "status": (
+                "passed"
+                if failed == 0
+                else "failed"
+            ),
         },
         "capsules": [
             {
                 **asdict(result),
-                "errors": [asdict(item) for item in result.errors],
-                "warnings": [asdict(item) for item in result.warnings],
+                "errors": [
+                    asdict(item)
+                    for item in result.errors
+                ],
+                "warnings": [
+                    asdict(item)
+                    for item in result.warnings
+                ],
             }
             for result in results
         ],
+        "history": history_document,
     }
 
 
-def print_human(document: dict[str, Any]) -> None:
+def print_human(
+    document: dict[str, Any]
+) -> None:
     capsules = document["capsules"]
-    if not capsules:
-        print("PASS: no task capsules found.")
+    history = document.get("history")
+
+    if not capsules and history is None:
+        print(
+            "PASS: no active task capsules "
+            "or terminal history found."
+        )
+
     for capsule in capsules:
         label = capsule["path"]
-        state = capsule.get("state") or "unknown-state"
-        print(f"{'PASS' if capsule['valid'] else 'FAIL'} {label} [{state}]")
+        state = (
+            capsule.get("state")
+            or "unknown-state"
+        )
+
+        print(
+            f"{'PASS' if capsule['valid'] else 'FAIL'} "
+            f"{label} [{state}]"
+        )
+
         for finding in capsule["errors"]:
-            field_name = f" ({finding['field']})" if finding.get("field") else ""
-            print(f"  ERROR {finding['code']}{field_name}: {finding['message']}")
+            field_name = (
+                f" ({finding['field']})"
+                if finding.get("field")
+                else ""
+            )
+            print(
+                f"  ERROR {finding['code']}"
+                f"{field_name}: "
+                f"{finding['message']}"
+            )
+
         for finding in capsule["warnings"]:
-            field_name = f" ({finding['field']})" if finding.get("field") else ""
-            print(f"  WARN {finding['code']}{field_name}: {finding['message']}")
+            field_name = (
+                f" ({finding['field']})"
+                if finding.get("field")
+                else ""
+            )
+            print(
+                f"  WARN {finding['code']}"
+                f"{field_name}: "
+                f"{finding['message']}"
+            )
+
+    if history is not None:
+        label = history["path"]
+        count = history["record_count"]
+
+        print(
+            f"{'PASS' if history['valid'] else 'FAIL'} "
+            f"{label} "
+            f"[{count} terminal record(s)]"
+        )
+
+        for finding in history["errors"]:
+            field_name = (
+                f" ({finding['field']})"
+                if finding.get("field")
+                else ""
+            )
+            print(
+                f"  ERROR {finding['code']}"
+                f"{field_name}: "
+                f"{finding['message']}"
+            )
+
+        for finding in history["warnings"]:
+            field_name = (
+                f" ({finding['field']})"
+                if finding.get("field")
+                else ""
+            )
+            print(
+                f"  WARN {finding['code']}"
+                f"{field_name}: "
+                f"{finding['message']}"
+            )
+
     summary = document["summary"]
+
     print(
-        "Task capsule validation: "
-        f"{summary['passed']} passed, {summary['failed']} failed, "
+        "Task capsule/history validation: "
+        f"{summary['passed']} passed, "
+        f"{summary['failed']} failed, "
         f"{summary['warnings']} warning(s)."
     )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__
+    )
+
     parser.add_argument(
         "paths",
         nargs="*",
         type=Path,
-        help="Capsules to validate; defaults to all active and completed capsules.",
+        help=(
+            "Capsules to validate; by default "
+            "validate all active capsules plus "
+            "the terminal history."
+        ),
     )
-    parser.add_argument("--all", action="store_true", help="Validate every active and completed capsule.")
+
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Validate all active capsules, "
+            "terminal history, and current-tree "
+            "archive invariants."
+        ),
+    )
+
     parser.add_argument(
         "--execution",
         action="store_true",
-        help="Run strict execution preflight for exactly one READY capsule.",
+        help=(
+            "Run strict execution preflight for "
+            "exactly one READY capsule."
+        ),
     )
-    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
-    parser.add_argument("--output", type=Path, help="Also write the JSON result to this path.")
-    parser.add_argument("--repo-root", type=Path, help="Repository root override.")
+
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON.",
+    )
+
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Also write the JSON result "
+            "to this path."
+        ),
+    )
+
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        help="Repository root override.",
+    )
+
     args = parser.parse_args()
+
     if args.all and args.paths:
-        parser.error("--all cannot be combined with explicit capsule paths")
-    if args.execution and len(args.paths) != 1:
-        parser.error("--execution requires exactly one explicit capsule path")
-    repo = (args.repo_root or Path(__file__).resolve().parents[1]).resolve()
+        parser.error(
+            "--all cannot be combined with "
+            "explicit capsule paths"
+        )
+
+    if (
+        args.execution
+        and len(args.paths) != 1
+    ):
+        parser.error(
+            "--execution requires exactly one "
+            "explicit capsule path"
+        )
+
+    repo = (
+        args.repo_root
+        or Path(__file__).resolve().parents[1]
+    ).resolve()
+
     try:
         context = repository_context(repo)
+
         if args.paths:
             paths = [
-                (path if path.is_absolute() else repo / path).resolve()
+                (
+                    path
+                    if path.is_absolute()
+                    else repo / path
+                ).resolve()
                 for path in args.paths
             ]
         else:
             paths = discover_capsules(repo)
+
         results = [
-            validate_capsule(repo, path, execution=args.execution, context=context)
+            validate_capsule(
+                repo,
+                path,
+                execution=args.execution,
+                context=context,
+            )
             for path in paths
         ]
+
+        history_result = None
+
+        if not args.paths:
+            history_result = validate_history(
+                repo,
+                [
+                    result.capsule_id
+                    for result in results
+                    if result.capsule_id
+                ],
+            )
+
         document = result_document(
             context,
             results,
-            "execution" if args.execution else "validation",
+            (
+                "execution"
+                if args.execution
+                else "validation"
+            ),
+            history_result,
         )
+
     except InvocationError as exc:
-        print(f"ERROR INVOCATION: {exc}", file=sys.stderr)
+        print(
+            f"ERROR INVOCATION: {exc}",
+            file=sys.stderr,
+        )
         return 2
-    rendered = json.dumps(document, indent=2) + "\n"
+
+    rendered = (
+        json.dumps(
+            document,
+            indent=2,
+        )
+        + "\n"
+    )
+
     if args.output:
-        output = args.output if args.output.is_absolute() else Path.cwd() / args.output
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(rendered, encoding="utf-8")
+        output = (
+            args.output
+            if args.output.is_absolute()
+            else Path.cwd() / args.output
+        )
+
+        output.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        output.write_text(
+            rendered,
+            encoding="utf-8",
+        )
+
     if args.json:
         print(rendered, end="")
     else:
         print_human(document)
-    return 0 if document["summary"]["failed"] == 0 else 1
 
+    return (
+        0
+        if document["summary"]["failed"] == 0
+        else 1
+    )
 
 if __name__ == "__main__":
     raise SystemExit(main())

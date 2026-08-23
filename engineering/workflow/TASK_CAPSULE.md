@@ -24,8 +24,10 @@ verification, evidence, and escalation. Copy the
 - `delegation` is `none` or `bounded`; bounded delegation requires explicit constraints.
 - `base_commit` may be empty before `READY`. At `READY`, it is an exact lowercase 40-character
   commit identifying the implementation baseline, and `branch` names the expected branch.
-- `planning_artifacts` contains existing repository-relative authority paths. A Markdown fragment
-  may follow `#`.
+- `planning_artifacts` contains repository-relative authority paths. A Markdown fragment may follow
+  `#`. At `READY` or later, an artifact intentionally removed by bounded implementation may be
+  absent from the current tree only when it still resolves as a file at the capsule's exact
+  `base_commit`; deleting obsolete authority does not require rewriting the qualified capsule.
 - `owned_paths`, `allowed_paths`, and `forbidden_paths` use repository-relative POSIX paths or
   patterns for mechanical scope enforcement.
 - Unknown schema versions or metadata keys are rejected rather than guessed.
@@ -42,7 +44,7 @@ contains `Focused`, `Baseline`, and `Specialized qualification` subsections in t
 
 ## Mechanical validation
 
-Validate all active and completed capsules:
+Validate all active capsules and the terminal history index:
 
 ```bash
 python3 scripts/validate-task-capsules.py --all
@@ -94,9 +96,12 @@ preflight cleanliness is preserved.
 - Executor notes do not change scope.
 - State History is append-only. Its final state matches TOML `state`, and its final date matches
   `updated`.
-- After `MERGED`, `RETROSPECTED`, or `CANCELLED`, fill Completion record and move the capsule to
-  `completed/`.
-- Never rename, recycle, or repurpose an ID after execution begins.
+- Keep the full capsule in `active/` through `REVIEWED` or the last non-terminal state.
+- After successful integration, write exactly one `MERGED` record to `engineering/capsules/HISTORY.md` with final completion evidence and an exact historical full-capsule commit/path plus SHA-256; remove the active capsule in the same closeout change.
+- Cancellation uses the same history-plus-removal closeout with `CANCELLED`, preserving the cancellation reason and partial-work disposition.
+- A later retrospective updates the existing unique terminal record to `RETROSPECTED`; do not recreate the full capsule.
+- Never retain per-task terminal capsules under `engineering/capsules/completed/`.
+- Never rename, recycle, or repurpose an ID after execution begins or after it appears in `HISTORY.md`.
 
 Schema changes require a changelog entry, migration guidance, and a new `schema_version`.
-Completed capsules remain readable under their original schema.
+Historical full capsules remain readable through the exact Git recovery locators recorded in `engineering/capsules/HISTORY.md`.

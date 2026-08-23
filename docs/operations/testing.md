@@ -168,7 +168,8 @@ Final E4-16 evidence also includes physical target-iPhone P-1 through P-12: logg
 secondary History navigation, readable four-card overview, exact 7-day selection, all-observation
 30-day horizontal scrolling, gap-versus-zero distinction, usable Nutrition Details and focused
 History, exact Daily Log navigation, and preserved return context. That completed physical evidence
-is retained in `engineering/capsules/completed/E4-16.md`; the script does not recreate a human device
+is indexed in `engineering/capsules/HISTORY.md`, which records the exact Git recovery locator and
+SHA-256 for the full historical E4-16 capsule; the script does not recreate a human device
 observation by itself.
 
 This is distinct from unrelated historical opt-in PostgreSQL, MinIO, Phase 5C performance,

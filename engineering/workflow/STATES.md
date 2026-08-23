@@ -59,3 +59,18 @@ Only the controller promotes planning and `READY`; the executor sets `IN_PROGRES
 `IMPLEMENTED`; verification sets `VERIFIED`; review sets `REVIEWED`; the human owner records
 `MERGED`. Every state change updates `updated` and appends State History. Regressions require a
 reason; never rewrite history to imply a gate passed earlier.
+
+## Terminal recording
+
+`MERGED`, `RETROSPECTED`, and `CANCELLED` remain lifecycle states, but the durable current-tree
+authority for those outcomes is `engineering/capsules/HISTORY.md`, not a retained full-capsule
+file.
+
+A full capsule remains under `engineering/capsules/active/` through `REVIEWED` or the last
+non-terminal state. After successful integration, the human owner records `MERGED` in the unique
+history entry and removes the active capsule in the same closeout change. Cancellation records
+`CANCELLED` and removes the active capsule. A later retrospective updates that same history entry
+to `RETROSPECTED`.
+
+Every terminal history entry preserves an exact Git commit/path locator and SHA-256 for the full
+historical capsule. Task IDs remain permanent across both active capsules and terminal history.
