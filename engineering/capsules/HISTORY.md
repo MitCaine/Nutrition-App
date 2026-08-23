@@ -2346,6 +2346,42 @@ than being rewritten as successful verification.
 - **Full-capsule recovery path:** `engineering/capsules/completed/GH-157.md`
 - **Historical capsule SHA-256:** `8fa2a7d641438a059f8f8aaaa02e09ac0eed03c53b054856ac0a3c67d9495997`
 
+### GH-158 - Consolidate completed task capsules into a durable history index
+
+- **ID:** `GH-158`
+- **Title:** Consolidate completed task capsules into a durable history index
+- **Final state:** `CANCELLED`
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/158
+- **Issue disposition:** OPEN — GH-158 was cancelled for a qualified-scope correction; issue #158 continues under GH-158-R1.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 8fead7f4eefd0a494ecab55dc6a13463f4169494
+- **Task branch:** gh-158-capsule-history
+- **Controller:** ChatGPT
+- **Executor:** ChatGPT
+- **Reviewer:** ChatGPT
+- **Delegation:** none
+- **Implementation commit(s):** `cb40b610dc9355b9c990db9c9cff7284fb854ce1` — committed the validated initial 69-record consolidated history before the scope-boundary stop.
+- **Verified commit reference(s):** Not applicable — task was cancelled before VERIFIED.
+- **Reviewed source commit:** Not applicable — task was cancelled before independent review.
+- **Reviewed task/checkpoint commit(s):** Not applicable — task was cancelled before REVIEWED.
+- **Integration/merged commit:** Not applicable — task was cancelled before integration.
+- **Integration-related commit reference(s):** Not applicable — no integration occurred.
+- **Acceptance result:** 0/12 checked in the terminal source capsule.
+- **Review disposition:** Stop and replan — `engineering/workflow/WORKFLOW.md` owned a live terminal-closeout rule but was outside GH-158's qualified scope.
+- **Verification summary:** The initial consolidated HISTORY.md migration was committed at `cb40b610dc9355b9c990db9c9cff7284fb854ce1` with 69 unique records, 69 resolvable full-capsule locators, and 69 matching historical SHA-256 bindings. Later validator, test, and workflow-documentation work was preserved externally and reset after the scope gap was discovered.
+- **Specialized qualification:** Initial 69-record migration inventory, set equality, historical-locator resolution, and history-build qualification passed. Final workflow implementation qualification was not claimed because execution stopped at the scope boundary.
+- **Known warnings:** `engineering/workflow/WORKFLOW.md` remained unchanged in GH-158 and still required terminal capsules to move to `completed/`; this prevented safe completion inside the qualified scope.
+- **Deferred work/follow-up IDs:** GH-158-R1 resumes issue #158 with corrected workflow authority and preserves this cancellation before removing the legacy completed-capsule tree.
+- **Retrospective:** Required — workflow-policy tasks must inspect the end-to-end `engineering/workflow/WORKFLOW.md` authority before READY.
+- **Referenced commits:** `8fead7f4eefd0a494ecab55dc6a13463f4169494`, `9bf3d83afe4b5f52fd23d29eccf89059132aa04e`, `6a45565feec15ba84f8870d60cafcd72b3ae7d83`, `cb40b610dc9355b9c990db9c9cff7284fb854ce1`, `31a3c7c3c1e0478537161eac41213fae6f4a21d1`.
+- **Full-capsule recovery commit:** `31a3c7c3c1e0478537161eac41213fae6f4a21d1`
+- **Full-capsule recovery path:** `engineering/capsules/completed/GH-158.md`
+- **Historical capsule SHA-256:** `8785fdd8672fb4389646a013ef1c1f2a4e6411c2bf14fb9e35f7fbda4ce49e63`
+
 ### UI-133 - Make Food Details task-first and space nutrient units
 
 - **ID:** `UI-133`
