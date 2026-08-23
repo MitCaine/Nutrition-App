@@ -41,8 +41,8 @@ compatibility evidence, or a past decision.
 
 Start with [Onboarding](project/onboarding.md), then use the [Repository Tour](project/repository-tour.md).
 The current repository is beyond the completed Version 1.1/Epic 2 implementation program, so current
-guides—not old planning artifacts—are the source for implemented feature scope. Versioned Version 1.2
-planning may govern an explicitly active Epic before its behavior is promoted into current guides.
+guides—not old planning artifacts—are the source for implemented feature scope. Version 1.2 planning
+is retained historical provenance and does not govern current Version 2.0 implementation work.
 
 ## Documentation taxonomy
 
@@ -59,7 +59,8 @@ planning may govern an explicitly active Epic before its behavior is promoted in
 
 ## Current canonical project knowledge
 
-- [Current State](project/current-state.md): current Version 1.2 product line, completed Epics,
+- [Version 2.0 Release Record](project/version-2.0-release.md): canonical source/GitHub release identity, supported toolchains, runtime boundaries, qualification, known limitations, and post-review publication sequence.
+- [Current State](project/current-state.md): current Version 2.0 product line, completed Epics,
   local-first authority, preserved remote/reference runtime, current capabilities/limitations, and
   dependency-maintenance boundary.
 - [Current Product Roadmap](project/product-roadmap.md): canonical current Epic numbering, completion
@@ -85,6 +86,8 @@ planning may govern an explicitly active Epic before its behavior is promoted in
 
 ## Current repository status
 
+Version 2.0 is the current source-release line. Root `VERSION` is the canonical repository release authority, with current mobile, Expo, backend, and documentation metadata mirroring `2.0.0`. Qualification uses Node 24 and Python 3.12.
+
 Version 1.1 and the technical Epic 2 program are complete. Subsequent implementation issue/PR work
 represented before Epic 4 is also closed. Nutrition Label Capture Confidence is completed Epic 3.
 
@@ -105,7 +108,7 @@ camera capture, conservative OCR image-quality warnings, unsaved-draft protectio
 sticky/fixed route headers, and related accessibility/refinement work.
 
 The remaining known maintenance constraint is dependency-security cleanup that requires
-Expo-compatible upstream fixes. Current documentation must not describe closed issues/PRs as the
+Expo-compatible upstream fixes. Version 2.0 currently carries three accepted Dependabot warnings in the Expo toolchain: two high-severity `image-size` alerts and one moderate `uuid` alert. Incompatible forced upgrades are not accepted remediation. Current documentation must not describe closed issues/PRs as the
 active implementation backlog.
 
 ## Retained Version 1.2 Epic 4 planning and delivery records

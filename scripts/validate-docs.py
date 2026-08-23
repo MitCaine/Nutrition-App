@@ -65,12 +65,12 @@ CURRENT_MIGRATION_HEAD_CONTRACTS: dict[str, tuple[str, ...]] = {
 
 CURRENT_STATUS_CONTRACTS: dict[str, tuple[str, ...]] = {
     "docs/README.md": (
-        "current Version 1.2 product line",
+        "current Version 2.0 product line",
         "Epic 4 — Nutrition History and Trends is implemented and qualified.",
         "Epic 5 — Recipe Reuse and Discovery remains planned and requires re-scope.",
     ),
     "docs/project/current-state.md": (
-        "Version 1.2 is the current product line.",
+        "Version 2.0 is the current product line.",
         "Epic 4 — Nutrition History and Trends is implemented and qualified.",
         "Epic 5 remains planned and requires re-scope.",
     ),

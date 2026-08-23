@@ -46,7 +46,7 @@ def create_app(
         if config.process_mode is ProcessMode.CANARY
         else None
     )
-    app = FastAPI(title="Nutrition App API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Nutrition App API", version="2.0.0", lifespan=lifespan)
     authenticated = [Depends(get_current_user)]
     included_canary_routes: set[tuple[str, str]] = set()
 

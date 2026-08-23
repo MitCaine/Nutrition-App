@@ -32,6 +32,19 @@ application-data mode does not require FastAPI or PostgreSQL.
 Private-single-user authentication is not a scalable account system. Its token is embedded in the
 mobile build and can be extracted, so backend exposure must remain narrowly controlled.
 
+The ordinary current-product path is local-first.
+
+The preserved remote runtime requires PostgreSQL already provisioned and
+qualified at `0033_complete_runtime_authority`.
+
+Schema `0020_immutable_provenance_enforcement` is retained only as the
+`LIMITED_PREACTIVATION_OPERATIONS_SANDBOX`; it is not current remote
+feature-parity startup. `0021_target_activation_execution` remains an
+operations-only activation boundary. Do not use an unqualified
+`alembic upgrade head` to cross it.
+
+For an already qualified current remote database:
+
 ```bash
 docker compose up -d postgres
 cd apps/backend
@@ -40,25 +53,26 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-build-isolation --no-deps -e .
 cp .env.example .env
-alembic upgrade 0020_immutable_provenance_enforcement
+alembic current
 uvicorn app.main:app --reload
 ```
 
-The example intentionally stops at schema 0020 because `0021_target_activation_execution` is a
-separately authorized production-hardening transition, not an ordinary convenience upgrade. Use the
-[Phase 5C4.7b runbook](../operations/runbooks/target-activation.md) for that boundary.
+`alembic current` must report `0033_complete_runtime_authority`. Database
+provisioning or progression across 0021 remains an explicit operations task;
+use the applicable runbook rather than a development convenience migration.
 
-Normal development uses one application URL for runtime and Alembic. A qualified production-like
-role profile runs migrations separately as `nutrition_migrator` and the API as
-`nutrition_runtime`. The root `scripts/start-backend.sh` implements only that qualified runtime
-launch: it verifies the exact runtime database role and deliberately does not run Alembic.
+A qualified production-like role profile runs migrations separately as
+`nutrition_migrator` and the API as `nutrition_runtime`. The root
+`scripts/start-backend.sh` implements only that qualified runtime launch and
+deliberately does not run Alembic.
 
-The current remote application migration head is `0033_complete_runtime_authority`. Revisions after
-the special 0021 activation boundary include immutable provenance/integrity hardening, serving
-reference measurements, duplicate-source identity, the expanded nutrient catalog, canonical total
-Omega-3, date-owned Complete persistence, qualifier read authority, and integration of Complete
-state with the current PostgreSQL runtime authority. [Current State](current-state.md) owns the
-authoritative current head.
+The current remote application migration head is
+`0033_complete_runtime_authority`.
+
+Root `VERSION` owns the canonical Version 2.0 repository release identity.
+`apps/backend/pyproject.toml` mirrors `2.0.0`, requires the Python 3.12 release
+line, and Ruff targets `py312`. `requirements-dev.lock` remains the reproducible
+dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
 Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented
@@ -71,6 +85,8 @@ pip-compile --strip-extras --all-build-deps --allow-unsafe --extra dev \
 ```
 
 ### Mobile
+
+Version 2.0 mobile development and qualification use Node 24. The package engine contract accepts the Node 24 line and excludes Node 25; `.nvmrc` remains the repository toolchain pin.
 
 Local-first development:
 

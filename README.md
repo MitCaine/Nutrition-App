@@ -6,7 +6,7 @@ The default application runtime is fully local: on-device SQLite is authoritativ
 
 ## Current product state
 
-Version 1.2 is the current product line. The application is in a complete, usable post-1.0 state, with the Version 1.1 local-first migration program completed and subsequent target-personalization and UI work incorporated into the current application.
+Version 2.0 is the current product line. Root `VERSION` is the canonical repository release authority and contains `2.0.0`; mobile, Expo, backend, and current documentation metadata mirror that release identity. Version 1.1 and Version 1.2 records remain retained as historical planning, implementation, and qualification provenance rather than current release authority.
 
 Current capabilities include:
 
@@ -94,7 +94,7 @@ For layer responsibilities, persistence boundaries, and migration streams, read 
 | Primary application data | `expo-sqlite`, fresh semantic SQLite schema, schema-version migration engine |
 | Native OCR | Swift Expo module using Apple Vision |
 | External nutrition data | USDA FoodData Central API through the local runtime or preserved remote backend |
-| Alternate/reference backend | Python 3.10+, FastAPI, Pydantic, SQLAlchemy 2 |
+| Alternate/reference backend | Python 3.12, FastAPI, Pydantic, SQLAlchemy 2 |
 | Alternate/reference application data | PostgreSQL 16, Alembic |
 | Advanced historical operations | Independent PostgreSQL control database and MinIO object-lock evidence for promotion workflows |
 | Tests | Pytest, Jest, native/file-backed SQLite qualification, PostgreSQL concurrency suites, native Swift tests |
@@ -130,7 +130,22 @@ A Release build bundles JavaScript into the installed application and does not r
 
 ### Optional: preserved remote FastAPI/PostgreSQL authority
 
-Use the remote path only for remote-mode development, PostgreSQL-specific behavior, historical qualification, or backend/reference work:
+Use the remote path only for remote-mode development, PostgreSQL-specific
+behavior, historical qualification, or backend/reference work.
+
+The current preserved remote application runtime requires PostgreSQL already
+provisioned and qualified at `0033_complete_runtime_authority`.
+
+Schema `0020_immutable_provenance_enforcement` is retained only as the
+`LIMITED_PREACTIVATION_OPERATIONS_SANDBOX`. It is not current remote
+feature-parity startup.
+
+Revision `0021_target_activation_execution` remains an operations-only
+activation boundary. There is no ordinary-development convenience upgrade
+across it, and an unqualified `alembic` direct-to-latest-head shortcut is not a supported
+startup procedure.
+
+For an already qualified current remote database:
 
 ```bash
 docker compose up -d postgres
@@ -140,9 +155,11 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-build-isolation --no-deps -e .
 cp .env.example .env
-alembic upgrade 0020_immutable_provenance_enforcement
+alembic current
 uvicorn app.main:app --reload
 ```
+
+`alembic current` must report `0033_complete_runtime_authority`.
 
 Then start the mobile client explicitly in remote mode:
 
@@ -154,7 +171,8 @@ EXPO_PUBLIC_NUTRITION_API_URL=http://localhost:8000/api/v1 \
   npm start
 ```
 
-There is no automatic fallback, synchronization, dual-write, or authority mixing between the two runtimes.
+There is no automatic fallback, synchronization, dual-write, or authority
+mixing between the two runtimes.
 
 ## Engineering workflow
 
@@ -209,6 +227,6 @@ Additional PostgreSQL concurrency, control-database, native SQLite, transfer, pe
 
 ## Release status
 
-Version 1.2 is the current product line. Historical Version 1.0 and Version 1.1 planning/qualification material remains in the repository because those documents record how the application reached its current architecture; they are not current planning guidance.
+Version 2.0 is the current product line, with root `VERSION` as the canonical repository release authority. Historical Version 1.0, Version 1.1, and Version 1.2 planning/qualification material remains in the repository as provenance rather than current release guidance.
 
 The primary application today is the local-first iOS runtime backed by SQLite. FastAPI/PostgreSQL remains intentionally preserved for alternate/reference operation and historical compatibility, not as a prerequisite for normal use.
