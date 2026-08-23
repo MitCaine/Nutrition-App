@@ -1,9 +1,10 @@
 import React from "react";
-import { Platform, Pressable, Text, TextInput } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TextInput } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { Food } from "../src/features/foods/api/types";
 import { SavedFoodsScreen } from "../src/features/foods/screens/SavedFoodsScreen";
+import { DARK_THEME, LIGHT_THEME } from "../src/app/theme/AppTheme";
 import { foodAccessibilityLabel, formatRecentUse } from "../src/features/foods/utils/foodDiscovery";
 
 const manual: Food = {
@@ -12,6 +13,28 @@ const manual: Food = {
   is_favorite: true, can_favorite: true, serving_definitions: [], nutrients: [],
 };
 const usda: Food = { ...manual, id: "usda", name: "Banana", source_type: "usda", source_kind: "usda", source_label: "USDA", is_favorite: false };
+const recipe: Food = {
+  ...manual,
+  id: "recipe",
+  name: "Sheet pan dinner",
+  source_type: "recipe",
+  source_id: "recipe-publication-1",
+  is_recipe: true,
+  source_kind: "recipe",
+  source_label: "Recipe",
+  is_favorite: true,
+};
+const usdaSearchResult = {
+  fdc_id: 1105314,
+  description: "Banana, raw",
+  data_type: "Foundation",
+  brand_owner: null,
+  food_category: "Fruits",
+  publication_date: null,
+  importable: true,
+  nutrient_preview: [],
+};
+let mockUsdaFoods: typeof usdaSearchResult[];
 let mockFavorites: Record<string, unknown>;
 let mockRecents: Record<string, unknown>;
 let mockSaved: Record<string, unknown>;
@@ -24,7 +47,14 @@ jest.mock("../src/features/foods/hooks/useFoods", () => ({
   useRecentFoods: () => mockRecents,
   useSavedFoods: () => mockSaved,
 }));
-jest.mock("../src/features/usda/hooks/useUsda", () => ({ useUsdaSearch: () => ({ data: { foods: [] }, isLoading: false, isError: false }) }));
+jest.mock("../src/features/usda/hooks/useUsda", () => ({
+  useUsdaSearch: () => ({
+    data: { foods: mockUsdaFoods },
+    isLoading: false,
+    isError: false,
+    refetch: jest.fn(),
+  }),
+}));
 jest.mock("../src/features/foods/hooks/useDebouncedSearchQuery", () => ({ useDebouncedSearchQuery: (value: string) => value }));
 jest.mock("../src/app/theme/AppTheme", () => {
   const actual = jest.requireActual("../src/app/theme/AppTheme");
@@ -35,6 +65,201 @@ function textContent(node: TestRenderer.ReactTestInstance | string): string {
   return typeof node === "string" ? node : node.children.map((child) => textContent(child as TestRenderer.ReactTestInstance | string)).join("");
 }
 function screenText(root: TestRenderer.ReactTestInstance) { return root.findAllByType(Text).map(textContent).join(" "); }
+
+type IdentityColors = {
+  foodsForeground: string;
+  foodsBackground: string;
+  recipesForeground: string;
+  recipesBackground: string;
+};
+
+function exactRows(root: TestRenderer.ReactTestInstance, label: string) {
+  return root.findAllByType(Pressable).filter(
+    (node) => node.props.accessibilityLabel === label,
+  );
+}
+
+function rowByLabelPrefix(root: TestRenderer.ReactTestInstance, prefix: string) {
+  const matches = root.findAllByType(Pressable).filter(
+    (node) =>
+      typeof node.props.accessibilityLabel === "string"
+      && node.props.accessibilityLabel.startsWith(prefix),
+  );
+  expect(matches).toHaveLength(1);
+  return matches[0];
+}
+
+function assertIdentityBadge(
+  row: TestRenderer.ReactTestInstance,
+  expectedBadge: "Food" | "Recipe",
+  expectedName: string,
+  colors: IdentityColors,
+) {
+  const badges = row.findAllByType(Text).filter(
+    (node) => textContent(node) === expectedBadge,
+  );
+  expect(badges).toHaveLength(1);
+
+  const badge = badges[0];
+  const badgeStyle = StyleSheet.flatten(badge.props.style);
+
+  expect(badgeStyle).toEqual(expect.objectContaining({
+    backgroundColor:
+      expectedBadge === "Recipe"
+        ? colors.recipesBackground
+        : colors.foodsBackground,
+    borderRadius: 10,
+    color:
+      expectedBadge === "Recipe"
+        ? colors.recipesForeground
+        : colors.foodsForeground,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 16,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  }));
+
+  expect(badge.props.accessibilityLabel).toBeUndefined();
+  expect(badge.props.accessibilityHint).toBeUndefined();
+  expect(badge.props.accessibilityRole).toBeUndefined();
+  expect(badge.props.testID).toBeUndefined();
+
+  const container = badge.parent;
+  expect(container).not.toBeNull();
+
+  const containerStyle = StyleSheet.flatten(container?.props.style);
+  expect(containerStyle).toEqual(expect.objectContaining({
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  }));
+
+  const nameNodes = row.findAllByType(Text).filter(
+    (node) => textContent(node) === expectedName,
+  );
+  expect(nameNodes).toHaveLength(1);
+
+  const nameStyle = StyleSheet.flatten(nameNodes[0].props.style);
+  expect(nameStyle).toEqual(expect.objectContaining({
+    flexShrink: 1,
+  }));
+  expect(nameNodes[0].props.numberOfLines).toBeUndefined();
+  expect(nameNodes[0].props.ellipsizeMode).toBeUndefined();
+}
+
+function assertPersistedIdentityContexts(
+  root: TestRenderer.ReactTestInstance,
+  colors: IdentityColors,
+) {
+  const manualLabel = foodAccessibilityLabel(manual);
+  const recipeLabel = foodAccessibilityLabel(recipe);
+  const usdaLabel = foodAccessibilityLabel(usda);
+
+  expect(manualLabel).toBe(
+    "Greek yogurt, Scanned label, favorite",
+  );
+  expect(recipeLabel).toBe(
+    "Sheet pan dinner, Recipe, favorite",
+  );
+  expect(usdaLabel).toBe(
+    "Banana, USDA",
+  );
+
+  // Favorites preview is rendered before the full Saved Foods list.
+  const manualExact = exactRows(root, manualLabel);
+  const recipeExact = exactRows(root, recipeLabel);
+
+  expect(manualExact).toHaveLength(2);
+  expect(recipeExact).toHaveLength(2);
+
+  const favoriteManual = manualExact[0];
+  const savedManual = manualExact[1];
+  const favoriteRecipe = recipeExact[0];
+  const savedRecipe = recipeExact[1];
+
+  assertIdentityBadge(
+    favoriteManual,
+    "Food",
+    manual.name,
+    colors,
+  );
+  assertIdentityBadge(
+    favoriteRecipe,
+    "Recipe",
+    recipe.name,
+    colors,
+  );
+  assertIdentityBadge(
+    savedManual,
+    "Food",
+    manual.name,
+    colors,
+  );
+  assertIdentityBadge(
+    savedRecipe,
+    "Recipe",
+    recipe.name,
+    colors,
+  );
+
+  // Recent preview carries the same identity rule while preserving
+  // independent recent-use metadata in the parent label.
+  const recentManual = rowByLabelPrefix(
+    root,
+    `${manualLabel}, `,
+  );
+  const recentRecipe = rowByLabelPrefix(
+    root,
+    `${recipeLabel}, `,
+  );
+  const recentUsda = rowByLabelPrefix(
+    root,
+    `${usdaLabel}, `,
+  );
+
+  assertIdentityBadge(
+    recentManual,
+    "Food",
+    manual.name,
+    colors,
+  );
+  assertIdentityBadge(
+    recentRecipe,
+    "Recipe",
+    recipe.name,
+    colors,
+  );
+  assertIdentityBadge(
+    recentUsda,
+    "Food",
+    usda.name,
+    colors,
+  );
+
+  // USDA-origin persisted Food is still Food identity: provenance does not
+  // drive the Food/Recipe mapping.
+  const savedUsda = exactRows(root, usdaLabel);
+  expect(savedUsda).toHaveLength(1);
+  assertIdentityBadge(
+    savedUsda[0],
+    "Food",
+    usda.name,
+    colors,
+  );
+
+  const accessibilityLabels = root
+    .findAllByType(Pressable)
+    .map((node) => node.props.accessibilityLabel)
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+
+  expect(accessibilityLabels).not.toMatch(
+    /teal|violet|plum|blue|purple/i,
+  );
+}
+
 async function render(query = "") {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => { renderer = TestRenderer.create(React.createElement(SavedFoodsScreen, {
@@ -48,9 +273,19 @@ async function render(query = "") {
 beforeEach(() => {
   Object.defineProperty(Platform, "OS", { configurable: true, value: defaultPlatform });
   mockUseDark = false;
-  mockFavorites = { data: [manual], isLoading: false, isError: false, refetch: jest.fn() };
-  mockRecents = { data: [{ food: usda, last_used_at: "2026-07-13T12:00:00Z" }, { food: manual, last_used_at: "2026-07-12T12:00:00Z" }], isLoading: false, isError: false, refetch: jest.fn() };
-  mockSaved = { data: [manual, usda], isLoading: false, isError: false };
+  mockUsdaFoods = [];
+  mockFavorites = { data: [manual, recipe], isLoading: false, isError: false, refetch: jest.fn() };
+  mockRecents = {
+    data: [
+      { food: recipe, last_used_at: "2026-07-14T12:00:00Z" },
+      { food: usda, last_used_at: "2026-07-13T12:00:00Z" },
+      { food: manual, last_used_at: "2026-07-12T12:00:00Z" },
+    ],
+    isLoading: false,
+    isError: false,
+    refetch: jest.fn(),
+  };
+  mockSaved = { data: [manual, recipe, usda], isLoading: false, isError: false };
 });
 
 afterEach(() => {
@@ -68,6 +303,50 @@ test("Saved Foods renders compact favorites, recents, all foods, source labels, 
   const fixedLabels = renderer.root.findAllByType(Text).filter((node) => ["Scan label", "+", "Custom Food"].includes(textContent(node)));
   expect(fixedLabels).toHaveLength(3);
   expect(fixedLabels.every((node) => node.props.maxFontSizeMultiplier === 1.5)).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
+test("persisted Food and Recipe identities use the exact light semantic roles in Favorites, Recent, and Saved rows", async () => {
+  const renderer = await render();
+  assertPersistedIdentityContexts(
+    renderer.root,
+    LIGHT_THEME.colors,
+  );
+  await act(async () => renderer.unmount());
+});
+
+test("persisted Food and Recipe identities use the exact dark semantic roles in Favorites, Recent, and Saved rows", async () => {
+  mockUseDark = true;
+  const renderer = await render();
+  assertPersistedIdentityContexts(
+    renderer.root,
+    DARK_THEME.colors,
+  );
+  await act(async () => renderer.unmount());
+});
+
+test("USDA reference search results remain outside the persisted Food and Recipe identity treatment", async () => {
+  mockUsdaFoods = [usdaSearchResult];
+
+  const renderer = await render("banana");
+
+  const referenceNames = renderer.root
+    .findAllByType(Text)
+    .filter((node) => textContent(node) === "Banana, raw");
+
+  expect(referenceNames).toHaveLength(1);
+
+  const referenceRow = referenceNames[0].parent;
+  expect(referenceRow).not.toBeNull();
+
+  const referenceText = referenceRow
+    ?.findAllByType(Text)
+    .map(textContent) ?? [];
+
+  expect(referenceText).toContain("Banana, raw");
+  expect(referenceText).not.toContain("Food");
+  expect(referenceText).not.toContain("Recipe");
+
   await act(async () => renderer.unmount());
 });
 

@@ -13,6 +13,7 @@ import { AccessibilityStatus } from "../../../shared/accessibility/Accessibility
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { foodAccessibilityLabel, formatRecentUse, recentFoodsInOrder, visibleDiscoveryRows } from "../utils/foodDiscovery";
+import type { Food } from "../api/types";
 
 // AppNavigator places screen content below a fixed 48-point top shell inset.
 // KeyboardAvoidingView needs the same screen-relative offset on iOS.
@@ -72,6 +73,33 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
     resultsRef.current?.scrollTo({ y: 0, animated: false });
   };
 
+  const renderPersistedFoodName = (food: Food) => {
+    const isRecipe = food.is_recipe;
+
+    return (
+      <View style={styles.foodIdentityRow}>
+        <Text style={[styles.foodName, styles.foodIdentityName]}>
+          {food.name}
+        </Text>
+        <Text
+          style={[
+            styles.foodIdentityBadge,
+            {
+              backgroundColor: isRecipe
+                ? theme.colors.recipesBackground
+                : theme.colors.foodsBackground,
+              color: isRecipe
+                ? theme.colors.recipesForeground
+                : theme.colors.foodsForeground,
+            },
+          ]}
+        >
+          {isRecipe ? "Recipe" : "Food"}
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -105,19 +133,19 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
           {favorites.isLoading ? <Text accessibilityLiveRegion="polite" style={styles.foodMeta}>Loading favorites…</Text> : null}
           {favorites.isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>Favorites are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry favorites" onPress={() => favorites.refetch()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
           {!favorites.isLoading && !favorites.isError && favorites.data?.length === 0 ? <Text style={styles.foodMeta}>No favorite foods yet.</Text> : null}
-          {visibleDiscoveryRows(favorites.data).map((food) => <Pressable accessible accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} key={`favorite-${food.id}`} onPress={() => onOpenFood(food.id)} style={styles.compactRow}><Text style={styles.foodName}>{food.name}</Text><Text style={styles.foodMeta}>{food.source_label} · Favorite</Text></Pressable>)}
+          {visibleDiscoveryRows(favorites.data).map((food) => <Pressable accessible accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} key={`favorite-${food.id}`} onPress={() => onOpenFood(food.id)} style={styles.compactRow}>{renderPersistedFoodName(food)}<Text style={styles.foodMeta}>{food.source_label} · Favorite</Text></Pressable>)}
         </View> : null}
         {showDiscovery ? <View style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>Recent preview</Text>
           {recent.isLoading ? <Text accessibilityLiveRegion="polite" style={styles.foodMeta}>Loading recent foods…</Text> : null}
           {recent.isError ? <View style={styles.errorRow}><Text accessibilityRole="alert" style={styles.error}>Recent foods are unavailable.</Text><Pressable accessibilityRole="button" accessibilityLabel="Retry recent foods" onPress={() => recent.refetch()}><Text style={styles.retry}>Retry</Text></Pressable></View> : null}
           {!recent.isLoading && !recent.isError && recent.data?.length === 0 ? <Text style={styles.foodMeta}>No recently logged foods.</Text> : null}
-          {recentFoodsInOrder(recent.data).map((item) => <Pressable accessible accessibilityRole="button" accessibilityLabel={`${foodAccessibilityLabel(item.food)}, ${formatRecentUse(item.last_used_at)}`} key={`recent-${item.food.id}`} onPress={() => onOpenFood(item.food.id)} style={styles.compactRow}><Text style={styles.foodName}>{item.food.name}</Text><Text style={styles.foodMeta}>{item.food.source_label} · {formatRecentUse(item.last_used_at)}</Text></Pressable>)}
+          {recentFoodsInOrder(recent.data).map((item) => <Pressable accessible accessibilityRole="button" accessibilityLabel={`${foodAccessibilityLabel(item.food)}, ${formatRecentUse(item.last_used_at)}`} key={`recent-${item.food.id}`} onPress={() => onOpenFood(item.food.id)} style={styles.compactRow}>{renderPersistedFoodName(item.food)}<Text style={styles.foodMeta}>{item.food.source_label} · {formatRecentUse(item.last_used_at)}</Text></Pressable>)}
         </View> : null}
         {isCurrent && (showDiscovery || sections.showSavedHeading) ? <Text accessibilityRole="header" style={styles.sectionTitle}>{showDiscovery ? "All Saved Foods" : "Saved Foods"}</Text> : null}
         {isCurrent ? foods.data?.map((food) => (
           <Pressable accessible accessibilityRole="button" accessibilityLabel={foodAccessibilityLabel(food)} key={food.id} onPress={() => onOpenFood(food.id)} style={styles.foodRow}>
-            <Text style={styles.foodName}>{food.name}</Text>
+            {renderPersistedFoodName(food)}
             <Text style={styles.foodMeta}>{food.brand ? `${food.brand} · ${food.source_label}` : food.source_label}{food.is_favorite ? " · Favorite" : ""}</Text>
           </Pressable>
         )) : null}
@@ -234,6 +262,21 @@ function createStyles(theme: ReturnType<typeof useAppTheme>) { return StyleSheet
   fabIcon: { color: theme.colors.primaryActionForeground, fontSize: 27, fontWeight: "300", lineHeight: 29, marginTop: -1 },
   fabLabel: { color: theme.colors.primaryActionForeground, fontSize: 16, fontWeight: "700" },
   fabPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
+    foodIdentityBadge: {
+      borderRadius: 10,
+      fontSize: 12,
+      fontWeight: "700",
+      lineHeight: 16,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    foodIdentityName: { flexShrink: 1 },
+    foodIdentityRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
   foodName: { color: theme.colors.text, fontSize: 16, fontWeight: "600" },
   foodRow: { borderBottomColor: theme.colors.listDivider, borderBottomWidth: 1, gap: 4, paddingVertical: 14 },
   preview: { color: theme.colors.text, fontWeight: "600" },
