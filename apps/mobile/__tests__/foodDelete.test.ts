@@ -49,7 +49,7 @@ test("food delete API sends explicit force flag only when requested", async () =
     ok: true,
     status: 200,
     json: async () => ({
-      food_id: "food-1",
+      food_id: "11111111-1111-4111-8111-111111111111",
       deleted: true,
       removed_ingredient_count: 0,
       affected_recipes: [],

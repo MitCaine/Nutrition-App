@@ -5,14 +5,19 @@ import {
 } from "../src/features/foods/api/foodApi";
 
 const responseFood = {
-  id: "food-1",
+  id: "11111111-1111-4111-8111-111111111111",
   name: "Food",
+  brand: null,
+  notes: null,
   source_type: "manual",
+  source_id: null,
   is_recipe: false,
   source_kind: "manual",
   source_label: "Manual",
   is_favorite: false,
   can_favorite: true,
+  created_at: "2026-08-22T18:00:00Z",
+  updated_at: "2026-08-22T18:00:00Z",
   serving_definitions: [],
   nutrients: [],
 };

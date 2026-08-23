@@ -4,6 +4,7 @@ import {
   getLogEditContext,
   getLogMutationStatus,
   listLogs,
+  listRecentEntries,
   markDayComplete,
   updateLog,
 } from "../src/features/logging/api/logApi";
@@ -334,35 +335,290 @@ test("mutation status validates and returns the canonical Complete result", asyn
   )).resolves.toEqual(status);
 });
 
-test("log edit context API returns immutable revision amount choices", async () => {
-  const context = {
-    log_id: "log-1",
+function recentEntryResponse() {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    food_item_id: "22222222-2222-4222-8222-222222222222",
+    food_name_snapshot: "Historical Food",
+    logged_date: "2026-07-08",
+    meal_type: "legacy_supper",
+    amount_quantity: "0001.5000",
+    amount_unit: "serving" as const,
+    serving_definition_id:
+      "33333333-3333-4333-8333-333333333333",
+    recipe_publication_revision_id: null,
+    recipe_publication_amount_definition_id: null,
+    historical_serving_label: "1 serving",
+    notes: null,
+    note_present: false,
+    note_reference: null,
+    note_copy_allowed: false,
+    created_at: "2026-07-08T09:00:00Z",
+    source_food_updated_at:
+      "2026-07-08T08:00:00Z",
+    source_recipe_publication_revision_id: null,
+    current_source_loggable: true,
+    current_amount_unit: "serving" as const,
+    current_amount_definition_id:
+      "33333333-3333-4333-8333-333333333333",
+    current_amount_label: "1 serving",
+    reuse_status: "exact" as const,
+  };
+}
+
+function editAmountResponse() {
+  return {
+    amount_definition_id:
+      "44444444-4444-4444-8444-444444444444",
+    display_label: "1 serving",
+    semantic_mode: "serving" as const,
+    display_quantity: "1.000000",
+    display_unit: "serving",
+    gram_equivalent: "120.000000",
+    is_default: true,
+    is_selected: true,
+  };
+}
+
+function editContextResponse() {
+  return {
+    log_id:
+      "55555555-5555-4555-8555-555555555555",
     source_food_available: false,
     is_revision_backed: true,
-    recipe_publication_revision_id: "revision-1",
-    selected_amount_definition_id: "amount-1",
+    recipe_publication_revision_id:
+      "66666666-6666-4666-8666-666666666666",
+    selected_amount_definition_id:
+      "44444444-4444-4444-8444-444444444444",
     amount_choices: [
-      {
-        amount_definition_id: "amount-1",
-        display_label: "1 serving",
-        semantic_mode: "serving",
-        display_quantity: "1",
-        display_unit: "serving",
-        gram_equivalent: "120",
-        is_default: true,
-        is_selected: true,
-      },
+      editAmountResponse(),
     ],
   };
-  global.fetch = jest.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => context,
-  });
+}
 
-  await expect(getLogEditContext("log-1")).resolves.toEqual(context);
-  expect(global.fetch).toHaveBeenCalledWith(
-    "http://localhost:8000/api/v1/logs/log-1/edit-context",
-    expect.any(Object),
-  );
-});
+test(
+  "Recent Entries validates complete canonical historical intent",
+  async () => {
+    const entry = recentEntryResponse();
+
+    mockSuccessfulJson({
+      entries: [entry],
+    });
+
+    await expect(
+      listRecentEntries(),
+    ).resolves.toEqual([entry]);
+  },
+);
+
+const malformedRecentEntryCases: Array<[
+  string,
+  () => unknown,
+]> = [
+  [
+    "missing backend field",
+    () => {
+      const value =
+        recentEntryResponse() as
+        Record<string, unknown>;
+
+      delete value.source_food_updated_at;
+
+      return {
+        entries: [value],
+      };
+    },
+  ],
+  [
+    "invalid Food UUID",
+    () => ({
+      entries: [
+        {
+          ...recentEntryResponse(),
+          food_item_id: "food-1",
+        },
+      ],
+    }),
+  ],
+  [
+    "numeric exact decimal",
+    () => ({
+      entries: [
+        {
+          ...recentEntryResponse(),
+          amount_quantity: 1.5,
+        },
+      ],
+    }),
+  ],
+  [
+    "invalid amount unit",
+    () => ({
+      entries: [
+        {
+          ...recentEntryResponse(),
+          amount_unit: "oz",
+        },
+      ],
+    }),
+  ],
+  [
+    "invalid timestamp",
+    () => ({
+      entries: [
+        {
+          ...recentEntryResponse(),
+          created_at: "2026-07-08T09:00:00",
+        },
+      ],
+    }),
+  ],
+  [
+    "unexpected nested field",
+    () => ({
+      entries: [
+        {
+          ...recentEntryResponse(),
+          unexpected: true,
+        },
+      ],
+    }),
+  ],
+];
+
+test.each(
+  malformedRecentEntryCases,
+)(
+  "Recent Entries rejects %s",
+  async (_name, buildResponse) => {
+    mockSuccessfulJson(
+      buildResponse(),
+    );
+
+    await expect(
+      listRecentEntries(),
+    ).rejects.toThrow();
+  },
+);
+
+test(
+  "log edit context accepts the deliberate five-field omission form",
+  async () => {
+    const context =
+      editContextResponse();
+
+    mockSuccessfulJson(context);
+
+    await expect(
+      getLogEditContext("log-1"),
+    ).resolves.toEqual(context);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/logs/log-1/edit-context",
+      expect.any(Object),
+    );
+  },
+);
+
+test(
+  "log edit context accepts all five current authority fields when present",
+  async () => {
+    const currentAmount =
+      editAmountResponse();
+
+    const context = {
+      ...editContextResponse(),
+      current_source_food_updated_at:
+        "2026-07-08T10:00:00Z",
+      current_recipe_publication_revision_id:
+        "77777777-7777-4777-8777-777777777777",
+      current_source_loggable: true,
+      current_selected_amount_definition_id:
+        currentAmount.amount_definition_id,
+      current_amount_choices: [
+        currentAmount,
+      ],
+    };
+
+    mockSuccessfulJson(context);
+
+    await expect(
+      getLogEditContext("log-1"),
+    ).resolves.toEqual(context);
+  },
+);
+
+const malformedEditContextCases: Array<[
+  string,
+  () => unknown,
+]> = [
+  [
+    "missing required base field",
+    () => {
+      const value =
+        editContextResponse() as
+        Record<string, unknown>;
+
+      delete value.amount_choices;
+
+      return value;
+    },
+  ],
+  [
+    "invalid log UUID",
+    () => ({
+      ...editContextResponse(),
+      log_id: "log-1",
+    }),
+  ],
+  [
+    "numeric display decimal",
+    () => ({
+      ...editContextResponse(),
+      amount_choices: [
+        {
+          ...editAmountResponse(),
+          display_quantity: 1,
+        },
+      ],
+    }),
+  ],
+  [
+    "present null current timestamp",
+    () => ({
+      ...editContextResponse(),
+      current_source_food_updated_at:
+        null,
+    }),
+  ],
+  [
+    "present null current loggable flag",
+    () => ({
+      ...editContextResponse(),
+      current_source_loggable:
+        null,
+    }),
+  ],
+  [
+    "unexpected field",
+    () => ({
+      ...editContextResponse(),
+      unexpected: true,
+    }),
+  ],
+];
+
+test.each(
+  malformedEditContextCases,
+)(
+  "Log edit context rejects %s",
+  async (_name, buildResponse) => {
+    mockSuccessfulJson(
+      buildResponse(),
+    );
+
+    await expect(
+      getLogEditContext("log-1"),
+    ).rejects.toThrow();
+  },
+);

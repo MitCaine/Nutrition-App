@@ -7,31 +7,43 @@ import { buildLogInput, initialServingId } from "../src/features/logging/utils/l
 import { createLog, getDailySummary } from "../src/features/logging/api/logApi";
 import { invalidateFoodRecents, invalidateLogDateCaches } from "../src/features/logging/hooks/useLogs";
 
-const importedFood: Food = {
-  id: "food-usda",
+const importedFood: Food & { created_at: string } = {
+  id: "11111111-1111-4111-8111-111111111111",
   name: "Example Protein Bar",
   brand: "Example Foods",
+  notes: null,
   source_type: "usda",
   source_id: "555000",
   is_recipe: false,
-  source_kind: "usda", source_label: "USDA", is_favorite: false, can_favorite: true,
+  source_kind: "usda",
+  source_label: "USDA",
+  is_favorite: false,
+  can_favorite: true,
+  created_at: "2026-08-22T18:00:00Z",
+  updated_at: "2026-08-22T18:00:00Z",
   serving_definitions: [
     {
-      id: "serving-100g",
+      id: "22222222-2222-4222-8222-222222222222",
       label: "100 g",
       quantity: "100",
       unit: "g",
       gram_weight: "100.000000",
+      reference_quantity: null,
+      reference_unit: null,
+      reference_gram_weight: null,
       is_default: false,
       source: "usda_fdc",
       is_user_confirmed: false,
     },
     {
-      id: "serving-bar",
+      id: "33333333-3333-4333-8333-333333333333",
       label: "1 bar",
       quantity: "50",
       unit: "g",
       gram_weight: "50.000000",
+      reference_quantity: null,
+      reference_unit: null,
+      reference_gram_weight: null,
       is_default: true,
       source: "usda_fdc",
       is_user_confirmed: false,
@@ -39,7 +51,7 @@ const importedFood: Food = {
   ],
   nutrients: [
     {
-      id: "nutrient-calories",
+      id: "44444444-4444-4444-8444-444444444444",
       nutrient_id: "calories",
       amount: "300.000000",
       unit: "kcal",
@@ -47,9 +59,12 @@ const importedFood: Food = {
       data_status: "known",
       source: "usda_fdc",
       is_user_confirmed: false,
+      original_amount: null,
+      original_unit: null,
+      original_text: null,
     },
     {
-      id: "nutrient-cholesterol",
+      id: "55555555-5555-4555-8555-555555555555",
       nutrient_id: "cholesterol",
       amount: "0.000000",
       unit: "mg",
@@ -57,9 +72,12 @@ const importedFood: Food = {
       data_status: "zero",
       source: "usda_fdc",
       is_user_confirmed: false,
+      original_amount: null,
+      original_unit: null,
+      original_text: null,
     },
     {
-      id: "nutrient-vitamin-d",
+      id: "66666666-6666-4666-8666-666666666666",
       nutrient_id: "vitamin_d",
       amount: null,
       unit: "mcg",
@@ -67,6 +85,9 @@ const importedFood: Food = {
       data_status: "unknown",
       source: "usda_fdc",
       is_user_confirmed: false,
+      original_amount: null,
+      original_unit: null,
+      original_text: null,
     },
   ],
 };
@@ -86,7 +107,7 @@ test("USDA import seeds food detail cache for immediate post-import navigation",
     "http://localhost:8000/api/v1/usda/foods/555000/import",
     expect.objectContaining({ method: "POST" }),
   );
-  expect(queryClient.getQueryData(["foods", "food-usda"])).toEqual(importedFood);
+  expect(queryClient.getQueryData(["foods", "11111111-1111-4111-8111-111111111111"])).toEqual(importedFood);
   queryClient.clear();
 });
 
@@ -101,8 +122,8 @@ test("duplicate USDA import response reuses existing food in the same cache path
   const food = await importUsdaFood(555000);
   applyUsdaImportToFoodCache(queryClient, food);
 
-  expect(food.id).toBe("food-usda");
-  expect(queryClient.getQueryData(["foods", "food-usda"])).toEqual(importedFood);
+  expect(food.id).toBe("11111111-1111-4111-8111-111111111111");
+  expect(queryClient.getQueryData(["foods", "11111111-1111-4111-8111-111111111111"])).toEqual(importedFood);
   queryClient.clear();
 });
 
@@ -116,7 +137,7 @@ test("USDA import failure rejects without seeding food detail cache", async () =
 
   await expect(importUsdaFood(555000)).rejects.toThrow("USDA search is unavailable");
 
-  expect(queryClient.getQueryData(["foods", "food-usda"])).toBeUndefined();
+  expect(queryClient.getQueryData(["foods", "11111111-1111-4111-8111-111111111111"])).toBeUndefined();
   queryClient.clear();
 });
 
@@ -194,11 +215,11 @@ test("imported USDA food can be logged with default serving and refreshes daily 
 
   expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)).toEqual({
     client_request_id: "00000000-0000-4000-8000-000000000001",
-    food_item_id: "food-usda",
+    food_item_id: "11111111-1111-4111-8111-111111111111",
     logged_date: "2026-07-08",
     amount_quantity: "1",
     amount_unit: "serving",
-    serving_definition_id: "serving-bar",
+    serving_definition_id: "33333333-3333-4333-8333-333333333333",
   });
   expect(queryClient.getQueryState(["logs", "2026-07-08"])?.isInvalidated).toBe(true);
   expect(queryClient.getQueryState(["daily-summary", "2026-07-08"])?.isInvalidated).toBe(true);

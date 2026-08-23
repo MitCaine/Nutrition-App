@@ -1,9 +1,11 @@
 import {
   createRecipe,
   duplicateRecipe,
+  getRecipe,
   getRecipeNutrition,
   listRecipes,
   publishRecipe,
+  updateRecipe,
 } from "../src/features/recipes/api/recipeApi";
 
 function recipePublishResponse() {
@@ -79,6 +81,38 @@ function recipePublishResponse() {
   };
 }
 
+function ordinaryRecipeResponse() {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    user_id: "22222222-2222-4222-8222-222222222222",
+    published_food_item_id: null,
+    name: "Soup",
+    notes: null,
+    serving_count_yield: "6.000000",
+    final_cooked_weight_grams: null,
+    final_cooked_weight_display_quantity: null,
+    final_cooked_weight_display_unit: null,
+    needs_republish: true,
+    created_at: "2026-07-10T00:00:00Z",
+    updated_at: "2026-07-10T00:00:00+00:00",
+    ingredients: [
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        recipe_id: "11111111-1111-4111-8111-111111111111",
+        food_item_id: "44444444-4444-4444-8444-444444444444",
+        position: 0,
+        amount_quantity: "50.000000",
+        amount_unit: "g" as const,
+        serving_definition_id: null,
+        resolved_gram_amount: "50.000000",
+        preparation_note: null,
+        amount_display_quantity: "1.763698",
+        amount_display_unit: "oz",
+      },
+    ],
+  };
+}
+
 function mockSuccessfulJson(value: unknown): void {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
@@ -111,14 +145,8 @@ test("recipe create API sends ingredient payload", async () => {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
     status: 201,
-    json: async () => ({
-      id: "recipe-1",
-      user_id: "user-1",
-      name: "Soup",
-      ingredients: [],
-      created_at: "2026-07-10T00:00:00Z",
-      updated_at: "2026-07-10T00:00:00Z",
-    }),
+    json: async () =>
+      ordinaryRecipeResponse(),
   });
 
   await createRecipe({
@@ -304,7 +332,16 @@ test("recipe duplicate posts only the client request id to the duplicate endpoin
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
     status: 201,
-    json: async () => ({ id: "recipe-copy", name: "Soup Copy", ingredients: [] }),
+    json: async () => ({
+      ...ordinaryRecipeResponse(),
+      id: "55555555-5555-4555-8555-555555555555",
+      name: "Soup Copy",
+      ingredients: ordinaryRecipeResponse().ingredients.map((ingredient) => ({
+        ...ingredient,
+        id: "66666666-6666-4666-8666-666666666666",
+        recipe_id: "55555555-5555-4555-8555-555555555555",
+      })),
+    }),
   });
 
   await duplicateRecipe({ recipeId: "recipe-1", clientRequestId: "request-2" });
@@ -317,3 +354,367 @@ test("recipe duplicate posts only the client request id to the duplicate endpoin
     }),
   );
 });
+
+
+test(
+  "general Recipe list validates the complete ordinary Recipe wire shape",
+  async () => {
+    const recipe =
+      ordinaryRecipeResponse();
+
+    mockSuccessfulJson({
+      recipes: [recipe],
+    });
+
+    await expect(
+      listRecipes(),
+    ).resolves.toEqual([recipe]);
+
+    expect(
+      (await listRecipes())[0]
+        .published_food_item_id,
+    ).toBeNull();
+
+    expect(
+      (await listRecipes())[0]
+        .needs_republish,
+    ).toBe(true);
+  },
+);
+
+test(
+  "general Recipe get validates nullable publication identity and ordinary republish state",
+  async () => {
+    const recipe =
+      ordinaryRecipeResponse();
+
+    mockSuccessfulJson(recipe);
+
+    await expect(
+      getRecipe(
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).resolves.toEqual(recipe);
+  },
+);
+
+test(
+  "general Recipe update validates the complete successful response",
+  async () => {
+    const recipe = {
+      ...ordinaryRecipeResponse(),
+      needs_republish: false,
+      updated_at:
+        "2026-07-11T00:00:00Z",
+    };
+
+    mockSuccessfulJson(recipe);
+
+    await expect(
+      updateRecipe(
+        "11111111-1111-4111-8111-111111111111",
+        {
+          name: "Soup",
+          notes: null,
+          serving_count_yield: "6",
+          final_cooked_weight_grams: null,
+          ingredients: [],
+        },
+      ),
+    ).resolves.toEqual(recipe);
+  },
+);
+
+const malformedOrdinaryRecipeCases: Array<[
+  string,
+  () => unknown,
+]> = [
+  [
+    "missing backend-emitted field",
+    () => {
+      const value =
+        ordinaryRecipeResponse() as
+        Record<string, unknown>;
+
+      delete value.published_food_item_id;
+
+      return value;
+    },
+  ],
+  [
+    "invalid Recipe UUID",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      id: "recipe-1",
+    }),
+  ],
+  [
+    "invalid ingredient UUID",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      ingredients: [
+        {
+          ...ordinaryRecipeResponse()
+            .ingredients[0],
+          food_item_id: "food-1",
+        },
+      ],
+    }),
+  ],
+  [
+    "negative ingredient position",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      ingredients: [
+        {
+          ...ordinaryRecipeResponse()
+            .ingredients[0],
+          position: -1,
+        },
+      ],
+    }),
+  ],
+  [
+    "numeric exact decimal",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      serving_count_yield: 6,
+    }),
+  ],
+  [
+    "signed exact decimal",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      serving_count_yield: "-6",
+    }),
+  ],
+  [
+    "exponent exact decimal",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      ingredients: [
+        {
+          ...ordinaryRecipeResponse()
+            .ingredients[0],
+          amount_quantity: "5e1",
+        },
+      ],
+    }),
+  ],
+  [
+    "invalid amount unit",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      ingredients: [
+        {
+          ...ordinaryRecipeResponse()
+            .ingredients[0],
+          amount_unit: "oz",
+        },
+      ],
+    }),
+  ],
+  [
+    "timestamp without offset",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      updated_at:
+        "2026-07-10T00:00:00",
+    }),
+  ],
+  [
+    "unexpected nested field",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      ingredients: [
+        {
+          ...ordinaryRecipeResponse()
+            .ingredients[0],
+          unexpected: true,
+        },
+      ],
+    }),
+  ],
+  [
+    "unexpected top-level field",
+    () => ({
+      ...ordinaryRecipeResponse(),
+      unexpected: true,
+    }),
+  ],
+];
+
+test.each(
+  malformedOrdinaryRecipeCases,
+)(
+  "general Recipe get rejects %s",
+  async (_name, buildResponse) => {
+    mockSuccessfulJson(
+      buildResponse(),
+    );
+
+    await expect(
+      getRecipe(
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).rejects.toThrow();
+  },
+);
+
+test(
+  "general Recipe list rejects malformed wrapper and nested Recipe",
+  async () => {
+    mockSuccessfulJson({
+      recipes: [
+        {
+          ...ordinaryRecipeResponse(),
+          id: "recipe-1",
+        },
+      ],
+    });
+
+    await expect(
+      listRecipes(),
+    ).rejects.toThrow();
+
+    mockSuccessfulJson({
+      recipes: [
+        ordinaryRecipeResponse(),
+      ],
+      unexpected: true,
+    });
+
+    await expect(
+      listRecipes(),
+    ).rejects.toThrow();
+  },
+);
+
+test(
+  "Recipe nutrition rejects malformed exact decimals, units, counts, and extra fields",
+  async () => {
+    mockSuccessfulJson({
+      totals: [
+        {
+          nutrient_id: "protein",
+          amount_known: 10,
+          amount_estimated: "0",
+          unit: "g",
+          has_unknown_contributors:
+            false,
+          unknown_contributor_count: 0,
+        },
+      ],
+      per_serving: null,
+      per_100g: null,
+    });
+
+    await expect(
+      getRecipeNutrition(
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).rejects.toThrow();
+
+    mockSuccessfulJson({
+      totals: [
+        {
+          nutrient_id: "protein",
+          amount_known: "10",
+          amount_estimated: "0",
+          unit: "oz",
+          has_unknown_contributors:
+            false,
+          unknown_contributor_count: 0,
+        },
+      ],
+      per_serving: null,
+      per_100g: null,
+    });
+
+    await expect(
+      getRecipeNutrition(
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).rejects.toThrow();
+
+    mockSuccessfulJson({
+      totals: [
+        {
+          nutrient_id: "protein",
+          amount_known: "10",
+          amount_estimated: "0",
+          unit: "g",
+          has_unknown_contributors:
+            true,
+          unknown_contributor_count: -1,
+        },
+      ],
+      per_serving: null,
+      per_100g: null,
+    });
+
+    await expect(
+      getRecipeNutrition(
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).rejects.toThrow();
+
+    mockSuccessfulJson({
+      totals: [],
+      per_serving: null,
+      per_100g: null,
+      unexpected: true,
+    });
+
+    await expect(
+      getRecipeNutrition(
+        "11111111-1111-4111-8111-111111111111",
+      ),
+    ).rejects.toThrow();
+  },
+);
+
+test(
+  "publication remains stricter than the general Recipe parser",
+  async () => {
+    const nullablePublication =
+      recipePublishResponse();
+
+    nullablePublication.recipe
+      .published_food_item_id =
+        null as unknown as string;
+
+    mockSuccessfulJson(
+      nullablePublication,
+    );
+
+    await expect(
+      publishRecipe({
+        recipeId:
+          "00000000-0000-4000-8000-000000000301",
+        clientRequestId:
+          "00000000-0000-4000-8000-000000000302",
+      }),
+    ).rejects.toThrow();
+
+    const dirtyPublication =
+      recipePublishResponse();
+
+    dirtyPublication.recipe
+      .needs_republish =
+        true as false;
+
+    mockSuccessfulJson(
+      dirtyPublication,
+    );
+
+    await expect(
+      publishRecipe({
+        recipeId:
+          "00000000-0000-4000-8000-000000000301",
+        clientRequestId:
+          "00000000-0000-4000-8000-000000000302",
+      }),
+    ).rejects.toThrow();
+  },
+);

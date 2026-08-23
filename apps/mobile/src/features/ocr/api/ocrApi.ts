@@ -3,7 +3,7 @@ import { z } from "zod";
 import { apiRequest } from "../../../shared/api/client";
 import type { OcrRecognitionResult } from "../../../native/ocr/NutritionOcr";
 import type { OcrConfirmationInput, OcrConfirmationResponse, ParsedNutritionLabel } from "./types";
-import { validateFoodSourceContract } from "../../foods/api/foodApi";
+import { parseFoodResponse } from "../../foods/api/foodResponseSchemas";
 
 const decimalValue = z.union([z.string(), z.number()]).transform(String);
 const fieldSchema = z.object({
@@ -33,6 +33,15 @@ const responseSchema = z.object({
   parser_version: z.string(),
 }).strict();
 
+const uuid = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+);
+
+const confirmationResponseSchema = z.object({
+  food: z.record(z.unknown()),
+  trace_id: uuid,
+}).strict();
+
 export function parserRequestFromRecognition(result: OcrRecognitionResult) {
   return {
     full_text: result.fullText,
@@ -53,8 +62,12 @@ export async function parseNutritionLabel(result: OcrRecognitionResult): Promise
 }
 
 export async function confirmNutritionLabel(input: OcrConfirmationInput): Promise<OcrConfirmationResponse> {
-  const response = await apiRequest<OcrConfirmationResponse>("/ocr/nutrition-label/confirm", {
+  const raw = await apiRequest<unknown>("/ocr/nutrition-label/confirm", {
     method: "POST", body: JSON.stringify(input),
   });
-  return { ...response, food: validateFoodSourceContract(response.food) };
+  const response = confirmationResponseSchema.parse(raw);
+  return {
+    food: parseFoodResponse(response.food),
+    trace_id: response.trace_id,
+  };
 }

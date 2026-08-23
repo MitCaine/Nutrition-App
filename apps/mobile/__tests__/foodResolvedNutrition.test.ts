@@ -7,7 +7,7 @@ test("Food Detail resolved nutrition API preserves count-only and nutrient statu
     recipe_publication_revision_id: null,
     amounts: [
       {
-        amount_definition_id: "serving-1",
+        amount_definition_id: "22222222-2222-4222-8222-222222222222",
         display_label: "1 serving",
         is_default: true,
         entered_quantity: "1.000000",
@@ -49,11 +49,11 @@ test("Food Detail resolved nutrition API preserves count-only and nutrient statu
 test("Food Detail maps revision-backed published nutrition and immutable amounts", async () => {
   const response = {
     nutrition_authority: "recipe_publication_revision" as const,
-    recipe_id: "recipe-1",
-    recipe_publication_revision_id: "revision-2",
+    recipe_id: "44444444-4444-4444-8444-444444444444",
+    recipe_publication_revision_id: "55555555-5555-4555-8555-555555555555",
     amounts: [
       {
-        amount_definition_id: "revision-amount-2",
+        amount_definition_id: "66666666-6666-4666-8666-666666666666",
         display_label: "1 serving",
         is_default: true,
         entered_quantity: "1.000000",
