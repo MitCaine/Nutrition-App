@@ -103,8 +103,13 @@ log_run() {
 # ------------------------------------------------------------------------------
 
 ensure_repo_root() {
-    [[ -d "$REPO_ROOT/.git" ]] || \
-        die "Repository root not found."
+    local inside_worktree
+
+    inside_worktree="$(
+        git -C "$REPO_ROOT"             rev-parse --is-inside-work-tree             2>/dev/null
+    )" || die "Repository root not found."
+
+    [[ "$inside_worktree" == "true" ]] ||         die "Repository root not found."
 }
 
 repo_cd() {

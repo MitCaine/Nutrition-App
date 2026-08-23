@@ -86,13 +86,13 @@ if [[ ! -f ".env" ]]; then
   exit 1
 fi
 
-# Prefer the backend virtual environment when present.
-if [[ -x ".venv/bin/python" ]]; then
-  PYTHON=".venv/bin/python"
-elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
-  PYTHON="$ROOT_DIR/.venv/bin/python"
-else
-  PYTHON="${PYTHON:-python3}"
+# The repository-owned backend environment is the runtime Python authority.
+PYTHON="$BACKEND_DIR/.venv/bin/python"
+
+if [[ ! -x "$PYTHON" ]]; then
+  echo "Error: backend Python environment is missing at:" >&2
+  echo "  $BACKEND_DIR/.venv" >&2
+  exit 1
 fi
 
 echo "Using Python: $("$PYTHON" --version)"

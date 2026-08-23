@@ -27,6 +27,7 @@ trap cleanup EXIT
 
 INCLUDE_PATHS=(
   README.md
+  VERSION
   CONTRIBUTING.md
   .gitignore
   .env.example
