@@ -14,9 +14,9 @@ preserves the qualified integration commit, annotated tag, and GitHub Release
 publication evidence.
 
 Epic 4 — Nutrition History and Trends is implemented and qualified.
-Epic 5 remains planned and requires re-scope. The
-[Current Product Roadmap](product-roadmap.md) owns canonical Epic numbering and
-the complete current planning-status table.
+Epic 5 — Recipe Reuse and Discovery is outcome complete and retired as a planning unit.
+The [Current Product Roadmap](product-roadmap.md) owns canonical Epic numbering,
+delivery provenance, and the complete current planning-status table.
 
 Completed Version 1.1 and Version 1.2 planning, implementation, qualification,
 and closure packages are historical provenance. They do not define current
@@ -38,7 +38,7 @@ The [Architecture Overview](../architecture/overview.md) owns the full current s
 - Personal Food creation, editing, collision-aware duplication, favorites, recents, search, serving definitions, and exact decimal nutrition handling.
 - Expanded canonical nutrient coverage spanning macros, vitamins, minerals, fatty acids, total Omega-3, ALA, EPA, DHA, and linoleic acid/Omega-6, including nutrient-specific canonical units where required.
 - Serving authoring with explicit gram authority and optional reference-measurement metadata so unit changes preserve physical equivalence rather than silently changing amount meaning.
-- Recipe authoring, nested published Recipe use, immutable publication revisions, generated Food compatibility projections, explicit serving/yield authoring, and draft-preserving navigation guards.
+- Recipe authoring, nested published Recipe use, immutable publication revisions, explicit serving/yield authoring, Draft/Published/Update Needed lifecycle presentation, Recipe-oriented discovery and recent-use reuse, direct Recipe logging through the established amount/serving flow, independent editable duplication, generated Food compatibility projections, and draft-preserving navigation guards.
 - Daily Logs with immutable nutrient snapshots so later Food or Recipe edits cannot rewrite historical nutrition.
 - Explicit date-owned Complete assertions for non-empty Daily Log dates. Complete is never inferred; nutrition-changing Log mutations invalidate it atomically, while exact snapshot-preserving and metadata-only edits preserve it.
 - Nutrition History and Trends for 7-day and 30-day calendar ranges ending yesterday, with honest Complete-day/Logged-day denominators, four macro overview cards, grouped Nutrition Details, focused nutrient History, exact daily values, and navigation to the authoritative Daily Log date.

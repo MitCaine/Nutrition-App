@@ -412,6 +412,23 @@ def test_current_document_contract_inventory_is_semantically_bounded() -> None:
         "docs/project/product-roadmap.md",
     }
 
+    assert DOCS_VALIDATOR.CURRENT_STATUS_CONTRACTS[
+        "docs/project/current-state.md"
+    ] == (
+        "Version 2.0 is the current product line.",
+        "Epic 4 — Nutrition History and Trends is implemented and qualified.",
+        "Epic 5 — Recipe Reuse and Discovery is outcome complete "
+        "and retired as a planning unit.",
+    )
+
+    assert DOCS_VALIDATOR.CURRENT_STATUS_CONTRACTS[
+        "docs/project/product-roadmap.md"
+    ] == (
+        "# Current product roadmap",
+        "| Epic 4 | Nutrition History and Trends | Complete |",
+        "| Epic 5 | Recipe Reuse and Discovery | Outcome complete; retired |",
+    )
+
 
 def test_current_document_contract_detects_application_and_control_head_drift(
     tmp_path: Path,
@@ -446,27 +463,33 @@ def test_current_document_contract_detects_project_status_drift(
     _write_document_fixture(
         tmp_path,
         "docs/status.md",
-        "Version 1.1 is current.\nEpic 4 is unfinished.\n",
+        (
+            "Version 1.1 is current.\n"
+            "Epic 4 is unfinished.\n"
+            "Epic 5 remains planned and requires re-scope.\n"
+        ),
     )
 
     errors = DOCS_VALIDATOR._current_status_contract_errors(
         root=tmp_path,
         contracts={
             "docs/status.md": (
-                "Version 1.2 is the current product line.",
+                "Version 2.0 is the current product line.",
                 "Epic 4 is complete.",
-                "Epic 5 remains planned.",
+                "Epic 5 — Recipe Reuse and Discovery is outcome complete "
+                "and retired as a planning unit.",
             )
         },
     )
 
     assert errors == [
         "docs/status.md: missing current product/status assertion "
-        "'Version 1.2 is the current product line.'",
+        "'Version 2.0 is the current product line.'",
         "docs/status.md: missing current product/status assertion "
         "'Epic 4 is complete.'",
         "docs/status.md: missing current product/status assertion "
-        "'Epic 5 remains planned.'",
+        "'Epic 5 — Recipe Reuse and Discovery is outcome complete "
+        "and retired as a planning unit.'",
     ]
 
 

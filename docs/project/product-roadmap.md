@@ -10,7 +10,7 @@ Nutrition App now uses the following Epic sequence:
 | Epic 2 | Local-First SQLite Runtime | Complete | Inserted as the technical/local-first Epic and implemented through the completed Epic 2 program. |
 | Epic 3 | Nutrition Label Capture Confidence | Complete | Originally planned as product Epic 4; later absorbed and completed through Epic 2 OCR work and post-Epic-2 OCR/camera issues and physical-device qualification. |
 | Epic 4 | Nutrition History and Trends | Complete | Implemented through E4-01–E4-15 and qualified across local SQLite, physical PostgreSQL 16, shared projections, and the target iPhone by E4-16. |
-| Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope | Originally planned as product Epic 3. Considerable Recipe authoring, serving, publication, and navigation work already exists, but the remaining reuse/discovery outcome has not been completed as an Epic. |
+| Epic 5 | Recipe Reuse and Discovery | Outcome complete; retired | Originally planned as product Epic 3. Its concrete reuse/discovery outcomes are now delivered through the existing Recipe architecture plus bounded issues #149 and #150, so no retroactive Epic delivery program is required. |
 
 ## Epic 3 — Nutrition Label Capture Confidence
 
@@ -49,13 +49,19 @@ The finalized package passed repository documentation validation, the pre-commit
 
 ## Epic 5 — Recipe Reuse and Discovery
 
-Epic 5 is the current name for the product work originally described as Version 1.1 product Epic 3.
+Epic 5 is the current name for the product work originally described as Version 1.1 product Epic 3. Its original concrete outcomes are now outcome complete, and Epic 5 is retired as a planning unit rather than being reopened for a retroactive Grill/PRD/backlog cycle.
 
-Substantial prerequisite and adjacent work has already landed: Recipe authoring, nested Recipes, immutable publication/republication, `needs_republish`, serving/yield authoring, safe serving management, guarded drafts, fixed route headers, and Recipe-backed logging authority.
+The delivered capability combines the pre-existing Recipe architecture with the final bounded product work:
 
-The original reuse/discovery outcome is therefore no longer a clean implementation plan and must be re-scoped before implementation. Remaining candidate product outcomes include coherent Recipe favorites/recent-use discovery, direct Recipe-context logging with explicit amount selection, Recipe duplication for independent variations, and user-facing lifecycle language that hides compatibility-projection mechanics without weakening publication semantics.
+- mutable Recipe authoring, nested Recipes, serving/yield authoring, guarded drafts, immutable publication/republication, and explicit `needs_republish` semantics;
+- Draft, Published/current, and Update Needed lifecycle presentation plus Recipe-oriented discovery and recent-use reuse delivered through #149;
+- direct `Log Recipe` through the established amount/serving logging flow, preserving one exact immutable publication revision;
+- user-facing Recipe language that does not require understanding managed Food compatibility projections, while retaining those projections as internal architecture;
+- independent editable Recipe duplication delivered through #150, with a new Recipe identity, unpublished state, collision-aware/idempotent creation semantics, and no copied publication or Daily Log history.
 
-Epic 5 has not yet entered a new Grill/PRD/architecture/backlog cycle under the current numbering.
+[#149](https://github.com/MitCaine/Nutrition-App/issues/149) and [#150](https://github.com/MitCaine/Nutrition-App/issues/150) are the bounded terminal delivery evidence for the remaining reuse/discovery and duplication outcomes. The historical Version 1.1 roadmap remains point-in-time provenance and is not rewritten to manufacture a retroactive Epic 5 delivery package.
+
+Future Recipe ideas require newly scoped product decisions or issues on their own merits; they are not unfinished acceptance scope for this retired planning unit.
 
 ## Historical numbering map
 
@@ -74,4 +80,4 @@ This remapping is intentional. It reflects the completed insertion of SQLite as 
 
 Epic numbers in new issues, PRDs, architecture reviews, project boards, and conversation should use this current sequence. Historical records should not be rewritten to pretend this numbering existed when they were authored; where historical material is reused, translate through the mapping above.
 
-An Epic being listed here does not itself authorize implementation. Epic 4 is complete because its approved package was delivered and qualified through the bounded GitHub backlog. Epic 5 remains planned and requires re-scope plus the normal Grill, PRD, architecture review, implementation backlog, validation, and GitHub issue workflow before code changes begin.
+An Epic being listed here does not itself authorize implementation. Epic 4 is complete because its approved package was delivered and qualified through the bounded GitHub backlog. Epic 5 is outcome complete and retired as a planning unit because its concrete historical outcomes are now delivered; new Recipe work requires newly scoped authority rather than reopening the retired Epic.

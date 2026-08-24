@@ -65,12 +65,14 @@ CURRENT_STATUS_CONTRACTS: dict[str, tuple[str, ...]] = {
     "docs/project/current-state.md": (
         "Version 2.0 is the current product line.",
         "Epic 4 — Nutrition History and Trends is implemented and qualified.",
-        "Epic 5 remains planned and requires re-scope.",
+        "Epic 5 — Recipe Reuse and Discovery is outcome complete "
+        "and retired as a planning unit.",
     ),
     "docs/project/product-roadmap.md": (
         "# Current product roadmap",
         "| Epic 4 | Nutrition History and Trends | Complete |",
-        "| Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope |",
+        "| Epic 5 | Recipe Reuse and Discovery | "
+        "Outcome complete; retired |",
     ),
 }
 

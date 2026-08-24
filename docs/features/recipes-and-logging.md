@@ -11,6 +11,34 @@ snapshots are the historical substrate. The implemented Nutrition History and Tr
 a bounded multi-day presentation and projection over that substrate; it does not create another
 historical authority.
 
+## Current Recipe reuse and discovery
+
+The current product presents Recipes as Recipes rather than requiring users to understand the
+managed Food compatibility layer used internally by publication and logging.
+
+The implemented reuse/discovery experience includes:
+
+- Recipe-list lifecycle presentation that distinguishes Draft, Published/current, and Update Needed
+  (`needs_republish`) state with explicit semantics rather than color alone;
+- Recipe-oriented search and recent-use discovery for reusable published Recipes, while recents
+  continue to derive from actual Log history rather than a second Recipe ranking/history authority;
+- direct `Log Recipe` from Recipe context through the established amount/serving selection flow,
+  resolving one exact immutable publication revision;
+- deliberate duplication into a new independent editable Recipe with a distinct identity and
+  unpublished state, without copying immutable publication revisions, managed projection identity,
+  historical Daily Logs, or mutable coupling to the source Recipe; and
+- collision-aware and retry-safe duplicate creation so replay does not silently create additional
+  Recipe copies.
+
+Draft or otherwise unpublished Recipes are not presented as reusable published Log sources. Editing,
+publishing, republishing, deleting, or later logging either the source or duplicate does not create
+cross-Recipe mutation coupling.
+
+GH-149 is the bounded delivery evidence for first-class lifecycle/reuse/discovery presentation and
+Recipe-oriented logging language. GH-150 is the bounded delivery evidence for independent Recipe
+duplication. The deeper projection and immutable-revision sections below remain maintainer
+architecture; they are not concepts a user must understand to reuse, log, or duplicate a Recipe.
+
 ## Authored Recipes
 
 A Recipe is a mutable user-owned definition containing:
