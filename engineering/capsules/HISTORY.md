@@ -2740,3 +2740,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed
 - **Full-capsule recovery path:** engineering/capsules/active/GH-161.md
 - **Historical capsule SHA-256:** b4973af6395da8b4cc739f4ad3f023de1624925644e71187982a11daa2d72658
+
+### GH-163 - Continuously run current Recipe duplication and History parity PostgreSQL contracts
+
+- **ID:** GH-163
+- **Title:** Continuously run current Recipe duplication and History parity PostgreSQL contracts
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/163
+- **Issue disposition:** OPEN — exact default-branch integration `87935126fa0a6e605bbf2a5480847600aee2033b` passed the required 7/7 GitHub check set, including Backend PostgreSQL 16 contracts with 85 tests and zero skips; terminal closeout qualification and explicit completion closure remain.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 4afa89a2bddfce4d96f5dd93e89608363f9cb32a
+- **Task branch:** ci/gh-163-postgres-product-contracts
+- **Controller:** ChatGPT GPT-5.6 Sol
+- **Executor:** ChatGPT GPT-5.6 Sol
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** fc59e5b0cdb97d504df242a05930ea224025536a
+- **Verified commit reference(s):** 780431263dd66e13bd52920bad660bddf5a927d2, 0a2dfbbf7cc8afc8e894c39552b4ae1b1d86ad7a
+- **Reviewed source commit:** 0a2dfbbf7cc8afc8e894c39552b4ae1b1d86ad7a
+- **Reviewed task/checkpoint commit(s):** a36a8083d6a4aab0afcaa3ae00daa390a68cf206
+- **Integration/merged commit:** 87935126fa0a6e605bbf2a5480847600aee2033b
+- **Integration-related commit reference(s):** integration 87935126fa0a6e605bbf2a5480847600aee2033b; CI run 32690067090; Backend PostgreSQL 16 job 97322025713; CodeQL default-setup run 32690066830; exact integration check set passed 7/7.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review reconstructed the exact workflow-only implementation, preserved all existing bounded PostgreSQL contracts and enforcement, reran the complete 85-test PostgreSQL 16 selection with zero failures/errors/skips, observed zero residual schemas/databases, and found no blocking or advisory issue.
+- **Verification summary:** PASS — implementation and lifecycle scope were independently reconstructed; 4/4 newly selected focused PostgreSQL tests and the complete 85/85 expanded PostgreSQL selection passed with zero infrastructure skips; cleanup returned zero residual schemas/databases; frozen non-owned authority remained byte-identical; repository qualification passed. Exact integration `87935126fa0a6e605bbf2a5480847600aee2033b` preserved reviewed tree `9677ebd9dc7761de9c50a37ef6ccdc1330f56978` and passed all 7 required GitHub checks.
+- **Specialized qualification:** PASS — PostgreSQL 16 was physically qualified throughout implementation, verification, review, and integration with `REQUIRE_POSTGRES_TESTS=1`. The exact default-branch CI run `32690067090` executed Backend PostgreSQL 16 job `97322025713` successfully with `85 passed`, zero infrastructure skips, and a successful isolated-schema/database cleanup step. CodeQL default setup passed all three required language checks in run `32690066830`.
+- **Known warnings:** Pre-existing `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning for `apps/backend/app/control_migrations/versions/ops_0004_phase5c4_admission.py`; unchanged and outside GH-163 scope. Existing GitHub Dependabot findings remain independent of GH-163.
+- **Deferred work/follow-up IDs:** Explicit issue #163 closure and HISTORY finalization; repository branch/worktree cleanup; audit follow-ups #162 and #164 remain independent tasks.
+- **Retrospective:** no — bounded CI-coverage correction completed without application, schema, migration, dependency, or runtime behavior change. Two generated implementation shell-controller defects and one initial remote-check resolver assumption were recovered without invalid repository mutation; exact Git/repository authority remained intact.
+- **Referenced commits:** base 4afa89a2bddfce4d96f5dd93e89608363f9cb32a; original READY f19f238623e019cc126882a30a3b2aac7dc6020f; DECOMPOSED 2845c6be1e4bb832a98864337e55bc8007916c33; revised READY 1bb5dfff5651b334595098f6fd95df5dcd74d373; IN_PROGRESS 8eb5776028f0fd9d3b106dc7e2dcadb214703afa; implementation fc59e5b0cdb97d504df242a05930ea224025536a; IMPLEMENTED 780431263dd66e13bd52920bad660bddf5a927d2; VERIFIED 0a2dfbbf7cc8afc8e894c39552b4ae1b1d86ad7a; REVIEWED a36a8083d6a4aab0afcaa3ae00daa390a68cf206; integration 87935126fa0a6e605bbf2a5480847600aee2033b.
+- **Full-capsule recovery commit:** 87935126fa0a6e605bbf2a5480847600aee2033b
+- **Full-capsule recovery path:** engineering/capsules/active/GH-163.md
+- **Historical capsule SHA-256:** e73c09f74a55656e8fd9b0d1606694859cdcac41642ff26234917c3239fd90b7
