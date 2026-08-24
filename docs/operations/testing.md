@@ -394,3 +394,58 @@ dumps, or screenshots containing personal data are not included.
 - [Architecture Overview](../architecture/overview.md#testing-architecture) for testing layers
 - [Repository Tour](../project/repository-tour.md) for test locations
 - [Release Candidate QA](../historical/releases/rc1-qa.md) for historical manual device/release evidence
+
+## Trusted task-controller bootstrap
+
+GH-165-P3 introduces a candidate-independent qualification boundary without activating it live.
+
+The trusted controller workflow is `.github/workflows/trusted-qualification.yml`. It is
+`workflow_dispatch`-only and is intended to be dispatched explicitly at `main` after the bootstrap
+has itself been reviewed and integrated. The workflow treats the candidate SHA as data: trusted
+planning and finalization use controller code checked out from `main`, while isolated candidate jobs
+check out the exact candidate SHA and receive only read-only repository access.
+
+The `trusted-qualification` GitHub environment is reserved for the privileged finalizer. The
+dedicated qualification App private key must be stored only as the environment secret
+`NUTRITION_QUALIFICATION_APP_PRIVATE_KEY`. The environment variable
+`NUTRITION_QUALIFICATION_APP_CLIENT_ID` identifies the App client, and
+`NUTRITION_QUALIFICATION_APP_INTEGRATION_ID` records the reviewed App integration ID. Candidate
+jobs must not reference this environment or any of those credentials.
+
+The finalizer re-fetches the exact authorization comment, rebuilds the qualification plan using
+trusted default-branch code, requires the same plan digest observed by the initial trusted planner,
+binds selected GitHub job results, and only then mints an installation token. The token is requested
+with Checks write permission and is used only to create the exact-SHA `Main qualification` check.
+
+P3 tests this contract deterministically. No private key, environment, live workflow dispatch,
+ruleset, or protected-main mutation is required during bootstrap. GH-165-P4 performs the live
+provisioning and pilot after this workflow exists on `main`.
+
+### GH-165-P4 live pilot handoff
+
+GH-165-P4 is the first task intended to use the trusted controller rather than a Task Capsule.
+Authority-sensitive controller commands run from a clean synchronized main checkout. The candidate
+worktree is supplied as data with --candidate-root.
+
+Expected operator sequence after the dedicated App/environment is provisioned:
+
+1. Run ./scripts/task prepare ISSUE with the bounded path/profile authorization.
+2. Run ./scripts/task authorize ISSUE.
+3. Perform bounded implementation in the task worktree.
+4. From main, run ./scripts/task qualify ISSUE --candidate-root PATH.
+5. Record the explicit independent verification decision with ./scripts/task verify.
+6. Record the explicit independent review decision with ./scripts/task review.
+7. After explicit human-owner approval, run ./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized.
+
+The qualify command publishes only the exact candidate SHA to a temporary task-candidate ref,
+dispatches trusted-qualification.yml explicitly at main, correlates the exact trusted workflow run,
+requires the dedicated-App Main qualification check for the same SHA and authorization identity,
+and removes the temporary ref before returning.
+
+The integrate command does not infer approval. It re-fetches the external authorization, requires
+the exact qualified SHA, explicit successful verification, explicit Approved review, explicit
+human-owner authorization, and a current successful Main qualification from the configured
+dedicated App before attempting the exact fast-forward main update.
+
+NUTRITION_QUALIFICATION_APP_INTEGRATION_ID must identify the dedicated qualification App. The
+generic GitHub Actions integration ID 15368 is rejected by the local controller.
