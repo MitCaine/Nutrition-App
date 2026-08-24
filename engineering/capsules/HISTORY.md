@@ -2884,3 +2884,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `9fc322e38e94a3165d36d3b4dd2ca241cc9f5fc6`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-165-P1.md`
 - **Historical capsule SHA-256:** `f7da4ff51a99d218bed46c648f01af044dde51778d3867a8557eb31bc7de0bcb`
+
+### GH-168 - Restore Expo 57 patch compatibility baseline
+
+- **ID:** `GH-168`
+- **Title:** Restore Expo 57 patch compatibility baseline
+- **Final state:** `MERGED`
+- **Capsule revision:** 1
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/168
+- **Issue disposition:** CLOSED / COMPLETED — terminal closeout completes issue #168 after the validated history commit reaches `main`.
+- **Created:** 2026-08-24
+- **Completed/updated:** 2026-08-24
+- **Base commit:** 302e029e0ca0cfb9ef39c7b57599517e47103ed9
+- **Task branch:** maintenance/gh-168-expo-57-patch-compatibility
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** ChatGPT GPT-5.6 Sol independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** `c78466e3e2dbcc73662cc2132fb269698b4b04ce`
+- **Verified commit reference(s):** `6a6640658e3cd3f46ca2f8b0518ca6b33523712d`, `c562f1fe00b4e7e4ed7768e4bc37d7fed4536052`
+- **Reviewed source commit:** c78466e3e2dbcc73662cc2132fb269698b4b04ce
+- **Reviewed task/checkpoint commit(s):** `c562f1fe00b4e7e4ed7768e4bc37d7fed4536052`, `1487c7e58c24e4fbc8700a11a3a544bc6ef418d4`
+- **Integration/merged commit:** `44185f2f02b2d333dd401f2c0590ad4ab0e5cdd7` on `main`.
+- **Integration-related commit reference(s):** `44185f2f02b2d333dd401f2c0590ad4ab0e5cdd7`, `1487c7e58c24e4fbc8700a11a3a544bc6ef418d4`, `c562f1fe00b4e7e4ed7768e4bc37d7fed4536052`, `6a6640658e3cd3f46ca2f8b0518ca6b33523712d`, `c78466e3e2dbcc73662cc2132fb269698b4b04ce`
+- **Acceptance result:** 11/11 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS; independent review confirmed exactly the four authorized Expo 57 patch alignments, zero unexplained lockfile records, and no product behavior, CI-policy, SDK-migration, React Native, unrelated dependency-cleanup, or security-sweep change.
+- **Verification summary:** Exact IMPLEMENTED checkpoint `6a6640658e3cd3f46ca2f8b0518ca6b33523712d` passed fresh repository/mobile Main qualification and a fresh baseline Nutrition Review with 13/13 checks, zero critical/advisory failures, and stable repository fingerprint `024f044256f0e0da54f199c3078bfc53bd577c5aaf99fb519c5ba589d245566c`; backend baseline passed 1826 selected tests with 470 deselected and two existing warnings; mobile baseline passed 164 suites with one skipped and 1827 tests with two skipped. After integration, exact `main` commit `44185f2f02b2d333dd401f2c0590ad4ab0e5cdd7` passed push CI run `32782650586`: Backend baseline, Backend PostgreSQL 16 contracts, Mobile baseline, and Repository validation all completed successfully.
+- **Specialized qualification:** PASS — exact checkpoint `6a6640658e3cd3f46ca2f8b0518ca6b33523712d` received repository/mobile Main qualification PASS in workflow run `32781399687`, check `97604047887`, artifact `9539904865` digest `sha256:5c675e04b4c33466f852513140bfaeca7fbe4850206645e5b85ef721d3f65d76`, manifest SHA-256 `5744f9441bf83d29eee352147ea13fbc68bf554b9ecfe91c39a3f9b655fee979`; the temporary qualification ref was removed.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning and existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` phase-boundary warning remain unchanged. GitHub reported existing dependency-security findings on the default branch during integration push; security remediation remains owned by #166 and was intentionally outside GH-168 scope.
+- **Deferred work/follow-up IDs:** GH-165-P3 must revise its base to the new terminal `main` authority and freshly qualify; #166 owns dependency-security remediation; #167 owns continuous ios-native qualification.
+- **Retrospective:** no — narrow Expo 57 patch-maintenance blocker completed without broader product, SDK, React Native, or CI-policy change.
+- **Referenced commits:** `302e029e0ca0cfb9ef39c7b57599517e47103ed9`, `568ad5a0f5ac36e4a9bfe870b6c22392a944b6a2`, `9a904b1709ef34d8138afef4a4e44a22f263ce9f`, `8431322cca9695e0e74bc8cf1e80e10ebcf8041f`, `c8fa9f0b3e145733ae7b8488de4b7ee697e5a253`, `b66597366466f3b3a0d47e0e9f753281afeba14f`, `2b5db4af446bbe42360592c28d8a9c8c13b66145`, `c78466e3e2dbcc73662cc2132fb269698b4b04ce`, `d0ec4b6839750395168c3a54f9a45a19122fb9b9`, `6a6640658e3cd3f46ca2f8b0518ca6b33523712d`, `c562f1fe00b4e7e4ed7768e4bc37d7fed4536052`, `1487c7e58c24e4fbc8700a11a3a544bc6ef418d4`, `44185f2f02b2d333dd401f2c0590ad4ab0e5cdd7`
+- **Full-capsule recovery commit:** `1487c7e58c24e4fbc8700a11a3a544bc6ef418d4`
+- **Full-capsule recovery path:** `engineering/capsules/active/GH-168.md`
+- **Historical capsule SHA-256:** `4b7c9a99ff7cf82ab8d8fa5945413c9f22d24ddeae7f14a3fbb2f037b28c564a`
