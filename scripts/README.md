@@ -17,6 +17,9 @@ and does not depend on the caller's shell configuration.
 | `python3 scripts/validate-docs.py` | Validates repository Markdown links, anchors, navigation reachability, executable references, and required current-state contracts. |
 | `python3 scripts/validate-task-capsules.py --all` | Validates task-capsule schema, authority paths, state transitions, scope metadata, completion records, and execution prerequisites. |
 | `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Runs strict READY preflight and writes a deterministic executor handoff bundle outside the repository. |
+| `./scripts/capsule status TASK-ID` | Reports exact active-capsule, branch, HEAD, base, cleanliness, and selected qualification-profile identity using the repository Python 3.12 authority even from linked worktrees. |
+| `./scripts/capsule transition TASK-ID STATE --actor ... --reason ...` | Performs one legal non-terminal Task Capsule state transition, appends State History, revalidates, and commits only the capsule transition. Semantic aliases include `start`, `implemented`, `verify`, and `review`. |
+| `./scripts/capsule qualify TASK-ID --evidence-dir PATH` | Publishes the exact clean task HEAD to a temporary `qualification/TASK-ID/SHA` ref, waits for the repository-owned `Main qualification` check, retains its artifact/evidence, and removes the temporary ref after PASS. |
 
 The [Repository Session Contract](../docs/operations/session-contract.md) defines the meaning and
 required use of these commands. Use the higher-level session scripts unless a guide explicitly

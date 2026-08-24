@@ -64,6 +64,41 @@ that mocks cannot establish. Native Apple Vision geometry/recognition/image-qual
 `modules/nutrition-ocr/ios-tests` and must run through the native iOS test target before a release
 claim that depends on those native behaviors.
 
+
+## Main qualification profiles
+
+Task Capsules may select machine-executable qualification profiles through
+`specialized_qualification` entries using `profile:lowercase-name`. The initial
+repository registry owns four profiles:
+
+| Profile | Required GitHub check |
+| --- | --- |
+| `repository` | `Repository validation` |
+| `backend` | `Backend baseline` |
+| `mobile` | `Mobile baseline` |
+| `postgresql` | `Backend PostgreSQL 16 contracts` |
+
+The existing CI jobs remain the qualification authorities; `Main qualification`
+aggregates their exact-SHA results rather than duplicating their test commands.
+Pushing an exact commit to a temporary `qualification/TASK-ID/SHA-PREFIX` ref
+causes the normal CI workflow and the aggregator to run against that unchanged
+commit. Unknown or unavailable profiles fail closed.
+
+`./scripts/capsule qualify TASK-ID --evidence-dir PATH` is the normal
+repository entry point for this remote qualification. It requires a clean task
+worktree, exact branch/base authority, scope conformity, and a GitHub-visible
+unchanged SHA. After PASS it downloads the retained qualification artifact,
+records the workflow/check identity, GitHub artifact ID/digest, and local
+manifest SHA-256, then removes the temporary ref. A failed qualification
+retains the ref for explicit inspection rather than silently waiving the
+failure.
+
+The `Main qualification` profile is commit qualification, not acceptance or
+review judgment. Task Capsule acceptance criteria, reviewer disposition, scope
+exceptions, architecture stops, and human-owner `MERGED` authority remain
+separate explicit decisions.
+
+
 ## High-value current feature suites
 
 | Area | Representative proof |

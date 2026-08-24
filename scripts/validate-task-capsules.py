@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,21 +14,58 @@ def _reexec_with_supported_python() -> None:
         return
 
     repository_root = Path(__file__).resolve().parents[1]
-    backend_python = repository_root / "apps/backend/.venv/bin/python"
+    candidates: list[Path] = [
+        repository_root / "apps/backend/.venv/bin/python",
+    ]
 
-    if backend_python.is_file():
-        current = Path(sys.executable).resolve()
-        target = backend_python.resolve()
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "worktree",
+            "list",
+            "--porcelain",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
-        if current != target:
-            os.execv(
-                str(target),
-                [str(target), str(Path(__file__).resolve()), *sys.argv[1:]],
+    if completed.returncode == 0:
+        for line in completed.stdout.splitlines():
+            if not line.startswith("worktree "):
+                continue
+
+            worktree = Path(line.removeprefix("worktree "))
+            candidates.append(
+                worktree / "apps/backend/.venv/bin/python"
             )
+
+    current = Path(sys.executable).resolve()
+
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+
+        target = candidate.resolve()
+
+        if current == target:
+            continue
+
+        os.execv(
+            str(target),
+            [
+                str(target),
+                str(Path(__file__).resolve()),
+                *sys.argv[1:],
+            ],
+        )
 
     raise SystemExit(
         "Python 3.11 or newer is required. "
-        "The validator could not locate apps/backend/.venv/bin/python."
+        "The validator could not locate a supported interpreter "
+        "in this or any linked repository worktree."
     )
 
 
@@ -42,6 +80,11 @@ import tomllib
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Iterable
+
+from lib.qualification_profiles import (
+    QualificationProfileError,
+    parse_profile_tokens,
+)
 
 SCHEMA_VERSION = 1
 ACTIVE_STATES = (
@@ -349,6 +392,83 @@ def discover_capsules(repo: Path) -> list[Path]:
         for path in sorted(directory.glob("*.md"))
         if path.name not in {"README.md", "TEMPLATE.md"}
     ]
+
+def historical_capsule_metadata(content: str) -> dict[str, Any] | None:
+    lines = content.splitlines()
+
+    if not lines or lines[0].strip() != "+++":
+        return None
+
+    try:
+        end = next(
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "+++"
+        )
+    except StopIteration:
+        return None
+
+    try:
+        return tomllib.loads("\n".join(lines[1:end]))
+    except tomllib.TOMLDecodeError:
+        return None
+
+
+def latest_ready_metadata(
+    repo: Path,
+    relative: Path,
+    *,
+    base_commit: str,
+    head: str,
+    capsule_revision: int,
+) -> tuple[bool, dict[str, Any] | None]:
+    log = run_git(
+        repo,
+        "log",
+        "--format=%H",
+        f"{base_commit}..{head}",
+        "--",
+        relative.as_posix(),
+    )
+
+    if log.returncode:
+        return False, None
+
+    commits = [
+        line.strip()
+        for line in log.stdout.splitlines()
+        if line.strip()
+    ]
+
+    if not commits:
+        return False, None
+
+    for commit in commits:
+        shown = run_git(
+            repo,
+            "show",
+            f"{commit}:{relative.as_posix()}",
+        )
+
+        if shown.returncode:
+            continue
+
+        metadata = historical_capsule_metadata(
+            shown.stdout
+        )
+
+        if metadata is None:
+            continue
+
+        if (
+            metadata.get("state") == "READY"
+            and metadata.get("capsule_revision")
+            == capsule_revision
+        ):
+            return True, metadata
+
+    return True, None
+
 
 def parse_document(path: Path, result: CapsuleResult) -> tuple[dict[str, Any], str] | None:
     try:
@@ -1602,13 +1722,71 @@ def validate_capsule(
     owned_paths = validate_string_list(metadata, "owned_paths", result)
     allowed_paths = validate_string_list(metadata, "allowed_paths", result)
     forbidden_paths = validate_string_list(metadata, "forbidden_paths", result)
-    validate_string_list(metadata, "specialized_qualification", result)
+    specialized_qualification = validate_string_list(
+        metadata,
+        "specialized_qualification",
+        result,
+    )
+
+    try:
+        parse_profile_tokens(
+            specialized_qualification
+        )
+    except QualificationProfileError as exc:
+        result.error(
+            exc.code,
+            str(exc),
+            "specialized_qualification",
+        )
     del dependencies
     authority_base = (
         metadata.get("base_commit", "")
         if isinstance(metadata.get("base_commit"), str)
         else ""
     )
+
+    if (
+        state in {"IN_PROGRESS", "IMPLEMENTED", "VERIFIED", "REVIEWED"}
+        and isinstance(revision, int)
+        and COMMIT_PATTERN.fullmatch(authority_base)
+    ):
+        history_exists, ready_metadata = latest_ready_metadata(
+            repo,
+            relative,
+            base_commit=authority_base,
+            head=context["head"],
+            capsule_revision=revision,
+        )
+
+        if history_exists and ready_metadata is None:
+            result.error(
+                "READY_QUALIFICATION_AUTHORITY_MISSING",
+                (
+                    "No READY capsule snapshot exists in Git history "
+                    "for the current capsule_revision."
+                ),
+                "specialized_qualification",
+            )
+        elif ready_metadata is not None:
+            ready_qualification = ready_metadata.get(
+                "specialized_qualification"
+            )
+
+            if (
+                isinstance(ready_qualification, list)
+                and ready_qualification
+                != specialized_qualification
+            ):
+                result.error(
+                    "QUALIFICATION_CHANGED_AFTER_READY",
+                    (
+                        "specialized_qualification changed after READY. "
+                        "Return to DECOMPOSED, increment capsule_revision, "
+                        "and requalify instead of changing execution "
+                        "qualification in place."
+                    ),
+                    "specialized_qualification",
+                )
 
     validate_authority_paths(
         repo,

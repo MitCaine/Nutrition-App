@@ -86,7 +86,9 @@ Provide only context a fresh executor needs; link rather than copy authority.
 ### Specialized qualification
 
 - Required PostgreSQL, MinIO, Docker, migration, performance, security, native,
-  accessibility, or manual checks; otherwise `Not applicable — <reason>`.
+  accessibility, or manual checks; otherwise `Not applicable — reason`.
+- Machine-executable repository profiles use concrete tokens such as
+  `profile:repository`; the generic notation is `profile:PROFILE_NAME`.
 
 ## Return evidence
 
