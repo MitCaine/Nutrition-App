@@ -169,6 +169,7 @@ NOT_APPLICABLE_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+TEMPLATE_PATH = Path("engineering/capsules/TEMPLATE.md")
 HISTORY_PATH = Path("engineering/capsules/HISTORY.md")
 HISTORY_FORMAT_MARKER = "History format version: **1**."
 HISTORY_ENTRY_PATTERN = re.compile(
@@ -438,6 +439,105 @@ def split_verification(content: str, result: CapsuleResult) -> dict[str, str]:
         values[match.group(1).strip()] = content[start:end].strip()
     return values
 
+
+def validate_template_structure(
+    repo: Path,
+) -> CapsuleResult | None:
+    path = repo / TEMPLATE_PATH
+
+    if not path.is_file():
+        return None
+
+    result = CapsuleResult(
+        path=TEMPLATE_PATH.as_posix(),
+        state="schema-v1-template",
+    )
+
+    parsed = parse_document(
+        path,
+        result,
+    )
+
+    if parsed is None:
+        return result
+
+    metadata, body = parsed
+    result.metadata = json_safe(
+        metadata
+    )
+
+    for key in REQUIRED_METADATA:
+        if key not in metadata:
+            result.error(
+                "METADATA_MISSING",
+                (
+                    "Canonical template is missing "
+                    f"schema-v1 metadata: {key}"
+                ),
+                key,
+            )
+
+    for key in sorted(
+        set(metadata)
+        - set(REQUIRED_METADATA)
+    ):
+        result.error(
+            "METADATA_UNKNOWN",
+            (
+                "Canonical template contains unknown "
+                f"schema-v1 metadata: {key}"
+            ),
+            key,
+        )
+
+    schema = metadata.get(
+        "schema_version"
+    )
+
+    if (
+        type(schema) is not int
+        or schema != SCHEMA_VERSION
+    ):
+        result.error(
+            "SCHEMA_UNSUPPORTED",
+            (
+                "Canonical template schema_version "
+                f"must be {SCHEMA_VERSION}."
+            ),
+            "schema_version",
+        )
+
+    revision = metadata.get(
+        "capsule_revision"
+    )
+
+    if (
+        type(revision) is not int
+        or revision < 1
+    ):
+        result.error(
+            "CAPSULE_REVISION_INVALID",
+            (
+                "Canonical template capsule_revision "
+                "must be a positive integer."
+            ),
+            "capsule_revision",
+        )
+
+    sections = split_sections(
+        body,
+        result,
+    )
+
+    if "Required verification" in sections:
+        split_verification(
+            sections[
+                "Required verification"
+            ],
+            result,
+        )
+
+    return result
 
 def parse_iso_date(value: Any, field_name: str, result: CapsuleResult) -> date | None:
     if not isinstance(value, str):
@@ -1672,11 +1772,13 @@ def validate_capsule(
 
 
 
+
 def result_document(
     context: dict[str, Any],
     results: list[CapsuleResult],
     mode: str,
     history: HistoryResult | None = None,
+    template: CapsuleResult | None = None,
 ) -> dict[str, Any]:
     capsule_failures = sum(
         not result.valid
@@ -1688,9 +1790,15 @@ def result_document(
         and not history.valid
     )
 
+    template_failures = int(
+        template is not None
+        and not template.valid
+    )
+
     failed = (
         capsule_failures
         + history_failures
+        + template_failures
     )
 
     warning_count = sum(
@@ -1703,9 +1811,15 @@ def result_document(
             history.warnings
         )
 
+    if template is not None:
+        warning_count += len(
+            template.warnings
+        )
+
     total = (
         len(results)
         + (1 if history is not None else 0)
+        + (1 if template is not None else 0)
     )
 
     history_document = None
@@ -1720,6 +1834,21 @@ def result_document(
             "warnings": [
                 asdict(item)
                 for item in history.warnings
+            ],
+        }
+
+    template_document = None
+
+    if template is not None:
+        template_document = {
+            **asdict(template),
+            "errors": [
+                asdict(item)
+                for item in template.errors
+            ],
+            "warnings": [
+                asdict(item)
+                for item in template.warnings
             ],
         }
 
@@ -1761,6 +1890,7 @@ def result_document(
             }
             for result in results
         ],
+        "template": template_document,
         "history": history_document,
     }
 
@@ -1769,16 +1899,56 @@ def print_human(
     document: dict[str, Any]
 ) -> None:
     capsules = document["capsules"]
+    template = document.get("template")
     history = document.get("history")
 
-    if not capsules and history is None:
+    if (
+        not capsules
+        and template is None
+        and history is None
+    ):
         print(
             "PASS: no active task capsules "
             "or terminal history found."
         )
 
+    if template is not None:
+        label = template["path"]
+
+        print(
+            f"{'PASS' if template['valid'] else 'FAIL'} "
+            f"{label} [schema-v1 template]"
+        )
+
+        for finding in template["errors"]:
+            field_name = (
+                f" ({finding['field']})"
+                if finding.get("field")
+                else ""
+            )
+
+            print(
+                f"  ERROR {finding['code']}"
+                f"{field_name}: "
+                f"{finding['message']}"
+            )
+
+        for finding in template["warnings"]:
+            field_name = (
+                f" ({finding['field']})"
+                if finding.get("field")
+                else ""
+            )
+
+            print(
+                f"  WARN {finding['code']}"
+                f"{field_name}: "
+                f"{finding['message']}"
+            )
+
     for capsule in capsules:
         label = capsule["path"]
+
         state = (
             capsule.get("state")
             or "unknown-state"
@@ -1795,6 +1965,7 @@ def print_human(
                 if finding.get("field")
                 else ""
             )
+
             print(
                 f"  ERROR {finding['code']}"
                 f"{field_name}: "
@@ -1807,6 +1978,7 @@ def print_human(
                 if finding.get("field")
                 else ""
             )
+
             print(
                 f"  WARN {finding['code']}"
                 f"{field_name}: "
@@ -1829,6 +2001,7 @@ def print_human(
                 if finding.get("field")
                 else ""
             )
+
             print(
                 f"  ERROR {finding['code']}"
                 f"{field_name}: "
@@ -1841,6 +2014,7 @@ def print_human(
                 if finding.get("field")
                 else ""
             )
+
             print(
                 f"  WARN {finding['code']}"
                 f"{field_name}: "
@@ -1855,7 +2029,6 @@ def print_human(
         f"{summary['failed']} failed, "
         f"{summary['warnings']} warning(s)."
     )
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -1960,9 +2133,16 @@ def main() -> int:
             for path in paths
         ]
 
+        template_result = None
         history_result = None
 
         if not args.paths:
+            template_result = (
+                validate_template_structure(
+                    repo
+                )
+            )
+
             history_result = validate_history(
                 repo,
                 [
@@ -1981,6 +2161,7 @@ def main() -> int:
                 else "validation"
             ),
             history_result,
+            template_result,
         )
 
     except InvocationError as exc:
