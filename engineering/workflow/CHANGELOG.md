@@ -76,3 +76,32 @@ Separated documentation executable-reference validation from task-capsule scope 
 `planning_artifacts`, scope syntax, and capsule structure remain fail-closed under `scripts/validate-task-capsules.py`. Focused regression tests preserve both sides of the boundary: capsule front matter is excluded, while ordinary Markdown remains fully scanned.
 
 **Required for `TRIAL`:** pass repository documentation validation and CI with a real READY capsule that owns a not-yet-created executable, then execute and review that capsule.
+
+## 2026-08-23 — Terminal capsule history model reconciliation
+
+**Workflow status:** unchanged; no formal promotion is recorded by this entry.
+
+GH-158-R1 replaced the current-tree per-task completed-capsule archive with
+the active-plus-history terminal model. Full capsules remain under
+`engineering/capsules/active/` through `REVIEWED` or the last non-terminal
+state. `MERGED`, `CANCELLED`, and `RETROSPECTED` outcomes are represented by
+one unique record in `engineering/capsules/HISTORY.md`, with an exact Git
+recovery commit/path and SHA-256 for the historical full capsule. Terminal
+closeout removes the active capsule, and the validator rejects new terminal
+capsules retained under `engineering/capsules/completed/`.
+
+The earlier 2026-08-04 entries remain unchanged as point-in-time workflow
+provenance. Their references to the former storage model describe the model
+that existed when those entries were written; they are not the current
+storage contract.
+
+This reconciliation does not authorize repository-wide mandatory capsule use
+and does not promote Workflow v3 to `TRIAL`, `QUALIFIED`, or `DEFAULT`.
+Promotion remains a separate policy decision requiring evidence, known limits,
+and accountable human approval.
+
+**Evidence:** GH-158-R1 reached `MERGED` with the history-plus-active-removal
+model mechanically validated, including unique terminal IDs, resolvable
+full-capsule recovery locators, matching SHA-256 bindings, zero retained
+current-tree terminal capsules, and explicit rejection of the legacy
+`completed/` storage model.

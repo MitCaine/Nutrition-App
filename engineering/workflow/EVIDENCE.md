@@ -50,16 +50,29 @@ identities, delegation, and checksums when available.
 
 ## Verification and disposition
 
-Map each material acceptance criterion to inspection, focused tests, contract/integration tests,
-PostgreSQL/MinIO/Docker/native/performance/manual qualification, or independent review. Unsupported
-claims remain unverified.
+Map each material acceptance criterion to inspection, focused tests,
+contract/integration tests, PostgreSQL/MinIO/Docker/native/performance/manual
+qualification, or independent review. Unsupported claims remain unverified.
 
 Review disposition is exactly one of:
 
 - **Approved** — acceptance and repository integrity are sufficiently evidenced.
-- **Bounded correction** — narrow correction without changing authority, acceptance, risk, surface,
-  or qualification.
-- **Stop and replan** — scope, authority, architecture, risk, or evidence is materially invalid.
+- **Bounded correction** — narrow correction without changing authority,
+  acceptance, risk, surface, or qualification.
+- **Stop and replan** — scope, authority, architecture, risk, or evidence is
+  materially invalid.
 
-Before completion, record reviewed commit, disposition, verification, specialized qualification,
-known warnings, deferred work, and follow-up IDs in the capsule.
+Before leaving the non-terminal lifecycle, record reviewed commit,
+disposition, verification, specialized qualification, known warnings,
+deferred work, and follow-up IDs in the active capsule.
+
+After successful integration, terminal closeout writes the task's unique
+`MERGED` record to `engineering/capsules/HISTORY.md`. The terminal record
+preserves final verification, review, and integration evidence plus the exact
+Git recovery commit/path and SHA-256 for the historical full capsule. The
+active capsule is removed in the same closeout change.
+
+Cancellation uses the same evidence boundary with a `CANCELLED` history
+record. A later retrospective updates the existing unique record to
+`RETROSPECTED`; it does not recreate a full terminal capsule in the current
+tree.

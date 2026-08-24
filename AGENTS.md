@@ -61,7 +61,7 @@ Preserve these unless the task explicitly changes the product contract and the r
 - Generated Recipe `FoodItem` rows are compatibility projections, not the historical authority.
 - Historical nutrition must not change when mutable Foods, servings, Recipes, or projections change.
 - OCR corrections retain immutable provenance.
-- Ownership is enforced server-side.
+- Ownership is enforced at the selected authority boundary; the remote runtime enforces ownership server-side and the local runtime preserves the repository's owner-scoping contracts in SQLite.
 - Mutation idempotency and replay behavior must be deterministic.
 - Concurrency correctness takes priority over optimistic behavior.
 - Failure paths must preserve atomicity and rollback completeness.
@@ -69,8 +69,8 @@ Preserve these unless the task explicitly changes the product contract and the r
 
 ## Database and concurrency rules
 
-- PostgreSQL 16 is the production concurrency authority.
-- SQLite parity is required where the repository provides SQLite behavior or triggers, but SQLite passing does not substitute for PostgreSQL contract coverage.
+- Concurrency evidence follows the selected runtime authority. Native, file-backed SQLite is authoritative for local-runtime persistence and transaction behavior; PostgreSQL 16 is authoritative for preserved remote SQL locking and multi-session concurrency contracts.
+- SQLite evidence does not substitute for PostgreSQL qualification when a change touches the preserved remote authority, and PostgreSQL evidence does not substitute for native/file-backed SQLite qualification when a change touches the local authority.
 - Respect established lock ordering. Inspect existing repository and service methods before adding a new `FOR UPDATE`, shared lock, advisory lock, or retry loop.
 - Keep lock scope as narrow as correctness permits.
 - Different logical records should not block each other merely because they share immutable read authority.
@@ -101,7 +101,7 @@ Use the repository's locked dependency process. Do not convert lower-bound decla
 
 The mobile app is React Native, Expo, and TypeScript.
 
-- Preserve server authority. Do not move ownership, historical-integrity, or concurrency guarantees into client-only logic.
+- Preserve the selected runtime authority. Do not move ownership, historical-integrity, or concurrency guarantees into UI-only logic or create synchronization, dual-write, or hidden fallback between local and remote authorities.
 - Keep platform behavior explicit when iOS and Android differ.
 - Preserve accessibility contracts for VoiceOver and TalkBack.
 - Treat Expo, React Native, TypeScript, Jest, Zod, storage, and native-module major upgrades as coordinated migration work, not routine grouped dependency bumps.
@@ -149,14 +149,23 @@ For dependency-only pull requests:
 
 ## Task capsules and workflow
 
-Active implementation work must follow the repository's task-capsule process.
+A task that already has an active capsule must follow the repository's
+task-capsule process.
 
 - Read the active capsule before implementation.
 - Preserve its state, boundaries, acceptance criteria, and artifact requirements.
 - Do not invent missing implementation-result artifacts or scripts.
-- When a capsule is frozen or decomposed, do not silently resume or broaden it.
+- When a capsule is blocked, revised, or returned to an earlier state, do not
+  silently resume or broaden it.
 - Update capsule state only through the repository's documented workflow.
-
+- Keep the full capsule under `engineering/capsules/active/` through
+  `REVIEWED` or the last non-terminal state.
+- Record `MERGED`, `CANCELLED`, and `RETROSPECTED` outcomes in
+  `engineering/capsules/HISTORY.md`; terminal closeout removes the active
+  capsule rather than retaining a per-task completed copy.
+- Do not infer that every repository change must create a capsule while
+  Workflow v3 remains experimental; capsule adoption follows the current
+  workflow policy and explicit task setup.
 ## Documentation
 
 - Update documentation when behavior, authority, commands, migration heads, or operational procedures change.
@@ -175,7 +184,7 @@ Active implementation work must follow the repository's task-capsule process.
 
 ## Completion report
 
-When finishing a task, report:
+When finishing implementation or review, report:
 
 1. What changed
 2. Why it was necessary
@@ -183,6 +192,10 @@ When finishing a task, report:
 4. Tests and validation actually run, with results
 5. Opt-in suites not run
 6. Remaining warnings or risks
-7. Whether the work is ready to commit, needs bounded correction, or should stop
+7. Whether the work is ready for the next lifecycle gate, needs bounded
+   correction, or should stop
 
-Do not describe work as complete when the working tree contains unexplained changes or repository closeout fails.
+Do not describe work as terminally complete while an active capsule still
+requires verification, review, integration, or history closeout. Do not claim
+completion when the working tree contains unexplained changes or repository
+closeout fails.
