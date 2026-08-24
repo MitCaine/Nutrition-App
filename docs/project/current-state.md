@@ -4,26 +4,23 @@
 
 ## Release and product status
 
-Version 2.0 is the current product line. Root `VERSION` is the canonical repository release authority with exact value `2.0.0`; current mobile, Expo, backend, and documentation metadata mirror it. Version 2.0 qualification uses Node 24 and Python 3.12.
+Version 2.0 is the current product line. Root `VERSION` is the canonical
+repository release authority with exact value `2.0.0`; current mobile, Expo,
+backend, and documentation metadata mirror it. Version 2.0 qualification uses
+Node 24 and Python 3.12.
 
-Version 1.0 established the maintained production baseline. The Version 1.1 planning and implementation program is complete, including the Daily Logging Flow work, the complete Epic 2 local-first SQLite program, transfer tooling, accessibility qualification, remote/PostgreSQL isolation qualification, and Epic 2 release closure. Subsequent work on `main` added substantial nutrition-model, OCR, backup/restore, serving, target, and mobile UX refinements.
+The finalized [Version 2.0 release record](../historical/releases/version-2.0-release.md)
+preserves the qualified integration commit, annotated tag, and GitHub Release
+publication evidence.
 
-Epic 4 — Nutrition History and Trends is implemented and qualified. E4-01 through E4-15 delivered date-owned Complete state, bounded History evidence and shared projections, logging-first Daily Log and Daily Nutrition presentation, 7/30-day History surfaces, focused nutrient inspection, manual Food authoring refinements, and Complete durability. E4-16 then passed the consolidated local SQLite, physical PostgreSQL 16, shared-projection, and target-iPhone qualification matrix. The frozen Version 1.2 package remains retained planning, architecture, delivery, and closure provenance; current guides now own implemented behavior. Epic 5 remains planned and requires re-scope. The remaining known maintenance constraint is dependency-security cleanup that cannot be completed safely until compatible Expo/upstream dependency fixes are available. Dependency automation is intentionally constrained to Expo-compatible updates rather than forcing incompatible major versions.
+Epic 4 — Nutrition History and Trends is implemented and qualified.
+Epic 5 remains planned and requires re-scope. The
+[Current Product Roadmap](product-roadmap.md) owns canonical Epic numbering and
+the complete current planning-status table.
 
-The [Current Product Roadmap](product-roadmap.md) owns the canonical Epic numbering used going forward:
-
-| Epic | Product area | Status |
-| --- | --- | --- |
-| Epic 1 | Daily Logging Flow | Complete |
-| Epic 2 | Local-First SQLite Runtime | Complete |
-| Epic 3 | Nutrition Label Capture Confidence | Complete; absorbed by Epic 2 OCR and subsequent OCR/camera work |
-| Epic 4 | Nutrition History and Trends | Complete; implemented through E4-01–E4-15 and qualified by E4-16 |
-| Epic 5 | Recipe Reuse and Discovery | Planned; requires re-scope because substantial adjacent Recipe work already landed |
-
-The historical Version 1.1 product roadmap predates this canonical numbering. In that record, Nutrition History and Trends was product Epic 2, Recipe Reuse and Discovery was product Epic 3, and Nutrition Label Capture Confidence was product Epic 4. Current planning maps those product areas to Epics 4, 5, and 3 respectively. Historical documents retain their point-in-time numbering rather than being rewritten as if the current sequence had existed when they were authored.
-
-The Version 1.1 roadmap, PRDs, architecture reviews, implementation backlogs, and closure records are retained as historical implementation evidence. They are not the current planning state. The Version 1.2 Epic 4 package is likewise retained as the point-in-time planning, architecture, backlog, and closure provenance for the now-completed Epic; current feature and architecture guides own the implemented behavior.
-
+Completed Version 1.1 and Version 1.2 planning, implementation, qualification,
+and closure packages are historical provenance. They do not define current
+feature state.
 ## Current application architecture
 
 The primary application runtime is the iOS-first local authority selected through `NutritionRuntime`. In normal use, on-device SQLite is authoritative for Foods, Recipes, Daily Logs, Targets, OCR confirmation/provenance, USDA imports, favorites/recents, idempotency state, and related local application data.
@@ -52,15 +49,17 @@ The [Architecture Overview](../architecture/overview.md) owns the full current s
 - Daily target comparison with per-nutrient tracking preferences, manual overrides, DRI recommendations where supported, FDA Daily Value fallback/reference data, neutral amount-only tracking when no goal is established, and explicit unavailable states.
 - Personalized DRI recommendations for supported adult reference profiles, including supported pregnancy/lactation life stages; calorie estimation remains a separate general-adult Mifflin–St Jeor calculation.
 - Accessibility-focused navigation, shared fixed/sticky route headers, focus restoration, mutation/recovery semantics, unsaved-draft protection, and light/dark presentation.
-- One-time PostgreSQL-to-SQLite transfer tooling for installations migrating from the preserved remote authority.
+- One-time [PostgreSQL-to-SQLite personal transfer](../operations/postgresql-to-sqlite-transfer.md) tooling for installations migrating from the preserved remote authority.
 
-History derives from immutable Daily Log snapshots rather than current Foods or Recipes. No-Log dates remain gaps, explicit zero remains a usable zero, and unknown-only nutrient evidence remains unavailable. Current Targets are a presentation lens only; the app does not reconstruct historical target configuration. See [Recipes and Nutrition History](../features/recipes-and-logging.md) for the feature contract and the retained [Version 1.2 Epic 4 package](version-1.2/epic-4/README.md) for planning and closure provenance.
+History derives from immutable Daily Log snapshots rather than current Foods or Recipes. No-Log dates remain gaps, explicit zero remains a usable zero, and unknown-only nutrient evidence remains unavailable. Current Targets are a presentation lens only; the app does not reconstruct historical target configuration. See [Recipes and Nutrition History](../features/recipes-and-logging.md) for the feature contract and the retained [Version 1.2 Epic 4 package](../historical/programs/version-1.2/epic-4/README.md) for planning and closure provenance.
 
 ## Remote/reference migration heads
 
 These heads describe the preserved PostgreSQL/control-plane streams. They do not govern the local SQLite schema-version migration engine.
 
-The current preserved remote application runtime requires PostgreSQL already provisioned and qualified at `0033_complete_runtime_authority`. Schema `0020_immutable_provenance_enforcement` is retained only as the `LIMITED_PREACTIVATION_OPERATIONS_SANDBOX`; it is not current feature-parity remote startup. `0021_target_activation_execution` remains an operations-only activation boundary, and ordinary development must not use an unqualified `alembic upgrade head` to cross it.
+The current preserved remote application runtime requires PostgreSQL already provisioned and qualified at `0033_complete_runtime_authority`.
+
+Schema `0020_immutable_provenance_enforcement` is retained only as the `LIMITED_PREACTIVATION_OPERATIONS_SANDBOX`; it is not current feature-parity remote startup. The target-activation procedure remains pinned to `0021_target_activation_execution`, an operations-only boundary. Ordinary development must not use an unqualified `alembic upgrade head` to cross that procedure boundary.
 
 | Authority | Current head |
 | --- | --- |
@@ -77,23 +76,8 @@ Historical Version 1.0 and Version 1.1 release/closure evidence remains availabl
 
 ## Current documentation entry points
 
-| Need | Canonical document |
-| --- | --- |
-| Current product line and supported boundaries | This document |
-| Current product Epic numbering and planning status | [Current Product Roadmap](product-roadmap.md) |
-| Version 1.2 Epic 4 retained planning/delivery/closure package | [Epic 4 Planning and Delivery Index](version-1.2/epic-4/README.md) |
-| Enduring purpose, scope, and priorities | [Project Constitution](constitution.md) |
-| Technical truths that changes must preserve | [Project Invariants](invariants.md) |
-| Minimum implementation or review context | [Project Onboarding](onboarding.md) |
-| Current system boundaries | [Architecture Overview](../architecture/overview.md) |
-| Accepted structural choices | [Architecture Decision Index](../architecture/decisions.md) |
-| Code ownership and change checklist | [Development Guide](development-guide.md) |
-| Testing, qualification, transfer, release, and recovery | [Operations Index](../operations/README.md) |
-| Completed Version 1.1 planning/implementation records | [Version 1.1 Product Roadmap](version-1.1/version-1.1-roadmap.md) |
-| Historical provenance and learning | [Historical Knowledge Index](../historical/README.md) |
-
-The [Documentation Index](../README.md) remains the authoritative navigation map for the full knowledge system.
-
+The [Documentation Index](../README.md) owns current-document navigation.
+Use that index rather than maintaining a second routing table here.
 ## Known limitations and boundaries
 
 - Public multi-user production deployment is intentionally unsupported. There is no production identity provider or multi-tenant trust model; private single-user authentication in the remote path is not a scalable account system.
@@ -105,7 +89,7 @@ The [Documentation Index](../README.md) remains the authoritative navigation map
 - Some nutrients intentionally have no established DRI/FDA goal and therefore default to amount-only presentation instead of inventing a target. Per-nutrient preferences can also explicitly select amount-only or ignored tracking.
 - The independent control gate is not consumed by ordinary local application requests. Remote provider routing, infrastructure backup/restore, and readback remain bounded operator/provider responsibilities distinct from the local user backup feature.
 - Local infrastructure qualification proves only its documented disposable topology/provider stand-ins; it is not production-vendor certification.
-- Version 2.0 currently carries three accepted Dependabot warnings in the Expo/toolchain dependency graph: two high-severity `image-size` alerts and one moderate `uuid` alert. Compatible upstream remediation remains deferred; incompatible forced upgrades are not treated as valid remediation.
+- The repository currently has three open Dependabot alerts in the Expo/toolchain dependency graph: two high-severity `image-size` alerts and one medium-severity `uuid` alert. Compatible upstream remediation remains deferred; incompatible forced upgrades are not treated as valid remediation.
 - Version 2.0 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
 
 ## Authority and maintenance

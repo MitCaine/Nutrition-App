@@ -302,8 +302,6 @@ mixing between the two runtimes.
 
 Contributors should start with [Contributing](CONTRIBUTING.md) and the [Engineering Workflow](engineering/README.md). Feature delivery uses approved planning artifacts and GitHub Epics/issues for implementation sequencing. Epics and issues are engineering-planning units; product release versions describe complete application states and are not derived from Epic or issue numbers.
 
-The completed Version 1.1 planning and local-first implementation material under `docs/project/version-1.1/` is retained as implementation history and qualification evidence. It should not be read as the current release state.
-
 ## Documentation
 
 Start at the [Documentation Index](docs/README.md). The most useful current documents are:
@@ -321,8 +319,6 @@ Start at the [Documentation Index](docs/README.md). The most useful current docu
 | Review canonical invariants | [Project Invariants](docs/project/invariants.md) |
 | Find the right code and tests for a change | [Development Guide](docs/project/development-guide.md) |
 | Run qualification | [Testing Guide](docs/operations/testing.md) |
-| Review completed local-first implementation history | [Version 1.1 / Epic 2 backlog](docs/project/version-1.1/epic-2/implementation-backlog.md) |
-| Review historical PostgreSQL/control-plane qualification | [Version 1.0 PostgreSQL Release Qualification](docs/operations/version-1.0-release-qualification.md) |
 
 ## Core invariants
 
@@ -351,6 +347,8 @@ Additional PostgreSQL concurrency, control-database, native SQLite, transfer, pe
 
 ## Release status
 
-Version 2.0 is the current product line, with root `VERSION` as the canonical repository release authority. Historical Version 1.0, Version 1.1, and Version 1.2 planning/qualification material remains in the repository as provenance rather than current release guidance.
-
-The primary application today is the local-first iOS runtime backed by SQLite. FastAPI/PostgreSQL remains intentionally preserved for alternate/reference operation and historical compatibility, not as a prerequisite for normal use.
+For the current release identity, supported runtime boundaries, migration
+heads, and known limitations, use
+[Current State](docs/project/current-state.md). Finalized release publication
+evidence and older qualification records are indexed by the
+[Historical Knowledge Index](docs/historical/README.md).

@@ -26,18 +26,28 @@
 
 ## Repository-owned task workflow
 
-The experimental [Workflow Foundation](workflow/README.md) defines repository-owned
-[task states](workflow/STATES.md), the versioned
+The experimental [Workflow Foundation](workflow/README.md) defines
+repository-owned [task states](workflow/STATES.md), the versioned
 [capsule contract](workflow/TASK_CAPSULE.md), [routing](workflow/ROUTING.md),
 [evidence](workflow/EVIDENCE.md), and the
-[failure taxonomy](workflow/FAILURE_TAXONOMY.md). Active and completed execution contracts live
-in the [Task Capsule Index](capsules/README.md).
+[failure taxonomy](workflow/FAILURE_TAXONOMY.md).
 
-Capsules coordinate bounded execution but do not replace Roadmaps, Grills, PRDs, Architecture
-Reviews, Implementation Backlogs, GitHub Issues, current architecture, invariants, or operations
-guidance. Until the workflow advances beyond `EXPERIMENTAL`, use capsules on explicit trials
-and record results in the [Workflow Changelog](workflow/CHANGELOG.md).
+When a task capsule is used, the full non-terminal execution contract remains
+under `engineering/capsules/active/` through `REVIEWED` or the last
+non-terminal state. Successful integration or cancellation writes the task's
+unique terminal record to `engineering/capsules/HISTORY.md`, including the
+historical full-capsule recovery locator and SHA-256, and removes the active
+capsule. Do not retain new per-task terminal copies under a `completed/`
+directory.
 
+Capsules coordinate bounded execution but do not replace Roadmaps, Grills,
+PRDs, Architecture Reviews, Implementation Backlogs, GitHub Issues, current
+architecture, invariants, or operations guidance.
+
+Workflow v3 remains formally `EXPERIMENTAL`. Until an accountable human
+approves promotion under the
+[Workflow Changelog](workflow/CHANGELOG.md), capsule adoption remains explicit
+and evidence-backed rather than the repository-wide default.
 ## Git conventions
 
 Use short-lived, kebab-case branches with one of these prefixes:

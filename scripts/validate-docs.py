@@ -35,7 +35,7 @@ SESSION_LINK_SOURCES = [
     ROOT / "docs" / "README.md",
 ]
 QUALIFICATION_DOCUMENT = (
-    ROOT / "docs" / "operations" / "version-1.0-release-qualification.md"
+    ROOT / "docs" / "historical" / "releases" / "version-1.0-release-qualification.md"
 )
 CURRENT_STATE_DOCUMENT = ROOT / "docs" / "project" / "current-state.md"
 INDEX_DIRECT_LINKS = [
@@ -49,26 +49,19 @@ INDEX_DIRECT_LINKS = [
 
 CURRENT_MIGRATION_HEAD_CONTRACTS: dict[str, tuple[str, ...]] = {
     "docs/architecture/overview.md": ("application", "control"),
-    "docs/operations/control-plane.md": ("control",),
+    "docs/operations/control-plane.md": ("application", "control"),
     "docs/operations/runbooks/recovery-and-cutback.md": (
         "application",
         "control",
     ),
     "docs/operations/runbooks/target-activation.md": ("application",),
-    "docs/operations/testing.md": ("application",),
-    "docs/operations/version-1.0-release-qualification.md": ("application",),
+    "docs/operations/postgresql-to-sqlite-transfer.md": ("application",),
     "docs/project/current-state.md": ("application", "control"),
     "docs/project/development-guide.md": ("application",),
-    "docs/project/repository-tour.md": ("application", "control"),
     "docs/reference/glossary.md": ("application", "control"),
 }
 
 CURRENT_STATUS_CONTRACTS: dict[str, tuple[str, ...]] = {
-    "docs/README.md": (
-        "current Version 2.0 product line",
-        "Epic 4 — Nutrition History and Trends is implemented and qualified.",
-        "Epic 5 — Recipe Reuse and Discovery remains planned and requires re-scope.",
-    ),
     "docs/project/current-state.md": (
         "Version 2.0 is the current product line.",
         "Epic 4 — Nutrition History and Trends is implemented and qualified.",

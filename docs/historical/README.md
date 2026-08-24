@@ -9,11 +9,28 @@ implementation, and migrations define present behavior.
 
 ## Release and evidence records
 
+- [Version 2.0 Release Record](releases/version-2.0-release.md)
+- [Version 1.0 PostgreSQL Release Qualification](releases/version-1.0-release-qualification.md)
 - [Version 1.0 Release Gate](releases/production-hardening-phase5c4.9.md)
 - [Release Candidate 1 QA](releases/rc1-qa.md)
 - [Manual QA Evidence](evidence/qa/README.md)
 - Captured Phase 5C performance evidence remains beside the backend operator implementation in
   `apps/backend/evidence/phase5c/`.
+
+## Completed version programs
+
+- [Version 1.1 Product Roadmap](programs/version-1.1/version-1.1-roadmap.md)
+- [Version 1.2 Epic 4 Planning and Delivery Index](programs/version-1.2/epic-4/README.md)
+- [Implementation Lessons](engineering/implementation-lessons.md)
+
+Additional retained implementation records:
+
+- [E1-17 Accessibility Remediation Stage 1](programs/version-1.1/epic-1/accessibility-remediation-stage-1.md)
+- [E1-17 Accessibility Remediation Stage 2](programs/version-1.1/epic-1/accessibility-remediation-stage-2.md)
+- [Issue #108 Sticky Navigation Header Inventory](programs/version-1.1/issue-108-sticky-header-inventory.md)
+
+These packages retain their original point-in-time assertions. Current feature,
+architecture, project, and operations guides own present behavior.
 
 ## Product implementation stages
 

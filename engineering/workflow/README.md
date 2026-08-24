@@ -7,10 +7,16 @@
 
 ## Purpose
 
-A task capsule is the durable execution contract. Chat may explain or reconstruct rationale, but
-it cannot silently change scope, authority, risk, or completion. Codex and reviewers should
-consume the same repository artifacts.
+When a task uses the repository-owned workflow, its task capsule is the durable
+execution contract while that task remains non-terminal. Chat may explain or
+reconstruct rationale, but it cannot silently change scope, authority, risk,
+or completion. Codex, executors, verifiers, and reviewers consume the same
+repository artifacts.
 
+The full capsule remains in `engineering/capsules/active/` through review.
+Terminal outcomes are represented by the task's unique record in
+`engineering/capsules/HISTORY.md`, which preserves an exact Git recovery
+commit/path and SHA-256 for the historical full capsule.
 ## Index
 
 | Artifact | Responsibility |
@@ -22,7 +28,7 @@ consume the same repository artifacts.
 | [Evidence](EVIDENCE.md) | Implementation return, review bundle, and reproducibility contract |
 | [Failure Taxonomy](FAILURE_TAXONOMY.md) | Failure classes, stop conditions, and correction boundary |
 | [Workflow Changelog](CHANGELOG.md) | Evidence-backed process qualification history |
-| [Task Capsules](../capsules/README.md) | Template, active capsules, and completed records |
+| [Task Capsules](../capsules/README.md) | Template, active capsules, terminal HISTORY records, and recovery rules |
 
 ## Authority order
 
@@ -49,5 +55,4 @@ override higher authority.
 - Human approval is required for policy, trust, privacy, security, destructive behavior,
   irreversible action, migration authority, risk tolerance, or material tradeoffs.
 
-Workflow v3 foundation begins as **EXPERIMENTAL**. It is not the default until qualification in
-the [Workflow Changelog](CHANGELOG.md) is satisfied.
+Workflow v3 remains **EXPERIMENTAL** and is not the repository-wide default. The active-plus-HISTORY terminal-storage contract applies whenever the workflow is used, but it does not itself promote the workflow. Promotion requires the evidence, known limits, and accountable human approval recorded in the [Workflow Changelog](CHANGELOG.md).

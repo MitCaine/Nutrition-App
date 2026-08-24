@@ -79,7 +79,7 @@ provider stand-in; it does not certify a production routing provider.
 ## Release qualification
 
 The canonical commands and exact suite inventory are maintained in
-[Version 1.0 PostgreSQL Release Qualification](../../operations/version-1.0-release-qualification.md).
+[Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md).
 
 The release gate requires:
 

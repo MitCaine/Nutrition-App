@@ -9,8 +9,8 @@ Epic 2 preserves one application-data authority for each running context: the ex
 local SQLite runtime **or** the remote FastAPI/PostgreSQL runtime, never both. There is no
 synchronization, fallback, dual write, background sync, cloud backup, or authority mixing. The
 control database remains an operational-evidence authority only; it is not a second application
-backend. See the [Architecture Overview](../../../architecture/overview.md) and the
-[Explicit mobile application-data authority decision](../../../architecture/decisions.md#explicit-mobile-application-data-authority).
+backend. See the [Architecture Overview](../../../../architecture/overview.md) and the
+[Explicit mobile application-data authority decision](../../../../architecture/decisions.md#explicit-mobile-application-data-authority).
 
 Only SQLite schema version 1 exists in the mobile runtime. E2-16 did not add a second schema
 stream, a production reset path, or a recovery queue. The temporary native qualification route,

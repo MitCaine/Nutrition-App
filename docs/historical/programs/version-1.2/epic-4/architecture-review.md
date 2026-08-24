@@ -6,8 +6,8 @@
 
 This review was performed against:
 
-- [Current Product Roadmap](../../product-roadmap.md);
-- [Project Invariants](../../invariants.md);
+- [Current Product Roadmap](../../../../project/product-roadmap.md);
+- [Project Invariants](../../../../project/invariants.md);
 - [Epic 4 research record](planning.md);
 - [Epic 4 Grill decision record](accepted-decisions.md);
 - [Epic 4 Feature PRD](feature-prd.md); and

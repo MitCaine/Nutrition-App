@@ -8,6 +8,7 @@
 - [Repository Session Contract](session-contract.md#repository-session-contract): mandatory start
   and end workflow for every implementation session.
 - [Testing Guide](testing.md): baseline, focused, PostgreSQL, MinIO, performance, and final checks.
+- [PostgreSQL-to-SQLite Personal Transfer](postgresql-to-sqlite-transfer.md): current one-time E2-15 operator boundary, executable contract identity, and qualification entry points.
 
 ## Control and recovery
 
@@ -24,7 +25,7 @@
 
 ## Release reproducibility
 
-- [Version 1.0 PostgreSQL Release Qualification](version-1.0-release-qualification.md): canonical
+- [Version 1.0 PostgreSQL Release Qualification](../historical/releases/version-1.0-release-qualification.md): frozen
   fail-closed PostgreSQL 16 suite and retained infrastructure-evidence command.
 - [Version 1.0 Release Gate Record](../historical/releases/production-hardening-phase5c4.9.md):
   point-in-time release criteria and evidence contract.
