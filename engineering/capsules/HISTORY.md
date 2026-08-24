@@ -2704,3 +2704,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03
 - **Full-capsule recovery path:** engineering/capsules/active/GH-160.md
 - **Historical capsule SHA-256:** cdb811b8b71a3c100e7bdbba46f4b5df693bd9c1d0e2cccdde67847145a00396
+
+### GH-161 - Retire Epic 5 and reorganize the future-product register
+
+- **ID:** GH-161
+- **Title:** Retire Epic 5 and reorganize the future-product register
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/161
+- **Issue disposition:** OPEN — exact integration 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed is remotely qualified; explicit issue closure remains gated on remote qualification of this terminal closeout.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 8fffa91b11d29cda1b3850aa68b7b48547b0dd8f
+- **Task branch:** docs/gh-161-retire-epic5-future-register
+- **Controller:** ChatGPT GPT-5.6 Sol
+- **Executor:** ChatGPT GPT-5.6 Sol
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** a4be026a5be1e975e32df0b9da9a321439613bdf
+- **Verified commit reference(s):** 165135684146f9719a793f153db06c1554712b43, e5a34215623fe29328885fb9a9912417fbebdae2
+- **Reviewed source commit:** e5a34215623fe29328885fb9a9912417fbebdae2
+- **Reviewed task/checkpoint commit(s):** 98d91f28487e1bf0e1e833d6cd7b1dfbe4a77d59
+- **Integration/merged commit:** 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed
+- **Integration-related commit reference(s):** integration 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed; integration CI run 32687257112; integration CodeQL run 32687256665; exact integration check set passed 7/7.
+- **Acceptance result:** 9/9 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent editorial and contract review found no blocking or advisory finding. Epic 5 retirement is evidence-backed by GH-149/GH-150, current Recipe user/maintainer concept boundaries are coherent, future ideas are correctly classified, implemented History/accessibility behavior is no longer represented as a future gap, and historical planning remains unchanged.
+- **Verification summary:** PASS — exact six-file implementation scope and capsule-only lifecycle overlays were independently verified; stale planned/re-scope status fixtures were rejected; corrected current-status fixtures were accepted; GH-149/GH-150 terminal evidence, Recipe lifecycle/discovery/direct logging/duplication semantics, future-register classification, historical immutability, 23 focused tests, documentation validation, project audit, repository review, and whitespace qualification passed. Exact integration 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed preserved reviewed tree ccd3c6a267f794d2ab249794bcf30d6391a2b3f9 and passed all 7 required GitHub checks via CI run 32687257112 and CodeQL run 32687256665.
+- **Specialized qualification:** Not applicable — GH-161 changes documentation and its current-status validation only. No application runtime, API, persistence, schema, migration, dependency, CI-definition, native-device, performance, deployment, or release behavior changed.
+- **Known warnings:** Pre-existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning for apps/backend/app/control_migrations/versions/ops_0004_phase5c4_admission.py; unchanged and outside GH-161 scope.
+- **Deferred work/follow-up IDs:** Remote qualification of this terminal closeout, explicit issue #161 closure/finalization, and repository branch/worktree cleanup remain; audit follow-ups #162, #163, and #164 remain independent tasks.
+- **Retrospective:** no — bounded documentation/current-authority reconciliation completed without application or architecture change. Two generated shell assertion defects were recovered before an invalid workflow checkpoint could be committed and did not alter repository authority.
+- **Referenced commits:** base 8fffa91b11d29cda1b3850aa68b7b48547b0dd8f; READY b4df7d2e352268442434a0cc891eff2161224623; IN_PROGRESS 67eb74d546f77c3044b52a2f031ba9b5ab931067; implementation a4be026a5be1e975e32df0b9da9a321439613bdf; IMPLEMENTED 165135684146f9719a793f153db06c1554712b43; VERIFIED e5a34215623fe29328885fb9a9912417fbebdae2; REVIEWED 98d91f28487e1bf0e1e833d6cd7b1dfbe4a77d59; integration 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed.
+- **Full-capsule recovery commit:** 6b4ea1dfed4ae8175f4711f894e879b7e5ba7bed
+- **Full-capsule recovery path:** engineering/capsules/active/GH-161.md
+- **Historical capsule SHA-256:** b4973af6395da8b4cc739f4ad3f023de1624925644e71187982a11daa2d72658
