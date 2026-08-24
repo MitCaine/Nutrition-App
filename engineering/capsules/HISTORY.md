@@ -2848,3 +2848,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 9d03deef949f2cafc32281e1507648fb31c70015
 - **Full-capsule recovery path:** engineering/capsules/active/GH-164.md
 - **Historical capsule SHA-256:** fd83aabbc524701fc8ad92a92f3e9d78122a9998790e81deb649c7868fd2ebaf
+
+### GH-165-P1 - Bootstrap Task Capsule orchestration and remote qualification
+
+- **ID:** `GH-165-P1`
+- **Title:** Bootstrap Task Capsule orchestration and remote qualification
+- **Final state:** `MERGED`
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/165
+- **Issue disposition:** OPEN — GH-165-P1 is completed; parent issue #165 remains open for GH-165-P2 live main-governance enforcement.
+- **Created:** 2026-08-24
+- **Completed/updated:** 2026-08-24
+- **Base commit:** 233938a941654e6eb8b0d46d30b3bfa4beb28879
+- **Task branch:** ops/gh-165-p1-capsule-automation
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** ChatGPT GPT-5.6 Sol independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** `1baeb7dbf1496ef24f894df2a516468bc4ef24ac`, `83a5fc6a803c901c67d070f7ebd7a4830797a056`
+- **Verified commit reference(s):** `e27490579ed3e4278af46a46fb99734edccca14a`, `a566260bd40087ffe76638d2bb2ebe4a7d40ed1e`
+- **Reviewed source commit:** 83a5fc6a803c901c67d070f7ebd7a4830797a056
+- **Reviewed task/checkpoint commit(s):** `4a71de01ed11d6df52354710eefb37a82f903887`, `9fc322e38e94a3165d36d3b4dd2ca241cc9f5fc6`
+- **Integration/merged commit:** `e35990f609d7b3c579e5f6d9fb2a5b373c47bcc0`
+- **Integration-related commit reference(s):** `e35990f609d7b3c579e5f6d9fb2a5b373c47bcc0`, `9fc322e38e94a3165d36d3b4dd2ca241cc9f5fc6`, `a566260bd40087ffe76638d2bb2ebe4a7d40ed1e`, `83a5fc6a803c901c67d070f7ebd7a4830797a056`
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS with no blocking P1 implementation, validation, scope, provenance, or qualification finding.
+- **Verification summary:** Focused capsule/orchestrator and validator qualification passed 39/39; authoritative Nutrition Review passed 13/13 checks with zero critical or advisory failures; backend baseline passed 1826 selected tests with 470 deselected and two existing warnings; mobile passed 164 suites with one skipped and 1827 tests with two skipped; documentation, shell, repository-session, drift, packaging, capsule, and linked-worktree Python validation passed.
+- **Specialized qualification:** PASS — exact implementation SHA `83a5fc6a803c901c67d070f7ebd7a4830797a056` received `Main qualification` PASS for `repository`, `backend`, `mobile`, and `postgresql` in GitHub Actions workflow run `32702858656`; artifact `9511191624` digest `sha256:d832f795021f95106552034f76185a47b03216ee797e341ead69e6a0cb4e2883`; manifest SHA-256 `52f7101c540c2db29d8271e46e82664dd32b44d8820de676b3ce59e6a676ff46`; temporary qualification ref removed.
+- **Known warnings:** Existing Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning and existing non-blocking `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning in `ops_0004_phase5c4_admission.py`. P1 qualification still requires an active capsule and repeated qualification of an identical SHA is not yet attempt-specific; GH-165-P2 must resolve both constraints before live `main` enforcement.
+- **Deferred work/follow-up IDs:** GH-165-P2; AUDIT-08 / #166; AUDIT-09 / #167.
+- **Retrospective:** yes — evaluate the bootstrap automation and exact-SHA governance workflow after GH-165-P2 activates and proves live enforcement.
+- **Referenced commits:** `233938a941654e6eb8b0d46d30b3bfa4beb28879`, `1baeb7dbf1496ef24f894df2a516468bc4ef24ac`, `83a5fc6a803c901c67d070f7ebd7a4830797a056`, `e27490579ed3e4278af46a46fb99734edccca14a`, `a566260bd40087ffe76638d2bb2ebe4a7d40ed1e`, `4a71de01ed11d6df52354710eefb37a82f903887`, `9fc322e38e94a3165d36d3b4dd2ca241cc9f5fc6`, `e35990f609d7b3c579e5f6d9fb2a5b373c47bcc0`
+- **Full-capsule recovery commit:** `9fc322e38e94a3165d36d3b4dd2ca241cc9f5fc6`
+- **Full-capsule recovery path:** `engineering/capsules/active/GH-165-P1.md`
+- **Historical capsule SHA-256:** `f7da4ff51a99d218bed46c648f01af044dde51778d3867a8557eb31bc7de0bcb`
