@@ -2678,7 +2678,7 @@ than being rewritten as successful verification.
 - **Task type:** tooling
 - **Risk:** medium
 - **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/160
-- **Issue disposition:** OPEN — implementation is integrated and remotely qualified; explicit issue closure remains gated on remote qualification of this terminal closeout.
+- **Issue disposition:** CLOSED / COMPLETED — explicitly closed after terminal closeout commit 1c8aebd57602d7c1f4842dfb99992724179ce18d passed exact remote qualification (CI run 32682019360; CodeQL run 32682018753; 7/7 required checks); GitHub closed at 2026-08-24T02:12:55Z.
 - **Created:** 2026-08-23
 - **Completed/updated:** 2026-08-23
 - **Base commit:** 7aa86987b2577055ba145aa9d3d255c78dcaf1e5
@@ -2692,15 +2692,15 @@ than being rewritten as successful verification.
 - **Reviewed source commit:** 9911f29d08cb7dc1699372caab7cf8e502305194
 - **Reviewed task/checkpoint commit(s):** 708888100112bd6ab85eaee71980e77a1b868b0e, 9911f29d08cb7dc1699372caab7cf8e502305194
 - **Integration/merged commit:** f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03
-- **Integration-related commit reference(s):** CI run 32681747286; CodeQL run 32681747184; exact integration check runs 7/7 PASS.
+- **Integration-related commit reference(s):** integration f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03; integration CI run 32681747286; integration CodeQL run 32681747184; terminal closeout 1c8aebd57602d7c1f4842dfb99992724179ce18d; closeout CI run 32682019360; closeout CodeQL run 32682018753; both exact integration and terminal-closeout check sets passed 7/7.
 - **Acceptance result:** 6/6 checked in the terminal source capsule.
 - **Review disposition:** Approved — exact implementation scope, schema/lifecycle non-change, invocation boundaries, structural negative behavior, focused regressions, and repository qualification passed with no blocking finding.
-- **Verification summary:** Pre-fix SECTION_UNKNOWN reproduced; canonical template structural validation passed; unknown/missing/duplicate/order/subsection regressions passed; 24 focused validator tests passed; documentation validation, project audit, repository review profile, integration validation, and exact remote integration checks passed.
+- **Verification summary:** Pre-fix SECTION_UNKNOWN reproduced; canonical template structural validation passed; unknown/missing/duplicate/order/subsection regressions passed; 24 focused validator tests passed; documentation validation, project audit, repository review profile, and integration validation passed. Exact integration commit f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03 passed 7/7 GitHub checks, and exact terminal closeout commit 1c8aebd57602d7c1f4842dfb99992724179ce18d independently passed 7/7 GitHub checks before explicit issue closure.
 - **Specialized qualification:** Not applicable — no application runtime, API, persistence, schema, migration, dependency, CI-definition, performance, native-device, or deployment behavior changed.
 - **Known warnings:** Pre-existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning for apps/backend/app/control_migrations/versions/ops_0004_phase5c4_admission.py; unchanged and outside GH-160 scope.
-- **Deferred work/follow-up IDs:** Remote qualification of this terminal closeout, explicit GitHub issue #160 closure/finalization, task branch/worktree cleanup; audit follow-ups #161, #162, #163, and #164 remain independent.
+- **Deferred work/follow-up IDs:** Repository branch/worktree cleanup only; audit follow-ups #161, #162, #163, and #164 remain independent tasks.
 - **Retrospective:** Bounded workflow/tooling correction completed without schema-v1 lifecycle expansion. One generated implementation command used an incorrect source-text insertion anchor and was recovered before validator/test edits were written; no scope or contract change resulted.
-- **Referenced commits:** base 7aa86987b2577055ba145aa9d3d255c78dcaf1e5; READY c2b1b8c248d6cb9c0fa2debd6b17b9278af5f91b; IN_PROGRESS f7321a8e932bc84316a14a18d15afc9edad4feb0; implementation be7e33f615a12a7145828b4f1a0b990dad88c2d4; IMPLEMENTED 3e0c289042b8a5ffba4f279194b49c5d0be61055; VERIFIED 708888100112bd6ab85eaee71980e77a1b868b0e; REVIEWED 9911f29d08cb7dc1699372caab7cf8e502305194; integration f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03.
+- **Referenced commits:** base 7aa86987b2577055ba145aa9d3d255c78dcaf1e5; READY c2b1b8c248d6cb9c0fa2debd6b17b9278af5f91b; IN_PROGRESS f7321a8e932bc84316a14a18d15afc9edad4feb0; implementation be7e33f615a12a7145828b4f1a0b990dad88c2d4; IMPLEMENTED 3e0c289042b8a5ffba4f279194b49c5d0be61055; VERIFIED 708888100112bd6ab85eaee71980e77a1b868b0e; REVIEWED 9911f29d08cb7dc1699372caab7cf8e502305194; integration f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03; terminal closeout 1c8aebd57602d7c1f4842dfb99992724179ce18d.
 - **Full-capsule recovery commit:** f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03
 - **Full-capsule recovery path:** engineering/capsules/active/GH-160.md
 - **Historical capsule SHA-256:** cdb811b8b71a3c100e7bdbba46f4b5df693bd9c1d0e2cccdde67847145a00396
