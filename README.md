@@ -274,7 +274,8 @@ For an already qualified current remote database:
 ```bash
 docker compose up -d postgres
 cd apps/backend
-python3 -m venv .venv
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" ../../scripts/toolchain-report.py --check python && "$PYTHON_BIN" -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.lock
 python -m pip install --no-build-isolation --no-deps -e .
@@ -282,6 +283,8 @@ cp .env.example .env
 alembic current
 uvicorn app.main:app --reload
 ```
+
+`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.12 line, set `PYTHON_BIN` to a compatible executable such as `python3.12`; the same verified interpreter then creates `apps/backend/.venv`.
 
 `alembic current` must report `0033_complete_runtime_authority`.
 

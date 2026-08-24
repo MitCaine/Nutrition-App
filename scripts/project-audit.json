@@ -25,10 +25,13 @@
   "operator_document_contracts": {
     "README.md": {
       "required": [
-        "docs/project/current-state.md"
+        "docs/project/current-state.md",
+        "PYTHON_BIN=\"${PYTHON_BIN:-python3}\"",
+        "\"$PYTHON_BIN\" ../../scripts/toolchain-report.py --check python && \"$PYTHON_BIN\" -m venv .venv"
       ],
       "forbidden": [
-        "alembic upgrade head"
+        "alembic upgrade head",
+        "python3 -m venv .venv"
       ]
     },
     "docs/README.md": {
@@ -64,9 +67,13 @@
     },
     "docs/project/development-guide.md": {
       "required": [
-        "0021_target_activation_execution"
+        "0021_target_activation_execution",
+        "PYTHON_BIN=\"${PYTHON_BIN:-python3}\"",
+        "\"$PYTHON_BIN\" ../../scripts/toolchain-report.py --check python && \"$PYTHON_BIN\" -m venv .venv"
       ],
-      "forbidden": []
+      "forbidden": [
+        "python3 -m venv .venv"
+      ]
     },
     "docs/historical/releases/production-hardening-phase5c4.9.md": {
       "required": [
