@@ -118,7 +118,7 @@ Provide only context a fresh executor needs; link rather than copy authority.
 - **Deferred work/follow-up IDs:**
 - **Retrospective required:** yes/no — reason
 
-## Terminal closeout rule
+### Terminal closeout rule
 
 Keep this full capsule under `engineering/capsules/active/` through review. At successful
 integration or cancellation, write the unique terminal record to `engineering/capsules/HISTORY.md`

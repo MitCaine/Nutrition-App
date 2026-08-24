@@ -264,6 +264,190 @@ def error_codes(result: subprocess.CompletedProcess[str]) -> set[str]:
     return {item["code"] for item in document["capsules"][0]["errors"]}
 
 
+def install_canonical_template(
+    repo: Path,
+) -> Path:
+    source = (
+        ROOT
+        / "engineering"
+        / "capsules"
+        / "TEMPLATE.md"
+    )
+
+    target = (
+        repo
+        / "engineering"
+        / "capsules"
+        / "TEMPLATE.md"
+    )
+
+    target.write_text(
+        source.read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+
+    return target
+
+
+def template_error_codes(
+    result: subprocess.CompletedProcess[str],
+) -> set[str]:
+    document = json.loads(
+        result.stdout
+    )
+
+    template = document["template"]
+
+    assert template is not None
+
+    return {
+        item["code"]
+        for item in template["errors"]
+    }
+
+
+def test_canonical_template_is_structurally_valid(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(
+        tmp_path
+    )
+
+    install_canonical_template(
+        repo
+    )
+
+    result = run_validator(
+        repo,
+        "--all",
+        "--json",
+    )
+
+    assert result.returncode == 0, (
+        result.stdout
+        + result.stderr
+    )
+
+    document = json.loads(
+        result.stdout
+    )
+
+    template = document["template"]
+
+    assert template is not None
+    assert template["valid"] is True
+    assert template["errors"] == []
+
+    assert (
+        template["path"]
+        == "engineering/capsules/TEMPLATE.md"
+    )
+
+
+def test_canonical_template_rejects_structural_drift(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(
+        tmp_path
+    )
+
+    target = install_canonical_template(
+        repo
+    )
+
+    original = target.read_text(
+        encoding="utf-8"
+    )
+
+    swapped = original.replace(
+        "\n## Goal\n",
+        "\n## __GH160_SWAP__\n",
+        1,
+    )
+
+    swapped = swapped.replace(
+        "\n## Outcome\n",
+        "\n## Goal\n",
+        1,
+    )
+
+    swapped = swapped.replace(
+        "\n## __GH160_SWAP__\n",
+        "\n## Outcome\n",
+        1,
+    )
+
+    cases = [
+        (
+            "unknown-section",
+            (
+                original
+                + "\n## Unsupported schema section\n"
+                + "\nNot part of schema v1.\n"
+            ),
+            "SECTION_UNKNOWN",
+        ),
+        (
+            "missing-section",
+            original.replace(
+                "\n## Outcome\n",
+                "\n### Outcome\n",
+                1,
+            ),
+            "SECTION_MISSING",
+        ),
+        (
+            "duplicate-section",
+            (
+                original
+                + "\n## Goal\n"
+                + "\nDuplicate schema section.\n"
+            ),
+            "SECTION_DUPLICATE",
+        ),
+        (
+            "misordered-section",
+            swapped,
+            "SECTION_ORDER",
+        ),
+        (
+            "missing-verification-subsection",
+            original.replace(
+                "\n### Focused\n",
+                "\n#### Focused\n",
+                1,
+            ),
+            "VERIFICATION_SUBSECTION_MISSING",
+        ),
+    ]
+
+    for label, content, expected in cases:
+        target.write_text(
+            content,
+            encoding="utf-8",
+        )
+
+        result = run_validator(
+            repo,
+            "--all",
+            "--json",
+        )
+
+        assert result.returncode == 1, (
+            label,
+            result.stdout,
+            result.stderr,
+        )
+
+        assert (
+            expected
+            in template_error_codes(
+                result
+            )
+        ), label
+
 def test_empty_repository_has_machine_summary(tmp_path: Path) -> None:
     repo, _ = setup_repo(tmp_path)
     result = run_validator(repo, "--all", "--json")
