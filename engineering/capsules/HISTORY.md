@@ -2776,3 +2776,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 87935126fa0a6e605bbf2a5480847600aee2033b
 - **Full-capsule recovery path:** engineering/capsules/active/GH-163.md
 - **Historical capsule SHA-256:** e73c09f74a55656e8fd9b0d1606694859cdcac41642ff26234917c3239fd90b7
+
+### GH-162 - Fail closed on Python 3.12 before creating the backend virtual environment
+
+- **ID:** GH-162
+- **Title:** Fail closed on Python 3.12 before creating the backend virtual environment
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/162
+- **Issue disposition:** CLOSED / COMPLETED — explicitly closed after integration 2ee33c1248fcf7141d6054d8e31e774a5389900b passed exact default-branch remote qualification (CI run 32692400368; CodeQL default-setup run 32692400085; Backend PostgreSQL 16 job 97328309242; 7/7 required checks); GitHub closed at 2026-08-24T05:12:23Z.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 2b7cdb9de7babf7274b7741299b9f27f7de9c97f
+- **Task branch:** docs/gh-162-python312-venv-guard
+- **Controller:** ChatGPT GPT-5.6 Sol
+- **Executor:** ChatGPT GPT-5.6 Sol
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 5db195d3a105b1eefb0ffb2e9c3bee5c264f9bfd
+- **Verified commit reference(s):** IMPLEMENTED c83ae2792c70a1b3869d2b1b671e52b81dbbe244; VERIFIED 690eedb096e7321fade36fbdd0379f678ed4dab9.
+- **Reviewed source commit:** 690eedb096e7321fade36fbdd0379f678ed4dab9
+- **Reviewed task/checkpoint commit(s):** REVIEWED 3d2fc07dcaddbcc42d749bdfdae2ab579e80ff74.
+- **Integration/merged commit:** 2ee33c1248fcf7141d6054d8e31e774a5389900b
+- **Integration-related commit reference(s):** integration 2ee33c1248fcf7141d6054d8e31e774a5389900b; CI run 32692400368; Backend PostgreSQL 16 job 97328309242; CodeQL default-setup run 32692400085; exact required check set 7/7 PASS.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review found zero blocking and zero advisory findings.
+- **Verification summary:** PASS — exact three-file substantive scope was independently reconstructed; unsupported /usr/bin/python3 failed the repository Python check before venv creation; Python 3.12.13 created the canonical apps/backend/.venv successfully; the temporary qualification environment was removed; focused toolchain/project-audit tests, documentation validation, project audit, repository review, frozen-authority checks, and exact default-branch integration qualification all passed.
+- **Specialized qualification:** Not applicable — interpreter mismatch/success and temporary venv creation were physically qualified as focused verification; no PostgreSQL-specific feature qualification was required by GH-162. The ordinary default-branch PostgreSQL CI tier independently remained green with 85 passed, zero infrastructure skips, and cleanup PASS.
+- **Known warnings:** Pre-existing DOMAIN_TOKEN_IN_OPS_MIGRATION remains outside GH-162 scope; GitHub reported three independent Dependabot vulnerabilities on the default branch.
+- **Deferred work/follow-up IDs:** GH-164 remains independent. No GH-162 product or documentation scope is deferred; terminal closeout qualification and repository branch/worktree cleanup are procedural completion gates.
+- **Retrospective:** no — bounded documentation/current-command correction used existing toolchain and audit authorities without architecture, runtime, dependency, or workflow-policy change.
+- **Referenced commits:** base 2b7cdb9de7babf7274b7741299b9f27f7de9c97f; READY cd0bf1ff69371132939b4ed1279f3fdcc5a9d9e8; IN_PROGRESS 83953867247f4af40dbea9c9f5190f92530bbc33; implementation 5db195d3a105b1eefb0ffb2e9c3bee5c264f9bfd; IMPLEMENTED c83ae2792c70a1b3869d2b1b671e52b81dbbe244; VERIFIED 690eedb096e7321fade36fbdd0379f678ed4dab9; REVIEWED 3d2fc07dcaddbcc42d749bdfdae2ab579e80ff74; integration 2ee33c1248fcf7141d6054d8e31e774a5389900b.
+- **Full-capsule recovery commit:** 2ee33c1248fcf7141d6054d8e31e774a5389900b
+- **Full-capsule recovery path:** engineering/capsules/active/GH-162.md
+- **Historical capsule SHA-256:** 07f7419a03f79796a4210f2c4eb62ed34376fd4d32d8403e1ccc95faf6afaff8
