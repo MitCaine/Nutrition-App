@@ -2632,3 +2632,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `10352bd329bfad3b55f515c3822235a0165f289c`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-159.md`
 - **Historical capsule SHA-256:** `e03e9dd0783761ff633a6c1ab0ce06c78c5e1042860264ca078bbf0c36fa3aa8`
+
+### GH-159-R1 - Resume Version 2.0 documentation reconciliation with complete audit-test scope
+
+- **ID:** `GH-159-R1`
+- **Title:** Resume Version 2.0 documentation reconciliation with complete audit-test scope
+- **Final state:** `MERGED`
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/159
+- **Issue disposition:** OPEN — repository integration is complete; final issue closure is pending successful remote qualification of this terminal-closeout commit.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** ac30fc818c55cc04c1dd97cd00c94159a1d5b41c
+- **Task branch:** docs/version-2-documentation-reconciliation
+- **Controller:** ChatGPT GPT-5.6 Sol
+- **Executor:** ChatGPT GPT-5.6 Sol
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** `cc0380d6e9a8392080171797f36c2c85fbe1f90f`, `ad8861e3f063857e80863e0197858d1f36abb3f0`, `7b753e22950fa97715ae24c44bffbf59765928c0`
+- **Verified commit reference(s):** `a8291b9befd981630b2730e7882eab9683a450bb`
+- **Reviewed source commit:** 7b753e22950fa97715ae24c44bffbf59765928c0
+- **Reviewed task/checkpoint commit(s):** `528582586555db0cc5e3e51cbc4f45da7f3c5ec9`
+- **Integration/merged commit:** 5d075a91976bfc960b8839c6b97398348405d4c4
+- **Integration-related commit reference(s):** `5d075a91976bfc960b8839c6b97398348405d4c4`, `528582586555db0cc5e3e51cbc4f45da7f3c5ec9`, `a8291b9befd981630b2730e7882eab9683a450bb`, `7b753e22950fa97715ae24c44bffbf59765928c0`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review found no blocking architecture, authority, scope, provenance, workflow-policy, source-integrity, or verification defect and approved exact implementation source `7b753e22950fa97715ae24c44bffbf59765928c0` for human integration.
+- **Verification summary:** PASS — exact integration commit `5d075a91976bfc960b8839c6b97398348405d4c4` is byte-identical to reviewed tree `e7d583a3264f94b489c2bb0c9c7bd742c4c6fc58`; documentation validation, focused process tests, capsule/history validation, project audit, repository review profiles, and integration whitespace/drift checks passed. GitHub CI run `32676848978` passed Backend baseline, Backend PostgreSQL 16 contracts, Mobile baseline, and Repository validation; CodeQL run `32676849015` passed actions, Python, and JavaScript/TypeScript analysis, for 7/7 required integration checks.
+- **Specialized qualification:** Not applicable — GH-159-R1 changed documentation, documentation validation, project-audit expectations, and engineering workflow guidance only; runtime, API, schema, migration, persistence, dependency, CI, mobile, Docker, MinIO, native/device, performance, and deployment authority were unchanged.
+- **Known warnings:** Pre-existing and non-blocking — `DOMAIN_TOKEN_IN_OPS_MIGRATION` remains outside GH-159-R1 scope. Integration pushes reported the existing 3 Dependabot vulnerability alerts (2 high, 1 moderate); dependency remediation is outside this documentation/workflow task.
+- **Deferred work/follow-up IDs:** None identified for product or implementation scope. Final issue #159 closure and terminal-history evidence finalization remain closeout bookkeeping after this closeout commit passes remote qualification.
+- **Retrospective:** yes — preserve the predecessor GH-159 lesson that path-sensitive validation dependencies must be represented in machine-readable READY scope, and preserve the distinction between reconciling current Workflow v3 documentation and formally promoting its status.
+- **Referenced commits:** `ac30fc818c55cc04c1dd97cd00c94159a1d5b41c`, `a9e0b5f64dc7b733a9a43989fca873e2db55b33c`, `8a2a1854b44ddb66cda2ba3ae4928d0a9744b8bc`, `cc0380d6e9a8392080171797f36c2c85fbe1f90f`, `ad8861e3f063857e80863e0197858d1f36abb3f0`, `7b753e22950fa97715ae24c44bffbf59765928c0`, `d0e3c074c1195ceb93aa6c884ddc8a97049fea4e`, `a8291b9befd981630b2730e7882eab9683a450bb`, `528582586555db0cc5e3e51cbc4f45da7f3c5ec9`, `5d075a91976bfc960b8839c6b97398348405d4c4`
+- **Full-capsule recovery commit:** `5d075a91976bfc960b8839c6b97398348405d4c4`
+- **Full-capsule recovery path:** `engineering/capsules/active/GH-159-R1.md`
+- **Historical capsule SHA-256:** `6e22639f915d79fb96d15c0fb8324d5a8dd6a06ab2e4f5db46af7c921fc58033`
