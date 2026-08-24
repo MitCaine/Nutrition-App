@@ -2812,3 +2812,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 2ee33c1248fcf7141d6054d8e31e774a5389900b
 - **Full-capsule recovery path:** engineering/capsules/active/GH-162.md
 - **Historical capsule SHA-256:** 07f7419a03f79796a4210f2c4eb62ed34376fd4d32d8403e1ccc95faf6afaff8
+
+### GH-164 - Close completed Version 1.1 milestones 6 through 11
+
+- **ID:** GH-164
+- **Title:** Close completed Version 1.1 milestones 6 through 11
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** operations
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/164
+- **Issue disposition:** CLOSED / COMPLETED — explicitly closed after independent verification and review confirmed milestones 6 through 11 were closed with unchanged issue totals/membership and milestones 12 through 17 remained unchanged; GitHub closed at 2026-08-24T05:45:42Z.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 790db9107d4e0ded65ad5b263e33404de817c382
+- **Task branch:** ops/gh-164-close-v11-milestones
+- **Controller:** ChatGPT GPT-5.6 Sol
+- **Executor:** ChatGPT GPT-5.6 Sol
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** No substantive repository implementation commit; IMPLEMENTED lifecycle checkpoint 939ccfb4ec54a2daf54ebca47576a408b3e82e3f records the completed GitHub milestone mutation.
+- **Verified commit reference(s):** VERIFIED bb9e8cb0a3fe80c8e41633c75253f5427b5349b8.
+- **Reviewed source commit:** bb9e8cb0a3fe80c8e41633c75253f5427b5349b8
+- **Reviewed task/checkpoint commit(s):** REVIEWED 9d03deef949f2cafc32281e1507648fb31c70015.
+- **Integration/merged commit:** 0d42d00f6270b4dae0c076c85f70a781203bac45
+- **Integration-related commit reference(s):** local human integration 0d42d00f6270b4dae0c076c85f70a781203bac45; reviewed second parent 9d03deef949f2cafc32281e1507648fb31c70015; terminal HISTORY closeout follows locally and both commits are delivered by one main push.
+- **Acceptance result:** 5/5 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent review found zero blocking and zero advisory findings.
+- **Verification summary:** PASS — independent verification bound and audited the frozen pre/post GitHub evidence, repeated fresh GitHub reads, confirmed exactly milestones 6 through 11 are closed with unchanged counts and child resources, confirmed milestones 12 through 17 remain unchanged and closed, confirmed repository substantive content remained unchanged, and confirmed issue #164 remained OPEN through the VERIFIED gate.
+- **Specialized qualification:** Not applicable — exact GitHub milestone and child-issue resource comparison is the authoritative qualification for this bookkeeping task; backend, mobile, PostgreSQL, CodeQL, migration, performance, MinIO, Docker, and deployment execution do not validate milestone state.
+- **Known warnings:** Existing DOMAIN_TOKEN_IN_OPS_MIGRATION and Dependabot findings remain unrelated to GH-164. The originally planned single merge/HISTORY commit was implemented as two local commits delivered by one push so HISTORY can contain the exact already-created integration SHA without triggering an intermediate main push.
+- **Deferred work/follow-up IDs:** None within AUDIT-06.
+- **Retrospective:** No task-specific retrospective required; the closeout used two local repository commits in one push solely to preserve exact integration-hash authority while avoiding an intermediate remote qualification cycle.
+- **Referenced commits:** base 790db9107d4e0ded65ad5b263e33404de817c382; READY revision 2 c56bd0f46d3833901667fbe9719b2bfb9d3da0cd; IN_PROGRESS 978008c6554ec2dbf6b19f28de895f259e9fe9b8; IMPLEMENTED 939ccfb4ec54a2daf54ebca47576a408b3e82e3f; VERIFIED bb9e8cb0a3fe80c8e41633c75253f5427b5349b8; REVIEWED 9d03deef949f2cafc32281e1507648fb31c70015; integration 0d42d00f6270b4dae0c076c85f70a781203bac45.
+- **Full-capsule recovery commit:** 9d03deef949f2cafc32281e1507648fb31c70015
+- **Full-capsule recovery path:** engineering/capsules/active/GH-164.md
+- **Historical capsule SHA-256:** fd83aabbc524701fc8ad92a92f3e9d78122a9998790e81deb649c7868fd2ebaf
