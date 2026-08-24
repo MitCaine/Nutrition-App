@@ -30,6 +30,11 @@ verification, evidence, and escalation. Copy the
   `base_commit`; deleting obsolete authority does not require rewriting the qualified capsule.
 - `owned_paths`, `allowed_paths`, and `forbidden_paths` use repository-relative POSIX paths or
   patterns for mechanical scope enforcement.
+- `specialized_qualification` remains a string list. Machine-executable repository qualification
+  profiles use explicit `profile:lowercase-name` tokens; other entries may remain human-readable
+  specialist qualification requirements. Duplicate or malformed profile tokens fail validation.
+  A profile may be syntactically valid before its executor exists, but remote qualification fails
+  closed until that profile is registered by repository tooling.
 - Unknown schema versions or metadata keys are rejected rather than guessed.
 
 ## Required sections

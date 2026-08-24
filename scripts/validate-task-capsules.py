@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,21 +14,58 @@ def _reexec_with_supported_python() -> None:
         return
 
     repository_root = Path(__file__).resolve().parents[1]
-    backend_python = repository_root / "apps/backend/.venv/bin/python"
+    candidates: list[Path] = [
+        repository_root / "apps/backend/.venv/bin/python",
+    ]
 
-    if backend_python.is_file():
-        current = Path(sys.executable).resolve()
-        target = backend_python.resolve()
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_root),
+            "worktree",
+            "list",
+            "--porcelain",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
-        if current != target:
-            os.execv(
-                str(target),
-                [str(target), str(Path(__file__).resolve()), *sys.argv[1:]],
+    if completed.returncode == 0:
+        for line in completed.stdout.splitlines():
+            if not line.startswith("worktree "):
+                continue
+
+            worktree = Path(line.removeprefix("worktree "))
+            candidates.append(
+                worktree / "apps/backend/.venv/bin/python"
             )
+
+    current = Path(sys.executable).resolve()
+
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+
+        target = candidate.resolve()
+
+        if current == target:
+            continue
+
+        os.execv(
+            str(target),
+            [
+                str(target),
+                str(Path(__file__).resolve()),
+                *sys.argv[1:],
+            ],
+        )
 
     raise SystemExit(
         "Python 3.11 or newer is required. "
-        "The validator could not locate apps/backend/.venv/bin/python."
+        "The validator could not locate a supported interpreter "
+        "in this or any linked repository worktree."
     )
 
 
@@ -42,6 +80,11 @@ import tomllib
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Iterable
+
+from lib.qualification_profiles import (
+    QualificationProfileError,
+    parse_profile_tokens,
+)
 
 SCHEMA_VERSION = 1
 ACTIVE_STATES = (
@@ -1602,7 +1645,22 @@ def validate_capsule(
     owned_paths = validate_string_list(metadata, "owned_paths", result)
     allowed_paths = validate_string_list(metadata, "allowed_paths", result)
     forbidden_paths = validate_string_list(metadata, "forbidden_paths", result)
-    validate_string_list(metadata, "specialized_qualification", result)
+    specialized_qualification = validate_string_list(
+        metadata,
+        "specialized_qualification",
+        result,
+    )
+
+    try:
+        parse_profile_tokens(
+            specialized_qualification
+        )
+    except QualificationProfileError as exc:
+        result.error(
+            exc.code,
+            str(exc),
+            "specialized_qualification",
+        )
     del dependencies
     authority_base = (
         metadata.get("base_commit", "")

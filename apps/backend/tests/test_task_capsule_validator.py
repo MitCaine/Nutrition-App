@@ -1294,3 +1294,103 @@ def test_authority_missing_from_current_and_base_is_rejected(
         "AUTHORITY_PATH_MISSING"
         in error_codes(result)
     )
+
+
+def _run_profile_validation(repo: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(VALIDATOR),
+            "--repo-root",
+            str(repo),
+            "--all",
+            "--json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_specialized_qualification_profile_token_is_valid(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+    path = repo / "engineering/capsules/active/PROFILE-VALID.md"
+    text = capsule_text(
+        "PROFILE-VALID",
+        "READY",
+        base,
+    ).replace(
+        "specialized_qualification = []",
+        (
+            'specialized_qualification = ['
+            '"profile:repository", '
+            '"Manual native evidence when applicable"'
+            "]"
+        ),
+    )
+    path.write_text(text, encoding="utf-8")
+
+    completed = _run_profile_validation(repo)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_specialized_qualification_profile_token_rejects_bad_syntax(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+    path = repo / "engineering/capsules/active/PROFILE-BAD.md"
+    text = capsule_text(
+        "PROFILE-BAD",
+        "READY",
+        base,
+    ).replace(
+        "specialized_qualification = []",
+        'specialized_qualification = ["profile:Backend"]',
+    )
+    path.write_text(text, encoding="utf-8")
+
+    completed = _run_profile_validation(repo)
+
+    assert completed.returncode != 0
+    document = json.loads(completed.stdout)
+    codes = {
+        finding["code"]
+        for capsule in document["capsules"]
+        for finding in capsule["errors"]
+    }
+    assert "QUALIFICATION_PROFILE_INVALID" in codes
+
+
+def test_specialized_qualification_profile_token_rejects_duplicates(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+    path = repo / "engineering/capsules/active/PROFILE-DUP.md"
+    text = capsule_text(
+        "PROFILE-DUP",
+        "READY",
+        base,
+    ).replace(
+        "specialized_qualification = []",
+        (
+            'specialized_qualification = ['
+            '"profile:repository", '
+            '"profile:repository"'
+            "]"
+        ),
+    )
+    path.write_text(text, encoding="utf-8")
+
+    completed = _run_profile_validation(repo)
+
+    assert completed.returncode != 0
+    document = json.loads(completed.stdout)
+    codes = {
+        finding["code"]
+        for capsule in document["capsules"]
+        for finding in capsule["errors"]
+    }
+    assert "QUALIFICATION_PROFILE_DUPLICATE" in codes

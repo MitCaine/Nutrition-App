@@ -1,0 +1,47 @@
+name: Main qualification
+
+on:
+  push:
+    branches:
+      - "qualification/**"
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+concurrency:
+  group: main-qualification-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Main qualification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+
+      - name: Wait for selected repository qualification profiles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/main-qualification.py
+          --repo-root "${GITHUB_WORKSPACE}"
+          --repository "${GITHUB_REPOSITORY}"
+          --sha "${GITHUB_SHA}"
+          --ref-name "${GITHUB_REF_NAME}"
+          --output "${RUNNER_TEMP}/main-qualification.json"
+
+      - name: Retain Main qualification manifest
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-qualification-${{ github.sha }}
+          path: ${{ runner.temp }}/main-qualification.json
+          if-no-files-found: error
