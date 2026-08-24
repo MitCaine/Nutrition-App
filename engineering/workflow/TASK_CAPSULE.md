@@ -34,7 +34,10 @@ verification, evidence, and escalation. Copy the
   profiles use explicit `profile:lowercase-name` tokens; other entries may remain human-readable
   specialist qualification requirements. Duplicate or malformed profile tokens fail validation.
   A profile may be syntactically valid before its executor exists, but remote qualification fails
-  closed until that profile is registered by repository tooling.
+  closed until that profile is registered by repository tooling. Once a capsule reaches `READY`,
+  its `specialized_qualification` list is bound to that capsule revision; an in-place change in
+  `IN_PROGRESS` through `REVIEWED` fails validation and requires the normal
+  `DECOMPOSED`/revision/requalification path.
 - Unknown schema versions or metadata keys are rejected rather than guessed.
 
 ## Required sections

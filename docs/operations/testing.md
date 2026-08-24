@@ -87,9 +87,11 @@ commit. Unknown or unavailable profiles fail closed.
 `./scripts/capsule qualify TASK-ID --evidence-dir PATH` is the normal
 repository entry point for this remote qualification. It requires a clean task
 worktree, exact branch/base authority, scope conformity, and a GitHub-visible
-unchanged SHA. After PASS it downloads the retained qualification artifact and
-removes the temporary ref. A failed qualification retains the ref for explicit
-inspection rather than silently waiving the failure.
+unchanged SHA. After PASS it downloads the retained qualification artifact,
+records the workflow/check identity, GitHub artifact ID/digest, and local
+manifest SHA-256, then removes the temporary ref. A failed qualification
+retains the ref for explicit inspection rather than silently waiving the
+failure.
 
 The `Main qualification` profile is commit qualification, not acceptance or
 review judgment. Task Capsule acceptance criteria, reviewer disposition, scope

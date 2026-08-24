@@ -484,3 +484,130 @@ def test_main_qualification_offline_failed_check_fails(
 
     assert manifest["result"] == "FAIL"
     assert "failed" in manifest["error"].lower()
+
+
+def test_blocked_capsule_fails_closed(
+    tmp_path: Path,
+) -> None:
+    repo, _, task_id = setup_repo(tmp_path)
+    path = (
+        repo
+        / "engineering/capsules/active"
+        / f"{task_id}.md"
+    )
+    text = path.read_text(encoding="utf-8")
+    text = text.replace(
+        "blocked = false",
+        "blocked = true",
+        1,
+    )
+    text = text.replace(
+        'blocked_reason = ""',
+        'blocked_reason = "Explicit test block."',
+        1,
+    )
+    text = text.replace(
+        'blocked_since = ""',
+        'blocked_since = "2026-08-24"',
+        1,
+    )
+    path.write_text(text, encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "block capsule")
+
+    completed = run_capsule(
+        repo,
+        "start",
+        task_id,
+        "--actor",
+        "Test executor",
+        "--reason",
+        "Should fail.",
+    )
+
+    assert completed.returncode != 0
+    assert "CAPSULE_BLOCKED" in completed.stderr
+
+
+def test_stale_origin_main_fails_closed(
+    tmp_path: Path,
+) -> None:
+    repo, base, task_id = setup_repo(tmp_path)
+    assert git(repo, "rev-parse", "HEAD") != base
+
+    git(
+        repo,
+        "update-ref",
+        "refs/remotes/origin/main",
+        git(repo, "rev-parse", "HEAD"),
+    )
+
+    completed = run_capsule(
+        repo,
+        "start",
+        task_id,
+        "--actor",
+        "Test executor",
+        "--reason",
+        "Should fail.",
+    )
+
+    assert completed.returncode != 0
+    assert "BASE_AUTHORITY_STALE" in completed.stderr
+
+
+def test_unknown_qualification_profile_fails_closed(
+    tmp_path: Path,
+) -> None:
+    repo, _, task_id = setup_repo(tmp_path)
+    path = (
+        repo
+        / "engineering/capsules/active"
+        / f"{task_id}.md"
+    )
+    text = path.read_text(encoding="utf-8").replace(
+        'specialized_qualification = ["profile:repository"]',
+        'specialized_qualification = ["profile:not-implemented"]',
+        1,
+    )
+    path.write_text(text, encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "select unavailable profile")
+
+    sha = git(repo, "rev-parse", "HEAD")
+    checks = tmp_path / "checks.json"
+    output = tmp_path / "manifest.json"
+
+    checks.write_text(
+        json.dumps({"check_runs": []}),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(MAIN_QUALIFICATION),
+            "--repo-root",
+            str(repo),
+            "--repository",
+            "owner/repo",
+            "--sha",
+            sha,
+            "--ref-name",
+            f"qualification/{task_id}/{sha[:12]}",
+            "--output",
+            str(output),
+            "--checks-json",
+            str(checks),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    manifest = json.loads(
+        output.read_text(encoding="utf-8")
+    )
+    assert manifest["result"] == "FAIL"
+    assert "not implemented" in manifest["error"].lower()

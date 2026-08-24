@@ -1394,3 +1394,57 @@ def test_specialized_qualification_profile_token_rejects_duplicates(
         for finding in capsule["errors"]
     }
     assert "QUALIFICATION_PROFILE_DUPLICATE" in codes
+
+
+def test_specialized_qualification_cannot_change_after_ready(
+    tmp_path: Path,
+) -> None:
+    repo, base = setup_repo(tmp_path)
+    path = (
+        repo
+        / "engineering/capsules/active/PROFILE-IMMUTABLE.md"
+    )
+
+    ready = capsule_text(
+        "PROFILE-IMMUTABLE",
+        "READY",
+        base,
+    ).replace(
+        "specialized_qualification = []",
+        'specialized_qualification = ["profile:repository"]',
+    )
+
+    path.write_text(
+        ready,
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "ready profile contract")
+
+    changed = capsule_text(
+        "PROFILE-IMMUTABLE",
+        "IN_PROGRESS",
+        base,
+    ).replace(
+        "specialized_qualification = []",
+        'specialized_qualification = ["profile:backend"]',
+    )
+
+    path.write_text(
+        changed,
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "change profile after ready")
+
+    completed = _run_profile_validation(repo)
+
+    assert completed.returncode != 0
+    document = json.loads(completed.stdout)
+    codes = {
+        finding["code"]
+        for capsule in document["capsules"]
+        for finding in capsule["errors"]
+    }
+
+    assert "QUALIFICATION_CHANGED_AFTER_READY" in codes

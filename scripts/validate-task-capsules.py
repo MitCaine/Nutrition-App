@@ -393,6 +393,83 @@ def discover_capsules(repo: Path) -> list[Path]:
         if path.name not in {"README.md", "TEMPLATE.md"}
     ]
 
+def historical_capsule_metadata(content: str) -> dict[str, Any] | None:
+    lines = content.splitlines()
+
+    if not lines or lines[0].strip() != "+++":
+        return None
+
+    try:
+        end = next(
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "+++"
+        )
+    except StopIteration:
+        return None
+
+    try:
+        return tomllib.loads("\n".join(lines[1:end]))
+    except tomllib.TOMLDecodeError:
+        return None
+
+
+def latest_ready_metadata(
+    repo: Path,
+    relative: Path,
+    *,
+    base_commit: str,
+    head: str,
+    capsule_revision: int,
+) -> tuple[bool, dict[str, Any] | None]:
+    log = run_git(
+        repo,
+        "log",
+        "--format=%H",
+        f"{base_commit}..{head}",
+        "--",
+        relative.as_posix(),
+    )
+
+    if log.returncode:
+        return False, None
+
+    commits = [
+        line.strip()
+        for line in log.stdout.splitlines()
+        if line.strip()
+    ]
+
+    if not commits:
+        return False, None
+
+    for commit in commits:
+        shown = run_git(
+            repo,
+            "show",
+            f"{commit}:{relative.as_posix()}",
+        )
+
+        if shown.returncode:
+            continue
+
+        metadata = historical_capsule_metadata(
+            shown.stdout
+        )
+
+        if metadata is None:
+            continue
+
+        if (
+            metadata.get("state") == "READY"
+            and metadata.get("capsule_revision")
+            == capsule_revision
+        ):
+            return True, metadata
+
+    return True, None
+
+
 def parse_document(path: Path, result: CapsuleResult) -> tuple[dict[str, Any], str] | None:
     try:
         text = path.read_text(encoding="utf-8")
@@ -1667,6 +1744,49 @@ def validate_capsule(
         if isinstance(metadata.get("base_commit"), str)
         else ""
     )
+
+    if (
+        state in {"IN_PROGRESS", "IMPLEMENTED", "VERIFIED", "REVIEWED"}
+        and isinstance(revision, int)
+        and COMMIT_PATTERN.fullmatch(authority_base)
+    ):
+        history_exists, ready_metadata = latest_ready_metadata(
+            repo,
+            relative,
+            base_commit=authority_base,
+            head=context["head"],
+            capsule_revision=revision,
+        )
+
+        if history_exists and ready_metadata is None:
+            result.error(
+                "READY_QUALIFICATION_AUTHORITY_MISSING",
+                (
+                    "No READY capsule snapshot exists in Git history "
+                    "for the current capsule_revision."
+                ),
+                "specialized_qualification",
+            )
+        elif ready_metadata is not None:
+            ready_qualification = ready_metadata.get(
+                "specialized_qualification"
+            )
+
+            if (
+                isinstance(ready_qualification, list)
+                and ready_qualification
+                != specialized_qualification
+            ):
+                result.error(
+                    "QUALIFICATION_CHANGED_AFTER_READY",
+                    (
+                        "specialized_qualification changed after READY. "
+                        "Return to DECOMPOSED, increment capsule_revision, "
+                        "and requalify instead of changing execution "
+                        "qualification in place."
+                    ),
+                    "specialized_qualification",
+                )
 
     validate_authority_paths(
         repo,

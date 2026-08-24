@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import re
 import subprocess
@@ -604,6 +605,45 @@ def wait_for_main_qualification(
     )
 
 
+def wait_for_qualification_artifact(
+    repo: Path,
+    slug: str,
+    run_id: int,
+    artifact_name: str,
+    *,
+    timeout_seconds: int = 120,
+    interval_seconds: int = 2,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+
+    while time.monotonic() < deadline:
+        document = gh_json(
+            repo,
+            (
+                f"/repos/{slug}/actions/runs/{run_id}/"
+                "artifacts?per_page=100"
+            ),
+        )
+
+        candidates = [
+            item
+            for item in document.get("artifacts", [])
+            if item.get("name") == artifact_name
+        ]
+
+        if candidates:
+            return max(
+                candidates,
+                key=lambda item: int(item.get("id", 0)),
+            )
+
+        time.sleep(interval_seconds)
+
+    raise CapsuleError(
+        f"QUALIFICATION_ARTIFACT_TIMEOUT: {artifact_name}"
+    )
+
+
 def find_qualification_run(
     repo: Path,
     slug: str,
@@ -712,6 +752,14 @@ def qualify(
             ref_name,
         )
 
+        artifact_name = f"main-qualification-{sha}"
+        artifact = wait_for_qualification_artifact(
+            repo,
+            slug,
+            int(workflow_run["id"]),
+            artifact_name,
+        )
+
         result = {
             "task": task_id,
             "capsule_revision": metadata.get("capsule_revision"),
@@ -723,7 +771,10 @@ def qualify(
             "check_conclusion": check.get("conclusion"),
             "workflow_run_id": workflow_run.get("id"),
             "workflow_run_url": workflow_run.get("html_url"),
-            "artifact_name": f"main-qualification-{sha}",
+            "artifact_name": artifact_name,
+            "artifact_id": artifact.get("id"),
+            "artifact_digest": artifact.get("digest"),
+            "artifact_size_in_bytes": artifact.get("size_in_bytes"),
             "result": "PASS",
         }
 
@@ -731,17 +782,6 @@ def qualify(
             evidence_dir.mkdir(
                 parents=True,
                 exist_ok=True,
-            )
-
-            result_path = evidence_dir / "qualification-result.json"
-            result_path.write_text(
-                json.dumps(
-                    result,
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
             )
 
             completed = run(
@@ -765,6 +805,31 @@ def qualify(
                 raise CapsuleError(
                     f"Qualification artifact download failed: {detail}"
                 )
+
+            manifest_path = (
+                evidence_dir / "main-qualification.json"
+            )
+
+            if not manifest_path.is_file():
+                raise CapsuleError(
+                    "Downloaded qualification artifact does not contain "
+                    "main-qualification.json."
+                )
+
+            result["manifest_sha256"] = hashlib.sha256(
+                manifest_path.read_bytes()
+            ).hexdigest()
+
+            result_path = evidence_dir / "qualification-result.json"
+            result_path.write_text(
+                json.dumps(
+                    result,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
         git(
             repo,
@@ -859,6 +924,7 @@ def build_parser() -> argparse.ArgumentParser:
     transition_parser.add_argument("--no-commit", action="store_true")
 
     aliases = {
+        "ready": "READY",
         "start": "IN_PROGRESS",
         "implemented": "IMPLEMENTED",
         "verify": "VERIFIED",
