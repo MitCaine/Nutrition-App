@@ -2668,3 +2668,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `5d075a91976bfc960b8839c6b97398348405d4c4`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-159-R1.md`
 - **Historical capsule SHA-256:** `6e22639f915d79fb96d15c0fb8324d5a8dd6a06ab2e4f5db46af7c921fc58033`
+
+### GH-160 - Make the canonical task-capsule template schema-valid
+
+- **ID:** GH-160
+- **Title:** Make the canonical task-capsule template schema-valid
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/160
+- **Issue disposition:** OPEN — implementation is integrated and remotely qualified; explicit issue closure remains gated on remote qualification of this terminal closeout.
+- **Created:** 2026-08-23
+- **Completed/updated:** 2026-08-23
+- **Base commit:** 7aa86987b2577055ba145aa9d3d255c78dcaf1e5
+- **Task branch:** workflow/gh-160-template-schema-valid
+- **Controller:** ChatGPT GPT-5.6 Sol
+- **Executor:** ChatGPT GPT-5.6 Sol
+- **Reviewer:** independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** be7e33f615a12a7145828b4f1a0b990dad88c2d4
+- **Verified commit reference(s):** 3e0c289042b8a5ffba4f279194b49c5d0be61055, 708888100112bd6ab85eaee71980e77a1b868b0e
+- **Reviewed source commit:** 9911f29d08cb7dc1699372caab7cf8e502305194
+- **Reviewed task/checkpoint commit(s):** 708888100112bd6ab85eaee71980e77a1b868b0e, 9911f29d08cb7dc1699372caab7cf8e502305194
+- **Integration/merged commit:** f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03
+- **Integration-related commit reference(s):** CI run 32681747286; CodeQL run 32681747184; exact integration check runs 7/7 PASS.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved — exact implementation scope, schema/lifecycle non-change, invocation boundaries, structural negative behavior, focused regressions, and repository qualification passed with no blocking finding.
+- **Verification summary:** Pre-fix SECTION_UNKNOWN reproduced; canonical template structural validation passed; unknown/missing/duplicate/order/subsection regressions passed; 24 focused validator tests passed; documentation validation, project audit, repository review profile, integration validation, and exact remote integration checks passed.
+- **Specialized qualification:** Not applicable — no application runtime, API, persistence, schema, migration, dependency, CI-definition, performance, native-device, or deployment behavior changed.
+- **Known warnings:** Pre-existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning for apps/backend/app/control_migrations/versions/ops_0004_phase5c4_admission.py; unchanged and outside GH-160 scope.
+- **Deferred work/follow-up IDs:** Remote qualification of this terminal closeout, explicit GitHub issue #160 closure/finalization, task branch/worktree cleanup; audit follow-ups #161, #162, #163, and #164 remain independent.
+- **Retrospective:** Bounded workflow/tooling correction completed without schema-v1 lifecycle expansion. One generated implementation command used an incorrect source-text insertion anchor and was recovered before validator/test edits were written; no scope or contract change resulted.
+- **Referenced commits:** base 7aa86987b2577055ba145aa9d3d255c78dcaf1e5; READY c2b1b8c248d6cb9c0fa2debd6b17b9278af5f91b; IN_PROGRESS f7321a8e932bc84316a14a18d15afc9edad4feb0; implementation be7e33f615a12a7145828b4f1a0b990dad88c2d4; IMPLEMENTED 3e0c289042b8a5ffba4f279194b49c5d0be61055; VERIFIED 708888100112bd6ab85eaee71980e77a1b868b0e; REVIEWED 9911f29d08cb7dc1699372caab7cf8e502305194; integration f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03.
+- **Full-capsule recovery commit:** f9742e5cbc0a15c3ca2baf34dbd5170fa6debb03
+- **Full-capsule recovery path:** engineering/capsules/active/GH-160.md
+- **Historical capsule SHA-256:** cdb811b8b71a3c100e7bdbba46f4b5df693bd9c1d0e2cccdde67847145a00396
