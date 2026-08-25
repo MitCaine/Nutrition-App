@@ -40,7 +40,7 @@ jobs:
 
       - name: Retain Main qualification manifest
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: main-qualification-${{ github.sha }}
           path: ${{ runner.temp }}/main-qualification.json
