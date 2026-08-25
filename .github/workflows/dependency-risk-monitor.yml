@@ -1,0 +1,106 @@
+name: Dependency risk monitor
+
+on:
+  push:
+    paths:
+      - apps/mobile/package.json
+      - apps/mobile/package-lock.json
+      - apps/mobile/src/**
+      - apps/mobile/modules/**
+      - engineering/security/dependency-risk-register.json
+      - scripts/dependency_risk.py
+      - scripts/tests/test_dependency_risk.py
+      - .github/workflows/dependency-risk-monitor.yml
+  pull_request:
+    paths:
+      - apps/mobile/package.json
+      - apps/mobile/package-lock.json
+      - apps/mobile/src/**
+      - apps/mobile/modules/**
+      - engineering/security/dependency-risk-register.json
+      - scripts/dependency_risk.py
+      - scripts/tests/test_dependency_risk.py
+      - .github/workflows/dependency-risk-monitor.yml
+  schedule:
+    - cron: "17 15 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-risk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Dependency risk validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Dependency risk unit tests
+        run: python scripts/tests/test_dependency_risk.py
+
+      - name: Offline fail-closed validation
+        run: python scripts/dependency_risk.py validate-offline
+
+      - name: Install exact mobile graph
+        working-directory: apps/mobile
+        run: npm ci --audit=false
+
+      - name: Installed graph and reachability validation
+        run: python scripts/dependency_risk.py validate-installed
+
+  monitor:
+    name: Dependency risk upstream monitor
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Compare tracked upstream assumptions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/dependency_risk.py
+          monitor
+          --output dependency-risk-monitor.json
+
+      - name: Upload material-change evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-risk-monitor
+          path: dependency-risk-monitor.json
+          if-no-files-found: error
+          retention-days: 30

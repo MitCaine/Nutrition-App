@@ -1,0 +1,284 @@
+{
+  "monitor_baseline": {
+    "remote_snapshot": {
+      "advisories": {
+        "GHSA-5p2g-fcmc-qvqq": {
+          "ghsa_id": "GHSA-5p2g-fcmc-qvqq",
+          "severity": "high",
+          "vulnerabilities": [
+            {
+              "first_patched_version": null,
+              "range": "<= 2.0.2"
+            }
+          ],
+          "withdrawn_at": null
+        },
+        "GHSA-w3rx-r6r6-pgpr": {
+          "ghsa_id": "GHSA-w3rx-r6r6-pgpr",
+          "severity": "high",
+          "vulnerabilities": [
+            {
+              "first_patched_version": null,
+              "range": "<= 2.0.2"
+            }
+          ],
+          "withdrawn_at": null
+        },
+        "GHSA-w5hq-g745-h8pq": {
+          "ghsa_id": "GHSA-w5hq-g745-h8pq",
+          "severity": "medium",
+          "vulnerabilities": [
+            {
+              "first_patched_version": "11.1.1",
+              "range": "< 11.1.1"
+            },
+            {
+              "first_patched_version": "12.0.1",
+              "range": ">= 12.0.0, < 12.0.1"
+            },
+            {
+              "first_patched_version": "13.0.1",
+              "range": ">= 13.0.0, < 13.0.1"
+            }
+          ],
+          "withdrawn_at": null
+        }
+      },
+      "npm_registry": {
+        "expo_config_plugins_latest": "57.0.9",
+        "expo_config_plugins_xcode_range": "^3.0.1",
+        "image_size_latest": "2.0.2",
+        "metro_image_size_range": "^1.0.2",
+        "metro_latest": "0.87.0",
+        "xcode_latest": "3.0.1",
+        "xcode_uuid_range": "^7.0.3"
+      }
+    }
+  },
+  "policy": {
+    "alerts_are_not_dismissed_for_dashboard_cleanliness": true,
+    "network_monitoring_is_separate_from_offline_validation": true,
+    "unsupported_transitive_forcing_is_prohibited": true
+  },
+  "records": [
+    {
+      "advisory_id": "GHSA-5p2g-fcmc-qvqq",
+      "alert_number": 16,
+      "classification": "build tooling",
+      "dependency_path": [
+        {
+          "location": "",
+          "name": "nutrition-mobile",
+          "requested": null,
+          "version": "2.0.0"
+        },
+        {
+          "location": "node_modules/react-native",
+          "name": "react-native",
+          "requested": "^0.86.2",
+          "version": "0.86.2"
+        },
+        {
+          "location": "node_modules/@react-native/community-cli-plugin",
+          "name": "@react-native/community-cli-plugin",
+          "requested": "0.86.2",
+          "version": "0.86.2"
+        },
+        {
+          "location": "node_modules/metro",
+          "name": "metro",
+          "requested": "^0.84.3",
+          "version": "0.84.4"
+        },
+        {
+          "location": "node_modules/image-size",
+          "name": "image-size",
+          "requested": "^1.0.2",
+          "version": "1.2.1"
+        }
+      ],
+      "disposition": "upstream-blocked accepted risk",
+      "first_patched_version": null,
+      "installed_version": "1.2.1",
+      "manifest_path": "apps/mobile/package-lock.json",
+      "owner": "repository owner",
+      "package": "image-size",
+      "reevaluation_triggers": [
+        "image-size publishes a new release or advisory patch state",
+        "Metro removes, replaces, or changes its image-size dependency",
+        "the installed npm dependency path changes",
+        "application/runtime source begins to reference image-size",
+        "the native OCR image boundary changes",
+        "a new advisory affects image-size@1.2.1"
+      ],
+      "remediation": {
+        "reason": "The current advisories publish no patched image-size release, npm latest remains 2.0.2, and current Metro upstream still declares image-size ^1.0.2.",
+        "supported_fix_available": false
+      },
+      "repository_reachability": {
+        "conclusion": "The vulnerable package is reachable from Metro build-asset processing, but no Nutrition App runtime path from camera/photo/OCR input to Node image-size is present. Runtime OCR uses Apple ImageIO and Vision.",
+        "evidence": [
+          "npm ls resolves exactly one image-size path through react-native@0.86.2, @react-native/community-cli-plugin@0.86.2, and metro@0.84.4.",
+          "npm explain binds image-size@1.2.1 to metro@0.84.4.",
+          "Only the installed root metro@0.84.4 copy owns image-size ^1.0.2.",
+          "Nutrition App application source contains no direct image-size reference.",
+          "NutritionOcrModule.swift uses CGImageSource and VNImageRequestHandler."
+        ]
+      },
+      "reviewed_at": "2026-08-24",
+      "reviewed_commit": "7ca4fe04ca7ae291492cba65339617755a0389d4",
+      "risk_id": "dependabot-16-image-size-GHSA-5p2g-fcmc-qvqq",
+      "severity": "high",
+      "source_issue": 166,
+      "vulnerable_precondition": "A specially malformed JXL/HEIF asset must reach the image-size parser and trigger its infinite-loop condition.",
+      "vulnerable_version_range": "<= 2.0.2"
+    },
+    {
+      "advisory_id": "GHSA-w3rx-r6r6-pgpr",
+      "alert_number": 17,
+      "classification": "build tooling",
+      "dependency_path": [
+        {
+          "location": "",
+          "name": "nutrition-mobile",
+          "requested": null,
+          "version": "2.0.0"
+        },
+        {
+          "location": "node_modules/react-native",
+          "name": "react-native",
+          "requested": "^0.86.2",
+          "version": "0.86.2"
+        },
+        {
+          "location": "node_modules/@react-native/community-cli-plugin",
+          "name": "@react-native/community-cli-plugin",
+          "requested": "0.86.2",
+          "version": "0.86.2"
+        },
+        {
+          "location": "node_modules/metro",
+          "name": "metro",
+          "requested": "^0.84.3",
+          "version": "0.84.4"
+        },
+        {
+          "location": "node_modules/image-size",
+          "name": "image-size",
+          "requested": "^1.0.2",
+          "version": "1.2.1"
+        }
+      ],
+      "disposition": "upstream-blocked accepted risk",
+      "first_patched_version": null,
+      "installed_version": "1.2.1",
+      "manifest_path": "apps/mobile/package-lock.json",
+      "owner": "repository owner",
+      "package": "image-size",
+      "reevaluation_triggers": [
+        "image-size publishes a new release or advisory patch state",
+        "Metro removes, replaces, or changes its image-size dependency",
+        "the installed npm dependency path changes",
+        "application/runtime source begins to reference image-size",
+        "the native OCR image boundary changes",
+        "a new advisory affects image-size@1.2.1"
+      ],
+      "remediation": {
+        "reason": "The current advisories publish no patched image-size release, npm latest remains 2.0.2, and current Metro upstream still declares image-size ^1.0.2.",
+        "supported_fix_available": false
+      },
+      "repository_reachability": {
+        "conclusion": "The vulnerable package is reachable from Metro build-asset processing, but no Nutrition App runtime path from camera/photo/OCR input to Node image-size is present. Runtime OCR uses Apple ImageIO and Vision.",
+        "evidence": [
+          "npm ls resolves exactly one image-size path through react-native@0.86.2, @react-native/community-cli-plugin@0.86.2, and metro@0.84.4.",
+          "npm explain binds image-size@1.2.1 to metro@0.84.4.",
+          "Only the installed root metro@0.84.4 copy owns image-size ^1.0.2.",
+          "Nutrition App application source contains no direct image-size reference.",
+          "NutritionOcrModule.swift uses CGImageSource and VNImageRequestHandler."
+        ]
+      },
+      "reviewed_at": "2026-08-24",
+      "reviewed_commit": "7ca4fe04ca7ae291492cba65339617755a0389d4",
+      "risk_id": "dependabot-17-image-size-GHSA-w3rx-r6r6-pgpr",
+      "severity": "high",
+      "source_issue": 166,
+      "vulnerable_precondition": "A specially malformed ICNS asset must reach the image-size parser and trigger its infinite-loop condition.",
+      "vulnerable_version_range": "<= 2.0.2"
+    },
+    {
+      "advisory_id": "GHSA-w5hq-g745-h8pq",
+      "alert_number": 2,
+      "classification": "Expo/Xcode configuration build tooling",
+      "dependency_path": [
+        {
+          "location": "",
+          "name": "nutrition-mobile",
+          "requested": null,
+          "version": "2.0.0"
+        },
+        {
+          "location": "node_modules/expo-sharing",
+          "name": "expo-sharing",
+          "requested": "~57.0.15",
+          "version": "57.0.15"
+        },
+        {
+          "location": "node_modules/@expo/config-plugins",
+          "name": "@expo/config-plugins",
+          "requested": "^57.0.9",
+          "version": "57.0.9"
+        },
+        {
+          "location": "node_modules/xcode",
+          "name": "xcode",
+          "requested": "^3.0.1",
+          "version": "3.0.1"
+        },
+        {
+          "location": "node_modules/uuid",
+          "name": "uuid",
+          "requested": "^7.0.3",
+          "version": "7.0.3"
+        }
+      ],
+      "disposition": "non-reachable residual dependency risk",
+      "first_patched_version": "11.1.1",
+      "installed_version": "7.0.3",
+      "manifest_path": "apps/mobile/package-lock.json",
+      "owner": "repository owner",
+      "package": "uuid",
+      "reevaluation_triggers": [
+        "xcode publishes a new release",
+        "xcode removes or changes its uuid dependency",
+        "@expo/config-plugins changes its xcode dependency",
+        "the installed npm dependency path changes",
+        "xcode source begins using uuid.v3, uuid.v5, or uuid.v6",
+        "a new advisory affects uuid@7.0.3"
+      ],
+      "remediation": {
+        "reason": "uuid 11.1.1 patches the installed affected range, but current xcode@3.0.1 still declares uuid ^7.0.3 and current Expo configuration tooling still uses xcode ^3.0.1. Unsupported transitive forcing is prohibited.",
+        "supported_fix_available": false
+      },
+      "repository_reachability": {
+        "conclusion": "Installed xcode@3.0.1 uses uuid.v4 once and contains no uuid.v3, uuid.v5, or uuid.v6 call, so the advisory's affected API path is not reachable through the current dependency owner.",
+        "evidence": [
+          "npm ls resolves exactly one uuid path through expo-sharing@57.0.15, @expo/config-plugins@57.0.9, and xcode@3.0.1.",
+          "npm explain binds uuid@7.0.3 to xcode@3.0.1.",
+          "Installed xcode@3.0.1 contains one uuid.v4 call.",
+          "Installed xcode@3.0.1 contains zero uuid.v3/v5/v6 calls."
+        ]
+      },
+      "reviewed_at": "2026-08-24",
+      "reviewed_commit": "7ca4fe04ca7ae291492cba65339617755a0389d4",
+      "risk_id": "dependabot-2-uuid-GHSA-w5hq-g745-h8pq",
+      "severity": "medium",
+      "source_issue": 166,
+      "vulnerable_precondition": "The affected UUID v3, v5, or v6 API must be invoked with a caller-supplied output buffer that can trigger the advisory's missing bounds check.",
+      "vulnerable_version_range": "< 11.1.1"
+    }
+  ],
+  "reviewed_at": "2026-08-24",
+  "reviewed_commit": "7ca4fe04ca7ae291492cba65339617755a0389d4",
+  "schema_version": 1,
+  "source_issue": 166
+}

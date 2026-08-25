@@ -104,6 +104,7 @@ backlogs do not override them.
 
 - [Operations Index](operations/README.md)
 - [Testing Guide](operations/testing.md)
+- [Dependency Risk Management](operations/dependency-risk-management.md)
 - [PostgreSQL-to-SQLite Personal Transfer](operations/postgresql-to-sqlite-transfer.md)
 - [Control Plane Guide](operations/control-plane.md)
 
