@@ -2920,3 +2920,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `1487c7e58c24e4fbc8700a11a3a544bc6ef418d4`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-168.md`
 - **Historical capsule SHA-256:** `4b7c9a99ff7cf82ab8d8fa5945413c9f22d24ddeae7f14a3fbb2f037b28c564a`
+
+### GH-165-P3 - Bootstrap trusted task controller
+
+- **ID:** `GH-165-P3`
+- **Title:** Bootstrap trusted task controller
+- **Final state:** `MERGED`
+- **Capsule revision:** 3
+- **Task type:** architecture
+- **Risk:** critical
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/165
+- **Issue disposition:** OPEN / P3 COMPLETE — issue #165 remains open for GH-165-P4 live dedicated-App provisioning, protected-main enforcement, disposable pilot, ruleset activation, and operator-flow evaluation.
+- **Created:** 2026-08-24
+- **Completed/updated:** 2026-08-24
+- **Base commit:** 44693b870d1b6d9bc8c5b87d73398225c2fd15c5
+- **Task branch:** ops/gh-165-p3-trusted-task-controller
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** ChatGPT GPT-5.6 Sol independent reviewer
+- **Delegation:** none
+- **Implementation commit(s):** `312d7885ac9723e79ed1d6129700b702db41ea8e`, `2f7dfc9ed92ef83cbe3e624285c3a4137013b940` — revision-3 substantive replay and IMPLEMENTED checkpoint; source is byte/mode-identical to preserved revision-2 repair `4f70048d83fa798fe80613ba66078a241c6c39c7`.
+- **Verified commit reference(s):** `01f71871bf6c78ea3e646be6cc964f1303d1596b`, `a1097a9d66911e4757c851bbcbde9c87aba2e8e1`
+- **Reviewed source commit:** `a1097a9d66911e4757c851bbcbde9c87aba2e8e1`
+- **Reviewed task/checkpoint commit(s):** `a1097a9d66911e4757c851bbcbde9c87aba2e8e1`, `8adf537643823b1a4c03dbd548e353bc4fa9400a`, `69387f639f5e162d1e46648585edfa4ef04d572b`
+- **Integration/merged commit:** `dc8093ea00d8c9208c759e1f99a1fa58253a9c7a` on `main`.
+- **Integration-related commit reference(s):** `dc8093ea00d8c9208c759e1f99a1fa58253a9c7a`, `69387f639f5e162d1e46648585edfa4ef04d572b`, `a1097a9d66911e4757c851bbcbde9c87aba2e8e1`, `2f7dfc9ed92ef83cbe3e624285c3a4137013b940`
+- **Acceptance result:** 12/12 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent revision-3 source/security review found zero blocking findings. Exact VERIFIED checkpoint `a1097a9d66911e4757c851bbcbde9c87aba2e8e1` was reviewed; all nine implementation files remain identical to the qualified implementation, the three prior review blockers remain closed, acceptance is 12/12, qualification is 5/5, authoritative Nutrition Review is 13/13, and live App/ruleset activation remains deferred to GH-165-P4. Independent review-summary SHA-256 `8f78e0e6f447107745f25e38184a053c50b0349392da6ef6c3367206925d97e6`.
+- **Verification summary:** PASS — independent revision-3 verifier explicitly judged AC-1 through AC-12 satisfied on exact IMPLEMENTED candidate `2f7dfc9ed92ef83cbe3e624285c3a4137013b940`. Focused controller verification passed 43/43; the three previously blocking trust findings were freshly re-proved closed; and the authoritative Nutrition Review passed 13/13 with stable repository fingerprint `4693e44e8bfbf3e44d9ad938260aed427ecff1c97792e8353d997b373c8cd4d3`. Review bundle SHA-256 `a9becbe5fe031688e68e85e3e49fc670b8064c48f47600877de06bd6760ed2b0`; results JSON SHA-256 `70921febc2f08d843bcdba4353a8fc2721229e3a3b80b5cecd87f5162a84e8b3`; review summary SHA-256 `ec2492d030f1c48e1298b0eb855aeaf8d99ec4f753b3c29f5bf653b70beb5282`. After human integration, exact main commit `dc8093ea00d8c9208c759e1f99a1fa58253a9c7a` passed push CI run `32795218590`: Repository validation `97644985906`, Backend baseline `97644986054`, Backend PostgreSQL 16 contracts `97644986091`, and Mobile baseline `97644986134` all completed successfully on the exact integration SHA.
+- **Specialized qualification:** PASS — exact candidate `2f7dfc9ed92ef83cbe3e624285c3a4137013b940` passed repository/backend/mobile/postgresql qualification. CI run `32784938090` supplied the four baseline checks and Main qualification run `32784938146` / check `97614798768` supplied the fifth successful exact-SHA check. Artifact `9541158754` digest `sha256:dcfe6ef9a919b7e0a0d6c0eabcdde905ca7d4ac2f98d11d9d7330d51040f2cf2`; downloaded manifest SHA-256 `04211fd4e3e4890ff4729560fcb4a1bb17d03c40ce5b79b9e6a7f3c2c53b55f6`; temporary qualification ref removed.
+- **Known warnings:** Existing non-blocking Starlette `HTTP_422_UNPROCESSABLE_ENTITY` deprecation and `DOMAIN_TOKEN_IN_OPS_MIGRATION` warning remain. The fresh locked mobile dependency preparation also reported 16 inherited npm advisories (12 moderate, 4 high); P3 did not modify package.json or package-lock.json. npm-ci log SHA-256 `42e810be17d8860e7b637d63b720fd6aa81aeaaaa6b49a6b6b1cc345fcc15ce9`. The integration push also reported three existing default-branch Dependabot findings (2 high, 1 moderate); security remediation remains separately owned by #166.
+- **Deferred work/follow-up IDs:** GH-165-P4 — live dedicated-App provisioning, trusted workflow pilot, forged/out-of-scope/fake-check rejection proof, protected-main ruleset activation, and owner-facing operator-flow evaluation.
+- **Retrospective:** yes — governance/security workflow migration requires a post-pilot operator-flow retrospective. Perform the post-pilot operator-flow retrospective after GH-165-P4 completes the live controller/App/ruleset pilot.
+- **Referenced commits:** `44693b870d1b6d9bc8c5b87d73398225c2fd15c5`, `4f70048d83fa798fe80613ba66078a241c6c39c7`, `8602eb53e7dc11049925915149f7af4305d599f3`, `1bf4d6268fa9ef01ff249c18d5e5d18ab17ee30d`, `3348fed6afaec1d8d0035d5017a76e65c05a56aa`, `407e68a06f805aedb75e2635fbcb6cf7e1eeb573`, `312d7885ac9723e79ed1d6129700b702db41ea8e`, `2f7dfc9ed92ef83cbe3e624285c3a4137013b940`, `01f71871bf6c78ea3e646be6cc964f1303d1596b`, `a1097a9d66911e4757c851bbcbde9c87aba2e8e1`, `8adf537643823b1a4c03dbd548e353bc4fa9400a`, `69387f639f5e162d1e46648585edfa4ef04d572b`, `dc8093ea00d8c9208c759e1f99a1fa58253a9c7a`
+- **Full-capsule recovery commit:** `69387f639f5e162d1e46648585edfa4ef04d572b`
+- **Full-capsule recovery path:** `engineering/capsules/active/GH-165-P3.md`
+- **Historical capsule SHA-256:** `db9d241c4b0cb70de401e97067fcc4829c5cde6b167959c404b0d19fa9829e94`
