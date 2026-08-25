@@ -7,6 +7,26 @@ metadata readable by Python's standard library; Markdown owns rationale, scope, 
 verification, evidence, and escalation. Copy the
 [canonical template](../capsules/TEMPLATE.md).
 
+## Authority status and controller cutover
+
+Task Capsules remain the schema and recovery authority for work that already entered the capsule
+lifecycle. They are not silently interchangeable with the external task controller.
+
+After GH-165-P4 is successfully integrated through the protected `main` workflow and the AUDIT-07
+pilot is accepted, new tasks use `./scripts/task` with trusted-author GitHub Issue authorization as
+their execution authority. Do not create a new Task Capsule merely as a fallback when the controller,
+dedicated App, qualification workflow, or protected-main policy rejects an operation; such a failure
+remains fail-closed and requires an explicit reviewed correction or workflow rollback decision.
+
+Any capsule already active at cutover continues under this schema through its normal terminal state.
+Existing `engineering/capsules/HISTORY.md` records and their exact Git recovery locators remain
+authoritative historical evidence. The legacy capsule validator and recovery tooling may remain
+available during the compatibility period without making capsules the default authority for new
+post-cutover tasks.
+
+Before that successful P4 cutover, this Task Capsule contract remains the current authority wherever
+the repository workflow still explicitly invokes it.
+
 ## Required metadata
 
 `schema_version`, `capsule_revision`, `id`, `title`, `state`, `task_type`, `risk`, `created`,

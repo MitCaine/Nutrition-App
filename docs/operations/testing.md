@@ -421,31 +421,67 @@ P3 tests this contract deterministically. No private key, environment, live work
 ruleset, or protected-main mutation is required during bootstrap. GH-165-P4 performs the live
 provisioning and pilot after this workflow exists on `main`.
 
-### GH-165-P4 live pilot handoff
+### GH-165-P4 live protected pilot and cutover
 
-GH-165-P4 is the first task intended to use the trusted controller rather than a Task Capsule.
-Authority-sensitive controller commands run from a clean synchronized main checkout. The candidate
-worktree is supplied as data with --candidate-root.
+GH-165-P4 is the first live task that uses the trusted controller rather than a Task Capsule.
+Authority-sensitive controller commands run from a clean, synchronized `main` checkout. Candidate
+worktrees are untrusted inputs supplied with `--candidate-root`; they never supply their own
+authorization, workflow authority, or qualification profile.
 
-Expected operator sequence after the dedicated App/environment is provisioned:
+The first protected-main pilot must prove the complete trust boundary before the ruleset becomes
+normal repository governance:
 
-1. Run ./scripts/task prepare ISSUE with the bounded path/profile authorization.
-2. Run ./scripts/task authorize ISSUE.
-3. Perform bounded implementation in the task worktree.
-4. From main, run ./scripts/task qualify ISSUE --candidate-root PATH.
-5. Record the explicit independent verification decision with ./scripts/task verify.
-6. Record the explicit independent review decision with ./scripts/task review.
-7. After explicit human-owner approval, run ./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized.
+1. Provision a dedicated GitHub App installed only on this repository. Its repository permission
+   surface is Checks write plus GitHub's implicit Metadata read. Store its private key only in the
+   `trusted-qualification` environment secret `NUTRITION_QUALIFICATION_APP_PRIVATE_KEY`; record the
+   App client ID and reviewed App integration ID in the corresponding environment variables.
+2. Run `./scripts/task prepare ISSUE` with explicit allowed paths, forbidden paths, profiles,
+   revision, exact `origin/main` base, and a fresh nonce; then run `./scripts/task authorize ISSUE`
+   so the exact canonical authorization becomes a trusted-author GitHub Issue comment outside
+   candidate history.
+3. Build the candidate only from the authorized base and scope. Unexpected or forbidden paths,
+   edited/ambiguous authorization, stale base authority, or unsupported profiles must fail closed.
+4. From synchronized `main`, run `./scripts/task qualify ISSUE --candidate-root PATH`. Qualification
+   may publish only the exact candidate SHA to its temporary candidate ref, must dispatch
+   `.github/workflows/trusted-qualification.yml` explicitly from `main`, and must require the
+   dedicated App's successful exact-SHA `Main qualification` check before removing the temporary
+   ref.
+5. Demonstrate the negative trust cases before ruleset activation: forged, edited, or ambiguous
+   authorization is rejected; an out-of-scope candidate is rejected; a same-named check from an
+   integration other than the configured dedicated App is not accepted as qualification; and
+   stale or mismatched SHA/check identity is rejected.
+6. Build and validate the `main` governance plan with `scripts/main-governance.py` using the reviewed
+   dedicated-App integration ID. The planned policy must require `Main qualification` from that App,
+   use the approved loose required-status semantics, prohibit deletion and non-fast-forward updates,
+   and contain no routine bypass actor.
+7. Activate the `main` ruleset only after the live qualification and negative trust proofs pass.
+   Then use a disposable unqualified commit to prove GitHub rejects an ordinary direct update to
+   `main`; the failed probe must not change remote `main`.
+8. Record independent verification explicitly with `./scripts/task verify` and independent review
+   explicitly with `./scripts/task review`. Tests and successful qualification do not infer either
+   decision.
+9. After explicit human-owner approval, run
+   `./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized`. Integration
+   re-fetches external authority, requires the exact qualified SHA, successful explicit verification,
+   Approved review, the current dedicated-App `Main qualification`, and then attempts only the exact
+   protected update.
+10. Confirm remote `main`, ruleset identity, issue disposition, temporary-ref cleanup, and local
+    worktree cleanup. Any contradiction or unsupported GitHub behavior remains a stop condition
+    rather than a reason to weaken the governance contract.
 
-The qualify command publishes only the exact candidate SHA to a temporary task-candidate ref,
-dispatches trusted-qualification.yml explicitly at main, correlates the exact trusted workflow run,
-requires the dedicated-App Main qualification check for the same SHA and authorization identity,
-and removes the temporary ref before returning.
+After the GH-165-P4 pilot is successfully integrated and accepted, this controller sequence is the
+default workflow for new tasks:
 
-The integrate command does not infer approval. It re-fetches the external authorization, requires
-the exact qualified SHA, explicit successful verification, explicit Approved review, explicit
-human-owner authorization, and a current successful Main qualification from the configured
-dedicated App before attempting the exact fast-forward main update.
+1. `./scripts/task prepare ISSUE ...`
+2. `./scripts/task authorize ISSUE`
+3. bounded candidate implementation
+4. `./scripts/task qualify ISSUE --candidate-root PATH`
+5. explicit `./scripts/task verify ISSUE ...`
+6. explicit `./scripts/task review ISSUE ...`
+7. explicit human-owner authorization followed by
+   `./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized`
 
-NUTRITION_QUALIFICATION_APP_INTEGRATION_ID must identify the dedicated qualification App. The
-generic GitHub Actions integration ID 15368 is rejected by the local controller.
+`Main qualification` is valid only when its exact SHA, name, conclusion, authorization identity,
+and producing App match the controller's trusted configuration.
+`NUTRITION_QUALIFICATION_APP_INTEGRATION_ID` must identify the dedicated qualification App; the
+generic GitHub Actions integration ID 15368 is never an acceptable substitute.
