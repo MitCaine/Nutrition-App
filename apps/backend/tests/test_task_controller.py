@@ -1163,9 +1163,16 @@ TRUSTED_WORKFLOW = (
     / ".github/workflows/trusted-qualification.yml"
 )
 
+TRUSTED_EXECUTOR_WORKFLOW = (
+    ROOT
+    / ".github/workflows/trusted-qualification-execute.yml"
+)
 
-def workflow_text() -> str:
-    return TRUSTED_WORKFLOW.read_text(
+
+def workflow_text(
+    path: Path = TRUSTED_WORKFLOW,
+) -> str:
+    return path.read_text(
         encoding="utf-8"
     )
 
@@ -1173,8 +1180,10 @@ def workflow_text() -> str:
 def workflow_job_slice(
     job_name: str,
     next_job_name: str | None,
+    *,
+    path: Path = TRUSTED_EXECUTOR_WORKFLOW,
 ) -> str:
-    text = workflow_text()
+    text = workflow_text(path)
 
     start = text.index(
         f"  {job_name}:\n"
@@ -1193,6 +1202,9 @@ def workflow_job_slice(
 
 def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> None:
     text = workflow_text()
+    executor_text = workflow_text(
+        TRUSTED_EXECUTOR_WORKFLOW
+    )
 
     assert "\n  workflow_dispatch:\n" in text
     assert "\n  push:" not in text
@@ -1205,12 +1217,12 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
     )
 
     assert (
-        "ref: ${{ github.sha }}"
+        "ref: ${{ github.event.workflow_run.head_sha }}"
         in plan
     )
     assert "ref: main" not in plan
     assert (
-        "ref: ${{ inputs.candidate_sha }}"
+        "ref: ${{ needs.handoff.outputs.candidate_sha }}"
         in plan
     )
     assert (
@@ -1219,8 +1231,8 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
     )
 
     assert (
-        text.count(
-            "ref: ${{ github.sha }}"
+        executor_text.count(
+            "ref: ${{ github.event.workflow_run.head_sha }}"
         )
         == 2
     )
@@ -1264,7 +1276,7 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
     ]
 
     for binding in env_bindings:
-        assert text.count(binding) == 2
+        assert text.count(binding) == 1
 
     shell_bindings = [
         '--issue-number "${ISSUE_NUMBER}"',
@@ -1283,7 +1295,7 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
     ]
 
     for binding in shell_bindings:
-        assert text.count(binding) == 2
+        assert executor_text.count(binding) == 2
 
 def test_candidate_jobs_have_no_dedicated_app_secret_or_environment() -> None:
     job_pairs = (
@@ -1308,7 +1320,7 @@ def test_candidate_jobs_have_no_dedicated_app_secret_or_environment() -> None:
             "environment:" not in body
         )
         assert (
-            "ref: ${{ inputs.candidate_sha }}"
+            "ref: ${{ needs.plan.outputs.candidate_sha }}"
             in body
         )
 
@@ -1325,10 +1337,14 @@ def test_finalizer_isolated_and_app_action_is_sha_pinned() -> None:
         in body
     )
     assert (
-        "ref: ${{ github.sha }}"
+        "ref: ${{ github.event.workflow_run.head_sha }}"
         in body
     )
     assert "ref: main" not in body
+    assert (
+        "ref: ${{ needs.plan.outputs.candidate_sha }}"
+        in body
+    )
     assert (
         "Rebuild trusted plan without candidate execution"
         in body
