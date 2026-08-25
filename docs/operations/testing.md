@@ -399,11 +399,24 @@ dumps, or screenshots containing personal data are not included.
 
 GH-165-P3 introduces a candidate-independent qualification boundary without activating it live.
 
-The trusted controller workflow is `.github/workflows/trusted-qualification.yml`. It is
-`workflow_dispatch`-only and is intended to be dispatched explicitly at `main` after the bootstrap
-has itself been reviewed and integrated. The workflow treats the candidate SHA as data: trusted
-planning and finalization use controller code checked out from `main`, while isolated candidate jobs
-check out the exact candidate SHA and receive only read-only repository access.
+GH-165-P3 originally introduced `.github/workflows/trusted-qualification.yml` as a
+single `workflow_dispatch` qualification workflow. GH-171 subsequently separates the trusted
+dispatch boundary from candidate execution so untrusted candidate code does not execute in a
+default-branch cache-write-capable `workflow_dispatch` run.
+
+The steady-state entrypoint remains `.github/workflows/trusted-qualification.yml` and is dispatched
+explicitly at the exact authorized `main` commit. That workflow does not check out or execute the
+candidate. It validates the controller-supplied scalar identities and publishes them as a
+short-retention `trusted-qualification-dispatch` artifact.
+
+`.github/workflows/trusted-qualification-execute.yml` is triggered by successful completion of that
+entrypoint through `workflow_run`. It requires the triggering run to be a same-repository
+`workflow_dispatch` on `main`, requires the executor/default-branch SHA to equal the triggering
+controller SHA, downloads and validates the exact handoff artifact, then performs trusted planning
+and selected candidate qualification. Candidate jobs retain read-only repository permissions and do
+not enable dependency caching. GitHub also gives `workflow_run` executions read-only access to the
+default branch cache scope, preventing candidate code from creating or overwriting default-branch
+cache entries.
 
 The `trusted-qualification` GitHub environment is reserved for the privileged finalizer. The
 dedicated qualification App private key must be stored only as the environment secret
@@ -412,14 +425,22 @@ dedicated qualification App private key must be stored only as the environment s
 `NUTRITION_QUALIFICATION_APP_INTEGRATION_ID` records the reviewed App integration ID. Candidate
 jobs must not reference this environment or any of those credentials.
 
-The finalizer re-fetches the exact authorization comment, rebuilds the qualification plan using
-trusted default-branch code, requires the same plan digest observed by the initial trusted planner,
-binds selected GitHub job results, and only then mints an installation token. The token is requested
-with Checks write permission and is used only to create the exact-SHA `Main qualification` check.
+The executor finalizer re-fetches the exact authorization comment, rebuilds the qualification plan
+using trusted controller code bound to the triggering `main` SHA, requires the same plan digest
+observed by the initial trusted planner, binds selected GitHub job results, and only then mints an
+installation token. The token is requested with Checks write permission and is used only to create
+the exact-SHA `Main qualification` check. Candidate code is never executed in the finalizer and
+never receives the qualification App credential.
 
-P3 tests this contract deterministically. No private key, environment, live workflow dispatch,
-ruleset, or protected-main mutation is required during bootstrap. GH-165-P4 performs the live
-provisioning and pilot after this workflow exists on `main`.
+P3 tested the original contract deterministically. No private key, environment, live workflow
+dispatch, ruleset, or protected-main mutation was required during that bootstrap. GH-165-P4 then
+performed the live provisioning and pilot.
+
+GH-171-P1 is itself a bounded security bootstrap. Because a new `workflow_run` workflow cannot
+participate until that workflow file exists on the default branch, P1 is qualified through the
+pre-GH-171 dispatch workflow with authorization restricted to workflow/documentation files and the
+repository profile. The bootstrap candidate cannot modify the scripts executed by that profile.
+After P1 integration, subsequent candidate execution uses the cache-safe `workflow_run` executor.
 
 ### GH-165-P4 live protected pilot and cutover
 
@@ -470,7 +491,9 @@ normal repository governance:
     rather than a reason to weaken the governance contract.
 
 After the GH-165-P4 pilot is successfully integrated and accepted, this controller sequence is the
-default workflow for new tasks:
+default workflow for new tasks. GH-171 changes the internal GitHub Actions transport from a
+single dispatch execution to the dispatch-handoff plus `workflow_run` executor described above;
+the operator-facing controller commands remain unchanged:
 
 1. `./scripts/task prepare ISSUE ...`
 2. `./scripts/task authorize ISSUE`
