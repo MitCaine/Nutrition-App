@@ -39,6 +39,7 @@ class IosNativeQualificationTests(
             "apps/mobile/plugins/with-ios-build-workarounds.js",
             "apps/mobile/modules/nutrition-ocr/expo-module.config.json",
             "apps/mobile/modules/nutrition-ocr/ios/NutritionOcrModule.swift",
+            "apps/mobile/modules/nutrition-ocr/ios-tests/NutritionOcrGeometryTests.swift",
             "scripts/ios-native-qualification.sh",
             ".github/workflows/ios-native.yml",
             ".github/workflows/trusted-qualification-execute.yml",

@@ -37,6 +37,7 @@ IOS_NATIVE_PATH_PATTERNS = (
     "apps/mobile/plugins/**",
     "apps/mobile/modules/**/expo-module.config.json",
     "apps/mobile/modules/**/ios/**",
+    "apps/mobile/modules/**/ios-tests/**",
     "scripts/ios-native-qualification.sh",
     "scripts/lib/qualification_profiles.py",
     "scripts/lib/task_authorization.py",
