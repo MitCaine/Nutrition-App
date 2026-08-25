@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(
+    cd "$(dirname "${BASH_SOURCE[0]}")/.."
+    pwd
+)"
+
+python_matches_project() {
+    local candidate="$1"
+
+    [[ -x "$candidate" ]] \
+        || command -v "$candidate" >/dev/null 2>&1 \
+        || return 1
+
+    "$candidate" -c '
+import sys
+raise SystemExit(
+    0
+    if sys.version_info[:2] == (3, 12)
+    else 1
+)
+' >/dev/null 2>&1
+}
+
+choose_python() {
+    local candidate=""
+    local line=""
+    local worktree_path=""
+
+    if command -v python3 >/dev/null 2>&1 \
+        && python_matches_project "$(command -v python3)"; then
+        command -v python3
+        return 0
+    fi
+
+    if command -v python3.12 >/dev/null 2>&1 \
+        && python_matches_project "$(command -v python3.12)"; then
+        command -v python3.12
+        return 0
+    fi
+
+    while IFS= read -r line; do
+        case "$line" in
+            "worktree "*)
+                worktree_path="${line#worktree }"
+                candidate="$worktree_path/apps/backend/.venv/bin/python"
+
+                if python_matches_project "$candidate"; then
+                    printf '%s\n' "$candidate"
+                    return 0
+                fi
+                ;;
+        esac
+    done < <(
+        git -C "$ROOT" worktree list --porcelain
+    )
+
+    return 1
+}
+
+PROJECT_PYTHON="$(
+    choose_python || true
+)"
+
+if [[ -z "$PROJECT_PYTHON" ]]; then
+    echo "Unable to locate repository Python 3.12." >&2
+    exit 1
+fi
+
+exec \
+    "$PROJECT_PYTHON" \
+    "$ROOT/scripts/task.py" \
+    "$@"

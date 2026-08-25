@@ -1,0 +1,484 @@
+name: Trusted qualification
+
+run-name: >-
+  Trusted qualification
+  ${{ inputs.task_id }}
+  ${{ inputs.dispatch_nonce }}
+  ${{ inputs.candidate_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: Authorized task ID
+        required: true
+        type: string
+      issue_number:
+        description: GitHub issue number
+        required: true
+        type: string
+      authorization_revision:
+        description: External authorization revision
+        required: true
+        type: string
+      authorization_comment_id:
+        description: Exact authorization comment ID
+        required: true
+        type: string
+      authorization_payload_sha256:
+        description: Canonical authorization payload digest
+        required: true
+        type: string
+      candidate_sha:
+        description: Exact candidate commit
+        required: true
+        type: string
+      candidate_ref:
+        description: Temporary exact-candidate ref
+        required: true
+        type: string
+      dispatch_nonce:
+        description: Unique dispatch correlation nonce
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: >-
+    trusted-qualification-${{ inputs.issue_number }}-${{
+    inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Trusted qualification plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      plan_sha256: ${{ steps.plan-outputs.outputs.plan_sha256 }}
+      profiles_json: ${{ steps.plan-outputs.outputs.profiles_json }}
+      repository: ${{ steps.plan-outputs.outputs.repository }}
+      backend: ${{ steps.plan-outputs.outputs.backend }}
+      mobile: ${{ steps.plan-outputs.outputs.mobile }}
+      postgresql: ${{ steps.plan-outputs.outputs.postgresql }}
+    steps:
+      - name: Checkout trusted controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch exact external authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ inputs.authorization_comment_id }}
+        run: >-
+          gh api
+          -H "Accept: application/vnd.github+json"
+          "/repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}"
+          > authorization-comment.json
+
+      - name: Build trusted qualification plan
+        env:
+          TRUSTED_AUTHOR: >-
+            ${{ vars.NUTRITION_TASK_TRUSTED_AUTHOR ||
+            github.repository_owner }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TASK_ID: ${{ inputs.task_id }}
+          AUTHORIZATION_REVISION: ${{ inputs.authorization_revision }}
+          AUTHORIZATION_COMMENT_ID: ${{ inputs.authorization_comment_id }}
+          AUTHORIZATION_PAYLOAD_SHA256: ${{ inputs.authorization_payload_sha256 }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+        run: >-
+          python
+          trusted/scripts/lib/trusted_qualification.py
+          plan
+          --repo-root candidate
+          --repository "${GITHUB_REPOSITORY}"
+          --issue-number "${ISSUE_NUMBER}"
+          --task-id "${TASK_ID}"
+          --authorization-revision "${AUTHORIZATION_REVISION}"
+          --authorization-comment-id "${AUTHORIZATION_COMMENT_ID}"
+          --authorization-payload-sha256
+          "${AUTHORIZATION_PAYLOAD_SHA256}"
+          --trusted-author "${TRUSTED_AUTHOR}"
+          --candidate-sha "${CANDIDATE_SHA}"
+          --candidate-ref "${CANDIDATE_REF}"
+          --comment authorization-comment.json
+          --output trusted-plan.json
+
+      - id: plan-outputs
+        name: Expose trusted profile selection
+        run: |
+          echo "plan_sha256=$(jq -r '.plan_sha256' trusted-plan.json)" >> "$GITHUB_OUTPUT"
+          echo "profiles_json=$(jq -c '.profiles' trusted-plan.json)" >> "$GITHUB_OUTPUT"
+          for profile in repository backend mobile postgresql; do
+            selected="$(jq -r --arg profile "$profile" '.profiles | index($profile) != null' trusted-plan.json)"
+            echo "${profile}=${selected}" >> "$GITHUB_OUTPUT"
+          done
+
+  repository:
+    name: Trusted repository validation
+    if: needs.plan.outputs.repository == 'true'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate docs
+        run: python scripts/validate-docs.py
+
+      - name: Shell syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r bash -n
+
+  backend:
+    name: Trusted backend baseline
+    if: needs.plan.outputs.backend == 'true'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: apps/backend/requirements-dev.lock
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install -r requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Backend baseline
+        run: >-
+          python -m pytest
+          -m
+          "not postgres_concurrency and not phase5c_performance_t0 and not phase5c4_control_postgres and not phase5c4_minio and not phase5c4_docker_integration"
+
+      - name: Repository session contract
+        run: ../../scripts/session-end.sh
+
+  backend-postgres:
+    name: Trusted Backend PostgreSQL 16 contracts
+    if: needs.plan.outputs.postgresql == 'true'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: nutrition_app
+          POSTGRES_PASSWORD: nutrition_app
+          POSTGRES_USER: nutrition_app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd
+          "pg_isready -U nutrition_app -d nutrition_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NUTRITION_TEST_POSTGRES_URL: >-
+        postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app
+      REQUIRE_POSTGRES_TESTS: "1"
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: apps/backend/requirements-dev.lock
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install -r requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps -e .
+
+      - name: Verify PostgreSQL major version
+        run: >-
+          python -c
+          "from sqlalchemy import create_engine, text; import os;
+          engine = create_engine(os.environ['NUTRITION_TEST_POSTGRES_URL']);
+          connection = engine.connect();
+          version = connection.execute(text('SHOW server_version')).scalar_one();
+          connection.close(); engine.dispose();
+          assert version.split('.')[0] == '16',
+          f'expected PostgreSQL 16, found {version}'"
+
+      - name: Runtime and completed Epic 4 PostgreSQL contracts
+        run: >-
+          pytest -q --strict-markers
+          tests/test_postgres_test_support.py
+          tests/test_log_concurrency_postgres.py
+          tests/test_graph_restart_idempotency_postgres.py
+          tests/test_food_nutrient_integrity_postgres.py
+          tests/test_food_nutrient_integrity_migration_postgres.py
+          tests/test_e4_01_complete_persistence_postgres.py
+          tests/test_e4_02_complete_mutation_postgres.py
+          tests/test_e4_03_complete_invalidation_postgres.py
+          tests/test_e4_04_history_range_postgres.py
+          tests/test_recipe_duplication_postgres.py
+          tests/test_e4_16_history_parity_postgres.py
+
+  mobile:
+    name: Trusted mobile baseline
+    if: needs.plan.outputs.mobile == 'true'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Verify repository Node toolchain
+        run: python ../../scripts/toolchain-report.py --check node
+
+      - run: npm ci
+
+      - name: Expo configuration contract
+        env:
+          EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
+          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
+        run: npm run config:validate
+
+      - name: Expo dependency compatibility
+        env:
+          EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
+          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
+        run: npm exec -- expo install --check
+
+      - name: Expo project health
+        env:
+          EXPO_PUBLIC_NUTRITION_DATA_AUTHORITY: remote
+          EXPO_PUBLIC_NUTRITION_DEPLOYMENT_MODE: test
+          EXPO_PUBLIC_NUTRITION_API_URL: http://127.0.0.1:8000
+        run: npx expo-doctor
+
+      - run: npm run typecheck
+
+      - name: Jest
+        run: npm test -- --runInBand
+
+  finalize:
+    name: Trusted qualification finalizer
+    if: always() && needs.plan.result == 'success'
+    needs:
+      - plan
+      - repository
+      - backend
+      - backend-postgres
+      - mobile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    environment:
+      name: trusted-qualification
+    steps:
+      - name: Checkout trusted controller only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout candidate as inert data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refetch exact external authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ inputs.authorization_comment_id }}
+        run: >-
+          gh api
+          -H "Accept: application/vnd.github+json"
+          "/repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}"
+          > authorization-comment.json
+
+      - name: Rebuild trusted plan without candidate execution
+        env:
+          TRUSTED_AUTHOR: >-
+            ${{ vars.NUTRITION_TASK_TRUSTED_AUTHOR ||
+            github.repository_owner }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TASK_ID: ${{ inputs.task_id }}
+          AUTHORIZATION_REVISION: ${{ inputs.authorization_revision }}
+          AUTHORIZATION_COMMENT_ID: ${{ inputs.authorization_comment_id }}
+          AUTHORIZATION_PAYLOAD_SHA256: ${{ inputs.authorization_payload_sha256 }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+        run: >-
+          python
+          trusted/scripts/lib/trusted_qualification.py
+          plan
+          --repo-root candidate
+          --repository "${GITHUB_REPOSITORY}"
+          --issue-number "${ISSUE_NUMBER}"
+          --task-id "${TASK_ID}"
+          --authorization-revision "${AUTHORIZATION_REVISION}"
+          --authorization-comment-id "${AUTHORIZATION_COMMENT_ID}"
+          --authorization-payload-sha256
+          "${AUTHORIZATION_PAYLOAD_SHA256}"
+          --trusted-author "${TRUSTED_AUTHOR}"
+          --candidate-sha "${CANDIDATE_SHA}"
+          --candidate-ref "${CANDIDATE_REF}"
+          --comment authorization-comment.json
+          --output final-plan.json
+
+      - name: Require identical trusted plan identity
+        env:
+          EXPECTED_PLAN_SHA256: ${{ needs.plan.outputs.plan_sha256 }}
+        run: |
+          observed="$(jq -r '.plan_sha256' final-plan.json)"
+          test "$observed" = "$EXPECTED_PLAN_SHA256"
+
+      - name: Bind GitHub job outcomes
+        env:
+          PROFILES_JSON: ${{ needs.plan.outputs.profiles_json }}
+          REPOSITORY_RESULT: ${{ needs.repository.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          POSTGRESQL_RESULT: ${{ needs.backend-postgres.result }}
+          MOBILE_RESULT: ${{ needs.mobile.result }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          profiles = json.loads(
+              os.environ["PROFILES_JSON"]
+          )
+
+          all_results = {
+              "repository": os.environ["REPOSITORY_RESULT"],
+              "backend": os.environ["BACKEND_RESULT"],
+              "postgresql": os.environ["POSTGRESQL_RESULT"],
+              "mobile": os.environ["MOBILE_RESULT"],
+          }
+
+          results = {
+              profile: all_results[profile]
+              for profile in profiles
+          }
+
+          Path("profile-results.json").write_text(
+              json.dumps(
+                  results,
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Construct exact-SHA App check request
+        env:
+          TRUSTED_AUTHOR: >-
+            ${{ vars.NUTRITION_TASK_TRUSTED_AUTHOR ||
+            github.repository_owner }}
+        run: >-
+          python
+          trusted/scripts/lib/trusted_qualification.py
+          finalize
+          --plan final-plan.json
+          --comment authorization-comment.json
+          --profile-results profile-results.json
+          --trusted-author "${TRUSTED_AUTHOR}"
+          --workflow-run-id "${GITHUB_RUN_ID}"
+          --output check-request.json
+
+      - name: Mint minimum-permission qualification App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.NUTRITION_QUALIFICATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NUTRITION_QUALIFICATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - name: Publish authoritative Main qualification
+        env:
+          NUTRITION_QUALIFICATION_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          EXPECTED_APP_ID: >-
+            ${{ vars.NUTRITION_QUALIFICATION_APP_INTEGRATION_ID }}
+        run: >-
+          python
+          trusted/scripts/lib/trusted_qualification.py
+          publish
+          --repository "${GITHUB_REPOSITORY}"
+          --expected-app-id "${EXPECTED_APP_ID}"
+          --request check-request.json
+          --output check-response.json
