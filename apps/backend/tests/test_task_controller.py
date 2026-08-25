@@ -517,6 +517,113 @@ def test_stale_main_fails_closed(
         )
 
 
+def test_native_path_requires_ios_native_profile(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+
+    path = repo / "apps/mobile/app.json"
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    path.write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    git(repo, "add", ".")
+    git(
+        repo,
+        "commit",
+        "-q",
+        "-m",
+        "native candidate",
+    )
+
+    candidate = git(
+        repo,
+        "rev-parse",
+        "HEAD",
+    )
+
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=[
+                "apps/mobile/app.json",
+            ],
+            profiles=[
+                "repository",
+                "mobile",
+            ],
+        )
+    )
+
+    with pytest.raises(
+        AuthorizationError,
+        match="QUALIFICATION_PROFILE_REQUIRED",
+    ):
+        validate_candidate_scope(
+            repo,
+            auth,
+            candidate_sha=candidate,
+        )
+
+
+def test_native_path_accepts_ios_native_profile(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+
+    path = repo / "apps/mobile/app.json"
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    path.write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+
+    git(repo, "add", ".")
+    git(
+        repo,
+        "commit",
+        "-q",
+        "-m",
+        "native candidate",
+    )
+
+    candidate = git(
+        repo,
+        "rev-parse",
+        "HEAD",
+    )
+
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=[
+                "apps/mobile/app.json",
+            ],
+            profiles=[
+                "repository",
+                "mobile",
+                "ios-native",
+            ],
+        )
+    )
+
+    assert validate_candidate_scope(
+        repo,
+        auth,
+        candidate_sha=candidate,
+    ) == [
+        "apps/mobile/app.json",
+    ]
+
+
 def test_plan_profiles_come_from_external_authorization(
     tmp_path: Path,
 ) -> None:

@@ -1,0 +1,70 @@
+name: iOS native qualification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".nvmrc"
+      - "apps/mobile/app.json"
+      - "apps/mobile/package.json"
+      - "apps/mobile/package-lock.json"
+      - "apps/mobile/plugins/**"
+      - "apps/mobile/modules/**/expo-module.config.json"
+      - "apps/mobile/modules/**/ios/**"
+      - "scripts/ios-native-qualification.sh"
+      - "scripts/lib/qualification_profiles.py"
+      - "scripts/lib/task_authorization.py"
+      - ".github/workflows/ios-native.yml"
+      - ".github/workflows/trusted-qualification-execute.yml"
+  pull_request:
+    paths:
+      - ".nvmrc"
+      - "apps/mobile/app.json"
+      - "apps/mobile/package.json"
+      - "apps/mobile/package-lock.json"
+      - "apps/mobile/plugins/**"
+      - "apps/mobile/modules/**/expo-module.config.json"
+      - "apps/mobile/modules/**/ios/**"
+      - "scripts/ios-native-qualification.sh"
+      - "scripts/lib/qualification_profiles.py"
+      - "scripts/lib/task_authorization.py"
+      - ".github/workflows/ios-native.yml"
+      - ".github/workflows/trusted-qualification-execute.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios_native:
+    name: iOS native qualification
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run repository-owned native qualifier
+        run: >-
+          bash scripts/ios-native-qualification.sh
+          --evidence-dir "${RUNNER_TEMP}/ios-native-evidence"
+          --runner macos-26
+
+      - name: Retain native qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-native-${{ github.sha }}
+          path: ${{ runner.temp }}/ios-native-evidence
+          if-no-files-found: warn
+          retention-days: 30

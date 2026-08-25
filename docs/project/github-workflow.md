@@ -130,6 +130,14 @@ evidence-backed rather than repository-wide mandatory. The GitHub Issue
 remains the delivery record. Formal workflow promotion requires accountable
 human approval under the
 [Workflow Changelog](../../engineering/workflow/CHANGELOG.md).
+
+Protected Task Capsule qualification may select the explicit `ios-native` profile when a reviewed
+change crosses the Apple-native boundary. Repository validation enforces a minimum native-trigger
+path floor so obvious mobile dependency, Expo configuration/plugin, local-module iOS, or native
+qualification-tooling changes cannot silently omit that profile. The profile remains an execution
+requirement, not an acceptance or review decision, and documentation/HISTORY bookkeeping alone does
+not imply an expensive native build.
+
 ### GitHub Milestones
 
 Backlog milestone headings become GitHub Milestones with identical titles. Every child issue is

@@ -10,6 +10,7 @@ PROFILE_CHECKS: dict[str, tuple[str, ...]] = {
     "backend": ("Backend baseline",),
     "mobile": ("Mobile baseline",),
     "postgresql": ("Backend PostgreSQL 16 contracts",),
+    "ios-native": ("iOS native qualification",),
 }
 
 

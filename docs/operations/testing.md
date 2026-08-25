@@ -4,8 +4,9 @@
 
 The test strategy follows architectural claims. Fast unit tests explain behavior; Jest proves mobile
 models, local-runtime parity, and rendered flows; native/file-backed SQLite qualification proves
-local storage/lifecycle claims; native Swift tests prove Apple Vision/image-quality behavior;
-PostgreSQL suites prove remote locking, role, migration, and concurrency claims; MinIO suites prove
+local storage/lifecycle claims; host-executable Swift regression harnesses prove bounded Apple
+Vision/image-quality behavior; PostgreSQL suites prove remote locking, role, migration, and
+concurrency claims; MinIO suites prove
 object-retention behavior.
 
 ## Baseline validation
@@ -60,16 +61,18 @@ shared route chrome, OCR quality policy, and rendered flow behavior.
 
 Native/file-backed SQLite qualification is required for claims about `expo-sqlite` lifecycle,
 migrations, transaction visibility, termination, backup/restore activation, and restart semantics
-that mocks cannot establish. Native Apple Vision geometry/recognition/image-quality tests live under
-`modules/nutrition-ocr/ios-tests` and must run through the native iOS test target before a release
-claim that depends on those native behaviors.
+that mocks cannot establish. Native Apple Vision geometry/recognition/image-quality regressions live under
+`modules/nutrition-ocr/ios-tests`. They are standalone host-executable Swift programs, not XCTest
+cases or an iOS Simulator test target. Continuous native qualification runs those programs on the
+macOS host and separately proves that the real generated application and `NutritionOcr` pod compile
+for an iOS Simulator.
 
 
 ## Main qualification profiles
 
 Task Capsules may select machine-executable qualification profiles through
-`specialized_qualification` entries using `profile:lowercase-name`. The initial
-repository registry owns four profiles:
+`specialized_qualification` entries using `profile:lowercase-name`. The
+repository registry owns five profiles:
 
 | Profile | Required GitHub check |
 | --- | --- |
@@ -77,6 +80,7 @@ repository registry owns four profiles:
 | `backend` | `Backend baseline` |
 | `mobile` | `Mobile baseline` |
 | `postgresql` | `Backend PostgreSQL 16 contracts` |
+| `ios-native` | `iOS native qualification` |
 
 The existing CI jobs remain the qualification authorities; `Main qualification`
 aggregates their exact-SHA results rather than duplicating their test commands.
@@ -97,6 +101,34 @@ The `Main qualification` profile is commit qualification, not acceptance or
 review judgment. Task Capsule acceptance criteria, reviewer disposition, scope
 exceptions, architecture stops, and human-owner `MERGED` authority remain
 separate explicit decisions.
+
+### iOS native qualification
+
+`ios-native` is the continuous Apple-native compilation profile. Its substantive implementation is
+repository-owned by `scripts/ios-native-qualification.sh`; the GitHub workflow is intentionally a
+thin macOS wrapper.
+
+On a qualified macOS host, run:
+
+    bash scripts/ios-native-qualification.sh       --evidence-dir /tmp/nutrition-ios-native-evidence       --runner local
+
+The qualifier requires the repository Node pin and Xcode 26.4 or newer, creates a disposable clean
+Git worktree whose path contains spaces, runs `npm ci`, regenerates iOS through clean Expo CNG,
+validates `NutritionOcr` autolinking, installs CocoaPods, compiles the generated application for a
+generic iOS Simulator without distribution signing, and runs the three retained standalone Swift
+regression programs. Generated `ios/`, Pods, DerivedData, harness binaries, and the disposable
+worktree are removed before PASS. Detailed logs and a compact `manifest.json` remain as evidence.
+
+GitHub uses the explicit `macos-26` runner authority rather than floating `macos-latest`.
+Obviously native-affecting paths fail closed when a Task Capsule omits `ios-native`; this path floor
+includes the mobile dependency manifests, `app.json`, repository-owned mobile plugins, Expo-module
+configuration, module `ios/` sources, and the native qualification/profile workflow itself.
+Documentation-only and terminal capsule/HISTORY bookkeeping do not imply native compilation.
+
+This profile proves generated-project compilation and host Swift regressions. It does not prove
+physical-iPhone signing/install, real camera/photo-library behavior, VoiceOver/manual accessibility,
+physical-device OCR accuracy, or device lifecycle behavior that requires separate native/manual
+qualification.
 
 
 ## High-value current feature suites
@@ -176,9 +208,11 @@ SQLite qualification when the change affects backup copy coherence, schema compa
 replacement/rollback, or restart-time activation. A mocked filesystem/database test alone cannot
 prove safe replacement of the real local authority.
 
-For OCR native changes, run the Swift test target under `modules/nutrition-ocr/ios-tests` in addition
-to TypeScript OCR tests. Image-quality inspection is intentionally best-effort; tests must preserve
-the contract that an unavailable/failing inspector does not convert into a recognition failure.
+For OCR native changes, select the `ios-native` profile in addition to affected TypeScript OCR
+tests. The profile compiles the real generated application and runs the standalone Swift programs
+under `modules/nutrition-ocr/ios-tests`; those programs are not XCTest. Image-quality inspection is
+intentionally best-effort; tests must preserve the contract that an unavailable/failing inspector
+does not convert into a recognition failure.
 
 ## Epic 4 History release qualification
 

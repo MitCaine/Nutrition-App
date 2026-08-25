@@ -25,6 +25,23 @@ REPOSITORY_PATTERN = re.compile(
 )
 NONCE_PATTERN = re.compile(r"^[A-Za-z0-9._-]{16,128}$")
 
+IOS_NATIVE_PROFILE = "ios-native"
+
+IOS_NATIVE_PATH_PATTERNS = (
+    ".github/workflows/ios-native.yml",
+    ".github/workflows/trusted-qualification-execute.yml",
+    ".nvmrc",
+    "apps/mobile/app.json",
+    "apps/mobile/package.json",
+    "apps/mobile/package-lock.json",
+    "apps/mobile/plugins/**",
+    "apps/mobile/modules/**/expo-module.config.json",
+    "apps/mobile/modules/**/ios/**",
+    "scripts/ios-native-qualification.sh",
+    "scripts/lib/qualification_profiles.py",
+    "scripts/lib/task_authorization.py",
+)
+
 CORE_FIELDS = {
     "schema_version",
     "task_id",
@@ -711,6 +728,21 @@ def _path_matches(
     )
 
 
+def required_profiles_for_paths(
+    paths: Iterable[str],
+) -> set[str]:
+    observed = tuple(paths)
+
+    if any(
+        _path_matches(path, pattern)
+        for path in observed
+        for pattern in IOS_NATIVE_PATH_PATTERNS
+    ):
+        return {IOS_NATIVE_PROFILE}
+
+    return set()
+
+
 def changed_paths(
     repo: Path,
     *,
@@ -846,5 +878,26 @@ def validate_candidate_scope(
                 "SCOPE_UNEXPECTED",
                 path,
             )
+
+    required_profiles = (
+        required_profiles_for_paths(
+            overlay
+        )
+    )
+
+    missing_profiles = sorted(
+        required_profiles
+        - set(authorization.profiles)
+    )
+
+    if missing_profiles:
+        raise AuthorizationError(
+            "QUALIFICATION_PROFILE_REQUIRED",
+            (
+                "changed paths require qualification "
+                "profile(s): "
+                + ", ".join(missing_profiles)
+            ),
+        )
 
     return overlay

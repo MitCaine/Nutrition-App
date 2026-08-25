@@ -195,6 +195,7 @@ jobs:
       backend: ${{ steps.plan-outputs.outputs.backend }}
       mobile: ${{ steps.plan-outputs.outputs.mobile }}
       postgresql: ${{ steps.plan-outputs.outputs.postgresql }}
+      ios_native: ${{ steps.plan-outputs.outputs.ios_native }}
     steps:
       - name: Checkout trusted controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -278,6 +279,8 @@ jobs:
             selected="$(jq -r --arg profile "$profile" '.profiles | index($profile) != null' trusted-plan.json)"
             echo "${profile}=${selected}" >> "$GITHUB_OUTPUT"
           done
+          selected="$(jq -r '.profiles | index("ios-native") != null' trusted-plan.json)"
+          echo "ios_native=${selected}" >> "$GITHUB_OUTPUT"
 
   repository:
     name: Trusted repository validation
@@ -464,6 +467,41 @@ jobs:
       - name: Jest
         run: npm test -- --runInBand
 
+  ios_native:
+    name: Trusted iOS native qualification
+    if: needs.plan.outputs.ios_native == 'true'
+    needs: plan
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.plan.outputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Run repository-owned native qualifier
+        run: >-
+          bash scripts/ios-native-qualification.sh
+          --evidence-dir "${RUNNER_TEMP}/ios-native-evidence"
+          --runner macos-26
+
+      - name: Retain trusted native evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trusted-ios-native-${{ needs.plan.outputs.candidate_sha }}
+          path: ${{ runner.temp }}/ios-native-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
   finalize:
     name: Trusted qualification finalizer
     if: always() && needs.plan.result == 'success'
@@ -473,6 +511,7 @@ jobs:
       - backend
       - backend-postgres
       - mobile
+      - ios_native
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -550,6 +589,7 @@ jobs:
           BACKEND_RESULT: ${{ needs.backend.result }}
           POSTGRESQL_RESULT: ${{ needs.backend-postgres.result }}
           MOBILE_RESULT: ${{ needs.mobile.result }}
+          IOS_NATIVE_RESULT: ${{ needs.ios_native.result }}
         run: |
           python - <<'PY'
           import json
@@ -565,6 +605,7 @@ jobs:
               "backend": os.environ["BACKEND_RESULT"],
               "postgresql": os.environ["POSTGRESQL_RESULT"],
               "mobile": os.environ["MOBILE_RESULT"],
+              "ios-native": os.environ["IOS_NATIVE_RESULT"],
           }
 
           results = {

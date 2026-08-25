@@ -421,6 +421,26 @@ range when that breaks the native stack. Dependabot is intentionally constrained
 packages. Apply compatible updates when available and keep the remaining vulnerability state
 visible rather than trading a known dependency issue for an unsupported mobile dependency graph.
 
+## Native iOS qualification
+
+Changes that cross the generated Apple-native boundary must select the `ios-native` Task Capsule
+qualification profile. The minimum fail-closed path floor includes `.nvmrc`, mobile dependency
+manifests, `apps/mobile/app.json`, repository-owned config plugins, Expo-module configuration,
+module `ios/` sources/podspecs, and the native qualification/profile workflow itself. Path detection
+is only a safety floor; a task may still declare `ios-native` for another change when its reviewed
+scope crosses the native boundary.
+
+The canonical local/macOS implementation is `scripts/ios-native-qualification.sh`. It regenerates
+the iOS project from repository authority in a disposable path containing spaces, installs Pods,
+builds the actual application for a generic simulator with signing disabled, proves the local
+`NutritionOcr` module compiles, and executes the retained host Swift regressions. Generated native
+products are disposable and must not be committed.
+
+Use ordinary `mobile` qualification as well when JavaScript/TypeScript or package behavior is
+affected. `ios-native` supplements the Ubuntu mobile baseline; it does not replace Jest,
+TypeScript, Expo configuration validation, or physical/manual qualification where those claims are
+in scope.
+
 ## Change checklist
 
 Before finishing any feature change:
@@ -439,6 +459,8 @@ Before finishing any feature change:
 - test the smallest unit plus the cross-layer flow;
 - use native/file-backed SQLite qualification for claims about local SQLite lifecycle,
   backup/restore, transactions, schema evolution, or restart behavior;
+- select `ios-native` whenever the reviewed change crosses generated iOS configuration, native
+  dependencies, config plugins, Expo module/podspec/Swift sources, or native qualification tooling;
 - use PostgreSQL for remote row-lock, PostgreSQL constraint/grant, role, or multi-worker concurrency claims;
 - update the reader guide if responsibility, a current capability, or an invariant changed.
 
