@@ -1486,14 +1486,34 @@ def default_state_file(source: Path) -> Path:
     return source.with_name(f".{source.stem}.github-issues.json")
 
 
-def empty_state(backlog_key: str, repository: str, source: Path) -> dict[str, Any]:
+def relative_source_file(source: Path, *, relative_to: Path) -> str:
+    """Return a portable source reference relative to the state-file directory."""
+
+    try:
+        return Path(
+            os.path.relpath(source.resolve(), start=relative_to.resolve())
+        ).as_posix()
+    except ValueError:
+        # A relative path cannot cross filesystem roots (for example, Windows
+        # drive letters). Preserve the usable absolute reference in that
+        # exceptional case rather than writing an invalid path.
+        return str(source)
+
+
+def empty_state(
+    backlog_key: str,
+    repository: str,
+    source: Path,
+    *,
+    source_base: Path,
+) -> dict[str, Any]:
     """Create the initial serializable state document."""
 
     return {
         "schema_version": STATE_SCHEMA_VERSION,
         "backlog_key": backlog_key,
         "repository": repository,
-        "source_file": str(source),
+        "source_file": relative_source_file(source, relative_to=source_base),
         "source_sha256": None,
         "epic": None,
         "children": {},
@@ -1510,7 +1530,12 @@ def load_state(
     """Load and validate state, or return a new in-memory state document."""
 
     if not path.exists():
-        return empty_state(backlog_key, repository or "", source)
+        return empty_state(
+            backlog_key,
+            repository or "",
+            source,
+            source_base=path.parent,
+        )
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -1658,12 +1683,14 @@ def execute(
 ) -> int:
     """Create or reconcile the Epic, child issues, checklist, and local state."""
 
+    source_file = relative_source_file(source, relative_to=state_path.parent)
     state = load_state(
         state_path,
         backlog_key=backlog_key,
         repository=repository,
         source=source,
     )
+    state["source_file"] = source_file
     stored_project = state.get("project")
     if project_title is None and isinstance(stored_project, dict):
         stored_title = stored_project.get("title")
@@ -1899,7 +1926,7 @@ def execute(
     else:
         print(f"Epic #{epic.number} generated metadata is already current.")
 
-    state["source_file"] = str(source)
+    state["source_file"] = source_file
     state["source_sha256"] = sha256_text(source_text)
     state["epic_checklist_sha256"] = sha256_text(generated_section)
     write_state(state_path, state)
