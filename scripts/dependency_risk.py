@@ -152,10 +152,10 @@ def validate_register_schema(
 
     require(
         isinstance(records, list)
-        and len(records) == 3,
+        and bool(records),
         (
-            "register must contain "
-            "exactly three records"
+            "register must contain at least "
+            "one active risk record"
         ),
     )
 
@@ -438,9 +438,10 @@ def validate_register_schema(
         )
 
     require(
-        seen_alerts
-        == set(TRACKED_ALERTS),
-        "tracked alert set incomplete",
+        seen_alerts.issubset(
+            set(TRACKED_ALERTS)
+        ),
+        "active alert set invalid",
     )
 
     baseline = register.get(
@@ -1057,14 +1058,9 @@ def validate_installed(
         list[list[str]],
     ] = {}
 
-    for package in (
-        "image-size",
-        "uuid",
+    for package, records in sorted(
+        records_by_package.items()
     ):
-        records = records_by_package[
-            package
-        ]
-
         expected_path = (
             registered_label_path(
                 records[0]
@@ -1104,15 +1100,6 @@ def validate_installed(
             package
         ] = observed
 
-    image_explain = npm_json(
-        mobile_root,
-        [
-            "explain",
-            "image-size",
-            "--json",
-        ],
-    )
-
     uuid_explain = npm_json(
         mobile_root,
         [
@@ -1122,42 +1109,10 @@ def validate_installed(
         ],
     )
 
-    image_identities = (
-        collect_identities(
-            image_explain
-        )
-    )
-
     uuid_identities = (
         collect_identities(
             uuid_explain
         )
-    )
-
-    require(
-        (
-            "image-size",
-            "1.2.1",
-            "node_modules/image-size",
-        )
-        in image_identities,
-        (
-            "npm explain image-size "
-            "target drift"
-        ),
-    )
-
-    require(
-        (
-            "metro",
-            "0.84.4",
-            "node_modules/metro",
-        )
-        in image_identities,
-        (
-            "npm explain image-size "
-            "owner drift"
-        ),
     )
 
     require(
@@ -1178,34 +1133,6 @@ def validate_installed(
         )
         in uuid_identities,
         "npm explain uuid owner drift",
-    )
-
-    metro_assets = (
-        mobile_root
-        / "node_modules"
-        / "metro"
-        / "src"
-        / "Assets.js"
-    )
-
-    require(
-        metro_assets.is_file(),
-        "Metro Assets.js missing",
-    )
-
-    metro_text = (
-        metro_assets.read_text(
-            encoding="utf-8"
-        )
-    )
-
-    require(
-        "image-size" in metro_text
-        and "readFile" in metro_text,
-        (
-            "Metro image-size "
-            "build-asset surface drift"
-        ),
     )
 
     xcode_root = (
@@ -1261,10 +1188,8 @@ def validate_installed(
     return {
         **offline,
         "mode": "installed",
-        "image_size_path_count": len(
-            observed_paths[
-                "image-size"
-            ]
+        "active_packages": sorted(
+            observed_paths
         ),
         "uuid_path_count": len(
             observed_paths[

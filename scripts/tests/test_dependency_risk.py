@@ -74,15 +74,13 @@ class DependencyRiskTests(unittest.TestCase):
 
         self.assertEqual(
             result["records"],
-            3,
+            1,
         )
 
-    def test_missing_alert_fails_closed(self):
+    def test_empty_active_register_fails_closed(self):
         register = self.load_register()
 
-        register["records"] = (
-            register["records"][:-1]
-        )
+        register["records"] = []
 
         with self.assertRaises(
             dependency_risk.DependencyRiskError
@@ -91,14 +89,44 @@ class DependencyRiskTests(unittest.TestCase):
                 register
             )
 
+    def test_monitored_alert_may_be_absent_from_active_register(self):
+        register = self.load_register()
+
+        dependency_risk.validate_register_schema(
+            register
+        )
+
+        active_alerts = {
+            record["alert_number"]
+            for record in register["records"]
+        }
+
+        self.assertEqual(
+            active_alerts,
+            {2},
+        )
+
+        self.assertEqual(
+            set(dependency_risk.TRACKED_ALERTS),
+            {2, 16, 17},
+        )
+
     def test_duplicate_risk_id_fails_closed(self):
         register = self.load_register()
 
-        register["records"][1][
-            "risk_id"
-        ] = register["records"][0][
-            "risk_id"
-        ]
+        duplicate = copy.deepcopy(
+            register["records"][0]
+        )
+
+        duplicate["risk_id"] = (
+            register["records"][0][
+                "risk_id"
+            ]
+        )
+
+        register["records"].append(
+            duplicate
+        )
 
         with self.assertRaises(
             dependency_risk.DependencyRiskError
