@@ -6,7 +6,7 @@ The default application runtime is fully local: on-device SQLite is authoritativ
 
 ## Current product state
 
-Version 2.0 is the current product line. Root `VERSION` is the canonical repository release authority and contains `2.0.0`; mobile, Expo, backend, and current documentation metadata mirror that release identity. Version 1.1 and Version 1.2 records remain retained as historical planning, implementation, and qualification provenance rather than current release authority.
+Version 2.0 is the current product line. Root `VERSION` is the canonical repository release authority and contains `2.0.2`; mobile, Expo, backend, and current documentation metadata mirror that release identity. Version 1.1 and Version 1.2 records remain retained as historical planning, implementation, and qualification provenance rather than current release authority.
 
 Current capabilities include:
 
