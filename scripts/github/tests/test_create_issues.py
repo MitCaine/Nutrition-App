@@ -205,7 +205,12 @@ class StateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "nested" / "state.json"
             source = Path(directory) / "backlog.md"
-            state = create_issues.empty_state("example-key", "owner/repo", source)
+            state = create_issues.empty_state(
+                "example-key",
+                "owner/repo",
+                source,
+                source_base=path.parent,
+            )
             create_issues.write_state(path, state)
 
             loaded = create_issues.load_state(
@@ -217,6 +222,7 @@ class StateTests(unittest.TestCase):
 
             self.assertEqual(loaded, json.loads(path.read_text(encoding="utf-8")))
             self.assertEqual(loaded["repository"], "owner/repo")
+            self.assertEqual(loaded["source_file"], "../backlog.md")
 
     def test_remote_marker_recovers_issue_without_state(self) -> None:
         backlog = create_issues.parse_backlog(backlog_text("EX-01"))
@@ -699,9 +705,11 @@ class WorkflowExecutionTests(unittest.TestCase):
                     dry_run=False,
                     project_title=None,
                 )
+                saved_state = json.loads(state.read_text(encoding="utf-8"))
 
         self.assertEqual(first, 0)
         self.assertEqual(second, 0)
+        self.assertEqual(saved_state["source_file"], "backlog.md")
         self.assertEqual(gh.issue_create_count, 2)
         self.assertEqual(gh.project_create_count, 1)
         self.assertEqual(set(gh.labels), {"planning", "backend"})

@@ -221,6 +221,26 @@ grep -Fq \
   "$mobile/ios/Podfile"
 
 grep -Fq \
+  "Nutrition App iOS path portability: React Native Info.plist discovery" \
+  "$mobile/ios/Podfile"
+
+grep -Fq \
+  "Nutrition App iOS path portability: CocoaPods XCFramework diagnostics" \
+  "$mobile/ios/Podfile"
+
+grep -Fq \
+  "Find.find(project_folder_path)" \
+  "$mobile/ios/Podfile"
+
+grep -Fq \
+  "::NewArchitectureHelper.define_singleton_method" \
+  "$mobile/ios/Podfile"
+
+grep -Fq \
+  'basename "$basepath"' \
+  "$mobile/ios/Podfile"
+
+grep -Fq \
   'REACT_NATIVE_XCODE_SCRIPT=' \
   "$project/project.pbxproj"
 
@@ -283,8 +303,16 @@ NODE
 
 (
   cd "$mobile/ios"
-  pod install
+pod install
 ) > "$evidence_dir/pod-install.log" 2>&1
+
+if grep -Fq \
+  "find: " \
+  "$evidence_dir/pod-install.log"
+then
+  echo "IOS_NATIVE_UNSAFE_FIND_OUTPUT" >&2
+  exit 1
+fi
 
 test -f "$mobile/ios/Podfile.lock"
 
