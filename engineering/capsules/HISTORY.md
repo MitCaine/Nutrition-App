@@ -2956,3 +2956,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `69387f639f5e162d1e46648585edfa4ef04d572b`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-165-P3.md`
 - **Historical capsule SHA-256:** `db9d241c4b0cb70de401e97067fcc4829c5cde6b167959c404b0d19fa9829e94`
+
+### GH-174 - Restore Expo SDK 57 dependency compatibility baseline
+
+- **ID:** `GH-174`
+- **Title:** Restore Expo SDK 57 dependency compatibility baseline
+- **Final state:** `MERGED`
+- **Capsule revision:** 1
+- **Task type:** correction
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/174
+- **Issue disposition:** OPEN — terminal closeout completes issue #174 after the validated history commit reaches `main`.
+- **Created:** 2026-09-03
+- **Completed/updated:** 2026-09-03
+- **Base commit:** 639462ca2b32644f14dc276be396cf93f47cf443
+- **Task branch:** task/GH-174-expo-sdk57-compatibility
+- **Controller:** ChatGPT GPT-5.6 Sol controller
+- **Executor:** ChatGPT GPT-5.6 Sol bounded executor
+- **Reviewer:** ChatGPT GPT-5.6 Sol review pass
+- **Delegation:** none
+- **Implementation commit(s):** `189a45e8` restored the Expo SDK 57-compatible manifest and lockfile dependency set.
+- **Verified commit reference(s):** `4acd50662b42d56dbbbb2bb2b7a3cf81c20c859f`, `29d484a648339d4d8c2d0eb2120dc429ccc17771`
+- **Reviewed source commit:** `29d484a648339d4d8c2d0eb2120dc429ccc17771`
+- **Reviewed task/checkpoint commit(s):** `def5277dfda32a771ab7ef1c7accd8451e32c672`
+- **Integration/merged commit:** `def5277dfda32a771ab7ef1c7accd8451e32c672` on `main`.
+- **Integration-related commit reference(s):** exact reviewed/qualified SHA `def5277dfda32a771ab7ef1c7accd8451e32c672`; qualification CI run `33844439634`; Main qualification run `33844439583`; canonical iOS native qualification run `33844440532`; exact-main CI run `33845545784`; exact-main iOS native run `33845545790`; exact-main CodeQL run `33845545186`.
+- **Acceptance result:** 10/10 checked in the terminal source capsule.
+- **Review disposition:** Approved — PASS; independent review found no scope, compatibility, lockfile, native-surface, backend, migration, or acceptance-criteria defect.
+- **Verification summary:** PASS — exact implemented checkpoint `4acd50662b42d56dbbbb2bb2b7a3cf81c20c859f` passed capsule validation, repository validation, clean `npm ci`, Expo configuration validation, `expo install --check`, `expo-doctor` 21/21, TypeScript, and Jest with 164/165 suites and 1827/1829 tests passing with only existing skips. Exact integration SHA `def5277dfda32a771ab7ef1c7accd8451e32c672` then passed push CI run `33845545784`: Repository validation, Mobile baseline, Backend baseline, and Backend PostgreSQL 16 contracts all succeeded; push-triggered iOS native qualification run `33845545790` succeeded; CodeQL run `33845545186` passed actions, JavaScript/TypeScript, and Python analysis.
+- **Specialized qualification:** PASS — exact reviewed SHA `def5277dfda32a771ab7ef1c7accd8451e32c672` passed `profile:repository`, `profile:mobile`, and `profile:ios-native`; Main qualification run `33844439583` succeeded, qualification CI run `33844439634` succeeded, and canonical iOS native run `33844440532` succeeded before integration. The same exact SHA subsequently passed push-triggered CI and iOS native qualification on `main`.
+- **Known warnings:** Existing npm/Dependabot security findings remain outside GH-174. npm reported 12 moderate vulnerabilities during local verification. Dependency Risk monitor run `33845545722` failed its existing dependency-risk validation on the exact integration SHA; that workflow is not one of GH-174's selected qualification profiles and the required repository/mobile/iOS qualification plus exact-main CI and CodeQL all passed.
+- **Deferred work/follow-up IDs:** GH-173 remains separate and must be reconstructed/retested against the React Native 0.86.3 baseline established by GH-174.
+- **Retrospective:** no — routine dependency-baseline correction; the React Native Jest preset alignment was an inseparable peer-resolution requirement.
+- **Referenced commits:** base `639462ca2b32644f14dc276be396cf93f47cf443`; READY `ec1c73c4`; IN_PROGRESS `e44c0464`; implementation `189a45e8`; IMPLEMENTED `4acd50662b42d56dbbbb2bb2b7a3cf81c20c859f`; VERIFIED `29d484a648339d4d8c2d0eb2120dc429ccc17771`; REVIEWED/integration `def5277dfda32a771ab7ef1c7accd8451e32c672`.
+- **Full-capsule recovery commit:** `def5277dfda32a771ab7ef1c7accd8451e32c672`
+- **Full-capsule recovery path:** `engineering/capsules/active/GH-174.md`
+- **Historical capsule SHA-256:** `3a040d008efbc0c360382e6306eb7b65744755138c1d4457b06e970ec5e135e8`
