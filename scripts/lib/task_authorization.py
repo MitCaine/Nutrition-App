@@ -667,17 +667,53 @@ def resolve_comments(
             "no authorization comment was found",
         )
 
-    if len(marked) != 1:
+    matching: list[dict[str, Any]] = []
+
+    for comment in marked:
+        body = comment.get("body")
+        assert isinstance(body, str)
+
+        try:
+            payload = extract_payload(body)
+        except AuthorizationError:
+            continue
+
+        if (
+            payload.get("repository")
+            == expected_repository
+            and payload.get("issue_number")
+            == expected_issue_number
+            and payload.get("task_id")
+            == expected_task_id
+            and payload.get("revision")
+            == expected_revision
+        ):
+            matching.append(comment)
+
+    if not matching:
+        raise AuthorizationError(
+            "AUTHORIZATION_MISSING",
+            (
+                "no authorization comment matched "
+                f"task={expected_task_id} "
+                f"revision={expected_revision}"
+            ),
+        )
+
+    if len(matching) != 1:
         raise AuthorizationError(
             "AUTHORIZATION_AMBIGUOUS",
             (
                 "expected exactly one authorization "
-                f"comment; found {len(marked)}"
+                "comment matching "
+                f"task={expected_task_id} "
+                f"revision={expected_revision}; "
+                f"found {len(matching)}"
             ),
         )
 
     return resolve_comment(
-        marked[0],
+        matching[0],
         trusted_author=trusted_author,
         expected_repository=expected_repository,
         expected_issue_number=expected_issue_number,
