@@ -75,8 +75,8 @@
         {
           "location": "node_modules/expo-sharing",
           "name": "expo-sharing",
-          "requested": "~57.0.18",
-          "version": "57.0.18"
+          "requested": "~57.0.21",
+          "version": "57.0.21"
         },
         {
           "location": "node_modules/@expo/config-plugins",
@@ -118,7 +118,7 @@
       "repository_reachability": {
         "conclusion": "Installed xcode@3.0.1 uses uuid.v4 once and contains no uuid.v3, uuid.v5, or uuid.v6 call, so the advisory's affected API path is not reachable through the current dependency owner.",
         "evidence": [
-          "npm ls resolves exactly one uuid path through expo-sharing@57.0.18, @expo/config-plugins@57.0.9, and xcode@3.0.1.",
+          "npm ls resolves exactly one uuid path through expo-sharing@57.0.21, @expo/config-plugins@57.0.9, and xcode@3.0.1.",
           "npm explain binds uuid@7.0.3 to xcode@3.0.1.",
           "Installed xcode@3.0.1 contains one uuid.v4 call.",
           "Installed xcode@3.0.1 contains zero uuid.v3/v5/v6 calls."
