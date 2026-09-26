@@ -103,6 +103,42 @@ def test_terminal_rejects_indented_duplicate_for_both_states(transaction, final_
                           recovery=recovery, terminal=terminal, final_state=final_state)
 
 
+@pytest.mark.parametrize("final_state,source_state,stray", [
+    ("MERGED", "REVIEWED", "- [ ] AC-2: unfinished"),
+    ("CANCELLED", "CANCELLED", "- [x] AC-1: duplicate"),
+])
+def test_terminal_rejects_stray_ac_after_section_with_matching_history(
+    transaction, final_state, source_state, stray,
+):
+    repo, implementation, _, _ = transaction
+    git(repo, "switch", "-qc", f"outside-recovery-{final_state.lower()}", implementation)
+    active = repo / "engineering/capsules/active/GH-193.md"
+    source = (f'+++\nstate = "{source_state}"\n+++\n## Acceptance criteria\n\n'
+              f'- [x] AC-1: first\n\n## Required verification\n{stray}\n')
+    active.write_text(source)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "outside recovery")
+    recovery = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-qc", f"outside-terminal-{final_state.lower()}", implementation)
+    active.unlink()
+    history = repo / closeout.HISTORY
+    history.write_text(
+        "# HISTORY\n\n### GH-193 - outside fixture\n"
+        f"- **Final state:** {final_state}\n"
+        f"- **Integration/merged commit:** {implementation}\n"
+        "- **Acceptance result:** 1/1 checked in the terminal source capsule.\n"
+        f"- **Full-capsule recovery commit:** {recovery}\n"
+        "- **Full-capsule recovery path:** engineering/capsules/active/GH-193.md\n"
+        f"- **Historical capsule SHA-256:** {hashlib.sha256(source.encode()).hexdigest()}\n"
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "outside terminal")
+    with pytest.raises(closeout.CloseoutError, match="AC_IDS_INVALID"):
+        closeout.validate(repo, issue_number=193, implementation=implementation,
+                          recovery=recovery, terminal=git(repo, "rev-parse", "HEAD"),
+                          final_state=final_state)
+
+
 def test_duplicate_history_and_unreachable_recovery_fail_closed(transaction):
     repo, implementation, recovery, terminal = transaction
     valid_history = (repo / closeout.HISTORY).read_text()

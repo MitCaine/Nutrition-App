@@ -32,7 +32,11 @@ def criterion_states(source: bytes) -> list[bytes]:
     marker = b"## Acceptance criteria\n"
     if source.count(marker) != 1:
         raise CloseoutError("CLOSEOUT_RECOVERY_AC_SECTION_INVALID")
-    section = source.split(marker, 1)[1].split(b"\n## ", 1)[0]
+    before, remainder = source.split(marker, 1)
+    section, separator, after = remainder.partition(b"\n## ")
+    outside = before + (separator + after if separator else b"")
+    if re.search(rb"(?m)^[ \t]*-[ \t]*\[[^\]\n]*\][ \t]*AC-", outside):
+        raise CloseoutError("CLOSEOUT_RECOVERY_AC_IDS_INVALID")
     lines = [line for line in section.splitlines() if re.match(rb"[ \t]*-[ \t]*\[", line)]
     if not lines:
         raise CloseoutError("CLOSEOUT_RECOVERY_AC_INCOMPLETE")
