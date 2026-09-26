@@ -371,14 +371,19 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     argv[0] = str(executable)
     record.update(argv=argv, runtime={"executable": str(executable),
                   "sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
-                  "python_prefix": sys.prefix, "python_base_prefix": sys.base_prefix})
+                  "python_prefix": sys.prefix, "python_base_prefix": sys.base_prefix,
+                  "python_version": sys.version})
     reads = ["/System", "/usr", "/bin", "/sbin", "/Library", "/opt/homebrew",
              "/private/var/select", "/var/select", "/Applications/Xcode.app", str(scratch), str(python.parent.parent),
              str(python.resolve().parent.parent)]
+    metadata_paths = sorted({str(p) for root in reads for p in Path(root).parents}
+                            | {str(p) for p in scratch.parents}
+                            | {str(directory / "stdout.log"), str(directory / "stderr.log")})
     profile = "\n".join([
         "(version 1)", "(deny default)", "(allow process*)", "(allow sysctl-read)", "(allow mach-lookup)",
-        '(allow file-read* (literal "/") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
+        '(allow file-read* (literal "/") (subpath "/dev/fd") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
         "(allow file-read* " + " ".join("(subpath " + json.dumps(x) + ")" for x in reads) + ")",
+        "(allow file-read-metadata " + " ".join("(literal " + json.dumps(x) + ")" for x in metadata_paths) + ")",
         '(allow file-write* (literal "/dev/null") (subpath ' + json.dumps(str(scratch)) + '))',
         "(deny network*)",
     ])

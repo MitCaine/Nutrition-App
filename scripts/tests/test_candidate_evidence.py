@@ -265,6 +265,10 @@ class EvidenceCaptureTests(CandidateFixture):
             "import pytest,sys; assert sys.prefix == " + repr(sys.prefix)]
         venv_result = evidence.run_check(self.repo, binding, "focused", self.root / "venv")
         self.assertEqual(venv_result["status"], "passed", venv_result)
+        if Path("/opt/homebrew/bin/node").is_file():
+            binding["requirements"][0]["argv"] = ["/opt/homebrew/bin/node", "--version"]
+            node_result = evidence.run_check(self.repo, binding, "focused", self.root / "node")
+            self.assertEqual(node_result["status"], "passed", node_result)
         # This fixture tests actual denial of writes outside scratch and network creation.
         binding["requirements"][0]["argv"] = ["{python}", "-c",
             "import pathlib,socket; p=pathlib.Path(" + repr(str(self.repo / "app.py")) + "); "

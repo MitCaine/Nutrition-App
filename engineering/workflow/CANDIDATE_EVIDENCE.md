@@ -76,7 +76,11 @@ A mere GitHub Actions success is not this dedicated-App qualification.
 sandbox policy, canonical review output artifacts when produced, and before/after source
 identity. The initial local transport is macOS-only and offline. It runs a full disposable
 clone without hardlinks inside writable scratch, with no write grant to the real candidate,
-Git metadata or controller evidence. Commands see system/runtime reads and scratch, no
+Git metadata or controller evidence. Runtime ancestor paths and inherited log descriptors
+have metadata-only reads; shell process substitution can read inherited `/dev/fd` handles.
+Git uses isolated configuration and the installed Xcode/Command Line Tools binary path.
+These runtime dependencies are selected reads, not a byte attestation of the entire toolchain.
+Commands see system/runtime reads and scratch, no
 inherited credentials. Required network/infrastructure work unavailable in this transport
 blocks instead of being waived. The accepted remote qualification transport is unchanged.
 The canonical runner's real results and fingerprint files remain individual hashed artifacts.
