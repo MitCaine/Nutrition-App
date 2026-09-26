@@ -48,8 +48,9 @@ The trusted task controller is the accepted normal entrypoint. Legacy Workflow v
 capsule-wide promotion remains experimental. Issues #188–#194 explicitly authorize
 bounded migration trials, not a default cutover. The optional [bounded execution/checkpoint command](EXECUTION.md) supports an isolated
 macOS local-command transport. The optional [candidate evidence lane](CANDIDATE_EVIDENCE.md)
-adds exact command/qualification binding and observed independent review. RI and default
-promotion still require their own acceptance gates.
+adds exact command/qualification binding and observed independent review. The optional
+[pinned RI navigation command](../tooling/RI.md) supplies exact committed-source locations.
+Structural review and default promotion still require their own acceptance gates.
 
 Initial local controller qualification targets macOS. Nutrition's existing Linux
 CI jobs remain qualification authorities; local SQLite, remote PostgreSQL, iOS

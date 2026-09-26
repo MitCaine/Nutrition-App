@@ -126,3 +126,12 @@ bounded correction and public handoff. Attached tasks cannot use assertion-only 
 Unattached compatibility and dedicated-App qualification remain unchanged. The helpers
 `scripts/lib/candidate_evidence.py` and `scripts/lib/independent_review.py` are implementation
 modules behind that public entrypoint, not alternate authorities.
+
+## Pinned Repository Intelligence navigation
+
+`./scripts/ri` bootstraps or verifies an external pinned private RI installation and emits
+bounded navigation packets for exact committed Python/JS/TS/TSX source. See the
+[RI consumer guide](../engineering/tooling/RI.md) for offline acquisition/install, source
+selection, result limits and Nutrition's authority boundaries. RI is optional controller
+tooling, not an app dependency or edit/approval authority. No private source or credentials
+belong in this public repository or candidate CI.
