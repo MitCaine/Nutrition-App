@@ -28,8 +28,10 @@ def text(repo: Path, *args: str) -> str:
 
 
 def validate(repo: Path, *, issue_number: int, implementation: str,
-             terminal: str, recovery: str) -> dict:
+             terminal: str, recovery: str, final_state: str = "MERGED") -> dict:
     """Verify the immutable two-path C→T closeout and reachable full capsule R."""
+    if final_state not in {"MERGED", "CANCELLED"}:
+        raise CloseoutError("CLOSEOUT_FINAL_STATE_INVALID")
     if not all(SHA.fullmatch(value) for value in (implementation, terminal, recovery)):
         raise CloseoutError("CLOSEOUT_SHA_INVALID")
     path = f"engineering/capsules/active/GH-{issue_number}.md"
@@ -46,10 +48,11 @@ def validate(repo: Path, *, issue_number: int, implementation: str,
     if text(repo, "for-each-ref", "--contains", recovery, "--format=%(refname)", "refs/heads", "refs/remotes").strip() == "":
         raise CloseoutError("CLOSEOUT_RECOVERY_UNREACHABLE")
     source = git(repo, "show", f"{recovery}:{path}")
-    if not source.startswith(b"+++") or b'state = "REVIEWED"' not in source:
+    expected_source_state = b"REVIEWED" if final_state == "MERGED" else b"CANCELLED"
+    if not source.startswith(b"+++") or b'state = "' + expected_source_state + b'"' not in source:
         raise CloseoutError("CLOSEOUT_RECOVERY_NOT_REVIEWED")
     criteria = re.findall(rb"^- \[([ x])\] AC-[0-9]+:", source, re.MULTILINE)
-    if not criteria or any(value != b"x" for value in criteria):
+    if not criteria or (final_state == "MERGED" and any(value != b"x" for value in criteria)):
         raise CloseoutError("CLOSEOUT_RECOVERY_AC_INCOMPLETE")
     digest = hashlib.sha256(source).hexdigest()
     before = text(repo, "show", f"{implementation}:{HISTORY}")
@@ -57,26 +60,32 @@ def validate(repo: Path, *, issue_number: int, implementation: str,
     heading = f"### GH-{issue_number} - "
     if before.count(heading) != 0 or after.count(heading) != 1:
         raise CloseoutError("CLOSEOUT_HISTORY_DUPLICATE_OR_MISSING")
+    if not after.startswith(before):
+        raise CloseoutError("CLOSEOUT_PRIOR_HISTORY_CHANGED")
+    suffix = after[len(before):]
+    if not suffix.strip().startswith(heading) or len(re.findall(r"(?m)^### ", suffix)) != 1:
+        raise CloseoutError("CLOSEOUT_HISTORY_APPEND_INVALID")
     entry = after[after.index(heading):].split("\n### ", 1)[0]
-    for field, expected in (("Final state", "MERGED"),
-                            ("Integration/merged commit", implementation),
+    for field, expected in (("Final state", final_state),
                             ("Full-capsule recovery commit", recovery),
                             ("Full-capsule recovery path", path),
                             ("Historical capsule SHA-256", digest)):
         if f"- **{field}:** {expected}" not in entry:
             raise CloseoutError("CLOSEOUT_HISTORY_BINDING_INVALID: " + field)
-    if f"{len(criteria)}/{len(criteria)} checked" not in entry:
+    if final_state == "MERGED" and f"- **Integration/merged commit:** {implementation}" not in entry:
+        raise CloseoutError("CLOSEOUT_HISTORY_BINDING_INVALID: integration")
+    if final_state == "MERGED" and f"{len(criteria)}/{len(criteria)} checked" not in entry:
         raise CloseoutError("CLOSEOUT_HISTORY_ACCEPTANCE_INVALID")
     return {"implementation": implementation, "terminal": terminal,
             "recovery": recovery, "path": path, "sha256": digest,
             "acceptance_count": len(criteria)}
 
 
-def cleanup_target(repo: Path, *, root: Path, branch: str, terminal: str) -> None:
+def cleanup_target(repo: Path, *, issue_number: int, root: Path, branch: str, terminal: str) -> None:
     """Reject a dirty, wrong or unregistered checkout before optional cleanup."""
     root = root.resolve()
     repo = repo.resolve()
-    if root == repo or not branch.startswith("task/GH-") or not SHA.fullmatch(terminal):
+    if root == repo or branch != f"task/GH-{issue_number}-closeout" or not SHA.fullmatch(terminal):
         raise CloseoutError("CLOSEOUT_CLEANUP_TARGET_INVALID")
     worktrees = text(repo, "worktree", "list", "--porcelain")
     if f"worktree {root}\n" not in worktrees:

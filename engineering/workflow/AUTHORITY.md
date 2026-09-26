@@ -105,6 +105,8 @@ Qualification, verification, review and owner authorization remain independent g
 for C and T; a checkpoint does not synthesize any of them. A capsule-only P normally
 travels on a non-main planning ref. Publishing P to main requires its own narrow
 authorization and dedicated-App qualification exactly like any other protected update.
+`finalize-cancel` uses the same separately protected two-path terminal transaction
+with a full `CANCELLED` recovery capsule; it does not invent a reviewed implementation C.
 
 Execution and opted-in candidate/review attachment checks are mechanical. Terminal links
 still require the separate closeout transaction. Existing executable gates apply.

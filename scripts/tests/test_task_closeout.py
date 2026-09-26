@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib import task_closeout as closeout  # noqa: E402
+import task as controller  # noqa: E402
 
 
 def git(repo: Path, *args: str) -> str:
@@ -93,20 +95,85 @@ def test_changed_source_and_recovery_hash_fail_closed(transaction):
                              recovery=recovery, terminal=terminal)
 
 
+def test_prior_history_records_cannot_change(transaction):
+    repo, implementation, recovery, _ = transaction
+    valid_history = (repo / closeout.HISTORY).read_text()
+    git(repo, "switch", "-qc", "rewritten-history", implementation)
+    (repo / "engineering/capsules/active/GH-193.md").unlink()
+    (repo / closeout.HISTORY).write_text(valid_history.replace("# HISTORY", "# CHANGED HISTORY"))
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "rewritten prior history")
+    with pytest.raises(closeout.CloseoutError, match="PRIOR_HISTORY_CHANGED"):
+        closeout.validate(repo, issue_number=193, implementation=implementation,
+                          recovery=recovery, terminal=git(repo, "rev-parse", "HEAD"))
+
+
+def test_cancelled_capsule_has_separate_terminal_state(transaction):
+    repo, implementation, _, _ = transaction
+    git(repo, "switch", "-qc", "cancel-recovery", implementation)
+    source = '+++\nstate = "CANCELLED"\n+++\n- [ ] AC-1: stopped\n'
+    active = repo / "engineering/capsules/active/GH-193.md"
+    active.write_text(source)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "cancelled source")
+    recovery = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-qc", "cancel-terminal", implementation)
+    active.unlink()
+    (repo / closeout.HISTORY).write_text(
+        "# HISTORY\n\n### GH-193 - cancelled\n"
+        "- **Final state:** CANCELLED\n"
+        f"- **Full-capsule recovery commit:** {recovery}\n"
+        "- **Full-capsule recovery path:** engineering/capsules/active/GH-193.md\n"
+        f"- **Historical capsule SHA-256:** {hashlib.sha256(source.encode()).hexdigest()}\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "cancelled terminal")
+    terminal = git(repo, "rev-parse", "HEAD")
+    assert closeout.validate(repo, issue_number=193, implementation=implementation,
+                             recovery=recovery, terminal=terminal,
+                             final_state="CANCELLED")["terminal"] == terminal
+
+
 def test_cleanup_requires_exact_clean_disposable_checkout(transaction, tmp_path):
     repo, implementation, _, terminal = transaction
     disposable = tmp_path / "disposable"
     git(repo, "worktree", "add", "-qb", "task/GH-193-closeout", str(disposable), terminal)
     git(repo, "update-ref", "refs/remotes/origin/main", terminal)
-    closeout.cleanup_target(repo, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
-    with pytest.raises(closeout.CloseoutError, match="BRANCH_MISMATCH"):
-        closeout.cleanup_target(repo, root=disposable, branch="task/GH-193-wrong", terminal=terminal)
+    closeout.cleanup_target(repo, issue_number=193, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
     with pytest.raises(closeout.CloseoutError, match="TARGET_INVALID"):
-        closeout.cleanup_target(repo, root=repo, branch="task/GH-193-closeout", terminal=terminal)
+        closeout.cleanup_target(repo, issue_number=193, root=disposable, branch="task/GH-999-closeout", terminal=terminal)
+    with pytest.raises(closeout.CloseoutError, match="TARGET_INVALID"):
+        closeout.cleanup_target(repo, issue_number=193, root=repo, branch="task/GH-193-closeout", terminal=terminal)
     (disposable / "untracked.txt").write_text("preserve")
     with pytest.raises(closeout.CloseoutError, match="DIRTY"):
-        closeout.cleanup_target(repo, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
+        closeout.cleanup_target(repo, issue_number=193, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
     (disposable / "untracked.txt").unlink()
     git(repo, "update-ref", "refs/remotes/origin/main", implementation)
     with pytest.raises(closeout.CloseoutError, match="REMOTE_MAIN_MISMATCH"):
-        closeout.cleanup_target(repo, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
+        closeout.cleanup_target(repo, issue_number=193, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
+
+
+def test_finalize_rechecks_integrated_candidate_and_remote_main(transaction, tmp_path, monkeypatch):
+    repo, implementation, _, _ = transaction
+    state_dir = tmp_path / "state"
+    terminal_state_dir = tmp_path / "terminal-state"
+    state = {"phase": "INTEGRATED", "task_id": "GH-193", "repository": "owner/repo",
+             "integration": {"origin_main_after": implementation}}
+    monkeypatch.setattr(controller, "load_state", lambda *_: state)
+    monkeypatch.setattr(controller, "resolve_repo_root", lambda path: Path(path))
+    monkeypatch.setattr(controller, "require_candidate_repository", lambda *_args, **_kwargs: implementation)
+    monkeypatch.setattr(controller, "configured_qualification_app_id", lambda: 424242)
+    calls = []
+    monkeypatch.setattr(controller, "revalidate_integration_state", lambda *_args, **_kwargs: calls.append("live"))
+    monkeypatch.setattr(controller, "git", lambda _repo, *args: "f" * 40 if args[0] == "rev-parse" else "")
+    args = argparse.Namespace(repo_root=repo, state_dir=state_dir,
+                              terminal_state_dir=terminal_state_dir, issue_number=193,
+                              candidate_root=repo, terminal_root=None, recovery_sha=None,
+                              human_owner_authorized=True)
+    with pytest.raises(controller.TaskControllerError, match="REMOTE_MAIN_DIVERGED"):
+        controller.command_finalize(args)
+    assert calls == ["live"]
+    monkeypatch.setattr(controller, "revalidate_integration_state",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                            controller.TaskControllerError("INTEGRATION_CHECK_REVALIDATION_FAILED")))
+    with pytest.raises(controller.TaskControllerError, match="CHECK_REVALIDATION_FAILED"):
+        controller.command_finalize(args)

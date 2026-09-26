@@ -47,6 +47,10 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    `task finalize-cleanup ISSUE --cleanup-root PATH --cleanup-branch NAME` removes
    only the exact clean terminal checkout/branch after remote T and issue closure;
    it refuses recovery, dirty, wrong-branch and moved-main targets.
+   A cancelled capsule uses `task finalize-cancel ISSUE --terminal-state-dir STATE
+   --terminal-root PATH --recovery-sha R --human-owner-authorized` with its own
+   reviewed and qualified `CANCELLED` terminal commit; no implementation C is
+   accepted or inferred.
 
 The complete command options and trusted qualification transport remain in the
 [testing guide](../../docs/operations/testing.md#trusted-task-controller-bootstrap).

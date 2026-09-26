@@ -2061,6 +2061,26 @@ def reconcile_integration(
 
     return updated
 
+
+def revalidate_integration_state(
+    state: dict[str, Any], *, candidate_repo: Path,
+    expected_app_id: int, transport: QualificationTransport,
+    ref_transport: CandidateRefTransport,
+) -> None:
+    """Recheck live authority/check/review before resuming an accepted push."""
+    integration = state.get("integration") or {}
+    base = integration.get("controller_main_sha")
+    if state.get("phase") not in {"INTEGRATION_PENDING", "INTEGRATED"} or not isinstance(base, str):
+        raise TaskControllerError("INTEGRATION_RECOVERY_STATE_INVALID")
+    revalidated = integrate_task(
+        {**state, "phase": "REVIEWED_APPROVED"},
+        candidate_repo=candidate_repo, controller_main_sha=base,
+        expected_app_id=expected_app_id, transport=transport,
+        ref_transport=ref_transport, human_owner_authorized=True,
+    )
+    if revalidated["integration"] != {**integration, "origin_main_after": None}:
+        raise TaskControllerError("INTEGRATION_RECOVERY_REVALIDATION_CHANGED")
+
 def record_qualification(
     state: dict[str, Any],
     *,
@@ -2805,20 +2825,13 @@ def command_integrate(
 
         # Recovery is another integration attempt, not a license to reuse
         # yesterday's check, authorization, source, or review evidence.
-        revalidated = integrate_task(
-            {**state, "phase": "REVIEWED_APPROVED"},
+        revalidate_integration_state(
+            state,
             candidate_repo=candidate_repo,
-            controller_main_sha=controller_main_sha,
             expected_app_id=expected_app_id,
             transport=GhQualificationTransport(),
             ref_transport=GitCandidateRefTransport(candidate_repo),
-            human_owner_authorized=True,
         )
-        if revalidated["integration"] != {
-            **integration,
-            "origin_main_after": None,
-        }:
-            raise TaskControllerError("INTEGRATION_RECOVERY_REVALIDATION_CHANGED")
 
     else:
         raise TaskControllerError(
@@ -2925,6 +2938,12 @@ def command_finalize(args: argparse.Namespace) -> int:
             candidate_root=candidate_repo,
             human_owner_authorized=args.human_owner_authorized))
         state = load_state(state_dir, args.issue_number)
+    else:
+        revalidate_integration_state(
+            state, candidate_repo=candidate_repo,
+            expected_app_id=configured_qualification_app_id(),
+            transport=GhQualificationTransport(),
+            ref_transport=GitCandidateRefTransport(candidate_repo))
     if state["phase"] != "INTEGRATED" or state["integration"]["origin_main_after"] != implementation:
         raise TaskControllerError("FINALIZE_IMPLEMENTATION_NOT_INTEGRATED")
     existing = json.loads(intent_path.read_text())
@@ -2965,14 +2984,23 @@ def command_finalize(args: argparse.Namespace) -> int:
     previous = json.loads(intent_path.read_text())
     if previous.get("terminal") not in (None, terminal) or previous.get("recovery") not in (None, recovery):
         raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
+    if previous.get("terminal_root") not in (None, str(terminal_repo)):
+        raise TaskControllerError("FINALIZE_TERMINAL_ROOT_CHANGED")
     atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_PENDING",
-                                    "terminal": terminal, "recovery": recovery})
+                                    "terminal": terminal, "recovery": recovery,
+                                    "terminal_root": str(terminal_repo)})
     if terminal_state["phase"] != "INTEGRATED":
         command_integrate(argparse.Namespace(
             state_dir=args.terminal_state_dir, issue_number=args.issue_number,
             repo_root=repo, candidate_root=terminal_repo,
             human_owner_authorized=args.human_owner_authorized))
         terminal_state = load_state(args.terminal_state_dir, args.issue_number)
+    else:
+        revalidate_integration_state(
+            terminal_state, candidate_repo=terminal_repo,
+            expected_app_id=configured_qualification_app_id(),
+            transport=GhQualificationTransport(),
+            ref_transport=GitCandidateRefTransport(terminal_repo))
     if (terminal_state["phase"] != "INTEGRATED"
             or terminal_state["integration"]["origin_main_after"] != terminal):
         raise TaskControllerError("FINALIZE_TERMINAL_NOT_INTEGRATED")
@@ -2983,14 +3011,16 @@ def command_finalize(args: argparse.Namespace) -> int:
                            implementation=implementation, terminal=terminal,
                            recovery=args.recovery_sha)
     atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_INTEGRATED",
-                                    "terminal": terminal, "recovery": recovery})
+                                    "terminal": terminal, "recovery": recovery,
+                                    "terminal_root": str(terminal_repo)})
     issue = GhIssueAuthorizationTransport()._api(
         method="PATCH", path=f"/repos/{state['repository']}/issues/{args.issue_number}",
         payload={"state": "closed", "state_reason": "completed"})
     if issue.get("state") != "closed":
         raise TaskControllerError("FINALIZE_ISSUE_CLOSE_NOT_CONFIRMED")
     atomic_write_json(intent_path, {**intent, "phase": "COMPLETE",
-                                    "terminal": terminal, "recovery": recovery})
+                                    "terminal": terminal, "recovery": recovery,
+                                    "terminal_root": str(terminal_repo)})
     emit({"task": state["task_id"], "phase": "COMPLETE", "origin_main": terminal,
           "recovery": recovery, "issue_closed": True})
     return 0
@@ -3008,6 +3038,8 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
     terminal = intent["terminal"]
     root = args.cleanup_root.resolve()
     target = {"root": str(root), "branch": args.cleanup_branch}
+    if intent.get("terminal_root") != str(root):
+        raise TaskControllerError("FINALIZE_CLEANUP_ROOT_MISMATCH")
     if intent.get("phase") == "COMPLETE" and intent.get("cleanup") == target:
         emit({"task": f"GH-{args.issue_number}", "cleanup": "already_complete"})
         return 0
@@ -3017,7 +3049,8 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
     if git(repo, "rev-parse", "refs/remotes/origin/main") != terminal:
         raise TaskControllerError("FINALIZE_CLEANUP_REMOTE_MAIN_CHANGED")
     if root.exists():
-        task_closeout.cleanup_target(repo, root=root, branch=args.cleanup_branch,
+        task_closeout.cleanup_target(repo, issue_number=args.issue_number,
+                                     root=root, branch=args.cleanup_branch,
                                      terminal=terminal)
     elif intent["phase"] != "CLEANUP_PENDING" or f"worktree {root}\n" in git(repo, "worktree", "list", "--porcelain"):
         raise TaskControllerError("FINALIZE_CLEANUP_TARGET_MISSING")
@@ -3033,6 +3066,65 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
     atomic_write_json(intent_path, intent)
     emit({"task": f"GH-{args.issue_number}", "cleanup": "complete",
           "root": str(root), "branch": args.cleanup_branch})
+    return 0
+
+
+def command_finalize_cancel(args: argparse.Namespace) -> int:
+    """Accept a separately reviewed CANCELLED capsule terminal transaction."""
+    repo = resolve_repo_root(args.repo_root)
+    state = load_state(args.terminal_state_dir, args.issue_number)
+    terminal_repo = resolve_repo_root(args.terminal_root)
+    terminal = require_candidate_repository(terminal_repo, expected_repository=state["repository"])
+    authorization = resolve_current_authorization(state, GhQualificationTransport())
+    if (state["task_id"] != f"GH-{args.issue_number}-closeout"
+            or authorization.profiles != ("repository",)
+            or set(authorization.allowed_paths) != {
+                "engineering/capsules/HISTORY.md",
+                f"engineering/capsules/active/GH-{args.issue_number}.md"}):
+        raise TaskControllerError("FINALIZE_CANCEL_AUTHORITY_INVALID")
+    recovery = task_closeout.validate(
+        terminal_repo, issue_number=args.issue_number,
+        implementation=authorization.base_sha, terminal=terminal,
+        recovery=args.recovery_sha, final_state="CANCELLED")
+    intent_path = args.state_dir / f"issue-{args.issue_number}-cancel-finalize.json"
+    intent = {"schema_version": 1, "issue_number": args.issue_number,
+              "terminal": terminal, "base": authorization.base_sha,
+              "recovery": recovery, "terminal_root": str(terminal_repo)}
+    if intent_path.exists():
+        prior = json.loads(intent_path.read_text())
+        if any(prior.get(key) != value for key, value in intent.items()):
+            raise TaskControllerError("FINALIZE_CANCEL_INTENT_CHANGED")
+    else:
+        atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_PENDING"})
+    if state["phase"] != "INTEGRATED":
+        command_integrate(argparse.Namespace(
+            state_dir=args.terminal_state_dir, issue_number=args.issue_number,
+            repo_root=repo, candidate_root=terminal_repo,
+            human_owner_authorized=args.human_owner_authorized))
+        state = load_state(args.terminal_state_dir, args.issue_number)
+    else:
+        revalidate_integration_state(
+            state, candidate_repo=terminal_repo,
+            expected_app_id=configured_qualification_app_id(),
+            transport=GhQualificationTransport(),
+            ref_transport=GitCandidateRefTransport(terminal_repo))
+    if state["phase"] != "INTEGRATED" or state["integration"]["origin_main_after"] != terminal:
+        raise TaskControllerError("FINALIZE_CANCEL_TERMINAL_NOT_INTEGRATED")
+    git(repo, "fetch", "origin", "main")
+    if git(repo, "rev-parse", "refs/remotes/origin/main") != terminal:
+        raise TaskControllerError("FINALIZE_CANCEL_REMOTE_MAIN_MISMATCH")
+    task_closeout.validate(
+        terminal_repo, issue_number=args.issue_number,
+        implementation=authorization.base_sha, terminal=terminal,
+        recovery=args.recovery_sha, final_state="CANCELLED")
+    issue = GhIssueAuthorizationTransport()._api(
+        method="PATCH", path=f"/repos/{state['repository']}/issues/{args.issue_number}",
+        payload={"state": "closed", "state_reason": "not_planned"})
+    if issue.get("state") != "closed":
+        raise TaskControllerError("FINALIZE_CANCEL_ISSUE_CLOSE_NOT_CONFIRMED")
+    atomic_write_json(intent_path, {**intent, "phase": "COMPLETE"})
+    emit({"task": state["task_id"], "phase": "CANCELLED", "origin_main": terminal,
+          "recovery": recovery, "issue_closed": True})
     return 0
 
 def command_execution(args: argparse.Namespace) -> int:
@@ -3463,6 +3555,14 @@ def build_parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--cleanup-root", type=Path, required=True)
     cleanup.add_argument("--cleanup-branch", required=True)
     cleanup.set_defaults(handler=command_finalize_cleanup)
+
+    cancel = subparsers.add_parser("finalize-cancel")
+    cancel.add_argument("issue_number", type=int)
+    cancel.add_argument("--terminal-state-dir", type=Path, required=True)
+    cancel.add_argument("--terminal-root", type=Path, required=True)
+    cancel.add_argument("--recovery-sha", required=True)
+    cancel.add_argument("--human-owner-authorized", action="store_true")
+    cancel.set_defaults(handler=command_finalize_cancel)
 
     return parser
 

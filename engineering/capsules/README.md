@@ -63,6 +63,9 @@ The controller can resume after a partial remote push; it closes the issue only 
 remote main is confirmed at T. Never transfer C's qualification or review to T.
 Optional final cleanup accepts only an explicit clean terminal checkout and branch
 at T after verified issue closure; recovery and unrelated work remain available.
+Cancellation has a separate guarded `finalize-cancel` path: its full source capsule
+records `CANCELLED` at R, its two-path terminal T has distinct authorization and
+qualification, and no unimplemented acceptance criterion is marked passed.
 
 Cancellation follows the same pattern with a `CANCELLED` history record and an exact recovery
 locator for the full capsule. A later retrospective updates the existing unique history record to

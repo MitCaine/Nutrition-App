@@ -2515,6 +2515,50 @@ def test_integrate_rejects_dedicated_app_source_drift(
     assert refs.main_pushes == []
 
 
+def test_recovery_revalidates_live_check_review_and_owner(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
+    pending = TASK.integrate_task(
+        reviewed, candidate_repo=repo, controller_main_sha=base,
+        expected_app_id=424242, transport=transport, ref_transport=refs,
+        human_owner_authorized=True)
+    TASK.revalidate_integration_state(
+        pending, candidate_repo=repo, expected_app_id=424242,
+        transport=transport, ref_transport=refs)
+    refs.main_sha = candidate
+    integrated = TASK.reconcile_integration(pending, candidate_sha=candidate, ref_transport=refs)
+    TASK.revalidate_integration_state(
+        integrated, candidate_repo=repo, expected_app_id=424242,
+        transport=transport, ref_transport=refs)
+    transport.app_id = 15368
+    with pytest.raises(TASK.TaskControllerError, match="CHECK_REVALIDATION_FAILED"):
+        TASK.revalidate_integration_state(
+            integrated, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+    transport.app_id = 424242
+    stale_review = {**integrated, "review": {**integrated["review"], "decision": "changes-requested"}}
+    with pytest.raises(TASK.TaskControllerError, match="REVIEW_MISMATCH"):
+        TASK.revalidate_integration_state(
+            stale_review, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+    no_owner = {**integrated, "integration": {**integrated["integration"], "human_owner_authorized": False}}
+    with pytest.raises(TASK.TaskControllerError, match="REVALIDATION_CHANGED"):
+        TASK.revalidate_integration_state(
+            no_owner, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+    failed_terminal = {**integrated, "qualification": {**integrated["qualification"], "result": "FAIL"}}
+    with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_MISMATCH"):
+        TASK.revalidate_integration_state(
+            failed_terminal, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+    transport.comments[0]["body"] = "authorization withdrawn"
+    with pytest.raises(AuthorizationError):
+        TASK.revalidate_integration_state(
+            integrated, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+
+
 def test_trusted_controller_requires_clean_synchronized_main(
     tmp_path: Path,
 ) -> None:
