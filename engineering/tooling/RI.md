@@ -184,3 +184,13 @@ intentionally fail verification after a lock change. Bootstrap a fresh external 
 from the updated wheelhouse and requalify navigation before using it. Preserve previous
 environments as historical evidence, not the selected runtime. RI source and parser
 contracts are unchanged. Setuptools alert 23 is tracked separately by PR #196.
+
+### Setuptools security refresh (2026-09-26)
+
+The companion update selects setuptools 83.0.0 for Dependabot alert 23
+([GHSA-h35f-9h28-mq5c](https://github.com/advisories/GHSA-h35f-9h28-mq5c)),
+while retaining pip 26.2 and the existing RI/parser pins. The alert concerns Unicode
+normalization when applying source-distribution exclusions on macOS. The fixed wheel
+and its hash are synchronized in both lock files. As with the pip refresh, bootstrap
+a new external runtime and requalify it; do not edit an accepted manifest or environment
+in place. No private source distribution is published by this workflow.

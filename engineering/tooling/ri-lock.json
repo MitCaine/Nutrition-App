@@ -51,10 +51,10 @@
       "version": "26.2"
     },
     {
-      "filename": "setuptools-79.0.1-py3-none-any.whl",
+      "filename": "setuptools-83.0.0-py3-none-any.whl",
       "name": "setuptools",
-      "sha256": "e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51",
-      "version": "79.0.1"
+      "sha256": "29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3",
+      "version": "83.0.0"
     },
     {
       "filename": "tree_sitter-0.25.0-cp312-cp312-macosx_11_0_arm64.whl",
