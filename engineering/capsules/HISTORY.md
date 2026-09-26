@@ -3177,3 +3177,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** ba9ae2f3464ee9f9a46143d3da6d49b14df99e96
 - **Full-capsule recovery path:** engineering/capsules/active/GH-192.md
 - **Historical capsule SHA-256:** a3cbfa84bdc324a5e6140c958cfaa0921d0765eeb1fdd105383184bfcde9a7c9
+
+
+### GH-193 - Guarded integration and recoverable terminal closeout
+
+- **ID:** GH-193
+- **Title:** Guarded integration and recoverable terminal closeout
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/193; owner authorized sequential migration implementation; exact external authorization comment5848471316.
+- **Issue disposition:** Implementation integrated; terminal outcome becomes effective only after separately qualified protected T and remote observation.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** 92e1d4bf960cb4621f243a1653bec9eb83dbbfce
+- **Task branch:** task/GH-193-guarded-closeout
+- **Controller:** Codex migration controller
+- **Executor:** Codex tooling implementor
+- **Reviewer:** Fresh independent standards and specification reviews, followed by exact terminal reviewers
+- **Delegation:** Read-only independent reviews; implementation stayed with controller.
+- **Implementation commit(s):** e9cc15573cb2b1528fedf8ce43f6e5c07150b97b; fdb1bec72de4bc8782012b60e061227740ff4caf; 7b83059eb12093ce2ca36cd9d8063c8e3ed255be
+- **Verified commit reference(s):** 7b83059eb12093ce2ca36cd9d8063c8e3ed255be
+- **Reviewed source commit:** 7b83059eb12093ce2ca36cd9d8063c8e3ed255be
+- **Reviewed task/checkpoint commit(s):** 7b83059eb12093ce2ca36cd9d8063c8e3ed255be
+- **Integration/merged commit:** 7b83059eb12093ce2ca36cd9d8063c8e3ed255be
+- **Integration-related commit reference(s):** Protected C3 integration at 7b83059; separate GH-193-closeout authorization comment5848625407 and terminal protected update.
+- **Acceptance result:** 9/9 checked in the terminal source capsule.
+- **Review disposition:** Approved for protected self-pilot. C1 failed standards/spec review and C2 failed the cancelled-count specification criterion. Corrected C3 standards PASS and requirements AC1-AC8 PASS; AC9 is the observed protected C/T postcondition and must be confirmed after T.
+- **Verification summary:** Focused closeout/controller tests57PASS; repository baseline6/6 and71audit PASS. C1/C2 check evidence retained without transferred verdicts. Finalize stage revalidated C3 against current external authority and live App check, and stopped for separate T.
+- **Specialized qualification:** Exact C3 repository profile PASS, dedicatedApp4708441 check108458313342 run36261535962. T requires distinct App check and independent review. Product/native/database profiles not applicable.
+- **Known warnings:** Terminal pilot evidence is a postcondition of the protected T update; this proposed HISTORY record is not effective before that observation. Recovery branch retained.
+- **Deferred work/follow-up IDs:** #194 combined pilots and rollout decision.
+- **Retrospective:** Required in #194; preserve C1/C2 review failures and correction evidence.
+- **Referenced commits:** Planning26719b4436459a4442fea4cbe33ee1c327f0b847; implementation7b83059eb12093ce2ca36cd9d8063c8e3ed255be; full reviewed capsulefe57f6b4224011d7445c8e8feaf0e7379e5f192c.
+- **Full-capsule recovery commit:** fe57f6b4224011d7445c8e8feaf0e7379e5f192c
+- **Full-capsule recovery path:** engineering/capsules/active/GH-193.md
+- **Historical capsule SHA-256:** 643722bc02653de51d1eb528ddd3d2ee00e58d1b4620f11ea97076eb4f9f12cd
