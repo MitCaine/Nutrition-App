@@ -3103,3 +3103,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 0e7aff008df8c4c172099c3d83fc374b3be007ac
 - **Full-capsule recovery path:** engineering/capsules/active/GH-190.md
 - **Historical capsule SHA-256:** a8360753015d5790c7a91a78fde23e64898e989a4f784509dd79002c5f753372
+
+
+### GH-191 - Adopt pinned standalone RI navigation
+
+- **ID:** GH-191
+- **Title:** Adopt pinned standalone RI navigation
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/191; owner authorized sequential migration implementation.
+- **Issue disposition:** Implementation integrated; issue closes after protected terminal bookkeeping integration.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** ade78159515ee44d3581c0b2da4cd49e802e75b4
+- **Task branch:** task/GH-191-pinned-ri
+- **Controller:** Codex migration controller
+- **Executor:** Codex tooling implementor
+- **Reviewer:** Independent review191_standards and review191_spec contexts
+- **Delegation:** Read-only independent standards and requirements reviews; implementation stayed with controller.
+- **Implementation commit(s):** 50e828ed2d0c551b932b06eb755d9cfbcc68954f; cdea244c74fdd016faef0a7bbf85c233498b6d75
+- **Verified commit reference(s):** cdea244c74fdd016faef0a7bbf85c233498b6d75
+- **Reviewed source commit:** cdea244c74fdd016faef0a7bbf85c233498b6d75
+- **Reviewed task/checkpoint commit(s):** cdea244c74fdd016faef0a7bbf85c233498b6d75
+- **Integration/merged commit:** cdea244c74fdd016faef0a7bbf85c233498b6d75
+- **Integration-related commit reference(s):** cdea244c74fdd016faef0a7bbf85c233498b6d75 protected controller integration; separate terminal authority GH-191-closeout comment5844321130.
+- **Acceptance result:** 8/8 checked in the terminal source capsule.
+- **Review disposition:** Approved. Standards PASS and requirements AC1-AC8 PASS on corrected exact candidate. Original candidate rejected for unsupported-only packet limits; corrected and independently reproduced with1001unsupported/excluded files.
+- **Verification summary:** 17 focused/actual-package tests PASS; exact candidate repository6/6 and71audit PASS. Reviewer independently checked40file identities/16declaration slices across backend, TSX, cross-runtime and tooling. Offline installed runtime manifest48773461719c46ac17e30e8ca0ce070405d0c1a47bfd85ec5a9822203ce82393.
+- **Specialized qualification:** Exact candidate repository PASS dedicatedApp4708441 check108363725426 dispatch36227292671. Actual macOS arm64 Python3.12 private RI installation and negative oracle PASS. Terminal SHA separately qualified; no transfer of candidate check. Product/native/database suites not applicable.
+- **Known warnings:** Existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning. RI private source is not licensed for public vendoring. Only macOS arm64 controller installation qualified; no CI RI execution selected. Reviewer nested sandbox restriction recorded honestly; raw real-runtime evidence inspected.
+- **Deferred work/follow-up IDs:** #192, #193, #194. Combined workflow remains a trial.
+- **Retrospective:** Required in #194; include packet-bound correction and post-integration lifecycle helper limitation.
+- **Referenced commits:** Planning62f277b5aa6672e15129f524283fc337ca66b2c9; final implementationcdea244c74fdd016faef0a7bbf85c233498b6d75; full reviewed capsule8a55cbca09c625c9b7122f22943ef06927605eb0.
+- **Full-capsule recovery commit:** 8a55cbca09c625c9b7122f22943ef06927605eb0
+- **Full-capsule recovery path:** engineering/capsules/active/GH-191.md
+- **Historical capsule SHA-256:** f7755ce906743c4a989be40d76537c004cda496de33731c3ee1b05489f1fa53d
