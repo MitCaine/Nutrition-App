@@ -27,6 +27,24 @@ def text(repo: Path, *args: str) -> str:
     return git(repo, *args).decode()
 
 
+def criterion_states(source: bytes) -> list[bytes]:
+    """Read the complete ordered AC-1..AC-N list from a recovered capsule."""
+    marker = b"## Acceptance criteria\n"
+    if source.count(marker) != 1:
+        raise CloseoutError("CLOSEOUT_RECOVERY_AC_SECTION_INVALID")
+    section = source.split(marker, 1)[1].split(b"\n## ", 1)[0]
+    lines = [line for line in section.splitlines() if re.match(rb"[ \t]*-[ \t]*\[", line)]
+    if not lines:
+        raise CloseoutError("CLOSEOUT_RECOVERY_AC_INCOMPLETE")
+    states = []
+    for number, line in enumerate(lines, start=1):
+        match = re.fullmatch(rb"- \[([ x])\] AC-([1-9][0-9]*):[ \t]+\S.*", line)
+        if match is None or match.group(2) != str(number).encode():
+            raise CloseoutError("CLOSEOUT_RECOVERY_AC_IDS_INVALID")
+        states.append(match.group(1))
+    return states
+
+
 def validate(repo: Path, *, issue_number: int, implementation: str,
              terminal: str, recovery: str, final_state: str = "MERGED") -> dict:
     """Verify the immutable two-path C→T closeout and reachable full capsule R."""
@@ -51,8 +69,8 @@ def validate(repo: Path, *, issue_number: int, implementation: str,
     expected_source_state = b"REVIEWED" if final_state == "MERGED" else b"CANCELLED"
     if not source.startswith(b"+++") or b'state = "' + expected_source_state + b'"' not in source:
         raise CloseoutError("CLOSEOUT_RECOVERY_NOT_REVIEWED")
-    criteria = re.findall(rb"^- \[([ x])\] AC-[0-9]+:", source, re.MULTILINE)
-    if not criteria or (final_state == "MERGED" and any(value != b"x" for value in criteria)):
+    criteria = criterion_states(source)
+    if final_state == "MERGED" and any(value != b"x" for value in criteria):
         raise CloseoutError("CLOSEOUT_RECOVERY_AC_INCOMPLETE")
     digest = hashlib.sha256(source).hexdigest()
     before = text(repo, "show", f"{implementation}:{HISTORY}")

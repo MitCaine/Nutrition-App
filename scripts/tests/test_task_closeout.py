@@ -35,7 +35,7 @@ def transaction(tmp_path: Path):
     git(repo, "commit", "-qm", "implementation")
     implementation = git(repo, "rev-parse", "HEAD")
     git(repo, "switch", "-qc", "recovery")
-    source = '+++\nstate = "REVIEWED"\n+++\n- [x] AC-1: required\n'
+    source = '+++\nstate = "REVIEWED"\n+++\n## Acceptance criteria\n\n- [x] AC-1: required\n'
     active.write_text(source)
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "full reviewed capsule")
@@ -62,6 +62,45 @@ def test_exact_recoverable_terminal_transaction(transaction):
                               recovery=recovery, terminal=terminal)
     assert value["acceptance_count"] == 1
     assert value["recovery"] == recovery
+
+
+@pytest.mark.parametrize("line", [
+    b"- [x] AC-1: duplicate", b"- [x] AC-3: skipped",
+    b" - [x] AC-1: indented duplicate", b" - [ ] AC-2: indented unchecked",
+    b"-  [x] AC-2: malformed spacing",
+    b"- [x] AC-0: zero", b"- [x] AC-02: padded",
+    b"- [x] AC-X: malformed", b"- [X] AC-2: malformed checkbox",
+])
+def test_recovery_rejects_duplicate_skipped_and_malformed_ac_ids(line):
+    prefix = b"## Acceptance criteria\n\n- [x] AC-1: first\n"
+    with pytest.raises(closeout.CloseoutError, match="AC_IDS_INVALID"):
+        closeout.criterion_states(prefix + line + b"\n")
+    assert closeout.criterion_states(prefix + b"- [ ] AC-2: second\n") == [b"x", b" "]
+
+
+def test_recovery_rejects_reordered_ac_ids():
+    with pytest.raises(closeout.CloseoutError, match="AC_IDS_INVALID"):
+        closeout.criterion_states(
+            b"## Acceptance criteria\n- [x] AC-2: second\n- [x] AC-1: first\n")
+
+
+@pytest.mark.parametrize("final_state,source_state", [
+    ("MERGED", "REVIEWED"), ("CANCELLED", "CANCELLED"),
+])
+def test_terminal_rejects_indented_duplicate_for_both_states(transaction, final_state, source_state):
+    repo, implementation, _, terminal = transaction
+    git(repo, "switch", "-qc", f"bad-{final_state.lower()}", implementation)
+    active = repo / "engineering/capsules/active/GH-193.md"
+    active.write_text(
+        f'+++\nstate = "{source_state}"\n+++\n## Acceptance criteria\n\n'
+        '- [x] AC-1: first\n - [x] AC-1: duplicate\n'
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "bad recovery")
+    recovery = git(repo, "rev-parse", "HEAD")
+    with pytest.raises(closeout.CloseoutError, match="AC_IDS_INVALID"):
+        closeout.validate(repo, issue_number=193, implementation=implementation,
+                          recovery=recovery, terminal=terminal, final_state=final_state)
 
 
 def test_duplicate_history_and_unreachable_recovery_fail_closed(transaction):
@@ -111,7 +150,7 @@ def test_prior_history_records_cannot_change(transaction):
 def test_cancelled_capsule_has_separate_terminal_state(transaction):
     repo, implementation, _, _ = transaction
     git(repo, "switch", "-qc", "cancel-recovery", implementation)
-    source = '+++\nstate = "CANCELLED"\n+++\n- [ ] AC-1: stopped\n'
+    source = '+++\nstate = "CANCELLED"\n+++\n## Acceptance criteria\n\n- [ ] AC-1: stopped\n'
     active = repo / "engineering/capsules/active/GH-193.md"
     active.write_text(source)
     git(repo, "add", ".")
