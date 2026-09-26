@@ -46,7 +46,7 @@ def transaction(tmp_path: Path):
     history.write_text("# HISTORY\n\n### GH-193 - fixture\n"
                        "- **Final state:** MERGED\n"
                        f"- **Integration/merged commit:** {implementation}\n"
-                       "- **Acceptance result:** 1/1 checked\n"
+                       "- **Acceptance result:** 1/1 checked in the terminal source capsule.\n"
                        f"- **Full-capsule recovery commit:** {recovery}\n"
                        "- **Full-capsule recovery path:** engineering/capsules/active/GH-193.md\n"
                        f"- **Historical capsule SHA-256:** {digest}\n")
@@ -122,6 +122,7 @@ def test_cancelled_capsule_has_separate_terminal_state(transaction):
     (repo / closeout.HISTORY).write_text(
         "# HISTORY\n\n### GH-193 - cancelled\n"
         "- **Final state:** CANCELLED\n"
+        "- **Acceptance result:** 0/1 checked in the terminal source capsule.\n"
         f"- **Full-capsule recovery commit:** {recovery}\n"
         "- **Full-capsule recovery path:** engineering/capsules/active/GH-193.md\n"
         f"- **Historical capsule SHA-256:** {hashlib.sha256(source.encode()).hexdigest()}\n")
@@ -131,6 +132,17 @@ def test_cancelled_capsule_has_separate_terminal_state(transaction):
     assert closeout.validate(repo, issue_number=193, implementation=implementation,
                              recovery=recovery, terminal=terminal,
                              final_state="CANCELLED")["terminal"] == terminal
+    git(repo, "switch", "-qc", "cancel-wrong-count", implementation)
+    active.unlink()
+    history = repo / closeout.HISTORY
+    history.write_text(git(repo, "show", f"{terminal}:{closeout.HISTORY}").replace(
+        "0/1 checked", "1/1 checked") + "\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "false cancellation acceptance")
+    with pytest.raises(closeout.CloseoutError, match="ACCEPTANCE_INVALID"):
+        closeout.validate(repo, issue_number=193, implementation=implementation,
+                          recovery=recovery, terminal=git(repo, "rev-parse", "HEAD"),
+                          final_state="CANCELLED")
 
 
 def test_cleanup_requires_exact_clean_disposable_checkout(transaction, tmp_path):

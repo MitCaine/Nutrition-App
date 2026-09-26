@@ -74,7 +74,9 @@ def validate(repo: Path, *, issue_number: int, implementation: str,
             raise CloseoutError("CLOSEOUT_HISTORY_BINDING_INVALID: " + field)
     if final_state == "MERGED" and f"- **Integration/merged commit:** {implementation}" not in entry:
         raise CloseoutError("CLOSEOUT_HISTORY_BINDING_INVALID: integration")
-    if final_state == "MERGED" and f"{len(criteria)}/{len(criteria)} checked" not in entry:
+    checked = sum(value == b"x" for value in criteria)
+    acceptance = re.search(r"(?m)^- \*\*Acceptance result:\*\* ([0-9]+)/([0-9]+) checked in the terminal source capsule\.$", entry)
+    if acceptance is None or (int(acceptance.group(1)), int(acceptance.group(2))) != (checked, len(criteria)):
         raise CloseoutError("CLOSEOUT_HISTORY_ACCEPTANCE_INVALID")
     return {"implementation": implementation, "terminal": terminal,
             "recovery": recovery, "path": path, "sha256": digest,
