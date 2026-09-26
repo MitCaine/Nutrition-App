@@ -79,10 +79,14 @@ def clean_env(home: Path) -> dict:
             "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
 
 
-def offline_run(argv: list[str], *, cwd: Path, log: Path, timeout: float = 180, max_bytes: int = MAX_RAW_BYTES) -> None:
+def offline_run(argv: list[str], *, cwd: Path, log: Path, timeout: float = 180, max_bytes: int = MAX_RAW_BYTES,
+                readonly_roots: list[Path] | None = None) -> None:
     if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").is_file():
         raise RIError("RI_OFFLINE_HOST_UNQUALIFIED")
-    command = ["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)(deny network*)", *argv]
+    policy = "(version 1)(allow default)(deny network*)"
+    for root in readonly_roots or []:
+        policy += "(deny file-write* (subpath " + json.dumps(str(root.resolve())) + "))"
+    command = ["/usr/bin/sandbox-exec", "-p", policy, *argv]
     with log.open("ab") as output:
         process = subprocess.Popen(command, cwd=cwd, env=clean_env(cwd), stdin=subprocess.DEVNULL,
                                    stdout=output, stderr=subprocess.STDOUT, start_new_session=True)

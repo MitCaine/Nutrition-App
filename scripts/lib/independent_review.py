@@ -44,7 +44,7 @@ def verdict_schema(binding: dict) -> dict:
     def obj(properties):
         return {"type": "object", "properties": properties,
                 "required": list(properties), "additionalProperties": False}
-    return obj({
+    result = obj({
         "candidate": {"type": "string", "enum": [binding["candidate"]]},
         "binding_sha256": {"type": "string", "enum": [binding["binding_sha256"]]},
         "disposition": {"type": "string", "enum": ["approved", "bounded-correction", "stop-replan"]},
@@ -58,6 +58,13 @@ def verdict_schema(binding: dict) -> dict:
             "description": {"type": "string"}})},
         "summary": {"type": "string"},
     })
+    if binding.get("structural"):
+        result["properties"]["structural_review"] = {"type": "array", "items": obj({
+            "path": {"type": "string", "enum": binding["structural_paths"]},
+            "result": {"type": "string", "enum": ["PASS", "FAIL"]},
+            "evidence": {"type": "string"}})}
+        result["required"].append("structural_review")
+    return result
 
 
 def source_tools() -> list[dict]:
@@ -124,11 +131,13 @@ def read_evidence(packet: dict, arguments: dict) -> dict:
     if type(start) is not int or type(end) is not int or not 1 <= start <= end or end - start >= 400:
         raise EvidenceError("REVIEW_EVIDENCE_LINE_LIMIT")
     try:
-        entry = packet["commands"][arguments["check"]]["artifacts"][arguments["artifact"]]
+        entries = (packet["structural"]["record"]["artifacts"] if arguments["check"] == "$structural"
+                   else packet["commands"][arguments["check"]]["artifacts"])
+        entry = entries[arguments["artifact"]]
     except (KeyError, TypeError) as exc:
         raise EvidenceError("REVIEW_EVIDENCE_NOT_DECLARED") from exc
     path = Path(entry["path"])
-    if artifact(path) != entry or entry["bytes"] > 8_000_000:
+    if artifact(path) != entry or entry["bytes"] > (32_000_000 if arguments["check"] == "$structural" else 8_000_000):
         raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
     lines = path.read_text().splitlines()
     content = "\n".join(f"{i+start}: {line}" for i, line in enumerate(lines[start-1:end]))
@@ -364,7 +373,7 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                            provider=started.get("modelProvider"))
             turn = rpc.request("turn/start", {
                 "threadId": tid, "environments": [], "outputSchema": verdict_schema(binding),
-                "input": [{"type": "text", "text": "Review this exact candidate packet.\n" + json.dumps(request_packet)}],
+                "input": [{"type": "text", "text": "Review this exact candidate packet. If structural evidence is required, independently reconcile every structural_review path with capsule authority, full diff, full inventories and required checks; controller expected labels are claims, not approval. Raw inventory artifacts are readable with check=$structural.\n" + json.dumps(request_packet)}],
             })["turn"]["id"]
             session["turn_id"] = turn
             messages = []

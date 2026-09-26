@@ -91,6 +91,24 @@ not proof of acceptance; the independent reviewer evaluates its adequacy against
 The controller state directory is trusted, private operator state. Do not edit it to manufacture
 observations. Preserve interrupted attempts and their raw files.
 
+## Optional required RI evidence
+
+A READY capsule containing the frozen `nutrition-ri-v1` changed-files policy requires
+[structural evidence and controller path dispositions](../tooling/RI.md#candidate-structural-evidence)
+before sealing or verification. Run `evidence ISSUE structural --ri-runtime PATH` and
+`evidence ISSUE disposition --disposition-file PATH` after attachment. Their artifacts bind
+exact P/C and the same attachment digest. Missing, incomplete or incompatible supported
+coverage blocks; unsupported-only work has explicit direct-review obligations and keeps every
+required ordinary/native/manual check. The full Git diff is always reviewed.
+
+The independent reviewer receives the compact delta, complete changed-path coverage and
+controller disposition. It reads full hashed inventory/comparison artifacts with the existing
+`nutrition_read_evidence` callback using `check: "$structural"`. The callback accepts declared
+artifact names only. Approval additionally requires one evidenced PASS per changed path;
+a controller's expected label cannot approve itself. Signed packet identity prevents later
+structural changes or dispositions from reusing a receipt. Corrected candidates archive and
+clear all structural evidence alongside the other gates.
+
 ## Observed independent review
 
 The qualified runtime is `codex-cli 0.153.4` with an explicitly supplied binary SHA-256.

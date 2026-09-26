@@ -340,3 +340,69 @@ class ControllerEvidenceTests(CandidateFixture):
             with self.assertRaisesRegex(evidence.EvidenceError, "MANUAL_REQUIREMENT"):
                 task.command_evidence(args)
             issue_transport.get_issue_comment.assert_called_once_with("example/repo", 19)
+
+
+class StructuralEvidenceTests(CandidateFixture):
+    def structural_binding(self):
+        self.git("reset", "--hard", self.base)
+        self.capsule.parent.mkdir(parents=True, exist_ok=True)
+        planned = self.original.replace("## Required verification", '```nutrition-ri-v1\n{"schema_version":1,"scope":"changed-files-v1"}\n```\n\n## Required verification')
+        self.capsule.write_text(planned)
+        self.git("add", ".")
+        self.git("commit", "-qm", "structural planning")
+        self.planning = self.git("rev-parse", "HEAD")
+        self.capsule.write_text(planned.replace('state = "READY"', 'state = "IMPLEMENTED"'))
+        (self.repo / "app.py").write_text("def add(a,b):\n    return a+b\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "structural candidate")
+        self.candidate = self.git("rev-parse", "HEAD")
+        return self.binding()
+
+    def test_frozen_structural_contract_requires_complete_independent_path_matrix(self):
+        from lib import independent_review
+        binding = self.structural_binding()
+        self.assertEqual(binding["structural"]["scope"], "changed-files-v1")
+        self.assertEqual(binding["structural_paths"], ["app.py", self.path])
+        verdict = self.verdict(binding)
+        with self.assertRaisesRegex(evidence.EvidenceError, "VERDICT_INVALID"):
+            evidence.validate_verdict(binding, verdict)
+        verdict["structural_review"] = [{"path": p, "result": "PASS", "evidence": "full diff and authority reviewed"}
+                                        for p in binding["structural_paths"]]
+        self.assertEqual(evidence.validate_verdict(binding, verdict), "approved")
+        self.assertIn("structural_review", independent_review.verdict_schema(binding)["required"])
+        verdict["structural_review"][0]["result"] = "FAIL"
+        with self.assertRaisesRegex(evidence.EvidenceError, "CONTRADICTS"):
+            evidence.validate_verdict(binding, verdict)
+        verdict["structural_review"].pop()
+        with self.assertRaisesRegex(evidence.EvidenceError, "MATRIX_INCOMPLETE"):
+            evidence.validate_verdict(binding, verdict)
+
+    def test_structural_evidence_is_mandatory_and_correction_clears_it(self):
+        binding = self.structural_binding()
+        commands = {r["id"]: {"binding_sha256": binding["binding_sha256"], "kind": r["kind"],
+                              "status": "passed", "artifacts": {}} for r in binding["requirements"]}
+        attached = {"binding": binding, "commands": commands, "qualified": {"binding_sha256": binding["binding_sha256"]}}
+        with self.assertRaisesRegex(evidence.EvidenceError, "STRUCTURAL_EVIDENCE_MISSING"):
+            evidence.evidence_packet(attached)
+        attached.update(structural={"proof": "old"}, structural_disposition={"claim": "old"},
+                        review={"verdict": {"disposition": "bounded-correction"}})
+        state = {"phase": "REVIEWED_CHANGES_REQUESTED", "capsule_evidence": attached}
+        corrected = evidence.correction(state)
+        self.assertNotIn("structural", corrected["capsule_evidence"])
+        self.assertNotIn("structural_disposition", corrected["capsule_evidence"])
+        self.assertEqual(corrected["evidence_history"][0]["structural"], {"proof": "old"})
+        self.assertIsNone(corrected["qualification"])
+
+    def test_independent_reviewer_reads_only_declared_hashed_structural_artifacts(self):
+        from lib import independent_review
+        raw = self.root / "inventory.json"
+        raw.write_text('{"files":[]}\n')
+        packet = {"structural": {"record": {"artifacts": {"candidate": evidence.artifact(raw)}}}}
+        args = {"check": "$structural", "artifact": "candidate", "start_line": 1, "end_line": 2}
+        self.assertIn('"files"', independent_review.read_evidence(packet, args)["content"])
+        raw.write_text("changed")
+        with self.assertRaisesRegex(evidence.EvidenceError, "CHANGED"):
+            independent_review.read_evidence(packet, args)
+        args["artifact"] = "../../undeclared"
+        with self.assertRaisesRegex(evidence.EvidenceError, "NOT_DECLARED"):
+            independent_review.read_evidence(packet, args)

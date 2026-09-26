@@ -50,7 +50,8 @@ The optional [candidate evidence lane](CANDIDATE_EVIDENCE.md) mechanically binds
 capsule/candidate, command records, dedicated-App qualification and observed independent review.
 The [bounded execution command](EXECUTION.md) separately attaches READY execution authority.
 Legacy capsule commands do not attach automatically. [Pinned RI navigation](../tooling/RI.md)
-is available as optional controller tooling; #192 owns structural review. #193 owns
+is available as optional controller tooling. Explicit attached capsules can require
+[source-bound structural review](../tooling/RI.md#candidate-structural-evidence); #193 owns
 combined protected closeout; #194 owns promotion and retirement after pilots.
 
 ## Capsule attachment design

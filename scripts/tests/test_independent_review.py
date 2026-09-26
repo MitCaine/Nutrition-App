@@ -160,3 +160,33 @@ class EvidenceCallbackTests(CandidateFixture):
         path.write_text("tampered")
         with self.assertRaisesRegex(evidence.EvidenceError, "CHANGED"):
             review.read_evidence(packet, args)
+
+
+class StructuralReviewerOracle(CandidateFixture):
+    def test_real_structural_reviewer_receives_full_inventory_and_path_matrix(self):
+        if os.environ.get("NUTRITION_REQUIRE_STRUCTURAL_REVIEW") != "1":
+            self.skipTest("Explicit native controller structural reviewer oracle required")
+        from test_candidate_evidence import StructuralEvidenceTests
+        from lib import ri_delta
+        binding = StructuralEvidenceTests.structural_binding(self)
+        runtime = Path(os.environ["NUTRITION_RI_RUNTIME"])
+        record = ri_delta.capture(self.repo, binding, runtime, self.root / "structural")
+        decision = {"binding_sha256": binding["binding_sha256"], "record_sha256": record["record_sha256"],
+                    "paths": [{"path": p, "decision": "expected", "authority": "fixture AC-1 or capsule lifecycle",
+                               "qualification": "Fixture only; production qualification intentionally absent"}
+                              for p in binding["structural_paths"]]}
+        ri_delta.disposition(binding, record, decision)
+        packet = {"fixture": True, "qualification": "No production qualification; do not approve.",
+                  "structural": {"record": record, "controller_disposition": decision},
+                  "instruction": "This transport oracle requires reading app.py source and the full candidate inventory artifact via nutrition_read_evidence check=$structural artifact=candidate before judging all ACs and every structural path. Missing production qualification must prevent approval."}
+        key = b"k" * 32
+        receipt = review.run_review(self.repo, binding, packet, directory=self.root / "review-structural",
+            executable=Path(os.environ["NUTRITION_REVIEW_RUNTIME"]),
+            expected_sha256=os.environ["NUTRITION_REVIEW_RUNTIME_SHA256"], key=key, timeout=300)
+        destination = os.environ.get("NUTRITION_STRUCTURAL_ORACLE_RECORD")
+        if destination:
+            Path(destination).write_text(json.dumps(receipt, indent=2))
+        evidence.authenticate_receipt(receipt, key, binding)
+        self.assertEqual(sorted(x["path"] for x in receipt["verdict"]["structural_review"]), binding["structural_paths"])
+        self.assertTrue(any(x["tool"] == "nutrition_read_evidence" and x["success"] for x in receipt["source_reads"]))
+        self.assertNotEqual(receipt["verdict"]["disposition"], "approved")

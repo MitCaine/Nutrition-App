@@ -135,3 +135,8 @@ bounded navigation packets for exact committed Python/JS/TS/TSX source. See the
 selection, result limits and Nutrition's authority boundaries. RI is optional controller
 tooling, not an app dependency or edit/approval authority. No private source or credentials
 belong in this public repository or candidate CI.
+
+`task evidence ISSUE structural --candidate-root PATH --ri-runtime MANIFEST` captures full
+changed-file inventories and Git reconciliation. `task evidence ISSUE disposition` records
+controller path explanations; the independent reviewer must confirm every path. See the
+[structural evidence contract](../engineering/tooling/RI.md#candidate-structural-evidence).

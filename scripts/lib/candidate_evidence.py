@@ -11,6 +11,7 @@ import secrets
 import subprocess
 from pathlib import Path
 
+from lib import ri_delta
 from lib.capsule_execution import capsule_metadata, source_snapshot, verify_planning_bytes
 from lib.task_authorization import ResolvedAuthorization, canonical_json, validate_candidate_scope
 
@@ -175,6 +176,10 @@ def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,
               "branch": metadata["branch"], "criteria": dict(criteria), "requirements": planned,
               "issue": issue, "issue_sha256": digest(issue), "source": observed,
               "changed_paths": changed, "correction_limit": correction_limit}
+    structural = ri_delta.configuration(original.decode())
+    if structural is not None:
+        result["structural"] = structural
+        result["structural_paths"] = ri_delta.changed_paths(repo, planning, candidate)
     return {**result, "binding_sha256": digest(result)}
 
 
@@ -222,7 +227,10 @@ def validate_commands(binding: dict, observations: dict) -> None:
 
 
 def validate_verdict(binding: dict, value: dict) -> str:
-    if (not isinstance(value, dict) or set(value) != {"candidate", "binding_sha256", "disposition", "matrix", "findings", "summary"}
+    expected_fields = {"candidate", "binding_sha256", "disposition", "matrix", "findings", "summary"}
+    if binding.get("structural"):
+        expected_fields.add("structural_review")
+    if (not isinstance(value, dict) or set(value) != expected_fields
             or value["candidate"] != binding["candidate"]
             or value["binding_sha256"] != binding["binding_sha256"]
             or value["disposition"] not in {"approved", "bounded-correction", "stop-replan"}
@@ -247,7 +255,16 @@ def validate_verdict(binding: dict, value: dict) -> str:
                 or not isinstance(finding["path"], str) or not finding["path"]
                 or not isinstance(finding["description"], str) or not finding["description"].strip()):
             raise EvidenceError("REVIEW_FINDING_INVALID")
-    if value["disposition"] == "approved" and (value["findings"] or any(x["result"] != "PASS" for x in rows)):
+    structural_rows = value.get("structural_review", [])
+    if binding.get("structural"):
+        if (not isinstance(structural_rows, list)
+                or sorted(row.get("path", "") for row in structural_rows) != binding["structural_paths"]):
+            raise EvidenceError("REVIEW_STRUCTURAL_MATRIX_INCOMPLETE")
+        for row in structural_rows:
+            if (set(row) != {"path", "result", "evidence"} or row["result"] not in {"PASS", "FAIL"}
+                    or not isinstance(row["evidence"], str) or not row["evidence"].strip()):
+                raise EvidenceError("REVIEW_STRUCTURAL_MATRIX_INVALID")
+    if value["disposition"] == "approved" and (value["findings"] or any(x["result"] != "PASS" for x in rows + structural_rows)):
         raise EvidenceError("REVIEW_APPROVAL_CONTRADICTS_FINDINGS")
     return value["disposition"]
 
@@ -439,7 +456,15 @@ def evidence_packet(attached: dict) -> dict:
     qualified = attached.get("qualified")
     if not qualified or qualified.get("binding_sha256") != binding["binding_sha256"]:
         raise EvidenceError("BOUND_QUALIFICATION_MISSING")
-    return {"qualification": qualified, "commands": commands}
+    packet = {"qualification": qualified, "commands": commands}
+    if binding.get("structural"):
+        record = attached.get("structural")
+        if not record:
+            raise EvidenceError("REQUIRED_STRUCTURAL_EVIDENCE_MISSING")
+        ri_delta.validate_record(binding, record)
+        decision = ri_delta.disposition(binding, record, attached.get("structural_disposition", {}))
+        packet["structural"] = {"record": record, "controller_disposition": decision}
+    return packet
 
 
 def gate(state: dict, candidate: str, *, review_required: bool = False) -> None:
@@ -477,6 +502,14 @@ def public_handoff(attached: dict) -> str:
                                         "locator": "controller-local:" + entry["sha256"]}
                                 for label, entry in item.get("artifacts", {}).items()}}
                            for name, item in commands.items()}}
+    if binding.get("structural"):
+        record = attached["structural"]
+        public["structural"] = {"record_sha256": record["record_sha256"], "status": record["status"],
+                                "planning": record["planning"], "candidate": record["candidate"],
+                                "controller_disposition": attached["structural_disposition"],
+                                "artifacts": {name: {"sha256": entry["sha256"], "bytes": entry["bytes"],
+                                              "locator": "controller-local:" + entry["sha256"]}
+                                              for name, entry in record["artifacts"].items()}}
     body = "## Capsule candidate evidence\n\nRaw local logs remain controller-owned; digests are locators, not remote availability claims. "
     body += "The exact qualification is retrievable from GitHub; the observed review decision and matrix are recorded below.\n\n```json\n"
     body += json.dumps(public, indent=2) + "\n```\n"

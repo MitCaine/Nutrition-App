@@ -194,3 +194,97 @@ normalization when applying source-distribution exclusions on macOS. The fixed w
 and its hash are synchronized in both lock files. As with the pip refresh, bootstrap
 a new external runtime and requalify it; do not edit an accepted manifest or environment
 in place. No private source distribution is published by this workflow.
+
+## Candidate structural evidence
+
+Explicit attached capsules can require structural evidence before review by including this
+frozen block at READY:
+
+```nutrition-ri-v1
+{"schema_version":1,"scope":"changed-files-v1"}
+```
+
+This policy inventories **every supported file in the union of paths changed from P to C**,
+completely on both sides, including zero-callable files. It does not scan unchanged repository
+context or claim whole-repository coverage. P is the exact direct capsule-only planning overlay
+above authorized B; C descends from P. The comparison is P→C, never a newly chosen merge-base.
+The capsule's lifecycle change stays in the full Git list as ordinary Markdown bookkeeping.
+The independent reviewer can also read any committed source context at B/P/C.
+
+The trusted controller reads both complete committed Git tree memberships, selects the same
+union of changed paths, and records additions, deletions, modifications, mode changes and
+Git-detected rename pairs. Scope does not follow `.gitignore`. Hidden/build/generated paths
+remain explicit excluded coverage records in the full changed-file list. A selected source
+renamed into an excluded path, or the reverse, blocks instead of becoming an ordinary callable
+addition/deletion. Git may represent a sufficiently changed rename as delete-plus-add; both
+paths remain review obligations, and RI never claims semantic rename identity.
+
+Only Python/JS/TS source is materialized. Swift, SQL, configuration, shell, native and other
+unsupported paths remain explicit direct-review obligations. Both materializations are made
+read-only; the native worker policy denies writes to them and denies network. Before/after
+checks cover exact Git-derived bytes and filesystem identity, mode, link count, modification
+and change timestamps. Even a write followed by restoring the original bytes invalidates the
+scan. This is a controller-established stable evidence window, not trust in RI's
+`caller_asserted_stable` label. Materializations are removed after the attempt; raw evidence
+and failure diagnostics remain outside Git. Independent actors with host administrator access
+remain outside this controller's trust boundary.
+
+Each supported selected path must appear exactly once in a complete inventory, even when it
+contains no callable. Returned source identities and complete declaration byte ranges/hashes
+are checked against committed bytes. Both sides use the same logical scope, parser contract,
+language choices and exclusions. Incomplete mapping, malformed/read failures, missing source,
+changed metadata, unexpected inclusion/exclusion or incompatible comparisons block. Ranked
+navigation hits and truncated structural summaries never substitute for full inventories.
+The pinned RI comparison checks inventory consistency; the consumer independently reconciles
+its file changes against Git source identities.
+
+Use the accepted `scripts/task` from clean trusted main, with the candidate supplied separately:
+
+```bash
+./scripts/task --state-dir "$STATE" evidence ISSUE structural \
+  --candidate-root "$CANDIDATE" --ri-runtime "$RI_RUNTIME/manifest.json"
+```
+
+The controller stores complete planning/candidate inventories, full comparison, compact delta,
+Git membership/coverage and before/after stability records. Raw output is limited to 32MB,
+changed scope to 200 paths, selected source to the navigation byte/file budgets, and the review
+structural packet to 1MB. A larger task stops for decomposition; it is not silently truncated.
+
+Inspect the record and every changed path, then write an external controller disposition:
+
+```json
+{
+  "binding_sha256": "EXACT_ATTACHMENT_DIGEST",
+  "record_sha256": "EXACT_STRUCTURAL_RECORD_DIGEST",
+  "paths": [
+    {"path":"apps/backend/app/example.py","decision":"expected",
+     "authority":"AC-1 and owned path in the frozen capsule",
+     "qualification":"Focused test plus the selected backend profile"}
+  ]
+}
+```
+
+Every changed path appears exactly once. Unexpected changes must be corrected or replanned;
+`expected` requires a concrete authority and qualification explanation. Import/config-only or
+empty callable deltas still need full-diff review. Unsupported-only changes receive the explicit
+`unsupported-only` coverage status, requiring path dispositions and ordinary/specialist/manual
+checks from the capsule. This status neither globally blocks Swift work nor proves its behavior.
+
+```bash
+./scripts/task --state-dir "$STATE" evidence ISSUE disposition \
+  --candidate-root "$CANDIDATE" --disposition-file /external/controller/disposition.json
+```
+
+Then complete required command evidence, exact App qualification, seal, verify and independent
+review as described in [candidate evidence](../workflow/CANDIDATE_EVIDENCE.md). Controller path
+labels are claims for the independent reviewer to evaluate. The observed review must return
+PASS/FAIL and evidence for every structural path as well as every acceptance criterion.
+All PASS with no findings is required for approval. The receipt binds the complete evidence
+packet; raw artifacts are rehashed at each gate. Corrections archive old structural evidence
+and require fresh inventories, disposition, tests, qualification and independent review.
+
+No private RI source or package credential enters candidate execution or GitHub CI. This
+consumer uses the existing external pinned installation; upstream changes require the same
+upgrade procedure. Run `scripts/tests/test_ri_delta.py` with `NUTRITION_RI_RUNTIME` on the
+qualified native controller to exercise real mixed Python/TSX inventories, unsupported-only
+coverage, malformed input, correction and source-write/network denial.

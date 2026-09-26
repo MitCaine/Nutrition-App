@@ -25,6 +25,8 @@ from lib.task_authorization import (
 from lib.trusted_qualification import CHECK_NAME
 from lib.capsule_execution import ExecutionError
 from lib import candidate_evidence as candidate_evidence
+from lib import ri_delta
+from lib.ri_consumer import RIError
 from lib.candidate_evidence import EvidenceError
 
 
@@ -2999,6 +3001,18 @@ def command_evidence(args: argparse.Namespace) -> int:
                 attempt = directory / f"check-{args.issue_number}-{secrets.token_hex(8)}"
                 result = candidate_evidence.run_check(candidate, binding, args.check, attempt, timeout=args.timeout)
                 attached["commands"][args.check] = result
+            elif args.action == "structural":
+                if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.ri_runtime:
+                    raise EvidenceError("STRUCTURAL_REQUIRES_AUTHORIZED_RUNTIME")
+                attempt = directory / f"structural-{args.issue_number}-{secrets.token_hex(8)}"
+                attached["structural"] = ri_delta.capture(candidate, binding, args.ri_runtime, attempt)
+                attached.pop("structural_disposition", None)
+            elif args.action == "disposition":
+                if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.disposition_file:
+                    raise EvidenceError("STRUCTURAL_DISPOSITION_PHASE_INVALID")
+                source = ri_delta.ri.external(args.disposition_file, candidate)
+                value = json.loads(source.read_text())
+                attached["structural_disposition"] = ri_delta.disposition(binding, attached.get("structural", {}), value)
             elif args.action == "manual":
                 if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.check or not args.comment_id:
                     raise EvidenceError("MANUAL_EVIDENCE_INPUT_INVALID")
@@ -3077,9 +3091,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     evidence = subparsers.add_parser("evidence")
     evidence.add_argument("issue_number", type=int)
-    evidence.add_argument("action", choices=("attach", "check", "manual", "seal", "review", "correct", "publish", "status"))
+    evidence.add_argument("action", choices=("attach", "check", "structural", "disposition", "manual", "seal", "review", "correct", "publish", "status"))
     evidence.add_argument("--candidate-root", type=Path, required=True)
     evidence.add_argument("--planning")
+    evidence.add_argument("--ri-runtime", type=Path)
+    evidence.add_argument("--disposition-file", type=Path)
     evidence.add_argument("--check")
     evidence.add_argument("--comment-id", type=int)
     evidence.add_argument("--runtime", type=Path)
@@ -3293,6 +3309,7 @@ def main(
         TaskControllerError,
         ExecutionError,
         EvidenceError,
+        RIError,
         OSError,
     ) as exc:
         emit(
