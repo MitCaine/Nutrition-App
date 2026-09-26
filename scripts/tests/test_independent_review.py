@@ -77,6 +77,36 @@ class IndependentReviewTests(CandidateFixture):
             rpc.close()
         rpc.selector.close()
 
+    def test_notifications_cannot_escape_during_requests_or_terminal_drain(self):
+        bad_events = [
+            {"method": "item/started", "params": {"threadId": "thread", "turnId": "turn", "item": {"type": "commandExecution"}}},
+            {"method": "item/started", "params": {"threadId": "foreign", "turnId": "turn", "item": {"type": "agentMessage"}}},
+            {"method": "turn/completed", "params": {"threadId": "thread", "turn": {"id": "foreign"}}},
+            {"method": "unknown/capability", "params": {}},
+        ]
+        for event in bad_events:
+            fake = object.__new__(review.Rpc)
+            fake.next_id = 1
+            fake.trace = []
+            fake.send = mock.Mock()
+            messages = iter([event, {"id": 1, "result": {"data": []}}])
+            def read():
+                message = next(messages)
+                fake.trace.append({"direction": "received", "message": message})
+                return message
+            fake.read = read
+            self.assertEqual(fake.request("mcpServerStatus/list", {}), {"data": []})
+            # The final complete-trace audit is mandatory before any receipt can be signed.
+            with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_TRACE"):
+                review.validate_trace(fake.trace, "thread", "turn")
+            process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, start_new_session=True)
+            rpc = review.Rpc(process, self.root, 1)
+            rpc.buffer = (json.dumps(event) + "\n").encode()
+            rpc.close()
+            with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_TRACE"):
+                review.validate_trace(rpc.trace, "thread", "turn")
+
     def test_schema_binds_exact_candidate_and_matrix_ids(self):
         binding = self.binding()
         schema = review.verdict_schema(binding)

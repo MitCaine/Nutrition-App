@@ -101,7 +101,8 @@ Inherited MCP servers are enumerated and explicitly disabled, then their empty d
 inventory is verified before and after the turn. Shell, browser, agent, memory, hook and
 plugin features are disabled. The code-mode dispatch host remains available for the three
 controller-supplied bounded callbacks; it is not a grant to repository shell or MCP tools.
-Unexpected capabilities, approvals, session events, late requests, timeouts or source changes
+The full event stream, including handshake waits and terminal drain, is validated before
+signing. Unexpected capabilities, approvals, session events, late requests, timeouts or source changes
 stop the attempt. The controller owns all command execution evidence.
 
 The reviewer receives the entire frozen capsule, issue snapshot, authorization, full P-to-C

@@ -231,6 +231,45 @@ class Rpc:
         self.selector.close()
 
 
+def validate_trace(trace: list[dict], thread: str, turn: str) -> None:
+    """Audit every observed event, including handshake waits and terminal draining."""
+    global_events = {"account/rateLimits/updated", "remoteControl/status/changed"}
+    thread_events = {"thread/status/changed", "thread/tokenUsage/updated"}
+    turn_events = {"turn/started", "turn/completed"}
+    item_events = {"item/started", "item/completed", "item/agentMessage/delta",
+                   "item/reasoning/textDelta", "item/reasoning/summaryTextDelta",
+                   "item/reasoning/summaryPartAdded", "item/tool/call"}
+    for entry in trace:
+        if entry["direction"] != "received":
+            continue
+        message = entry["message"]
+        method = message.get("method")
+        if method is None:
+            continue
+        params = message.get("params", {})
+        if method in global_events:
+            continue
+        if method == "thread/started":
+            if params.get("thread", {}).get("id") != thread:
+                raise EvidenceError("REVIEW_TRACE_THREAD_MISMATCH")
+            continue
+        if method not in thread_events | turn_events | item_events:
+            raise EvidenceError("REVIEW_TRACE_UNEXPECTED_EVENT: " + str(method))
+        if params.get("threadId") != thread:
+            raise EvidenceError("REVIEW_TRACE_THREAD_MISMATCH")
+        if method in turn_events:
+            if params.get("turn", {}).get("id") != turn:
+                raise EvidenceError("REVIEW_TRACE_TURN_MISMATCH")
+        elif method in item_events and params.get("turnId") != turn:
+            raise EvidenceError("REVIEW_TRACE_TURN_MISMATCH")
+        if method in {"item/started", "item/completed"}:
+            if params.get("item", {}).get("type") not in {"userMessage", "agentMessage", "reasoning", "dynamicToolCall"}:
+                raise EvidenceError("REVIEW_TRACE_UNEXPECTED_CAPABILITY")
+        if method == "item/tool/call" and (params.get("namespace") is not None
+                or params.get("tool") not in {"nutrition_read_source", "nutrition_list_source", "nutrition_read_evidence"}):
+            raise EvidenceError("REVIEW_TRACE_UNEXPECTED_TOOL")
+
+
 def disabled_servers(servers: list[dict]) -> bool:
     return all(s.get("runtimeStatus") == "disabled" and not s.get("tools")
                and not s.get("resources") and not s.get("resourceTemplates") for s in servers)
@@ -368,6 +407,7 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
             validate_verdict(binding, verdict)
             rpc.close()
             rpc_closed = True
+            validate_trace(rpc.trace, tid, turn)
             after = observe(repo, binding["candidate"])
             if before != after or runtime(executable, expected_sha256) != identity:
                 raise EvidenceError("REVIEW_SOURCE_OR_RUNTIME_MUTATED")

@@ -255,9 +255,16 @@ class EvidenceCaptureTests(CandidateFixture):
         before = evidence.observe(self.repo, self.candidate)
         result = evidence.run_check(self.repo, binding, "focused", self.root / "capture")
         self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(result["argv"][0], str(Path(sys.executable).absolute()))
+        self.assertEqual(result["runtime"]["python_prefix"], sys.prefix)
         self.assertEqual(result["source_before"], before)
         self.assertEqual(result["source_after"], before)
         evidence.validate_artifacts(result)
+        # Resolve bytes for identity, but retain invocation through the actual prepared venv.
+        binding["requirements"][0]["argv"] = ["{python}", "-c",
+            "import pytest,sys; assert sys.prefix == " + repr(sys.prefix)]
+        venv_result = evidence.run_check(self.repo, binding, "focused", self.root / "venv")
+        self.assertEqual(venv_result["status"], "passed", venv_result)
         # This fixture tests actual denial of writes outside scratch and network creation.
         binding["requirements"][0]["argv"] = ["{python}", "-c",
             "import pathlib,socket; p=pathlib.Path(" + repr(str(self.repo / "app.py")) + "); "
