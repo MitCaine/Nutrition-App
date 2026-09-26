@@ -3140,3 +3140,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 8a55cbca09c625c9b7122f22943ef06927605eb0
 - **Full-capsule recovery path:** engineering/capsules/active/GH-191.md
 - **Historical capsule SHA-256:** f7755ce906743c4a989be40d76537c004cda496de33731c3ee1b05489f1fa53d
+
+
+### GH-192 - Attach exact-source RI structural deltas to independent review
+
+- **ID:** GH-192
+- **Title:** Attach exact-source RI structural deltas to independent review
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/192; owner authorized sequential migration implementation; revision2 authorization comment5848359072.
+- **Issue disposition:** Implementation integrated; issue closes after protected terminal bookkeeping integration.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** dc61541773d23116669421473ce15b573ec08d20
+- **Task branch:** task/GH-192-ri-delta-r2
+- **Controller:** Codex migration controller
+- **Executor:** Codex tooling implementor
+- **Reviewer:** Fresh independent standards and specification reviewers
+- **Delegation:** Read-only independent reviews; implementation stayed with controller.
+- **Implementation commit(s):** 0e61647e32c93e63ae60aba236955c3fa346a181
+- **Verified commit reference(s):** 0e61647e32c93e63ae60aba236955c3fa346a181
+- **Reviewed source commit:** 0e61647e32c93e63ae60aba236955c3fa346a181
+- **Reviewed task/checkpoint commit(s):** 0e61647e32c93e63ae60aba236955c3fa346a181
+- **Integration/merged commit:** 0e61647e32c93e63ae60aba236955c3fa346a181
+- **Integration-related commit reference(s):** Protected controller integration at 0e61647e; separate terminal authority GH-192-closeout comment5848421158.
+- **Acceptance result:** 9/9 checked in the terminal source capsule.
+- **Review disposition:** Approved; independent standards PASS and specification AC1-AC9 PASS on exact C.
+- **Verification summary:** Pinned RI focused tests37PASS/3optional skips, prior full focused104PASS/2skips, repository baseline6/6 and71audit PASS. Current post-security live reviewer transport retry ended REVIEW_TURN_NOT_COMPLETED; prior live transport oracle PASS and current actual pinned RI tests PASS.
+- **Specialized qualification:** Exact C repository PASS, dedicatedApp4708441 check108453568613 workflow run36259836735. Terminal SHA receives separate qualification. Product/native/database profiles not applicable to tooling slice.
+- **Known warnings:** Private RI source not vendored; macOS arm64 controller installation. Current live reviewer transport retry incomplete and not claimed as PASS.
+- **Deferred work/follow-up IDs:** #193, #194.
+- **Retrospective:** Required in #194.
+- **Referenced commits:** Planning01571bdce5f876637e72192e10b170f09963e7eb; final implementation0e61647e32c93e63ae60aba236955c3fa346a181; full reviewed capsuleba9ae2f3464ee9f9a46143d3da6d49b14df99e96.
+- **Full-capsule recovery commit:** ba9ae2f3464ee9f9a46143d3da6d49b14df99e96
+- **Full-capsule recovery path:** engineering/capsules/active/GH-192.md
+- **Historical capsule SHA-256:** a3cbfa84bdc324a5e6140c958cfaa0921d0765eeb1fdd105383184bfcde9a7c9
