@@ -385,9 +385,16 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     (directory / "sandbox.sb").write_text(profile)
     (scratch / "home").mkdir()
     (scratch / "tmp").mkdir()
+    developer = next((p for p in (Path("/Applications/Xcode.app/Contents/Developer"),
+                                  Path("/Library/Developer/CommandLineTools")) if (p / "usr/bin/git").is_file()), None)
+    tool_path = str(developer / "usr/bin") + ":" if developer else ""
     env = {"HOME": str(scratch / "home"), "TMPDIR": str(scratch / "tmp"),
-           "PATH": str(python.parent) + ":/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+           "PATH": str(python.parent) + ":" + tool_path + "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_ATTR_NOSYSTEM": "1",
            "PYTHONDONTWRITEBYTECODE": "1", "NUTRITION_REVIEW_OUTPUT_DIR": str(scratch / "output")}
+    if developer:
+        env["DEVELOPER_DIR"] = str(developer)
+    record["environment"] = env
     started = time.monotonic()
     with (directory / "stdout.log").open("wb") as stdout, (directory / "stderr.log").open("wb") as stderr:
         process = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", profile, *argv], cwd=clone,
