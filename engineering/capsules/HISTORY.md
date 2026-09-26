@@ -3214,3 +3214,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** fe57f6b4224011d7445c8e8feaf0e7379e5f192c
 - **Full-capsule recovery path:** engineering/capsules/active/GH-193.md
 - **Historical capsule SHA-256:** 643722bc02653de51d1eb528ddd3d2ee00e58d1b4620f11ea97076eb4f9f12cd
+
+
+### GH-197 - Reject duplicate terminal acceptance IDs
+
+- **ID:** GH-197
+- **Title:** Reject duplicate terminal acceptance IDs
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/197; revision-two authorization comment5848802521 and separate terminal authorization comment5848932621.
+- **Issue disposition:** Implementation integrated; terminal result is effective only after separately qualified protected T and remote observation.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** 06b9672693e2020a51f335466c7cdb9f727a30b0
+- **Task branch:** task/GH-197-python-pilot-r2
+- **Controller:** Codex migration controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent candidate reviewer and separate terminal reviewers
+- **Delegation:** Read-only independent review; implementation remained controller-owned.
+- **Implementation commit(s):** a562c20c840d5559d76cb6ab8e0bba79cf9c7a1c; c7b2fd8f403e1fc13872a1f6283d597db29e6b4d; e20420cbe449be758c27a88661c2e24b6aada304
+- **Verified commit reference(s):** e20420cbe449be758c27a88661c2e24b6aada304
+- **Reviewed source commit:** e20420cbe449be758c27a88661c2e24b6aada304
+- **Reviewed task/checkpoint commit(s):** e20420cbe449be758c27a88661c2e24b6aada304
+- **Integration/merged commit:** e20420cbe449be758c27a88661c2e24b6aada304
+- **Integration-related commit reference(s):** Protected C integration at e20420cbe449be758c27a88661c2e24b6aada304; distinct terminal authority and protected T.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved corrected C with full independent RI structural matrix; C1 STOP_REPLAN and C2 bounded correction retained. Terminal approval and observed protected T remain required.
+- **Verification summary:** Corrected focused21 PASS, frozen repository baseline PASS, historical GH-193 terminal acceptance9 verified. Full P/C RI inventories and all changed-path dispositions retained.
+- **Specialized qualification:** Corrected C repository profile PASS, App4708441 check108464568624 run36263784221; T requires distinct App check and independent review. No product/native/database profile applies.
+- **Known warnings:** Automatic approval review rejected publication of the candidate evidence digest to issue #197; signed local receipt remains. `finalize` resume failed ATTACHED_SOURCE_CHANGED after integration changed Git refs; the separate trusted terminal transaction is used. This proposed HISTORY record is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #194 combined pilot decision; controller finalize-resume defect requires a tracked fix.
+- **Retrospective:** Required in #194; preserve failed candidate/review and controller stop evidence.
+- **Referenced commits:** Planning d1019c85328f6b02bc9cceaf79f4f7103b7e4726; implementation e20420cbe449be758c27a88661c2e24b6aada304; full reviewed capsule c205af47add011294235d4a1c4b71d735aa9f005.
+- **Full-capsule recovery commit:** c205af47add011294235d4a1c4b71d735aa9f005
+- **Full-capsule recovery path:** engineering/capsules/active/GH-197.md
+- **Historical capsule SHA-256:** d8be2bfc914ca676e5ceedff87421a1badc8e74f50929b833c64269da30e6de9
