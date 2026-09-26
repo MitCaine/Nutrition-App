@@ -234,6 +234,33 @@ def sandbox_profile(candidate: Path, capsule: Path, scratch: Path, executable: P
     ])
 
 
+def execution_packet(rendered: str) -> str:
+    """Replace only the generic renderer's lifecycle protocol for this transport."""
+    start, end = "## Execution protocol\n", "## Authority artifacts\n"
+    if rendered.count(start) != 1 or rendered.count(end) != 1:
+        raise ExecutionError("HANDOFF_PROTOCOL_UNRECOGNIZED")
+    prefix, tail = rendered.split(start)
+    _, suffix = tail.split(end)
+    protocol = """## Execution protocol
+
+This packet uses the macos-bounded-command transport. Read all listed authority
+and the complete capsule below. Its acceptance, scope and escalation rules remain
+binding. The trusted controller already ran strict READY preflight and owns capsule
+lifecycle updates, candidate commits and every qualification/review/integration gate.
+Keep capsule bytes unchanged during this command; general lifecycle instructions in
+repository references are controller actions for this transport.
+
+Perform only the selected bounded source operation. No child processes, network,
+Git or controller writes are authorized. A required subprocess check is a controller
+handoff requirement, not permission to escape this transport; report it as not run.
+Return completed, blocked or stop_replan with a nonempty summary at NUTRITION_OUTCOME.
+Completed means source handoff only. Report only checks actually run. Model/effort
+are unobserved and null for this local command, never inferred from launch text.
+
+"""
+    return prefix + protocol + end + suffix
+
+
 def execute(record: dict, authorization: ResolvedAuthorization, *, checkpoint: Path,
             timeout: float, resume: bool = False) -> dict:
     if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").is_file():

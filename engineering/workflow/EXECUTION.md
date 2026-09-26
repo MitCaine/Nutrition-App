@@ -55,8 +55,11 @@ authorization; arbitrary glob containment is rejected instead of guessed.
   --candidate-root /absolute/task-checkout --timeout 900
 ```
 
-Preparation repeats the existing strict READY renderer and writes its full capsule/handoff
-outside the candidate. It also checks actual tracked planning bytes and modes, including
+Preparation repeats the existing strict READY renderer and preserves its full capsule/handoff
+outside the candidate. The delivered packet replaces only the generic execution-protocol
+section with this transport's controller-owned lifecycle and verification handoff; task
+identity, authority, scope, acceptance and full capsule remain intact. Unknown renderer
+structure blocks preparation rather than dropping instructions. It also checks actual tracked planning bytes and modes, including
 changes hidden by index flags. Ignored/untracked material, symlinks, multiply linked files and non-regular source
 are not accepted as clean input. A checkpoint may not be overwritten by another preparation.
 Keep the planning capsule byte-identical while the executable runs; lifecycle updates and

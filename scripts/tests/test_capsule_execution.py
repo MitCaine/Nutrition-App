@@ -81,6 +81,17 @@ class ExecutionTests(unittest.TestCase):
         return ("import json,os\nfrom pathlib import Path\n"
                 f"Path(os.environ['NUTRITION_OUTCOME']).write_text(json.dumps({{'outcome': '{outcome}', 'summary': 'fixture result'}}))\n")
 
+    def test_packet_adapts_lifecycle_without_changing_authority_or_capsule(self):
+        rendered = ("identity\n## Execution protocol\nlegacy lifecycle edits\n"
+                    "## Authority artifacts\nauthority and full capsule\n")
+        packet = execution.execution_packet(rendered)
+        self.assertNotIn("legacy lifecycle edits", packet)
+        self.assertIn("controller already ran strict READY preflight", packet)
+        self.assertTrue(packet.startswith("identity\n"))
+        self.assertTrue(packet.endswith("## Authority artifacts\nauthority and full capsule\n"))
+        with self.assertRaisesRegex(execution.ExecutionError, "PROTOCOL_UNRECOGNIZED"):
+            execution.execution_packet("unknown renderer output")
+
     def test_binding_has_full_capsule_and_no_proof_claim(self):
         record = self.bind()
         self.assertEqual(record["capsule_text"], (self.repo / self.capsule).read_text())
