@@ -3251,3 +3251,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** c205af47add011294235d4a1c4b71d735aa9f005
 - **Full-capsule recovery path:** engineering/capsules/active/GH-197.md
 - **Historical capsule SHA-256:** d8be2bfc914ca676e5ceedff87421a1badc8e74f50929b833c64269da30e6de9
+
+
+### GH-199 - Align Expo 57 patch pins with trusted mobile qualification
+
+- **ID:** GH-199
+- **Title:** Align Expo 57 patch pins with trusted mobile qualification
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/199; revision-three authorization comment5849115706 and terminal authorization comment5849252176.
+- **Issue disposition:** Implementation integrated; terminal outcome becomes effective only after distinct qualified protected T and remote observation.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** 204d4639b4686c7cef34c0674d17c0b52499bf03
+- **Task branch:** task/GH-199-expo-pins-r3
+- **Controller:** Codex migration controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent standards/specification and exact terminal reviewers
+- **Delegation:** Read-only independent reviews; implementation remained controller-owned.
+- **Implementation commit(s):** cd1ee5dcd47c13db438cbee742d1bffd29fe44c5; df9512f055475c03250fe84907e53762f8ba1efd
+- **Verified commit reference(s):** df9512f055475c03250fe84907e53762f8ba1efd
+- **Reviewed source commit:** df9512f055475c03250fe84907e53762f8ba1efd
+- **Reviewed task/checkpoint commit(s):** df9512f055475c03250fe84907e53762f8ba1efd
+- **Integration/merged commit:** df9512f055475c03250fe84907e53762f8ba1efd
+- **Integration-related commit reference(s):** Protected C integration at df9512f055475c03250fe84907e53762f8ba1efd; separate terminal authority and protected T.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved corrected C after independent standards/specification review; profile-router failure on C1 retained. Terminal source and protected T require separate review/observation.
+- **Verification summary:** Fresh npm ci, Expo install --check and repository/mobile local bundle PASS. Trusted repository/mobile/iOS-native profiles PASS. Four direct/five required transitive lock resolutions only; unrelated nested ws stable.
+- **Specialized qualification:** Exact C App4708441 check108472115935 PASS, trusted execution run36265712746 on repository/mobile/ios-native. T needs distinct repository App check and independent review.
+- **Known warnings:** Local Node26 gave an engine warning; CI used repository-supported Node24. Native CI qualification is not physical-device proof. This proposed HISTORY record is ineffective before protected T observation.
+- **Deferred work/follow-up IDs:** #198 replan from new main; #194 combined pilot decision.
+- **Retrospective:** Required in #194; retain original #198 Expo-failed check and GH-199 profile-router stop.
+- **Referenced commits:** Planning ac4ef424abad0858fe0c5643a85553fac153707d; implementation df9512f055475c03250fe84907e53762f8ba1efd; full reviewed capsule fa6f50bfaa585102ca7af44f1a6c6e8bf6bcdd40.
+- **Full-capsule recovery commit:** fa6f50bfaa585102ca7af44f1a6c6e8bf6bcdd40
+- **Full-capsule recovery path:** engineering/capsules/active/GH-199.md
+- **Historical capsule SHA-256:** aa053d966f73fa29847d935c0aeb9e1fbd325d5ddbec7c7b6aa315249533b2e9
