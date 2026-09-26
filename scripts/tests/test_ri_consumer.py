@@ -142,6 +142,19 @@ class SelectionTests(SourceFixture):
         self.assertFalse(selected)
         self.assertEqual(scope["unsupported_or_other"], ["backend/schema.sql"])
 
+    def test_unsupported_only_packet_is_bounded_and_retains_full_selection(self):
+        scope = {"excluded": [], "unsupported_or_other": ["config/" + str(i) + ".sql" for i in range(1000)]}
+        runtime = self.root / "runtime" / "manifest.json"
+        with mock.patch.object(ri, "verify_runtime", return_value=({"manifest_sha256": "fixture"}, runtime.parent / "environment")), mock.patch.object(ri, "selected_source", return_value=({}, scope)):
+            output = self.root / "unsupported-output"
+            packet = ri.navigate(self.repo, self.revision, ["backend"], "total", 8, runtime, output)
+            self.assertEqual(len(packet["scan_scope"]["unsupported_or_other"]), 20)
+            self.assertEqual(packet["scan_scope"]["unsupported_or_other_count"], 1000)
+            self.assertEqual(len(json.loads((output / "selection.json").read_text())["unsupported_or_other"]), 1000)
+            with mock.patch.object(ri, "MAX_PACKET_BYTES", 100):
+                with self.assertRaisesRegex(ri.RIError, "PACKET_BUDGET"):
+                    ri.navigate(self.repo, self.revision, ["backend"], "total", 8, runtime, self.root / "small")
+
     def test_materialization_mutation_extra_files_and_aliases_fail(self):
         selected, _ = ri.selected_source(
             self.repo, self.revision, ["backend/service.py"]

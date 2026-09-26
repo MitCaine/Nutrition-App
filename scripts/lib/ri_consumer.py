@@ -328,6 +328,13 @@ def stable_failure_path(value: str | None, directory: Path) -> str | None:
     return path.as_posix()
 
 
+def bounded_scope(scope: dict) -> dict:
+    return {**scope, "excluded": scope["excluded"][:20],
+            "excluded_count": len(scope["excluded"]),
+            "unsupported_or_other": scope["unsupported_or_other"][:20],
+            "unsupported_or_other_count": len(scope["unsupported_or_other"])}
+
+
 def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, directory: Path,
                    *, query: str, limit: int, lock: dict) -> dict:
     if raw.get("schema_version") != lock["contracts"]["navigation"]:
@@ -383,10 +390,7 @@ def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, direc
               "runtime_manifest_sha256": manifest["manifest_sha256"],
               "source_manifest_sha256": digest(source_manifest),
               "mapping_status": raw["mapping_status"], "total_matches": raw["total_matches"], "matches": matches,
-              "scan_scope": {**scope, "excluded": scope["excluded"][:20],
-                             "excluded_count": len(scope["excluded"]),
-                             "unsupported_or_other": scope["unsupported_or_other"][:20],
-                             "unsupported_or_other_count": len(scope["unsupported_or_other"])},
+              "scan_scope": bounded_scope(scope),
               "failures": [{**failure, "path": stable_failure_path(failure.get("path"), directory)}
                            for failure in raw.get("failures", [])[:20]], "failure_count": len(raw.get("failures", [])),
               "parse_error_count": raw.get("parse_error_count"), "structural_error_count": raw.get("structural_error_count"),
@@ -394,7 +398,7 @@ def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, direc
               "limitations": ["Lexical source navigation only; no edit authority or complete behavior proof.",
                               "No matches never proves absence. Unmapped files still need direct source/full-diff review.",
                               "Committed selection excludes all untracked/ignored working files and is not current dirty-worktree evidence."]}
-    if len(json.dumps(packet).encode()) > MAX_PACKET_BYTES:
+    if len(json.dumps(packet, indent=2).encode()) > MAX_PACKET_BYTES:
         raise RIError("RI_PACKET_BUDGET_EXCEEDED")
     return packet
 
@@ -415,7 +419,14 @@ def navigate(repo: Path, revision: str, prefixes: list[str], query: str, limit: 
     (directory / "selection.json").write_text(json.dumps(scope, indent=2))
     if not selected:
         packet = {"schema_version": 1, "revision": revision, "mapping_status": "unsupported",
-                  "matches": [], "scan_scope": scope, "reason": "No selected supported source; no absence/completeness claim."}
+                  "ri_revision": lock["revision"], "contracts": lock["contracts"],
+                  "runtime_manifest_sha256": manifest["manifest_sha256"],
+                  "matches": [], "scan_scope": bounded_scope(scope),
+                  "selection_evidence": {"path": str(directory / "selection.json"),
+                                         "sha256": sha256((directory / "selection.json").read_bytes())},
+                  "reason": "No selected supported source; no absence/completeness claim."}
+        if len(json.dumps(packet, indent=2).encode()) > MAX_PACKET_BYTES:
+            raise RIError("RI_PACKET_BUDGET_EXCEEDED")
         (directory / "packet.json").write_text(json.dumps(packet, indent=2))
         return packet
     source = directory / "source"
