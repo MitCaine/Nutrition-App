@@ -2992,3 +2992,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** `def5277dfda32a771ab7ef1c7accd8451e32c672`
 - **Full-capsule recovery path:** `engineering/capsules/active/GH-174.md`
 - **Historical capsule SHA-256:** `3a040d008efbc0c360382e6306eb7b65744755138c1d4457b06e970ec5e135e8`
+
+
+### GH-188 - Unify capsule and trusted-task authority
+
+- **ID:** GH-188
+- **Title:** Unify capsule and trusted-task authority
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/188; owner authorized sequential migration implementation.
+- **Issue disposition:** Implementation integrated; issue closes after protected terminal bookkeeping integration.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** edc9b14355fad56b35fb019a653f87f069328d92
+- **Task branch:** task/GH-188-workflow-authority
+- **Controller:** Codex migration controller
+- **Executor:** Codex documentation implementor
+- **Reviewer:** Fresh review188_standards and review188_spec contexts
+- **Delegation:** Independent read-only standards and specification reviews; implementation stayed with controller.
+- **Implementation commit(s):** 2687b372a9e8412ac847b24f15c5c3953db5f86f
+- **Verified commit reference(s):** 2687b372a9e8412ac847b24f15c5c3953db5f86f
+- **Reviewed source commit:** 2687b372a9e8412ac847b24f15c5c3953db5f86f
+- **Reviewed task/checkpoint commit(s):** 2687b372a9e8412ac847b24f15c5c3953db5f86f
+- **Integration/merged commit:** 2687b372a9e8412ac847b24f15c5c3953db5f86f
+- **Integration-related commit reference(s):** 2687b372a9e8412ac847b24f15c5c3953db5f86f protected trusted-controller integration; separate terminal transaction uses GH-188-closeout authorization.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved — independent standards PASS and specification AC1-AC6 PASS; zero findings.
+- **Verification summary:** Exact candidate repository bundle 20260925-222046-gh-188-candidate: 6/6 checks, 71 focused tests; docs 100 files/581 links; capsule/history 3/3; stable fingerprint 868904ec270784f4e0e81e94ac2894660b3f9ddeaf69b715654dd0e35013f57c.
+- **Specialized qualification:** Repository PASS from dedicated App 4708441 check 108344808639; dispatch 36220495424; execution 36220502696. Product/native/infrastructure profiles not applicable to documentation. Terminal SHA is separately qualified, not covered by this candidate check.
+- **Known warnings:** Existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning. Initial local review lacked pytest; rerun in existing Python 3.12.14 environment passed. No source fixes or waived checks.
+- **Deferred work/follow-up IDs:** #189, #190, #191, #192, #193, #194; combined workflow remains a trial.
+- **Retrospective:** Required in #194 after combined-workflow pilot.
+- **Referenced commits:** Planning 3ecc1f3498f7; implementation 2687b372a9e8412ac847b24f15c5c3953db5f86f; full reviewed capsule 51a53b983f8694fdcc1b3aac68a017e30c9bb445
+- **Full-capsule recovery commit:** 51a53b983f8694fdcc1b3aac68a017e30c9bb445
+- **Full-capsule recovery path:** engineering/capsules/active/GH-188.md
+- **Historical capsule SHA-256:** 2e593b09cd8bef523f439ef087c2ee3f962e86aeba59bdbada2cebbdfa5f2a4a
