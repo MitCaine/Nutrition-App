@@ -3066,3 +3066,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 00159a1f1e1b874ba3044c2216ad86bfd85bf3c9
 - **Full-capsule recovery path:** engineering/capsules/active/GH-189.md
 - **Historical capsule SHA-256:** 49663d5fbd9c9ab89783d7f3837551ff940d6e58c184f9bbaedb155d5456912e
+
+
+### GH-190 - Bind exact candidate evidence and independent review
+
+- **ID:** GH-190
+- **Title:** Bind exact candidate evidence and independent review
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/190; owner authorized sequential migration implementation.
+- **Issue disposition:** Implementation integrated; issue closes after protected terminal bookkeeping integration.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** 59cda9ca36f1c59f73ce1479967f5c4d3e81d5dc
+- **Task branch:** task/GH-190-candidate-evidence
+- **Controller:** Codex migration controller
+- **Executor:** Codex tooling implementor
+- **Reviewer:** Independent review190_standards and review190_spec contexts
+- **Delegation:** Read-only independent standards and requirements reviews; implementation stayed with controller.
+- **Implementation commit(s):** c9f465ab2c073a291fc35ac4984df56ceeec86cb; e486cf88cf138f67b1196b1995f97e3569cf08ee; e6e23d0f4370f132f0bc5267d916e5988ea5bf09; 7cd4e1866099690982b310c00919e1ea77d4b7b8
+- **Verified commit reference(s):** 7cd4e1866099690982b310c00919e1ea77d4b7b8
+- **Reviewed source commit:** 7cd4e1866099690982b310c00919e1ea77d4b7b8
+- **Reviewed task/checkpoint commit(s):** 7cd4e1866099690982b310c00919e1ea77d4b7b8
+- **Integration/merged commit:** 7cd4e1866099690982b310c00919e1ea77d4b7b8
+- **Integration-related commit reference(s):** 7cd4e1866099690982b310c00919e1ea77d4b7b8 protected controller integration; terminal transaction has separate GH-190-closeout authorization comment5844112054.
+- **Acceptance result:** 8/8 checked in the terminal source capsule.
+- **Review disposition:** Approved. Final standards PASS and requirements AC1-AC8 PASS. Original candidate rejected for event-stream validation and lost virtual environment; both corrected and independently reassessed. New receipt code did not approve its own introduction.
+- **Verification summary:** Exact candidate74/74 focused tests PASS including native command isolation and live independent reviewer. Canonical sandbox capture6/6 and71audit PASS,21hashed artifacts, unchanged source; record SHA2566d2d5e7207a697fb170ff5f3755a78b96454114caf0ccef445fd025f4a002718. Spec reviewer independently ran73tests with native isolation and revalidated every canonical artifact. Live oracle had9source reads and correctly stopped for missing production qualification in its fixture.
+- **Specialized qualification:** Exact C2 repository PASS, dedicatedApp4708441 check108358361993 dispatch36225372641, temporaryrefremoved. Product/native/device, PostgreSQL and infrastructure profiles not applicable. Terminal SHA receives separate qualification, not transferred candidate proof.
+- **Known warnings:** Existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning. Local runtime selected libraries remain dependencies rather than full cryptographic toolchain attestation. Private raw evidence stays controller-owned with honest local locators; approval matrix and qualification are remotely retrievable.
+- **Deferred work/follow-up IDs:** #191, #192, #193, #194. Combined workflow remains a trial.
+- **Retrospective:** Required in #194; retain original rejection, correction and native sandbox probe evidence.
+- **Referenced commits:** Planning15bbc6188e5a8958e5c63396496f3695d55352c7; final implementation7cd4e1866099690982b310c00919e1ea77d4b7b8; full reviewed capsule0e7aff008df8c4c172099c3d83fc374b3be007ac.
+- **Full-capsule recovery commit:** 0e7aff008df8c4c172099c3d83fc374b3be007ac
+- **Full-capsule recovery path:** engineering/capsules/active/GH-190.md
+- **Historical capsule SHA-256:** a8360753015d5790c7a91a78fde23e64898e989a4f784509dd79002c5f753372
