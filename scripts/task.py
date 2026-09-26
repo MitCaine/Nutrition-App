@@ -24,6 +24,8 @@ from lib.task_authorization import (
 
 from lib.trusted_qualification import CHECK_NAME
 from lib.capsule_execution import ExecutionError
+from lib import candidate_evidence as candidate_evidence
+from lib.candidate_evidence import EvidenceError
 
 
 class TaskControllerError(RuntimeError):
@@ -1566,6 +1568,14 @@ def qualify_task(
         observed_main_sha=controller_main_sha,
     )
 
+    if "capsule_evidence" in state:
+        attached = state["capsule_evidence"]
+        if not attached.get("binding"):
+            raise EvidenceError("FRESH_CANDIDATE_ATTACHMENT_REQUIRED")
+        candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
+        if candidate_evidence.observe(candidate_repo, candidate_sha) != attached["binding"]["source"]:
+            raise EvidenceError("ATTACHED_SOURCE_CHANGED")
+
     nonce = (
         dispatch_nonce
         or secrets.token_hex(12)
@@ -1920,6 +1930,15 @@ def integrate_task(
             "INTEGRATION_CHECK_REVALIDATION_FAILED"
         )
 
+    candidate_evidence.gate(state, candidate_sha, review_required=True)
+    if "capsule_evidence" in state:
+        attached = state["capsule_evidence"]
+        candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
+        candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
+        candidate_evidence.qualify(attached["binding"], qualification, check, expected_app_id)
+        if candidate_evidence.observe(candidate_repo, candidate_sha) != attached["binding"]["source"]:
+            raise EvidenceError("ATTACHED_SOURCE_CHANGED")
+
     updated = json.loads(
         json.dumps(state)
     )
@@ -2112,6 +2131,9 @@ def record_verification(
                 )
             )
 
+    if decision == "pass":
+        candidate_evidence.gate(state, candidate_sha)
+
     updated = dict(state)
 
     updated["verification"] = {
@@ -2166,6 +2188,9 @@ def record_review(
                     "EXACT_VERIFICATION"
                 )
             )
+
+    if "capsule_evidence" in state:
+        raise EvidenceError("OBSERVED_REVIEW_COMMAND_REQUIRED")
 
     updated = dict(state)
 
@@ -2913,6 +2938,119 @@ def command_execution(args: argparse.Namespace) -> int:
         return 1 if record["phase"] in {"STOP_REPLAN", "RUNNING"} else 0
 
 
+def command_evidence(args: argparse.Namespace) -> int:
+    """Controller-owned opt-in evidence; never import a caller's approval JSON."""
+    import fcntl
+    from lib import independent_review
+    from lib.capsule_execution import require_external
+
+    repo = resolve_repo_root(args.repo_root)
+    candidate = resolve_repo_root(args.candidate_root)
+    directory = require_external(args.state_dir, candidate)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / f"evidence-{args.issue_number}.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise EvidenceError("EVIDENCE_ALREADY_RUNNING") from exc
+        state = load_state(directory, args.issue_number)
+        git(repo, "fetch", "origin", "main")
+        main = require_trusted_main_controller(repo, expected_repository=state["repository"])
+        transport = GhQualificationTransport()
+        authorization = resolve_current_authorization(state, transport)
+        if main != authorization.base_sha or repository_slug(candidate) != state["repository"]:
+            raise EvidenceError("EVIDENCE_AUTHORITY_NOT_CURRENT")
+        sha = git(candidate, "rev-parse", "HEAD")
+        attached = state.get("capsule_evidence", {})
+        key_path = directory / "review-key.bin"
+        key = candidate_evidence.create_key(key_path)
+        if args.action == "attach":
+            if state["phase"] != "AUTHORIZED" or not args.planning:
+                raise EvidenceError("ATTACH_REQUIRES_AUTHORIZED_PLANNING")
+            if attached and not attached.get("requires_fresh_candidate"):
+                raise EvidenceError("CANDIDATE_ALREADY_ATTACHED")
+            if attached:
+                if args.planning != attached["planning"]:
+                    raise EvidenceError("CORRECTION_PLANNING_CHANGED")
+                prior = state["evidence_history"][-1]["binding"]
+                if sha == prior["candidate"]:
+                    raise EvidenceError("CORRECTION_REQUIRES_NEW_CANDIDATE")
+                limit = prior["correction_limit"]
+            else:
+                limit = args.corrections
+            issue = GhIssueAuthorizationTransport()._api(method="GET",
+                path=f"/repos/{state['repository']}/issues/{args.issue_number}")
+            issue = {k: issue[k] for k in ("number", "title", "body", "updated_at", "html_url")}
+            binding = candidate_evidence.attach(candidate, authorization, planning=args.planning,
+                candidate=sha, issue=issue, correction_limit=limit)
+            attached = {"binding": binding, "commands": {}, "key_path": str(key_path),
+                        "corrections_used": attached.get("corrections_used", 0)}
+            state["capsule_evidence"] = attached
+        else:
+            if not attached.get("binding"):
+                raise EvidenceError("CANDIDATE_ATTACHMENT_REQUIRED")
+            binding = attached["binding"]
+            candidate_evidence.authenticate_binding(binding, authorization, sha)
+            if candidate_evidence.observe(candidate, sha) != binding["source"]:
+                raise EvidenceError("ATTACHED_SOURCE_CHANGED")
+            if args.action == "check":
+                if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.check:
+                    raise EvidenceError("COMMAND_EVIDENCE_PHASE_INVALID")
+                attempt = directory / f"check-{args.issue_number}-{secrets.token_hex(8)}"
+                result = candidate_evidence.run_check(candidate, binding, args.check, attempt, timeout=args.timeout)
+                attached["commands"][args.check] = result
+            elif args.action == "manual":
+                if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.check or not args.comment_id:
+                    raise EvidenceError("MANUAL_EVIDENCE_INPUT_INVALID")
+                comment = GhIssueAuthorizationTransport().get_issue_comment(state["repository"], args.comment_id)
+                attached["commands"][args.check] = candidate_evidence.manual_observation(binding, args.check, comment)
+            elif args.action == "seal":
+                if state["phase"] != "QUALIFIED":
+                    raise EvidenceError("SEAL_REQUIRES_QUALIFICATION")
+                qualification = state["qualification"]
+                check = transport.get_check_run(state["repository"], qualification["check_id"])
+                attached["qualified"] = candidate_evidence.qualify(binding, qualification, check,
+                                                                   configured_qualification_app_id())
+                candidate_evidence.evidence_packet(attached)
+            elif args.action == "review":
+                if state["phase"] != "VERIFIED" or not args.runtime or not args.runtime_sha256:
+                    raise EvidenceError("REVIEW_REQUIRES_VERIFICATION_AND_PINNED_RUNTIME")
+                candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
+                packet = candidate_evidence.evidence_packet(attached)
+                attempt = directory / f"review-{args.issue_number}-{secrets.token_hex(8)}"
+                try:
+                    receipt = independent_review.run_review(candidate, binding, packet, directory=attempt,
+                        executable=args.runtime, expected_sha256=args.runtime_sha256, key=key,
+                        timeout=args.timeout, model=args.model, effort=args.effort)
+                except EvidenceError as exc:
+                    state["phase"] = "STOP_REPLAN"
+                    attached["review_failure"] = {"reason": str(exc), "diagnostics": str(attempt)}
+                    atomic_write_json(state_path(directory, args.issue_number), state)
+                    raise
+                attached["review"] = receipt
+                disposition = receipt["verdict"]["disposition"]
+                state["phase"] = {"approved": "REVIEWED_APPROVED", "bounded-correction": "REVIEWED_CHANGES_REQUESTED",
+                                  "stop-replan": "STOP_REPLAN"}[disposition]
+                state["review"] = {"candidate_sha": sha, "actor": receipt["session"]["thread_id"],
+                    "decision": "approved" if disposition == "approved" else "changes-requested",
+                    "summary": receipt["verdict"]["summary"]}
+            elif args.action == "correct":
+                candidate_evidence.authenticate_receipt(attached.get("review", {}), key, binding)
+                state = candidate_evidence.correction(state)
+            elif args.action == "publish":
+                candidate_evidence.authenticate_receipt(attached.get("review", {}), key, binding)
+                candidate_evidence.evidence_packet(attached)
+                body = candidate_evidence.public_handoff(attached)
+                comment = GhIssueAuthorizationTransport().create_issue_comment(state["repository"], args.issue_number, body)
+                attached["public_handoff"] = {"url": comment["html_url"], "id": comment["id"],
+                                              "body_sha256": candidate_evidence.digest(body)}
+        atomic_write_json(state_path(directory, args.issue_number), state)
+        emit({"task": state["task_id"], "phase": state["phase"], "candidate": sha,
+              "binding": state.get("capsule_evidence", {}).get("binding", {}).get("binding_sha256"),
+              "action": args.action})
+        return 1 if state["phase"] == "STOP_REPLAN" else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -2936,6 +3074,21 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command",
         required=True,
     )
+
+    evidence = subparsers.add_parser("evidence")
+    evidence.add_argument("issue_number", type=int)
+    evidence.add_argument("action", choices=("attach", "check", "manual", "seal", "review", "correct", "publish", "status"))
+    evidence.add_argument("--candidate-root", type=Path, required=True)
+    evidence.add_argument("--planning")
+    evidence.add_argument("--check")
+    evidence.add_argument("--comment-id", type=int)
+    evidence.add_argument("--runtime", type=Path)
+    evidence.add_argument("--runtime-sha256")
+    evidence.add_argument("--model")
+    evidence.add_argument("--effort")
+    evidence.add_argument("--corrections", type=int, choices=(0, 1), default=1)
+    evidence.add_argument("--timeout", type=float, default=900)
+    evidence.set_defaults(handler=command_evidence)
 
     execution = subparsers.add_parser("execution")
     execution.add_argument("issue_number", type=int)
@@ -3139,6 +3292,7 @@ def main(
         AuthorizationError,
         TaskControllerError,
         ExecutionError,
+        EvidenceError,
         OSError,
     ) as exc:
         emit(

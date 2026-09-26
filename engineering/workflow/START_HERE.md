@@ -24,7 +24,9 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    its handoff before implementation; keep its lifecycle through terminal closeout.
 4. From trusted main, `./scripts/task qualify ISSUE --candidate-root PATH` qualifies
    the exact committed candidate through the existing dedicated-App boundary.
-5. Record explicit verification and independent review for that same SHA with
+5. For an attached candidate, follow the [evidence sequence](CANDIDATE_EVIDENCE.md)
+   for command capture, sealed qualification and observed independent review. For
+   compatibility tasks, record explicit verification and independent review for that same SHA with
    `./scripts/task verify` and `./scripts/task review`. Inspect the source and full
    diff against acceptance; tests never infer review approval.
 6. With the owner's authorization, `./scripts/task integrate ISSUE --candidate-root
@@ -45,8 +47,9 @@ capsule/RI migration target; it owns the binding design and compatibility invent
 The trusted task controller is the accepted normal entrypoint. Legacy Workflow v3's
 capsule-wide promotion remains experimental. Issues #188–#194 explicitly authorize
 bounded migration trials, not a default cutover. The optional [bounded execution/checkpoint command](EXECUTION.md) supports an isolated
-macOS local-command transport. Richer review and RI features still require their own
-acceptance gates before use.
+macOS local-command transport. The optional [candidate evidence lane](CANDIDATE_EVIDENCE.md)
+adds exact command/qualification binding and observed independent review. RI and default
+promotion still require their own acceptance gates.
 
 Initial local controller qualification targets macOS. Nutrition's existing Linux
 CI jobs remain qualification authorities; local SQLite, remote PostgreSQL, iOS

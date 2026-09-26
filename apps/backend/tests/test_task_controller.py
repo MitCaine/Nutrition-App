@@ -2591,3 +2591,18 @@ def test_trusted_qualification_cli_runs_as_standalone_script() -> None:
         "Trusted candidate-independent qualification helper."
         in completed.stdout
     )
+
+
+def test_attached_lane_cannot_use_assertion_only_review():
+    from lib.candidate_evidence import EvidenceError
+    state = {"capsule_evidence": {}, "verification": {"decision": "pass", "candidate_sha": "a" * 40}}
+    with pytest.raises(EvidenceError, match="OBSERVED_REVIEW"):
+        TASK.record_review(state, candidate_sha="a" * 40, actor="author", decision="approved", summary="looks good")
+
+
+def test_attached_lane_cannot_verify_missing_or_corrected_evidence():
+    from lib.candidate_evidence import EvidenceError
+    for attached in ({}, {"requires_fresh_candidate": True}):
+        state = {"capsule_evidence": attached, "qualification": {"result": "PASS", "candidate_sha": "a" * 40}}
+        with pytest.raises(EvidenceError, match="FRESH_CANDIDATE"):
+            TASK.record_verification(state, candidate_sha="a" * 40, actor="author", decision="pass", evidence="tests passed")

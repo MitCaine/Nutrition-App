@@ -45,19 +45,19 @@ instructions, but cannot manufacture a passed gate or silently revise fixed task
 | Controller state outside candidate tree | Current authorization and candidate-bound gate records | Retain; extend resumability/portable evidence only with tests |
 | Active capsules and HISTORY | Non-terminal contract and terminal Git recovery | Retain; no per-task completed archive |
 
-The current controller stores verification/review assertions with a candidate SHA;
-it does not yet mechanically establish reviewer independence or a complete acceptance
-matrix. #190 owns that extension. The explicit [bounded execution command](EXECUTION.md) attaches a qualified READY
-capsule to external authorization and retains checkpoints for the macOS local-command
-transport. Legacy capsule commands do not attach automatically; #191/#192
-own RI consumption. #193 owns combined protected closeout. #194 owns promotion and
-retirement after pilots. Do not advertise these planned guarantees as current features.
+Unattached compatibility tasks retain explicit candidate-bound verification/review assertions.
+The optional [candidate evidence lane](CANDIDATE_EVIDENCE.md) mechanically binds the frozen
+capsule/candidate, command records, dedicated-App qualification and observed independent review.
+The [bounded execution command](EXECUTION.md) separately attaches READY execution authority.
+Legacy capsule commands do not attach automatically. #191/#192 own RI consumption; #193 owns
+combined protected closeout; #194 owns promotion and retirement after pilots.
 
 ## Capsule attachment design
 
 This is the attachment contract. The [execution command](EXECUTION.md) implements
-planning/runtime binding for the initial bounded-command transport; later candidate,
-review and terminal integration extensions remain separately owned. It is not an added
+planning/runtime binding for the initial bounded-command transport. The
+[candidate evidence lane](CANDIDATE_EVIDENCE.md) implements candidate/review binding;
+terminal closeout remains separately owned. It is not an added
 v1 capsule metadata key or authorization-v1 extension. Keep the capsule schema and authorization v1
 compatible until a separately reviewed implementation defines versioned storage.
 
@@ -97,9 +97,8 @@ requires its own bounded authority and exact-SHA repository qualification before
 integration. Its HISTORY record points to the full capsule at a reachable pre-deletion
 commit and binds those bytes by SHA-256. Never call Q(C) qualification of T.
 
-For the bounded-command lane, execution attachment checks are mechanical. Candidate
-qualification/review and terminal links still require explicit controller inspection
-until their follow-up issues implement those gates. Existing executable gates apply.
+Execution and opted-in candidate/review attachment checks are mechanical. Terminal links
+still require the separate closeout transaction. Existing executable gates apply.
 
 ## State, concurrency and recovery
 

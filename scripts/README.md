@@ -116,3 +116,13 @@ authentication, dry-run behavior, state-file handling, and rerun guarantees.
   ever be replaced.
 - Commands that can destroy or overwrite data must identify exact scope and require an explicit,
   narrow confirmation.
+
+## Attached candidate evidence
+
+`./scripts/task evidence` adds optional exact capsule/candidate evidence to the accepted
+controller. Follow [Candidate evidence](../engineering/workflow/CANDIDATE_EVIDENCE.md) for
+frozen requirements, command capture, qualification sealing, observed independent review,
+bounded correction and public handoff. Attached tasks cannot use assertion-only review.
+Unattached compatibility and dedicated-App qualification remain unchanged. The helpers
+`scripts/lib/candidate_evidence.py` and `scripts/lib/independent_review.py` are implementation
+modules behind that public entrypoint, not alternate authorities.

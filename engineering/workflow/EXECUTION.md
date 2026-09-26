@@ -110,7 +110,7 @@ normal `task status` instead of using execution status as a new grant.
 
 Execution COMPLETED is source-handoff evidence only. The controller must inspect it,
 make any authorized lifecycle update/candidate commit, then obtain fresh qualification and
-independent review for that committed SHA. #190 supplies richer candidate evidence binding;
+independent review for that committed SHA. #190 supplies the optional [candidate evidence lane](CANDIDATE_EVIDENCE.md);
 #192 adds RI structural review. No existing gate is waived by this execution command.
 
 Native isolation qualification runs the focused execution tests on macOS with
