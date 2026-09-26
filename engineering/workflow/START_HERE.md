@@ -44,8 +44,9 @@ capsule/RI migration target; it owns the binding design and compatibility invent
 
 The trusted task controller is the accepted normal entrypoint. Legacy Workflow v3's
 capsule-wide promotion remains experimental. Issues #188–#194 explicitly authorize
-bounded migration trials, not a default cutover. Later execution/checkpoint, richer
-review and RI features must pass their own acceptance gates before use.
+bounded migration trials, not a default cutover. The optional [bounded execution/checkpoint command](EXECUTION.md) supports an isolated
+macOS local-command transport. Richer review and RI features still require their own
+acceptance gates before use.
 
 Initial local controller qualification targets macOS. Nutrition's existing Linux
 CI jobs remain qualification authorities; local SQLite, remote PostgreSQL, iOS

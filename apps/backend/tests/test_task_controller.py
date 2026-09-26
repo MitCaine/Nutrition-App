@@ -55,6 +55,47 @@ def load_task_module():
 TASK = load_task_module()
 
 
+def test_execution_command_refuses_stale_authority_before_checkpoint(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from lib.capsule_execution import ExecutionError
+
+    repo, base = init_repo(tmp_path)
+    authorization = resolve(authorization_payload(base))
+    state_dir = tmp_path / "controller"
+    monkeypatch.setattr(TASK, "resolve_repo_root", lambda _: repo)
+    monkeypatch.setattr(TASK, "load_state", lambda *_: {"repository": "owner/repo", "phase": "AUTHORIZED"})
+    monkeypatch.setattr(TASK, "git", lambda *_: "")
+    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_, **__: "f" * 40)
+    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_: authorization)
+    args = SimpleNamespace(repo_root=repo, state_dir=state_dir, issue_number=999)
+    with pytest.raises(ExecutionError, match="AUTHORITY_NOT_CURRENT"):
+        TASK.command_execution(args)
+    assert not state_dir.exists()
+
+
+def test_execution_command_does_not_overwrite_existing_attempt(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from lib.capsule_execution import ExecutionError
+
+    repo, base = init_repo(tmp_path)
+    authorization = resolve(authorization_payload(base))
+    state_dir = tmp_path / "controller"
+    state_dir.mkdir()
+    checkpoint = state_dir / "execution-999.json"
+    checkpoint.write_text('{"phase":"RUNNING"}')
+    monkeypatch.setattr(TASK, "resolve_repo_root", lambda _: repo)
+    monkeypatch.setattr(TASK, "load_state", lambda *_: {"repository": "owner/repo", "phase": "AUTHORIZED"})
+    monkeypatch.setattr(TASK, "git", lambda *_: "")
+    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_, **__: base)
+    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_: authorization)
+    monkeypatch.setattr(TASK, "repository_slug", lambda _: "owner/repo")
+    args = SimpleNamespace(repo_root=repo, state_dir=state_dir, issue_number=999,
+                           candidate_root=repo, action="prepare")
+    with pytest.raises(ExecutionError, match="CHECKPOINT_EXISTS"):
+        TASK.command_execution(args)
+    assert checkpoint.read_text() == '{"phase":"RUNNING"}'
+
+
 def git(
     repo: Path,
     *args: str,

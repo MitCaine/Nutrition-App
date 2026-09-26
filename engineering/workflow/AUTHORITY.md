@@ -47,15 +47,18 @@ instructions, but cannot manufacture a passed gate or silently revise fixed task
 
 The current controller stores verification/review assertions with a candidate SHA;
 it does not yet mechanically establish reviewer independence or a complete acceptance
-matrix. #190 owns that extension. Existing capsule tools do not automatically attach a
-capsule to external authorization. #189 owns execution binding/checkpoints; #191/#192
+matrix. #190 owns that extension. The explicit [bounded execution command](EXECUTION.md) attaches a qualified READY
+capsule to external authorization and retains checkpoints for the macOS local-command
+transport. Legacy capsule commands do not attach automatically; #191/#192
 own RI consumption. #193 owns combined protected closeout. #194 owns promotion and
 retirement after pilots. Do not advertise these planned guarantees as current features.
 
 ## Capsule attachment design
 
-This is the agreed target for subsequent implementation, not an added v1 metadata key
-or an implemented authorization extension. Keep the capsule schema and authorization v1
+This is the attachment contract. The [execution command](EXECUTION.md) implements
+planning/runtime binding for the initial bounded-command transport; later candidate,
+review and terminal integration extensions remain separately owned. It is not an added
+v1 capsule metadata key or authorization-v1 extension. Keep the capsule schema and authorization v1
 compatible until a separately reviewed implementation defines versioned storage.
 
 The controller records an attachment outside candidate-controlled authority. It contains
@@ -94,8 +97,9 @@ requires its own bounded authority and exact-SHA repository qualification before
 integration. Its HISTORY record points to the full capsule at a reachable pre-deletion
 commit and binds those bytes by SHA-256. Never call Q(C) qualification of T.
 
-Until attachment enforcement exists, migration controllers record these bindings in
-external evidence and explicitly inspect them; existing executable gates still apply.
+For the bounded-command lane, execution attachment checks are mechanical. Candidate
+qualification/review and terminal links still require explicit controller inspection
+until their follow-up issues implement those gates. Existing executable gates apply.
 
 ## State, concurrency and recovery
 

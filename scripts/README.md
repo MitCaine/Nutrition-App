@@ -31,6 +31,12 @@ The [Repository Session Contract](../docs/operations/session-contract.md) define
 required use of these commands. Use the higher-level session scripts unless a guide explicitly
 requires a lower-level audit subcommand.
 
+The optional `./scripts/task execution` interface binds a READY capsule and external
+authorization to the [bounded macOS command transport](../engineering/workflow/EXECUTION.md).
+It retains external checkpoints and never substitutes for qualification or review.
+Its implementation is `scripts/lib/capsule_execution.py`; consumer regressions are in
+`scripts/tests/test_capsule_execution.py`.
+
 ## Local runtime
 
 | Entry point | Responsibility |

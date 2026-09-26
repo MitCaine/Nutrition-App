@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -22,6 +23,7 @@ from lib.task_authorization import (
 )
 
 from lib.trusted_qualification import CHECK_NAME
+from lib.capsule_execution import ExecutionError
 
 
 class TaskControllerError(RuntimeError):
@@ -2850,6 +2852,65 @@ def command_integrate(
 
     return 0
 
+def command_execution(args: argparse.Namespace) -> int:
+    """Execute with trusted controller code and live external authorization."""
+    import fcntl
+    from lib import capsule_execution as execution
+
+    repo = resolve_repo_root(args.repo_root)
+    state = load_state(args.state_dir, args.issue_number)
+    git(repo, "fetch", "origin", "main")
+    head = require_trusted_main_controller(repo, expected_repository=state["repository"])
+    authorization = resolve_current_authorization(state, GhQualificationTransport())
+    if head != authorization.base_sha or state["phase"] != "AUTHORIZED":
+        raise ExecutionError("EXECUTION_AUTHORITY_NOT_CURRENT")
+    candidate = resolve_repo_root(args.candidate_root)
+    if repository_slug(candidate) != state["repository"]:
+        raise ExecutionError("EXECUTION_REPOSITORY_MISMATCH")
+    directory = execution.require_external(args.state_dir, candidate)
+    directory.mkdir(parents=True, exist_ok=True)
+    checkpoint = directory / f"execution-{args.issue_number}.json"
+    with (directory / f"execution-{args.issue_number}.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ExecutionError("EXECUTION_ALREADY_RUNNING") from exc
+        if args.action == "prepare":
+            if checkpoint.exists():
+                raise ExecutionError("EXECUTION_CHECKPOINT_EXISTS")
+            if not args.planning or not args.branch or args.runtime is None:
+                raise ExecutionError("EXECUTION_PREPARATION_INPUT_MISSING")
+            runtime_path = execution.require_external(args.runtime, candidate)
+            runtime = json.loads(runtime_path.read_text())
+            record = execution.bind(candidate, authorization, planning=args.planning,
+                                    branch=args.branch, runtime=runtime,
+                                    correction_limit=args.corrections)
+            handoff = directory / f"execution-{args.issue_number}-handoff"
+            result = run([sys.executable, str(repo / "scripts/render-task-handoff.py"),
+                          record["capsule_path"], "--repo-root", str(candidate),
+                          "--output-dir", str(handoff)], cwd=repo)
+            if result.returncode:
+                raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + result.stdout + result.stderr)
+            record["handoff_dir"] = str(handoff)
+            execution.authenticate(record, authorization)
+            execution.write_json(checkpoint, record)
+        else:
+            if not checkpoint.is_file():
+                raise ExecutionError("EXECUTION_CHECKPOINT_MISSING")
+            record = json.loads(checkpoint.read_text())
+            if record["candidate_root"] != str(candidate.resolve()):
+                raise ExecutionError("EXECUTION_CHECKOUT_CHANGED")
+            execution.authenticate(record, authorization)
+            if args.action != "status":
+                record = execution.execute(record, authorization, checkpoint=checkpoint,
+                                           timeout=args.timeout, resume=args.action == "resume")
+        emit({"task": authorization.task_id, "phase": record["phase"],
+              "planning": record["planning"], "checkpoint": str(checkpoint),
+              "attempts": len(record["attempts"]), "qualified": False,
+              "reviewed": False, "published": False})
+        return 1 if record["phase"] in {"STOP_REPLAN", "RUNNING"} else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -2873,6 +2934,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command",
         required=True,
     )
+
+    execution = subparsers.add_parser("execution")
+    execution.add_argument("issue_number", type=int)
+    execution.add_argument("action", choices=("prepare", "run", "resume", "status"))
+    execution.add_argument("--candidate-root", type=Path, required=True)
+    execution.add_argument("--planning")
+    execution.add_argument("--branch")
+    execution.add_argument("--runtime", type=Path)
+    execution.add_argument("--corrections", type=int, choices=(0, 1), default=0)
+    execution.add_argument("--timeout", type=float, default=900)
+    execution.set_defaults(handler=command_execution)
 
     prepare = subparsers.add_parser(
         "prepare"
@@ -3064,6 +3136,7 @@ def main(
     except (
         AuthorizationError,
         TaskControllerError,
+        ExecutionError,
         OSError,
     ) as exc:
         emit(
