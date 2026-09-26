@@ -172,3 +172,15 @@ public CI does not need private source access to run deterministic consumer test
 An upgrade needs a new explicit revision/contract/wheel lock, a clean external installation,
 real source/failure oracles, baseline qualification and independent review. Do not edit an
 accepted environment in place or point a manifest at the newer dirty upstream checkout.
+
+### Pip security refresh (2026-09-26)
+
+The controller lock now selects pip 26.2, which clears the pip affected ranges in
+Dependabot alerts 19–22 and 24, including
+[GHSA-qwm4-qh6w-59xr](https://github.com/advisories/GHSA-qwm4-qh6w-59xr).
+Both the requirements file and wheel lock must change together; a requirements-only
+Dependabot patch is not an installable RI lock update. Existing installation manifests
+intentionally fail verification after a lock change. Bootstrap a fresh external environment
+from the updated wheelhouse and requalify navigation before using it. Preserve previous
+environments as historical evidence, not the selected runtime. RI source and parser
+contracts are unchanged. Setuptools alert 23 is tracked separately by PR #196.
