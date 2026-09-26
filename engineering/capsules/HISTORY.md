@@ -3029,3 +3029,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 51a53b983f8694fdcc1b3aac68a017e30c9bb445
 - **Full-capsule recovery path:** engineering/capsules/active/GH-188.md
 - **Historical capsule SHA-256:** 2e593b09cd8bef523f439ef087c2ee3f962e86aeba59bdbada2cebbdfa5f2a4a
+
+
+### GH-189 - Bind bounded execution and resumable checkpoints
+
+- **ID:** GH-189
+- **Title:** Bind bounded execution and resumable checkpoints
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/189; owner authorized sequential migration implementation.
+- **Issue disposition:** Implementation integrated; issue closes after protected terminal bookkeeping integration.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** 1eaa1972cdd9ba4a997662950bc51bacd4e914f2
+- **Task branch:** task/GH-189-capsule-execution
+- **Controller:** Codex migration controller
+- **Executor:** Codex tooling implementor
+- **Reviewer:** Independent review189_standards and review189_spec contexts
+- **Delegation:** Independent read-only standards and requirements reviews; implementation stayed with controller.
+- **Implementation commit(s):** e29072488947d381bb4eff48943b378737b6718d; 295c105f5800c42a3229c8ecb1079c5a3117ae1a; cf1cd37ad6081637e79de0bbdd273a362b45a248
+- **Verified commit reference(s):** cf1cd37ad6081637e79de0bbdd273a362b45a248
+- **Reviewed source commit:** cf1cd37ad6081637e79de0bbdd273a362b45a248
+- **Reviewed task/checkpoint commit(s):** cf1cd37ad6081637e79de0bbdd273a362b45a248
+- **Integration/merged commit:** cf1cd37ad6081637e79de0bbdd273a362b45a248
+- **Integration-related commit reference(s):** cf1cd37ad6081637e79de0bbdd273a362b45a248 protected controller integration; separate terminal transaction uses GH-189-closeout authorization comment5843706129.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved. Exact final candidate Standards PASS and requirements AC1-AC6 PASS. Earlier candidates rejected; source aliases, packet delivery, failure accounting and generic protocol incompatibility corrected before integration.
+- **Verification summary:** 64 focused tests (17 execution/native and47 controller) PASS; final repository bundle20260925-225522-gh-189-packet-final6/6 and71 audit tests PASS; docs101files/586links; stable fingerprint9400cb7b295a73446624e0f69a337c892d2433dc77b77ea8ee9f35b11f1dd036. Independent standards reviewer reran17 execution tests and71 audit tests.
+- **Specialized qualification:** Exact candidate repository PASS, dedicated App4708441 check108349744730; dispatch36222275307. Product iOS/native, backend/mobile and infrastructure profiles not applicable. Terminal SHA is separately qualified; candidate check is not reused.
+- **Known warnings:** Existing DOMAIN_TOKEN_IN_OPS_MIGRATION warning and default-shell toolchain mismatch; tests used existing Python3.12.14. Unsupported transports block. System libraries/runtime prefix remain explicit host dependencies rather than full cryptographic toolchain attestation.
+- **Deferred work/follow-up IDs:** #190, #191, #192, #193, #194. Combined workflow remains a trial.
+- **Retrospective:** Required in #194; retain independent rejection/correction evidence.
+- **Referenced commits:** Planning a99fb6b21b63cf3a995de2394ecb6ba55b0f0765; final implementation cf1cd37ad6081637e79de0bbdd273a362b45a248; full reviewed capsule00159a1f1e1b874ba3044c2216ad86bfd85bf3c9.
+- **Full-capsule recovery commit:** 00159a1f1e1b874ba3044c2216ad86bfd85bf3c9
+- **Full-capsule recovery path:** engineering/capsules/active/GH-189.md
+- **Historical capsule SHA-256:** 49663d5fbd9c9ab89783d7f3837551ff940d6e58c184f9bbaedb155d5456912e
