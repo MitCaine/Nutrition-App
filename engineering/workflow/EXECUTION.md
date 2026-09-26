@@ -57,13 +57,14 @@ authorization; arbitrary glob containment is rejected instead of guessed.
 
 Preparation repeats the existing strict READY renderer and writes its full capsule/handoff
 outside the candidate. It also checks actual tracked planning bytes and modes, including
-changes hidden by index flags. Ignored/untracked material, symlinks and non-regular source
+changes hidden by index flags. Ignored/untracked material, symlinks, multiply linked files and non-regular source
 are not accepted as clean input. A checkpoint may not be overwritten by another preparation.
 Keep the planning capsule byte-identical while the executable runs; lifecycle updates and
 candidate commits remain controller actions after a completed handoff.
 
 The process receives `NUTRITION_CAPSULE`, pointing to an attempt copy of the full capsule,
-and `NUTRITION_OUTCOME`, the only result path the controller reads. The environment is
+`NUTRITION_HANDOFF`, containing the complete rendered executor packet, and
+`NUTRITION_OUTCOME`, the only result path the controller reads. The environment is
 minimal and carries no inherited credentials. On successful process exit, write exactly:
 
 ```json
@@ -81,7 +82,9 @@ an after-execution gate; the capsule/Git/controller write restrictions are nativ
 An exclusive per-issue lock prevents simultaneous dispatch. PREPARED becomes RUNNING
 before launch, then COMPLETED, BLOCKED or STOP_REPLAN. Each attempt preserves stdout,
 stderr, sandbox policy, command identity, source observations and outcome outside candidate
-source. Unknown post-failure source accounting remains null, never a fabricated empty diff.
+source. Successfully inspected post-failure source is retained, including scope violations and
+invalid results. If source acquisition itself fails, accounting remains null, never a
+fabricated empty diff.
 A process exception or supervisor death can leave RUNNING; this state cannot resume.
 
 Only an explicitly returned BLOCKED outcome with unchanged authority, runtime and exact

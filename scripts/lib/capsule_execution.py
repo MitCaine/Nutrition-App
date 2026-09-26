@@ -84,13 +84,16 @@ def source_snapshot(repo: Path) -> dict[str, dict]:
             files = [x for x in files if x != ".git"]
         for name in dirs + files:
             path = Path(directory) / name
-            mode = path.lstat().st_mode
+            info = path.lstat()
+            mode = info.st_mode
             if stat.S_ISLNK(mode):
                 raise ExecutionError("SOURCE_SYMLINK: " + str(path.relative_to(repo)))
             if stat.S_ISDIR(mode):
                 continue
             if not stat.S_ISREG(mode):
                 raise ExecutionError("SOURCE_NON_REGULAR: " + str(path.relative_to(repo)))
+            if info.st_nlink != 1:
+                raise ExecutionError("SOURCE_HARDLINK: " + str(path.relative_to(repo)))
             result[path.relative_to(repo).as_posix()] = {
                 "sha256": digest(path.read_bytes()), "mode": stat.S_IMODE(mode),
             }
@@ -182,7 +185,7 @@ def bind(candidate: Path, authorization: ResolvedAuthorization, *, planning: str
     return {"schema_version": 1, "candidate_root": str(candidate),
             "authorization": authorization.to_dict(), "planning": planning,
             "branch": branch, "capsule_path": capsule, "capsule_sha256": digest(raw),
-            "capsule_text": raw.decode(), "allowed": allowed,
+            "capsule_text": raw.decode(), "handoff_text": None, "allowed": allowed,
             "forbidden": sorted(set(metadata["forbidden_paths"]) | set(authorization.forbidden_paths)),
             "runtime": runtime_identity(runtime), "correction_limit": correction_limit,
             "initial_source": snapshot, "phase": "PREPARED", "attempts": [],
@@ -238,6 +241,8 @@ def execute(record: dict, authorization: ResolvedAuthorization, *, checkpoint: P
     if not 0 < timeout <= 3600:
         raise ExecutionError("EXECUTION_TIMEOUT_INVALID")
     candidate = authenticate(record, authorization)
+    if not isinstance(record.get("handoff_text"), str) or not record["handoff_text"].strip():
+        raise ExecutionError("EXECUTION_HANDOFF_MISSING")
     checkpoint = require_external(checkpoint, candidate)
     before = source_snapshot(candidate)
     if resume:
@@ -259,11 +264,13 @@ def execute(record: dict, authorization: ResolvedAuthorization, *, checkpoint: P
     profile = sandbox_profile(candidate, capsule, scratch, Path(record["runtime"]["executable"]))
     (attempt_dir / "sandbox.sb").write_text(profile)
     (scratch / "capsule.md").write_text(record["capsule_text"])
+    (scratch / "handoff.md").write_text(record["handoff_text"])
     runtime = record["runtime"]
     command = ["/usr/bin/sandbox-exec", "-p", profile, runtime["executable"], *runtime["argv"]]
     env = {"PATH": "/usr/bin:/bin", "HOME": str(scratch), "TMPDIR": str(scratch),
            "PYTHONDONTWRITEBYTECODE": "1", "NUTRITION_CAPSULE": str(scratch / "capsule.md"),
-           "NUTRITION_OUTCOME": str(scratch / "outcome.json")}
+           "NUTRITION_OUTCOME": str(scratch / "outcome.json"),
+           "NUTRITION_HANDOFF": str(scratch / "handoff.md")}
     started = time.monotonic()
     with (attempt_dir / "stdout.log").open("wb") as out, (attempt_dir / "stderr.log").open("wb") as err:
         process = subprocess.Popen(command, cwd=candidate, env=env, stdin=subprocess.DEVNULL,
@@ -283,9 +290,10 @@ def execute(record: dict, authorization: ResolvedAuthorization, *, checkpoint: P
                 pass
     outcome = {"outcome": "stop_replan", "summary": "missing or invalid execution outcome"}
     error = None
+    after = None
     try:
-        authenticate(record, authorization)
         after = source_snapshot(candidate)
+        authenticate(record, authorization)
         reported = json.loads((scratch / "outcome.json").read_text())
         if (set(reported) != {"outcome", "summary"}
                 or reported["outcome"] not in {"completed", "blocked", "stop_replan"}
@@ -296,7 +304,6 @@ def execute(record: dict, authorization: ResolvedAuthorization, *, checkpoint: P
         outcome = reported
     except (ExecutionError, OSError, ValueError, TypeError) as exc:
         error = str(exc)
-        after = None
     record["phase"] = {"completed": "COMPLETED", "blocked": "BLOCKED", "stop_replan": "STOP_REPLAN"}[outcome["outcome"]]
     record["attempts"].append({"outcome": outcome, "error": error, "source": after,
                                "changed_paths": changed_source(record["initial_source"], after) if after is not None else None,

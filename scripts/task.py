@@ -2892,6 +2892,8 @@ def command_execution(args: argparse.Namespace) -> int:
             if result.returncode:
                 raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + result.stdout + result.stderr)
             record["handoff_dir"] = str(handoff)
+            record["handoff_text"] = (handoff / "handoff.md").read_text()
+            record["handoff_sha256"] = execution.digest(record["handoff_text"].encode())
             execution.authenticate(record, authorization)
             execution.write_json(checkpoint, record)
         else:

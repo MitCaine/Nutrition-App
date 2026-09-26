@@ -59,9 +59,11 @@ class ExecutionTests(unittest.TestCase):
                 "sha256": execution.digest(binary.read_bytes()), "argv": ["-c", code]}
 
     def bind(self, code="pass", corrections=0):
-        return execution.bind(self.repo, self.auth, planning=self.planning,
-                              branch="task/demo", runtime=self.runtime(code),
-                              correction_limit=corrections)
+        record = execution.bind(self.repo, self.auth, planning=self.planning,
+                                branch="task/demo", runtime=self.runtime(code),
+                                correction_limit=corrections)
+        record["handoff_text"] = "Fixture handoff\n" + record["capsule_text"]
+        return record
 
     def native(self):
         if platform.system() != "Darwin":
@@ -135,6 +137,13 @@ class ExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(execution.ExecutionError, "SYMLINK"):
             execution.source_snapshot(self.repo)
 
+    def test_existing_hardlinks_are_not_isolated_source(self):
+        outside = self.root / "outside.txt"
+        os.link(self.repo / "app.py", outside)
+        with self.assertRaisesRegex(execution.ExecutionError, "SOURCE_HARDLINK"):
+            self.bind()
+        self.assertEqual(outside.read_text(), "original\n")
+
     def test_actual_scope_includes_ignored_and_untracked_changes(self):
         record = self.bind()
         (self.repo / "forbidden.txt").write_text("changed")
@@ -144,6 +153,7 @@ class ExecutionTests(unittest.TestCase):
     def test_native_success_reads_capsule_and_changes_authorized_source(self):
         code = ("import os\nfrom pathlib import Path\n"
                 "assert 'Full fixture' in Path(os.environ['NUTRITION_CAPSULE']).read_text()\n"
+                "assert 'Fixture handoff' in Path(os.environ['NUTRITION_HANDOFF']).read_text()\n"
                 "Path('app.py').write_text('implemented\\n')\n" + self.report())
         record = self.run_native(code)
         self.assertEqual(record["phase"], "COMPLETED", record["attempts"])
@@ -182,10 +192,18 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(record["phase"], "COMPLETED", record["attempts"])
         self.assertEqual(self.git("rev-parse", "HEAD"), self.planning)
 
+    def test_native_invalid_result_retains_observed_source(self):
+        record = self.run_native("from pathlib import Path\nPath('app.py').write_text('changed')\n")
+        self.assertEqual(record["phase"], "STOP_REPLAN")
+        self.assertEqual(record["attempts"][0]["changed_paths"], ["app.py"])
+        self.assertIsNotNone(record["attempts"][0]["source"])
+
     def test_native_scope_breach_is_stop_even_with_completed_claim(self):
         record = self.run_native("from pathlib import Path\nPath('forbidden.txt').write_text('bad')\n" + self.report())
         self.assertEqual(record["phase"], "STOP_REPLAN")
         self.assertIn("SCOPE_BREACH", record["attempts"][0]["error"])
+        self.assertEqual(record["attempts"][0]["changed_paths"], ["forbidden.txt"])
+        self.assertIsNotNone(record["attempts"][0]["source"])
 
     def test_blocked_resume_is_finite_and_source_bound(self):
         record = self.run_native(self.report("blocked"), corrections=1)
