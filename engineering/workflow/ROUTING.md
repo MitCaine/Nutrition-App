@@ -15,6 +15,10 @@
 
 One accountable controller remains named even when work is delegated.
 
+Use the current [controller entrypoint](START_HERE.md). Runtime/model preferences below
+do not prove effective settings; record requested and observed identities for the selected
+transport. Review must be independent of the patch author.
+
 ## Current model mapping
 
 - **Sol-class reasoning in ChatGPT Work:** controller, grilling, architecture, audit,

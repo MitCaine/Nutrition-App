@@ -5,6 +5,12 @@
 
 ## Principles
 
+The [authority contract](AUTHORITY.md) defines the capsule-to-external-authorization
+attachment target and distinguishes current evidence fields from planned enforcement.
+Record authorization identity alongside capsule/planning/candidate identity for migration
+trials. A legacy capsule qualification bundle alone cannot satisfy the trusted dedicated-App
+check or independent review.
+
 Evidence belongs to a task, capsule revision, command, and repository state. Raw output remains
 available behind summaries. Passed, failed, skipped, blocked, and not applicable stay distinct.
 Warnings are surfaced. Evidence from a different source tree is invalid.

@@ -28,6 +28,9 @@ A planning gate may be `Not applicable — <reason>` but remains visible. `REVIE
 `IN_PROGRESS` only for a bounded correction. `READY` may return to `DECOMPOSED` when a capsule
 revision invalidates readiness. Any non-terminal state may become `CANCELLED`.
 
+A capsule state does not advance the external task controller. Candidate integration and
+terminal capsule closeout are distinct; see the [state mapping](AUTHORITY.md#state-concurrency-and-recovery).
+
 ## Blocking overlay
 
 Blocking does not erase the last qualified state:

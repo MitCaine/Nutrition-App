@@ -9,23 +9,19 @@ verification, evidence, and escalation. Copy the
 
 ## Authority status and controller cutover
 
-Task Capsules remain the schema and recovery authority for work that already entered the capsule
-lifecycle. They are not silently interchangeable with the external task controller.
+`./scripts/task` is the accepted public controller entrypoint. Its external trusted-author
+issue comment remains the edit/profile authority. A capsule is the full execution contract
+for an explicitly selected capsule task; it does not replace that authorization.
 
-After GH-165-P4 is successfully integrated through the protected `main` workflow and the AUDIT-07
-pilot is accepted, new tasks use `./scripts/task` with trusted-author GitHub Issue authorization as
-their execution authority. Do not create a new Task Capsule merely as a fallback when the controller,
-dedicated App, qualification workflow, or protected-main policy rejects an operation; such a failure
-remains fail-closed and requires an explicit reviewed correction or workflow rollback decision.
+Existing active capsules retain this schema and normal terminal recovery. The owner-approved
+#187 migration explicitly selects bounded capsule trials. Its attachment design, compatibility
+inventory and current enforcement limits are in [Authority](AUTHORITY.md). Default adoption
+and retirement require #194's qualified pilots and recorded promotion decision. No new TOML
+keys or authorization-v1 fields are introduced by this documentation reconciliation.
 
-Any capsule already active at cutover continues under this schema through its normal terminal state.
-Existing `engineering/capsules/HISTORY.md` records and their exact Git recovery locators remain
-authoritative historical evidence. The legacy capsule validator and recovery tooling may remain
-available during the compatibility period without making capsules the default authority for new
-post-cutover tasks.
-
-Before that successful P4 cutover, this Task Capsule contract remains the current authority wherever
-the repository workflow still explicitly invokes it.
+Never create a capsule as a fallback around a rejected controller, dedicated-App check or
+protected-main update. A capsule state transition is not a trusted-controller gate transition.
+Historical HISTORY records and exact Git recovery remain authoritative.
 
 ## Required metadata
 

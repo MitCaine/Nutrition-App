@@ -88,8 +88,9 @@ Pushing an exact commit to a temporary `qualification/TASK-ID/SHA-PREFIX` ref
 causes the normal CI workflow and the aggregator to run against that unchanged
 commit. Unknown or unavailable profiles fail closed.
 
-`./scripts/capsule qualify TASK-ID --evidence-dir PATH` is the normal
-repository entry point for this remote qualification. It requires a clean task
+`./scripts/capsule qualify TASK-ID --evidence-dir PATH` is the retained legacy
+capsule qualification interface. It cannot replace the trusted controller or supply
+the dedicated-App protected-main authority by itself. It requires a clean task
 worktree, exact branch/base authority, scope conformity, and a GitHub-visible
 unchanged SHA. After PASS it downloads the retained qualification artifact,
 records the workflow/check identity, GitHub artifact ID/digest, and local
@@ -430,6 +431,12 @@ dumps, or screenshots containing personal data are not included.
 - [Release Candidate QA](../historical/releases/rc1-qa.md) for historical manual device/release evidence
 
 ## Trusted task-controller bootstrap
+
+The accepted operator entrypoint is [Start here](../../engineering/workflow/START_HERE.md).
+The [authority contract](../../engineering/workflow/AUTHORITY.md) records retained
+interfaces and the explicitly unimplemented parts of the capsule/RI migration. The
+bootstrap history below explains the trust boundary; it is not an instruction to
+recreate the existing App or reactivate an already active ruleset.
 
 GH-165-P3 introduces a candidate-independent qualification boundary without activating it live.
 

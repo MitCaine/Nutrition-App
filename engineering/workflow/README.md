@@ -7,6 +7,10 @@
 
 ## Purpose
 
+Start with [START_HERE](START_HERE.md) and the [authority contract](AUTHORITY.md).
+The accepted public operator entrypoint is `./scripts/task`; capsule lifecycle
+compatibility and the combined capsule/RI migration remain explicitly separated.
+
 When a task uses the repository-owned workflow, its task capsule is the durable
 execution contract while that task remains non-terminal. Chat may explain or
 reconstruct rationale, but it cannot silently change scope, authority, risk,
@@ -21,6 +25,8 @@ commit/path and SHA-256 for the historical full capsule.
 
 | Artifact | Responsibility |
 | --- | --- |
+| [Start here](START_HERE.md) | Current operator sequence |
+| [Authority](AUTHORITY.md) | Ownership, attachment design, compatibility and cutover boundaries |
 | [Workflow](WORKFLOW.md) | End-to-end gates, exceptions, human decisions, and automation eligibility |
 | [States](STATES.md) | Task state machine, blocking overlay, and readiness gate |
 | [Task Capsule Contract](TASK_CAPSULE.md) | Versioned Markdown/TOML capsule schema |
@@ -34,8 +40,8 @@ commit/path and SHA-256 for the historical full capsule.
 
 1. Explicit human product decisions and accepted requirements.
 2. Current architecture, invariants, operations guides, and accepted decisions.
-3. Approved backlog and GitHub Issue.
-4. Task capsule.
+3. Approved backlog, GitHub Issue and resolved trusted external task authorization.
+4. Explicitly selected task capsule within that authorization.
 5. Implementation notes and generated evidence.
 6. Conversation history.
 
@@ -55,4 +61,6 @@ override higher authority.
 - Human approval is required for policy, trust, privacy, security, destructive behavior,
   irreversible action, migration authority, risk tolerance, or material tradeoffs.
 
-Workflow v3 remains **EXPERIMENTAL** and is not the repository-wide default. The active-plus-HISTORY terminal-storage contract applies whenever the workflow is used, but it does not itself promote the workflow. Promotion requires the evidence, known limits, and accountable human approval recorded in the [Workflow Changelog](CHANGELOG.md).
+The legacy Workflow v3 capsule-wide adoption remains **EXPERIMENTAL**. This does not
+make the accepted trusted task controller experimental: it remains the normal entrypoint.
+The combined capsule/RI migration is not the repository-wide default. The active-plus-HISTORY terminal-storage contract applies whenever the workflow is used, but it does not itself promote the workflow. Promotion requires the evidence, known limits, and accountable human approval recorded in the [Workflow Changelog](CHANGELOG.md).

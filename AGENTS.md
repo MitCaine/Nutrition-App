@@ -149,6 +149,12 @@ For dependency-only pull requests:
 
 ## Task capsules and workflow
 
+Start at [the current workflow entrypoint](engineering/workflow/START_HERE.md).
+Use the accepted trusted task controller for external authorization, qualification and
+protected integration. Explicit migration capsules attach a full specification within
+that authority; they never bypass it. The combined capsule/RI workflow remains a trial
+until its recorded promotion gate passes.
+
 A task that already has an active capsule must follow the repository's
 task-capsule process.
 

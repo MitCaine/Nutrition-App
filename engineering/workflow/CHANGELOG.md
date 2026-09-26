@@ -105,3 +105,11 @@ model mechanically validated, including unique terminal IDs, resolvable
 full-capsule recovery locators, matching SHA-256 bindings, zero retained
 current-tree terminal capsules, and explicit rejection of the legacy
 `completed/` storage model.
+
+## 2026-09-26 — Trusted-controller and capsule authority reconciliation
+
+GH-188 selects `scripts/task` as the existing public controller entrypoint, records
+the current interface/state inventory and the target capsule attachment contract,
+and reconciles legacy qualification guidance. No executable/schema/ruleset change
+or default promotion is made. GH-189 through GH-193 own implementation and proof;
+GH-194 owns the combined-workflow adoption decision. Historical evidence is unchanged.

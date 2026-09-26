@@ -24,6 +24,12 @@ work may not bypass them.
 
 ## Gates
 
+These are reasoning/lifecycle gates. Execute them through the current
+[trusted controller sequence](START_HERE.md), with the ownership and current-versus-target
+boundaries in [Authority](AUTHORITY.md). Capsule use is explicit during the migration;
+legacy capsule commands cannot substitute for trusted external authorization or protected
+integration.
+
 1. **Route:** classify task type, risk, authority, controller, executor, reviewer, and required
    qualification using [Routing](ROUTING.md).
 2. **Plan:** move ambiguity upstream. Resolve user-visible behavior before implementation.
