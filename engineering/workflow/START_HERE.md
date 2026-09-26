@@ -33,9 +33,20 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    PATH --human-owner-authorized` attempts the protected exact-SHA update. The flag
    records actual authorization, not permission to invent it. Existing explicit
    authorization need not be requested repeatedly.
-7. Verify remote success. An active capsule still needs its separately authorized,
-   qualified HISTORY/deletion closeout. Only then reconcile the issue and clean
-   exact disposable refs/checkouts. Preserve recoverable work on failure.
+7. For a capsule task using the guarded closeout, run `./scripts/task finalize ISSUE
+   --candidate-root PATH --terminal-state-dir STATE --human-owner-authorized`.
+   It durably records the implementation and resumes its guarded integration if needed.
+   Prepare a distinct `GH-ISSUE-closeout` authorization at the integrated C, preserve
+   the full REVIEWED capsule in reachable recovery commit R, and form direct-child T
+   with only HISTORY plus active-capsule removal. Qualify, verify and independently
+   review T with its own check. Rerun `finalize` with `--terminal-root PATH
+   --recovery-sha R`; it validates the separate evidence, integrates T, verifies
+   remote main and recovery, then closes the issue. Repeat the same command after an
+   interruption; changed candidate or terminal intent stops. Preserve dirty or
+   unrelated refs/checkouts, failed attempts and recovery evidence. Optional
+   `task finalize-cleanup ISSUE --cleanup-root PATH --cleanup-branch NAME` removes
+   only the exact clean terminal checkout/branch after remote T and issue closure;
+   it refuses recovery, dirty, wrong-branch and moved-main targets.
 
 The complete command options and trusted qualification transport remain in the
 [testing guide](../../docs/operations/testing.md#trusted-task-controller-bootstrap).

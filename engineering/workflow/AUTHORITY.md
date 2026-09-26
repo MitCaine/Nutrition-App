@@ -98,6 +98,13 @@ A terminal commit T containing only HISTORY plus capsule deletion differs from C
 requires its own bounded authority and exact-SHA repository qualification before protected
 integration. Its HISTORY record points to the full capsule at a reachable pre-deletion
 commit and binds those bytes by SHA-256. Never call Q(C) qualification of T.
+`task finalize` records the C/T transaction outside candidate source, resumes the
+existing guarded integration at each SHA, validates T's two-path diff and R's complete
+reviewed capsule, and closes the issue only after remote main is observed at T.
+Qualification, verification, review and owner authorization remain independent gates
+for C and T; a checkpoint does not synthesize any of them. A capsule-only P normally
+travels on a non-main planning ref. Publishing P to main requires its own narrow
+authorization and dedicated-App qualification exactly like any other protected update.
 
 Execution and opted-in candidate/review attachment checks are mechanical. Terminal links
 still require the separate closeout transaction. Existing executable gates apply.

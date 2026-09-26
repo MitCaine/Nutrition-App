@@ -161,7 +161,9 @@ Publication never grants authority or substitutes for live integration checks.
 GH-190 itself bootstraps through the previously accepted controller plus independent external
 reviews; its new receipt generator does not approve its own introduction. Later terminal
 HISTORY/deletion still requires separate exact-SHA qualification under the existing closeout
-process until GH-193 supplies its unified transaction.
+process. The guarded `task finalize` path records both integration stages and verifies
+the separately authorized T, recovery R, remote main and issue closeout; it never reuses
+the candidate review receipt for T.
 
 ## Qualification of this transport
 

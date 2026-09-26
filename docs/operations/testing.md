@@ -228,6 +228,7 @@ Use it when a change crosses that qualified boundary; it is not the current
 release-state authority and does not replace affected baseline or focused
 tests. Historical device/release evidence is retained in
 `engineering/capsules/HISTORY.md` and the historical Epic 4 package.
+
 ## Issue 17 isolated Phase 5C clone
 
 This retained workflow exists for historical/application-path qualification that specifically needs
@@ -482,6 +483,17 @@ participate until that workflow file exists on the default branch, P1 is qualifi
 pre-GH-171 dispatch workflow with authorization restricted to workflow/documentation files and the
 repository profile. The bootstrap candidate cannot modify the scripts executed by that profile.
 After P1 integration, subsequent candidate execution uses the cache-safe `workflow_run` executor.
+
+### Guarded capsule closeout
+
+The trusted `task finalize` command is the guarded capsule terminal transaction.
+It records implementation intent before the protected update, accepts a separately
+authorized and qualified direct-child HISTORY/deletion commit, verifies the reachable
+full REVIEWED capsule by SHA-256, and closes the issue only after remote main is T.
+An interrupted invocation is resumed with the same C, T and R; a moved main or changed
+check/authorization/review stops. Capsule-only planning P ordinarily remains on its
+planning ref; any publication of P to protected main has its own narrow authority and
+exact dedicated-App qualification, never a bypass.
 
 ### GH-165-P4 live protected pilot and cutover
 
