@@ -4,12 +4,13 @@ import { isRuntimeError } from "../../../runtime/RuntimeError";
 
 import { useFavoriteFoods, useRecentFoods, useSavedFoods } from "../hooks/useFoods";
 import { useUsdaSearch } from "../../usda/hooks/useUsda";
-import { formatUsdaNutrientPreview, usdaResultMeta, usdaSearchMessage } from "../../usda/utils/usdaDisplay";
+import { formatUsdaNutrientPreview, usdaFoodAccessibilityLabel, usdaResultMeta, usdaSearchMessage } from "../../usda/utils/usdaDisplay";
 import { unifiedFoodSearchSections } from "../utils/unifiedFoodSearch";
 import { isCurrentSearchQuery } from "../utils/unifiedFoodSearch";
 import { useDebouncedSearchQuery } from "../hooks/useDebouncedSearchQuery";
 import { useAppTheme } from "../../../app/theme/AppTheme";
 import { AccessibilityStatus } from "../../../shared/accessibility/AccessibilityStatus";
+import { AccessiblePressable } from "../../../shared/accessibility/AccessiblePressable";
 import { TransientSuccessBanner } from "../../../shared/components/TransientSuccessBanner";
 import { RootScreenHeader } from "../../../shared/components/RootScreenHeader";
 import { foodAccessibilityLabel, formatRecentUse, recentFoodsInOrder, visibleDiscoveryRows } from "../utils/foodDiscovery";
@@ -175,12 +176,19 @@ export function SavedFoodsScreen({ onCreate, onOpenFood, onOpenUsdaPreview, quer
             {usda.data?.foods.map((food) => {
               const nutrientPreview = formatUsdaNutrientPreview(food.nutrient_preview);
               return (
-                <Pressable key={food.fdc_id} onPress={() => onOpenUsdaPreview(food.fdc_id)} style={styles.foodRow}>
+                <AccessiblePressable
+                  key={food.fdc_id}
+                  accessibilityLabel={usdaFoodAccessibilityLabel(food)}
+                  accessibilityHint={food.importable ? "Opens USDA food details before import" : "This USDA result cannot be imported"}
+                  disabled={!food.importable}
+                  onPress={() => onOpenUsdaPreview(food.fdc_id)}
+                  style={styles.foodRow}
+                >
                   <Text style={styles.foodName}>{food.description}</Text>
                   <Text style={styles.foodMeta}>{usdaResultMeta(food)}</Text>
                   {food.food_category ? <Text style={styles.foodMeta}>{food.food_category}</Text> : null}
                   {nutrientPreview ? <Text style={styles.preview}>{nutrientPreview}</Text> : null}
-                </Pressable>
+                </AccessiblePressable>
               );
             })}
           </View>

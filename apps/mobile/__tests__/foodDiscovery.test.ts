@@ -6,6 +6,7 @@ import type { Food } from "../src/features/foods/api/types";
 import { SavedFoodsScreen } from "../src/features/foods/screens/SavedFoodsScreen";
 import { DARK_THEME, LIGHT_THEME } from "../src/app/theme/AppTheme";
 import { foodAccessibilityLabel, formatRecentUse } from "../src/features/foods/utils/foodDiscovery";
+import { usdaFoodAccessibilityLabel } from "../src/features/usda/utils/usdaDisplay";
 
 const manual: Food = {
   id: "manual", name: "Greek yogurt", brand: null, source_type: "manual", source_id: null,
@@ -260,10 +261,10 @@ function assertPersistedIdentityContexts(
   );
 }
 
-async function render(query = "") {
+async function render(query = "", onOpenUsdaPreview = jest.fn()) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => { renderer = TestRenderer.create(React.createElement(SavedFoodsScreen, {
-    onCreate: jest.fn(), onOpenFood: jest.fn(), onOpenUsdaPreview: jest.fn(), query,
+    onCreate: jest.fn(), onOpenFood: jest.fn(), onOpenUsdaPreview, query,
     setQuery: jest.fn(), initialScrollOffset: 0, onScrollSessionChange: jest.fn(),
     onOpenSettings: jest.fn(), onScanNutritionLabel: jest.fn(),
   })); });
@@ -347,6 +348,37 @@ test("USDA reference search results remain outside the persisted Food and Recipe
   expect(referenceText).not.toContain("Food");
   expect(referenceText).not.toContain("Recipe");
 
+  await act(async () => renderer.unmount());
+});
+
+test("unified USDA results expose identity and only importable rows open preview", async () => {
+  const openPreview = jest.fn();
+  mockUsdaFoods = [usdaSearchResult, { ...usdaSearchResult, fdc_id: 1105315, importable: false }];
+  const renderer = await render("banana", openPreview);
+  const rows = renderer.root.findAllByType(Pressable).filter((node) =>
+    typeof node.props.accessibilityLabel === "string"
+    && node.props.accessibilityLabel.includes("Banana, raw"),
+  );
+  expect(rows).toHaveLength(2);
+  expect(rows[0].props).toMatchObject({
+    accessibilityRole: "button",
+    accessibilityLabel: usdaFoodAccessibilityLabel(usdaSearchResult),
+    accessibilityHint: "Opens USDA food details before import",
+    accessibilityState: { disabled: false },
+    disabled: false,
+  });
+  expect(rows[0].props.accessibilityLabel).not.toContain("1105314");
+  expect(rows[1].props).toMatchObject({
+    accessibilityRole: "button",
+    accessibilityLabel: usdaFoodAccessibilityLabel(mockUsdaFoods[1]),
+    accessibilityHint: "This USDA result cannot be imported",
+    accessibilityState: { disabled: true },
+    disabled: true,
+    onPress: undefined,
+  });
+  await act(async () => rows[0].props.onPress());
+  expect(openPreview).toHaveBeenCalledTimes(1);
+  expect(openPreview).toHaveBeenCalledWith(1105314);
   await act(async () => renderer.unmount());
 });
 
