@@ -5,6 +5,9 @@
 
 Run the commands below from the repository root. Each script resolves repository paths internally
 and does not depend on the caller's shell configuration.
+For new tasks, follow the [capsule/RI default sequence](../engineering/workflow/START_HERE.md)
+through the trusted `./scripts/task` controller. Unattached and legacy capsule
+commands remain compatibility interfaces for in-flight or explicitly justified work.
 
 ## Repository lifecycle and validation
 

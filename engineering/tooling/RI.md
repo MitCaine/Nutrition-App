@@ -1,11 +1,13 @@
 # Repository Intelligence for Nutrition
 
-> **Document role: Engineering Tooling.** Optional, controller-owned source navigation.
+> **Document role: Engineering Tooling.** Controller-owned source navigation and structural evidence.
 
 RI supplies locations and source facts. Nutrition owns domain meaning, edit scope, tests,
 review and approval. Start from the [workflow entrypoint](../workflow/START_HERE.md), then
-use this guide to assemble bounded source context. This does not promote the combined
-workflow or implement the structural-delta gate owned by GH-192.
+use this guide to assemble bounded source context. The owner's
+[2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452)
+makes the combined workflow normal for new tasks. RI remains evidence only: it
+cannot authorize edits, approve review or replace full-diff and required runtime checks.
 
 ## Pinned installation and private access
 

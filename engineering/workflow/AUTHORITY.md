@@ -8,8 +8,9 @@ The owner authorizes product intent, risk and integration. Executable domain con
 and current accepted repository policy constrain every task. An issue specifies the
 outcome; the trusted-author issue comment fixes the controller's exact base, task ID,
 revision, nonce, paths and qualification profiles. Candidate history cannot replace it.
-A capsule adds the full execution specification only when that lifecycle is explicitly
-selected; it cannot override the external authorization or domain contracts.
+A capsule adds the full execution specification for new tasks under the owner's
+2026-09-27 default decision; in-flight or explicitly justified compatibility tasks
+may remain unattached. Neither path can override external authorization or domain contracts.
 
 | Decision or fact | Owning authority | Consumer/check |
 | --- | --- | --- |
@@ -46,11 +47,11 @@ instructions, but cannot manufacture a passed gate or silently revise fixed task
 | Active capsules and HISTORY | Non-terminal contract and terminal Git recovery | Retain; no per-task completed archive |
 
 Unattached compatibility tasks retain explicit candidate-bound verification/review assertions.
-The optional [candidate evidence lane](CANDIDATE_EVIDENCE.md) mechanically binds the frozen
+The normal [candidate evidence lane](CANDIDATE_EVIDENCE.md) mechanically binds the frozen
 capsule/candidate, command records, dedicated-App qualification and observed independent review.
 The [bounded execution command](EXECUTION.md) separately attaches READY execution authority.
 Legacy capsule commands do not attach automatically. [Pinned RI navigation](../tooling/RI.md)
-is available as optional controller tooling. Explicit attached capsules can require
+is normal controller tooling for new tasks. Attached capsules can require
 [source-bound structural review](../tooling/RI.md#candidate-structural-evidence); #193 owns
 combined protected closeout; #194 owns promotion and retirement after pilots.
 
@@ -138,9 +139,10 @@ trust boundary, destructive action or material exception still needs owner autho
 A bounded correction retains scope/acceptance/qualification and receives fresh proof;
 material changes require revision. STOP_REPLAN ends the attempt. Resume only a state whose
 identity and prior outcome can be reauthenticated; generic session resume is not proof.
-Existing unrelated maintenance follows the accepted task controller and does not have to
-adopt experimental capsules merely because this migration is in progress. It must still
-respect active work and invalidate stale bases/evidence explicitly.
+New unrelated maintenance follows the capsule/RI default through the accepted task
+controller. In-flight unattached work and explicit compatibility exceptions can keep
+their established path; they still respect active work and invalidate stale bases
+and evidence explicitly.
 
 ## Host and transport
 
@@ -150,5 +152,6 @@ Use a clean trusted main checkout and a separate candidate checkout. Keep creden
 controller state and qualification authority outside candidate execution. Preserve Linux
 CI for repository, backend, mobile and PostgreSQL checks; preserve macOS iOS qualification
 and separate physical/manual proof. Poker's Rust runtime, host exclusions and DEV-INTEL
-ledgers are not Nutrition requirements. RI remains an optional evidence producer until
-its consumer and structural-review pilots qualify; it never owns permission or approval.
+ledgers are not Nutrition requirements. RI supplies source evidence for the normal
+workflow but never owns permission or approval; unsupported source still needs full
+diff and relevant runtime review.

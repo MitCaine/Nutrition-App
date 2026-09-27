@@ -151,11 +151,12 @@ For dependency-only pull requests:
 
 Start at [the current workflow entrypoint](engineering/workflow/START_HERE.md).
 Use the accepted trusted task controller for external authorization, qualification and
-protected integration. Explicit migration capsules attach a full specification within
-that authority; they never bypass it. The combined capsule/RI workflow remains a trial
-until its recorded promotion gate passes.
-Read the [combined pilot and rollout record](engineering/workflow/PILOT_2026-09-26.md)
-for the two completed pilots, failure paths, host limits and current decision gate.
+protected integration. The combined capsule/RI workflow is the normal path for new tasks
+under the [owner's 2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452).
+Capsules attach a full specification within that authority; RI supplies source evidence,
+never edit or approval authority. Read the [combined pilot and rollout record](engineering/workflow/PILOT_2026-09-26.md)
+for historical outcomes and limits, and [START_HERE](engineering/workflow/START_HERE.md)
+for the current sequence and compatibility exceptions.
 
 A task that already has an active capsule must follow the repository's
 task-capsule process.
@@ -171,9 +172,9 @@ task-capsule process.
 - Record `MERGED`, `CANCELLED`, and `RETROSPECTED` outcomes in
   `engineering/capsules/HISTORY.md`; terminal closeout removes the active
   capsule rather than retaining a per-task completed copy.
-- Do not infer that every repository change must create a capsule while
-  Workflow v3 remains experimental; capsule adoption follows the current
-  workflow policy and explicit task setup.
+- New tasks normally create a capsule under the current combined workflow;
+  preserve in-flight unattached tasks and explicit compatibility exceptions.
+  Do not infer a capsule retroactively for historical changes.
 ## Documentation
 
 - Update documentation when behavior, authority, commands, migration heads, or operational procedures change.

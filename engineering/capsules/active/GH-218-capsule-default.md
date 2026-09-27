@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 2
 id = "GH-218-capsule-default"
 title = "Make capsule/RI the normal workflow for new tasks"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "documentation"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ The owner explicitly selected the new default on #187 after seeing the measured 
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four acceptance criteria and repository verification selected. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Documentation-only owned paths and terminal lifecycle separated. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-two external authorization comment 5859403898 and exact base verified; revision-one review STOP_REPLAN preserved separately. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Qualified P2 and reapplied only reviewed documentation bytes from failed first candidate. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Bounded documentation cutover committed for new independent gates. |
 
 ## Completion record
 

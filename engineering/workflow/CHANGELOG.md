@@ -1,5 +1,32 @@
 # Workflow changelog
 
+## 2026-09-27 — Owner selects combined capsule/RI as normal for new tasks
+
+**Current status:** the combined capsule/RI workflow is the normal route for new
+Nutrition tasks under the owner's [#187 rollout decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452).
+The accepted `./scripts/task` controller continues to own trusted external
+authorization, exact-SHA dedicated-App qualification, independent review,
+protected integration and guarded HISTORY recovery. Capsules bind the execution
+contract; RI provides committed-source navigation and structural evidence where
+supported, never edit or approval authority. Unsupported files retain full-diff
+review and all selected specialist checks.
+
+This decision follows completed Python/TSX pilots #213/#215, the #216 live
+Python guarded-finalize replay and the [#217 live TSX replay](https://github.com/MitCaine/Nutrition-App/issues/217#issuecomment-5859310313).
+#217 took three implementation authorization rounds plus separate terminal
+authorization, three C App checks and one T App check across failed and successful
+attempts. The owner reported less than one minute of human-active time total
+for #217, without a per-category breakdown. The historical pre-pilot active-time
+baseline was not captured; no speed or lower-handoff claim is established.
+The prior 2026-09-26 no-promotion decision remains historical, superseded by
+this explicit owner decision rather than rewritten.
+
+In-flight unattached work and explicit compatibility exceptions may retain the
+existing controller path. `scripts/capsule` remains available for legacy callers.
+No interface is retired until a separate live-caller inventory and reviewed
+migration/recovery plan. Branch protection, qualification profiles, native and
+PostgreSQL proof, review and human-owner integration authority remain unchanged.
+
 > **Document role: Engineering Process.** Workflow changes advance only through observed
 > evidence.
 

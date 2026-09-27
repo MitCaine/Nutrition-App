@@ -25,10 +25,10 @@ work may not bypass them.
 ## Gates
 
 These are reasoning/lifecycle gates. Execute them through the current
-[trusted controller sequence](START_HERE.md), with the ownership and current-versus-target
-boundaries in [Authority](AUTHORITY.md). Capsule use is explicit during the migration;
-legacy capsule commands cannot substitute for trusted external authorization or protected
-integration.
+[trusted controller sequence](START_HERE.md), with ownership and compatibility
+boundaries in [Authority](AUTHORITY.md). Capsule/RI is normal for new tasks under
+the owner's 2026-09-27 decision; legacy capsule commands cannot substitute for
+trusted external authorization or protected integration.
 
 1. **Route:** classify task type, risk, authority, controller, executor, reviewer, and required
    qualification using [Routing](ROUTING.md).

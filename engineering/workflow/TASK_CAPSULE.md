@@ -11,13 +11,17 @@ verification, evidence, and escalation. Copy the
 
 `./scripts/task` is the accepted public controller entrypoint. Its external trusted-author
 issue comment remains the edit/profile authority. A capsule is the full execution contract
-for an explicitly selected capsule task; it does not replace that authorization.
+for new tasks under the owner's 2026-09-27 default decision; it does not replace
+that authorization. In-flight unattached and explicit compatibility tasks may keep
+their established path.
 
 Existing active capsules retain this schema and normal terminal recovery. The owner-approved
-#187 migration explicitly selects bounded capsule trials. Its attachment design, compatibility
-inventory and current enforcement limits are in [Authority](AUTHORITY.md). Default adoption
-and retirement require #194's qualified pilots and recorded promotion decision. No new TOML
-keys or authorization-v1 fields are introduced by this documentation reconciliation.
+#187 migration began with bounded capsule trials. Its attachment design, compatibility
+inventory and enforcement limits are in [Authority](AUTHORITY.md); historical #194
+and later pilots are recorded in the [changelog](CHANGELOG.md). The owner's
+2026-09-27 decision made the combined workflow normal for new tasks, without
+retiring compatibility callers. No new TOML keys or authorization-v1 fields
+are introduced by that policy change.
 
 Never create a capsule as a fallback around a rejected controller, dedicated-App check or
 protected-main update. A capsule state transition is not a trusted-controller gate transition.

@@ -8,8 +8,11 @@
 ## Purpose
 
 Start with [START_HERE](START_HERE.md) and the [authority contract](AUTHORITY.md).
-The accepted public operator entrypoint is `./scripts/task`; capsule lifecycle
-compatibility and the combined capsule/RI migration remain explicitly separated.
+The accepted public operator entrypoint is `./scripts/task`. Under the owner's
+[2026-09-27 rollout decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452),
+new tasks normally attach a capsule and RI source evidence to that trusted controller.
+Existing unattached and legacy capsule interfaces remain available for in-flight and
+explicitly justified compatibility work.
 
 When a task uses the repository-owned workflow, its task capsule is the durable
 execution contract while that task remains non-terminal. Chat may explain or
@@ -62,6 +65,10 @@ override higher authority.
 - Human approval is required for policy, trust, privacy, security, destructive behavior,
   irreversible action, migration authority, risk tolerance, or material tradeoffs.
 
-The legacy Workflow v3 capsule-wide adoption remains **EXPERIMENTAL**. This does not
-make the accepted trusted task controller experimental: it remains the normal entrypoint.
-The combined capsule/RI migration is not the repository-wide default. The active-plus-HISTORY terminal-storage contract applies whenever the workflow is used, but it does not itself promote the workflow. Promotion requires the evidence, known limits, and accountable human approval recorded in the [Workflow Changelog](CHANGELOG.md).
+The combined capsule/RI path is the normal route for new tasks. The trusted controller
+remains the single authorization, qualification, review and integration authority;
+the capsule and RI never replace those gates. The legacy standalone Workflow v3
+capsule command is a compatibility interface, not the current default. The
+[Workflow Changelog](CHANGELOG.md) records the decision, evidence and remaining
+measurement limits. Active capsules retain full text through review; terminal
+HISTORY records bind exact recoverable bytes.

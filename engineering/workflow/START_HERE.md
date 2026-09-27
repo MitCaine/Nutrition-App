@@ -22,12 +22,16 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
 1. Run the [session preflight](../../docs/operations/session-contract.md).
 2. From trusted main, use `./scripts/task prepare ISSUE` with the exact base, task
    ID, bounded allowed/forbidden paths and qualification profiles; then `authorize`.
-3. Implement only that authorized scope in a separate task checkout. If this task
-   explicitly uses a capsule, qualify its capsule-only planning overlay and render
-   its handoff before implementation; keep its lifecycle through terminal closeout.
+3. For a new task, create its bounded capsule, qualify the capsule-only planning
+   overlay and render its handoff before implementing only the authorized scope in
+   a separate task checkout. Use the pinned RI runtime for source navigation and
+   changed-path evidence; supported structural results supplement full diff review,
+   while unsupported files still require direct review. Keep the capsule lifecycle
+   through terminal closeout. An in-flight unattached task or explicit compatibility
+   exception may retain its existing path without inventing a capsule after the fact.
 4. From trusted main, `./scripts/task qualify ISSUE --candidate-root PATH` qualifies
    the exact committed candidate through the existing dedicated-App boundary.
-5. For an attached candidate, follow the [evidence sequence](CANDIDATE_EVIDENCE.md)
+5. For a capsule-attached candidate, follow the [evidence sequence](CANDIDATE_EVIDENCE.md)
    for command capture, sealed qualification and observed independent review. For
    compatibility tasks, record explicit verification and independent review for that same SHA with
    `./scripts/task verify` and `./scripts/task review`. Inspect the source and full
@@ -84,18 +88,20 @@ capsule/RI migration target; it owns the binding design and compatibility invent
 
 ## Status and boundaries
 
-The trusted task controller is the accepted normal entrypoint. Legacy Workflow v3's
-capsule-wide promotion remains experimental. Issues #188–#194 explicitly authorize
-bounded migration trials, not a default cutover. The optional [bounded execution/checkpoint command](EXECUTION.md) supports an isolated
-macOS local-command transport. The optional [candidate evidence lane](CANDIDATE_EVIDENCE.md)
-adds exact command/qualification binding and observed independent review. The optional
-[pinned RI navigation command](../tooling/RI.md) supplies exact committed-source locations. Explicit attached capsules can also require
-[source-bound structural evidence](../tooling/RI.md#candidate-structural-evidence) before independent review.
-The [pilot record](PILOT_2026-09-26.md) contains both completed pilots and the
-owner's decision to retain this controller as default. A future combined-lane
-promotion needs new evidence and owner approval. A fresh operator should inspect current remote
-main and issue state first; pilot SHAs are historical evidence, never a base to
-reuse without revalidation.
+The trusted task controller remains the accepted entrypoint. The owner's
+[2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452)
+makes capsule attachment and RI evidence normal for new tasks. The
+[bounded execution/checkpoint command](EXECUTION.md) supplies an isolated macOS
+local-command transport when selected. The [candidate evidence lane](CANDIDATE_EVIDENCE.md)
+binds exact commands, qualification, structural path dispositions where supported,
+and observed independent review. The [pinned RI navigation command](../tooling/RI.md)
+supplies exact committed-source locations, never authority. The unattached controller
+path and `scripts/capsule` remain for in-flight/explicit compatibility work; their
+retirement requires a separate caller inventory and migration/recovery review.
+The [pilot record](PILOT_2026-09-26.md) contains historical decisions and failures;
+the [changelog](CHANGELOG.md) records the current decision and measurement limits.
+Inspect current remote main and issue state first; historical SHAs are never a base
+to reuse without revalidation.
 
 Initial local controller qualification targets macOS. Nutrition's existing Linux
 CI jobs remain qualification authorities; local SQLite, remote PostgreSQL, iOS
