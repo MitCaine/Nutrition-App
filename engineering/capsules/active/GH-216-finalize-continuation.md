@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 7
 id = "GH-216-finalize-continuation"
 title = "Repair guarded finalize continuation after terminal R/T preparation"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ Use distinct R/T worktrees and leave the attached C checkout untouched. Combined
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four bounded candidate criteria and frozen evidence selected. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Evidence matcher, finalizer, tests and docs. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Exact revision-7 authorization and capsule-only planning overlay. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Prior failed candidates preserved; bounded repair reapplied after new planning P. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Exact ref continuation, interrupted-push handling, real Git recovery test and docs implemented. |
 
 ## Completion record
 

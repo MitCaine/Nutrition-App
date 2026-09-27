@@ -51,6 +51,16 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    create R in a separate worktree on `evidence/GH-ISSUE-recovery` and T in a
    separate worktree on `task/GH-ISSUE-closeout`. Do not switch the attached C
    checkout to either branch and back; that can rewrite its sealed Git index.
+   From a separate trusted checkout at C, the branch-creation shape is:
+
+   ```bash
+   git worktree add -b evidence/GH-ISSUE-recovery "$RECOVERY_ROOT" "$C"
+   git worktree add -b task/GH-ISSUE-closeout "$TERMINAL_ROOT" "$C"
+   ```
+
+   Replace `ISSUE`, `RECOVERY_ROOT`, `TERMINAL_ROOT` and `C` with the exact task
+   values. Commit the reviewed full capsule on R; commit only HISTORY and active
+   capsule deletion on T. Validate R/T before the second `finalize` call.
    A resumed finalizer accepts only those two exact refs after validating R/T and
    their separate authority. It still rejects changed C source/index or any other
    ref change. If a prior attempt changed C's index, use the separately authorized

@@ -136,5 +136,6 @@ ref additions and receipted main movement, including an interrupted T push.
 The C source and Git index remain sealed; unrelated refs still stop. Operators
 must prepare R and T in separate worktrees without switching the attached C
 checkout. #215's index-drift failure and separate terminal completion remain
-recorded in the [pilot follow-up](PILOT_2026-09-26.md). A new live guarded
-two-stage closeout is still required before any default rollout decision.
+recorded in the [pilot follow-up](PILOT_2026-09-26.md). The new live guarded
+two-stage closeout is recorded, if successful, in terminal HISTORY and remains
+separate from any default rollout decision.

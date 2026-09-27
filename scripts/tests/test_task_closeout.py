@@ -6,6 +6,7 @@ import hashlib
 import argparse
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -387,3 +388,33 @@ def test_finalize_authenticates_terminal_before_allowing_exact_refs_and_pending_
         controller.command_finalize(args)
     assert observed[-1]["source_main_after"] == terminal
     assert observed[-1]["source_added_refs"] == additions
+
+
+def test_validated_terminal_context_uses_real_recovery_transaction(transaction, tmp_path, monkeypatch):
+    repo, implementation, recovery, terminal = transaction
+    state = {"task_id": "GH-193", "repository": "owner/repo"}
+    terminal_state = {"task_id": "GH-193-closeout", "repository": "owner/repo",
+                      "phase": "REVIEWED_APPROVED"}
+    authorization = SimpleNamespace(
+        base_sha=implementation,
+        allowed_paths=("engineering/capsules/HISTORY.md", "engineering/capsules/active/GH-193.md"),
+        profiles=("repository",))
+    monkeypatch.setattr(controller, "load_state", lambda *_args: terminal_state)
+    monkeypatch.setattr(controller, "resolve_repo_root", lambda path: Path(path))
+    monkeypatch.setattr(controller, "require_candidate_repository", lambda *_args, **_kwargs: terminal)
+    monkeypatch.setattr(controller, "resolve_current_authorization", lambda *_args: authorization)
+    args = argparse.Namespace(terminal_state_dir=tmp_path, terminal_root=repo,
+                              issue_number=193, recovery_sha=recovery)
+    observed = controller.validated_finalize_terminal(state, args, implementation)
+    assert observed[2] == terminal
+    assert observed[3]["recovery"] == recovery
+    assert observed[4] == {"refs/heads/evidence/GH-193-recovery": recovery,
+                           "refs/heads/task/GH-193-closeout": terminal}
+
+    authorization.base_sha = "0" * 40
+    with pytest.raises(controller.TaskControllerError, match="TERMINAL_AUTHORITY_INVALID"):
+        controller.validated_finalize_terminal(state, args, implementation)
+    authorization.base_sha = implementation
+    args.recovery_sha = "0" * 40
+    with pytest.raises(closeout.CloseoutError):
+        controller.validated_finalize_terminal(state, args, implementation)
