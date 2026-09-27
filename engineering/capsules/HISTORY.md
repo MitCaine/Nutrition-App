@@ -3758,3 +3758,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 1ae527620a2531e9fd61b320d9782b94788db575
 - **Full-capsule recovery path:** engineering/capsules/active/GH-223-review-drain.md
 - **Historical capsule SHA-256:** 527eb68be7a6bb8750e5102671b0290ed9ae139618585dd9239d874774b0c80f
+
+### GH-224-retry-stop - Stop direct dependency retry on shared failures after narrowing begins
+
+- **ID:** GH-224-retry-stop
+- **Title:** Stop direct dependency retry on shared failures after narrowing begins
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/224; implementation authorization comment 5860783155 and distinct terminal authorization comment 5860821968.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 78b4d2c78062b04e34466bb3fdd0c9094a2661a7
+- **Task branch:** task/GH-224-retry-stop
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53
+- **Verified commit reference(s):** 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53
+- **Reviewed source commit:** 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53
+- **Reviewed task/checkpoint commit(s):** 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53
+- **Integration/merged commit:** 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53
+- **Integration-related commit reference(s):** Protected C at 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and four changed paths with no findings.
+- **Verification summary:** Focused 35 updater tests and repository baseline passed; RI P-to-C comparable with four controller path dispositions. Bulk conflict then direct ECONNRESET stops before another package, preserves prior validated update and permits independent mobile progress.
+- **Specialized qualification:** Dedicated App check 108731342920 passed repository profile at C; terminal T requires distinct repository App check.
+- **Known warnings:** None for accepted candidate; this entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #225, #226.
+- **Retrospective:** Required after residual audit issues; retain stopped cascade and partial proposal evidence.
+- **Referenced commits:** Planning bbc44c8341fc3cff334a16f1bdeb6e7813af7a63; implementation 23ffa7295be59aafbfb2f04ebbbcf37803bdbf53; full reviewed capsule 6743aaf219a9d0d96c4c56ad99e48df1aed76a81.
+- **Full-capsule recovery commit:** 6743aaf219a9d0d96c4c56ad99e48df1aed76a81
+- **Full-capsule recovery path:** engineering/capsules/active/GH-224-retry-stop.md
+- **Historical capsule SHA-256:** ac8b51c2017afd6367bd3638de88016f8c011207151e2341c6dd0e385d95b06f
