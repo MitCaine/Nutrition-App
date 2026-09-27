@@ -110,7 +110,7 @@ on-device SQLite without FastAPI or PostgreSQL. USDA requires upstream network
 access and a configured personal credential. Native Apple Vision OCR requires
 an iOS native development or Release build and is not provided by Expo Go.
 
-Use Node 24 for the mobile project. On a fresh checkout, or whenever the locked
+Use Node 26 for the mobile project. On a fresh checkout, or whenever the locked
 JavaScript dependencies need to be reconciled, install them once:
 
 ```bash
