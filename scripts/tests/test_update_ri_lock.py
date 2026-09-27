@@ -45,6 +45,13 @@ class RILockRefreshTest(unittest.TestCase):
                 refreshed = ri_update.proposed(root)
                 self.assertNotEqual(refreshed[0][1], refreshed[0][2])
                 self.assertTrue(download.called)
+                for malformed in (None, 123):
+                    lock["wheels"][0]["sha256"] = malformed
+                    lock_path.write_text(json.dumps(lock))
+                    requirements_path.write_bytes(ri_update.requirements_bytes(lock))
+                    with tempfile.TemporaryDirectory() as attempt:
+                        refreshed = ri_update.proposed(Path(attempt))
+                        self.assertNotEqual(refreshed[0][1], refreshed[0][2])
 
     def test_regenerates_both_files_for_selected_python_without_writing_preview(self):
         with tempfile.TemporaryDirectory() as folder:
