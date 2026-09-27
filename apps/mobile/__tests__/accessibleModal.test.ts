@@ -1,5 +1,5 @@
 import React, { createRef } from "react";
-import { Modal, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { AccessibleModal } from "../src/shared/accessibility/AccessibleModal";
@@ -7,6 +7,31 @@ import { AccessibleModal } from "../src/shared/accessibility/AccessibleModal";
 function modalElement(renderer: TestRenderer.ReactTestRenderer) {
   return renderer.root.findByType(Modal);
 }
+
+test("busy modal blocks owned dismissal paths until the action settles", async () => {
+  const onRequestClose = jest.fn();
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(React.createElement(AccessibleModal, {
+      visible: true, title: "Confirm", busy: true, dismissOnBackdropPress: true, onRequestClose,
+    }));
+  });
+  await act(async () => modalElement(renderer).props.onRequestClose());
+  const backdrop = renderer.root.findByType(Pressable);
+  expect(backdrop.props.disabled).toBe(true);
+  expect(backdrop.props.onPress).toBeUndefined();
+  expect(onRequestClose).not.toHaveBeenCalled();
+
+  await act(async () => {
+    renderer.update(React.createElement(AccessibleModal, {
+      visible: true, title: "Confirm", busy: false, dismissOnBackdropPress: true, onRequestClose,
+    }));
+  });
+  await act(async () => modalElement(renderer).props.onRequestClose());
+  await act(async () => renderer.root.findByType(Pressable).props.onPress());
+  expect(onRequestClose).toHaveBeenCalledTimes(2);
+  await act(async () => renderer.unmount());
+});
 
 test("modal entry focus starts at native onShow once per opening", async () => {
   const initial = createRef<object>();

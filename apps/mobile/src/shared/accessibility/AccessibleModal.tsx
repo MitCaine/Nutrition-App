@@ -50,6 +50,7 @@ export function AccessibleModal({
   title,
   onRequestClose,
   children,
+  busy = false,
   initialFocusRef,
   returnFocusRef,
   fallbackFocusRef,
@@ -151,7 +152,7 @@ export function AccessibleModal({
       animationType={animationType}
       transparent={transparent}
       visible={visible}
-      onRequestClose={onRequestClose}
+      onRequestClose={() => { if (!busy) onRequestClose(); }}
       onShow={handleShow}
       statusBarTranslucent
     >
@@ -161,7 +162,8 @@ export function AccessibleModal({
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
             accessibilityLabel="Dismiss modal"
-            onPress={onRequestClose}
+            disabled={busy}
+            onPress={busy ? undefined : onRequestClose}
             style={styles.backdropDismissTarget}
           />
         ) : null}
