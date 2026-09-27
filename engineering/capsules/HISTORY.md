@@ -3578,3 +3578,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 73b7f73d779ad8839d3609689d4738d321c8b117
 - **Full-capsule recovery path:** engineering/capsules/active/GH-218-capsule-default.md
 - **Historical capsule SHA-256:** c1de9c8df132120790becfe04c9895c4b148acdacdcd47e2dfb732c237c83f64
+
+### GH-219-update-transaction - Resume partial dependency updates and bind publication to checkout identity
+
+- **ID:** GH-219-update-transaction
+- **Title:** Resume partial dependency updates and bind publication to checkout identity
+- **Final state:** MERGED
+- **Capsule revision:** 5
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/219; revision-five implementation authorization comment 5859907955 and distinct terminal authorization comment 5859953232.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** a5cba4331306d9dac8b3b33a5d9ea276540ee5f6
+- **Task branch:** task/GH-219-update-transaction-r5
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 8692e730d1a6f7baf44c76c2b61b554b4e9d097c
+- **Verified commit reference(s):** 8692e730d1a6f7baf44c76c2b61b554b4e9d097c
+- **Reviewed source commit:** 8692e730d1a6f7baf44c76c2b61b554b4e9d097c
+- **Reviewed task/checkpoint commit(s):** 8692e730d1a6f7baf44c76c2b61b554b4e9d097c
+- **Integration/merged commit:** 8692e730d1a6f7baf44c76c2b61b554b4e9d097c
+- **Integration-related commit reference(s):** Protected C at 8692e730d1a6f7baf44c76c2b61b554b4e9d097c; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C5 reviewer for AC-1..AC-4 and all nine changed paths, with no findings; revision-two STOP_REPLAN remains preserved.
+- **Verification summary:** Frozen Python 3.14 focused updater tests and repository baseline passed; startup tests also passed locally. RI P5-to-C5 comparable with nine path dispositions and full-diff review. Revision-three planning failure and revision-four sequencing failure remain preserved.
+- **Specialized qualification:** Dedicated App check 108710716689 passed repository profile at C5; terminal T requires distinct repository App check.
+- **Known warnings:** The audit's isolated reproductions are narrower than live update qualification. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #220, #221, #222.
+- **Retrospective:** Required after all four audit issues; record practical resumed update behavior.
+- **Referenced commits:** Planning 00d3ae86f9663ec331ee6c6f5a3a9bf5af6fa876; implementation 8692e730d1a6f7baf44c76c2b61b554b4e9d097c; full reviewed capsule 65c79467437758323a764a3e8d518b821b1059b5.
+- **Full-capsule recovery commit:** 65c79467437758323a764a3e8d518b821b1059b5
+- **Full-capsule recovery path:** engineering/capsules/active/GH-219-update-transaction.md
+- **Historical capsule SHA-256:** a5004061c85d9f83f1ef9f72753b636a924d2ae46ba252b75e7d70abda271053
