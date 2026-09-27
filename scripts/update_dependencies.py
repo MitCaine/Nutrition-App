@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -41,6 +42,29 @@ def run(args: list[str], cwd: Path, *, capture: bool = False) -> str:
 def clean_checkout() -> None:
     if run(["git", "status", "--porcelain=v1", "--untracked-files=all"], ROOT, capture=True).strip():
         raise UpdateError("Checkout has existing changes; use a clean worktree to protect them.")
+
+
+def area_inputs(area: str) -> dict[Path, str | None]:
+    """Snapshot authority inputs separately so earlier successful areas may proceed."""
+    if area == "backend":
+        paths = [BACKEND / "pyproject.toml", BACKEND / "requirements-dev.lock",
+                 ROOT / ".python-version"]
+    elif area == "mobile":
+        paths = [MOBILE / "package.json", MOBILE / "package-lock.json", ROOT / ".nvmrc",
+                 ROOT / "engineering/security/dependency-risk-register.json",
+                 ROOT / ".github/workflows/dependency-risk-monitor.yml"]
+        paths.extend(path for source_root in (MOBILE / "src", MOBILE / "modules")
+                     for path in source_root.rglob("*") if path.is_file())
+    else:
+        paths = [ROOT / ".python-version", ROOT / "engineering/tooling/ri-lock.json",
+                 ROOT / "engineering/tooling/ri-requirements.txt"]
+    return {path: hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+            for path in paths}
+
+
+def verify_area_inputs(area: str, snapshot: dict[Path, str | None]) -> None:
+    if area_inputs(area) != snapshot:
+        raise UpdateError(f"{area} authority inputs changed during resolution; refusing to publish its lock.")
 
 
 def publish_ri_files(proposals: list[tuple[Path, bytes, bytes]]) -> None:
@@ -463,6 +487,7 @@ def main() -> int:
             for area in areas:
                 try:
                     ensure_python(area)
+                    input_snapshot = area_inputs(area)
                     if area == "ri":
                         if args.packages:
                             raise UpdateError("The ri command takes no package names.")
@@ -475,6 +500,7 @@ def main() -> int:
                             for path, _, _ in changed_ri:
                                 print(f"RI wheel lock: {path.relative_to(ROOT)}")
                             if args.apply:
+                                verify_area_inputs(area, input_snapshot)
                                 publish_ri_files(proposals)
                                 print("ri: applied both validated wheel lock files.")
                             changed = True
@@ -516,6 +542,7 @@ def main() -> int:
                                 print(f"{area} {package}: {old} -> {new}")
                         print(f"Lockfile: {path.relative_to(ROOT)}")
                         if args.apply:
+                            verify_area_inputs(area, input_snapshot)
                             if path.read_bytes() != before:
                                 raise UpdateError("Lockfile changed during preparation; refusing to overwrite it.")
                             staged = path.with_name(path.name + ".update-tmp")

@@ -107,6 +107,57 @@ class DependencyUpdateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(self.call_main("all", "sample", "--apply"), 2)
 
+    def test_mobile_manifest_change_during_resolution_refuses_publication(self):
+        original = self.lock.read_bytes()
+        manifest_path = self.mobile / "package.json"
+        def changed_manifest(*_args, **_kwargs):
+            manifest_path.write_text('{"name":"different"}')
+            return self.lock, original, original + b" "
+        with patch.object(module, "mobile", side_effect=changed_manifest), \
+             contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(self.call_main("mobile", "sample", "--apply"), 2)
+        self.assertIn("authority inputs changed", errors.getvalue())
+        self.assertEqual(self.lock.read_bytes(), original)
+
+    def test_backend_manifest_change_during_resolution_refuses_publication(self):
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        manifest = backend / "pyproject.toml"
+        manifest.write_text("[project]\nname = 'original'\n")
+        lock = backend / "requirements-dev.lock"
+        lock.write_bytes(b"old")
+        def changed_manifest(*_args, **_kwargs):
+            manifest.write_text("[project]\nname = 'changed'\n")
+            return lock, b"old", b"new"
+        with patch.object(module, "BACKEND", backend), \
+             patch.object(module, "backend", side_effect=changed_manifest), \
+             contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(self.call_main("backend", "--apply"), 2)
+        self.assertIn("authority inputs changed", errors.getvalue())
+        self.assertEqual(lock.read_bytes(), b"old")
+
+    def test_all_continues_mobile_after_backend_input_drift(self):
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        manifest = backend / "pyproject.toml"
+        manifest.write_text("[project]\nname = 'original'\n")
+        lock = backend / "requirements-dev.lock"
+        lock.write_bytes(b"old")
+        def changed_manifest(*_args, **_kwargs):
+            manifest.write_text("[project]\nname = 'changed'\n")
+            return lock, b"old", b"new"
+        with patch.object(module, "BACKEND", backend), \
+             patch.object(module, "backend", side_effect=changed_manifest), \
+             patch.object(module, "toolchain_report"), \
+             patch.object(module.subprocess, "run") as outdated, \
+             contextlib.redirect_stderr(io.StringIO()) as errors:
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            self.assertEqual(self.call_main("all", "--apply"), 2)
+        self.assertIn("backend update failed", errors.getvalue())
+        self.assertEqual(lock.read_bytes(), b"old")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+
     def test_ri_wheel_failure_does_not_undo_backend_or_mobile_updates(self):
         backend_lock = self.root / "backend.lock"
         backend_lock.write_bytes(b"fastapi==0.1.0\n")

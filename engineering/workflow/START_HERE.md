@@ -5,6 +5,9 @@
 Use `./scripts/task` from a clean, synchronized trusted `main` checkout. Read the
 issue and current source before preparing authority. Candidate code lives in a separate
 checkout and never supplies the trusted controller or qualification policy.
+The `task` launcher accepts the selected Python line from the trusted checkout's
+PATH. If it is missing, provision/select that host interpreter first; the launcher
+does not probe virtual environments in candidate worktrees.
 
 ## Orient once
 

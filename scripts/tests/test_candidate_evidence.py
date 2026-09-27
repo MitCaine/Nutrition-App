@@ -79,6 +79,20 @@ class CandidateFixture(unittest.TestCase):
 
 
 class CandidateEvidenceTests(CandidateFixture):
+    def test_receipted_main_fetch_preserves_candidate_and_rejects_other_refs(self):
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        binding = self.binding()
+        original = binding["source"]
+        self.git("update-ref", "refs/remotes/origin/main", self.candidate)
+        moved = evidence.observe(self.repo, self.candidate)
+        self.assertFalse(evidence.source_matches(original, moved))
+        self.assertTrue(evidence.source_matches(
+            original, moved, main_transition=(self.base, self.candidate)))
+        self.git("update-ref", "refs/heads/unrelated", self.candidate)
+        self.assertFalse(evidence.source_matches(
+            original, evidence.observe(self.repo, self.candidate),
+            main_transition=(self.base, self.candidate)))
+
     def test_mobile_preparation_contract_is_explicit_and_strict(self):
         def raw(values):
             return ("```nutrition-evidence-v1\n" + json.dumps(values) + "\n```").encode()

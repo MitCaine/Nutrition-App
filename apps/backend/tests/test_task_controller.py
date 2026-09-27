@@ -2559,6 +2559,38 @@ def test_recovery_revalidates_live_check_review_and_owner(
             transport=transport, ref_transport=refs)
 
 
+def test_attached_revalidation_allows_only_receipted_main_fetch(tmp_path: Path, monkeypatch) -> None:
+    repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
+    original = {"candidate": candidate, "branch": "task/fixture", "source_sha256": "source",
+                "index_sha256": "index", "refs_sha256": "before",
+                "refs": {"refs/remotes/origin/main": base}}
+    reviewed["capsule_evidence"] = {"binding": {"source": original}}
+    monkeypatch.setattr(TASK.candidate_evidence, "authenticate_binding", lambda *_args: None)
+    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
+    monkeypatch.setattr(TASK.candidate_evidence, "qualify", lambda *_args: None)
+    observed = dict(original)
+    monkeypatch.setattr(TASK.candidate_evidence, "observe", lambda *_args: observed)
+    pending = TASK.integrate_task(
+        reviewed, candidate_repo=repo, controller_main_sha=base, expected_app_id=424242,
+        transport=transport, ref_transport=refs, human_owner_authorized=True)
+    observed = {**original, "refs_sha256": "after",
+                "refs": {"refs/remotes/origin/main": candidate}}
+    TASK.revalidate_integration_state(
+        pending, candidate_repo=repo, expected_app_id=424242,
+        transport=transport, ref_transport=refs)
+    refs.main_sha = candidate
+    integrated = TASK.reconcile_integration(pending, candidate_sha=candidate, ref_transport=refs)
+    TASK.revalidate_integration_state(
+        integrated, candidate_repo=repo, expected_app_id=424242,
+        transport=transport, ref_transport=refs)
+    observed = {**observed, "refs": {**observed["refs"], "refs/heads/unrelated": candidate}}
+    with pytest.raises(TASK.EvidenceError, match="ATTACHED_SOURCE_CHANGED"):
+        TASK.revalidate_integration_state(
+            integrated, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+
+
 def test_trusted_controller_requires_clean_synchronized_main(
     tmp_path: Path,
 ) -> None:

@@ -111,10 +111,30 @@ def observe(repo: Path, candidate: str) -> dict:
     index = Path(git_text(repo, "rev-parse", "--git-path", "index"))
     if not index.is_absolute():
         index = repo / index
+    refs_raw = git(repo, "show-ref")
+    refs = {name.decode(): sha.decode() for sha, name in
+            (line.split(b" ", 1) for line in refs_raw.splitlines())}
     return {"candidate": candidate, "branch": git_text(repo, "branch", "--show-current"),
             "source_sha256": digest(snapshot),
             "index_sha256": hashlib.sha256(index.read_bytes()).hexdigest(),
-            "refs_sha256": hashlib.sha256(git(repo, "show-ref")).hexdigest()}
+            "refs_sha256": hashlib.sha256(refs_raw).hexdigest(), "refs": refs}
+
+
+def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str, str] | None = None) -> bool:
+    """Keep sealed source identity while allowing only a receipted main fetch."""
+    if any(expected.get(key) != observed.get(key) for key in
+           ("candidate", "branch", "source_sha256", "index_sha256")):
+        return False
+    if expected.get("refs_sha256") == observed.get("refs_sha256"):
+        return "refs" not in expected or expected["refs"] == observed.get("refs")
+    if main_transition is None or not isinstance(expected.get("refs"), dict) or not isinstance(observed.get("refs"), dict):
+        return False
+    before, after = main_transition
+    ref = "refs/remotes/origin/main"
+    if expected["refs"].get(ref) != before or observed["refs"].get(ref) != after:
+        return False
+    return {name: sha for name, sha in expected["refs"].items() if name != ref} == {
+        name: sha for name, sha in observed["refs"].items() if name != ref}
 
 
 def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,

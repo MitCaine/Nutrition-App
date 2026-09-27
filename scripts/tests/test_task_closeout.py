@@ -28,7 +28,7 @@ def transaction(tmp_path: Path):
     git(repo, "config", "user.email", "fixture@example.invalid")
     active = repo / "engineering/capsules/active/GH-193.md"
     active.parent.mkdir(parents=True)
-    active.write_text('+++\nstate = "IN_PROGRESS"\n+++\n- [ ] AC-1: required\n')
+    active.write_text('+++\nstate = "IN_PROGRESS"\n+++\n## Acceptance criteria\n\n- [ ] AC-1: required\n')
     history = repo / closeout.HISTORY
     history.write_text("# HISTORY\n")
     git(repo, "add", ".")
@@ -62,6 +62,41 @@ def test_exact_recoverable_terminal_transaction(transaction):
                               recovery=recovery, terminal=terminal)
     assert value["acceptance_count"] == 1
     assert value["recovery"] == recovery
+    with pytest.raises(closeout.CloseoutError, match="PLANNING_CONTRACT_CHANGED"):
+        closeout.validate(repo, issue_number=193, implementation=implementation,
+                          recovery=recovery, terminal=terminal,
+                          expected_contract_sha256="0" * 64)
+
+
+@pytest.mark.parametrize("source,expected", [
+    ('+++\nstate = "REVIEWED"\n+++\n## Acceptance criteria\n\n- [x] AC-1: weaker\n',
+     "CONTRACT_CHANGED"),
+    ('+++\nstate = "IN_PROGRESS"\n+++\n## Acceptance criteria\n\n- [x] AC-1: required\n'
+     '\nThe example says state = "REVIEWED".\n', "NOT_REVIEWED"),
+])
+def test_recovery_rejects_weaker_contract_and_body_state_spoof(transaction, source, expected):
+    repo, implementation, _, _ = transaction
+    git(repo, "switch", "-qc", f"bad-recovery-{expected.lower()}", implementation)
+    active = repo / "engineering/capsules/active/GH-193.md"
+    active.write_text(source)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "invalid recovery")
+    recovery = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-qc", f"terminal-{expected.lower()}", implementation)
+    active.unlink()
+    (repo / closeout.HISTORY).write_text(
+        "# HISTORY\n\n### GH-193 - fixture\n"
+        "- **Final state:** MERGED\n"
+        f"- **Integration/merged commit:** {implementation}\n"
+        "- **Acceptance result:** 1/1 checked in the terminal source capsule.\n"
+        f"- **Full-capsule recovery commit:** {recovery}\n"
+        "- **Full-capsule recovery path:** engineering/capsules/active/GH-193.md\n"
+        f"- **Historical capsule SHA-256:** {hashlib.sha256(source.encode()).hexdigest()}\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "terminal")
+    with pytest.raises(closeout.CloseoutError, match=expected):
+        closeout.validate(repo, issue_number=193, implementation=implementation,
+                          recovery=recovery, terminal=git(repo, "rev-parse", "HEAD"))
 
 
 @pytest.mark.parametrize("line", [
@@ -186,7 +221,7 @@ def test_prior_history_records_cannot_change(transaction):
 def test_cancelled_capsule_has_separate_terminal_state(transaction):
     repo, implementation, _, _ = transaction
     git(repo, "switch", "-qc", "cancel-recovery", implementation)
-    source = '+++\nstate = "CANCELLED"\n+++\n## Acceptance criteria\n\n- [ ] AC-1: stopped\n'
+    source = '+++\nstate = "CANCELLED"\n+++\n## Acceptance criteria\n\n- [ ] AC-1: required\n'
     active = repo / "engineering/capsules/active/GH-193.md"
     active.write_text(source)
     git(repo, "add", ".")

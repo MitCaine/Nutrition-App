@@ -7,6 +7,9 @@ import re
 import subprocess
 from pathlib import Path
 
+from lib.candidate_evidence import EvidenceError, digest as contract_digest, frozen_contract
+from lib.capsule_execution import ExecutionError, capsule_metadata
+
 
 class CloseoutError(RuntimeError):
     pass
@@ -50,7 +53,8 @@ def criterion_states(source: bytes) -> list[bytes]:
 
 
 def validate(repo: Path, *, issue_number: int, implementation: str,
-             terminal: str, recovery: str, final_state: str = "MERGED") -> dict:
+             terminal: str, recovery: str, final_state: str = "MERGED",
+             expected_contract_sha256: str | None = None) -> dict:
     """Verify the immutable two-path C→T closeout and reachable full capsule R."""
     if final_state not in {"MERGED", "CANCELLED"}:
         raise CloseoutError("CLOSEOUT_FINAL_STATE_INVALID")
@@ -70,12 +74,26 @@ def validate(repo: Path, *, issue_number: int, implementation: str,
     if text(repo, "for-each-ref", "--contains", recovery, "--format=%(refname)", "refs/heads", "refs/remotes").strip() == "":
         raise CloseoutError("CLOSEOUT_RECOVERY_UNREACHABLE")
     source = git(repo, "show", f"{recovery}:{path}")
-    expected_source_state = b"REVIEWED" if final_state == "MERGED" else b"CANCELLED"
-    if not source.startswith(b"+++") or b'state = "' + expected_source_state + b'"' not in source:
+    implementation_source = git(repo, "show", f"{implementation}:{path}")
+    expected_source_state = "REVIEWED" if final_state == "MERGED" else "CANCELLED"
+    try:
+        metadata = capsule_metadata(source)
+    except ExecutionError as exc:
+        raise CloseoutError("CLOSEOUT_RECOVERY_METADATA_INVALID") from exc
+    if metadata.get("state") != expected_source_state:
         raise CloseoutError("CLOSEOUT_RECOVERY_NOT_REVIEWED")
     criteria = criterion_states(source)
     if final_state == "MERGED" and any(value != b"x" for value in criteria):
         raise CloseoutError("CLOSEOUT_RECOVERY_AC_INCOMPLETE")
+    try:
+        implementation_contract = frozen_contract(implementation_source)
+        if frozen_contract(source) != implementation_contract:
+            raise CloseoutError("CLOSEOUT_RECOVERY_CONTRACT_CHANGED")
+        if (expected_contract_sha256 is not None
+                and contract_digest(implementation_contract) != expected_contract_sha256):
+            raise CloseoutError("CLOSEOUT_PLANNING_CONTRACT_CHANGED")
+    except (EvidenceError, ExecutionError, UnicodeError, ValueError) as exc:
+        raise CloseoutError("CLOSEOUT_RECOVERY_CONTRACT_INVALID") from exc
     digest = hashlib.sha256(source).hexdigest()
     before = text(repo, "show", f"{implementation}:{HISTORY}")
     after = text(repo, "show", f"{terminal}:{HISTORY}")

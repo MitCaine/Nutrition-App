@@ -98,6 +98,9 @@ A terminal commit T containing only HISTORY plus capsule deletion differs from C
 requires its own bounded authority and exact-SHA repository qualification before protected
 integration. Its HISTORY record points to the full capsule at a reachable pre-deletion
 commit and binds those bytes by SHA-256. Never call Q(C) qualification of T.
+Recovery validation also compares the frozen capsule contract at C and R and,
+for an attached task, checks it against the planning contract sealed at P. Only
+lifecycle fields, completion sections and checkbox state may change.
 `task finalize` records the C/T transaction outside candidate source, resumes the
 existing guarded integration at each SHA, validates T's two-path diff and R's complete
 reviewed capsule, and closes the issue only after remote main is observed at T.

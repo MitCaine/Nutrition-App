@@ -96,6 +96,9 @@ Successful, validated updates remain applied; failures are named and the command
 nonzero. Review and qualify the changed lockfiles, record those accepted changes in a
 commit, then fix the failed item and rerun from the clean checkout. A missing or
 mismatched tool skips only the area that requires it.
+Each area rechecks the manifest, toolchain selection and policy inputs used for
+resolution immediately before writing its lock. If those inputs changed while an
+update ran, that area stops without publishing its proposal; other areas continue.
 It verifies the active language versions and rechecks Homebrew for pending updates after upgrading.
 Homebrew can update dependencies of those formulas as part of a tool upgrade.
 An existing source change makes it preview only, preserving the work. Sourcing is required

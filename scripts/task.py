@@ -1576,7 +1576,8 @@ def qualify_task(
         if not attached.get("binding"):
             raise EvidenceError("FRESH_CANDIDATE_ATTACHMENT_REQUIRED")
         candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
-        if candidate_evidence.observe(candidate_repo, candidate_sha) != attached["binding"]["source"]:
+        if not candidate_evidence.source_matches(
+            attached["binding"]["source"], candidate_evidence.observe(candidate_repo, candidate_sha)):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
 
     nonce = (
@@ -1939,7 +1940,16 @@ def integrate_task(
         candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
         candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
         candidate_evidence.qualify(attached["binding"], qualification, check, expected_app_id)
-        if candidate_evidence.observe(candidate_repo, candidate_sha) != attached["binding"]["source"]:
+        integration_receipt = state.get("integration") or {}
+        main_transition = None
+        if (integration_receipt.get("candidate_sha") == candidate_sha
+                and integration_receipt.get("controller_main_sha") == controller_main_sha
+                and integration_receipt.get("human_owner_authorized") is True
+                and type(integration_receipt.get("check_id")) is int):
+            main_transition = (controller_main_sha, candidate_sha)
+        if not candidate_evidence.source_matches(
+            attached["binding"]["source"], candidate_evidence.observe(candidate_repo, candidate_sha),
+            main_transition=main_transition):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
 
     updated = json.loads(
@@ -2978,9 +2988,11 @@ def command_finalize(args: argparse.Namespace) -> int:
                 f"engineering/capsules/active/GH-{args.issue_number}.md"}
             or terminal_authorization.profiles != ("repository",)):
         raise TaskControllerError("FINALIZE_TERMINAL_AUTHORITY_INVALID")
+    attached_binding = (state.get("capsule_evidence") or {}).get("binding") or {}
     recovery = task_closeout.validate(terminal_repo, issue_number=args.issue_number,
                                        implementation=implementation, terminal=terminal,
-                                       recovery=args.recovery_sha)
+                                       recovery=args.recovery_sha,
+                                       expected_contract_sha256=attached_binding.get("contract_sha256"))
     previous = json.loads(intent_path.read_text())
     if previous.get("terminal") not in (None, terminal) or previous.get("recovery") not in (None, recovery):
         raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
@@ -3009,7 +3021,8 @@ def command_finalize(args: argparse.Namespace) -> int:
         raise TaskControllerError("FINALIZE_REMOTE_MAIN_MISMATCH")
     task_closeout.validate(terminal_repo, issue_number=args.issue_number,
                            implementation=implementation, terminal=terminal,
-                           recovery=args.recovery_sha)
+                           recovery=args.recovery_sha,
+                           expected_contract_sha256=attached_binding.get("contract_sha256"))
     atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_INTEGRATED",
                                     "terminal": terminal, "recovery": recovery,
                                     "terminal_root": str(terminal_repo)})
@@ -3241,7 +3254,7 @@ def command_evidence(args: argparse.Namespace) -> int:
                 raise EvidenceError("CANDIDATE_ATTACHMENT_REQUIRED")
             binding = attached["binding"]
             candidate_evidence.authenticate_binding(binding, authorization, sha)
-            if candidate_evidence.observe(candidate, sha) != binding["source"]:
+            if not candidate_evidence.source_matches(binding["source"], candidate_evidence.observe(candidate, sha)):
                 raise EvidenceError("ATTACHED_SOURCE_CHANGED")
             if args.action == "check":
                 if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.check:
