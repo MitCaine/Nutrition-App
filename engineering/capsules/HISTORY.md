@@ -3362,3 +3362,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** bf7c1ffc8fd1d2fb500a5b5955fb08d1672b1804
 - **Full-capsule recovery path:** engineering/capsules/active/GH-198.md
 - **Historical capsule SHA-256:** 7c33ea54ea048ad2f2e33a9b959b5eef9f6f3501b47763033e326a1bebccabb7
+
+### GH-194 - Record combined-workflow pilot evidence and rollout decision
+
+- **ID:** GH-194
+- **Title:** Record combined-workflow pilot evidence and rollout decision
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/194; final implementation authorization revision 3, comment 5852259385; separate terminal authorization required.
+- **Issue disposition:** No-go for default promotion. The owner retained the accepted trusted controller and chose to keep the exact #198 public evidence draft local. The original issue's pre-pilot active evidence-assembly/review-time baseline was not measured and remains unmet; record it as a future promotion prerequisite, not a passed speed comparison. The combined lane remains an opt-in trial and no live command or state store was retired.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** 707801fc598e2736c14acaba1d5f940cec95ca6b
+- **Task branch:** task/GH-194-rollout
+- **Controller:** Codex migration controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent standards and spec reviewers
+- **Delegation:** Read-only independent review only; implementation remained controller-owned.
+- **Implementation commit(s):** ea2a69298644911f0cc547204036c0f975bc11cc; ce08806ec6bb53ecd2512fc287dff0bd4b1555cd; 51eeabbc2dd3ec75e8fe7adf252ef1415a467e25; d981b2df26beaded26fd7807b3e37c57ded72162; 644221cbdcef291d5b92aec8e4eee1e766f8b24d
+- **Verified commit reference(s):** 644221cbdcef291d5b92aec8e4eee1e766f8b24d
+- **Reviewed source commit:** 644221cbdcef291d5b92aec8e4eee1e766f8b24d
+- **Reviewed task/checkpoint commit(s):** 644221cbdcef291d5b92aec8e4eee1e766f8b24d
+- **Integration/merged commit:** 644221cbdcef291d5b92aec8e4eee1e766f8b24d
+- **Integration-related commit reference(s):** Protected C integrated; this terminal HISTORY/deletion T requires separate qualification and review.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh independent standards and truthful no-go spec reviewers for final C; earlier d981b2d review failure preserved and corrected.
+- **Verification summary:** Documentation 104 files/618 links, repository baseline 6/6 checks and 71 audit tests, capsule validator, exact routing probe, negative-case modules 62 plus 17 macOS execution tests. Five host-gated skips in the 62-test selection; no new database/native product qualification claimed.
+- **Specialized qualification:** Exact C App4708441 check108541598412 PASS repository profile; terminal T requires distinct repository App check and independent review.
+- **Known warnings:** Missing pre-pilot active-time baseline prevents speed/promotion claim. Repeated attached-finalize moved-refs stops in #197/#198 remain an exit criterion. No default cutover or duplicate retirement. This proposed HISTORY entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** Future measured proving period and finalizer drift repair before another owner promotion decision; future dependency-update workflow to use declared compatibility and validated lock resolutions.
+- **Retrospective:** Completed in engineering/workflow/PILOT_2026-09-26.md; retain exact failed candidates and recovery evidence.
+- **Referenced commits:** Planning 5ae533f0bdabf70ff5ad3b619a3107b21bee8c7f; implementation 644221cbdcef291d5b92aec8e4eee1e766f8b24d; full reviewed capsule 242fec147f63d3d51892acee3e95b700b736a5bc.
+- **Full-capsule recovery commit:** 242fec147f63d3d51892acee3e95b700b736a5bc
+- **Full-capsule recovery path:** engineering/capsules/active/GH-194.md
+- **Historical capsule SHA-256:** 31ca40f87de39c026694d506c12d2ddadaf20d2aaf23ecafdb6f3f94d79fa4a9
