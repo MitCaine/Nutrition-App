@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -39,7 +40,8 @@ def proposed(scratch: Path, *, force: bool = False) -> list[tuple[Path, bytes, b
         raise RILockError("RI source lock has a different host contract")
     wheels = lock["wheels"]
     if (not force and lock.get("python") == list(line)
-            and all(w.get("filename") and len(w.get("sha256", "")) == 64 for w in wheels)
+            and all(w.get("filename") and re.fullmatch(r"[0-9a-f]{64}", w.get("sha256", ""))
+                    for w in wheels)
             and old_requirements == requirements_bytes(lock)):
         return [(LOCK, old_lock, old_lock), (REQUIREMENTS, old_requirements, old_requirements)]
     wheelhouse = scratch / "wheelhouse"

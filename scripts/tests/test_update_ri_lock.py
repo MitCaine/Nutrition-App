@@ -34,6 +34,17 @@ class RILockRefreshTest(unittest.TestCase):
                  patch.object(ri_update.subprocess, "run") as download:
                 self.assertTrue(all(before == after for _, before, after in ri_update.proposed(root)))
                 download.assert_not_called()
+                lock["wheels"][0]["sha256"] = "z" * 64
+                lock_path.write_text(json.dumps(lock))
+                requirements_path.write_bytes(ri_update.requirements_bytes(lock))
+                def refresh(args, **_kwargs):
+                    destination = Path(args[args.index("--dest") + 1])
+                    (destination / "tree_sitter-0.25.1-cp314-cp314-macosx_11_0_arm64.whl").write_bytes(b"wheel")
+                    return types.SimpleNamespace(returncode=0, stderr="")
+                download.side_effect = refresh
+                refreshed = ri_update.proposed(root)
+                self.assertNotEqual(refreshed[0][1], refreshed[0][2])
+                self.assertTrue(download.called)
 
     def test_regenerates_both_files_for_selected_python_without_writing_preview(self):
         with tempfile.TemporaryDirectory() as folder:

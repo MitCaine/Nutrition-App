@@ -29,8 +29,9 @@ package dependency.
 start-of-work `all` command checks the selected wheel lock and regenerates it when the
 Python line or requirements have changed. When already consistent, it skips the wheel
 download; run `ri` explicitly to recheck the published wheel hashes. A failed RI download
-does not stop backend or mobile refreshes. It keeps the reviewed RI source revision and parser
-versions fixed; adopting a newer RI source or parser release still requires an explicit
+does not stop backend or mobile refreshes. A malformed wheel digest is not treated as a
+current lock and instead requires a fresh wheel selection. The updater keeps the reviewed
+RI source revision and parser versions fixed; adopting a newer release still requires an explicit
 contract review, new archive/source digests, offline bootstrap and runtime qualification.
 The known-crashing Tree-sitter 0.26.0 is never proposed by this pinned-wheel refresh.
 Regeneration does not put downloaded wheels or private source into the repository.
