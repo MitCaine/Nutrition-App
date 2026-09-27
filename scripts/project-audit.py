@@ -825,7 +825,7 @@ def git_diff_check() -> int:
     return 0
 
 
-def validate_task_capsules() -> int:
+def validate_task_capsules(portable_recovery: bool = False) -> int:
     validator = ROOT / "scripts" / "validate-task-capsules.py"
     if not validator.is_file():
         print(
@@ -833,10 +833,10 @@ def validate_task_capsules() -> int:
             "scripts/validate-task-capsules.py"
         )
         return 1
-    result = run(
-        [sys.executable, str(validator), "--all"],
-        cwd=ROOT,
-    )
+    command = [sys.executable, str(validator), "--all"]
+    if portable_recovery:
+        command.append("--portable-recovery")
+    result = run(command, cwd=ROOT)
     if result.stdout:
         print(result.stdout, end="")
     if result.stderr:
@@ -847,7 +847,11 @@ def validate_task_capsules() -> int:
             "repository task capsules are invalid"
         )
         return 1
-    print("PASS: repository task capsules are mechanically valid")
+    if portable_recovery:
+        print("PASS: portable capsule structure validated; unavailable recovery "
+              "objects require strict local controller validation")
+    else:
+        print("PASS: repository task capsules are mechanically valid")
     return 0
 
 
@@ -920,7 +924,7 @@ def report_opt_in_suites(config: dict[str, Any] | None = None) -> int:
     return 0
 
 
-def pre_commit() -> int:
+def pre_commit(portable_recovery: bool = False) -> int:
     config = load_config()
     return run_independent_checks(
         [
@@ -931,7 +935,7 @@ def pre_commit() -> int:
                 lambda: verify_control_inventory(config),
             ),
             ("Git whitespace check", git_diff_check),
-            ("Task capsule validation", validate_task_capsules),
+            ("Task capsule validation", lambda: validate_task_capsules(portable_recovery)),
             ("Focused audit-tooling tests", lambda: focused_audit_tests(config)),
             ("Expensive suite status", lambda: report_opt_in_suites(config)),
         ]
@@ -960,9 +964,14 @@ def main() -> int:
     )
     privileges.add_argument("--expected", type=Path)
     privileges.add_argument("--write-expected", type=Path)
-    sub.add_parser(
+    pre_commit_command = sub.add_parser(
         "pre-commit",
         help="run repository-owned mechanical checks and aggregate failures",
+    )
+    pre_commit_command.add_argument(
+        "--portable-recovery",
+        action="store_true",
+        help="allow CI's explicit portable recovery-object check",
     )
     args = parser.parse_args()
 
@@ -981,7 +990,7 @@ def main() -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     if args.command == "pre-commit":
-        return pre_commit()
+        return pre_commit(args.portable_recovery)
     raise AssertionError(args.command)
 
 

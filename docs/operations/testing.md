@@ -84,6 +84,21 @@ repository registry owns five profiles:
 
 The existing CI jobs remain the qualification authorities; `Main qualification`
 aggregates their exact-SHA results rather than duplicating their test commands.
+Fresh GitHub Actions checkouts can omit terminal capsule recovery commits retained
+only in local controller refs. The two CI workflows explicitly pass
+`--portable-recovery` to the session audit; the default command remains strict
+even if it inherits CI environment variables. Portable mode validates HISTORY
+structure and all available
+recovery objects, and reports unavailable objects as explicit warnings. It does
+not claim to verify the missing capsule bytes or SHA-256. Local controller and
+operator validation continue to use strict mode, which requires every recorded
+recovery commit, path, identity, and digest to resolve before closeout. Do not
+publish local-only or private recovery refs to make portable CI pass.
+Until the trusted workflow definition on `main` contains the explicit argument,
+`session-end.sh` recognizes only this repository's two named Linux GitHub Actions
+workflows with a matching workspace and no caller arguments. That transition
+path does not apply to an ordinary local audit or the controller's direct
+capsule validation.
 Select profiles from the changed runtime authority and concrete path impact.
 The [combined pilot record](../../engineering/workflow/PILOT_2026-09-26.md)
 distinguishes path-trigger tests and pilot App checks from actual native,

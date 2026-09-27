@@ -340,7 +340,7 @@ jobs:
           "not postgres_concurrency and not phase5c_performance_t0 and not phase5c4_control_postgres and not phase5c4_minio and not phase5c4_docker_integration"
 
       - name: Repository session contract
-        run: ../../scripts/session-end.sh
+        run: ../../scripts/session-end.sh --portable-recovery
 
   backend-postgres:
     name: Trusted Backend PostgreSQL 16 contracts

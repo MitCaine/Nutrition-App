@@ -1036,6 +1036,8 @@ def historical_capsule_identity(
 def validate_history(
     repo: Path,
     active_ids: Iterable[str],
+    *,
+    portable_recovery: bool = False,
 ) -> HistoryResult | None:
     relative = HISTORY_PATH
     path = repo / relative
@@ -1125,6 +1127,7 @@ def validate_history(
 
     seen_ids: set[str] = set()
     active_id_set = set(active_ids)
+    portable_integrity_ok: bool | None = None
 
     for index, match in enumerate(matches):
         capsule_id = match.group(1)
@@ -1420,15 +1423,42 @@ def validate_history(
                 or resolved.stdout.strip()
                 != recovery_commit
             ):
-                result.error(
-                    "HISTORY_RECOVERY_COMMIT_UNKNOWN",
-                    (
-                        f"{capsule_id} recovery commit "
-                        "does not resolve in this "
-                        "repository."
-                    ),
-                    capsule_id,
-                )
+                if portable_recovery:
+                    object_type = run_git(repo, "cat-file", "-t", recovery_commit)
+                    if portable_integrity_ok is None:
+                        portable_integrity_ok = not run_git(
+                            repo, "fsck", "--connectivity-only", "--no-reflogs",
+                            "--no-progress",
+                        ).returncode
+                    if object_type.returncode == 0 or not portable_integrity_ok:
+                        result.error(
+                            "HISTORY_RECOVERY_OBJECT_INVALID",
+                            (
+                                f"{capsule_id} recovery object is present with the "
+                                "wrong type or repository object integrity failed."
+                            ),
+                            capsule_id,
+                        )
+                    else:
+                        result.warning(
+                            "HISTORY_RECOVERY_OBJECT_UNAVAILABLE",
+                            (
+                                f"{capsule_id} recovery commit is unavailable "
+                                "in this portable checkout; strict controller "
+                                "validation must verify the object and capsule digest."
+                            ),
+                            capsule_id,
+                        )
+                else:
+                    result.error(
+                        "HISTORY_RECOVERY_COMMIT_UNKNOWN",
+                        (
+                            f"{capsule_id} recovery commit "
+                            "does not resolve in this "
+                            "repository."
+                        ),
+                        capsule_id,
+                    )
                 commit_valid = False
 
         recovery_path = strip_history_code(
@@ -2235,6 +2265,16 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--portable-recovery",
+        action="store_true",
+        help=(
+            "Warn when a historical recovery object is absent from a "
+            "portable checkout; validate available objects normally. "
+            "The controller's local recovery check remains strict."
+        ),
+    )
+
+    parser.add_argument(
         "--execution",
         action="store_true",
         help=(
@@ -2328,6 +2368,7 @@ def main() -> int:
                     for result in results
                     if result.capsule_id
                 ],
+                portable_recovery=args.portable_recovery,
             )
 
         document = result_document(

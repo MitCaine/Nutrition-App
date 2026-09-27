@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -1071,6 +1072,92 @@ def test_terminal_history_rejects_hash_mismatch(
         "HISTORY_SHA256_MISMATCH"
         in history_error_codes(result)
     )
+
+    portable = run_validator(repo, "--all", "--portable-recovery", "--json")
+    assert portable.returncode == 1
+    assert "HISTORY_SHA256_MISMATCH" in history_error_codes(portable)
+
+
+def test_portable_history_warns_only_for_unavailable_recovery_object(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+    source_commit, source_path, source_text = make_historical_capsule(repo, "WF-PORTABLE")
+    reachable_commit = git(repo, "rev-parse", "HEAD")
+    record = terminal_history_record(
+        "WF-PORTABLE", source_commit, source_path, source_text,
+    ).replace(source_commit, reachable_commit)
+    record = record.replace(
+        f"- **Full-capsule recovery commit:** `{reachable_commit}`",
+        f"- **Full-capsule recovery commit:** `{source_commit}`",
+    )
+    write_terminal_history(repo, terminal_history_document(record))
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "record terminal history")
+
+    portable_repo = tmp_path / "portable"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "2", f"file://{repo}", str(portable_repo)],
+        check=True,
+    )
+    assert subprocess.run(
+        ["git", "-C", str(portable_repo), "cat-file", "-e", f"{source_commit}^{{commit}}"],
+        check=False, capture_output=True,
+    ).returncode != 0
+
+    strict = run_validator(portable_repo, "--all", "--json")
+    assert strict.returncode == 1
+    assert "HISTORY_RECOVERY_COMMIT_UNKNOWN" in history_error_codes(strict)
+
+    portable = run_validator(portable_repo, "--all", "--portable-recovery", "--json")
+    assert portable.returncode == 0, portable.stdout + portable.stderr
+    history = json.loads(portable.stdout)["history"]
+    assert "HISTORY_RECOVERY_OBJECT_UNAVAILABLE" in {
+        item["code"] for item in history["warnings"]
+    }
+
+
+def test_portable_history_rejects_present_noncommit_recovery_object(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+    source_commit, source_path, source_text = make_historical_capsule(repo, "WF-TYPE")
+    blob = subprocess.run(
+        ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+        input="not a commit", text=True, capture_output=True, check=True,
+    ).stdout.strip()
+    record = terminal_history_record("WF-TYPE", source_commit, source_path, source_text)
+    record = record.replace(
+        f"- **Full-capsule recovery commit:** `{source_commit}`",
+        f"- **Full-capsule recovery commit:** `{blob}`",
+    )
+    write_terminal_history(repo, terminal_history_document(record))
+    portable = run_validator(repo, "--all", "--portable-recovery", "--json")
+    assert portable.returncode == 1
+    assert "HISTORY_RECOVERY_OBJECT_INVALID" in history_error_codes(portable)
+
+
+def test_portable_history_rejects_corrupt_recovery_object(
+    tmp_path: Path,
+) -> None:
+    repo, _ = setup_repo(tmp_path)
+    source_commit, source_path, source_text = make_historical_capsule(repo, "WF-CORRUPT")
+    blob = subprocess.run(
+        ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+        input="temporary blob", text=True, capture_output=True, check=True,
+    ).stdout.strip()
+    record = terminal_history_record("WF-CORRUPT", source_commit, source_path, source_text)
+    record = record.replace(
+        f"- **Full-capsule recovery commit:** `{source_commit}`",
+        f"- **Full-capsule recovery commit:** `{blob}`",
+    )
+    write_terminal_history(repo, terminal_history_document(record))
+    object_path = repo / ".git/objects" / blob[:2] / blob[2:]
+    os.chmod(object_path, 0o600)
+    object_path.write_bytes(b"corrupt")
+    portable = run_validator(repo, "--all", "--portable-recovery", "--json")
+    assert portable.returncode == 1
+    assert "HISTORY_RECOVERY_OBJECT_INVALID" in history_error_codes(portable)
 
 
 def test_terminal_history_rejects_bad_recovery_path(
