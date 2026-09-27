@@ -100,8 +100,9 @@ Homebrew can update dependencies of those formulas as part of a tool upgrade.
 An existing source change makes it preview only, preserving the work. Sourcing is required
 because a launched script cannot alter its parent terminal's `PATH`. The toolchain and
 dependency steps are separate files under `scripts/dependency-modules/`.
-For a read-only run, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`;
-add `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1` to skip Homebrew installs and upgrades.
+For a lockfile preview, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`.
+For a fully read-only update check, also set `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1`
+to skip Homebrew installs and upgrades.
 These environment switches apply to that invocation only.
 
 For a whole-project dependency refresh without the startup toolchain step, run:
