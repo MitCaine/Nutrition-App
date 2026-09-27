@@ -5,6 +5,7 @@ ROOT="$(
     cd "$(dirname "${BASH_SOURCE[0]}")/.."
     pwd
 )"
+EXPECTED_PYTHON_LINE="$(cat "$ROOT/.python-version")"
 
 python_matches_project() {
     local candidate="$1"
@@ -17,10 +18,10 @@ python_matches_project() {
 import sys
 raise SystemExit(
     0
-    if sys.version_info[:2] == (3, 12)
+    if sys.version_info[:2] == tuple(map(int, sys.argv[1].split(".")))
     else 1
 )
-' >/dev/null 2>&1
+' "$EXPECTED_PYTHON_LINE" >/dev/null 2>&1
 }
 
 choose_python() {
@@ -34,9 +35,9 @@ choose_python() {
         return 0
     fi
 
-    if command -v python3.12 >/dev/null 2>&1 \
-        && python_matches_project "$(command -v python3.12)"; then
-        command -v python3.12
+    if command -v "python$EXPECTED_PYTHON_LINE" >/dev/null 2>&1 \
+        && python_matches_project "$(command -v "python$EXPECTED_PYTHON_LINE")"; then
+        command -v "python$EXPECTED_PYTHON_LINE"
         return 0
     fi
 
@@ -64,7 +65,7 @@ PROJECT_PYTHON="$(
 )"
 
 if [[ -z "$PROJECT_PYTHON" ]]; then
-    echo "Unable to locate repository Python 3.12." >&2
+    echo "Unable to locate repository Python $EXPECTED_PYTHON_LINE." >&2
     exit 1
 fi
 

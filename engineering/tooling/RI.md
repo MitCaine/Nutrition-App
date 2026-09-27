@@ -10,19 +10,28 @@ workflow or implement the structural-delta gate owned by GH-192.
 ## Pinned installation and private access
 
 [ri-lock.json](ri-lock.json) pins private repository `MitCaine/repository-intelligence`
-at `1619dd0665eb779ce7ffd2c6cc71331259dcbd5a`: navigation5, inventory11, adapter8 and
-`python-rust-javascript-typescript-java-go-csharp-c-cpp-source-callables-v8`. Package
+at `2f28da4d326ff12da5dc9270eb57910303e4a737`: navigation6, inventory13, adapter10 and
+`python-rust-javascript-typescript-java-go-csharp-c-cpp-source-callables-v10`. Package
 version0.1.0 alone is insufficient. Later upstream commits and dirty checkout files are
 not part of this installation. The pin records the archive digest, all19 installed RI
 source-file hashes, and14 public parser/build/installer wheels with versions and hashes.
 The [requirements file](ri-requirements.txt) is controller tooling, not an app dependency.
 
-The qualified installation target is **macOS arm64 with Python3.12**. This wheel lock is
+The qualified installation target is **macOS arm64 with Python3.14**. This wheel lock is
 platform-specific. No CI host is selected to run RI; Nutrition's existing Linux product CI
 remains supported and unchanged. Other RI hosts require a separately reviewed wheel lock
 and actual qualification. Ordinary Python/TS/TSX/JS navigation does not launch rust-analyzer,
 Cargo or any Rust build; the standalone package's Rust grammar wheel is just a pinned
 package dependency.
+
+`./scripts/update-dependencies ri` previews the public wheel lock for the selected
+`.python-version`; add `--apply` from a clean checkout to write both lock files. The
+start-of-work `all` command includes this independent step, so a failed RI download does
+not stop backend or mobile refreshes. It keeps the reviewed RI source revision and parser
+versions fixed; adopting a newer RI source or parser release still requires an explicit
+contract review, new archive/source digests, offline bootstrap and runtime qualification.
+The known-crashing Tree-sitter 0.26.0 is never proposed by this pinned-wheel refresh.
+Regeneration does not put downloaded wheels or private source into the repository.
 
 The controller must already have authorized access to the private Git objects. RI has no
 project license file at this pin: do not vendor its source or upload private source/wheels
@@ -36,19 +45,19 @@ checkout. This reads committed objects only; it does not copy dirty files or mut
 
 ```bash
 git -C /absolute/private-ri-checkout -c tar.umask=0002 archive --format=tar \
-  1619dd0665eb779ce7ffd2c6cc71331259dcbd5a > /absolute/private-tooling/ri-source.tar
+  2f28da4d326ff12da5dc9270eb57910303e4a737 > /absolute/private-tooling/ri-source.tar
 ```
 
 The expected archive SHA256 is
-`311b93ec1a55db897d68c0eac579e56883bf23c5809f6be6b11b334ffb248553`.
+`1191956e867256c6e7ad20ff5f74588a9f13f7a26b108b8c2ac08ee799f2a918`.
 The repository URL and archive pin identify the selected dependency; merely writing that
 revision into a local manifest does not establish an installation.
 
-Acquire public wheels separately, on the qualified platform, with the selected Python3.12
+Acquire public wheels separately, on the qualified platform, with the selected Python3.14
 interpreter. This explicit acquisition step uses PyPI; navigation never installs or downloads:
 
 ```bash
-/absolute/python3.12 -m pip --isolated download --index-url https://pypi.org/simple \
+/absolute/python3.14 -m pip --isolated download --index-url https://pypi.org/simple \
   --only-binary=:all: --require-hashes -r engineering/tooling/ri-requirements.txt \
   --dest /absolute/private-tooling/wheelhouse
 ```
@@ -56,11 +65,11 @@ interpreter. This explicit acquisition step uses PyPI; navigation never installs
 Then install offline from the verified inputs into a **new external directory**:
 
 ```bash
-NUTRITION_CONTROLLER_PYTHON=/absolute/python3.12 ./scripts/ri bootstrap \
+NUTRITION_CONTROLLER_PYTHON=/absolute/python3.14 ./scripts/ri bootstrap \
   --source-archive /absolute/private-tooling/ri-source.tar \
   --wheelhouse /absolute/private-tooling/wheelhouse \
   --destination /absolute/private-tooling/nutrition-ri
-NUTRITION_CONTROLLER_PYTHON=/absolute/python3.12 ./scripts/ri verify \
+NUTRITION_CONTROLLER_PYTHON=/absolute/python3.14 ./scripts/ri verify \
   --runtime /absolute/private-tooling/nutrition-ri/manifest.json
 ```
 
@@ -85,7 +94,7 @@ Use an exact40-character commit and either a named scope or up to8 relative file
 prefixes. A dirty checkout does not change these committed-source observations.
 
 ```bash
-NUTRITION_CONTROLLER_PYTHON=/absolute/python3.12 ./scripts/ri query \
+NUTRITION_CONTROLLER_PYTHON=/absolute/python3.14 ./scripts/ri query \
   --runtime /absolute/private-tooling/nutrition-ri/manifest.json \
   --revision EXACT_COMMIT --path apps/backend/app/services/recipe_service.py \
   --query 'publish recipe revision' --limit 4 \

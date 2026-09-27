@@ -70,7 +70,7 @@ def git(repo: Path, *args: str) -> bytes:
 def host(lock: dict) -> None:
     if (list(sys.version_info[:2]) != lock["python"] or sys.platform != lock["platform"]
             or platform.machine() != lock["machine"]):
-        raise RIError("RI_HOST_UNQUALIFIED: this lock selects macOS arm64 Python 3.12")
+        raise RIError("RI_HOST_UNQUALIFIED: this lock selects macOS arm64 Python " + ".".join(map(str, lock["python"])))
 
 
 def clean_env(home: Path) -> dict:
@@ -117,10 +117,11 @@ def offline_run(argv: list[str], *, cwd: Path, log: Path, timeout: float = 180, 
 
 def runtime_files(environment: Path) -> dict:
     records = {}
+    python_name = "python" + ".".join(map(str, read_lock()["python"]))
     for path in sorted(environment.rglob("*")):
         relative = path.relative_to(environment).as_posix()
         if path.is_symlink():
-            if path.parent != environment / "bin" or path.name not in {"python", "python3", "python3.12"} or not path.resolve().is_file():
+            if path.parent != environment / "bin" or path.name not in {"python", "python3", python_name} or not path.resolve().is_file():
                 raise RIError("RI_RUNTIME_UNEXPECTED_LINK")
             records[relative] = {"target": str(path.resolve()), "sha256": sha256(path.read_bytes())}
         elif path.is_file():
@@ -160,7 +161,7 @@ def validate_probe(lock: dict, result: dict, environment: Path) -> None:
 
 
 def validate_source_install(lock: dict, environment: Path) -> None:
-    site = environment / "lib/python3.12/site-packages"
+    site = environment / ("lib/python" + ".".join(map(str, lock["python"]))) / "site-packages"
     package = site / "repository_intelligence"
     actual = {str(p.relative_to(site)): sha256(p.read_bytes()) for p in package.rglob("*")
               if p.is_file() and "__pycache__" not in p.parts}
@@ -363,7 +364,7 @@ def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, direc
         by_path[path] = record
         parser = record.get("parser")
         if parser and (parser.get("adapter_version") != lock["contracts"]["adapter"]
-                       or parser.get("runtime_version") != "0.25.0"):
+                       or parser.get("runtime_version") != next(w["version"] for w in lock["wheels"] if w["name"] == "tree-sitter")):
             raise RIError("RI_PARSER_CONTRACT_CHANGED")
     if raw["mapping_status"] == "navigation_only" and seen != set(selected):
         raise RIError("RI_SCAN_MEMBERSHIP_INCOMPLETE")

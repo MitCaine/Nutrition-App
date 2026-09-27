@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nutrition-backend"
 version = "2.0.2"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
   "alembic>=1.13",
   "fastapi>=0.111",
@@ -45,4 +45,4 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"

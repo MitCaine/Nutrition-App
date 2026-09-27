@@ -64,14 +64,14 @@ class DeltaFixture(unittest.TestCase):
     def raw(self):
         selected = self.selected()
         def inventory(items):
-            return {"inventory_schema_version": 11, "navigation_schema_version": 5,
+            return {"inventory_schema_version": self.lock["contracts"]["inventory"], "navigation_schema_version": self.lock["contracts"]["navigation"],
                     "mapping_contract": self.lock["contracts"]["mapping"], "status": "complete",
                     "failures": [], "incomplete_reasons": [], "materialization": "caller_asserted_stable",
                     "observed_exclusions": [], "observed_unsupported_paths": [],
                     "scope": {"logical_root": "nutrition-changed-files-v1", "language_choices": {}, "excluded_directories": [], "configuration": None}, "parser_contract": {"fixture": "pinned"},
                     "files": [{"path": p, "source_identity": {"relative_path": p, "raw_sha256": r["sha256"],
                                "byte_count": len(r["bytes"])}, "mapping_status": "navigation_only",
-                               "parser": {"adapter_version": 8, "runtime_version": "0.25.0", "grammar": "TSX" if p.endswith(".tsx") else "Python", "grammar_version": "0.23.2" if p.endswith(".tsx") else "0.25.0"},
+                               "parser": {"adapter_version": self.lock["contracts"]["adapter"], "runtime_version": next(w["version"] for w in self.lock["wheels"] if w["name"] == "tree-sitter"), "grammar": "TSX" if p.endswith(".tsx") else "Python", "grammar_version": "0.23.2" if p.endswith(".tsx") else "0.25.0"},
                                "adapter_coverage": {"promised_node_count": 0, "mapped_node_count": 0, "unhandled_node_count": 0}, "structural": {"error_count": 0, "missing_count": 0, "diagnostic_count": 0, "declaration_count": 0}, "declarations": []} for p, r in items.items()]}
         changes = {"added": [], "removed": [], "modified": sorted(selected["candidate"]), "unchanged": []}
         return selected, {"planning": inventory(selected["planning"]), "candidate": inventory(selected["candidate"]),

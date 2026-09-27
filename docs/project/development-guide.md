@@ -58,7 +58,7 @@ alembic current
 uvicorn app.main:app --reload
 ```
 
-`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.12 line, set `PYTHON_BIN` to a compatible executable such as `python3.12`; the same verified interpreter then creates `apps/backend/.venv`.
+`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.14 line, set `PYTHON_BIN` to a compatible executable such as `python3.14`; the same verified interpreter then creates `apps/backend/.venv`.
 
 `alembic current` must report `0033_complete_runtime_authority`. Database
 provisioning or progression across 0021 remains an explicit operations task;
@@ -73,12 +73,12 @@ The current remote application migration head is
 `0033_complete_runtime_authority`.
 
 Root `VERSION` owns the canonical Version 2.0 repository release identity.
-`apps/backend/pyproject.toml` mirrors the root `VERSION`, requires the Python 3.12 release
-line, and Ruff targets `py312`. `requirements-dev.lock` remains the reproducible
+`apps/backend/pyproject.toml` mirrors the root `VERSION`, requires the Python 3.14 release
+line, and Ruff targets `py314`. `requirements-dev.lock` remains the reproducible
 dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
-Python 3.12 development and CI environment. At the start of work in either a VS Code or
+Python 3.14 development and CI environment. At the start of work in either a VS Code or
 Codex desktop integrated **zsh** terminal, run one command from the repository root:
 
 ```zsh
@@ -87,7 +87,7 @@ source ./scripts/start-work.zsh
 
 It selects the repository's Node and Python lines for that terminal, updates the installed
 Homebrew formulas within those lines when newer patches are available, checks the latest
-package and toolchain versions, and applies compatible backend and mobile lockfile updates.
+package and toolchain versions, and applies compatible backend, mobile, and RI wheel-lock updates.
 Node and Python upgrades are attempted independently. A failed tool upgrade does not stop
 the dependency check, and a backend failure does not stop mobile updates (or vice versa).
 If a bulk dependency refresh fails, the command retries declared packages individually.
@@ -111,10 +111,10 @@ For a whole-project dependency refresh without the startup toolchain step, run:
 ./scripts/update-dependencies all --apply
 ```
 
-The first command previews both backend and mobile lockfile changes, even with existing work,
+The first command previews backend, mobile, and RI wheel-lock changes, even with existing work,
 and shows registry-latest
 versions still held back by declarations or compatibility checks, and reports the Node and
-Python toolchain lines. The second command applies each validated lockfile independently. It updates
+Python toolchain lines. The second command applies each validated lock area independently. It updates
 packages within declared ranges; it does not change manifests or toolchain pins. Major,
 Expo/React Native/native, and language-runtime changes require a separate migration with
 the relevant tests and native qualification. The bulk mobile refresh retains Expo's
@@ -143,7 +143,7 @@ To update only one declared backend dependency, use:
 The first command previews the resolved change; the second writes only the lockfile. The
 compiler is included in the ranged development dependencies and is bootstrapped into a
 temporary environment if no prepared backend environment is available. Set
-`NUTRITION_DEPS_PYTHON` if Python 3.12 is not available as `python3.12`.
+`NUTRITION_DEPS_PYTHON` if Python 3.14 is not available as `python3.14`.
 The preview lists every resolved package version change, including transitive changes,
 and names the required `repository` and `backend` qualification profiles. Select
 `postgresql` as well when the changed package affects database contracts.

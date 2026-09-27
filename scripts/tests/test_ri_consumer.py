@@ -54,13 +54,13 @@ class SourceFixture(unittest.TestCase):
             "byte_count": len(data),
         }
         parser = {
-            "adapter_version": 8,
-            "runtime_version": "0.25.0",
+            "adapter_version": self.lock["contracts"]["adapter"],
+            "runtime_version": next(w["version"] for w in self.lock["wheels"] if w["name"] == "tree-sitter"),
             "grammar": "Python",
             "grammar_version": "0.25.0",
         }
         raw = {
-            "schema_version": 5,
+            "schema_version": self.lock["contracts"]["navigation"],
             "mapping_status": "navigation_only",
             "query": "total",
             "files": {
@@ -179,7 +179,7 @@ class PacketTests(SourceFixture):
         match = packet["matches"][0]
         self.assertEqual(match["path"], "backend/service.py")
         self.assertIn("return sum(items)", match["excerpt"])
-        self.assertEqual(match["parser"]["adapter_version"], 8)
+        self.assertEqual(match["parser"]["adapter_version"], self.lock["contracts"]["adapter"])
         self.assertEqual(
             packet["source_manifest_sha256"],
             ri.digest(
@@ -194,10 +194,10 @@ class PacketTests(SourceFixture):
         selected, scope, raw = self.raw_packet()
         variants = []
         wrong = copy.deepcopy(raw)
-        wrong["schema_version"] = 6
+        wrong["schema_version"] = 5
         variants.append(wrong)
         wrong = copy.deepcopy(raw)
-        next(iter(wrong["files"].values()))["parser"]["adapter_version"] = 9
+        next(iter(wrong["files"].values()))["parser"]["adapter_version"] = 8
         variants.append(wrong)
         wrong = copy.deepcopy(raw)
         next(iter(wrong["files"].values()))["source_identity"]["raw_sha256"] = "0" * 64
@@ -243,11 +243,11 @@ class PacketTests(SourceFixture):
 class RuntimeTests(SourceFixture):
     def test_lock_contains_exact_contracts_source_and_hashed_dependency_closure(self):
         self.assertEqual(
-            self.lock["revision"], "1619dd0665eb779ce7ffd2c6cc71331259dcbd5a"
+            self.lock["revision"], "2f28da4d326ff12da5dc9270eb57910303e4a737"
         )
-        self.assertEqual(self.lock["contracts"]["navigation"], 5)
-        self.assertEqual(self.lock["contracts"]["inventory"], 11)
-        self.assertEqual(self.lock["contracts"]["adapter"], 8)
+        self.assertEqual(self.lock["contracts"]["navigation"], 6)
+        self.assertEqual(self.lock["contracts"]["inventory"], 13)
+        self.assertEqual(self.lock["contracts"]["adapter"], 10)
         self.assertEqual(len(self.lock["wheels"]), 14)
         self.assertEqual(len(self.lock["source_files"]), 19)
         for wheel in self.lock["wheels"]:
@@ -298,14 +298,14 @@ class RuntimeTests(SourceFixture):
         }
         versions["repository-intelligence"] = "0.1.0"
         result = {
-            "python": [3, 12],
+            "python": self.lock["python"],
             "prefix": str(environment),
             "contracts": self.lock["contracts"],
             "versions": versions,
         }
         ri.validate_probe(self.lock, result, environment)
         for wrong in (
-            {**result, "contracts": {**result["contracts"], "navigation": 6}},
+            {**result, "contracts": {**result["contracts"], "navigation": 5}},
             {**result, "versions": {**versions, "tree-sitter": "0.26.0"}},
         ):
             with self.assertRaisesRegex(ri.RIError, "CONTRACT_OR_DEPENDENCIES"):

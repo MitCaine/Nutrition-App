@@ -7,7 +7,7 @@
 Version 2.0 is the current product line. Root `VERSION` is the canonical
 repository release authority with exact value `2.0.0`; current mobile, Expo,
 backend, and documentation metadata mirror it. Version 2.0 qualification uses
-Node 24 and Python 3.12.
+Node 26 and Python 3.14.
 
 The finalized [Version 2.0 release record](../historical/releases/version-2.0-release.md)
 preserves the qualified integration commit, annotated tag, and GitHub Release

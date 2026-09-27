@@ -33,7 +33,7 @@ not explicitly require PostgreSQL. This is appropriate for calculations, DRI/ref
 parser, schema, API, and most service behavior. It is not evidence for PostgreSQL locking or
 privilege claims.
 
-The reproducible Python 3.12 development and CI environment is pinned in
+The reproducible Python 3.14 development and CI environment is pinned in
 `requirements-dev.lock`. `pyproject.toml` remains the dependency declaration; use the regeneration
 command in the [Development Guide](../project/development-guide.md#configuration-and-startup) after changing
 dependencies.

@@ -86,8 +86,9 @@ def risk_result(scratch: Path) -> tuple[str, ...]:
 
 
 def ensure_python(area: str) -> None:
-    if area == "backend" and sys.version_info[:2] != (3, 12):
-        raise UpdateError("Backend tooling requires Python 3.12.")
+    python_line = (ROOT / ".python-version").read_text().strip()
+    if area in {"backend", "ri"} and ".".join(map(str, sys.version_info[:2])) != python_line:
+        raise UpdateError(f"{area} tooling requires Python {python_line}.")
     if area == "mobile" and sys.version_info < (3, 9):
         raise UpdateError("Mobile tooling requires Python 3.9 or newer.")
 
@@ -153,7 +154,7 @@ def backend(packages: list[str], scratch: Path, *, report_latest: bool = False,
         raise UpdateError("Invalid Python package name.")
     manifest = tomllib.loads((BACKEND / "pyproject.toml").read_text())
     direct = manifest["project"]["dependencies"] + manifest["project"]["optional-dependencies"]["dev"]
-    names = {re.split(r"[<>=!~;\[ ]", item, 1)[0].lower().replace("_", "-") for item in direct}
+    names = {re.split(r"[<>=!~;\[ ]", item, maxsplit=1)[0].lower().replace("_", "-") for item in direct}
     all_requested = not packages
     if not packages:
         packages = sorted(names)
@@ -175,9 +176,9 @@ def backend(packages: list[str], scratch: Path, *, report_latest: bool = False,
                             "from importlib.metadata import version; "
                             "from packaging.requirements import Requirement; "
                             "import sys, piptools; "
-                            "assert sys.version_info[:2] == (3, 12); "
+                            "assert sys.version_info[:2] == tuple(map(int, sys.argv[2].split('.'))); "
                             "assert version('pip-tools') in Requirement(sys.argv[1]).specifier",
-                            requirement],
+                            requirement, (ROOT / ".python-version").read_text().strip()],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if probe.returncode:
         tool_dir = scratch.parent / "tools"
@@ -205,7 +206,7 @@ def backend(packages: list[str], scratch: Path, *, report_latest: bool = False,
     after = (target / "requirements-dev.lock").read_bytes()
     if report_latest:
         resolved = backend_versions(after)
-        declarations = {re.split(r"[<>=!~;\[ ]", item, 1)[0].lower().replace("_", "-"): item
+        declarations = {re.split(r"[<>=!~;\[ ]", item, maxsplit=1)[0].lower().replace("_", "-"): item
                         for item in direct}
         with ThreadPoolExecutor(max_workers=8) as pool:
             latest = dict(pool.map(registry_latest, packages))
@@ -369,7 +370,7 @@ def retry_direct_packages(area: str, scratch: Path) -> tuple[Path, bytes, bytes,
         import tomllib
         manifest = tomllib.loads((BACKEND / "pyproject.toml").read_text())
         direct = manifest["project"]["dependencies"] + manifest["project"]["optional-dependencies"]["dev"]
-        packages = sorted({re.split(r"[<>=!~;\[ ]", item, 1)[0].lower().replace("_", "-")
+        packages = sorted({re.split(r"[<>=!~;\[ ]", item, maxsplit=1)[0].lower().replace("_", "-")
                            for item in direct})
         path = BACKEND / "requirements-dev.lock"
         versions = backend_versions
@@ -406,7 +407,7 @@ def retry_direct_packages(area: str, scratch: Path) -> tuple[Path, bytes, bytes,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("area", choices=("backend", "mobile", "all"))
+    parser.add_argument("area", choices=("backend", "mobile", "ri", "all"))
     parser.add_argument("packages", nargs="*", help="optional direct packages; omit to update all in-range packages")
     parser.add_argument("--apply", action="store_true", help="write the validated lockfile")
     args = parser.parse_args()
@@ -417,13 +418,48 @@ def main() -> int:
             clean_checkout()
         with tempfile.TemporaryDirectory(prefix="nutrition-deps-") as name:
             scratch = Path(name)
-            areas = ("backend", "mobile") if args.area == "all" else (args.area,)
+            areas = ("backend", "mobile", "ri") if args.area == "all" else (args.area,)
             succeeded = []
             failed = []
             changed = False
             for area in areas:
                 try:
                     ensure_python(area)
+                    if area == "ri":
+                        if args.packages:
+                            raise UpdateError("The ri command takes no package names.")
+                        from update_ri_lock import proposed
+                        ri_scratch = scratch / "ri"
+                        ri_scratch.mkdir()
+                        proposals = proposed(ri_scratch)
+                        changed_ri = [(path, before, after) for path, before, after in proposals if before != after]
+                        if changed_ri:
+                            for path, _, _ in changed_ri:
+                                print(f"RI wheel lock: {path.relative_to(ROOT)}")
+                            if args.apply:
+                                if any(path.read_bytes() != before for path, before, _ in proposals):
+                                    raise UpdateError("RI lock changed during preparation; refusing to overwrite it.")
+                                staged = []
+                                try:
+                                    for path, _, after in proposals:
+                                        temporary = path.with_name(path.name + ".update-tmp")
+                                        temporary.write_bytes(after)
+                                        staged.append(temporary)
+                                    for (path, _, _), temporary in zip(proposals, staged):
+                                        os.replace(temporary, path)
+                                except OSError:
+                                    for path, before, _ in proposals:
+                                        path.write_bytes(before)
+                                    raise
+                                finally:
+                                    for temporary in staged:
+                                        temporary.unlink(missing_ok=True)
+                                print("ri: applied both validated wheel lock files.")
+                            changed = True
+                        else:
+                            print("ri: selected Python wheels already match the reviewed source pin.")
+                        succeeded.append(area)
+                        continue
                     if area == "mobile":
                         ensure_node()
                     area_scratch = scratch / area

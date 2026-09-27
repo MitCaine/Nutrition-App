@@ -63,21 +63,21 @@ class StartWorkTest(unittest.TestCase):
             shutil.copy2(SCRIPTS / "dependency-modules/toolchain.zsh",
                          root / "scripts/dependency-modules/toolchain.zsh")
             (root / ".nvmrc").write_text("26\n")
-            (root / ".python-version").write_text("3.12\n")
+            (root / ".python-version").write_text("3.14\n")
             for name in ("fake-bin", "node/bin", "python/bin"):
                 (root / name).mkdir(parents=True)
             node = root / "node/bin/node"
             node.write_text("#!/bin/sh\ncase \"$1\" in -p) echo 26;; --version) echo v26.10.0;; esac\n")
             node.chmod(0o755)
-            python = root / "python/bin/python3.12"
-            python.write_text("#!/bin/sh\ncase \"$1\" in -c) echo 3.12;; --version) echo 'Python 3.12.14';; esac\n")
+            python = root / "python/bin/python3.14"
+            python.write_text("#!/bin/sh\ncase \"$1\" in -c) echo 3.14;; --version) echo 'Python 3.14.7';; esac\n")
             python.chmod(0o755)
             brew = root / "fake-bin/brew"
             brew.write_text(
                 "#!/bin/sh\ncase \"$1\" in\n"
                 "update) exit 0;;\n"
                 f"--prefix) case \"$2\" in node@26) echo '{root / 'node'}';; "
-                f"python@3.12) echo '{root / 'python'}';; esac;;\n"
+                f"python@3.14) echo '{root / 'python'}';; esac;;\n"
                 "info) echo '{\"formulae\":[{\"versions\":{\"stable\":\"26.10.0\"}}]}';;\n"
                 "outdated) echo \"$3\";;\n"
                 f"upgrade) if [ \"$2\" = node@26 ]; then exit 1; fi; "
@@ -101,7 +101,7 @@ class StartWorkTest(unittest.TestCase):
                          "dependency-modules/dependencies.zsh"):
                 shutil.copy2(SCRIPTS / name, root / "scripts" / name)
             (root / ".nvmrc").write_text("26\n")
-            (root / ".python-version").write_text("3.12\n")
+            (root / ".python-version").write_text("3.14\n")
             updater = root / "scripts/update-dependencies"
             updater.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$NUTRITION_START_WORK_TEST_MARKER\"\n")
             updater.chmod(0o755)
@@ -117,7 +117,7 @@ class StartWorkTest(unittest.TestCase):
                                    text=True, capture_output=True, check=True)
             self.assertEqual(marker.read_text().strip(), "all --apply")
             self.assertIn("v26.", clean.stdout)
-            self.assertIn("Python 3.12.", clean.stdout)
+            self.assertIn("Python 3.14.", clean.stdout)
             (root / "local-work.txt").write_text("preserve")
             subprocess.run(["zsh", "-c", command], cwd=root, env=env,
                            text=True, capture_output=True, check=True)

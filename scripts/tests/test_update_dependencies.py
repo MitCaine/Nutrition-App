@@ -11,6 +11,8 @@ import unittest
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / "update_dependencies.py"
+sys.path.insert(0, str(SCRIPT.parent))
+import update_ri_lock  # noqa: E402
 spec = importlib.util.spec_from_file_location("update_dependencies", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -29,6 +31,7 @@ class DependencyUpdateTest(unittest.TestCase):
         (self.root / "engineering/security/dependency-risk-register.json").write_text("{}")
         (self.root / ".github/workflows").mkdir(parents=True)
         (self.root / ".github/workflows/dependency-risk-monitor.yml").write_text("schedule:")
+        (self.root / ".python-version").write_text("3.14\n")
         self.manifest = {"name": "test", "dependencies": {"sample": "^1.0.0"}, "devDependencies": {}}
         (self.mobile / "package.json").write_text(json.dumps(self.manifest))
         self.lock = self.mobile / "package-lock.json"
@@ -36,7 +39,8 @@ class DependencyUpdateTest(unittest.TestCase):
         self.patchers = [patch.object(module, "ROOT", self.root), patch.object(module, "MOBILE", self.mobile),
                          patch.object(module, "ensure_python"), patch.object(module, "ensure_node"),
                          patch.object(module, "clean_checkout"),
-                         patch.object(module, "risk_result", return_value=())]
+                         patch.object(module, "risk_result", return_value=()),
+                         patch.object(update_ri_lock, "proposed", return_value=[])]
         for item in self.patchers:
             item.start()
             self.addCleanup(item.stop)
@@ -102,6 +106,22 @@ class DependencyUpdateTest(unittest.TestCase):
     def test_all_rejects_package_names(self):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(self.call_main("all", "sample", "--apply"), 2)
+
+    def test_ri_wheel_failure_does_not_undo_backend_or_mobile_updates(self):
+        backend_lock = self.root / "backend.lock"
+        backend_lock.write_bytes(b"fastapi==0.1.0\n")
+        with patch.object(module, "backend", return_value=(backend_lock, b"fastapi==0.1.0\n",
+                                                         b"fastapi==0.2.0\n")), \
+             patch.object(module, "toolchain_report"), \
+             patch.object(update_ri_lock, "proposed", side_effect=update_ri_lock.RILockError("wheel unavailable")), \
+             patch.object(module.subprocess, "run") as outdated:
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(self.call_main("all", "--apply"), 2)
+        self.assertIn("ri update failed: wheel unavailable", errors.getvalue())
+        self.assertEqual(backend_lock.read_bytes(), b"fastapi==0.2.0\n")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
 
     def test_all_keeps_first_validated_lock_if_second_publish_fails(self):
         backend_lock = self.root / "backend.lock"

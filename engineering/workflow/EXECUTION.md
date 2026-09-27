@@ -27,7 +27,7 @@ The controller chooses the executable and supplies this JSON outside candidate s
 ```json
 {
   "transport": "macos-bounded-command",
-  "executable": "/absolute/path/to/installed/python3.12",
+  "executable": "/absolute/path/to/installed/python3.14",
   "sha256": "<SHA-256 of the executable bytes>",
   "argv": ["-c", "<bounded operation that writes a structured outcome>"]
 }
