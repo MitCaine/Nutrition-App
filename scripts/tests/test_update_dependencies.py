@@ -441,6 +441,39 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertIn("no package retry", errors.getvalue())
         self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
 
+    def test_shared_failure_after_bulk_conflict_stops_narrowing_and_keeps_validated_proposal(self):
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["a>=1", "b>=1", "c>=1"]\n'
+            '[project.optional-dependencies]\ndev = []\n')
+        lock = backend / "requirements-dev.lock"
+        lock.write_bytes(b"a==1.0.0\nb==1.0.0\nc==1.0.0\n")
+        calls = []
+
+        def attempt(packages, scratch, *, report_latest=False, baseline=None):
+            calls.append(packages)
+            if not packages:
+                raise module.ResolutionConflict("ResolutionImpossible")
+            if packages == ["b"]:
+                raise module.UpdateError("registry ECONNRESET")
+            before = baseline or lock.read_bytes()
+            return lock, before, before.replace(b"a==1.0.0", b"a==1.1.0")
+
+        with patch.object(module, "BACKEND", backend), patch.object(module, "backend", side_effect=attempt), \
+             patch.object(module, "toolchain_report"), patch.object(module, "run", side_effect=self.fake_run), \
+             patch.object(module.subprocess, "run") as outdated, \
+             patch.object(sys, "argv", ["update", "all", "--apply"]):
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(module.main(), 2)
+        self.assertEqual(calls, [[], ["a"], ["b"]])
+        self.assertEqual(lock.read_bytes(), b"a==1.1.0\nb==1.0.0\nc==1.0.0\n")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+        self.assertIn("remaining direct packages were not attempted", errors.getvalue())
+        self.assertIn("succeeded: backend partial, mobile", errors.getvalue())
+
     def test_run_classifies_only_recognized_resolver_conflicts(self):
         with patch.object(module.subprocess, "run") as process:
             process.return_value.returncode = 1

@@ -514,9 +514,14 @@ def retry_direct_packages(area: str, scratch: Path) -> tuple[Path, bytes, bytes,
                     raise UpdateError(f"Direct dependency major changed during retry: {direct_name}.")
             current = proposed
             print(f"{area} retry {package}: validated.")
-        except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+        except ResolutionConflict as exc:
             failures.append(package)
             print(f"{area} retry {package} failed: {exc}", file=sys.stderr)
+        except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+            failures.append(package)
+            print(f"{area} retry {package} stopped after shared or contract failure: {exc}; "
+                  "remaining direct packages were not attempted.", file=sys.stderr)
+            break
     return path, original, current, failures
 
 

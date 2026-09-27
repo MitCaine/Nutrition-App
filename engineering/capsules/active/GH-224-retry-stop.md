@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 1
 id = "GH-224-retry-stop"
 title = "Stop direct dependency retry on shared failures after narrowing begins"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ ResolutionConflict is the only retryable package-local error type. Other errors 
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four acceptance criteria and partial proposal fixture. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Retry loop and tests bounded. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Owner authorization posted. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Exact plan and updater retry boundary confirmed. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Shared-failure stop, partial-proposal preservation and focused regression implemented. |
 
 ## Completion record
 
