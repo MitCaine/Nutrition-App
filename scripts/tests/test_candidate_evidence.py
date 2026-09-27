@@ -99,6 +99,62 @@ class CandidateFixture(unittest.TestCase):
 
 
 class CandidateEvidenceTests(CandidateFixture):
+    def test_attached_qualification_requires_candidate_bound_reviewer_preflight(self):
+        import importlib.util
+        from unittest.mock import Mock
+        spec = importlib.util.spec_from_file_location("evidence_task_preflight", Path(__file__).resolve().parents[1] / "task.py")
+        task = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(task)
+        binding = self.binding()
+        state = {"phase": "AUTHORIZED", "repository": "example/repo", "issue_number": 1,
+                 "task_id": "GH-1", "capsule_evidence": {"binding": binding}}
+        refs = Mock()
+        with mock.patch.object(task, "resolve_current_authorization", return_value=self.auth), \
+             mock.patch.object(task, "validate_candidate_scope"):
+            with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_PREFLIGHT_REQUIRED"):
+                task.qualify_task(state, candidate_repo=self.repo, controller_main_sha=self.base,
+                                  expected_app_id=42, transport=Mock(), ref_transport=refs)
+        refs.publish_candidate_ref.assert_not_called()
+        compatibility = {key: value for key, value in state.items() if key != "capsule_evidence"}
+        transport = Mock()
+        transport.dispatch_workflow.side_effect = RuntimeError("dispatch reached")
+        with mock.patch.object(task, "resolve_current_authorization", return_value=self.auth), \
+             mock.patch.object(task, "validate_candidate_scope"):
+            with self.assertRaisesRegex(RuntimeError, "dispatch reached"):
+                task.qualify_task(compatibility, candidate_repo=self.repo, controller_main_sha=self.base,
+                                  expected_app_id=42, transport=transport, ref_transport=refs)
+        refs.publish_candidate_ref.assert_called_once()
+        refs.delete_candidate_ref.assert_called_once()
+
+    def test_reviewer_selection_and_retry_epoch_must_match_preflight(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("evidence_task_selection", Path(__file__).resolve().parents[1] / "task.py")
+        task = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(task)
+        binding = self.binding()
+        binary = Path(sys.executable).resolve()
+        sha = "a" * 64
+        preflight = {"binding_sha256": binding["binding_sha256"], "candidate_sha": self.candidate,
+                     "failure_count": 0, "model": "first", "effort": "low",
+                     "runtime": {"executable": str(binary), "sha256": sha}}
+        attached = {"review_preflight": preflight}
+        task.require_review_preflight(attached, binding, self.candidate,
+                                      runtime=binary, runtime_sha256=sha, model="first", effort="low")
+        for model, effort, runtime_sha in (("other", "low", sha), ("first", "high", sha),
+                                           ("first", "low", "b" * 64)):
+            with self.assertRaisesRegex(evidence.EvidenceError, "SELECTION_NOT_PREFLIGHTED"):
+                task.require_review_preflight(attached, binding, self.candidate, runtime=binary,
+                                              runtime_sha256=runtime_sha, model=model, effort=effort)
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_PREFLIGHT_REQUIRED"):
+            task.require_review_preflight(attached, binding, self.planning)
+        attached["pre_review_failures"] = [{"reason": "model rejected"}]
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_PREFLIGHT_REQUIRED"):
+            task.require_review_preflight(attached, binding, self.candidate)
+        preflight["failure_count"] = 1
+        preflight["model"] = "second"
+        task.require_review_preflight(attached, binding, self.candidate,
+                                      runtime=binary, runtime_sha256=sha, model="second", effort="low")
+
     def test_validated_terminal_refs_preserve_attached_index_and_reject_other_drift(self):
         controller = self.root / "controller"
         self.git("worktree", "add", "-qb", "main", str(controller), self.base)
@@ -462,6 +518,41 @@ class ManualEvidenceTests(CandidateFixture):
 
 
 class ControllerEvidenceTests(CandidateFixture):
+    def test_verified_same_candidate_can_repreflight_without_requalification(self):
+        import importlib.util
+        from types import SimpleNamespace
+        spec = importlib.util.spec_from_file_location("evidence_task_retry_preflight", Path(__file__).resolve().parents[1] / "task.py")
+        task = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(task)
+        binding = self.binding()
+        old = {"model": "rejected", "failure_count": 0}
+        state = {"repository": "example/repo", "issue_number": 1, "task_id": "GH-1",
+                 "phase": "VERIFIED", "qualification": {"check_id": 17},
+                 "capsule_evidence": {"binding": binding, "review_preflight": old,
+                                      "pre_review_failures": [{"reason": "model rejected"}]}}
+        state_dir = self.root / "retry-preflight-controller"
+        state_dir.mkdir()
+        args = SimpleNamespace(repo_root=self.repo, candidate_root=self.repo, state_dir=state_dir,
+                               issue_number=1, action="preflight", runtime=Path(sys.executable),
+                               runtime_sha256="a" * 64, model="replacement", effort="low", timeout=10)
+        selected = {"runtime": {"executable": str(Path(sys.executable).resolve()), "sha256": "a" * 64},
+                    "model": "replacement", "effort": "low"}
+        with mock.patch.object(task, "load_state", return_value=state), \
+             mock.patch.object(task, "git", return_value=self.candidate), \
+             mock.patch.object(task, "resolve_repo_root", side_effect=lambda x: x), \
+             mock.patch.object(task, "repository_slug", return_value="example/repo"), \
+             mock.patch.object(task, "require_trusted_main_controller", return_value=self.base), \
+             mock.patch.object(task, "resolve_current_authorization", return_value=self.auth), \
+             mock.patch("lib.independent_review.preflight_model", return_value=selected), \
+             mock.patch.object(task, "emit"):
+            self.assertEqual(task.command_evidence(args), 0)
+        persisted = json.loads((state_dir / "issue-1.json").read_text())
+        self.assertEqual(persisted["phase"], "VERIFIED")
+        self.assertEqual(persisted["qualification"], {"check_id": 17})
+        self.assertEqual(persisted["capsule_evidence"]["review_preflight"]["failure_count"], 1)
+        self.assertEqual(persisted["capsule_evidence"]["review_preflight"]["model"], "replacement")
+        self.assertEqual(persisted["capsule_evidence"]["review_preflight_history"], [old])
+
     def test_attach_and_manual_use_trusted_transport_without_importing_approval(self):
         import importlib.util
         from types import SimpleNamespace

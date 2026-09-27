@@ -161,7 +161,15 @@ def read_evidence(packet: dict, arguments: dict) -> dict:
     path = Path(entry["path"])
     if artifact(path) != entry or entry["bytes"] > (32_000_000 if arguments["check"] == "$structural" else 8_000_000):
         raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
-    lines = path.read_text().splitlines()
+    # RI may emit one minified JSON line larger than a callback response. Split
+    # only oversized lines into stable virtual lines after authenticating the
+    # complete artifact, so the reviewer can page through every byte of text.
+    lines = []
+    for line in path.read_text().splitlines():
+        if len(line) > 20_000:
+            lines.extend(line[i:i + 20_000] for i in range(0, len(line), 20_000))
+        else:
+            lines.append(line)
     content = "\n".join(f"{i+start}: {line}" for i, line in enumerate(lines[start-1:end]))
     if len(content.encode()) > 100_000:
         raise EvidenceError("REVIEW_EVIDENCE_RESPONSE_LIMIT")

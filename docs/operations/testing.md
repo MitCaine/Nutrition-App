@@ -573,9 +573,12 @@ the operator-facing controller commands remain unchanged:
 1. `./scripts/task prepare ISSUE ...`
 2. `./scripts/task authorize ISSUE`
 3. bounded candidate implementation
-4. `./scripts/task qualify ISSUE --candidate-root PATH`
-5. explicit `./scripts/task verify ISSUE ...`
-6. explicit `./scripts/task review ISSUE ...`
+4. for an attached new-task candidate, `./scripts/task evidence ISSUE attach ...`,
+   `./scripts/task evidence ISSUE preflight ... --runtime CODEX --runtime-sha256 SHA256 --model MODEL --effort EFFORT`,
+   and required command/RI evidence; unattached compatibility tasks skip this attachment lane
+5. `./scripts/task qualify ISSUE --candidate-root PATH`
+6. attached candidates seal evidence, then explicit verification and review with the same
+   preflighted reviewer selection; compatibility tasks use explicit `verify` and `review`
 7. explicit human-owner authorization followed by
    `./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized`
 

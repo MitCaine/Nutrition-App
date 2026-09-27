@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -1504,6 +1505,31 @@ def _wait_for_authoritative_check(
     return None
 
 
+def require_review_preflight(attached: dict, binding: dict, candidate_sha: str, *,
+                             runtime: Path | None = None, runtime_sha256: str | None = None,
+                             model: str | None = None, effort: str | None = None) -> dict:
+    """Bind the selected reviewer to this exact attached candidate and retry epoch."""
+    preflight = attached.get("review_preflight")
+    if (not isinstance(preflight, dict)
+            or preflight.get("binding_sha256") != binding["binding_sha256"]
+            or preflight.get("candidate_sha") != candidate_sha
+            or preflight.get("failure_count") != len(attached.get("pre_review_failures", []))
+            or not isinstance(preflight.get("model"), str) or not preflight["model"]
+            or not isinstance(preflight.get("effort"), str) or not preflight["effort"]
+            or not isinstance(preflight.get("runtime"), dict)
+            or not isinstance(preflight["runtime"].get("executable"), str)
+            or not Path(preflight["runtime"]["executable"]).is_absolute()
+            or not isinstance(preflight["runtime"].get("sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", preflight["runtime"].get("sha256", ""))):
+        raise EvidenceError("REVIEW_PREFLIGHT_REQUIRED_OR_STALE")
+    if runtime is not None and (
+            str(runtime.resolve()) != preflight["runtime"]["executable"]
+            or runtime_sha256 != preflight["runtime"]["sha256"]
+            or model != preflight["model"] or effort != preflight["effort"]):
+        raise EvidenceError("REVIEW_SELECTION_NOT_PREFLIGHTED")
+    return preflight
+
+
 def qualify_task(
     state: dict[str, Any],
     *,
@@ -1579,6 +1605,7 @@ def qualify_task(
         if not candidate_evidence.source_matches(
             attached["binding"]["source"], candidate_evidence.observe(candidate_repo, candidate_sha)):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
+        require_review_preflight(attached, attached["binding"], candidate_sha)
 
     nonce = (
         dispatch_nonce
@@ -3316,13 +3343,18 @@ def command_evidence(args: argparse.Namespace) -> int:
             if not candidate_evidence.source_matches(binding["source"], candidate_evidence.observe(candidate, sha)):
                 raise EvidenceError("ATTACHED_SOURCE_CHANGED")
             if args.action == "preflight":
-                if state["phase"] not in {"AUTHORIZED", "QUALIFIED", "VERIFIED"} or not args.runtime or not args.runtime_sha256 or not args.model:
+                if state["phase"] not in {"AUTHORIZED", "QUALIFIED", "VERIFIED"} or not args.runtime or not args.runtime_sha256 or not args.model or not args.effort:
                     raise EvidenceError("REVIEW_PREFLIGHT_REQUIRES_PINNED_RUNTIME_AND_MODEL")
                 attempt = directory / f"preflight-{args.issue_number}-{secrets.token_hex(8)}"
-                attached["review_preflight"] = independent_review.preflight_model(
+                preflight = independent_review.preflight_model(
                     args.runtime, args.runtime_sha256, args.model, args.effort,
                     directory=attempt, timeout=min(args.timeout, 60))
-                attached["review_preflight"]["diagnostics"] = str(attempt)
+                preflight.update(binding_sha256=binding["binding_sha256"], candidate_sha=sha,
+                                 failure_count=len(attached.get("pre_review_failures", [])),
+                                 diagnostics=str(attempt))
+                if attached.get("review_preflight"):
+                    attached.setdefault("review_preflight_history", []).append(attached["review_preflight"])
+                attached["review_preflight"] = preflight
             elif args.action == "check":
                 if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.check:
                     raise EvidenceError("COMMAND_EVIDENCE_PHASE_INVALID")
@@ -3357,6 +3389,9 @@ def command_evidence(args: argparse.Namespace) -> int:
             elif args.action == "review":
                 if state["phase"] != "VERIFIED" or not args.runtime or not args.runtime_sha256:
                     raise EvidenceError("REVIEW_REQUIRES_VERIFICATION_AND_PINNED_RUNTIME")
+                require_review_preflight(attached, binding, sha, runtime=args.runtime,
+                                         runtime_sha256=args.runtime_sha256,
+                                         model=args.model, effort=args.effort)
                 candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
                 packet = candidate_evidence.evidence_packet(attached)
                 if attached.get("pre_review_failures") and attached["pre_review_failures"][-1]["evidence_sha256"] != candidate_evidence.digest(packet):

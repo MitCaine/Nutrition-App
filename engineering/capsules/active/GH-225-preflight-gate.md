@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 3
 id = "GH-225-preflight-gate"
 title = "Bind reviewer preflight into the normal qualification workflow"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ The controller state is private trusted evidence; bind preflight to exact attach
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four acceptance criteria and controller tests. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Gate, binding and docs bounded. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-three owner authorization posted after retained reviewer STOP_REPLAN exposed unreadable single-line RI evidence. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Exact revision-three planning commit and bounded path set verified. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Preflight gate, ordered guidance and authenticated evidence pagination implemented. |
 
 ## Completion record
 

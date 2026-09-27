@@ -72,12 +72,13 @@ All examples run from trusted main. `STATE` and `CANDIDATE` below mean absolute 
 
 ```bash
 ./scripts/task --state-dir "$STATE" evidence ISSUE attach --candidate-root "$CANDIDATE" --planning "$P" --corrections 1
+./scripts/task --state-dir "$STATE" evidence ISSUE preflight --candidate-root "$CANDIDATE" --runtime /absolute/codex --runtime-sha256 EXACT_BINARY_SHA256 --model MODEL --effort EFFORT
 ./scripts/task --state-dir "$STATE" evidence ISSUE check --candidate-root "$CANDIDATE" --check focused
 ./scripts/task --state-dir "$STATE" evidence ISSUE check --candidate-root "$CANDIDATE" --check baseline
 ./scripts/task --state-dir "$STATE" qualify ISSUE --candidate-root "$CANDIDATE"
 ./scripts/task --state-dir "$STATE" evidence ISSUE seal --candidate-root "$CANDIDATE"
 ./scripts/task --state-dir "$STATE" verify ISSUE --candidate-sha "$C" --actor 'controller' --decision pass --evidence 'Exact observed records'
-./scripts/task --state-dir "$STATE" evidence ISSUE review --candidate-root "$CANDIDATE" --runtime /absolute/codex --runtime-sha256 EXACT_BINARY_SHA256
+./scripts/task --state-dir "$STATE" evidence ISSUE review --candidate-root "$CANDIDATE" --runtime /absolute/codex --runtime-sha256 EXACT_BINARY_SHA256 --model MODEL --effort EFFORT
 ./scripts/task --state-dir "$STATE" evidence ISSUE publish --candidate-root "$CANDIDATE"
 ./scripts/task --state-dir "$STATE" integrate ISSUE --candidate-root "$CANDIDATE" --human-owner-authorized
 ```
@@ -129,14 +130,17 @@ clear all structural evidence alongside the other gates.
 
 The qualified runtime is `codex-cli 0.153.4` with an explicitly supplied binary SHA-256.
 A different version or binary requires a new runtime qualification, not silent fallback.
-Default model/effort are inherited and observed; optional `--model`/`--effort` requests must
-match the actual session. The controller records provider, fresh thread/turn IDs, nonce,
+Attached tasks require explicit `--model` and `--effort` at preflight and review; both must
+match the pinned selection. Unattached compatibility tasks retain their existing reviewer path.
+The controller records provider, fresh thread/turn IDs, nonce,
 completion, runtime digest and transcript digest. No implementation thread is resumed.
 After attaching C and before expensive qualification, run
 `./scripts/task --state-dir STATE evidence ISSUE preflight --candidate-root PATH --runtime CODEX --runtime-sha256 SHA256 --model MODEL --effort EFFORT`.
 The pinned runtime's account-visible model catalog must list the selected model and effort;
-an absent choice fails before qualification. Repeat preflight if intentionally selecting a
-different reviewer model. Review still requests the named model explicitly and never falls back.
+an absent choice fails before qualification. The controller binds the successful result to
+the exact candidate and rejects qualification without it. Repeat preflight after a genuine
+pre-review failure, including when selecting a different model; the unchanged candidate's
+qualification remains valid. Review still requests the named model explicitly and never falls back.
 
 The ephemeral reviewer has explicitly empty environments, no imported repository instructions,
 no workspace roots, read-only sandbox policy, approval never and no provider-model fallback.

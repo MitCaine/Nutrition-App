@@ -246,6 +246,19 @@ class IndependentReviewTests(CandidateFixture):
 
 
 class EvidenceCallbackTests(CandidateFixture):
+    def test_minified_structural_artifact_can_be_read_in_authenticated_pages(self):
+        path = self.root / "raw.json"
+        path.write_text("{" + "x" * 160_000 + "}")
+        entry = evidence.artifact(path)
+        packet = {"structural": {"record": {"artifacts": {"raw": entry}}}}
+        args = {"check": "$structural", "artifact": "raw", "start_line": 1, "end_line": 1}
+        first = review.read_evidence(packet, args)
+        self.assertGreater(first["total_lines"], 1)
+        self.assertEqual(first["sha256"], entry["sha256"])
+        chunks = [review.read_evidence(packet, {**args, "start_line": line, "end_line": line})["content"].split(": ", 1)[1]
+                  for line in range(1, first["total_lines"] + 1)]
+        self.assertEqual("".join(chunks), path.read_text())
+
     def test_evidence_callback_is_declared_digest_bound_and_bounded(self):
         path = self.root / "log"
         path.write_text("one\ntwo\n")

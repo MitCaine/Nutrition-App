@@ -29,11 +29,16 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    while unsupported files still require direct review. Keep the capsule lifecycle
    through terminal closeout. An in-flight unattached task or explicit compatibility
    exception may retain its existing path without inventing a capsule after the fact.
-4. From trusted main, `./scripts/task qualify ISSUE --candidate-root PATH` qualifies
-   the exact committed candidate through the existing dedicated-App boundary.
-5. For a capsule-attached candidate, follow the [evidence sequence](CANDIDATE_EVIDENCE.md)
-   for command capture, sealed qualification and observed independent review. For
-   compatibility tasks, record explicit verification and independent review for that same SHA with
+4. For a capsule-attached candidate, follow the [evidence sequence](CANDIDATE_EVIDENCE.md):
+   attach exact C, preflight the pinned reviewer runtime/model/effort, and capture required
+   command and RI evidence. From trusted main, then run `./scripts/task qualify ISSUE
+   --candidate-root PATH` for the exact committed candidate through the dedicated-App boundary.
+   The controller requires the candidate-bound preflight before dispatch for attached tasks.
+   An unattached compatibility or terminal closeout task uses its existing qualification path.
+5. For an attached candidate, seal qualification, record verification and run the independent
+   reviewer with the same preflighted runtime/model/effort. A genuine pre-review failure
+   requires another explicit preflight before the one fresh review attempt on unchanged C;
+   qualification is retained. For compatibility tasks, record explicit verification and review for that same SHA with
    `./scripts/task verify` and `./scripts/task review`. Inspect the source and full
    diff against acceptance; tests never infer review approval.
 6. With the owner's authorization, `./scripts/task integrate ISSUE --candidate-root
