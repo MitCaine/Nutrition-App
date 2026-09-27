@@ -39,6 +39,22 @@ Each command is a fixed argument array, not shell text. Entire arguments `{pytho
 `{repository}`, and `{evidence}` resolve to the observed controller interpreter,
 disposable committed-source clone and scratch output directory. Repository-relative
 executables resolve inside that clone. Requirement IDs are stable lowercase identifiers.
+An executable requirement may opt into `"prepare":"mobile-npm-ci-offline-v1"`.
+This frozen value requires `NUTRITION_EVIDENCE_NPM_CACHE` to name the existing,
+non-symlinked controller-home `.npm` cache and exact candidate `apps/mobile/package.json` and
+`package-lock.json` files. The macOS controller also requires
+`NUTRITION_EVIDENCE_NODE_BIN` to name an explicit Node/npm binary directory
+under Homebrew. It records the exact runtime and applies npm's `--engine-strict`
+check against the candidate's declared engine range rather than embedding a
+Node version in the runner. In the disposable clone, the controller invokes npm
+`ci --offline --ignore-scripts --engine-strict --no-audit --no-fund` with the cache readable,
+not writable, and network denied by a preparation-only sandbox policy. The
+frozen command's sandbox cannot read the cache. The packet records manifest and
+lock SHA-256 digests, npm and Node executable digests, exact preparation argv,
+exit status, and hashed logs and policies. Missing inputs or failed preparation cannot
+satisfy a required check. The cache is controller-host input; lock integrity
+governs installed package bytes. Preparation is forbidden on manual entries;
+other names and extra requirement keys are rejected.
 `specialized_qualification` retains `profile:NAME`; additional local requirements can use
 `evidence:ID`, referring to a required entry. Unknown specialist declarations stop attachment.
 

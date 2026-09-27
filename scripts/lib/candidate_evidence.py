@@ -80,10 +80,14 @@ def requirements(raw: bytes) -> list[dict]:
     kinds = {"focused", "baseline", "sqlite", "postgresql", "infrastructure", "native", "manual"}
     seen = set()
     for item in values:
-        if (not isinstance(item, dict) or set(item) != {"id", "kind", "required", "argv"}
+        if (not isinstance(item, dict) or not {"id", "kind", "required", "argv"}.issubset(item)
+                or set(item) - {"id", "kind", "required", "argv", "prepare"}
                 or not isinstance(item["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]*", item["id"])
                 or item["id"] in seen or item["kind"] not in kinds or type(item["required"]) is not bool):
             raise EvidenceError("CAPSULE_EVIDENCE_REQUIREMENT_INVALID")
+        if "prepare" in item and (item["prepare"] != "mobile-npm-ci-offline-v1"
+                                  or item["kind"] == "manual"):
+            raise EvidenceError("CAPSULE_EVIDENCE_PREPARATION_INVALID")
         argv = item["argv"]
         if item["kind"] == "manual":
             if argv is not None:
@@ -375,6 +379,27 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     if result.returncode:
         raise EvidenceError("EVIDENCE_CLONE_FAILED")
     git(clone, "checkout", "--detach", binding["candidate"])
+    preparation = requirement.get("prepare")
+    cache = None
+    if preparation == "mobile-npm-ci-offline-v1":
+        mobile = clone / "apps/mobile"
+        lock = mobile / "package-lock.json"
+        manifest = mobile / "package.json"
+        cache_value = os.environ.get("NUTRITION_EVIDENCE_NPM_CACHE", "")
+        cache = Path(cache_value).expanduser().absolute() if cache_value else None
+        trusted_cache = (Path.home() / ".npm").absolute()
+        if (not lock.is_file() or lock.is_symlink() or not manifest.is_file()
+                or manifest.is_symlink()):
+            record["reason"] = "Mobile manifest or lock unavailable in exact candidate"
+            return record
+        if (cache is None or cache != trusted_cache or cache.resolve() != cache
+                or not cache.is_dir()):
+            record["reason"] = "Trusted local npm cache unavailable"
+            return record
+        record["preparation"] = {"contract": preparation,
+                                  "package_lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+                                  "package_json_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                                  "cache": str(cache)}
     python = Path(sys.executable).absolute()
     replacements = {"{python}": str(python), "{repository}": str(clone), "{evidence}": str(scratch / "output")}
     argv = [replacements.get(x, x) for x in requirement["argv"]]
@@ -393,30 +418,89 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     reads = ["/System", "/usr", "/bin", "/sbin", "/Library", "/opt/homebrew",
              "/private/var/select", "/var/select", "/Applications/Xcode.app", str(scratch), str(python.parent.parent),
              str(python.resolve().parent.parent)]
-    metadata_paths = sorted({str(p) for root in reads for p in Path(root).parents}
-                            | {str(p) for p in scratch.parents}
-                            | {str(directory / "stdout.log"), str(directory / "stderr.log")})
-    profile = "\n".join([
-        "(version 1)", "(deny default)", "(allow process*)", "(allow sysctl-read)", "(allow mach-lookup)",
-        '(allow file-read* (literal "/") (subpath "/dev/fd") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
-        "(allow file-read* " + " ".join("(subpath " + json.dumps(x) + ")" for x in reads) + ")",
-        "(allow file-read-metadata " + " ".join("(literal " + json.dumps(x) + ")" for x in metadata_paths) + ")",
-        '(allow file-write* (literal "/dev/null") (subpath ' + json.dumps(str(scratch)) + '))',
-        "(deny network*)",
-    ])
+    def sandbox_policy(read_paths: list[str]) -> str:
+        metadata_paths = sorted({str(p) for root in read_paths for p in Path(root).parents}
+                                | {str(p) for p in scratch.parents}
+                                | {str(directory / name) for name in
+                                   ("stdout.log", "stderr.log", "prepare-stdout.log", "prepare-stderr.log")})
+        return "\n".join([
+            "(version 1)", "(deny default)", "(allow process*)", "(allow sysctl-read)", "(allow mach-lookup)",
+            '(allow file-read* (literal "/") (subpath "/dev/fd") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
+            "(allow file-read* " + " ".join("(subpath " + json.dumps(x) + ")" for x in read_paths) + ")",
+            "(allow file-read-metadata " + " ".join("(literal " + json.dumps(x) + ")" for x in metadata_paths) + ")",
+            '(allow file-write* (literal "/dev/null") (subpath ' + json.dumps(str(scratch)) + '))',
+            "(deny network*)",
+        ])
+    profile = sandbox_policy(reads)
     (directory / "sandbox.sb").write_text(profile)
     (scratch / "home").mkdir()
     (scratch / "tmp").mkdir()
     developer = next((p for p in (Path("/Applications/Xcode.app/Contents/Developer"),
                                   Path("/Library/Developer/CommandLineTools")) if (p / "usr/bin/git").is_file()), None)
     tool_path = str(developer / "usr/bin") + ":" if developer else ""
+    mobile_node_bin = os.environ.get("NUTRITION_EVIDENCE_NODE_BIN", "") if preparation == "mobile-npm-ci-offline-v1" else ""
+    mobile_node_path = str(Path(mobile_node_bin).absolute()) + ":" if mobile_node_bin else ""
     env = {"HOME": str(scratch / "home"), "TMPDIR": str(scratch / "tmp"),
-           "PATH": str(python.parent) + ":" + tool_path + "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+           "PATH": mobile_node_path + str(python.parent) + ":" + tool_path + "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_ATTR_NOSYSTEM": "1",
            "PYTHONDONTWRITEBYTECODE": "1", "NUTRITION_REVIEW_OUTPUT_DIR": str(scratch / "output")}
     if developer:
         env["DEVELOPER_DIR"] = str(developer)
     record["environment"] = env
+    if preparation == "mobile-npm-ci-offline-v1":
+        node_bin = Path(mobile_node_bin).absolute() if mobile_node_bin else None
+        if (node_bin is None or not node_bin.is_dir()
+                or not node_bin.resolve().is_relative_to(Path("/opt/homebrew"))):
+            record["reason"] = "Explicit supported Node toolchain unavailable"
+            return record
+        npm = Path(shutil.which("npm", path=env["PATH"]) or "/missing").absolute()
+        node = Path(shutil.which("node", path=env["PATH"]) or "/missing").absolute()
+        if not npm.is_file() or not node.is_file():
+            record["reason"] = "npm or Node executable unavailable"
+            return record
+        if (node.parent != node_bin or npm.parent != node_bin
+                or not node.resolve().is_relative_to(Path("/opt/homebrew"))
+                or not npm.resolve().is_relative_to(Path("/opt/homebrew"))):
+            record["reason"] = "Explicit Node/npm toolchain unavailable"
+            return record
+        node_version = subprocess.run([str(node), "--version"], capture_output=True, env=env, timeout=10)
+        if node_version.returncode or not re.fullmatch(rb"v\d+\.\d+\.\d+\s*", node_version.stdout):
+            record["reason"] = "Node runtime unavailable"
+            return record
+        prepare_argv = [str(npm), "ci", "--offline", "--ignore-scripts", "--engine-strict", "--no-audit",
+                        "--no-fund", "--cache", str(cache)]
+        record["preparation"].update(argv=prepare_argv,
+            npm_sha256=hashlib.sha256(npm.read_bytes()).hexdigest(),
+            node_path=str(node), node_sha256=hashlib.sha256(node.read_bytes()).hexdigest(),
+            node_version=node_version.stdout.decode().strip())
+        prepare_profile = sandbox_policy([*reads, str(cache)])
+        (directory / "prepare-sandbox.sb").write_text(prepare_profile)
+        with (directory / "prepare-stdout.log").open("wb") as stdout, (directory / "prepare-stderr.log").open("wb") as stderr:
+            process = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", prepare_profile, *prepare_argv],
+                                       cwd=clone / "apps/mobile", env=env, stdin=subprocess.DEVNULL,
+                                       stdout=stdout, stderr=stderr, start_new_session=True)
+            try:
+                prepare_code = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                prepare_code = None
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=10)
+        record["preparation"].update(exit_code=prepare_code,
+            stdout=artifact(directory / "prepare-stdout.log"),
+            stderr=artifact(directory / "prepare-stderr.log"))
+        record["artifacts"].update({"prepare-stdout.log": record["preparation"]["stdout"],
+                                    "prepare-stderr.log": record["preparation"]["stderr"],
+                                    "prepare-sandbox.sb": artifact(directory / "prepare-sandbox.sb"),
+                                    "sandbox.sb": artifact(directory / "sandbox.sb")})
+        if prepare_code != 0:
+            record.update(status="failed" if prepare_code is not None else "unavailable",
+                          reason="Offline npm preparation did not pass", source_after=observe(repo, binding["candidate"]))
+            record["record_sha256"] = digest(record)
+            return record
     started = time.monotonic()
     with (directory / "stdout.log").open("wb") as stdout, (directory / "stderr.log").open("wb") as stderr:
         process = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", profile, *argv], cwd=clone,
@@ -436,7 +520,7 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     record["source_after"] = observe(repo, binding["candidate"])
     if record["source_after"] != before:
         raise EvidenceError("EVIDENCE_AUTHORITY_MUTATED")
-    record["artifacts"] = {name: artifact(directory / name) for name in ("stdout.log", "stderr.log", "sandbox.sb")}
+    record["artifacts"].update({name: artifact(directory / name) for name in ("stdout.log", "stderr.log", "sandbox.sb")})
     # Preserve the canonical runner's actual output files, including fingerprints.
     output = scratch / "output"
     if output.exists():

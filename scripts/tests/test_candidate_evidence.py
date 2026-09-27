@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib import candidate_evidence as evidence  # noqa: E402
@@ -78,6 +79,57 @@ class CandidateFixture(unittest.TestCase):
 
 
 class CandidateEvidenceTests(CandidateFixture):
+    def test_mobile_preparation_contract_is_explicit_and_strict(self):
+        def raw(values):
+            return ("```nutrition-evidence-v1\n" + json.dumps(values) + "\n```").encode()
+        prepared = copy.deepcopy(self.requirements)
+        prepared[0]["prepare"] = "mobile-npm-ci-offline-v1"
+        self.assertEqual(evidence.requirements(raw(prepared)), prepared)
+        for invalid in (None, "", "npm-ci", {}, ["mobile-npm-ci-offline-v1"]):
+            wrong = copy.deepcopy(prepared)
+            wrong[0]["prepare"] = invalid
+            with self.assertRaisesRegex(evidence.EvidenceError, "PREPARATION_INVALID"):
+                evidence.requirements(raw(wrong))
+        wrong = copy.deepcopy(prepared)
+        wrong[0]["extra"] = "ignored"
+        with self.assertRaisesRegex(evidence.EvidenceError, "REQUIREMENT_INVALID"):
+            evidence.requirements(raw(wrong))
+        wrong = copy.deepcopy(prepared)
+        wrong[0].update(kind="manual", argv=None)
+        with self.assertRaisesRegex(evidence.EvidenceError, "PREPARATION_INVALID"):
+            evidence.requirements(raw(wrong))
+
+    def test_mobile_preparation_missing_lock_or_cache_fails_closed(self):
+        binding = self.binding()
+        binding["requirements"][0]["prepare"] = "mobile-npm-ci-offline-v1"
+        result = evidence.run_check(self.repo, binding, "focused", self.root / "no-lock")
+        if sys.platform != "darwin":
+            self.assertEqual(result["status"], "unavailable")
+            return
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("lock unavailable", result["reason"])
+        self.assertEqual(evidence.observe(self.repo, self.candidate), binding["source"])
+
+    def test_mobile_preparation_rejects_broad_cache_read(self):
+        if sys.platform != "darwin":
+            self.skipTest("Native macOS evidence transport required")
+        binding = self.binding()
+        mobile = self.repo / "apps/mobile"
+        mobile.mkdir(parents=True)
+        (mobile / "package.json").write_text('{"name":"fixture","version":"1.0.0"}\n')
+        (mobile / "package-lock.json").write_text('{"name":"fixture","version":"1.0.0","lockfileVersion":3,"packages":{}}\n')
+        self.git("add", ".")
+        self.git("commit", "-qm", "fixture mobile lock")
+        self.candidate = self.git("rev-parse", "HEAD")
+        binding["candidate"] = self.candidate
+        binding["source"] = evidence.observe(self.repo, self.candidate)
+        binding["requirements"][0]["prepare"] = "mobile-npm-ci-offline-v1"
+        with mock.patch.dict(os.environ, {"NUTRITION_EVIDENCE_NPM_CACHE": "/"}):
+            result = evidence.run_check(self.repo, binding, "focused", self.root / "broad-cache")
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["reason"], "Trusted local npm cache unavailable")
+        self.assertEqual(evidence.observe(self.repo, self.candidate), binding["source"])
+
     def test_exact_binding_and_source_read(self):
         binding = self.binding()
         self.assertEqual(binding["criteria"], {"AC-1": "add returns the sum."})
