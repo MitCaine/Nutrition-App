@@ -12,6 +12,37 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 
 
 class StartWorkTest(unittest.TestCase):
+    def test_matching_path_tools_are_selected_without_homebrew_install(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "scripts/dependency-modules").mkdir(parents=True)
+            shutil.copy2(SCRIPTS / "dependency-modules/toolchain.zsh",
+                         root / "scripts/dependency-modules/toolchain.zsh")
+            (root / ".nvmrc").write_text("26\n")
+            (root / ".python-version").write_text("3.14\n")
+            (root / "fake-bin").mkdir()
+            node = root / "fake-bin/node"
+            node.write_text("#!/bin/sh\ncase \"$1\" in -p) echo 26;; --version) echo v26.10.0;; esac\n")
+            node.chmod(0o755)
+            python = root / "fake-bin/python3.14"
+            python.write_text("#!/bin/sh\ncase \"$1\" in -c) echo 3.14;; --version) echo 'Python 3.14.7';; esac\n")
+            python.chmod(0o755)
+            brew = root / "fake-bin/brew"
+            brew.write_text(
+                "#!/bin/sh\ncase \"$1\" in\n"
+                "update|outdated) exit 0;;\n"
+                f"install) touch '{root / 'unexpected-install'}'; exit 1;;\n"
+                "esac\n")
+            brew.chmod(0o755)
+            env = {**os.environ, "PATH": str(root / "fake-bin") + ":/bin:/usr/bin",
+                   "NUTRITION_APP_ROOT": str(root)}
+            result = subprocess.run(
+                ["zsh", "-c", "source ./scripts/dependency-modules/toolchain.zsh; print $NUTRITION_DEPS_PYTHON"],
+                cwd=root, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root / "unexpected-install").exists())
+            self.assertIn(str(python), result.stdout)
+
     def test_missing_python_line_is_installed_and_selected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -37,7 +68,7 @@ class StartWorkTest(unittest.TestCase):
                 f"chmod +x '{root / 'python/bin/python3.14'}';;\n"
                 "esac\n")
             brew.chmod(0o755)
-            env = {**os.environ, "PATH": str(root / "fake-bin") + ":" + os.environ["PATH"],
+            env = {**os.environ, "PATH": str(root / "fake-bin") + ":/bin:/usr/bin",
                    "NUTRITION_APP_ROOT": str(root)}
             result = subprocess.run(
                 ["zsh", "-c", "source ./scripts/dependency-modules/toolchain.zsh; print $NUTRITION_DEPS_PYTHON"],

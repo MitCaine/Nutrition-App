@@ -85,7 +85,8 @@ Codex desktop integrated **zsh** terminal, run one command from the repository r
 source ./scripts/start-work.zsh
 ```
 
-It installs a missing repository Node or Python Homebrew formula, selects those lines for
+It installs a required Node or Python Homebrew formula when no compatible executable is
+already available, selects those lines for
 that terminal, updates installed formulas within those lines when newer patches are available, checks the latest
 package and toolchain versions, and applies compatible backend, mobile, and RI wheel-lock updates.
 Node and Python upgrades are attempted independently. A failed tool upgrade does not stop

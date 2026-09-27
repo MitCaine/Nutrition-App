@@ -28,7 +28,9 @@ nutrition_app_toolchain() {
     python_prefix="$(brew --prefix "python@$python_line" 2>/dev/null)"
 
     if [[ "${NUTRITION_START_WORK_SKIP_TOOL_UPDATES:-}" != 1 ]]; then
-      if [[ -z "$node_prefix" ]]; then
+      if [[ -z "$node_prefix" ]] &&
+          { ! command -v node >/dev/null 2>&1 ||
+            [[ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null)" != "$node_line" ]]; }; then
         print "Installing Node $node_line..."
         if brew install "node@$node_line"; then
           node_formula="node@$node_line"
@@ -38,7 +40,9 @@ nutrition_app_toolchain() {
           failed=1
         fi
       fi
-      if [[ -z "$python_prefix" || ! -x "$python_prefix/bin/python$python_line" ]]; then
+      if [[ -z "$python_prefix" || ! -x "$python_prefix/bin/python$python_line" ]] &&
+          { ! command -v "python$python_line" >/dev/null 2>&1 ||
+            [[ "$("python$python_line" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" != "$python_line" ]]; }; then
         print "Installing Python $python_line..."
         if brew install "python@$python_line"; then
           python_prefix="$(brew --prefix "python@$python_line" 2>/dev/null)"
