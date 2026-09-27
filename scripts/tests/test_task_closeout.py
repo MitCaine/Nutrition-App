@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import argparse
+import json
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -318,6 +319,85 @@ def test_cleanup_requires_exact_clean_disposable_checkout(transaction, tmp_path)
     git(repo, "update-ref", "refs/remotes/origin/main", implementation)
     with pytest.raises(closeout.CloseoutError, match="REMOTE_MAIN_MISMATCH"):
         closeout.cleanup_target(repo, issue_number=193, root=disposable, branch="task/GH-193-closeout", terminal=terminal)
+
+
+@pytest.mark.parametrize("interruption", ["worktree", "branch", "checkpoint"])
+def test_finalize_cleanup_resume_persists_complete(transaction, tmp_path, monkeypatch, interruption):
+    repo, implementation, _, terminal = transaction
+    disposable = tmp_path / "disposable"
+    branch = "task/GH-193-closeout"
+    git(repo, "worktree", "add", "-qb", branch, str(disposable), terminal)
+    git(repo, "update-ref", "refs/remotes/origin/main", terminal)
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    intent_path = state_dir / "issue-193-finalize.json"
+    intent_path.write_text(json.dumps({"phase": "COMPLETE", "issue_number": 193,
+                                       "terminal": terminal, "terminal_root": str(disposable)}))
+    args = argparse.Namespace(repo_root=repo, state_dir=state_dir, issue_number=193,
+                              cleanup_root=disposable, cleanup_branch=branch)
+    actual_git = controller.git
+    def interrupted_git(repository, *argv):
+        if argv[:2] == ("fetch", "origin"):
+            return ""
+        result = actual_git(repository, *argv)
+        if ((interruption == "worktree" and argv[:2] == ("worktree", "remove"))
+                or (interruption == "branch" and argv[:2] == ("branch", "-d"))):
+            raise RuntimeError("interrupted after " + interruption)
+        return result
+    actual_write = controller.atomic_write_json
+    writes = 0
+    def interrupted_write(path, value):
+        nonlocal writes
+        writes += 1
+        if interruption == "checkpoint" and writes == 2:
+            raise RuntimeError("interrupted before final checkpoint")
+        return actual_write(path, value)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(controller, "git", interrupted_git)
+        patcher.setattr(controller, "atomic_write_json", interrupted_write)
+        with pytest.raises(RuntimeError, match="interrupted"):
+            controller.command_finalize_cleanup(args)
+    assert json.loads(intent_path.read_text())["phase"] == "CLEANUP_PENDING"
+    with monkeypatch.context() as patcher:
+        patcher.setattr(controller, "git", lambda repository, *argv:
+                        "" if argv[:2] == ("fetch", "origin") else actual_git(repository, *argv))
+        assert controller.command_finalize_cleanup(args) == 0
+    completed = json.loads(intent_path.read_text())
+    assert completed["phase"] == "COMPLETE"
+    assert completed["cleanup"] == {"root": str(disposable), "branch": branch}
+    assert not disposable.exists()
+    assert subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+                          cwd=repo).returncode == 1
+    git(repo, "update-ref", "refs/remotes/origin/main", implementation)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(controller, "git", lambda *_args: (_ for _ in ()).throw(
+            AssertionError("completed cleanup must not fetch or inspect main")))
+        assert controller.command_finalize_cleanup(args) == 0
+    with pytest.raises(controller.TaskControllerError, match="INTENT_CHANGED"):
+        controller.command_finalize_cleanup(argparse.Namespace(**{**vars(args),
+            "cleanup_branch": "task/GH-193-wrong"}))
+
+
+def test_pending_cleanup_rejects_remote_main_advance(transaction, tmp_path, monkeypatch):
+    repo, implementation, _, terminal = transaction
+    disposable = tmp_path / "disposable"
+    branch = "task/GH-193-closeout"
+    git(repo, "worktree", "add", "-qb", branch, str(disposable), terminal)
+    git(repo, "update-ref", "refs/remotes/origin/main", implementation)
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "issue-193-finalize.json").write_text(json.dumps({
+        "phase": "CLEANUP_PENDING", "issue_number": 193, "terminal": terminal,
+        "terminal_root": str(disposable),
+        "cleanup": {"root": str(disposable), "branch": branch}}))
+    args = argparse.Namespace(repo_root=repo, state_dir=state_dir, issue_number=193,
+                              cleanup_root=disposable, cleanup_branch=branch)
+    actual_git = controller.git
+    monkeypatch.setattr(controller, "git", lambda repository, *argv:
+                        "" if argv[:2] == ("fetch", "origin") else actual_git(repository, *argv))
+    with pytest.raises(controller.TaskControllerError, match="REMOTE_MAIN_CHANGED"):
+        controller.command_finalize_cleanup(args)
+    assert disposable.exists()
 
 
 def test_finalize_rechecks_integrated_candidate_and_remote_main(transaction, tmp_path, monkeypatch):

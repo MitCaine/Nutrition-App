@@ -3120,6 +3120,7 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
         if git(repo, "rev-parse", branch_ref) != terminal:
             raise TaskControllerError("FINALIZE_CLEANUP_BRANCH_CHANGED")
         git(repo, "branch", "-d", args.cleanup_branch)
+    intent["phase"] = "COMPLETE"
     intent["cleanup"] = target
     atomic_write_json(intent_path, intent)
     emit({"task": f"GH-{args.issue_number}", "cleanup": "complete",

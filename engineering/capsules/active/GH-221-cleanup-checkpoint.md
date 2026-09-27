@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 2
 id = "GH-221-cleanup-checkpoint"
 title = "Persist completed capsule cleanup after interrupted resume"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ Only the final checkpoint value changes in implementation; existing checks and o
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four candidate-reviewable criteria and real-Git tests selected. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Final checkpoint and tests bounded; integration gates untouched. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-two owner authorization comment 5860279908 follows a preserved reviewer STOP_REPLAN caused by overlooking present RI dispositions. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Preserved one-line fix and interruption fixtures transferred to exact revision-two plan. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Focused 30 tests and capsule validation passed; fresh candidate gates pending. |
 
 Candidate review and terminal closeout occur after this implementation commit; Pending completion fields are lifecycle markers.
 
