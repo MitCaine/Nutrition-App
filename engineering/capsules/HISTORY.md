@@ -3470,3 +3470,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 84c9d64d818954596cbe255af1b6f9d1c454a6c2
 - **Full-capsule recovery path:** engineering/capsules/active/GH-215-saved-usda-accessibility.md
 - **Historical capsule SHA-256:** 7357b3a383f227561b5501255992870cca5fc94d351ce41a4d278b0b3ca28fc1
+
+### GH-216-finalize-continuation - Repair guarded finalize continuation after terminal R/T preparation
+
+- **ID:** GH-216-finalize-continuation
+- **Title:** Repair guarded finalize continuation after terminal R/T preparation
+- **Final state:** MERGED
+- **Capsule revision:** 7
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/216; implementation authorization comment 5858429874 and distinct terminal authorization comment 5858504565.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize. Capsule/RI remains opt-in.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** bcbaa35a91dd1c741bdd8dfa77820b9224fc90d4
+- **Task branch:** task/GH-216-finalize-continuation-r7
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** f6155ed; e1c99e9de8700345bee947bbebf55fed5c98a8bb
+- **Verified commit reference(s):** e1c99e9de8700345bee947bbebf55fed5c98a8bb
+- **Reviewed source commit:** e1c99e9de8700345bee947bbebf55fed5c98a8bb
+- **Reviewed task/checkpoint commit(s):** e1c99e9de8700345bee947bbebf55fed5c98a8bb
+- **Integration/merged commit:** e1c99e9de8700345bee947bbebf55fed5c98a8bb
+- **Integration-related commit reference(s):** Protected C at e1c99e9de8700345bee947bbebf55fed5c98a8bb; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C reviewer for AC-1..AC-4 and eight changed paths with no findings; failed revision-5 and revision-6 reviews remain preserved. Terminal T requires separate independent review.
+- **Verification summary:** Frozen focused 49 passed/1 skipped, repository baseline passed, RI P-to-C comparison comparable with eight changed paths dispositioned; real Git R/T recovery and hostile drift tests passed.
+- **Specialized qualification:** Dedicated App check 108677545399 passed repository profile at C; terminal T requires distinct repository profile check.
+- **Known warnings:** Existing non-blocking domain-token warning. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #187 proving period and owner rollout decision.
+- **Retrospective:** Required in #187; record live guarded result and measured limits.
+- **Referenced commits:** Planning ab1c3b08e539703bc0463736a18e2a221b680ed7; implementation e1c99e9de8700345bee947bbebf55fed5c98a8bb; full reviewed capsule e7dc16ef06e4e4420a3a8efd30c9c73a315a3a2c.
+- **Full-capsule recovery commit:** e7dc16ef06e4e4420a3a8efd30c9c73a315a3a2c
+- **Full-capsule recovery path:** engineering/capsules/active/GH-216-finalize-continuation.md
+- **Historical capsule SHA-256:** 005cb537edce46f54a991cd59b4e09fb36ac4eafd43888da707c4e36452aa5f1
