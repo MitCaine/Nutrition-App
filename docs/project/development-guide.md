@@ -85,8 +85,8 @@ Codex desktop integrated **zsh** terminal, run one command from the repository r
 source ./scripts/start-work.zsh
 ```
 
-It selects the repository's Node and Python lines for that terminal, updates the installed
-Homebrew formulas within those lines when newer patches are available, checks the latest
+It installs a missing repository Node or Python Homebrew formula, selects those lines for
+that terminal, updates installed formulas within those lines when newer patches are available, checks the latest
 package and toolchain versions, and applies compatible backend, mobile, and RI wheel-lock updates.
 Node and Python upgrades are attempted independently. A failed tool upgrade does not stop
 the dependency check, and a backend failure does not stop mobile updates (or vice versa).
@@ -101,7 +101,7 @@ An existing source change makes it preview only, preserving the work. Sourcing i
 because a launched script cannot alter its parent terminal's `PATH`. The toolchain and
 dependency steps are separate files under `scripts/dependency-modules/`.
 For a read-only run, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`;
-add `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1` to keep installed Homebrew tools unchanged.
+add `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1` to skip Homebrew installs and upgrades.
 These environment switches apply to that invocation only.
 
 For a whole-project dependency refresh without the startup toolchain step, run:

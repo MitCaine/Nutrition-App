@@ -28,6 +28,25 @@ nutrition_app_toolchain() {
     python_prefix="$(brew --prefix "python@$python_line" 2>/dev/null)"
 
     if [[ "${NUTRITION_START_WORK_SKIP_TOOL_UPDATES:-}" != 1 ]]; then
+      if [[ -z "$node_prefix" ]]; then
+        print "Installing Node $node_line..."
+        if brew install "node@$node_line"; then
+          node_formula="node@$node_line"
+          node_prefix="$(brew --prefix "$node_formula" 2>/dev/null)"
+        else
+          print -u2 "Node $node_line installation failed; continuing with Python and dependencies."
+          failed=1
+        fi
+      fi
+      if [[ -z "$python_prefix" || ! -x "$python_prefix/bin/python$python_line" ]]; then
+        print "Installing Python $python_line..."
+        if brew install "python@$python_line"; then
+          python_prefix="$(brew --prefix "python@$python_line" 2>/dev/null)"
+        else
+          print -u2 "Python $python_line installation failed; continuing with Node and dependencies."
+          failed=1
+        fi
+      fi
       if [[ -n "$node_formula" ]]; then
         latest="$(brew info --json=v2 "$node_formula" 2>/dev/null | python3 -c \
           'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])' 2>/dev/null)"
