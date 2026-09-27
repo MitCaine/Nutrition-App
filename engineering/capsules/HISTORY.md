@@ -3686,3 +3686,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** e71367961f7519cb452ce3a578b586f38bc0ce77
 - **Full-capsule recovery path:** engineering/capsules/active/GH-221-cleanup-checkpoint.md
 - **Historical capsule SHA-256:** f46296b9c60f360b9a0788ef7d406229c0623a3c95a43be822c6ea225e9c553d
+
+### GH-222-review-transport - Recover only pre-review transport failures without replanning unchanged candidates
+
+- **ID:** GH-222-review-transport
+- **Title:** Recover only pre-review transport failures without replanning unchanged candidates
+- **Final state:** MERGED
+- **Capsule revision:** 5
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/222; revision-five implementation authorization comment 5860532538 and distinct terminal authorization comment 5860570143.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 7a19f3137f545b4bb30a540a4f33641793242c9e
+- **Task branch:** task/GH-222-review-transport-r5
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** f22123e4a281b101cdc358d9614a89995ef97b44
+- **Verified commit reference(s):** f22123e4a281b101cdc358d9614a89995ef97b44
+- **Reviewed source commit:** f22123e4a281b101cdc358d9614a89995ef97b44
+- **Reviewed task/checkpoint commit(s):** f22123e4a281b101cdc358d9614a89995ef97b44
+- **Integration/merged commit:** f22123e4a281b101cdc358d9614a89995ef97b44
+- **Integration-related commit reference(s):** Protected C at f22123e4a281b101cdc358d9614a89995ef97b44; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and seven changed paths with no findings; earlier failed checks and reviewer verdicts remain preserved.
+- **Verification summary:** Focused 34 tests passed with three explicit runtime-oracle skips; repository baseline passed; RI P5-to-C5 comparable with seven controller path dispositions. Model preflight verified pinned gpt-5.6-luna low before App qualification.
+- **Specialized qualification:** Dedicated App check 108725219321 passed repository profile at C5; terminal T requires distinct repository App check.
+- **Known warnings:** Earlier candidates failed sandbox process signalling tests; two independent reviewers failed on RI disposition or circular review-proof reading. Their traces and verdicts remain preserved. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** Required after all four audit issues; record review-friction lesson.
+- **Referenced commits:** Planning ec7bd1c234f9387f192d2aafc3800c13e5b593da; implementation f22123e4a281b101cdc358d9614a89995ef97b44; full reviewed capsule 22007ed6eff9d42ec6b8d8382a07b1a9e27b595f.
+- **Full-capsule recovery commit:** 22007ed6eff9d42ec6b8d8382a07b1a9e27b595f
+- **Full-capsule recovery path:** engineering/capsules/active/GH-222-review-transport.md
+- **Historical capsule SHA-256:** 632641d95a3dabd5a719f48d26f07f52063da98daa820c42c42973f441e22373
