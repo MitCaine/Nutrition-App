@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 5
 id = "GH-222-review-transport"
 title = "Recover only pre-review transport failures without replanning unchanged candidates"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ Retry authority is limited to a typed, authenticated failure before any reviewer
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four acceptance criteria selected. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Transport, controller, tests and docs bounded. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-five owner authorization posted after retained reviewer STOP_REPLAN on a circular review-proof AC. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Exact base and planning established. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Transport/controller code and signal-independent fixtures retained; acceptance now follows issue #222 without requiring a prior verdict. Candidate checks pending. |
 
 ## Completion record
 

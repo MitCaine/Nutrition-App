@@ -15,6 +15,36 @@ from test_candidate_evidence import CandidateFixture  # noqa: E402
 
 
 class IndependentReviewTests(CandidateFixture):
+    def test_only_explicit_model_rejection_is_recoverable(self):
+        self.assertTrue(review.model_rejected({"message": "Model gpt-example is not supported by this account"}))
+        self.assertFalse(review.model_rejected({"message": "server closed before result"}))
+        self.assertFalse(review.reviewer_activity([{"direction": "received", "message": {"method": "turn/started"}}]))
+        for method in ("item/started", "item/tool/call", "unknown/event"):
+            self.assertTrue(review.reviewer_activity([{"direction": "received", "message": {"method": method}}]))
+        fake = object.__new__(review.Rpc)
+        fake.next_id = 1
+        fake.send = mock.Mock()
+        fake.read = mock.Mock(return_value={"id": 1, "error": {"message": "Model unavailable"}})
+        with self.assertRaises(review.PreReviewTransportError):
+            fake.request("turn/start", {})
+        fake.read = mock.Mock(return_value={"id": 2, "error": {"message": "Model unavailable"}})
+        with self.assertRaisesRegex(evidence.EvidenceError, "PROTOCOL_REJECTED"):
+            fake.request("model/list", {})
+
+    def test_model_preflight_rejects_absent_or_unsupported_effort(self):
+        binary = Path(sys.executable).resolve()
+        identity = {"executable": str(binary), "sha256": "fixture", "version": review.QUALIFIED_VERSION}
+        fake = mock.Mock()
+        fake.trace = []
+        fake.request.side_effect = [{}, {"data": [{"model": "working", "supportedReasoningEfforts": [{"reasoningEffort": "low"}]}]}]
+        with mock.patch.object(review, "runtime", return_value=identity), \
+             mock.patch.object(review.subprocess, "Popen"), mock.patch.object(review, "Rpc", return_value=fake):
+            with self.assertRaisesRegex(evidence.EvidenceError, "MODEL_UNSUPPORTED"):
+                review.preflight_model(binary, "fixture", "missing", "low", directory=self.root / "preflight-1")
+            fake.request.side_effect = [{}, {"data": [{"model": "working", "supportedReasoningEfforts": [{"reasoningEffort": "low"}]}]}]
+            with self.assertRaisesRegex(evidence.EvidenceError, "EFFORT_UNSUPPORTED"):
+                review.preflight_model(binary, "fixture", "working", "high", directory=self.root / "preflight-2")
+
     def test_callbacks_read_only_fixed_objects(self):
         binding = self.binding()
         result = review.read_source(self.repo, binding, "nutrition_read_source", {
@@ -52,14 +82,15 @@ class IndependentReviewTests(CandidateFixture):
                 review.runtime(binary, hashlib.sha256(binary.read_bytes()).hexdigest())
 
     def test_rpc_timeout_and_unexpected_request(self):
-        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"],
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.2)"],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, start_new_session=True)
         rpc = review.Rpc(process, self.root, 0.02)
         try:
             with self.assertRaisesRegex(evidence.EvidenceError, "TIMEOUT"):
                 rpc.read()
         finally:
-            rpc.close()
+            with mock.patch.object(review.os, "killpg", side_effect=ProcessLookupError):
+                rpc.close()
         fake = object.__new__(review.Rpc)
         fake.next_id = 1
         fake.send = mock.Mock()
@@ -69,12 +100,13 @@ class IndependentReviewTests(CandidateFixture):
 
     def test_late_request_prevents_receipt(self):
         message = json.dumps({"id": 99, "method": "item/tool/call", "params": {}})
-        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"],
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.2)"],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, start_new_session=True)
         rpc = review.Rpc(process, self.root, 1)
         rpc.buffer = (message + "\n").encode()
-        with self.assertRaisesRegex(evidence.EvidenceError, "LATE_SERVER_REQUEST"):
-            rpc.close()
+        with mock.patch.object(review.os, "killpg", side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(evidence.EvidenceError, "LATE_SERVER_REQUEST"):
+                rpc.close()
         rpc.selector.close()
 
     def test_notifications_cannot_escape_during_requests_or_terminal_drain(self):
@@ -99,11 +131,12 @@ class IndependentReviewTests(CandidateFixture):
             # The final complete-trace audit is mandatory before any receipt can be signed.
             with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_TRACE"):
                 review.validate_trace(fake.trace, "thread", "turn")
-            process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"],
+            process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.2)"],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, start_new_session=True)
             rpc = review.Rpc(process, self.root, 1)
             rpc.buffer = (json.dumps(event) + "\n").encode()
-            rpc.close()
+            with mock.patch.object(review.os, "killpg", side_effect=ProcessLookupError):
+                rpc.close()
             with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_TRACE"):
                 review.validate_trace(rpc.trace, "thread", "turn")
 

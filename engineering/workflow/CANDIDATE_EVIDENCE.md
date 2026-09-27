@@ -132,6 +132,11 @@ A different version or binary requires a new runtime qualification, not silent f
 Default model/effort are inherited and observed; optional `--model`/`--effort` requests must
 match the actual session. The controller records provider, fresh thread/turn IDs, nonce,
 completion, runtime digest and transcript digest. No implementation thread is resumed.
+After attaching C and before expensive qualification, run
+`./scripts/task --state-dir STATE evidence ISSUE preflight --candidate-root PATH --runtime CODEX --runtime-sha256 SHA256 --model MODEL --effort EFFORT`.
+The pinned runtime's account-visible model catalog must list the selected model and effort;
+an absent choice fails before qualification. Repeat preflight if intentionally selecting a
+different reviewer model. Review still requests the named model explicitly and never falls back.
 
 The ephemeral reviewer has explicitly empty environments, no imported repository instructions,
 no workspace roots, read-only sandbox policy, approval never and no provider-model fallback.
@@ -160,7 +165,12 @@ symlinks and hardlinks. These are observed checks, not reviewer assertions.
 ## Corrections, failure and portability
 
 Approved maps to REVIEWED_APPROVED; bounded-correction maps to REVIEWED_CHANGES_REQUESTED;
-stop-replan and failed runtime observation map to STOP_REPLAN. There is at most one correction
+stop-replan and failed runtime observation map to STOP_REPLAN. An explicit model rejection
+before any reviewer output or tool call retains its trace and leaves the verified candidate
+eligible for exactly one fresh independent attempt. The controller rechecks live issue authority,
+main, candidate source and the sealed evidence digest on that attempt. A second rejection,
+ambiguous transport, protocol violation, source drift or substantive verdict stops replanning;
+no verdict is inherited. There is at most one correction
 (default one, optionally zero). `evidence ISSUE correct --candidate-root PATH` requires the
 observed bounded-correction receipt, archives prior evidence and clears qualification,
 verification, review and integration. Then attach a newly committed C2 with the same P;

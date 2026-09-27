@@ -3249,6 +3249,17 @@ def command_execution(args: argparse.Namespace) -> int:
         return 1 if record["phase"] in {"STOP_REPLAN", "RUNNING"} else 0
 
 
+def record_pre_review_failure(state: dict, attached: dict, binding: dict, packet: dict,
+                              candidate_sha: str, attempt: Path, reason: str) -> None:
+    """Consume the sole same-candidate pre-review retry without granting a verdict."""
+    failures = attached.setdefault("pre_review_failures", [])
+    failures.append({"reason": reason, "diagnostics": str(attempt),
+                     "candidate": candidate_sha, "binding_sha256": binding["binding_sha256"],
+                     "evidence_sha256": candidate_evidence.digest(packet)})
+    if len(failures) > 1:
+        state["phase"] = "STOP_REPLAN"
+
+
 def command_evidence(args: argparse.Namespace) -> int:
     """Controller-owned opt-in evidence; never import a caller's approval JSON."""
     import fcntl
@@ -3304,7 +3315,15 @@ def command_evidence(args: argparse.Namespace) -> int:
             candidate_evidence.authenticate_binding(binding, authorization, sha)
             if not candidate_evidence.source_matches(binding["source"], candidate_evidence.observe(candidate, sha)):
                 raise EvidenceError("ATTACHED_SOURCE_CHANGED")
-            if args.action == "check":
+            if args.action == "preflight":
+                if state["phase"] not in {"AUTHORIZED", "QUALIFIED", "VERIFIED"} or not args.runtime or not args.runtime_sha256 or not args.model:
+                    raise EvidenceError("REVIEW_PREFLIGHT_REQUIRES_PINNED_RUNTIME_AND_MODEL")
+                attempt = directory / f"preflight-{args.issue_number}-{secrets.token_hex(8)}"
+                attached["review_preflight"] = independent_review.preflight_model(
+                    args.runtime, args.runtime_sha256, args.model, args.effort,
+                    directory=attempt, timeout=min(args.timeout, 60))
+                attached["review_preflight"]["diagnostics"] = str(attempt)
+            elif args.action == "check":
                 if state["phase"] not in {"AUTHORIZED", "QUALIFIED"} or not args.check:
                     raise EvidenceError("COMMAND_EVIDENCE_PHASE_INVALID")
                 attempt = directory / f"check-{args.issue_number}-{secrets.token_hex(8)}"
@@ -3340,11 +3359,17 @@ def command_evidence(args: argparse.Namespace) -> int:
                     raise EvidenceError("REVIEW_REQUIRES_VERIFICATION_AND_PINNED_RUNTIME")
                 candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
                 packet = candidate_evidence.evidence_packet(attached)
+                if attached.get("pre_review_failures") and attached["pre_review_failures"][-1]["evidence_sha256"] != candidate_evidence.digest(packet):
+                    raise EvidenceError("REVIEW_RETRY_EVIDENCE_CHANGED")
                 attempt = directory / f"review-{args.issue_number}-{secrets.token_hex(8)}"
                 try:
                     receipt = independent_review.run_review(candidate, binding, packet, directory=attempt,
                         executable=args.runtime, expected_sha256=args.runtime_sha256, key=key,
                         timeout=args.timeout, model=args.model, effort=args.effort)
+                except independent_review.PreReviewTransportError as exc:
+                    record_pre_review_failure(state, attached, binding, packet, sha, attempt, str(exc))
+                    atomic_write_json(state_path(directory, args.issue_number), state)
+                    raise
                 except EvidenceError as exc:
                     state["phase"] = "STOP_REPLAN"
                     attached["review_failure"] = {"reason": str(exc), "diagnostics": str(attempt)}
@@ -3400,7 +3425,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     evidence = subparsers.add_parser("evidence")
     evidence.add_argument("issue_number", type=int)
-    evidence.add_argument("action", choices=("attach", "check", "structural", "disposition", "manual", "seal", "review", "correct", "publish", "status"))
+    evidence.add_argument("action", choices=("attach", "preflight", "check", "structural", "disposition", "manual", "seal", "review", "correct", "publish", "status"))
     evidence.add_argument("--candidate-root", type=Path, required=True)
     evidence.add_argument("--planning")
     evidence.add_argument("--ri-runtime", type=Path)

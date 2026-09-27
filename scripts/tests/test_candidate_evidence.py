@@ -16,6 +16,25 @@ from lib import candidate_evidence as evidence  # noqa: E402
 from lib.task_authorization import ResolvedAuthorization  # noqa: E402
 
 
+class PreReviewRetryTests(unittest.TestCase):
+    def test_one_retry_only_and_diagnostics_preserved(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("evidence_task_retry", Path(__file__).resolve().parents[1] / "task.py")
+        task = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(task)
+        state = {"phase": "VERIFIED"}
+        attached = {}
+        binding = {"binding_sha256": "binding"}
+        packet = {"qualification": "sealed"}
+        task.record_pre_review_failure(state, attached, binding, packet, "candidate", Path("/tmp/attempt-1"), "model rejected")
+        self.assertEqual(state["phase"], "VERIFIED")
+        self.assertEqual(attached["pre_review_failures"][0]["candidate"], "candidate")
+        self.assertEqual(attached["pre_review_failures"][0]["evidence_sha256"], evidence.digest(packet))
+        task.record_pre_review_failure(state, attached, binding, packet, "candidate", Path("/tmp/attempt-2"), "model rejected")
+        self.assertEqual(state["phase"], "STOP_REPLAN")
+        self.assertEqual(len(attached["pre_review_failures"]), 2)
+
+
 class CandidateFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="nutrition-evidence-")

@@ -27,6 +27,28 @@ DISABLED_FEATURES = (
 )
 
 
+class PreReviewTransportError(EvidenceError):
+    """Explicit model rejection before the reviewer produced work or a verdict."""
+
+
+def model_rejected(value: object) -> bool:
+    message = str(value).lower()
+    return bool(re.search(r"(unsupported|not supported|unavailable|not available|unknown|not found|invalid)\s+(model|reasoning effort)|(model|reasoning effort).{0,80}(unsupported|not supported|unavailable|not available|unknown|not found|invalid)", message))
+
+
+def reviewer_activity(trace: list[dict]) -> bool:
+    """An ambiguous event is activity; only a clean pre-review trace is retryable."""
+    harmless = {"thread/started", "turn/started", "thread/status/changed"}
+    for entry in trace:
+        if entry.get("direction") != "received":
+            continue
+        message = entry.get("message", {})
+        method = message.get("method")
+        if method and method not in harmless:
+            return True
+    return False
+
+
 def runtime(executable: Path, expected_sha256: str) -> dict:
     executable = executable.resolve()
     raw = hashlib.sha256(executable.read_bytes()).hexdigest()
@@ -193,6 +215,8 @@ class Rpc:
                 raise EvidenceError("REVIEW_UNEXPECTED_SERVER_REQUEST")
             if message.get("id") == identifier:
                 if "error" in message:
+                    if method in {"thread/start", "turn/start"} and model_rejected(message["error"]):
+                        raise PreReviewTransportError("REVIEW_MODEL_REJECTED: " + str(message["error"]))
                     raise EvidenceError("REVIEW_PROTOCOL_REJECTED: " + str(message["error"]))
                 return message["result"]
             if "id" in message:
@@ -238,6 +262,49 @@ class Rpc:
             if "id" in message and "method" in message:
                 raise EvidenceError("REVIEW_LATE_SERVER_REQUEST")
         self.selector.close()
+
+
+def preflight_model(executable: Path, expected_sha256: str, model: str, effort: str | None,
+                    *, directory: Path, timeout: float = 30) -> dict:
+    """Inspect the pinned runtime's account-visible model catalog without starting a review."""
+    identity = runtime(executable, expected_sha256)
+    directory.mkdir(parents=True, exist_ok=False)
+    env = {name: os.environ[name] for name in ("HOME", "PATH", "CODEX_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR") if name in os.environ}
+    with (directory / "stderr.log").open("wb") as stderr:
+        process = subprocess.Popen([identity["executable"], "app-server", "--stdio"],
+            cwd=directory, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=stderr, start_new_session=True)
+        rpc = Rpc(process, directory, timeout)
+        try:
+            rpc.request("initialize", {"clientInfo": {"name": "nutrition-review-preflight", "version": "1"},
+                                       "capabilities": {"experimentalApi": True}})
+            rpc.send({"method": "initialized", "params": {}})
+            cursor = None
+            found = None
+            for _ in range(10):
+                params = {"limit": 100, "includeHidden": True}
+                if cursor:
+                    params["cursor"] = cursor
+                page = rpc.request("model/list", params)
+                for item in page["data"]:
+                    if item.get("model") == model:
+                        found = item
+                cursor = page.get("nextCursor")
+                if not cursor:
+                    break
+            else:
+                raise EvidenceError("REVIEW_MODEL_CATALOG_LIMIT")
+            if found is None:
+                raise EvidenceError("REVIEW_MODEL_UNSUPPORTED: " + model)
+            efforts = [item["reasoningEffort"] for item in found.get("supportedReasoningEfforts", [])]
+            if effort is not None and effort not in efforts:
+                raise EvidenceError("REVIEW_EFFORT_UNSUPPORTED: " + effort)
+            return {"runtime": identity, "model": model, "effort": effort, "supported_efforts": efforts}
+        finally:
+            try:
+                rpc.close()
+            finally:
+                (directory / "trace.json").write_text(json.dumps(rpc.trace, indent=2))
 
 
 def validate_trace(trace: list[dict], thread: str, turn: str) -> None:
@@ -407,7 +474,11 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                         messages.append(values["item"]["text"])
                 if method == "turn/completed":
                     completed = values["turn"]
-                    if values.get("threadId") != tid or completed["id"] != turn or completed["status"] != "completed":
+                    if values.get("threadId") != tid or completed["id"] != turn:
+                        raise EvidenceError("REVIEW_TURN_NOT_COMPLETED")
+                    if completed["status"] != "completed":
+                        if model_rejected(completed.get("error")) and not reviewer_activity(rpc.trace[:-1]):
+                            raise PreReviewTransportError("REVIEW_MODEL_REJECTED: " + str(completed.get("error")))
                         raise EvidenceError("REVIEW_TURN_NOT_COMPLETED")
                     break
             if not messages or not disabled_servers(rpc.servers(tid)):
@@ -428,6 +499,7 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                        "verdict": verdict, "trace_sha256": digest(rpc.trace)}
     except (EvidenceError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         failure = str(exc)
+        retryable = isinstance(exc, PreReviewTransportError) and rpc is not None and not reviewer_activity(rpc.trace)
     finally:
         if rpc is not None:
             try:
@@ -438,6 +510,8 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
             (directory / "trace.json").write_text(json.dumps(rpc.trace, indent=2))
         (directory / "outcome.json").write_text(json.dumps({"error": failure, "session": session}, indent=2))
     if failure or receipt is None:
+        if locals().get("retryable", False):
+            raise PreReviewTransportError(f"INDEPENDENT_REVIEW_PRE_REVIEW_TRANSPORT: {failure}; diagnostics={directory}")
         raise EvidenceError(f"INDEPENDENT_REVIEW_STOP_REPLAN: {failure}; diagnostics={directory}")
     receipt = sign_receipt(receipt, key)
     (directory / "receipt.json").write_text(json.dumps(receipt, indent=2))
