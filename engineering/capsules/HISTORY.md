@@ -3325,3 +3325,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** b31b3392b27b0402dc33b2c1971d0b4629cbc0c8
 - **Full-capsule recovery path:** engineering/capsules/active/GH-200.md
 - **Historical capsule SHA-256:** 622580e142cc265ace5a9241e907d79153557380ae2e6e8f158ce489e0ff8a53
+
+
+### GH-198 - Use shared accessible root-header actions
+
+- **ID:** GH-198
+- **Title:** Use shared accessible root-header actions
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/198; revision-three authorization comment5851260438 and distinct terminal authorization comment5851310734.
+- **Issue disposition:** Implementation integrated; terminal result becomes effective only after separately qualified protected T and remote observation.
+- **Created:** 2026-09-26
+- **Completed/updated:** 2026-09-26
+- **Base commit:** c27d029b9f36ffde8136682f669c581eda71ec35
+- **Task branch:** task/GH-198-tsx-pilot-r3
+- **Controller:** Codex migration controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate and exact-terminal reviewers
+- **Delegation:** Read-only independent reviews; implementation remained controller-owned.
+- **Implementation commit(s):** 3314c630efa0ae7d95a76d59ab1e9aba6bac316f; 523ad1e46f44e982c22a99304762c54fbfe52316; 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d
+- **Verified commit reference(s):** 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d
+- **Reviewed source commit:** 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d
+- **Reviewed task/checkpoint commit(s):** 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d
+- **Integration/merged commit:** 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d
+- **Integration-related commit reference(s):** Protected C integration at 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d; distinct terminal authority and protected T.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C independent reviewer with AC-1..AC-4 and all three changed-path structural rows PASS, no findings; terminal source and protected T require separate review and observation.
+- **Verification summary:** Frozen focused Jest and repository/mobile no-package baseline passed in isolated clones with lock-verified offline npm preparation. RI record 5235bda8c9e85a037734803fbf9871864cbe11619fd6fa3a9e232c7510a98983 comparable; all three changed paths disposed and independently reviewed. Mobile typecheck and 1,830 Jest tests passed in baseline.
+- **Specialized qualification:** Exact C App4708441 check108517625327 PASS, trusted execution run36282655914 repository/mobile profiles; T requires distinct repository App check and independent review. No native profile triggered by the two TSX paths.
+- **Known warnings:** Original C1 failed Expo qualification before #199 and lacked executable attached npm evidence before #200; revision-two reviewer transport failed because the account rejected its default model. No verdict transferred. Automatic approval review rejected public digest/matrix publication for this issue; signed local reviewer receipt remains. This proposed HISTORY entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #194 combined pilot decision and documentation; public evidence publication requires separately authorized disclosure.
+- **Retrospective:** Required in #194; preserve failed candidates, runner/reviewer friction and distinct qualification.
+- **Referenced commits:** Planning 7c7efcd2d0a8fd23136f6ff3e07544dd7e10cc15; implementation 9d5b1bf3305a16d9c000bc936a835a2d9fd98e8d; full reviewed capsule bf7c1ffc8fd1d2fb500a5b5955fb08d1672b1804.
+- **Full-capsule recovery commit:** bf7c1ffc8fd1d2fb500a5b5955fb08d1672b1804
+- **Full-capsule recovery path:** engineering/capsules/active/GH-198.md
+- **Historical capsule SHA-256:** 7c33ea54ea048ad2f2e33a9b959b5eef9f6f3501b47763033e326a1bebccabb7
