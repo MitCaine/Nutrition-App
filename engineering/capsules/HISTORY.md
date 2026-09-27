@@ -3434,3 +3434,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** e512574daa292ff6db670d84c7340bfa2adc7fe3
 - **Full-capsule recovery path:** engineering/capsules/active/GH-213-update-serialization.md
 - **Historical capsule SHA-256:** 9969a2a6f557bbb77eb95d75f2fe5f95607e11d7dc2edafbf021340717b0ef35
+
+### GH-215-saved-usda-accessibility - Align Saved Foods USDA result accessibility and importability
+
+- **ID:** GH-215-saved-usda-accessibility
+- **Title:** Align Saved Foods USDA result accessibility and importability
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/215; implementation authorization comment 5857964683 and distinct terminal authorization comment 5858038581.
+- **Issue disposition:** Implementation integrated; this proposed HISTORY entry is effective only after separate terminal qualification, independent review and protected integration. Combined capsule/RI remains opt-in.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 90d2f45fb02319013515479bb8b5c9ce149622a4
+- **Task branch:** task/GH-215-saved-usda-accessibility
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e67fb80; f2e4ba4d42b8940321690fdadd0043414b109057
+- **Verified commit reference(s):** f2e4ba4d42b8940321690fdadd0043414b109057
+- **Reviewed source commit:** f2e4ba4d42b8940321690fdadd0043414b109057
+- **Reviewed task/checkpoint commit(s):** f2e4ba4d42b8940321690fdadd0043414b109057
+- **Integration/merged commit:** f2e4ba4d42b8940321690fdadd0043414b109057
+- **Integration-related commit reference(s):** Protected implementation C at f2e4ba4d42b8940321690fdadd0043414b109057; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C independent reviewer for AC-1..AC-4 and all three changed paths with no findings; terminal T requires separate review.
+- **Verification summary:** Frozen focused 10 Jest tests and repository/mobile baseline passed with offline npm preparation; full mobile baseline passed 1,832 tests. RI P-to-C comparison comparable with three paths dispositioned.
+- **Specialized qualification:** Dedicated App check 108667750752 passed repository/mobile profiles at C; terminal T requires distinct repository profile check. TSX-only paths did not trigger iOS-native.
+- **Known warnings:** Existing non-blocking domain-token warning; database/native/manual opt-in checks did not apply. This HISTORY entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #187 proving period and owner rollout decision.
+- **Retrospective:** Required in #187; compare actual handoffs and measurement limits.
+- **Referenced commits:** Planning 4260b7748f52247b86d809b3fe98fcd850c2e671; implementation f2e4ba4d42b8940321690fdadd0043414b109057; full reviewed capsule 84c9d64d818954596cbe255af1b6f9d1c454a6c2.
+- **Full-capsule recovery commit:** 84c9d64d818954596cbe255af1b6f9d1c454a6c2
+- **Full-capsule recovery path:** engineering/capsules/active/GH-215-saved-usda-accessibility.md
+- **Historical capsule SHA-256:** 7357b3a383f227561b5501255992870cca5fc94d351ce41a4d278b0b3ca28fc1
