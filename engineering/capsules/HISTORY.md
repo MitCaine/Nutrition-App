@@ -3506,3 +3506,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** e7dc16ef06e4e4420a3a8efd30c9c73a315a3a2c
 - **Full-capsule recovery path:** engineering/capsules/active/GH-216-finalize-continuation.md
 - **Historical capsule SHA-256:** 005cb537edce46f54a991cd59b4e09fb36ac4eafd43888da707c4e36452aa5f1
+
+### GH-217-target-life-stage-radio - Make optional target life-stage selection use consistent radio semantics
+
+- **ID:** GH-217-target-life-stage-radio
+- **Title:** Make optional target life-stage selection use consistent radio semantics
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** product
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/217; revision-three implementation authorization comment 5859199198 and distinct terminal authorization comment 5859264793.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize. Capsule/RI remains opt-in.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** ce8d044aa548f6b211ca1beb9255f53331600d1e
+- **Task branch:** task/GH-217-target-life-stage-radio-r3
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 709edd7826e305c332ff847f16af0ba6d44e5ad6
+- **Verified commit reference(s):** 709edd7826e305c332ff847f16af0ba6d44e5ad6
+- **Reviewed source commit:** 709edd7826e305c332ff847f16af0ba6d44e5ad6
+- **Reviewed task/checkpoint commit(s):** 709edd7826e305c332ff847f16af0ba6d44e5ad6
+- **Integration/merged commit:** 709edd7826e305c332ff847f16af0ba6d44e5ad6
+- **Integration-related commit reference(s):** Protected C at 709edd7826e305c332ff847f16af0ba6d44e5ad6; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and all three changed paths, with no findings; failed revision-one reviewer and revision-two transport attempts remain preserved. Terminal T requires separate independent review.
+- **Verification summary:** Frozen focused and repository/mobile baseline passed at C; local focused 21 passed, full mobile 1835 passed/2 existing skips and TypeScript passed; RI P3-to-C3 comparable with three changed paths dispositioned. Revision-one host PATH failure and review STOP_REPLAN, and revision-two unsupported-model STOP_REPLAN, are retained as #187 workflow-friction evidence.
+- **Specialized qualification:** Dedicated App check 108693893768 passed repository/mobile at C; TSX-only change did not trigger iOS-native. Terminal T requires distinct repository App check.
+- **Known warnings:** Existing non-blocking domain-token warning. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #187 measured proving period and owner rollout decision.
+- **Retrospective:** Required in #187; record live guarded result and human-active-time limits.
+- **Referenced commits:** Planning aa6f8ef880d70558a3fd40047d4f26af693aecbc; implementation 709edd7826e305c332ff847f16af0ba6d44e5ad6; full reviewed capsule b35fd93417efcd9498e3e0a0c855f260816b5210.
+- **Full-capsule recovery commit:** b35fd93417efcd9498e3e0a0c855f260816b5210
+- **Full-capsule recovery path:** engineering/capsules/active/GH-217-target-life-stage-radio.md
+- **Historical capsule SHA-256:** 32a0a04fdf2f325b2a34c7edd7d6b227fd566301abd9eb25e7e08cd9a86daabd
