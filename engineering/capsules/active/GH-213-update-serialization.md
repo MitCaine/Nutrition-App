@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 3
 id = "GH-213-update-serialization"
 title = "Serialize dependency updater runs"
-state = "IN_PROGRESS"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -119,6 +119,7 @@ The lock is scoped to this updater and the working repository. The combined lane
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | One updater and test/documentation surface. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-three authority and fresh capsule-only planning overlay; failed C1 and reviewer-runtime C2 evidence preserved. |
 | 2026-09-27 | READY | IN_PROGRESS | Codex controller | Revision-three external authorization and unchanged bounded implementation |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Corrected updater implementation committed; independent review uses qualified explicit model |
 
 ## Completion record
 
