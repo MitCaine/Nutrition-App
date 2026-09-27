@@ -3542,3 +3542,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** b35fd93417efcd9498e3e0a0c855f260816b5210
 - **Full-capsule recovery path:** engineering/capsules/active/GH-217-target-life-stage-radio.md
 - **Historical capsule SHA-256:** 32a0a04fdf2f325b2a34c7edd7d6b227fd566301abd9eb25e7e08cd9a86daabd
+
+### GH-218-capsule-default - Make capsule/RI the normal workflow for new tasks
+
+- **ID:** GH-218-capsule-default
+- **Title:** Make capsule/RI the normal workflow for new tasks
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** documentation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/218; revision-two implementation authorization comment 5859403898 and distinct terminal authorization comment 5859449656.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize. The owner's #187 decision selects capsule/RI as normal for new tasks.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 21869a4da3578858de7ee5668ffcdc67eb4cf80b
+- **Task branch:** task/GH-218-capsule-default-r2
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e175e2db9a0a8129173209083b4c8aebba1fccc9
+- **Verified commit reference(s):** e175e2db9a0a8129173209083b4c8aebba1fccc9
+- **Reviewed source commit:** e175e2db9a0a8129173209083b4c8aebba1fccc9
+- **Reviewed task/checkpoint commit(s):** e175e2db9a0a8129173209083b4c8aebba1fccc9
+- **Integration/merged commit:** e175e2db9a0a8129173209083b4c8aebba1fccc9
+- **Integration-related commit reference(s):** Protected C at e175e2db9a0a8129173209083b4c8aebba1fccc9; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C2 reviewer for AC-1..AC-4 and all ten Markdown paths with no findings; revision-one STOP_REPLAN remains preserved. Terminal T requires separate independent review.
+- **Verification summary:** Fresh frozen documentation validation and session-end baseline passed at C2; RI P2-to-C2 comparable, with all ten unsupported Markdown paths routed to full-diff review. Revision-one circular AC-4 review failure remains retained.
+- **Specialized qualification:** Dedicated App check 108698401077 passed repository profile at C2; terminal T requires distinct repository App check.
+- **Known warnings:** Historical active-time baseline unavailable; no speed comparison. Existing non-blocking domain-token warning. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #187 rollout record and caller inventory before any compatibility retirement.
+- **Retrospective:** Required in #187; record live guarded result and owner-reported #217 active-time bound.
+- **Referenced commits:** Planning 0c3ae0767455da5d3c95469369736580f9983501; implementation e175e2db9a0a8129173209083b4c8aebba1fccc9; full reviewed capsule 73b7f73d779ad8839d3609689d4738d321c8b117.
+- **Full-capsule recovery commit:** 73b7f73d779ad8839d3609689d4738d321c8b117
+- **Full-capsule recovery path:** engineering/capsules/active/GH-218-capsule-default.md
+- **Historical capsule SHA-256:** c1de9c8df132120790becfe04c9895c4b148acdacdcd47e2dfb732c237c83f64
