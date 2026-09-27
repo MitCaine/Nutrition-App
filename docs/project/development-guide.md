@@ -73,19 +73,26 @@ The current remote application migration head is
 `0033_complete_runtime_authority`.
 
 Root `VERSION` owns the canonical Version 2.0 repository release identity.
-`apps/backend/pyproject.toml` mirrors `2.0.0`, requires the Python 3.12 release
+`apps/backend/pyproject.toml` mirrors the root `VERSION`, requires the Python 3.12 release
 line, and Ruff targets `py312`. `requirements-dev.lock` remains the reproducible
 dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
-Python 3.12 development and CI environment. Regenerate it from `apps/backend` with the documented
-pip-tools version after changing `pyproject.toml`:
+Python 3.12 development and CI environment. For a routine update of one declared dependency,
+run this from the repository root:
 
 ```bash
-python -m pip install "pip-tools==7.6.0"
-pip-compile --strip-extras --all-build-deps --allow-unsafe --extra dev \
-  --output-file requirements-dev.lock pyproject.toml
+./scripts/update-dependencies backend fastapi
+./scripts/update-dependencies backend fastapi --apply
 ```
+
+The first command previews the resolved change; the second writes only the lockfile. The
+compiler is included in the ranged development dependencies and is bootstrapped into a
+temporary environment if no prepared backend environment is available. Set
+`NUTRITION_DEPS_PYTHON` if Python 3.12 is not available as `python3.12`.
+The preview lists every resolved package version change, including transitive changes,
+and names the required `repository` and `backend` qualification profiles. Select
+`postgresql` as well when the changed package affects database contracts.
 
 ### Mobile
 
@@ -100,6 +107,23 @@ npm ci
 ```
 
 `npm ci` is setup/dependency reconciliation, not a per-rebuild requirement.
+For a routine update within an existing package range, preview and then apply one package:
+
+```bash
+./scripts/update-dependencies mobile @tanstack/react-query
+./scripts/update-dependencies mobile @tanstack/react-query --apply
+```
+
+This changes only `package-lock.json`. It refuses fixed or undeclared package versions,
+checks lockfile declarations, installs the candidate lock without scripts in a temporary
+directory, checks Expo compatibility, and refuses new dependency-risk register drift. Existing
+risk findings are reported and still need separate review. Review
+the exact resolved changes before qualification. Expo and native package migrations need
+their coordinated upgrade process. The script requires a clean worktree so a failed
+attempt cannot overwrite unrelated changes. Exact resolved versions remain pinned in
+lockfiles; declared ranges remain flexible. The mobile command accepts Python 3.9 or
+newer alongside the repository's Node 24 toolchain, and lists every resolved version
+change plus the `repository`, `mobile`, and `ios-native` qualification profiles.
 
 For ordinary local-first JS/TS development with an appropriate native
 development build already installed:

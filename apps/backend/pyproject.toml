@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "httpx2>=2.5,<3",
+  "pip-tools>=7.6,<8",
   "pytest>=8.2",
   "ruff>=0.5",
 ]

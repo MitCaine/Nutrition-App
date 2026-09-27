@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -n "${NUTRITION_DEPS_PYTHON:-}" ]; then
+  PYTHON=$NUTRITION_DEPS_PYTHON
+elif [ "${1:-}" = mobile ] && command -v python3 >/dev/null 2>&1; then
+  PYTHON=python3
+elif command -v python3.12 >/dev/null 2>&1; then
+  PYTHON=python3.12
+else
+  printf '%s\n' 'Python 3.12 is required for backend updates; Python 3.9+ is required for mobile. Set NUTRITION_DEPS_PYTHON to a compatible executable.' >&2
+  exit 2
+fi
+exec "$PYTHON" "$ROOT/scripts/update_dependencies.py" "$@"
