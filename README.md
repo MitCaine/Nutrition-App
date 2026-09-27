@@ -94,7 +94,7 @@ For layer responsibilities, persistence boundaries, and migration streams, read 
 | Primary application data | `expo-sqlite`, fresh semantic SQLite schema, schema-version migration engine |
 | Native OCR | Swift Expo module using Apple Vision |
 | External nutrition data | USDA FoodData Central API through the local runtime or preserved remote backend |
-| Alternate/reference backend | Python 3.12, FastAPI, Pydantic, SQLAlchemy 2 |
+| Alternate/reference backend | Python 3.14, FastAPI, Pydantic, SQLAlchemy 2 |
 | Alternate/reference application data | PostgreSQL 16, Alembic |
 | Advanced historical operations | Independent PostgreSQL control database and MinIO object-lock evidence for promotion workflows |
 | Tests | Pytest, Jest, native/file-backed SQLite qualification, PostgreSQL concurrency suites, native Swift tests |
@@ -284,7 +284,7 @@ alembic current
 uvicorn app.main:app --reload
 ```
 
-`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.12 line, set `PYTHON_BIN` to a compatible executable such as `python3.12`; the same verified interpreter then creates `apps/backend/.venv`.
+`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.14 line, set `PYTHON_BIN` to a compatible executable such as `python3.14`; the same verified interpreter then creates `apps/backend/.venv`.
 
 `alembic current` must report `0033_complete_runtime_authority`.
 
