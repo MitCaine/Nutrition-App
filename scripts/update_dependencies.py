@@ -43,6 +43,44 @@ def clean_checkout() -> None:
         raise UpdateError("Checkout has existing changes; use a clean worktree to protect them.")
 
 
+def publish_ri_files(proposals: list[tuple[Path, bytes, bytes]]) -> None:
+    """Keep recoverable originals until both validated lock files are installed."""
+    if any(path.read_bytes() != before for path, before, _ in proposals):
+        raise UpdateError("RI lock changed during preparation; refusing to overwrite it.")
+    backups = [path.with_name(path.name + ".update-backup") for path, _, _ in proposals]
+    staged = [path.with_name(path.name + ".update-tmp") for path, _, _ in proposals]
+    if any(path.exists() for path in backups + staged):
+        raise UpdateError("Previous RI publication artifacts exist; inspect and recover them before updating.")
+    published = []
+    recovery_failed = False
+    try:
+        for (path, before, after), backup, temporary in zip(proposals, backups, staged):
+            backup.write_bytes(before)
+            temporary.write_bytes(after)
+        for (path, _, _), temporary in zip(proposals, staged):
+            os.replace(temporary, path)
+            published.append(path)
+    except BaseException as exc:
+        failed_recovery = []
+        for path, backup in zip((item[0] for item in proposals), backups):
+            if path in published:
+                try:
+                    os.replace(backup, path)
+                except OSError:
+                    failed_recovery.append(str(backup))
+        if failed_recovery:
+            recovery_failed = True
+            raise UpdateError("RI lock publication was partial; recover originals from "
+                              + ", ".join(failed_recovery)) from exc
+        raise
+    finally:
+        for temporary in staged:
+            temporary.unlink(missing_ok=True)
+        if not recovery_failed:
+            for backup in backups:
+                backup.unlink(missing_ok=True)
+
+
 def backend_versions(data: bytes) -> dict[str, str]:
     return {re.sub(r"[-_.]+", "-", name).lower(): version
             for name, version in LOCK_LINE.findall(data.decode())}
@@ -431,29 +469,13 @@ def main() -> int:
                         from update_ri_lock import proposed
                         ri_scratch = scratch / "ri"
                         ri_scratch.mkdir()
-                        proposals = proposed(ri_scratch)
+                        proposals = proposed(ri_scratch, force=args.area == "ri")
                         changed_ri = [(path, before, after) for path, before, after in proposals if before != after]
                         if changed_ri:
                             for path, _, _ in changed_ri:
                                 print(f"RI wheel lock: {path.relative_to(ROOT)}")
                             if args.apply:
-                                if any(path.read_bytes() != before for path, before, _ in proposals):
-                                    raise UpdateError("RI lock changed during preparation; refusing to overwrite it.")
-                                staged = []
-                                try:
-                                    for path, _, after in proposals:
-                                        temporary = path.with_name(path.name + ".update-tmp")
-                                        temporary.write_bytes(after)
-                                        staged.append(temporary)
-                                    for (path, _, _), temporary in zip(proposals, staged):
-                                        os.replace(temporary, path)
-                                except OSError:
-                                    for path, before, _ in proposals:
-                                        path.write_bytes(before)
-                                    raise
-                                finally:
-                                    for temporary in staged:
-                                        temporary.unlink(missing_ok=True)
+                                publish_ri_files(proposals)
                                 print("ri: applied both validated wheel lock files.")
                             changed = True
                         else:

@@ -113,8 +113,9 @@ For a whole-project dependency refresh without the startup toolchain step, run:
 ./scripts/update-dependencies all --apply
 ```
 
-The first command previews backend, mobile, and RI wheel-lock changes, even with existing work,
-and shows registry-latest
+The first command previews backend, mobile, and RI wheel-lock changes, even with existing work.
+It skips the RI wheel download when its selected lock and requirements are already consistent;
+use `./scripts/update-dependencies ri` to force a fresh wheel-hash check. It also shows registry-latest
 versions still held back by declarations or compatibility checks, and reports the Node and
 Python toolchain lines. The second command applies each validated lock area independently. It updates
 packages within declared ranges; it does not change manifests or toolchain pins. Major,

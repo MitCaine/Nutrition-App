@@ -123,6 +123,41 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(backend_lock.read_bytes(), b"fastapi==0.2.0\n")
         self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
 
+    def test_ri_second_file_publish_failure_restores_both_originals(self):
+        first, second = self.root / "ri-lock.json", self.root / "ri-requirements.txt"
+        first.write_bytes(b"old lock")
+        second.write_bytes(b"old requirements")
+        real_replace = module.os.replace
+        def fail_second(source, target):
+            if target == second:
+                raise OSError("second publish failed")
+            real_replace(source, target)
+        proposals = [(first, b"old lock", b"new lock"),
+                     (second, b"old requirements", b"new requirements")]
+        with patch.object(module.os, "replace", side_effect=fail_second):
+            with self.assertRaises(OSError):
+                module.publish_ri_files(proposals)
+        self.assertEqual(first.read_bytes(), b"old lock")
+        self.assertEqual(second.read_bytes(), b"old requirements")
+        self.assertFalse(first.with_name(first.name + ".update-backup").exists())
+
+    def test_ri_failed_rollback_retains_recovery_copy(self):
+        first, second = self.root / "ri-lock.json", self.root / "ri-requirements.txt"
+        first.write_bytes(b"old lock")
+        second.write_bytes(b"old requirements")
+        real_replace = module.os.replace
+        def fail_publish_and_rollback(source, target):
+            if target == second or str(source).endswith(".update-backup"):
+                raise OSError("simulated filesystem failure")
+            real_replace(source, target)
+        proposals = [(first, b"old lock", b"new lock"),
+                     (second, b"old requirements", b"new requirements")]
+        with patch.object(module.os, "replace", side_effect=fail_publish_and_rollback):
+            with self.assertRaisesRegex(module.UpdateError, "partial"):
+                module.publish_ri_files(proposals)
+        self.assertEqual(first.read_bytes(), b"new lock")
+        self.assertEqual(first.with_name(first.name + ".update-backup").read_bytes(), b"old lock")
+
     def test_all_keeps_first_validated_lock_if_second_publish_fails(self):
         backend_lock = self.root / "backend.lock"
         backend_lock.write_bytes(b"fastapi==0.1.0\n")

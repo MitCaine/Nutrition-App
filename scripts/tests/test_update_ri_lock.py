@@ -14,6 +14,27 @@ import update_ri_lock as ri_update  # noqa: E402
 
 
 class RILockRefreshTest(unittest.TestCase):
+    def test_current_lock_skips_download_unless_forced(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            tooling = root / "engineering/tooling"
+            tooling.mkdir(parents=True)
+            (root / ".python-version").write_text("3.14\n")
+            lock_path = tooling / "ri-lock.json"
+            requirements_path = tooling / "ri-requirements.txt"
+            lock = {"platform": "darwin", "machine": "arm64", "python": [3, 14],
+                    "wheels": [{"name": "tree-sitter", "version": "0.25.1",
+                                "filename": "tree_sitter.whl", "sha256": "a" * 64}]}
+            lock_path.write_text(json.dumps(lock))
+            requirements_path.write_bytes(ri_update.requirements_bytes(lock))
+            with patch.object(ri_update, "ROOT", root), patch.object(ri_update, "LOCK", lock_path), \
+                 patch.object(ri_update, "REQUIREMENTS", requirements_path), \
+                 patch.object(ri_update, "sys", types.SimpleNamespace(platform="darwin", version_info=(3, 14), executable="python3.14")), \
+                 patch.object(ri_update.platform, "machine", return_value="arm64"), \
+                 patch.object(ri_update.subprocess, "run") as download:
+                self.assertTrue(all(before == after for _, before, after in ri_update.proposed(root)))
+                download.assert_not_called()
+
     def test_regenerates_both_files_for_selected_python_without_writing_preview(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

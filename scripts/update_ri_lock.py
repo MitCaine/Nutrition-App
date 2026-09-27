@@ -22,14 +22,26 @@ class RILockError(RuntimeError):
     pass
 
 
-def proposed(scratch: Path) -> list[tuple[Path, bytes, bytes]]:
+def requirements_bytes(lock: dict) -> bytes:
+    return ("# Controller-only public dependencies; RI source stays private and is installed separately.\n"
+            + "".join(f"{w['name']}=={w['version']} --hash=sha256:{w['sha256']}\n"
+                      for w in lock["wheels"])).encode()
+
+
+def proposed(scratch: Path, *, force: bool = False) -> list[tuple[Path, bytes, bytes]]:
     old_lock = LOCK.read_bytes()
     lock = json.loads(old_lock)
+    old_requirements = REQUIREMENTS.read_bytes()
     line = tuple(map(int, (ROOT / ".python-version").read_text().strip().split(".")))
     if (sys.platform, platform.machine(), sys.version_info[:2]) != ("darwin", "arm64", line):
         raise RILockError("RI wheel refresh requires the selected macOS arm64 Python line")
     if lock.get("platform") != "darwin" or lock.get("machine") != "arm64":
         raise RILockError("RI source lock has a different host contract")
+    wheels = lock["wheels"]
+    if (not force and lock.get("python") == list(line)
+            and all(w.get("filename") and len(w.get("sha256", "")) == 64 for w in wheels)
+            and old_requirements == requirements_bytes(lock)):
+        return [(LOCK, old_lock, old_lock), (REQUIREMENTS, old_requirements, old_requirements)]
     wheelhouse = scratch / "wheelhouse"
     wheelhouse.mkdir()
     requirements = [f"{wheel['name']}=={wheel['version']}" for wheel in lock["wheels"]]
@@ -51,8 +63,6 @@ def proposed(scratch: Path) -> list[tuple[Path, bytes, bytes]]:
         wheel["sha256"] = hashlib.sha256(matches[0].read_bytes()).hexdigest()
     lock["python"] = list(line)
     new_lock = (json.dumps(lock, indent=2, sort_keys=True) + "\n").encode()
-    new_requirements = ("# Controller-only public dependencies; RI source stays private and is installed separately.\n"
-                        + "".join(f"{w['name']}=={w['version']} --hash=sha256:{w['sha256']}\n"
-                                  for w in lock["wheels"])).encode()
+    new_requirements = requirements_bytes(lock)
     return [(LOCK, old_lock, new_lock),
-            (REQUIREMENTS, REQUIREMENTS.read_bytes(), new_requirements)]
+            (REQUIREMENTS, old_requirements, new_requirements)]
