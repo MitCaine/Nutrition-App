@@ -3650,3 +3650,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 4f20e03017722d30e6d6fa8feba6c6b8ab15caa2
 - **Full-capsule recovery path:** engineering/capsules/active/GH-220-expo-holds.md
 - **Historical capsule SHA-256:** b6a7305becae43735861985f99d38f3d4978a99cac46416c24ef6093029cdcd0
+
+### GH-221-cleanup-checkpoint - Persist completed capsule cleanup after interrupted resume
+
+- **ID:** GH-221-cleanup-checkpoint
+- **Title:** Persist completed capsule cleanup after interrupted resume
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/221; revision-two implementation authorization comment 5860279908 and distinct terminal authorization comment 5860321846.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 7f04a8aad7b879a4aec6f57e6d3c19df957425a7
+- **Task branch:** task/GH-221-cleanup-checkpoint-r2
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e04007038bae1c787d6141d4d207746889fdfe54
+- **Verified commit reference(s):** e04007038bae1c787d6141d4d207746889fdfe54
+- **Reviewed source commit:** e04007038bae1c787d6141d4d207746889fdfe54
+- **Reviewed task/checkpoint commit(s):** e04007038bae1c787d6141d4d207746889fdfe54
+- **Integration/merged commit:** e04007038bae1c787d6141d4d207746889fdfe54
+- **Integration-related commit reference(s):** Protected C at e04007038bae1c787d6141d4d207746889fdfe54; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C2 reviewer for AC-1..AC-4 and all three changed paths with no findings; revision-one evidence-misread STOP_REPLAN remains preserved.
+- **Verification summary:** Frozen 30 focused task-closeout tests and repository baseline passed; RI P2-to-C2 comparable with three path dispositions. Real-Git fixtures cover three interrupted cut points, completed idempotence and pending/wrong-target guards.
+- **Specialized qualification:** Dedicated App check 108719196779 passed repository profile at C2; terminal T requires distinct repository App check.
+- **Known warnings:** Revision-one reviewer overlooked present controller RI dispositions; preserved as #222 review-friction evidence. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #222.
+- **Retrospective:** Required after all four audit issues; record recovered cleanup state.
+- **Referenced commits:** Planning b9db1973702d1194a9cb4b7fe7aee787b3e81570; implementation e04007038bae1c787d6141d4d207746889fdfe54; full reviewed capsule e71367961f7519cb452ce3a578b586f38bc0ce77.
+- **Full-capsule recovery commit:** e71367961f7519cb452ce3a578b586f38bc0ce77
+- **Full-capsule recovery path:** engineering/capsules/active/GH-221-cleanup-checkpoint.md
+- **Historical capsule SHA-256:** f46296b9c60f360b9a0788ef7d406229c0623a3c95a43be822c6ea225e9c553d
