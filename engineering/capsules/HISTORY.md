@@ -3614,3 +3614,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 65c79467437758323a764a3e8d518b821b1059b5
 - **Full-capsule recovery path:** engineering/capsules/active/GH-219-update-transaction.md
 - **Historical capsule SHA-256:** a5004061c85d9f83f1ef9f72753b636a924d2ae46ba252b75e7d70abda271053
+
+### GH-220-expo-holds - Correct Expo holds and bound dependency retry failures
+
+- **ID:** GH-220-expo-holds
+- **Title:** Correct Expo holds and bound dependency retry failures
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/220; revision-three implementation authorization comment 5860134971 and distinct terminal authorization comment 5860189544.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 519a543b632d9e1619ee08b8cc3fb36633f311d4
+- **Task branch:** task/GH-220-expo-holds-r3
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df
+- **Verified commit reference(s):** 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df
+- **Reviewed source commit:** 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df
+- **Reviewed task/checkpoint commit(s):** 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df
+- **Integration/merged commit:** 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df
+- **Integration-related commit reference(s):** Protected C at 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C3 reviewer for AC-1..AC-4 and all three changed paths, with no findings; revision-one STOP_REPLAN and revision-two bounded correction remain preserved.
+- **Verification summary:** Frozen 34 focused updater tests and repository baseline passed; RI P3-to-C3 comparable with all three paths dispositioned. Earlier held-version-only and stale bulk-failure findings were corrected; revision-two invalid capsule-history baseline remains preserved.
+- **Specialized qualification:** Dedicated App check 108716358340 passed repository/mobile at C3; terminal T requires distinct repository App check.
+- **Known warnings:** Isolated audit probes are narrower than live registry behavior. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #221, #222.
+- **Retrospective:** Required after all four audit issues; record practical update failure classification.
+- **Referenced commits:** Planning f37c756ac163ed56c6c4e1b1ba2afbd23884b43d; implementation 2e41ea1e3c5f643f4a590da0303ebfe43bb8f1df; full reviewed capsule 4f20e03017722d30e6d6fa8feba6c6b8ab15caa2.
+- **Full-capsule recovery commit:** 4f20e03017722d30e6d6fa8feba6c6b8ab15caa2
+- **Full-capsule recovery path:** engineering/capsules/active/GH-220-expo-holds.md
+- **Historical capsule SHA-256:** b6a7305becae43735861985f99d38f3d4978a99cac46416c24ef6093029cdcd0
