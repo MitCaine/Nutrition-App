@@ -130,7 +130,7 @@ class DependencyUpdateTest(unittest.TestCase):
         script = ("import fcntl, os, sys; "
                   "fd=os.open(sys.argv[1], os.O_CREAT|os.O_RDWR, 0o600); "
                   "fcntl.flock(fd, fcntl.LOCK_EX); print('locked', flush=True); "
-                  "sys.stdin.read()")
+                  "sys.stdin.read(); os._exit(17)")
         holder = subprocess.Popen([sys.executable, "-c", script, str(lock_path)],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         try:
@@ -141,8 +141,9 @@ class DependencyUpdateTest(unittest.TestCase):
                 self.assertEqual(module.main(), 2)
             update.assert_not_called()
         finally:
-            holder.kill()
-            holder.communicate(timeout=5)
+            holder.stdin.close()
+            self.assertEqual(holder.wait(timeout=5), 17)
+            holder.stdout.close()
         self.assertEqual(self.call_main("mobile", "sample"), 0)
 
     def test_mobile_manifest_change_during_resolution_refuses_publication(self):
