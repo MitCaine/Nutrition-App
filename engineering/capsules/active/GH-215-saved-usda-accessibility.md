@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 1
 id = "GH-215-saved-usda-accessibility"
 title = "Align Saved Foods USDA result accessibility and importability"
-state = "IN_PROGRESS"
+state = "IMPLEMENTED"
 task_type = "implementation"
 risk = "medium"
 created = "2026-09-27"
@@ -119,6 +119,7 @@ Use the existing USDA result identity function rather than duplicate labeling lo
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | One TSX screen and focused test. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Exact authorization and capsule-only planning overlay. |
 | 2026-09-27 | READY | IN_PROGRESS | Codex controller | External authorization and qualified planning overlay; bounded TSX implementation committed |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | USDA row semantics and focused renderer coverage implemented |
 
 ## Completion record
 
