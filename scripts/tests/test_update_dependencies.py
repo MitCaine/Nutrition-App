@@ -19,6 +19,35 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+class StubTransaction:
+    """Existing resolver tests isolate Git; real transaction tests use a repository."""
+    state = {"status": "running"}
+
+    def done(self, _area):
+        return False
+
+    def verify(self, _inputs):
+        pass
+
+    def assert_identity(self):
+        pass
+
+    def publishing(self, _area, _proposals):
+        pass
+
+    def applied(self, _area):
+        pass
+
+    def current(self, _area):
+        pass
+
+    def failed(self, _area):
+        pass
+
+    def finish(self):
+        pass
+
+
 class DependencyUpdateTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -39,9 +68,12 @@ class DependencyUpdateTest(unittest.TestCase):
         (self.mobile / "package.json").write_text(json.dumps(self.manifest))
         self.lock = self.mobile / "package-lock.json"
         self.write_lock("1.0.0")
-        self.patchers = [patch.object(module, "ROOT", self.root), patch.object(module, "MOBILE", self.mobile),
+        self.patchers = [patch.object(module, "ROOT", self.root),
+                         patch.object(module, "BACKEND", self.root / "apps/backend"),
+                         patch.object(module, "MOBILE", self.mobile),
                          patch.object(module, "ensure_python"), patch.object(module, "ensure_node"),
                          patch.object(module, "clean_checkout"),
+                         patch.object(module.UpdateTransaction, "begin", return_value=StubTransaction()),
                          patch.object(module, "risk_result", return_value=()),
                          patch.object(update_ri_lock, "proposed", return_value=[])]
         for item in self.patchers:

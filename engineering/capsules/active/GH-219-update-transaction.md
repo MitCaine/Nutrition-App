@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 5
 id = "GH-219-update-transaction"
 title = "Resume partial dependency updates and bind publication to checkout identity"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "high"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ The transaction state is external to the repository checkout and does not contai
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four candidate-reviewable criteria and real-Git tests selected. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Updater state, wrapper and docs bounded; other audit findings separate. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-five authorization comment 5859907955 retains scope after failed prior review and planning attempts; evidence attachment proceeds directly from this capsule-only planning overlay. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Preserved implementation transferred onto exact revision-five planning overlay. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Durable updater transaction, startup behavior, documentation and focused tests committed for fresh evidence gates. |
 
 ## Completion record
 

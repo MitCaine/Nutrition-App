@@ -158,7 +158,7 @@ class StartWorkTest(unittest.TestCase):
             self.assertTrue((root / "python-upgraded").exists())
             self.assertIn("Node 26 update failed", result.stderr)
 
-    def test_clean_checkout_applies_and_dirty_checkout_previews(self):
+    def test_startup_applies_or_reports_dirty_stop_and_only_explicitly_previews(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "scripts/dependency-modules").mkdir(parents=True)
@@ -168,7 +168,13 @@ class StartWorkTest(unittest.TestCase):
             (root / ".nvmrc").write_text("26\n")
             (root / ".python-version").write_text("3.14\n")
             updater = root / "scripts/update-dependencies"
-            updater.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$NUTRITION_START_WORK_TEST_MARKER\"\n")
+            updater.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" > \"$NUTRITION_START_WORK_TEST_MARKER\"\n"
+                "if [ -e ./local-work.txt ] && [ \"$*\" = 'all --apply' ]; then\n"
+                "  echo 'Unrelated checkout change blocks safe resume' >&2\n"
+                "  exit 2\n"
+                "fi\n")
             updater.chmod(0o755)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(["git", "add", "."], cwd=root, check=True)
@@ -184,16 +190,23 @@ class StartWorkTest(unittest.TestCase):
             self.assertIn("v26.", clean.stdout)
             self.assertIn("Python 3.14.", clean.stdout)
             (root / "local-work.txt").write_text("preserve")
-            subprocess.run(["zsh", "-c", command], cwd=root, env=env,
-                           text=True, capture_output=True, check=True)
+            dirty = subprocess.run(["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
+                                   cwd=root, env=env, text=True, capture_output=True)
+            self.assertEqual(dirty.returncode, 1)
+            self.assertEqual(marker.read_text().strip(), "all --apply")
+            self.assertIn("Unrelated checkout change blocks safe resume", dirty.stderr)
+            preview = subprocess.run(["zsh", "-c", command], cwd=root,
+                                     env={**env, "NUTRITION_START_WORK_PREVIEW": "1"},
+                                     text=True, capture_output=True, check=True)
             self.assertEqual(marker.read_text().strip(), "all")
+            self.assertIn("Preview mode", preview.stdout)
             (root / "scripts/dependency-modules/toolchain.zsh").write_text(
                 "print -u2 'simulated toolchain failure'\nreturn 1\n")
             failed = subprocess.run(
                 ["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
                 cwd=root, env=env, text=True, capture_output=True)
             self.assertEqual(failed.returncode, 1)
-            self.assertEqual(marker.read_text().strip(), "all")
+            self.assertEqual(marker.read_text().strip(), "all --apply")
             self.assertIn("simulated toolchain failure", failed.stderr)
             self.assertIn("Successful updates remain applied", failed.stderr)
 

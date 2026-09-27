@@ -93,15 +93,19 @@ Node and Python upgrades are attempted independently. A failed tool upgrade does
 the dependency check, and a backend failure does not stop mobile updates (or vice versa).
 If a bulk dependency refresh fails, the command retries declared packages individually.
 Successful, validated updates remain applied; failures are named and the command returns
-nonzero. Review and qualify the changed lockfiles, record those accepted changes in a
-commit, then fix the failed item and rerun from the clean checkout. A missing or
-mismatched tool skips only the area that requires it.
+nonzero. The updater records its own exact lock outputs outside the checkout. Fix the
+failed item and rerun the same command to resume pending areas without first committing
+the retained locks. Review, qualify and commit the final changes through the normal task
+workflow. A missing or mismatched tool skips only the area that requires it.
 Each area rechecks the manifest, toolchain selection and policy inputs used for
 resolution immediately before writing its lock. If those inputs changed while an
 update ran, that area stops without publishing its proposal; other areas continue.
 It verifies the active language versions and rechecks Homebrew for pending updates after upgrading.
 Homebrew can update dependencies of those formulas as part of a tool upgrade.
-An existing source change makes it preview only, preserving the work. Sourcing is required
+An unrelated checkout change stops automatic apply with a nonzero result; it does not
+silently turn the startup run into a successful preview. The exact updater-owned partial
+changes are resumable only on the original worktree, branch and HEAD, with unchanged
+authority inputs and output bytes. Sourcing is required
 because a launched script cannot alter its parent terminal's `PATH`. The toolchain and
 dependency steps are separate files under `scripts/dependency-modules/`.
 For a lockfile preview, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`.
@@ -125,10 +129,12 @@ packages within declared ranges; it does not change manifests or toolchain pins.
 Expo/React Native/native, and language-runtime changes require a separate migration with
 the relevant tests and native qualification. The bulk mobile refresh retains Expo's
 expected package versions when npm selects newer compatible-range versions that Expo
-does not yet accept. Applying requires a clean worktree; previews are read-only.
+does not yet accept. A new apply requires a clean worktree; a recorded partial apply
+may resume only its exact updater-owned changes. Previews are read-only.
 If one area or package fails, other independent attempts continue and the command exits
-nonzero after reporting partial success. Review and commit accepted partial changes before
-an applying rerun; do not treat
+nonzero after reporting partial success. Fix the cause and rerun the same apply to
+complete pending areas; changed branches, commits or unrelated edits block resume.
+Do not treat
 a partially updated checkout as fully qualified until the applicable checks pass.
 Registry availability is reported as
 `unavailable` rather than treated as proof that a package is current.
@@ -182,8 +188,9 @@ checks lockfile declarations, installs the candidate lock without scripts in a t
 directory, checks Expo compatibility, and refuses new dependency-risk register drift. Existing
 risk findings are reported and still need separate review. Review
 the exact resolved changes before qualification. Expo and native package migrations need
-their coordinated upgrade process. Applying requires a clean worktree so a failed
-attempt cannot overwrite unrelated changes. Exact resolved versions remain pinned in
+their coordinated upgrade process. A new apply requires a clean worktree; an interrupted
+apply can resume only on the same branch and HEAD with exact recorded updater output.
+Unrelated changes remain protected. Exact resolved versions remain pinned in
 lockfiles; declared ranges remain flexible. The mobile command accepts Python 3.9 or
 newer alongside the repository's Node 26 toolchain, and lists every resolved version
 change plus the `repository`, `mobile`, and `ios-native` qualification profiles.

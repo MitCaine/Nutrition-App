@@ -17,6 +17,8 @@ import tempfile
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from lib.update_transaction import UpdateTransaction, TransactionError, state_path
+
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "apps/backend"
 MOBILE = ROOT / "apps/mobile"
@@ -84,7 +86,12 @@ def verify_area_inputs(area: str, snapshot: dict[Path, str | None]) -> None:
         raise UpdateError(f"{area} authority inputs changed during resolution; refusing to publish its lock.")
 
 
-def publish_ri_files(proposals: list[tuple[Path, bytes, bytes]]) -> None:
+def transaction_inputs(areas: tuple[str, ...]) -> dict[str, dict[str, str | None]]:
+    return {area: {path.relative_to(ROOT).as_posix(): value for path, value in area_inputs(area).items()}
+            for area in areas}
+
+
+def publish_ri_files(proposals: list[tuple[Path, bytes, bytes]], *, guard=None) -> None:
     """Keep recoverable originals until both validated lock files are installed."""
     if any(path.read_bytes() != before for path, before, _ in proposals):
         raise UpdateError("RI lock changed during preparation; refusing to overwrite it.")
@@ -99,6 +106,8 @@ def publish_ri_files(proposals: list[tuple[Path, bytes, bytes]]) -> None:
             backup.write_bytes(before)
             temporary.write_bytes(after)
         for (path, _, _), temporary in zip(proposals, staged):
+            if guard is not None:
+                guard()
             os.replace(temporary, path)
             published.append(path)
     except BaseException as exc:
@@ -488,15 +497,26 @@ def _update(args: argparse.Namespace) -> int:
     try:
         if args.area == "all" and args.packages:
             raise UpdateError("The all command takes no package names; use backend or mobile for selected packages.")
+        areas = ("backend", "mobile", "ri") if args.area == "all" else (args.area,)
+        transaction = None
         if args.apply:
-            clean_checkout()
+            if not state_path(ROOT).exists():
+                clean_checkout()
+            transaction = UpdateTransaction.begin(ROOT, args.area, args.packages, areas,
+                                                  transaction_inputs(areas))
+            if transaction.state["status"] == "complete":
+                print("Recorded dependency update is already applied; review and integrate its exact lock changes.")
+                return 0
         with tempfile.TemporaryDirectory(prefix="nutrition-deps-") as name:
             scratch = Path(name)
-            areas = ("backend", "mobile", "ri") if args.area == "all" else (args.area,)
             succeeded = []
             failed = []
             changed = False
             for area in areas:
+                if transaction and transaction.done(area):
+                    print(f"{area}: previously validated transaction output retained.")
+                    succeeded.append(area)
+                    continue
                 try:
                     ensure_python(area)
                     input_snapshot = area_inputs(area)
@@ -514,11 +534,16 @@ def _update(args: argparse.Namespace) -> int:
                             if args.apply:
                                 ensure_python(area)
                                 verify_area_inputs(area, input_snapshot)
-                                publish_ri_files(proposals)
+                                transaction.verify(transaction_inputs(areas))
+                                transaction.publishing(area, proposals)
+                                publish_ri_files(proposals, guard=transaction.assert_identity)
+                                transaction.applied(area)
                                 print("ri: applied both validated wheel lock files.")
                             changed = True
                         else:
                             print("ri: selected Python wheels already match the reviewed source pin.")
+                            if transaction:
+                                transaction.current(area)
                         succeeded.append(area)
                         continue
                     if area == "mobile":
@@ -559,16 +584,24 @@ def _update(args: argparse.Namespace) -> int:
                             if area == "mobile":
                                 ensure_node()
                             verify_area_inputs(area, input_snapshot)
+                            transaction.verify(transaction_inputs(areas))
                             if path.read_bytes() != before:
                                 raise UpdateError("Lockfile changed during preparation; refusing to overwrite it.")
+                            transaction.publishing(area, [(path, before, after)])
                             staged = path.with_name(path.name + ".update-tmp")
                             try:
                                 staged.write_bytes(after)
+                                transaction.assert_identity()
                                 os.replace(staged, path)
                             finally:
                                 staged.unlink(missing_ok=True)
+                            transaction.applied(area)
                             print(f"{area}: applied validated lockfile; review exact changes before integration.")
                         changed = True
+                    if before == after and transaction and not retry_failures:
+                        transaction.current(area)
+                    if retry_failures and transaction:
+                        transaction.failed(area)
                     if not retry_failures:
                         succeeded.append(area)
                     elif before != after:
@@ -580,6 +613,8 @@ def _update(args: argparse.Namespace) -> int:
                         print("Backend: run the locked install, lint, tests, and PostgreSQL checks when applicable.")
                         print("Required qualification profiles: repository, backend (plus postgresql if affected).")
                 except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+                    if transaction:
+                        transaction.failed(area)
                     failed.append(area)
                     print(f"{area} update failed: {exc}", file=sys.stderr)
             if args.area == "all":
@@ -593,12 +628,14 @@ def _update(args: argparse.Namespace) -> int:
                       + "; failed: " + ", ".join(failed)
                       + ". Successful validated changes remain; fix failures and rerun.", file=sys.stderr)
                 return 2
+            if transaction:
+                transaction.finish()
             if not changed:
                 print("All requested dependencies are current within declared ranges.")
             elif not args.apply:
                 print("Preview only. Repeat with --apply to write the lockfile.")
         return 0
-    except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+    except (UpdateError, TransactionError, OSError, ValueError, KeyError, RuntimeError) as exc:
         print(f"Dependency update stopped: {exc}", file=sys.stderr)
         return 2
 
