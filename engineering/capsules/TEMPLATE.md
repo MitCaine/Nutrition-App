@@ -75,6 +75,13 @@ Provide only context a fresh executor needs; link rather than copy authority.
 
 ## Required verification
 
+For an explicitly attached candidate, declare frozen command requirements in the
+single `nutrition-evidence-v1` block described by
+[Candidate evidence](../workflow/CANDIDATE_EVIDENCE.md). Add the
+`nutrition-ri-v1` changed-files block only when structural RI evidence is required.
+Choose current profiles from changed authority and path impact; do not copy pilot
+versions or infer that a zero callable delta waives unsupported-file review.
+
 ### Focused
 
 - Exact tests or inspections for the changed contract.

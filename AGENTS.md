@@ -154,6 +154,8 @@ Use the accepted trusted task controller for external authorization, qualificati
 protected integration. Explicit migration capsules attach a full specification within
 that authority; they never bypass it. The combined capsule/RI workflow remains a trial
 until its recorded promotion gate passes.
+Read the [combined pilot and rollout record](engineering/workflow/PILOT_2026-09-26.md)
+for the two completed pilots, failure paths, host limits and current decision gate.
 
 A task that already has an active capsule must follow the repository's
 task-capsule process.

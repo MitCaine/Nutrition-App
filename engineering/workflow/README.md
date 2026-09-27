@@ -34,6 +34,7 @@ commit/path and SHA-256 for the historical full capsule.
 | [Evidence](EVIDENCE.md) | Implementation return, review bundle, and reproducibility contract |
 | [Failure Taxonomy](FAILURE_TAXONOMY.md) | Failure classes, stop conditions, and correction boundary |
 | [Workflow Changelog](CHANGELOG.md) | Evidence-backed process qualification history |
+| [Combined pilot record](PILOT_2026-09-26.md) | Python/TSX outcomes, failures, routing, host limits and rollout decision |
 | [Task Capsules](../capsules/README.md) | Template, active capsules, terminal HISTORY records, and recovery rules |
 
 ## Authority order

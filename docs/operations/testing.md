@@ -84,6 +84,12 @@ repository registry owns five profiles:
 
 The existing CI jobs remain the qualification authorities; `Main qualification`
 aggregates their exact-SHA results rather than duplicating their test commands.
+Select profiles from the changed runtime authority and concrete path impact.
+The [combined pilot record](../../engineering/workflow/PILOT_2026-09-26.md)
+distinguishes path-trigger tests and pilot App checks from actual native,
+local/file-backed SQLite and remote PostgreSQL proof. A repository or mobile PASS
+does not imply those specialist results; configuration and migration edits need
+their own affected-contract review and selected opt-in checks.
 Pushing an exact commit to a temporary `qualification/TASK-ID/SHA-PREFIX` ref
 causes the normal CI workflow and the aggregator to run against that unchanged
 commit. Unknown or unavailable profiles fail closed.

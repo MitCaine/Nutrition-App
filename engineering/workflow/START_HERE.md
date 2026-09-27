@@ -67,6 +67,10 @@ adds exact command/qualification binding and observed independent review. The op
 [pinned RI navigation command](../tooling/RI.md) supplies exact committed-source locations. Explicit attached capsules can also require
 [source-bound structural evidence](../tooling/RI.md#candidate-structural-evidence) before independent review.
 Default promotion still requires the combined pilot and rollout decision in #194.
+The [pilot record](PILOT_2026-09-26.md) contains both completed pilots and the
+remaining owner decision gate. A fresh operator should inspect current remote
+main and issue state first; pilot SHAs are historical evidence, never a base to
+reuse without revalidation.
 
 Initial local controller qualification targets macOS. Nutrition's existing Linux
 CI jobs remain qualification authorities; local SQLite, remote PostgreSQL, iOS

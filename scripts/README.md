@@ -140,3 +140,8 @@ belong in this public repository or candidate CI.
 changed-file inventories and Git reconciliation. `task evidence ISSUE disposition` records
 controller path explanations; the independent reviewer must confirm every path. See the
 [structural evidence contract](../engineering/tooling/RI.md#candidate-structural-evidence).
+
+The [combined pilot record](../engineering/workflow/PILOT_2026-09-26.md) gives the
+observed macOS setup, failure/recovery cases and default decision boundary. The
+current command list above remains the operator inventory; no duplicate command is
+retired solely because the pilot completed.

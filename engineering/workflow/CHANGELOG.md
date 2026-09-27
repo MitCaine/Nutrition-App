@@ -113,3 +113,16 @@ the current interface/state inventory and the target capsule attachment contract
 and reconciles legacy qualification guidance. No executable/schema/ruleset change
 or default promotion is made. GH-189 through GH-193 own implementation and proof;
 GH-194 owns the combined-workflow adoption decision. Historical evidence is unchanged.
+
+## 2026-09-26 — Two combined-workflow pilots completed
+
+**Combined-lane status:** `TRIAL`; no repository-wide default promotion is inferred.
+
+#197 Python and #198 TSX reached protected main with exact candidate and separately
+qualified terminal HISTORY closeouts. The [pilot record](PILOT_2026-09-26.md)
+compares their evidence with the pre-pilot baseline, including failed candidates,
+negative/routing checks, macOS RI access, extra handoffs and recovery. Both attached
+`finalize` attempts stopped after integration moved refs, requiring the separately
+qualified terminal path. Human active-time savings were not measured. The owner
+decision and the moved-refs exit criterion remain explicit; until resolved, the
+accepted trusted controller remains the operator default.
