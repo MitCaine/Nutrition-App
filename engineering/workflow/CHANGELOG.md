@@ -116,13 +116,15 @@ GH-194 owns the combined-workflow adoption decision. Historical evidence is unch
 
 ## 2026-09-26 — Two combined-workflow pilots completed
 
-**Combined-lane status:** `TRIAL`; no repository-wide default promotion is inferred.
+**Combined-lane status:** `TRIAL`; the repository owner chose to retain the
+accepted trusted controller as default on 2026-09-26. The exact #198 public
+evidence draft remains local at the owner's direction.
 
 #197 Python and #198 TSX reached protected main with exact candidate and separately
 qualified terminal HISTORY closeouts. The [pilot record](PILOT_2026-09-26.md)
 compares their evidence with the pre-pilot baseline, including failed candidates,
 negative/routing checks, macOS RI access, extra handoffs and recovery. Both attached
 `finalize` attempts stopped after integration moved refs, requiring the separately
-qualified terminal path. Human active-time savings were not measured. The owner
-decision and the moved-refs exit criterion remain explicit; until resolved, the
-accepted trusted controller remains the operator default.
+qualified terminal path. Human active-time savings were not measured. The
+moved-refs repair, representative stable closeouts and a comparable handoff/
+active-time measurement are exit criteria for another promotion proposal.
