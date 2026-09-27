@@ -88,6 +88,13 @@ source ./scripts/start-work.zsh
 It selects the repository's Node and Python lines for that terminal, updates the installed
 Homebrew formulas within those lines when newer patches are available, checks the latest
 package and toolchain versions, and applies compatible backend and mobile lockfile updates.
+Node and Python upgrades are attempted independently. A failed tool upgrade does not stop
+the dependency check, and a backend failure does not stop mobile updates (or vice versa).
+If a bulk dependency refresh fails, the command retries declared packages individually.
+Successful, validated updates remain applied; failures are named and the command returns
+nonzero. Review and qualify the changed lockfiles, record those accepted changes in a
+commit, then fix the failed item and rerun from the clean checkout. A missing or
+mismatched tool skips only the area that requires it.
 It verifies the active language versions and rechecks Homebrew for pending updates after upgrading.
 Homebrew can update dependencies of those formulas as part of a tool upgrade.
 An existing source change makes it preview only, preserving the work. Sourcing is required
@@ -107,12 +114,16 @@ For a whole-project dependency refresh without the startup toolchain step, run:
 The first command previews both backend and mobile lockfile changes, even with existing work,
 and shows registry-latest
 versions still held back by declarations or compatibility checks, and reports the Node and
-Python toolchain lines. The second command applies both validated lockfiles. It updates
+Python toolchain lines. The second command applies each validated lockfile independently. It updates
 packages within declared ranges; it does not change manifests or toolchain pins. Major,
 Expo/React Native/native, and language-runtime changes require a separate migration with
 the relevant tests and native qualification. The bulk mobile refresh retains Expo's
 expected package versions when npm selects newer compatible-range versions that Expo
 does not yet accept. Applying requires a clean worktree; previews are read-only.
+If one area or package fails, other independent attempts continue and the command exits
+nonzero after reporting partial success. Review and commit accepted partial changes before
+an applying rerun; do not treat
+a partially updated checkout as fully qualified until the applicable checks pass.
 Registry availability is reported as
 `unavailable` rather than treated as proof that a package is current.
 The current backend Ruff range remains below 0.16 because that line flags existing

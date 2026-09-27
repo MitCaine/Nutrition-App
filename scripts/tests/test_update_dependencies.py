@@ -34,7 +34,8 @@ class DependencyUpdateTest(unittest.TestCase):
         self.lock = self.mobile / "package-lock.json"
         self.write_lock("1.0.0")
         self.patchers = [patch.object(module, "ROOT", self.root), patch.object(module, "MOBILE", self.mobile),
-                         patch.object(module, "ensure_python"), patch.object(module, "clean_checkout"),
+                         patch.object(module, "ensure_python"), patch.object(module, "ensure_node"),
+                         patch.object(module, "clean_checkout"),
                          patch.object(module, "risk_result", return_value=())]
         for item in self.patchers:
             item.start()
@@ -102,7 +103,7 @@ class DependencyUpdateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(self.call_main("all", "sample", "--apply"), 2)
 
-    def test_all_restores_first_lock_if_second_publish_fails(self):
+    def test_all_keeps_first_validated_lock_if_second_publish_fails(self):
         backend_lock = self.root / "backend.lock"
         backend_lock.write_bytes(b"fastapi==0.1.0\n")
         original_mobile = self.lock.read_bytes()
@@ -119,8 +120,77 @@ class DependencyUpdateTest(unittest.TestCase):
             outdated.return_value.stdout = "{}"
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(self.call_main("all", "--apply"), 2)
-        self.assertEqual(backend_lock.read_bytes(), b"fastapi==0.1.0\n")
+        self.assertEqual(backend_lock.read_bytes(), b"fastapi==0.2.0\n")
         self.assertEqual(self.lock.read_bytes(), original_mobile)
+
+    def test_bulk_failure_retries_direct_packages_and_continues_mobile(self):
+        backend_root = self.root / "apps/backend"
+        backend_root.mkdir()
+        (backend_root / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["bad>=1", "good>=1"]\n'
+            '[project.optional-dependencies]\ndev = []\n')
+        backend_lock = backend_root / "requirements-dev.lock"
+        original = b"bad==1.0.0\ngood==1.0.0\n"
+        backend_lock.write_bytes(original)
+        def backend_attempt(packages, scratch, *, report_latest=False, baseline=None):
+            if not packages or packages == ["bad"]:
+                raise module.UpdateError("bad package resolver failure")
+            before = baseline or original
+            return backend_lock, before, before.replace(b"good==1.0.0", b"good==1.1.0")
+        with patch.object(module, "BACKEND", backend_root), \
+             patch.object(module, "backend", side_effect=backend_attempt), \
+             patch.object(module, "toolchain_report"), patch.object(module.subprocess, "run") as outdated, \
+             patch.object(module, "run", side_effect=self.fake_run), \
+             patch.object(sys, "argv", ["update", "all", "--apply"]):
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            output, errors = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                self.assertEqual(module.main(), 2)
+        self.assertEqual(backend_lock.read_bytes(), b"bad==1.0.0\ngood==1.1.0\n")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+        self.assertIn("backend retry bad failed", errors.getvalue())
+        self.assertIn("succeeded: backend partial, mobile", errors.getvalue())
+
+    def test_backend_failure_does_not_prevent_mobile(self):
+        with patch.object(module, "backend", side_effect=module.UpdateError("backend unavailable")), \
+             patch.object(module, "retry_direct_packages", side_effect=module.UpdateError("cannot retry")), \
+             patch.object(module, "toolchain_report"), patch.object(module.subprocess, "run") as outdated, \
+             patch.object(module, "run", side_effect=self.fake_run), \
+             patch.object(sys, "argv", ["update", "all", "--apply"]):
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(module.main(), 2)
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+
+    def test_mobile_bulk_failure_retries_packages_after_backend_succeeds(self):
+        self.manifest["dependencies"]["broken"] = "^1.0.0"
+        (self.mobile / "package.json").write_text(json.dumps(self.manifest))
+        self.lock.write_text(json.dumps({"packages": {"": self.manifest,
+            "node_modules/sample": {"version": "1.0.0"},
+            "node_modules/broken": {"version": "1.0.0"}}}))
+        original = self.lock.read_bytes()
+        backend_lock = self.root / "backend.lock"
+        backend_lock.write_bytes(b"fastapi==0.1.0\n")
+        def mobile_attempt(packages, scratch, *, report_latest=False, baseline=None):
+            if not packages or packages == ["broken"]:
+                raise module.UpdateError("broken npm package")
+            before = baseline or original
+            lock = json.loads(before)
+            lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
+            return self.lock, before, json.dumps(lock).encode()
+        with patch.object(module, "backend", return_value=(backend_lock, b"fastapi==0.1.0\n",
+                                                            b"fastapi==0.2.0\n")), \
+             patch.object(module, "mobile", side_effect=mobile_attempt), \
+             patch.object(module, "toolchain_report"), patch.object(sys, "argv", ["update", "all", "--apply"]):
+            errors = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(errors):
+                self.assertEqual(module.main(), 2)
+        self.assertEqual(backend_lock.read_bytes(), b"fastapi==0.2.0\n")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["broken"], "1.0.0")
+        self.assertIn("mobile broken", errors.getvalue())
 
     def test_empty_failed_npm_outdated_is_error(self):
         with patch.object(module.subprocess, "run") as outdated:

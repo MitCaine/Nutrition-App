@@ -27,8 +27,11 @@ class UpdateError(Exception):
 
 
 def run(args: list[str], cwd: Path, *, capture: bool = False) -> str:
-    result = subprocess.run(args, cwd=cwd, text=True, stdout=subprocess.PIPE if capture else None,
-                            stderr=subprocess.PIPE if capture else None, check=False)
+    try:
+        result = subprocess.run(args, cwd=cwd, text=True, stdout=subprocess.PIPE if capture else None,
+                                stderr=subprocess.PIPE if capture else None, check=False, timeout=600)
+    except subprocess.TimeoutExpired as exc:
+        raise UpdateError(f"{' '.join(args[:2])} timed out after 600 seconds") from exc
     if result.returncode:
         detail = (result.stderr or result.stdout or "").strip()
         raise UpdateError(f"{' '.join(args[:2])} failed ({result.returncode})" + (f": {detail}" if detail else ""))
@@ -52,10 +55,13 @@ def mobile_versions(data: bytes) -> dict[str, str]:
 
 
 def peer_accepts(target: Path, expected_version: str, peer_range: str) -> bool:
-    result = subprocess.run(["node", "-e", "const semver=require('semver'); "
-                             "process.stdout.write(String(semver.satisfies(process.argv[1], process.argv[2])))",
-                             expected_version, peer_range], cwd=target, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        result = subprocess.run(["node", "-e", "const semver=require('semver'); "
+                                 "process.stdout.write(String(semver.satisfies(process.argv[1], process.argv[2])))",
+                                 expected_version, peer_range], cwd=target, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+    except subprocess.TimeoutExpired:
+        return False
     return result.returncode == 0 and result.stdout == "true"
 
 
@@ -86,6 +92,16 @@ def ensure_python(area: str) -> None:
         raise UpdateError("Mobile tooling requires Python 3.9 or newer.")
 
 
+def ensure_node() -> None:
+    expected = (ROOT / ".nvmrc").read_text().strip()
+    try:
+        actual = run(["node", "-p", "process.versions.node.split('.')[0]"], ROOT, capture=True).strip()
+    except (OSError, UpdateError) as exc:
+        raise UpdateError(f"Mobile tooling requires Node {expected}: {exc}") from exc
+    if actual != expected:
+        raise UpdateError(f"Mobile tooling requires Node {expected}; found {actual or 'unavailable'}.")
+
+
 def registry_latest(package: str) -> tuple[str, str]:
     try:
         with urlopen(f"https://pypi.org/pypi/{package}/json", timeout=10) as response:
@@ -106,7 +122,10 @@ def declaration_accepts(python: Path, declaration: str, version: str) -> bool:
 
 def toolchain_report() -> None:
     node_line = (ROOT / ".nvmrc").read_text().strip()
-    node_version = run(["node", "--version"], ROOT, capture=True).strip().removeprefix("v")
+    try:
+        node_version = run(["node", "--version"], ROOT, capture=True).strip().removeprefix("v")
+    except (OSError, UpdateError):
+        node_version = "unavailable"
     try:
         with urlopen("https://nodejs.org/dist/index.json", timeout=10) as response:
             releases = json.load(response)
@@ -127,7 +146,8 @@ def toolchain_report() -> None:
           + f", registry latest {latest_python}; changing lines requires qualification.")
 
 
-def backend(packages: list[str], scratch: Path, *, report_latest: bool = False) -> tuple[Path, bytes, bytes]:
+def backend(packages: list[str], scratch: Path, *, report_latest: bool = False,
+            baseline: bytes | None = None) -> tuple[Path, bytes, bytes]:
     import tomllib
     if not all(PYTHON_PACKAGE.fullmatch(package) for package in packages):
         raise UpdateError("Invalid Python package name.")
@@ -144,6 +164,8 @@ def backend(packages: list[str], scratch: Path, *, report_latest: bool = False) 
     target.mkdir()
     for name in ("pyproject.toml", "requirements-dev.lock"):
         shutil.copy2(BACKEND / name, target / name)
+    if baseline is not None:
+        (target / "requirements-dev.lock").write_bytes(baseline)
     tool_python = BACKEND / ".venv/bin/python"
     if not tool_python.exists():
         tool_python = Path(sys.executable)
@@ -158,9 +180,11 @@ def backend(packages: list[str], scratch: Path, *, report_latest: bool = False) 
                             requirement],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if probe.returncode:
-        tool_python = scratch / "tools/bin/python"
-        run([sys.executable, "-m", "venv", str(scratch / "tools")], scratch)
-        run([str(tool_python), "-m", "pip", "install", requirement], scratch)
+        tool_dir = scratch.parent / "tools"
+        tool_python = tool_dir / "bin/python"
+        if not tool_python.exists():
+            run([sys.executable, "-m", "venv", str(tool_dir)], scratch)
+            run([str(tool_python), "-m", "pip", "install", requirement], scratch)
     before = (target / "requirements-dev.lock").read_bytes()
     constraints: list[str] = []
     if all_requested:
@@ -208,7 +232,8 @@ def backend(packages: list[str], scratch: Path, *, report_latest: bool = False) 
     return BACKEND / "requirements-dev.lock", before, after
 
 
-def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False) -> tuple[Path, bytes, bytes]:
+def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
+           baseline: bytes | None = None) -> tuple[Path, bytes, bytes]:
     if not all(NPM_PACKAGE.fullmatch(package) for package in packages):
         raise UpdateError("Invalid npm package name.")
     manifest = json.loads((MOBILE / "package.json").read_text())
@@ -226,6 +251,8 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False) -
     target.mkdir(parents=True)
     for name in ("package.json", "package-lock.json"):
         shutil.copy2(MOBILE / name, target / name)
+    if baseline is not None:
+        (target / "package-lock.json").write_bytes(baseline)
     register = scratch / "engineering/security"
     register.mkdir(parents=True)
     shutil.copy2(ROOT / "engineering/security/dependency-risk-register.json",
@@ -301,8 +328,12 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False) -
             target, capture=True)
         run(["npm", "exec", "--", "expo", "install", "--check"], target, capture=True)
     if report_latest:
-        outdated = subprocess.run(["npm", "outdated", "--json", "--depth=0"], cwd=target,
-                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            outdated = subprocess.run(["npm", "outdated", "--json", "--depth=0"], cwd=target,
+                                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      timeout=60)
+        except subprocess.TimeoutExpired as exc:
+            raise UpdateError("npm outdated timed out after 60 seconds") from exc
         if outdated.returncode not in (0, 1):
             raise UpdateError("npm outdated failed: " + outdated.stderr.strip())
         if outdated.returncode == 1 and not outdated.stdout.strip():
@@ -332,6 +363,47 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False) -
     return MOBILE / "package-lock.json", before, after
 
 
+def retry_direct_packages(area: str, scratch: Path) -> tuple[Path, bytes, bytes, list[str]]:
+    """Recover valid updates after a bulk resolver failure, without publishing partial attempts."""
+    if area == "backend":
+        import tomllib
+        manifest = tomllib.loads((BACKEND / "pyproject.toml").read_text())
+        direct = manifest["project"]["dependencies"] + manifest["project"]["optional-dependencies"]["dev"]
+        packages = sorted({re.split(r"[<>=!~;\[ ]", item, 1)[0].lower().replace("_", "-")
+                           for item in direct})
+        path = BACKEND / "requirements-dev.lock"
+        versions = backend_versions
+        handler = backend
+    else:
+        manifest = json.loads((MOBILE / "package.json").read_text())
+        declared = {**manifest.get("dependencies", {}), **manifest.get("devDependencies", {})}
+        packages = sorted(name for name, spec in declared.items() if spec.startswith(("~", "^")))
+        path = MOBILE / "package-lock.json"
+        versions = mobile_versions
+        handler = mobile
+    original = path.read_bytes()
+    current = original
+    failures = []
+    original_versions = versions(original)
+    for index, package in enumerate(packages):
+        attempt = scratch / f"retry-{index}"
+        attempt.mkdir()
+        try:
+            _, _, proposed = handler([package], attempt, baseline=current)
+            proposed_versions = versions(proposed)
+            for direct_name in packages:
+                old = original_versions.get(direct_name)
+                new = proposed_versions.get(direct_name)
+                if not old or not new or old.split(".")[0] != new.split(".")[0]:
+                    raise UpdateError(f"Direct dependency major changed during retry: {direct_name}.")
+            current = proposed
+            print(f"{area} retry {package}: validated.")
+        except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+            failures.append(package)
+            print(f"{area} retry {package} failed: {exc}", file=sys.stderr)
+    return path, original, current, failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("area", choices=("backend", "mobile", "all"))
@@ -341,58 +413,89 @@ def main() -> int:
     try:
         if args.area == "all" and args.packages:
             raise UpdateError("The all command takes no package names; use backend or mobile for selected packages.")
-        ensure_python("backend" if args.area == "all" else args.area)
         if args.apply:
             clean_checkout()
         with tempfile.TemporaryDirectory(prefix="nutrition-deps-") as name:
             scratch = Path(name)
-            changes = []
-            if args.area in ("backend", "all"):
-                changes.append(("backend", *backend(args.packages, scratch, report_latest=args.area == "all")))
-            if args.area in ("mobile", "all"):
-                changes.append(("mobile", *mobile(args.packages, scratch, report_latest=args.area == "all")))
-            if args.area == "all":
-                toolchain_report()
-            if all(before == after for _, _, before, after in changes):
-                print("All requested dependencies are current within declared ranges.")
-                return 0
-            for area, path, before, after in changes:
-                versions = backend_versions if area == "backend" else mobile_versions
-                old_versions, new_versions = versions(before), versions(after)
-                for package in sorted(old_versions.keys() | new_versions.keys()):
-                    old, new = old_versions.get(package, "missing"), new_versions.get(package, "missing")
-                    if old != new:
-                        print(f"{area} {package}: {old} -> {new}")
-                print(f"Lockfile: {path.relative_to(ROOT)}")
-            if args.apply:
-                if any(path.read_bytes() != before for _, path, before, _ in changes):
-                    raise UpdateError("A lockfile changed during preparation; refusing to overwrite it.")
-                staged_files = []
-                published = []
+            areas = ("backend", "mobile") if args.area == "all" else (args.area,)
+            succeeded = []
+            failed = []
+            changed = False
+            for area in areas:
                 try:
-                    for _, path, _, after in changes:
-                        staged = path.with_name(path.name + ".update-tmp")
-                        staged.write_bytes(after)
-                        staged_files.append(staged)
-                    for (_, path, before, _), staged in zip(changes, staged_files):
-                        os.replace(staged, path)
-                        published.append((path, before))
-                except OSError:
-                    for path, before in reversed(published):
-                        path.write_bytes(before)
-                    raise
-                finally:
-                    for staged in staged_files:
-                        staged.unlink(missing_ok=True)
-                print("Applied. Review exact changes and run repository qualification before integration.")
-            else:
+                    ensure_python(area)
+                    if area == "mobile":
+                        ensure_node()
+                    area_scratch = scratch / area
+                    area_scratch.mkdir()
+                    retry_failures = []
+                    try:
+                        (area_scratch / "bulk").mkdir()
+                        path, before, after = (backend if area == "backend" else mobile)(
+                            args.packages, area_scratch / "bulk", report_latest=args.area == "all")
+                    except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+                        if args.area != "all":
+                            raise
+                        failed.append(f"{area} bulk update")
+                        print(f"{area} bulk update failed: {exc}; retrying direct packages independently.",
+                              file=sys.stderr)
+                        try:
+                            path, before, after, retry_failures = retry_direct_packages(area, area_scratch)
+                        except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as retry_exc:
+                            failed.append(f"{area} retry")
+                            print(f"{area} retry setup failed: {retry_exc}", file=sys.stderr)
+                            continue
+                        failed.extend(f"{area} {package}" for package in retry_failures)
+                    if before == after:
+                        print(f"{area}: current within declared ranges.")
+                    else:
+                        versions = backend_versions if area == "backend" else mobile_versions
+                        old_versions, new_versions = versions(before), versions(after)
+                        for package in sorted(old_versions.keys() | new_versions.keys()):
+                            old = old_versions.get(package, "missing")
+                            new = new_versions.get(package, "missing")
+                            if old != new:
+                                print(f"{area} {package}: {old} -> {new}")
+                        print(f"Lockfile: {path.relative_to(ROOT)}")
+                        if args.apply:
+                            if path.read_bytes() != before:
+                                raise UpdateError("Lockfile changed during preparation; refusing to overwrite it.")
+                            staged = path.with_name(path.name + ".update-tmp")
+                            try:
+                                staged.write_bytes(after)
+                                os.replace(staged, path)
+                            finally:
+                                staged.unlink(missing_ok=True)
+                            print(f"{area}: applied validated lockfile; review exact changes before integration.")
+                        changed = True
+                    if not retry_failures:
+                        succeeded.append(area)
+                    elif before != after:
+                        succeeded.append(f"{area} partial")
+                    if area == "mobile":
+                        print("Mobile lock install and Expo compatibility passed; run typecheck, tests, and native qualification when applicable.")
+                        print("Required qualification profiles: repository, mobile, ios-native.")
+                    else:
+                        print("Backend: run the locked install, lint, tests, and PostgreSQL checks when applicable.")
+                        print("Required qualification profiles: repository, backend (plus postgresql if affected).")
+                except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+                    failed.append(area)
+                    print(f"{area} update failed: {exc}", file=sys.stderr)
+            if args.area == "all":
+                try:
+                    toolchain_report()
+                except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+                    failed.append("toolchain report")
+                    print(f"Toolchain report failed: {exc}", file=sys.stderr)
+            if failed:
+                print("Update incomplete; succeeded: " + (", ".join(succeeded) or "none")
+                      + "; failed: " + ", ".join(failed)
+                      + ". Successful validated changes remain; fix failures and rerun.", file=sys.stderr)
+                return 2
+            if not changed:
+                print("All requested dependencies are current within declared ranges.")
+            elif not args.apply:
                 print("Preview only. Repeat with --apply to write the lockfile.")
-            if args.area in ("mobile", "all"):
-                print("Mobile lock install and Expo compatibility passed; run typecheck, tests, and native qualification when applicable.")
-                print("Required qualification profiles: repository, mobile, ios-native.")
-            if args.area in ("backend", "all"):
-                print("Backend: run the locked install, lint, tests, and PostgreSQL checks when applicable.")
-                print("Required qualification profiles: repository, backend (plus postgresql if affected).")
         return 0
     except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
         print(f"Dependency update stopped: {exc}", file=sys.stderr)
