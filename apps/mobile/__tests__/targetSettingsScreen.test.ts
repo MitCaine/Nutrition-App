@@ -255,7 +255,7 @@ test("edited US profile values reach the established update contract in canonica
   await act(async () => renderer.unmount());
 });
 
-test("sex controls share an equal-width row and female-only condition choices are explicit", async () => {
+test("sex controls share an equal-width row and female-only conditions are single-select radios", async () => {
   mockConfiguration = createConfiguration({
     profile: {
       birthDate: "1988-11-18",
@@ -275,21 +275,68 @@ test("sex controls share an equal-width row and female-only condition choices ar
   expect(sexRow).toBeDefined();
   expect(StyleSheet.flatten(sexRow?.props.style)).toMatchObject({ flexDirection: "row" });
   expect(sexRow?.findAllByType(Pressable).filter((item) => item.props.accessibilityLabel?.startsWith("Equation sex "))).toHaveLength(2);
-  expect(action(renderer.root, "Pregnant condition")).toBeDefined();
-  expect(action(renderer.root, "Lactating condition")).toBeDefined();
+  const conditions = ["None condition", "Pregnant condition", "Lactating condition"];
+  const expectSelectedCondition = (selected: string) => {
+    const group = renderer.root.findAllByType(View).find((item) =>
+      item.props.accessibilityRole === "radiogroup"
+      && item.findAllByType(Text).some((text) => textContent(text) === "Optional conditions"),
+    );
+    expect(group).toBeDefined();
+    expect(group!.props.accessibilityLabel).toBe("Optional conditions");
+    const radios = group!.findAllByType(Pressable);
+    expect(radios).toHaveLength(3);
+    expect(radios.every((radio) => radio.props.accessibilityRole === "radio")).toBe(true);
+    expect(radios.filter((radio) => radio.props.accessibilityState.checked)).toHaveLength(1);
+    for (const label of conditions) {
+      expect(action(renderer.root, label).props.accessibilityState.checked).toBe(label === selected);
+    }
+  };
+  expectSelectedCondition("None condition");
   const visibleText = renderer.root.findAllByType(Text).map(textContent).join(" ");
   expect(visibleText).not.toContain("Estimation context");
   expect(visibleText).not.toContain("General adult");
   expect(visibleText).not.toContain("specialized medical");
 
   await act(async () => action(renderer.root, "Pregnant condition").props.onPress());
-  expect(action(renderer.root, "Pregnant condition").props.accessibilityState.checked).toBe(true);
+  expectSelectedCondition("Pregnant condition");
+  await act(async () => action(renderer.root, "Pregnant condition").props.onPress());
+  expectSelectedCondition("Pregnant condition");
+  await act(async () => action(renderer.root, "Lactating condition").props.onPress());
+  expectSelectedCondition("Lactating condition");
+  await act(async () => action(renderer.root, "None condition").props.onPress());
+  expectSelectedCondition("None condition");
+  await act(async () => action(renderer.root, "Pregnant condition").props.onPress());
+  expectSelectedCondition("Pregnant condition");
   await act(async () => action(renderer.root, "Equation sex male").props.onPress());
-  expect(action(renderer.root, "Pregnant condition")).toBeUndefined();
-  expect(action(renderer.root, "Lactating condition")).toBeUndefined();
+  for (const label of conditions) expect(action(renderer.root, label)).toBeUndefined();
   await act(async () => action(renderer.root, "Save nutrition targets").props.onPress());
   expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
     profile: expect.objectContaining({ energy_estimation_context: "general_adult" }),
+  }));
+  await act(async () => renderer.unmount());
+});
+
+test.each([
+  ["None condition", "general_adult"],
+  ["Pregnant condition", "pregnant"],
+  ["Lactating condition", "lactating"],
+] as const)("female %s selection preserves the saved context", async (label, context) => {
+  mockConfiguration = createConfiguration({
+    profile: {
+      birthDate: "1988-11-18",
+      sexForEquation: "female",
+      heightCm: "170.180",
+      weightKg: "63.503",
+      activityLevel: "active",
+      energyEstimationContext: "general_adult",
+    },
+  });
+  mockUpdate.mockResolvedValue(mockConfiguration);
+  const renderer = await render();
+  await act(async () => action(renderer.root, label).props.onPress());
+  await act(async () => action(renderer.root, "Save nutrition targets").props.onPress());
+  expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    profile: expect.objectContaining({ energy_estimation_context: context }),
   }));
   await act(async () => renderer.unmount());
 });

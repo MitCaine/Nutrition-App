@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 3
 id = "GH-217-target-life-stage-radio"
 title = "Make optional target life-stage selection use consistent radio semantics"
-state = "IN_PROGRESS"
+state = "IMPLEMENTED"
 task_type = "product"
 risk = "medium"
 created = "2026-09-27"
@@ -121,6 +121,7 @@ Changed issue authority/base/scope, conflicting domain behavior, unavailable off
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Two product/test paths plus capsule lifecycle; no backend or native change. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-three external authorization comment 5859199198, exact base and capsule-only planning overlay; earlier reviewer and transport STOP_REPLAN attempts are preserved outside this candidate. |
 | 2026-09-27 | READY | IN_PROGRESS | Codex controller | Qualified revision-three P and generated bounded handoff; reapplying only the accepted product bytes. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Bounded product/test change committed; revision-three exact-C checks and review remain pending. |
 
 ## Completion record
 

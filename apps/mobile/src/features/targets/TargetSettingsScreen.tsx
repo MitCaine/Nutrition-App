@@ -71,6 +71,7 @@ const ACTIVITY = [
 ] as const;
 
 const CONDITION_OPTIONS = [
+  { value: "general_adult", label: "None" },
   { value: "pregnant", label: "Pregnant" },
   { value: "lactating", label: "Lactating" },
 ] as const;
@@ -524,7 +525,7 @@ export function TargetSettingsScreen({
             </View>
 
             {draft.sexForEquation === "female" ? (
-              <View accessibilityRole="radiogroup" style={styles.choiceGroup}>
+              <View accessibilityRole="radiogroup" accessibilityLabel="Optional conditions" style={styles.choiceGroup}>
                 <Text style={styles.label}>Optional conditions</Text>
 
                 <View style={styles.choiceGrid}>
@@ -544,7 +545,7 @@ export function TargetSettingsScreen({
                         onPress={() =>
                           setDraft((current) => ({
                             ...current,
-                            energyEstimationContext: selected ? "general_adult" : option.value,
+                            energyEstimationContext: option.value,
                           }))
                         }
                         style={({ pressed }) => [
