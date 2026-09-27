@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 3
 id = "GH-220-expo-holds"
 title = "Correct Expo holds and bound dependency retry failures"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "high"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ Resolver errors default to no retry; recognized conflicts alone justify per-pack
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four candidate-reviewable criteria and focused tests selected. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Source, tests and capsule bounded; adjacent issues separate. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-three owner authorization comment 5860134971 follows the preserved revision-one review and revision-two invalid capsule-history baseline; full held-entry equality remains required. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Bounded source and focused tests transferred to the revision-three planning overlay. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Full held-entry equality and corrected conflict-retry status implemented; fresh candidate gates pending. |
 
 Candidate review and terminal closeout occur after this implementation commit. Pending completion fields are lifecycle markers, not claims of missing candidate checks or RI evidence.
 

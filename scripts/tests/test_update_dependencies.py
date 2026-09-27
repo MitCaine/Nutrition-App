@@ -319,7 +319,7 @@ class DependencyUpdateTest(unittest.TestCase):
         backend_lock.write_bytes(original)
         def backend_attempt(packages, scratch, *, report_latest=False, baseline=None):
             if not packages or packages == ["bad"]:
-                raise module.UpdateError("bad package resolver failure")
+                raise module.ResolutionConflict("bad package resolver failure")
             before = baseline or original
             return backend_lock, before, before.replace(b"good==1.0.0", b"good==1.1.0")
         with patch.object(module, "BACKEND", backend_root), \
@@ -336,6 +336,37 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
         self.assertIn("backend retry bad failed", errors.getvalue())
         self.assertIn("succeeded: backend partial, mobile", errors.getvalue())
+
+    def test_successful_conflict_retries_report_success(self):
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["one>=1", "two>=1"]\n'
+            '[project.optional-dependencies]\ndev = []\n')
+        lock = backend / "requirements-dev.lock"
+        original = b"one==1.0.0\ntwo==1.0.0\n"
+        lock.write_bytes(original)
+        attempts = []
+        def backend_attempt(packages, scratch, *, report_latest=False, baseline=None):
+            attempts.append(packages)
+            if not packages:
+                raise module.ResolutionConflict("ResolutionImpossible")
+            before = baseline or original
+            after = before.replace(f"{packages[0]}==1.0.0".encode(),
+                                   f"{packages[0]}==1.1.0".encode())
+            return lock, before, after
+        with patch.object(module, "BACKEND", backend), patch.object(module, "backend", side_effect=backend_attempt), \
+             patch.object(module, "toolchain_report"), patch.object(module, "run", side_effect=self.fake_run), \
+             patch.object(module.subprocess, "run") as outdated, \
+             patch.object(sys, "argv", ["update", "all", "--apply"]):
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(module.main(), 0)
+        self.assertEqual(attempts, [[], ["one"], ["two"]])
+        self.assertEqual(lock.read_bytes(), b"one==1.1.0\ntwo==1.1.0\n")
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+        self.assertNotIn("Update incomplete", errors.getvalue())
 
     def test_backend_failure_does_not_prevent_mobile(self):
         with patch.object(module, "backend", side_effect=module.UpdateError("backend unavailable")), \
@@ -360,7 +391,7 @@ class DependencyUpdateTest(unittest.TestCase):
         backend_lock.write_bytes(b"fastapi==0.1.0\n")
         def mobile_attempt(packages, scratch, *, report_latest=False, baseline=None):
             if not packages or packages == ["broken"]:
-                raise module.UpdateError("broken npm package")
+                raise module.ResolutionConflict("broken npm package")
             before = baseline or original
             lock = json.loads(before)
             lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
@@ -377,14 +408,49 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(module.mobile_versions(self.lock.read_bytes())["broken"], "1.0.0")
         self.assertIn("mobile broken", errors.getvalue())
 
-    def test_empty_failed_npm_outdated_is_error(self):
+    def test_empty_failed_npm_outdated_warns_but_retains_proposal(self):
         with patch.object(module.subprocess, "run") as outdated:
             outdated.return_value.returncode = 1
             outdated.return_value.stdout = ""
             outdated.return_value.stderr = "registry unavailable"
             with patch.object(module, "run", side_effect=self.fake_run):
-                with self.assertRaisesRegex(module.UpdateError, "no results"):
-                    module.mobile([], self.root / "scratch", report_latest=True)
+                with contextlib.redirect_stderr(io.StringIO()) as warning:
+                    _, _, after = module.mobile([], self.root / "scratch", report_latest=True)
+        self.assertEqual(module.mobile_versions(after)["sample"], "1.1.0")
+        self.assertIn("validated lock retained", warning.getvalue())
+
+    def test_shared_backend_failure_does_not_retry_each_package_or_block_mobile(self):
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text('[project]\ndependencies = ["one>=1", "two>=1"]\n'
+                                                   '[project.optional-dependencies]\ndev = []\n')
+        (backend / "requirements-dev.lock").write_bytes(b"one==1.0.0\ntwo==1.0.0\n")
+        calls = []
+        def unavailable(packages, scratch, *, report_latest=False, baseline=None):
+            calls.append(packages)
+            raise module.UpdateError("registry unavailable")
+        with patch.object(module, "BACKEND", backend), patch.object(module, "backend", side_effect=unavailable), \
+             patch.object(module, "toolchain_report"), patch.object(module, "run", side_effect=self.fake_run), \
+             patch.object(module.subprocess, "run") as outdated, \
+             patch.object(sys, "argv", ["update", "all", "--apply"]):
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(module.main(), 2)
+        self.assertEqual(calls, [[]])
+        self.assertIn("no package retry", errors.getvalue())
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+
+    def test_run_classifies_only_recognized_resolver_conflicts(self):
+        with patch.object(module.subprocess, "run") as process:
+            process.return_value.returncode = 1
+            process.return_value.stderr = "npm ERR! code ERESOLVE\n"
+            with self.assertRaises(module.ResolutionConflict):
+                module.run(["npm", "update", "sample"], self.mobile, capture=True)
+            process.return_value.stderr = "npm ERR! code ECONNRESET\n"
+            with self.assertRaises(module.UpdateError) as raised:
+                module.run(["npm", "update", "sample"], self.mobile, capture=True)
+            self.assertNotIsInstance(raised.exception, module.ResolutionConflict)
 
     def test_dirty_checkout_allows_preview_but_blocks_apply(self):
         with patch.object(module, "clean_checkout", side_effect=module.UpdateError("dirty")):
@@ -464,6 +530,133 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertIn("Holding Expo-managed versions and changed peers: sample", output.getvalue())
         self.assertEqual(module.mobile_versions(after)["sample"], "1.0.0")
+
+    def test_all_expo_held_skips_bare_npm_update(self):
+        updates = []
+        checks = 0
+        def expo_run(args, cwd, *, capture=False):
+            nonlocal checks
+            if args[:2] == ["npm", "update"]:
+                updates.append(args)
+                # Bare npm update updates everything, even without package names.
+                lock = json.loads((cwd / "package-lock.json").read_text())
+                lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
+                (cwd / "package-lock.json").write_text(json.dumps(lock))
+            elif args[:2] == ["npm", "ci"]:
+                (cwd / "node_modules").mkdir(exist_ok=True)
+            elif args[:2] == ["npm", "exec"]:
+                checks += 1
+                if checks == 1:
+                    raise module.UpdateError("npm exec failed (1):\n  sample@1.1.0 - expected version: 1.0.0")
+            return ""
+        with patch.object(module, "run", side_effect=expo_run), patch.object(module.subprocess, "run") as outdated:
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            _, _, after = module.mobile([], self.root / "scratch", report_latest=True)
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(checks, 2)
+        self.assertEqual(module.mobile_versions(after)["sample"], "1.0.0")
+
+    def test_nonheld_update_cannot_move_held_package_indirectly(self):
+        self.manifest["dependencies"]["other"] = "^1.0.0"
+        (self.mobile / "package.json").write_text(json.dumps(self.manifest))
+        self.lock.write_text(json.dumps({"packages": {"": self.manifest,
+            "node_modules/sample": {"version": "1.0.0"},
+            "node_modules/other": {"version": "1.0.0"}}}))
+        checks = 0
+        updates = []
+        def expo_run(args, cwd, *, capture=False):
+            nonlocal checks
+            if args[:2] == ["npm", "update"]:
+                updates.append(args)
+                lock = json.loads((cwd / "package-lock.json").read_text())
+                lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
+                lock["packages"]["node_modules/other"]["version"] = "1.1.0"
+                (cwd / "package-lock.json").write_text(json.dumps(lock))
+            elif args[:2] == ["npm", "ci"]:
+                (cwd / "node_modules").mkdir(exist_ok=True)
+            elif args[:2] == ["npm", "exec"]:
+                checks += 1
+                if checks == 1:
+                    raise module.UpdateError("npm exec failed (1):\n  sample@1.1.0 - expected version: 1.0.0")
+            return ""
+        with patch.object(module, "run", side_effect=expo_run):
+            with self.assertRaisesRegex(module.UpdateError, "Expo-held lock entry changed"):
+                module.mobile([], self.root / "scratch", report_latest=True)
+        self.assertEqual(len(updates), 2)
+        self.assertIn("other", updates[1])
+        self.assertNotIn("sample", updates[1])
+
+    def test_some_expo_held_updates_only_remaining_package(self):
+        self.manifest["dependencies"]["other"] = "^1.0.0"
+        (self.mobile / "package.json").write_text(json.dumps(self.manifest))
+        self.lock.write_text(json.dumps({"packages": {"": self.manifest,
+            "node_modules/sample": {"version": "1.0.0"},
+            "node_modules/other": {"version": "1.0.0"}}}))
+        checks = 0
+        updates = []
+        def expo_run(args, cwd, *, capture=False):
+            nonlocal checks
+            if args[:2] == ["npm", "update"]:
+                updates.append(args)
+                lock = json.loads((cwd / "package-lock.json").read_text())
+                if "sample" in args:
+                    lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
+                lock["packages"]["node_modules/other"]["version"] = "1.1.0"
+                (cwd / "package-lock.json").write_text(json.dumps(lock))
+            elif args[:2] == ["npm", "ci"]:
+                (cwd / "node_modules").mkdir(exist_ok=True)
+            elif args[:2] == ["npm", "exec"]:
+                checks += 1
+                if checks == 1:
+                    raise module.UpdateError("npm exec failed (1):\n  sample@1.1.0 - expected version: 1.0.0")
+            return ""
+        with patch.object(module, "run", side_effect=expo_run), patch.object(module.subprocess, "run") as outdated:
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            _, _, after = module.mobile([], self.root / "scratch", report_latest=True)
+        self.assertEqual(len(updates), 2)
+        self.assertNotIn("sample", updates[1])
+        self.assertIn("other", updates[1])
+        self.assertEqual(checks, 2)
+        self.assertEqual(module.mobile_versions(after)["sample"], "1.0.0")
+        self.assertEqual(module.mobile_versions(after)["other"], "1.1.0")
+
+    def test_nested_held_copy_movement_is_rejected(self):
+        before = json.dumps({"packages": {"": {}, "node_modules/sample": {"version": "1.0.0"},
+            "node_modules/other/node_modules/sample": {"version": "1.0.0"}}}).encode()
+        after = json.dumps({"packages": {"": {}, "node_modules/sample": {"version": "1.0.0"},
+            "node_modules/other/node_modules/sample": {"version": "1.1.0"}}}).encode()
+        self.assertNotEqual(module.held_entries(before, {"sample"}),
+                            module.held_entries(after, {"sample"}))
+
+    def test_nonheld_update_cannot_change_held_integrity(self):
+        self.manifest["dependencies"]["other"] = "^1.0.0"
+        (self.mobile / "package.json").write_text(json.dumps(self.manifest))
+        self.lock.write_text(json.dumps({"packages": {"": self.manifest,
+            "node_modules/sample": {"version": "1.0.0", "integrity": "original"},
+            "node_modules/other": {"version": "1.0.0"}}}))
+        checks = 0
+        def expo_run(args, cwd, *, capture=False):
+            nonlocal checks
+            if args[:2] == ["npm", "update"]:
+                lock = json.loads((cwd / "package-lock.json").read_text())
+                if "sample" in args:
+                    lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
+                else:
+                    lock["packages"]["node_modules/sample"]["integrity"] = "changed"
+                lock["packages"]["node_modules/other"]["version"] = "1.1.0"
+                (cwd / "package-lock.json").write_text(json.dumps(lock))
+            elif args[:2] == ["npm", "ci"]:
+                (cwd / "node_modules").mkdir(exist_ok=True)
+            elif args[:2] == ["npm", "exec"]:
+                checks += 1
+                if checks == 1:
+                    raise module.UpdateError("npm exec failed (1):\n  sample@1.1.0 - expected version: 1.0.0")
+            return ""
+        with patch.object(module, "run", side_effect=expo_run):
+            with self.assertRaisesRegex(module.UpdateError, "Expo-held lock entry changed"):
+                module.mobile([], self.root / "scratch", report_latest=True)
 
     def test_backend_compile_updates_requested_package_only_in_scratch(self):
         backend = self.root / "apps/backend"

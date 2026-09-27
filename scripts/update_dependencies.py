@@ -31,6 +31,10 @@ class UpdateError(Exception):
     pass
 
 
+class ResolutionConflict(UpdateError):
+    """A resolver conflict that may benefit from bounded direct-package retry."""
+
+
 @contextmanager
 def exclusive_update():
     """Serialize invocations for one checkout without leaving stale process locks."""
@@ -54,7 +58,12 @@ def run(args: list[str], cwd: Path, *, capture: bool = False) -> str:
         raise UpdateError(f"{' '.join(args[:2])} timed out after 600 seconds") from exc
     if result.returncode:
         detail = (result.stderr or result.stdout or "").strip()
-        raise UpdateError(f"{' '.join(args[:2])} failed ({result.returncode})" + (f": {detail}" if detail else ""))
+        message = f"{' '.join(args[:2])} failed ({result.returncode})" + (f": {detail}" if detail else "")
+        if ((args[:2] == ["npm", "update"] and re.search(r"\bERESOLVE\b", detail))
+                or ("piptools" in args and "compile" in args
+                    and "ResolutionImpossible" in detail)):
+            raise ResolutionConflict(message)
+        raise UpdateError(message)
     return result.stdout or ""
 
 
@@ -140,6 +149,14 @@ def mobile_versions(data: bytes) -> dict[str, str]:
     packages = json.loads(data)["packages"]
     return {key.removeprefix("node_modules/"): value["version"]
             for key, value in packages.items() if key.startswith("node_modules/") and "version" in value}
+
+
+def held_entries(data: bytes, held: set[str]) -> dict[str, dict]:
+    """Keep every lock entry for held package names, including nested copies."""
+    packages = json.loads(data)["packages"]
+    return {path: value for path, value in packages.items()
+            if any(path == f"node_modules/{name}"
+                   or path.endswith(f"/node_modules/{name}") for name in held)}
 
 
 def peer_accepts(target: Path, expected_version: str, peer_range: str) -> bool:
@@ -385,9 +402,14 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
             print("Holding Expo-managed versions and changed peers: " + ", ".join(sorted(held)))
             (target / "package-lock.json").write_bytes(before)
             shutil.rmtree(target / "node_modules")
-            run(["npm", "update", *[name for name in packages if name not in held],
-                 "--package-lock-only", "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund",
-                 "--save=false"], target)
+            remaining = [name for name in packages if name not in held]
+            if remaining:
+                run(["npm", "update", *remaining, "--package-lock-only", "--ignore-scripts",
+                     "--engine-strict", "--no-audit", "--no-fund", "--save=false"], target)
+            else:
+                print("All requested mobile packages are Expo-held; retaining the original lock.")
+            if held_entries((target / "package-lock.json").read_bytes(), held) != held_entries(before, held):
+                raise UpdateError("Expo-held lock entry changed during resolution; refusing the proposed lock.")
             run(["npm", "ci", "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund"],
                 target, capture=True)
             run(["npm", "exec", "--", "expo", "install", "--check"], target, capture=True)
@@ -421,16 +443,21 @@ def mobile(packages: list[str], scratch: Path, *, report_latest: bool = False,
             outdated = subprocess.run(["npm", "outdated", "--json", "--depth=0"], cwd=target,
                                       text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       timeout=60)
-        except subprocess.TimeoutExpired as exc:
-            raise UpdateError("npm outdated timed out after 60 seconds") from exc
-        if outdated.returncode not in (0, 1):
-            raise UpdateError("npm outdated failed: " + outdated.stderr.strip())
-        if outdated.returncode == 1 and not outdated.stdout.strip():
-            raise UpdateError("npm outdated returned no results: " + outdated.stderr.strip())
-        try:
-            rows = json.loads(outdated.stdout or "{}")
-        except ValueError as exc:
-            raise UpdateError("Cannot read npm outdated results: " + outdated.stderr.strip()) from exc
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"Warning: npm outdated report unavailable ({exc}); validated lock retained.", file=sys.stderr)
+            outdated = None
+        rows = None
+        if outdated is not None:
+            try:
+                if outdated.returncode not in (0, 1) or (outdated.returncode == 1 and not outdated.stdout.strip()):
+                    raise ValueError(outdated.stderr.strip() or f"exit {outdated.returncode}")
+                rows = json.loads(outdated.stdout or "{}")
+                if not isinstance(rows, dict):
+                    raise ValueError("non-object report")
+            except ValueError as exc:
+                print(f"Warning: npm outdated report unavailable ({exc}); validated lock retained.", file=sys.stderr)
+        if rows is None:
+            return MOBILE / "package-lock.json", before, after
         resolved = mobile_versions(after)
         for package in sorted(declared):
             current = resolved.get(package, "missing")
@@ -558,8 +585,14 @@ def _update(args: argparse.Namespace) -> int:
                     except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
                         if args.area != "all":
                             raise
-                        failed.append(f"{area} bulk update")
-                        print(f"{area} bulk update failed: {exc}; retrying direct packages independently.",
+                        if not isinstance(exc, ResolutionConflict):
+                            failed.append(f"{area} bulk update")
+                            print(f"{area} bulk update failed: {exc}; no package retry for shared or contract failure.",
+                                  file=sys.stderr)
+                            if transaction:
+                                transaction.failed(area)
+                            continue
+                        print(f"{area} bulk update conflict: {exc}; retrying direct packages independently.",
                               file=sys.stderr)
                         try:
                             path, before, after, retry_failures = retry_direct_packages(area, area_scratch)
