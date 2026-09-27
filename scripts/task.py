@@ -2980,19 +2980,21 @@ def command_finalize(args: argparse.Namespace) -> int:
         terminal_repo, expected_repository=state["repository"])
     terminal_authorization = resolve_current_authorization(
         terminal_state, GhQualificationTransport())
+    capsule_path = task_closeout.active_capsule_path(args.issue_number, state["task_id"])
     if (terminal_state["task_id"] != state["task_id"] + "-closeout"
             or terminal_state["repository"] != state["repository"]
             or terminal_authorization.base_sha != implementation
             or set(terminal_authorization.allowed_paths) != {
                 "engineering/capsules/HISTORY.md",
-                f"engineering/capsules/active/GH-{args.issue_number}.md"}
+                capsule_path}
             or terminal_authorization.profiles != ("repository",)):
         raise TaskControllerError("FINALIZE_TERMINAL_AUTHORITY_INVALID")
     attached_binding = (state.get("capsule_evidence") or {}).get("binding") or {}
     recovery = task_closeout.validate(terminal_repo, issue_number=args.issue_number,
                                        implementation=implementation, terminal=terminal,
                                        recovery=args.recovery_sha,
-                                       expected_contract_sha256=attached_binding.get("contract_sha256"))
+                                       expected_contract_sha256=attached_binding.get("contract_sha256"),
+                                       task_id=state["task_id"])
     previous = json.loads(intent_path.read_text())
     if previous.get("terminal") not in (None, terminal) or previous.get("recovery") not in (None, recovery):
         raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
@@ -3022,7 +3024,8 @@ def command_finalize(args: argparse.Namespace) -> int:
     task_closeout.validate(terminal_repo, issue_number=args.issue_number,
                            implementation=implementation, terminal=terminal,
                            recovery=args.recovery_sha,
-                           expected_contract_sha256=attached_binding.get("contract_sha256"))
+                           expected_contract_sha256=attached_binding.get("contract_sha256"),
+                           task_id=state["task_id"])
     atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_INTEGRATED",
                                     "terminal": terminal, "recovery": recovery,
                                     "terminal_root": str(terminal_repo)})
@@ -3089,16 +3092,18 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
     terminal_repo = resolve_repo_root(args.terminal_root)
     terminal = require_candidate_repository(terminal_repo, expected_repository=state["repository"])
     authorization = resolve_current_authorization(state, GhQualificationTransport())
-    if (state["task_id"] != f"GH-{args.issue_number}-closeout"
+    capsule_id = state["task_id"].removesuffix("-closeout")
+    capsule_path = task_closeout.active_capsule_path(args.issue_number, capsule_id)
+    if (state["task_id"] != capsule_id + "-closeout"
             or authorization.profiles != ("repository",)
             or set(authorization.allowed_paths) != {
                 "engineering/capsules/HISTORY.md",
-                f"engineering/capsules/active/GH-{args.issue_number}.md"}):
+                capsule_path}):
         raise TaskControllerError("FINALIZE_CANCEL_AUTHORITY_INVALID")
     recovery = task_closeout.validate(
         terminal_repo, issue_number=args.issue_number,
         implementation=authorization.base_sha, terminal=terminal,
-        recovery=args.recovery_sha, final_state="CANCELLED")
+        recovery=args.recovery_sha, final_state="CANCELLED", task_id=capsule_id)
     intent_path = args.state_dir / f"issue-{args.issue_number}-cancel-finalize.json"
     intent = {"schema_version": 1, "issue_number": args.issue_number,
               "terminal": terminal, "base": authorization.base_sha,
@@ -3129,7 +3134,7 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
     task_closeout.validate(
         terminal_repo, issue_number=args.issue_number,
         implementation=authorization.base_sha, terminal=terminal,
-        recovery=args.recovery_sha, final_state="CANCELLED")
+        recovery=args.recovery_sha, final_state="CANCELLED", task_id=capsule_id)
     issue = GhIssueAuthorizationTransport()._api(
         method="PATCH", path=f"/repos/{state['repository']}/issues/{args.issue_number}",
         payload={"state": "closed", "state_reason": "not_planned"})

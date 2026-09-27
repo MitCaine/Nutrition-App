@@ -84,8 +84,13 @@ class CandidateEvidenceTests(CandidateFixture):
         controller = self.root / "controller"
         self.git("worktree", "add", "-qb", "main", str(controller), self.base)
         self.git("update-ref", "refs/remotes/origin/main", self.base)
+        self.git("update-ref", "refs/remotes/origin/HEAD", self.base)
         binding = self.binding()
         original = binding["source"]
+        self.git("update-ref", "refs/remotes/origin/HEAD", self.candidate)
+        self.assertFalse(evidence.source_matches(
+            original, evidence.observe(self.repo, self.candidate),
+            main_transition=(self.base, self.candidate)))
         self.git("update-ref", "refs/remotes/origin/main", self.candidate)
         subprocess.run(["git", "merge", "--ff-only", self.candidate], cwd=controller,
                        check=True, capture_output=True)
@@ -93,6 +98,11 @@ class CandidateEvidenceTests(CandidateFixture):
         self.assertFalse(evidence.source_matches(original, moved))
         self.assertTrue(evidence.source_matches(
             original, moved, main_transition=(self.base, self.candidate)))
+        self.git("update-ref", "refs/remotes/origin/HEAD", self.planning)
+        self.assertFalse(evidence.source_matches(
+            original, evidence.observe(self.repo, self.candidate),
+            main_transition=(self.base, self.candidate)))
+        self.git("update-ref", "refs/remotes/origin/HEAD", self.candidate)
         self.git("update-ref", "refs/heads/unrelated", self.candidate)
         self.assertFalse(evidence.source_matches(
             original, evidence.observe(self.repo, self.candidate),

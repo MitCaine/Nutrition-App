@@ -19,6 +19,13 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 HISTORY = "engineering/capsules/HISTORY.md"
 
 
+def active_capsule_path(issue_number: int, task_id: str | None = None) -> str:
+    capsule_id = task_id or f"GH-{issue_number}"
+    if not re.fullmatch(rf"GH-{issue_number}(?:-[A-Za-z0-9][A-Za-z0-9-]*)?", capsule_id):
+        raise CloseoutError("CLOSEOUT_CAPSULE_ID_INVALID")
+    return f"engineering/capsules/active/{capsule_id}.md"
+
+
 def git(repo: Path, *args: str) -> bytes:
     result = subprocess.run(["git", *args], cwd=repo, capture_output=True, check=False)
     if result.returncode:
@@ -54,13 +61,14 @@ def criterion_states(source: bytes) -> list[bytes]:
 
 def validate(repo: Path, *, issue_number: int, implementation: str,
              terminal: str, recovery: str, final_state: str = "MERGED",
-             expected_contract_sha256: str | None = None) -> dict:
+             expected_contract_sha256: str | None = None,
+             task_id: str | None = None) -> dict:
     """Verify the immutable two-path C→T closeout and reachable full capsule R."""
     if final_state not in {"MERGED", "CANCELLED"}:
         raise CloseoutError("CLOSEOUT_FINAL_STATE_INVALID")
     if not all(SHA.fullmatch(value) for value in (implementation, terminal, recovery)):
         raise CloseoutError("CLOSEOUT_SHA_INVALID")
-    path = f"engineering/capsules/active/GH-{issue_number}.md"
+    path = active_capsule_path(issue_number, task_id)
     if text(repo, "rev-parse", f"{terminal}^").strip() != implementation:
         raise CloseoutError("CLOSEOUT_NOT_DIRECT_CHILD")
     if text(repo, "rev-parse", f"{recovery}^").strip() != implementation:
@@ -97,7 +105,7 @@ def validate(repo: Path, *, issue_number: int, implementation: str,
     digest = hashlib.sha256(source).hexdigest()
     before = text(repo, "show", f"{implementation}:{HISTORY}")
     after = text(repo, "show", f"{terminal}:{HISTORY}")
-    heading = f"### GH-{issue_number} - "
+    heading = f"### {Path(path).stem} - "
     if before.count(heading) != 0 or after.count(heading) != 1:
         raise CloseoutError("CLOSEOUT_HISTORY_DUPLICATE_OR_MISSING")
     if not after.startswith(before):

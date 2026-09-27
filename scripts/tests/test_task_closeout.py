@@ -68,6 +68,51 @@ def test_exact_recoverable_terminal_transaction(transaction):
                           expected_contract_sha256="0" * 64)
 
 
+def test_long_task_id_closeout_and_identity_rejection(tmp_path: Path):
+    repo = tmp_path / "long-id"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    task_id = "GH-213-update-serialization"
+    path = repo / closeout.active_capsule_path(213, task_id)
+    path.parent.mkdir(parents=True)
+    path.write_text('+++\nstate = "IMPLEMENTED"\n+++\n## Acceptance criteria\n\n- [ ] AC-1: required\n')
+    history = repo / closeout.HISTORY
+    history.write_text("# HISTORY\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "implementation")
+    implementation = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-qc", "recovery")
+    source = '+++\nstate = "REVIEWED"\n+++\n## Acceptance criteria\n\n- [x] AC-1: required\n'
+    path.write_text(source)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "reviewed capsule")
+    recovery = git(repo, "rev-parse", "HEAD")
+    git(repo, "switch", "-qc", "terminal", implementation)
+    path.unlink()
+    history.write_text(
+        "# HISTORY\n\n### GH-213-update-serialization - fixture\n"
+        "- **Final state:** MERGED\n"
+        f"- **Integration/merged commit:** {implementation}\n"
+        "- **Acceptance result:** 1/1 checked in the terminal source capsule.\n"
+        f"- **Full-capsule recovery commit:** {recovery}\n"
+        "- **Full-capsule recovery path:** engineering/capsules/active/GH-213-update-serialization.md\n"
+        f"- **Historical capsule SHA-256:** {hashlib.sha256(source.encode()).hexdigest()}\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "terminal")
+    terminal = git(repo, "rev-parse", "HEAD")
+    assert closeout.validate(repo, issue_number=213, task_id=task_id,
+                             implementation=implementation, recovery=recovery,
+                             terminal=terminal)["path"] == closeout.active_capsule_path(213, task_id)
+    with pytest.raises(closeout.CloseoutError, match="SCOPE_INVALID"):
+        closeout.validate(repo, issue_number=213, implementation=implementation,
+                          recovery=recovery, terminal=terminal)
+    for invalid in ("GH-214-update-serialization", "GH-213/escape", "GH-213-../escape"):
+        with pytest.raises(closeout.CloseoutError, match="CAPSULE_ID_INVALID"):
+            closeout.active_capsule_path(213, invalid)
+
+
 @pytest.mark.parametrize("source,expected", [
     ('+++\nstate = "REVIEWED"\n+++\n## Acceptance criteria\n\n- [x] AC-1: weaker\n',
      "CONTRACT_CHANGED"),

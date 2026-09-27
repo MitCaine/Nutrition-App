@@ -130,10 +130,18 @@ def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str
     if main_transition is None or not isinstance(expected.get("refs"), dict) or not isinstance(observed.get("refs"), dict):
         return False
     before, after = main_transition
-    permitted = {"refs/remotes/origin/main", "refs/heads/main"}
+    main_refs = {"refs/remotes/origin/main", "refs/heads/main"}
+    alias = "refs/remotes/origin/HEAD"
+    permitted = main_refs | {alias}
     changed = {name for name in expected["refs"].keys() | observed["refs"].keys()
                if expected["refs"].get(name) != observed["refs"].get(name)}
-    return bool(changed) and changed <= permitted and all(
+    if not changed & main_refs or not changed <= permitted:
+        return False
+    if alias in changed and ("refs/remotes/origin/main" not in changed
+                             or expected["refs"].get(alias) != expected["refs"].get("refs/remotes/origin/main")
+                             or observed["refs"].get(alias) != observed["refs"].get("refs/remotes/origin/main")):
+        return False
+    return all(
         expected["refs"].get(name) == before and observed["refs"].get(name) == after
         for name in changed)
 
