@@ -78,8 +78,51 @@ line, and Ruff targets `py312`. `requirements-dev.lock` remains the reproducible
 dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
-Python 3.12 development and CI environment. For a routine update of one declared dependency,
-run this from the repository root:
+Python 3.12 development and CI environment. At the start of work in either a VS Code or
+Codex desktop integrated **zsh** terminal, run one command from the repository root:
+
+```zsh
+source ./scripts/start-work.zsh
+```
+
+It selects the repository's Node and Python lines for that terminal, updates the installed
+Homebrew formulas within those lines when newer patches are available, checks the latest
+package and toolchain versions, and applies compatible backend and mobile lockfile updates.
+It verifies the active language versions and rechecks Homebrew for pending updates after upgrading.
+Homebrew can update dependencies of those formulas as part of a tool upgrade.
+An existing source change makes it preview only, preserving the work. Sourcing is required
+because a launched script cannot alter its parent terminal's `PATH`. The toolchain and
+dependency steps are separate files under `scripts/dependency-modules/`.
+For a read-only run, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`;
+add `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1` to keep installed Homebrew tools unchanged.
+These environment switches apply to that invocation only.
+
+For a whole-project dependency refresh without the startup toolchain step, run:
+
+```bash
+./scripts/update-dependencies all
+./scripts/update-dependencies all --apply
+```
+
+The first command previews both backend and mobile lockfile changes, even with existing work,
+and shows registry-latest
+versions still held back by declarations or compatibility checks, and reports the Node and
+Python toolchain lines. The second command applies both validated lockfiles. It updates
+packages within declared ranges; it does not change manifests or toolchain pins. Major,
+Expo/React Native/native, and language-runtime changes require a separate migration with
+the relevant tests and native qualification. The bulk mobile refresh retains Expo's
+expected package versions when npm selects newer compatible-range versions that Expo
+does not yet accept. Applying requires a clean worktree; previews are read-only.
+Registry availability is reported as
+`unavailable` rather than treated as proof that a package is current.
+The current backend Ruff range remains below 0.16 because that line flags existing
+FastAPI dependency defaults; adopting it requires a separate lint migration.
+Routine npm and pip version PRs are disabled because the startup command owns their lock
+refreshes. Dependabot security fixes remain enabled and grouped per ecosystem; GitHub
+Actions version updates stay grouped on a weekly schedule. Review security and major
+migration changes separately before integration.
+
+To update only one declared backend dependency, use:
 
 ```bash
 ./scripts/update-dependencies backend fastapi
@@ -96,7 +139,10 @@ and names the required `repository` and `backend` qualification profiles. Select
 
 ### Mobile
 
-Version 2.0 mobile development and qualification use Node 24. The package engine contract accepts the Node 24 line and excludes Node 25; `.nvmrc` remains the repository toolchain pin.
+Version 2.0 mobile development and qualification use Node 26. The package engine contract
+accepts the Node 26 line; `.nvmrc` remains the repository toolchain pin. The dependency
+update wrapper selects a Homebrew-installed required Node line automatically when the active
+Node is another major version. Other Node installations can be selected on `PATH`.
 
 On a fresh checkout, or when the lockfile/dependency installation needs to be
 reconciled:
@@ -107,7 +153,7 @@ npm ci
 ```
 
 `npm ci` is setup/dependency reconciliation, not a per-rebuild requirement.
-For a routine update within an existing package range, preview and then apply one package:
+To update only one mobile package within its existing range, preview and then apply:
 
 ```bash
 ./scripts/update-dependencies mobile @tanstack/react-query
@@ -119,10 +165,10 @@ checks lockfile declarations, installs the candidate lock without scripts in a t
 directory, checks Expo compatibility, and refuses new dependency-risk register drift. Existing
 risk findings are reported and still need separate review. Review
 the exact resolved changes before qualification. Expo and native package migrations need
-their coordinated upgrade process. The script requires a clean worktree so a failed
+their coordinated upgrade process. Applying requires a clean worktree so a failed
 attempt cannot overwrite unrelated changes. Exact resolved versions remain pinned in
 lockfiles; declared ranges remain flexible. The mobile command accepts Python 3.9 or
-newer alongside the repository's Node 24 toolchain, and lists every resolved version
+newer alongside the repository's Node 26 toolchain, and lists every resolved version
 change plus the `repository`, `mobile`, and `ios-native` qualification profiles.
 
 For ordinary local-first JS/TS development with an appropriate native

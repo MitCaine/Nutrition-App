@@ -45,7 +45,9 @@ class DependencyUpdateTest(unittest.TestCase):
             "node_modules/sample": {"version": version}}}))
 
     def fake_run(self, args, cwd, *, capture=False):
-        if args[:2] == ["npm", "update"]:
+        if args[:2] == ["npm", "ci"]:
+            (cwd / "node_modules").mkdir(exist_ok=True)
+        if args[:2] == ["npm", "update"] and "sample" in args:
             path = cwd / "package-lock.json"
             lock = json.loads(path.read_text())
             lock["packages"]["node_modules/sample"]["version"] = "1.1.0"
@@ -68,6 +70,80 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(self.lock.read_bytes(), original)
         self.assertEqual(self.call_main("mobile", "sample", "--apply"), 0)
         self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+
+    def test_all_previews_and_applies_both_locks(self):
+        backend_lock = self.root / "backend.lock"
+        backend_before = b"fastapi==0.1.0\n"
+        backend_after = b"fastapi==0.2.0\n"
+        backend_lock.write_bytes(backend_before)
+        original_mobile = self.lock.read_bytes()
+        def fake_backend(packages, scratch, *, report_latest=False):
+            self.assertEqual(packages, [])
+            self.assertTrue(report_latest)
+            return backend_lock, backend_before, backend_after
+        with patch.object(module, "backend", side_effect=fake_backend), patch.object(module, "toolchain_report"), \
+             patch.object(module.subprocess, "run") as outdated:
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with patch.object(module, "run", side_effect=self.fake_run), patch.object(sys, "argv", ["update", "all"]):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(module.main(), 0)
+            self.assertIn("backend fastapi: 0.1.0 -> 0.2.0", output.getvalue())
+            self.assertEqual(backend_lock.read_bytes(), backend_before)
+            self.assertEqual(self.lock.read_bytes(), original_mobile)
+            with patch.object(module, "run", side_effect=self.fake_run), patch.object(sys, "argv", ["update", "all", "--apply"]):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(module.main(), 0)
+        self.assertEqual(backend_lock.read_bytes(), backend_after)
+        self.assertEqual(module.mobile_versions(self.lock.read_bytes())["sample"], "1.1.0")
+
+    def test_all_rejects_package_names(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.call_main("all", "sample", "--apply"), 2)
+
+    def test_all_restores_first_lock_if_second_publish_fails(self):
+        backend_lock = self.root / "backend.lock"
+        backend_lock.write_bytes(b"fastapi==0.1.0\n")
+        original_mobile = self.lock.read_bytes()
+        real_replace = module.os.replace
+        def fail_second(source, target):
+            if target == self.lock:
+                raise OSError("simulated mobile publish failure")
+            real_replace(source, target)
+        with patch.object(module, "backend", return_value=(backend_lock, b"fastapi==0.1.0\n",
+                                                         b"fastapi==0.2.0\n")), \
+             patch.object(module, "toolchain_report"), patch.object(module.subprocess, "run") as outdated, \
+             patch.object(module.os, "replace", side_effect=fail_second):
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(self.call_main("all", "--apply"), 2)
+        self.assertEqual(backend_lock.read_bytes(), b"fastapi==0.1.0\n")
+        self.assertEqual(self.lock.read_bytes(), original_mobile)
+
+    def test_empty_failed_npm_outdated_is_error(self):
+        with patch.object(module.subprocess, "run") as outdated:
+            outdated.return_value.returncode = 1
+            outdated.return_value.stdout = ""
+            outdated.return_value.stderr = "registry unavailable"
+            with patch.object(module, "run", side_effect=self.fake_run):
+                with self.assertRaisesRegex(module.UpdateError, "no results"):
+                    module.mobile([], self.root / "scratch", report_latest=True)
+
+    def test_dirty_checkout_allows_preview_but_blocks_apply(self):
+        with patch.object(module, "clean_checkout", side_effect=module.UpdateError("dirty")):
+            self.assertEqual(self.call_main("mobile", "sample"), 0)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(self.call_main("mobile", "sample", "--apply"), 2)
+
+    def test_peer_compatibility_uses_semver(self):
+        with patch.object(module.subprocess, "run") as check:
+            check.return_value.returncode = 0
+            check.return_value.stdout = "true"
+            self.assertTrue(module.peer_accepts(self.root, "19.2.3", "^18 || ^19"))
+            check.return_value.stdout = "false"
+            self.assertFalse(module.peer_accepts(self.root, "19.2.3", "^19.3.0"))
 
     def test_fixed_mobile_version_requires_migration(self):
         self.manifest["dependencies"]["sample"] = "1.0.0"
@@ -109,6 +185,31 @@ class DependencyUpdateTest(unittest.TestCase):
                 self.assertEqual(module.main(), 2)
         self.assertEqual(self.lock.read_bytes(), original)
 
+    def test_bulk_refresh_retains_expo_expected_version(self):
+        calls = 0
+        def expo_run(args, cwd, *, capture=False):
+            nonlocal calls
+            if args[:2] == ["npm", "install"]:
+                lock = json.loads((cwd / "package-lock.json").read_text())
+                lock["packages"]["node_modules/sample"]["version"] = "1.0.0"
+                (cwd / "package-lock.json").write_text(json.dumps(lock))
+            elif args[:2] == ["npm", "exec"]:
+                calls += 1
+                if calls == 1:
+                    raise module.UpdateError("npm exec failed (1):\n  sample@1.1.0 - expected version: 1.0.0")
+            else:
+                return self.fake_run(args, cwd, capture=capture)
+            return ""
+        with patch.object(module, "run", side_effect=expo_run), patch.object(module.subprocess, "run") as outdated:
+            outdated.return_value.returncode = 0
+            outdated.return_value.stdout = "{}"
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                _, _, after = module.mobile([], self.root / "scratch", report_latest=True)
+        self.assertEqual(calls, 2)
+        self.assertIn("Holding Expo-managed versions and changed peers: sample", output.getvalue())
+        self.assertEqual(module.mobile_versions(after)["sample"], "1.0.0")
+
     def test_backend_compile_updates_requested_package_only_in_scratch(self):
         backend = self.root / "apps/backend"
         backend.mkdir()
@@ -132,6 +233,30 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertEqual(before, original)
         self.assertEqual(module.backend_versions(after)["fastapi"], "0.2.0")
         self.assertEqual(lock.read_bytes(), original)
+
+    def test_backend_all_constrains_direct_package_majors(self):
+        backend = self.root / "apps/backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["fastapi>=0.1"]\n[project.optional-dependencies]\n'
+            'dev = ["pip-tools>=7.6,<8"]\n')
+        (backend / "requirements-dev.lock").write_bytes(b"fastapi==0.1.0\npip-tools==7.6.1\n")
+        (self.root / "scratch").mkdir()
+        def compile_run(args, cwd, *, capture=False):
+            if "compile" in args:
+                self.assertIn("--upgrade", args)
+                constraint_name = args[args.index("--constraint") + 1]
+                self.assertEqual(constraint_name, "major-constraints.txt")
+                constraint = (cwd / constraint_name).read_text()
+                self.assertIn("fastapi<1", constraint)
+                self.assertIn("pip-tools<8", constraint)
+                (cwd / "requirements-dev.lock").write_bytes(b"fastapi==0.2.0\npip-tools==7.6.1\n")
+            return ""
+        with patch.object(module, "BACKEND", backend), patch.object(module, "run", side_effect=compile_run):
+            with patch.object(module.subprocess, "run") as probe:
+                probe.return_value.returncode = 0
+                _, _, after = module.backend([], self.root / "scratch")
+        self.assertEqual(module.backend_versions(after)["fastapi"], "0.2.0")
 
 
 if __name__ == "__main__":

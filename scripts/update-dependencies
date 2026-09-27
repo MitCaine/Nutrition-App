@@ -1,6 +1,19 @@
 #!/usr/bin/env sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+NODE_LINE=$(cat "$ROOT/.nvmrc")
+if [ "${1:-}" = mobile ] || [ "${1:-}" = all ]; then
+  if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]')" != "$NODE_LINE" ]; then
+    if command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix "node@$NODE_LINE" 2>/dev/null)/bin/node" ]; then
+      PATH="$(brew --prefix "node@$NODE_LINE")/bin:$PATH"
+      export PATH
+    fi
+  fi
+  if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]')" != "$NODE_LINE" ]; then
+    printf 'Mobile updates require Node %s. Install it or select it on PATH.\n' "$NODE_LINE" >&2
+    exit 2
+  fi
+fi
 if [ -n "${NUTRITION_DEPS_PYTHON:-}" ]; then
   PYTHON=$NUTRITION_DEPS_PYTHON
 elif [ "${1:-}" = mobile ] && command -v python3 >/dev/null 2>&1; then

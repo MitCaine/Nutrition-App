@@ -14,6 +14,9 @@ and does not depend on the caller's shell configuration.
 | `./scripts/session-end.sh` | Runs the required repository closeout checks and reports opt-in suites that were not run. |
 | `./scripts/project-audit.sh` | Exposes the lower-level session, boundary, deterministic inventory, privilege-manifest, and pre-commit commands. |
 | `python3 scripts/toolchain-report.py` | Reports the active Python and Node versions against `.python-version` and `.nvmrc`; use `--check node`, `--check python`, or `--check all` when a matching toolchain is required. |
+| `./scripts/update-dependencies all` | Preview all in-range backend and mobile lockfile updates, registry-latest packages requiring migration, and toolchain lines. Add `--apply` to write both validated lockfiles from a clean checkout. |
+| `source ./scripts/start-work.zsh` | In a VS Code or Codex desktop zsh terminal, select and refresh the repository Node/Python tool lines, then check and apply compatible backend/mobile updates. Dirty checkouts get a preview. The steps live in `scripts/dependency-modules/`. |
+| `./scripts/update-dependencies backend PACKAGE` or `mobile PACKAGE` | Preview a selected direct package update; add `--apply` to write its lockfile. |
 | `python3 scripts/validate-docs.py` | Validates repository Markdown links, anchors, navigation reachability, executable references, and required current-state contracts. |
 | `python3 scripts/validate-task-capsules.py --all` | Validates task-capsule schema, authority paths, state transitions, scope metadata, completion records, and execution prerequisites. |
 | `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Runs strict READY preflight and writes a deterministic executor handoff bundle outside the repository. |
