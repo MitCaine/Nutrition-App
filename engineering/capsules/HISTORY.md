@@ -3722,3 +3722,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 22007ed6eff9d42ec6b8d8382a07b1a9e27b595f
 - **Full-capsule recovery path:** engineering/capsules/active/GH-222-review-transport.md
 - **Historical capsule SHA-256:** 632641d95a3dabd5a719f48d26f07f52063da98daa820c42c42973f441e22373
+
+### GH-223-review-drain - Fail closed on reviewer activity discovered during terminal drain
+
+- **ID:** GH-223-review-drain
+- **Title:** Fail closed on reviewer activity discovered during terminal drain
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/223; implementation authorization comment 5860710468 and distinct terminal authorization comment 5860754843.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 9436e4b651ea2a7f54bc39c2e3d891fd6b6a261b
+- **Task branch:** task/GH-223-review-drain
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 628bcbff8eb03b93ade53a85bde8d760d14d7873
+- **Verified commit reference(s):** 628bcbff8eb03b93ade53a85bde8d760d14d7873
+- **Reviewed source commit:** 628bcbff8eb03b93ade53a85bde8d760d14d7873
+- **Reviewed task/checkpoint commit(s):** 628bcbff8eb03b93ade53a85bde8d760d14d7873
+- **Integration/merged commit:** 628bcbff8eb03b93ade53a85bde8d760d14d7873
+- **Integration-related commit reference(s):** Protected C at 628bcbff8eb03b93ade53a85bde8d760d14d7873; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and four changed paths with no findings.
+- **Verification summary:** Focused 11 tests passed with two explicit runtime-oracle skips; repository baseline passed; RI P-to-C comparable with four controller path dispositions. Combined model-rejection/late-drain tests prove fail-closed behavior.
+- **Specialized qualification:** Dedicated App check 108729702140 passed repository profile at C; terminal T requires distinct repository App check.
+- **Known warnings:** None for accepted candidate; this entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #224, #225, #226.
+- **Retrospective:** Required after residual audit issues; retain the final-trace classification lesson.
+- **Referenced commits:** Planning 4ee3e7fcbf39d560ce9d1f1acb678d0683778771; implementation 628bcbff8eb03b93ade53a85bde8d760d14d7873; full reviewed capsule 1ae527620a2531e9fd61b320d9782b94788db575.
+- **Full-capsule recovery commit:** 1ae527620a2531e9fd61b320d9782b94788db575
+- **Full-capsule recovery path:** engineering/capsules/active/GH-223-review-drain.md
+- **Historical capsule SHA-256:** 527eb68be7a6bb8750e5102671b0290ed9ae139618585dd9239d874774b0c80f
