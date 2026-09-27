@@ -101,6 +101,9 @@ commit and binds those bytes by SHA-256. Never call Q(C) qualification of T.
 Recovery validation also compares the frozen capsule contract at C and R and,
 for an attached task, checks it against the planning contract sealed at P. Only
 lifecycle fields, completion sections and checkbox state may change.
+When the controller integrates C, an attached source binding permits only the
+receipted base-to-C moves of `origin/main` and the shared local `main` ref;
+other ref, source, branch and index changes still stop finalization.
 `task finalize` records the C/T transaction outside candidate source, resumes the
 existing guarded integration at each SHA, validates T's two-path diff and R's complete
 reviewed capsule, and closes the issue only after remote main is observed at T.

@@ -500,6 +500,7 @@ def main() -> int:
                             for path, _, _ in changed_ri:
                                 print(f"RI wheel lock: {path.relative_to(ROOT)}")
                             if args.apply:
+                                ensure_python(area)
                                 verify_area_inputs(area, input_snapshot)
                                 publish_ri_files(proposals)
                                 print("ri: applied both validated wheel lock files.")
@@ -542,6 +543,9 @@ def main() -> int:
                                 print(f"{area} {package}: {old} -> {new}")
                         print(f"Lockfile: {path.relative_to(ROOT)}")
                         if args.apply:
+                            ensure_python(area)
+                            if area == "mobile":
+                                ensure_node()
                             verify_area_inputs(area, input_snapshot)
                             if path.read_bytes() != before:
                                 raise UpdateError("Lockfile changed during preparation; refusing to overwrite it.")

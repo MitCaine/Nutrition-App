@@ -121,7 +121,7 @@ def observe(repo: Path, candidate: str) -> dict:
 
 
 def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str, str] | None = None) -> bool:
-    """Keep sealed source identity while allowing only a receipted main fetch."""
+    """Keep sealed source identity across receipted remote and local main moves."""
     if any(expected.get(key) != observed.get(key) for key in
            ("candidate", "branch", "source_sha256", "index_sha256")):
         return False
@@ -130,11 +130,12 @@ def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str
     if main_transition is None or not isinstance(expected.get("refs"), dict) or not isinstance(observed.get("refs"), dict):
         return False
     before, after = main_transition
-    ref = "refs/remotes/origin/main"
-    if expected["refs"].get(ref) != before or observed["refs"].get(ref) != after:
-        return False
-    return {name: sha for name, sha in expected["refs"].items() if name != ref} == {
-        name: sha for name, sha in observed["refs"].items() if name != ref}
+    permitted = {"refs/remotes/origin/main", "refs/heads/main"}
+    changed = {name for name in expected["refs"].keys() | observed["refs"].keys()
+               if expected["refs"].get(name) != observed["refs"].get(name)}
+    return bool(changed) and changed <= permitted and all(
+        expected["refs"].get(name) == before and observed["refs"].get(name) == after
+        for name in changed)
 
 
 def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,

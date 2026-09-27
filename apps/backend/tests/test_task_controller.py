@@ -2563,7 +2563,7 @@ def test_attached_revalidation_allows_only_receipted_main_fetch(tmp_path: Path, 
     repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
     original = {"candidate": candidate, "branch": "task/fixture", "source_sha256": "source",
                 "index_sha256": "index", "refs_sha256": "before",
-                "refs": {"refs/remotes/origin/main": base}}
+                "refs": {"refs/remotes/origin/main": base, "refs/heads/main": base}}
     reviewed["capsule_evidence"] = {"binding": {"source": original}}
     monkeypatch.setattr(TASK.candidate_evidence, "authenticate_binding", lambda *_args: None)
     monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
@@ -2575,7 +2575,7 @@ def test_attached_revalidation_allows_only_receipted_main_fetch(tmp_path: Path, 
         reviewed, candidate_repo=repo, controller_main_sha=base, expected_app_id=424242,
         transport=transport, ref_transport=refs, human_owner_authorized=True)
     observed = {**original, "refs_sha256": "after",
-                "refs": {"refs/remotes/origin/main": candidate}}
+                "refs": {"refs/remotes/origin/main": candidate, "refs/heads/main": candidate}}
     TASK.revalidate_integration_state(
         pending, candidate_repo=repo, expected_app_id=424242,
         transport=transport, ref_transport=refs)

@@ -4,6 +4,7 @@ import copy
 import dataclasses
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -80,10 +81,14 @@ class CandidateFixture(unittest.TestCase):
 
 class CandidateEvidenceTests(CandidateFixture):
     def test_receipted_main_fetch_preserves_candidate_and_rejects_other_refs(self):
+        controller = self.root / "controller"
+        self.git("worktree", "add", "-qb", "main", str(controller), self.base)
         self.git("update-ref", "refs/remotes/origin/main", self.base)
         binding = self.binding()
         original = binding["source"]
         self.git("update-ref", "refs/remotes/origin/main", self.candidate)
+        subprocess.run(["git", "merge", "--ff-only", self.candidate], cwd=controller,
+                       check=True, capture_output=True)
         moved = evidence.observe(self.repo, self.candidate)
         self.assertFalse(evidence.source_matches(original, moved))
         self.assertTrue(evidence.source_matches(

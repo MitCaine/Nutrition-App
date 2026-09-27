@@ -119,6 +119,14 @@ class DependencyUpdateTest(unittest.TestCase):
         self.assertIn("authority inputs changed", errors.getvalue())
         self.assertEqual(self.lock.read_bytes(), original)
 
+    def test_mobile_toolchain_change_during_resolution_refuses_publication(self):
+        original = self.lock.read_bytes()
+        with patch.object(module, "ensure_node", side_effect=[None, module.UpdateError("Node changed")]), \
+             contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(self.call_main("mobile", "sample", "--apply"), 2)
+        self.assertIn("Node changed", errors.getvalue())
+        self.assertEqual(self.lock.read_bytes(), original)
+
     def test_backend_manifest_change_during_resolution_refuses_publication(self):
         backend = self.root / "apps/backend"
         backend.mkdir()
