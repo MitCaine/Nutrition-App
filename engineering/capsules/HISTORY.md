@@ -3398,3 +3398,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 242fec147f63d3d51892acee3e95b700b736a5bc
 - **Full-capsule recovery path:** engineering/capsules/active/GH-194.md
 - **Historical capsule SHA-256:** 31ca40f87de39c026694d506c12d2ddadaf20d2aaf23ecafdb6f3f94d79fa4a9
+
+### GH-213-update-serialization - Serialize dependency updater runs
+
+- **ID:** GH-213-update-serialization
+- **Title:** Serialize dependency updater runs
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/213; revision-three implementation authorization comment 5857828262 and separate terminal authorization comment 5857874901.
+- **Issue disposition:** Implementation integrated; this terminal HISTORY/deletion requires its own qualification, independent review and protected integration before issue closure. Combined capsule/RI remains opt-in.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 8c103e87788a8abebf4e88d5cf5d665b2c4c071c
+- **Task branch:** task/GH-213-update-serialization-r3
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** f86dc7f; 9c8645b; 29c953a705600519b5f58b2eee72d627845bdf6d
+- **Verified commit reference(s):** 29c953a705600519b5f58b2eee72d627845bdf6d
+- **Reviewed source commit:** 29c953a705600519b5f58b2eee72d627845bdf6d
+- **Reviewed task/checkpoint commit(s):** 29c953a705600519b5f58b2eee72d627845bdf6d
+- **Integration/merged commit:** 29c953a705600519b5f58b2eee72d627845bdf6d
+- **Integration-related commit reference(s):** Protected implementation C at 29c953a705600519b5f58b2eee72d627845bdf6d; terminal T requires distinct qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C independent reviewer for AC-1..AC-4 and four changed-path rows with no findings; terminal T requires separate review.
+- **Verification summary:** Frozen focused 26 tests and repository baseline passed; RI P-to-C comparison comparable with four paths dispositioned. Dedicated App check 108663602432 passed repository profile at exact C.
+- **Specialized qualification:** Repository profile for C; T requires a distinct repository check and review.
+- **Known warnings:** C1 focused evidence failed under sandbox process-kill restriction; C2 reviewer could not start with unsupported CLI default model; both preserved. Guarded finalize stopped at ATTACHED_SOURCE_CHANGED because origin/HEAD advanced with main. The active capsule path also differs from the guard's GH-213.md assumption; separate terminal qualification and integration are required. This entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #187 proving period; separate controller repair for ref movement and capsule path handling.
+- **Retrospective:** Required in #187; record all handoffs and measured limits.
+- **Referenced commits:** Planning e8aa83c1b6c5626aede2a41ce52ae79bb63c331a; implementation 29c953a705600519b5f58b2eee72d627845bdf6d; reviewed recovery e512574daa292ff6db670d84c7340bfa2adc7fe3.
+- **Full-capsule recovery commit:** e512574daa292ff6db670d84c7340bfa2adc7fe3
+- **Full-capsule recovery path:** engineering/capsules/active/GH-213-update-serialization.md
+- **Historical capsule SHA-256:** 9969a2a6f557bbb77eb95d75f2fe5f95607e11d7dc2edafbf021340717b0ef35
