@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useRef, type RefObject } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../../app/theme/AppTheme";
+import { AccessiblePressable } from "../accessibility/AccessiblePressable";
 import { useAccessibilityScreenFocus } from "../accessibility/focus";
 import { OPEN_SETTINGS_ACCESSIBILITY_LABEL, ROOT_SCREEN_TITLES } from "./rootScreenHeaderModel";
 
@@ -47,7 +48,7 @@ export function RootScreenHeader({
       </Text>
       <View style={styles.actions}>
         {action ? (
-          <Pressable
+          <AccessiblePressable
             accessibilityRole={action.checked === undefined ? "button" : "checkbox"}
             accessibilityLabel={action.accessibilityLabel ?? action.label}
             accessibilityHint={action.accessibilityHint}
@@ -73,9 +74,9 @@ export function RootScreenHeader({
             >
               {action.label}
             </Text>
-          </Pressable>
+          </AccessiblePressable>
         ) : null}
-        <Pressable
+        <AccessiblePressable
           accessibilityRole="button"
           accessibilityLabel={OPEN_SETTINGS_ACCESSIBILITY_LABEL}
           hitSlop={4}
@@ -83,7 +84,7 @@ export function RootScreenHeader({
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
           <Ionicons name="settings-outline" size={24} color={theme.colors.text} />
-        </Pressable>
+        </AccessiblePressable>
       </View>
     </View>
   );
