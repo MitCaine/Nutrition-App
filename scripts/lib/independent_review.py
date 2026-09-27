@@ -386,6 +386,8 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
     rpc = None
     receipt = None
     failure = None
+    pre_review_rejection = False
+    drain_error = None
     session = {"nonce": nonce, "fresh": False, "completed": False,
                "environment_access": False, "mcp_disabled": False,
                "requested_model": model, "requested_effort": effort}
@@ -499,18 +501,22 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                        "verdict": verdict, "trace_sha256": digest(rpc.trace)}
     except (EvidenceError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         failure = str(exc)
-        retryable = isinstance(exc, PreReviewTransportError) and rpc is not None and not reviewer_activity(rpc.trace)
+        pre_review_rejection = isinstance(exc, PreReviewTransportError)
     finally:
         if rpc is not None:
             try:
                 if not locals().get("rpc_closed", False):
                     rpc.close()
             except (EvidenceError, OSError, ValueError, subprocess.SubprocessError) as exc:
-                failure = failure or str(exc)
+                drain_error = str(exc)
+                failure = f"{failure}; terminal_drain={drain_error}" if failure else drain_error
             (directory / "trace.json").write_text(json.dumps(rpc.trace, indent=2))
-        (directory / "outcome.json").write_text(json.dumps({"error": failure, "session": session}, indent=2))
+        (directory / "outcome.json").write_text(json.dumps({"error": failure,
+            "terminal_drain_error": drain_error, "session": session}, indent=2))
     if failure or receipt is None:
-        if locals().get("retryable", False):
+        # The final observed trace and drain result, not the earlier exception,
+        # determine whether this failure was truly before reviewer activity.
+        if pre_review_rejection and rpc is not None and drain_error is None and not reviewer_activity(rpc.trace):
             raise PreReviewTransportError(f"INDEPENDENT_REVIEW_PRE_REVIEW_TRANSPORT: {failure}; diagnostics={directory}")
         raise EvidenceError(f"INDEPENDENT_REVIEW_STOP_REPLAN: {failure}; diagnostics={directory}")
     receipt = sign_receipt(receipt, key)

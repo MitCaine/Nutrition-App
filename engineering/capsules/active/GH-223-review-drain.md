@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 1
 id = "GH-223-review-drain"
 title = "Fail closed on reviewer activity discovered during terminal drain"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "medium"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ A late failure invalidates retryability even if an earlier model rejection was g
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four non-circular acceptance criteria. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Transport and tests bounded. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Owner authorization posted. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Exact plan and source boundary confirmed. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Final-trace classification, dual-error diagnostics and combined regression implemented. |
 
 ## Completion record
 

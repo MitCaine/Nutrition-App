@@ -15,6 +15,72 @@ from test_candidate_evidence import CandidateFixture  # noqa: E402
 
 
 class IndependentReviewTests(CandidateFixture):
+    def test_pre_review_retry_is_classified_after_terminal_drain(self):
+        binding = self.binding()
+        identity = {"executable": str(Path(sys.executable).resolve()), "sha256": "fixture",
+                    "version": review.QUALIFIED_VERSION}
+
+        class FakeRpc:
+            def __init__(self, late=None, drain_error=None):
+                self.trace = []
+                self.late = late
+                self.drain_error = drain_error
+
+            def request(self, method, _params):
+                if method == "initialize":
+                    return {}
+                if method == "thread/start":
+                    return {"thread": {"id": "fresh", "turns": [], "forkedFromId": None,
+                                       "parentThreadId": None, "ephemeral": True},
+                            "instructionSources": [], "runtimeWorkspaceRoots": [],
+                            "approvalPolicy": "never", "sandbox": {"type": "readOnly", "networkAccess": False},
+                            "model": "selected", "reasoningEffort": "low", "modelProvider": "fixture"}
+                if method == "turn/start":
+                    raise review.PreReviewTransportError("REVIEW_MODEL_REJECTED: selected unsupported")
+                raise AssertionError(method)
+
+            def send(self, _message):
+                pass
+
+            def servers(self, _thread=None):
+                return []
+
+            def close(self):
+                if self.late:
+                    self.trace.append({"direction": "received", "message": self.late})
+                if self.drain_error:
+                    raise evidence.EvidenceError(self.drain_error)
+
+        cases = [
+            (None, None, review.PreReviewTransportError),
+            ({"method": "item/started", "params": {}}, None, evidence.EvidenceError),
+            ({"id": 90, "method": "item/tool/call", "params": {}}, "REVIEW_LATE_SERVER_REQUEST", evidence.EvidenceError),
+            (None, "REVIEW_TERMINAL_STREAM_NOT_CLOSED", evidence.EvidenceError),
+        ]
+        for index, (late, drain_error, expected) in enumerate(cases):
+            rpc = FakeRpc(late, drain_error)
+            directory = self.root / f"review-drain-{index}"
+            with mock.patch.object(review, "runtime", return_value=identity), \
+                 mock.patch.object(review, "observe", return_value=binding["source"]), \
+                 mock.patch.object(review, "git", return_value=b""), \
+                 mock.patch.object(review.subprocess, "Popen"), \
+                 mock.patch.object(review, "Rpc", return_value=rpc):
+                if expected is review.PreReviewTransportError:
+                    with self.assertRaises(review.PreReviewTransportError):
+                        review.run_review(self.repo, binding, {}, directory=directory,
+                                          executable=Path(sys.executable), expected_sha256="fixture",
+                                          key=b"key", model="selected", effort="low")
+                else:
+                    with self.assertRaisesRegex(evidence.EvidenceError, "INDEPENDENT_REVIEW_STOP_REPLAN") as caught:
+                        review.run_review(self.repo, binding, {}, directory=directory,
+                                          executable=Path(sys.executable), expected_sha256="fixture",
+                                          key=b"key", model="selected", effort="low")
+                    self.assertNotIsInstance(caught.exception, review.PreReviewTransportError)
+                outcome = json.loads((directory / "outcome.json").read_text())
+                self.assertIn("REVIEW_MODEL_REJECTED", outcome["error"])
+                self.assertEqual(outcome["terminal_drain_error"], drain_error)
+                self.assertEqual(len(json.loads((directory / "trace.json").read_text())), bool(late))
+
     def test_only_explicit_model_rejection_is_recoverable(self):
         self.assertTrue(review.model_rejected({"message": "Model gpt-example is not supported by this account"}))
         self.assertFalse(review.model_rejected({"message": "server closed before result"}))

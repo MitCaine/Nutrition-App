@@ -170,7 +170,9 @@ before any reviewer output or tool call retains its trace and leaves the verifie
 eligible for exactly one fresh independent attempt. The controller rechecks live issue authority,
 main, candidate source and the sealed evidence digest on that attempt. A second rejection,
 ambiguous transport, protocol violation, source drift or substantive verdict stops replanning;
-no verdict is inherited. There is at most one correction
+no verdict is inherited. Retry classification occurs only after terminal draining; a late
+request, reviewer activity or drain error invalidates it, and diagnostics retain both the
+initial rejection and any drain error. There is at most one correction
 (default one, optionally zero). `evidence ISSUE correct --candidate-root PATH` requires the
 observed bounded-correction receipt, archives prior evidence and clears qualification,
 verification, review and integration. Then attach a newly committed C2 with the same P;
