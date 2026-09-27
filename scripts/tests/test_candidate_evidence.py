@@ -80,6 +80,62 @@ class CandidateFixture(unittest.TestCase):
 
 
 class CandidateEvidenceTests(CandidateFixture):
+    def test_validated_terminal_refs_preserve_attached_index_and_reject_other_drift(self):
+        controller = self.root / "controller"
+        self.git("worktree", "add", "-qb", "main", str(controller), self.base)
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        self.git("update-ref", "refs/remotes/origin/HEAD", self.base)
+        original = self.binding()["source"]
+
+        recovery_root = self.root / "recovery"
+        self.git("worktree", "add", "-qb", "evidence/GH-1-recovery", str(recovery_root), self.candidate)
+        (recovery_root / "recovery.txt").write_text("reviewed capsule\n")
+        subprocess.run(["git", "add", "recovery.txt"], cwd=recovery_root, check=True)
+        subprocess.run(["git", "commit", "-qm", "recovery"], cwd=recovery_root, check=True)
+        recovery = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=recovery_root).decode().strip()
+        terminal_root = self.root / "terminal"
+        self.git("worktree", "add", "-qb", "task/GH-1-closeout", str(terminal_root), self.candidate)
+        (terminal_root / "terminal.txt").write_text("closeout\n")
+        subprocess.run(["git", "add", "terminal.txt"], cwd=terminal_root, check=True)
+        subprocess.run(["git", "commit", "-qm", "terminal"], cwd=terminal_root, check=True)
+        terminal = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=terminal_root).decode().strip()
+
+        self.git("update-ref", "refs/remotes/origin/main", self.candidate)
+        self.git("update-ref", "refs/remotes/origin/HEAD", self.candidate)
+        subprocess.run(["git", "merge", "--ff-only", self.candidate], cwd=controller,
+                       check=True, capture_output=True)
+        observed = evidence.observe(self.repo, self.candidate)
+        additions = {"refs/heads/evidence/GH-1-recovery": recovery,
+                     "refs/heads/task/GH-1-closeout": terminal}
+        self.assertEqual(original["index_sha256"], observed["index_sha256"])
+        self.assertTrue(evidence.source_matches(
+            original, observed, main_transition=(self.base, self.candidate), added_refs=additions))
+        self.assertFalse(evidence.source_matches(
+            original, observed, main_transition=(self.base, self.candidate)))
+        wrong = {**additions, "refs/heads/task/GH-1-closeout": recovery}
+        self.assertFalse(evidence.source_matches(
+            original, observed, main_transition=(self.base, self.candidate), added_refs=wrong))
+        self.git("update-ref", "refs/remotes/origin/main", terminal)
+        self.git("update-ref", "refs/remotes/origin/HEAD", terminal)
+        subprocess.run(["git", "merge", "--ff-only", terminal], cwd=controller,
+                       check=True, capture_output=True)
+        after_terminal_push = evidence.observe(self.repo, self.candidate)
+        self.assertTrue(evidence.source_matches(
+            original, after_terminal_push, main_transition=(self.base, terminal),
+            added_refs=additions))
+        self.assertFalse(evidence.source_matches(
+            original, after_terminal_push, main_transition=(self.base, self.candidate),
+            added_refs=additions))
+        self.git("update-ref", "refs/heads/unrelated", terminal)
+        self.assertFalse(evidence.source_matches(
+            original, evidence.observe(self.repo, self.candidate),
+            main_transition=(self.base, terminal), added_refs=additions))
+        self.git("update-ref", "-d", "refs/heads/unrelated")
+        self.git("update-index", "--assume-unchanged", "app.py")
+        self.assertFalse(evidence.source_matches(
+            original, evidence.observe(self.repo, self.candidate),
+            main_transition=(self.base, terminal), added_refs=additions))
+
     def test_receipted_main_fetch_preserves_candidate_and_rejects_other_refs(self):
         controller = self.root / "controller"
         self.git("worktree", "add", "-qb", "main", str(controller), self.base)

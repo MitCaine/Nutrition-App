@@ -47,6 +47,15 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    remote main and recovery, then closes the issue. Repeat the same command after an
    interruption; changed candidate or terminal intent stops. Preserve dirty or
    unrelated refs/checkouts, failed attempts and recovery evidence.
+   Keep the attached C checkout on its original branch throughout R/T preparation:
+   create R in a separate worktree on `evidence/GH-ISSUE-recovery` and T in a
+   separate worktree on `task/GH-ISSUE-closeout`. Do not switch the attached C
+   checkout to either branch and back; that can rewrite its sealed Git index.
+   A resumed finalizer accepts only those two exact refs after validating R/T and
+   their separate authority. It still rejects changed C source/index or any other
+   ref change. If a prior attempt changed C's index, use the separately authorized
+   terminal controller and preserve the failed guarded-finalize evidence; do not
+   silently reattach C or reset its index to force a pass.
    The terminal authorization must name the exact active `engineering/capsules/active/TASK-ID.md`
    path; the task ID may include a bounded suffix after `GH-ISSUE`. A receipted advance of
    `origin/main` may also move its `origin/HEAD` alias, but any unrelated ref drift stops.

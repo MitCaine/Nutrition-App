@@ -120,8 +120,9 @@ def observe(repo: Path, candidate: str) -> dict:
             "refs_sha256": hashlib.sha256(refs_raw).hexdigest(), "refs": refs}
 
 
-def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str, str] | None = None) -> bool:
-    """Keep sealed source identity across receipted remote and local main moves."""
+def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str, str] | None = None,
+                   added_refs: dict[str, str] | None = None) -> bool:
+    """Keep sealed source identity across receipted main and terminal ref moves."""
     if any(expected.get(key) != observed.get(key) for key in
            ("candidate", "branch", "source_sha256", "index_sha256")):
         return False
@@ -132,7 +133,14 @@ def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str
     before, after = main_transition
     main_refs = {"refs/remotes/origin/main", "refs/heads/main"}
     alias = "refs/remotes/origin/HEAD"
-    permitted = main_refs | {alias}
+    additions = added_refs or {}
+    if (not isinstance(additions, dict)
+            or any(not isinstance(name, str) or not isinstance(sha, str)
+                   or not re.fullmatch(r"[0-9a-f]{40}", sha)
+                   or name in main_refs | {alias}
+                   for name, sha in additions.items())):
+        return False
+    permitted = main_refs | {alias} | additions.keys()
     changed = {name for name in expected["refs"].keys() | observed["refs"].keys()
                if expected["refs"].get(name) != observed["refs"].get(name)}
     if not changed & main_refs or not changed <= permitted:
@@ -142,7 +150,9 @@ def source_matches(expected: dict, observed: dict, *, main_transition: tuple[str
                              or observed["refs"].get(alias) != observed["refs"].get("refs/remotes/origin/main")):
         return False
     return all(
-        expected["refs"].get(name) == before and observed["refs"].get(name) == after
+        (expected["refs"].get(name) == before and observed["refs"].get(name) == after)
+        if name in main_refs | {alias} else
+        (name not in expected["refs"] and observed["refs"].get(name) == additions[name])
         for name in changed)
 
 

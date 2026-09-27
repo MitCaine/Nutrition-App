@@ -128,3 +128,13 @@ negative/routing checks, macOS RI access, extra handoffs and recovery. Both atta
 qualified terminal path. Human active-time savings were not measured. The
 moved-refs repair, representative stable closeouts and a comparable handoff/
 active-time measurement are exit criteria for another promotion proposal.
+
+## 2026-09-27 — Guarded finalize terminal continuation repair candidate
+
+#216 constrains post-C source revalidation to authenticated recovery/terminal
+ref additions and receipted main movement, including an interrupted T push.
+The C source and Git index remain sealed; unrelated refs still stop. Operators
+must prepare R and T in separate worktrees without switching the attached C
+checkout. #215's index-drift failure and separate terminal completion remain
+recorded in the [pilot follow-up](PILOT_2026-09-26.md). A new live guarded
+two-stage closeout is still required before any default rollout decision.

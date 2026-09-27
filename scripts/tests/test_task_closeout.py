@@ -344,3 +344,46 @@ def test_finalize_rechecks_integrated_candidate_and_remote_main(transaction, tmp
                             controller.TaskControllerError("INTEGRATION_CHECK_REVALIDATION_FAILED")))
     with pytest.raises(controller.TaskControllerError, match="CHECK_REVALIDATION_FAILED"):
         controller.command_finalize(args)
+
+
+def test_finalize_authenticates_terminal_before_allowing_exact_refs_and_pending_push(
+        transaction, tmp_path, monkeypatch):
+    repo, implementation, recovery, terminal = transaction
+    state_dir = tmp_path / "state"
+    terminal_state_dir = tmp_path / "terminal-state"
+    terminal_state_dir.mkdir()
+    controller.state_path(terminal_state_dir, 193).write_text("{}")
+    state = {"phase": "INTEGRATED", "task_id": "GH-193", "repository": "owner/repo",
+             "integration": {"origin_main_after": implementation}}
+    terminal_state = {"phase": "REVIEWED_APPROVED"}
+    additions = {"refs/heads/evidence/GH-193-recovery": recovery,
+                 "refs/heads/task/GH-193-closeout": terminal}
+    monkeypatch.setattr(controller, "load_state", lambda *_: state)
+    monkeypatch.setattr(controller, "resolve_repo_root", lambda path: Path(path))
+    monkeypatch.setattr(controller, "require_candidate_repository", lambda *_args, **_kwargs: implementation)
+    monkeypatch.setattr(controller, "configured_qualification_app_id", lambda: 424242)
+    monkeypatch.setattr(controller, "validated_finalize_terminal",
+                        lambda *_args: (terminal_state, repo, terminal, {"recovery": recovery}, additions))
+    current_main = implementation
+    monkeypatch.setattr(controller, "git",
+                        lambda _repo, *argv: current_main if argv[0] == "rev-parse" else "")
+    observed = []
+    monkeypatch.setattr(controller, "revalidate_integration_state",
+                        lambda *_args, **kwargs: observed.append(kwargs))
+    monkeypatch.setattr(controller, "command_integrate",
+                        lambda *_args: (_ for _ in ()).throw(controller.TaskControllerError("STOP_AFTER_GUARD")))
+    args = argparse.Namespace(repo_root=repo, state_dir=state_dir,
+                              terminal_state_dir=terminal_state_dir, issue_number=193,
+                              candidate_root=repo, terminal_root=repo, recovery_sha=recovery,
+                              human_owner_authorized=True)
+    with pytest.raises(controller.TaskControllerError, match="STOP_AFTER_GUARD"):
+        controller.command_finalize(args)
+    assert observed[-1]["source_main_after"] is None
+    assert observed[-1]["source_added_refs"] == additions
+
+    terminal_state["phase"] = "INTEGRATION_PENDING"
+    current_main = terminal
+    with pytest.raises(controller.TaskControllerError, match="STOP_AFTER_GUARD"):
+        controller.command_finalize(args)
+    assert observed[-1]["source_main_after"] == terminal
+    assert observed[-1]["source_added_refs"] == additions

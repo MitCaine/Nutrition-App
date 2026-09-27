@@ -1794,6 +1794,8 @@ def integrate_task(
     transport: QualificationTransport,
     ref_transport: CandidateRefTransport,
     human_owner_authorized: bool,
+    source_main_after: str | None = None,
+    source_added_refs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if state.get("phase") != "REVIEWED_APPROVED":
         raise TaskControllerError(
@@ -1946,10 +1948,10 @@ def integrate_task(
                 and integration_receipt.get("controller_main_sha") == controller_main_sha
                 and integration_receipt.get("human_owner_authorized") is True
                 and type(integration_receipt.get("check_id")) is int):
-            main_transition = (controller_main_sha, candidate_sha)
+            main_transition = (controller_main_sha, source_main_after or candidate_sha)
         if not candidate_evidence.source_matches(
             attached["binding"]["source"], candidate_evidence.observe(candidate_repo, candidate_sha),
-            main_transition=main_transition):
+            main_transition=main_transition, added_refs=source_added_refs):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
 
     updated = json.loads(
@@ -2076,6 +2078,8 @@ def revalidate_integration_state(
     state: dict[str, Any], *, candidate_repo: Path,
     expected_app_id: int, transport: QualificationTransport,
     ref_transport: CandidateRefTransport,
+    source_main_after: str | None = None,
+    source_added_refs: dict[str, str] | None = None,
 ) -> None:
     """Recheck live authority/check/review before resuming an accepted push."""
     integration = state.get("integration") or {}
@@ -2087,6 +2091,7 @@ def revalidate_integration_state(
         candidate_repo=candidate_repo, controller_main_sha=base,
         expected_app_id=expected_app_id, transport=transport,
         ref_transport=ref_transport, human_owner_authorized=True,
+        source_main_after=source_main_after, source_added_refs=source_added_refs,
     )
     if revalidated["integration"] != {**integration, "origin_main_after": None}:
         raise TaskControllerError("INTEGRATION_RECOVERY_REVALIDATION_CHANGED")
@@ -2921,6 +2926,43 @@ def command_integrate(
     return 0
 
 
+def validated_finalize_terminal(state: dict[str, Any], args: argparse.Namespace,
+                                implementation: str) -> tuple[dict, Path, str, dict, dict[str, str]]:
+    """Authenticate the exact terminal transaction before allowing its ref additions."""
+    terminal_state = load_state(args.terminal_state_dir, args.issue_number)
+    terminal_repo = resolve_repo_root(args.terminal_root)
+    terminal = require_candidate_repository(
+        terminal_repo, expected_repository=state["repository"])
+    terminal_authorization = resolve_current_authorization(
+        terminal_state, GhQualificationTransport())
+    capsule_path = task_closeout.active_capsule_path(args.issue_number, state["task_id"])
+    if (terminal_state["task_id"] != state["task_id"] + "-closeout"
+            or terminal_state["repository"] != state["repository"]
+            or terminal_authorization.base_sha != implementation
+            or set(terminal_authorization.allowed_paths) != {
+                "engineering/capsules/HISTORY.md", capsule_path}
+            or terminal_authorization.profiles != ("repository",)):
+        raise TaskControllerError("FINALIZE_TERMINAL_AUTHORITY_INVALID")
+    attached_binding = (state.get("capsule_evidence") or {}).get("binding") or {}
+    recovery = task_closeout.validate(terminal_repo, issue_number=args.issue_number,
+                                       implementation=implementation, terminal=terminal,
+                                       recovery=args.recovery_sha,
+                                       expected_contract_sha256=attached_binding.get("contract_sha256"),
+                                       task_id=state["task_id"])
+    if terminal_state["phase"] in {"INTEGRATION_PENDING", "INTEGRATED"}:
+        revalidate_integration_state(
+            terminal_state, candidate_repo=terminal_repo,
+            expected_app_id=configured_qualification_app_id(),
+            transport=GhQualificationTransport(),
+            ref_transport=GitCandidateRefTransport(terminal_repo))
+        if (terminal_state["phase"] == "INTEGRATED"
+                and terminal_state["integration"]["origin_main_after"] != terminal):
+            raise TaskControllerError("FINALIZE_TERMINAL_NOT_INTEGRATED")
+    refs = {f"refs/heads/evidence/GH-{args.issue_number}-recovery": args.recovery_sha,
+            f"refs/heads/task/GH-{args.issue_number}-closeout": terminal}
+    return terminal_state, terminal_repo, terminal, recovery, refs
+
+
 def command_finalize(args: argparse.Namespace) -> int:
     """Resume implementation and separately authorized terminal acceptance."""
     repo = resolve_repo_root(args.repo_root)
@@ -2942,6 +2984,12 @@ def command_finalize(args: argparse.Namespace) -> int:
             raise TaskControllerError("FINALIZE_IMPLEMENTATION_NOT_REVIEWED")
         atomic_write_json(intent_path, {**intent, "phase": "IMPLEMENTATION_PENDING"})
 
+    terminal_state_path = state_path(args.terminal_state_dir, args.issue_number)
+    terminal_inputs = terminal_state_path.is_file() and args.terminal_root is not None and args.recovery_sha is not None
+    terminal_context = None
+    if state["phase"] == "INTEGRATED" and terminal_inputs:
+        terminal_context = validated_finalize_terminal(state, args, implementation)
+
     if state["phase"] != "INTEGRATED":
         command_integrate(argparse.Namespace(
             state_dir=state_dir, issue_number=args.issue_number, repo_root=repo,
@@ -2949,11 +2997,23 @@ def command_finalize(args: argparse.Namespace) -> int:
             human_owner_authorized=args.human_owner_authorized))
         state = load_state(state_dir, args.issue_number)
     else:
+        source_main_after = None
+        if terminal_context is not None:
+            git(repo, "fetch", "origin", "main")
+            current_main = git(repo, "rev-parse", "refs/remotes/origin/main")
+            terminal_phase = terminal_context[0]["phase"]
+            if current_main == terminal_context[2] and terminal_phase in {
+                    "INTEGRATION_PENDING", "INTEGRATED"}:
+                source_main_after = current_main
+            elif current_main != implementation:
+                raise TaskControllerError("FINALIZE_REMOTE_MAIN_DIVERGED")
         revalidate_integration_state(
             state, candidate_repo=candidate_repo,
             expected_app_id=configured_qualification_app_id(),
             transport=GhQualificationTransport(),
-            ref_transport=GitCandidateRefTransport(candidate_repo))
+            ref_transport=GitCandidateRefTransport(candidate_repo),
+            source_main_after=source_main_after,
+            source_added_refs=terminal_context[4] if terminal_context is not None else None)
     if state["phase"] != "INTEGRATED" or state["integration"]["origin_main_after"] != implementation:
         raise TaskControllerError("FINALIZE_IMPLEMENTATION_NOT_INTEGRATED")
     existing = json.loads(intent_path.read_text())
@@ -2966,7 +3026,6 @@ def command_finalize(args: argparse.Namespace) -> int:
         if existing.get("terminal") != observed_main:
             raise TaskControllerError("FINALIZE_REMOTE_MAIN_DIVERGED")
 
-    terminal_state_path = state_path(args.terminal_state_dir, args.issue_number)
     if not terminal_state_path.is_file() or args.terminal_root is None or args.recovery_sha is None:
         if observed_main != implementation:
             raise TaskControllerError("FINALIZE_TERMINAL_INPUT_REQUIRED")
@@ -2974,27 +3033,10 @@ def command_finalize(args: argparse.Namespace) -> int:
               "next": "prepare_and_review_separate_terminal_candidate"})
         return 0
 
-    terminal_state = load_state(args.terminal_state_dir, args.issue_number)
-    terminal_repo = resolve_repo_root(args.terminal_root)
-    terminal = require_candidate_repository(
-        terminal_repo, expected_repository=state["repository"])
-    terminal_authorization = resolve_current_authorization(
-        terminal_state, GhQualificationTransport())
-    capsule_path = task_closeout.active_capsule_path(args.issue_number, state["task_id"])
-    if (terminal_state["task_id"] != state["task_id"] + "-closeout"
-            or terminal_state["repository"] != state["repository"]
-            or terminal_authorization.base_sha != implementation
-            or set(terminal_authorization.allowed_paths) != {
-                "engineering/capsules/HISTORY.md",
-                capsule_path}
-            or terminal_authorization.profiles != ("repository",)):
-        raise TaskControllerError("FINALIZE_TERMINAL_AUTHORITY_INVALID")
+    if terminal_context is None:
+        terminal_context = validated_finalize_terminal(state, args, implementation)
+    terminal_state, terminal_repo, terminal, recovery, _ = terminal_context
     attached_binding = (state.get("capsule_evidence") or {}).get("binding") or {}
-    recovery = task_closeout.validate(terminal_repo, issue_number=args.issue_number,
-                                       implementation=implementation, terminal=terminal,
-                                       recovery=args.recovery_sha,
-                                       expected_contract_sha256=attached_binding.get("contract_sha256"),
-                                       task_id=state["task_id"])
     previous = json.loads(intent_path.read_text())
     if previous.get("terminal") not in (None, terminal) or previous.get("recovery") not in (None, recovery):
         raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
