@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -25,6 +27,21 @@ LOCK_LINE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)", re.M)
 
 class UpdateError(Exception):
     pass
+
+
+@contextmanager
+def exclusive_update():
+    """Serialize invocations for one checkout without leaving stale process locks."""
+    lock_path = ROOT.with_name(f".{ROOT.name}.update-dependencies.lock")
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise UpdateError(f"Another dependency update is running for {ROOT}; wait for it to finish and retry.") from exc
+        yield
+    finally:
+        os.close(descriptor)
 
 
 def run(args: list[str], cwd: Path, *, capture: bool = False) -> str:
@@ -467,12 +484,7 @@ def retry_direct_packages(area: str, scratch: Path) -> tuple[Path, bytes, bytes,
     return path, original, current, failures
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("area", choices=("backend", "mobile", "ri", "all"))
-    parser.add_argument("packages", nargs="*", help="optional direct packages; omit to update all in-range packages")
-    parser.add_argument("--apply", action="store_true", help="write the validated lockfile")
-    args = parser.parse_args()
+def _update(args: argparse.Namespace) -> int:
     try:
         if args.area == "all" and args.packages:
             raise UpdateError("The all command takes no package names; use backend or mobile for selected packages.")
@@ -587,6 +599,20 @@ def main() -> int:
                 print("Preview only. Repeat with --apply to write the lockfile.")
         return 0
     except (UpdateError, OSError, ValueError, KeyError, RuntimeError) as exc:
+        print(f"Dependency update stopped: {exc}", file=sys.stderr)
+        return 2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("area", choices=("backend", "mobile", "ri", "all"))
+    parser.add_argument("packages", nargs="*", help="optional direct packages; omit to update all in-range packages")
+    parser.add_argument("--apply", action="store_true", help="write the validated lockfile")
+    args = parser.parse_args()
+    try:
+        with exclusive_update():
+            return _update(args)
+    except (UpdateError, OSError) as exc:
         print(f"Dependency update stopped: {exc}", file=sys.stderr)
         return 2
 

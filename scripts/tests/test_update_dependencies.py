@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,6 +24,8 @@ class DependencyUpdateTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.addCleanup(self.root.with_name(f".{self.root.name}.update-dependencies.lock").unlink,
+                        missing_ok=True)
         self.mobile = self.root / "apps/mobile"
         self.mobile.mkdir(parents=True)
         for name in ("src", "modules"):
@@ -106,6 +109,41 @@ class DependencyUpdateTest(unittest.TestCase):
     def test_all_rejects_package_names(self):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(self.call_main("all", "sample", "--apply"), 2)
+
+    def test_competing_invocation_stops_before_update_work(self):
+        with module.exclusive_update(), patch.object(module, "_update") as update, \
+             patch.object(sys, "argv", ["update", "all", "--apply"]), \
+             contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(module.main(), 2)
+        update.assert_not_called()
+        self.assertIn("Another dependency update is running", errors.getvalue())
+        self.assertEqual(self.call_main("mobile", "sample"), 0)
+
+    def test_lock_releases_after_failed_update_and_process_death(self):
+        with patch.object(module, "_update", side_effect=module.UpdateError("simulated failure")), \
+             patch.object(sys, "argv", ["update", "mobile"]), \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(module.main(), 2)
+        self.assertEqual(self.call_main("mobile", "sample"), 0)
+
+        lock_path = self.root.with_name(f".{self.root.name}.update-dependencies.lock")
+        script = ("import fcntl, os, sys; "
+                  "fd=os.open(sys.argv[1], os.O_CREAT|os.O_RDWR, 0o600); "
+                  "fcntl.flock(fd, fcntl.LOCK_EX); print('locked', flush=True); "
+                  "sys.stdin.read()")
+        holder = subprocess.Popen([sys.executable, "-c", script, str(lock_path)],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "locked")
+            with patch.object(module, "_update") as update, \
+                 patch.object(sys, "argv", ["update", "mobile"]), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(module.main(), 2)
+            update.assert_not_called()
+        finally:
+            holder.kill()
+            holder.communicate(timeout=5)
+        self.assertEqual(self.call_main("mobile", "sample"), 0)
 
     def test_mobile_manifest_change_during_resolution_refuses_publication(self):
         original = self.lock.read_bytes()
