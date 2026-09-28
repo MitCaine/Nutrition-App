@@ -4010,3 +4010,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 656c12c7ef0c914bbd9ca6575c67b4980e08696b
 - **Full-capsule recovery path:** engineering/capsules/active/GH-230.md
 - **Historical capsule SHA-256:** 56baccd827ad395a23a1e43e6f88af331bfe9044fee34d2a4aa7640dcd37b3a4
+
+### GH-237 - Bound structural review artifact paging
+
+- **ID:** GH-237
+- **Title:** Bound structural review artifact paging
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/237; revision-two implementation authorization comment 5864787919, corrected native-proof comment 5865062841, separate terminal authorization comment 5865174682. Revision-one STOP_REPLAN and revision-two bounded-correction evidence remain preserved.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-28
+- **Base commit:** dc17ec0f31d63e5fc49e0eaea2f6370079c6ebbe
+- **Task branch:** task/GH-237-r2
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 9fbcae8 and e921cf2; bounded correction 8ee40e5cda17f738021147d7180c12ccfc70909d.
+- **Verified commit reference(s):** 8ee40e5cda17f738021147d7180c12ccfc70909d
+- **Reviewed source commit:** 8ee40e5cda17f738021147d7180c12ccfc70909d
+- **Reviewed task/checkpoint commit(s):** 8ee40e5cda17f738021147d7180c12ccfc70909d
+- **Integration/merged commit:** 8ee40e5cda17f738021147d7180c12ccfc70909d on main.
+- **Integration-related commit reference(s):** Protected implementation C at 8ee40e5cda17f738021147d7180c12ccfc70909d; terminal T requires its own repository App check and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer, AC-1 through AC-4 PASS, no findings, 33 source/evidence reads. Prior reviewer requested the extra-path hostile regression, which the corrected C includes.
+- **Verification summary:** Frozen focused and baseline commands passed; native pinned-RI plus fresh structural-review oracle passed 25 tests with one expected skip. The oracle produced a complete two-path matrix in 16 reads and correctly stopped without production qualification. Aggregate artifact budget, extra/missing/tampered path evidence, documentation validation (104 files, 626 links), Ruff, and capsule validation passed.
+- **Specialized qualification:** Dedicated App check 108822226455 passed repository profile for exact C; required native proof is bound by owner comment 5865062841. Terminal T requires distinct repository qualification.
+- **Known warnings:** Revision-one compact-only candidate stopped on unbounded artifact budget and missing native proof; revision-two first candidate received a bounded-correction finding for absent extra-path regression. Both failed/reviewed attempts remain preserved.
+- **Deferred work/follow-up IDs:** #231 resumes after this prerequisite; #232–#236 remain open.
+- **Retrospective:** Compact serialization reduced GH-231's four preserved artifacts from 24,762 pretty lines to 34 virtual lines, but review completion also needs an aggregate fail-closed artifact budget and explicit native proof in the sealed packet.
+- **Referenced commits:** Planning 779bd911920f833b3320df4ecbc3a01d4628d07e; implementation 8ee40e5cda17f738021147d7180c12ccfc70909d; full reviewed capsule 7618d3c418be0de7393c97c6901016dd9516ef5d.
+- **Full-capsule recovery commit:** 7618d3c418be0de7393c97c6901016dd9516ef5d
+- **Full-capsule recovery path:** engineering/capsules/active/GH-237.md
+- **Historical capsule SHA-256:** 533d20de810752972c6b27eb403230d9e5129cf95b3b2fa0252564705ea33c0a
