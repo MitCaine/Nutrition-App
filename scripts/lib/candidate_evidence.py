@@ -391,6 +391,37 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     import sys
     import time
     import shutil
+    import stat
+
+    def tested_source(clone: Path) -> dict:
+        """Bind the bytes the command can read to every regular blob in C."""
+        candidate = binding["candidate"]
+        if git_text(clone, "rev-parse", "HEAD") != candidate:
+            raise EvidenceError("EVIDENCE_TESTED_HEAD_CHANGED")
+        algorithm = git_text(clone, "rev-parse", "--show-object-format")
+        if algorithm not in {"sha1", "sha256"}:
+            raise EvidenceError("EVIDENCE_TESTED_OBJECT_FORMAT")
+        records = {}
+        total = 0
+        for entry in git(clone, "ls-tree", "-r", "-z", candidate).split(b"\0"):
+            if not entry:
+                continue
+            header, name = entry.split(b"\t", 1)
+            mode, kind, oid = header.decode().split()
+            if kind != "blob" or mode not in {"100644", "100755"}:
+                raise EvidenceError("EVIDENCE_TESTED_NON_REGULAR_SOURCE")
+            path = clone / name.decode()
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise EvidenceError("EVIDENCE_TESTED_NON_REGULAR_SOURCE")
+            raw = path.read_bytes()
+            observed = hashlib.new(algorithm, b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+            if observed != oid or bool(info.st_mode & 0o111) != (mode == "100755"):
+                raise EvidenceError("EVIDENCE_TESTED_SOURCE_CHANGED: " + name.decode())
+            records[name.decode()] = {"sha256": hashlib.sha256(raw).hexdigest(), "mode": mode}
+            total += len(raw)
+        return {"candidate": candidate, "source_sha256": digest(records),
+                "tracked_files": len(records), "tracked_bytes": total}
 
     requirement = next((x for x in binding["requirements"] if x["id"] == identifier), None)
     if requirement is None or requirement["kind"] == "manual":
@@ -406,7 +437,9 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     directory.mkdir(parents=True, exist_ok=False)
     record = {"binding_sha256": binding["binding_sha256"], "id": identifier,
               "kind": requirement["kind"], "status": "unavailable", "artifacts": {},
-              "source_before": before, "source_after": None, "argv": None, "exit_code": None}
+              "source_before": before, "source_after": None,
+              "tested_source_before": None, "tested_source_after": None,
+              "argv": None, "exit_code": None}
     if platform.system() != "Darwin" or not Path("/usr/bin/sandbox-exec").is_file():
         record["reason"] = "Local command transport is qualified only on macOS; no substitute result."
         return record
@@ -418,6 +451,7 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     if result.returncode:
         raise EvidenceError("EVIDENCE_CLONE_FAILED")
     git(clone, "checkout", "--detach", binding["candidate"])
+    record["tested_source_before"] = tested_source(clone)
     preparation = requirement.get("prepare")
     cache = None
     if preparation == "mobile-npm-ci-offline-v1":
@@ -457,7 +491,7 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     reads = ["/System", "/usr", "/bin", "/sbin", "/Library", "/opt/homebrew",
              "/private/var/select", "/var/select", "/Applications/Xcode.app", str(scratch), str(python.parent.parent),
              str(python.resolve().parent.parent)]
-    def sandbox_policy(read_paths: list[str]) -> str:
+    def sandbox_policy(read_paths: list[str], write_paths: list[Path]) -> str:
         metadata_paths = sorted({str(p) for root in read_paths for p in Path(root).parents}
                                 | {str(p) for p in scratch.parents}
                                 | {str(directory / name) for name in
@@ -467,13 +501,15 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
             '(allow file-read* (literal "/") (subpath "/dev/fd") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
             "(allow file-read* " + " ".join("(subpath " + json.dumps(x) + ")" for x in read_paths) + ")",
             "(allow file-read-metadata " + " ".join("(literal " + json.dumps(x) + ")" for x in metadata_paths) + ")",
-            '(allow file-write* (literal "/dev/null") (subpath ' + json.dumps(str(scratch)) + '))',
+            "(allow file-write* (literal \"/dev/null\") "
+            + " ".join("(subpath " + json.dumps(str(path)) + ")" for path in write_paths) + ")",
             "(deny network*)",
         ])
-    profile = sandbox_policy(reads)
-    (directory / "sandbox.sb").write_text(profile)
     (scratch / "home").mkdir()
     (scratch / "tmp").mkdir()
+    (scratch / "output").mkdir()
+    profile = sandbox_policy(reads, [scratch / "home", scratch / "tmp", scratch / "output"])
+    (directory / "sandbox.sb").write_text(profile)
     developer = next((p for p in (Path("/Applications/Xcode.app/Contents/Developer"),
                                   Path("/Library/Developer/CommandLineTools")) if (p / "usr/bin/git").is_file()), None)
     tool_path = str(developer / "usr/bin") + ":" if developer else ""
@@ -512,7 +548,7 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
             npm_sha256=hashlib.sha256(npm.read_bytes()).hexdigest(),
             node_path=str(node), node_sha256=hashlib.sha256(node.read_bytes()).hexdigest(),
             node_version=node_version.stdout.decode().strip())
-        prepare_profile = sandbox_policy([*reads, str(cache)])
+        prepare_profile = sandbox_policy([*reads, str(cache)], [scratch])
         (directory / "prepare-sandbox.sb").write_text(prepare_profile)
         with (directory / "prepare-stdout.log").open("wb") as stdout, (directory / "prepare-stderr.log").open("wb") as stderr:
             process = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", prepare_profile, *prepare_argv],
@@ -540,6 +576,8 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
                           reason="Offline npm preparation did not pass", source_after=observe(repo, binding["candidate"]))
             record["record_sha256"] = digest(record)
             return record
+    if tested_source(clone) != record["tested_source_before"]:
+        raise EvidenceError("EVIDENCE_TESTED_SOURCE_CHANGED_DURING_PREPARATION")
     started = time.monotonic()
     with (directory / "stdout.log").open("wb") as stdout, (directory / "stderr.log").open("wb") as stderr:
         process = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", profile, *argv], cwd=clone,
@@ -559,6 +597,9 @@ def run_check(repo: Path, binding: dict, identifier: str, directory: Path,
     record["source_after"] = observe(repo, binding["candidate"])
     if record["source_after"] != before:
         raise EvidenceError("EVIDENCE_AUTHORITY_MUTATED")
+    record["tested_source_after"] = tested_source(clone)
+    if record["tested_source_after"] != record["tested_source_before"]:
+        raise EvidenceError("EVIDENCE_TESTED_SOURCE_CHANGED")
     record["artifacts"].update({name: artifact(directory / name) for name in ("stdout.log", "stderr.log", "sandbox.sb")})
     # Preserve the canonical runner's actual output files, including fingerprints.
     output = scratch / "output"

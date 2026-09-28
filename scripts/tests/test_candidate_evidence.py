@@ -471,6 +471,8 @@ class EvidenceCaptureTests(CandidateFixture):
         self.assertEqual(result["runtime"]["python_prefix"], sys.prefix)
         self.assertEqual(result["source_before"], before)
         self.assertEqual(result["source_after"], before)
+        self.assertEqual(result["tested_source_before"], result["tested_source_after"])
+        self.assertEqual(result["tested_source_before"]["candidate"], self.candidate)
         evidence.validate_artifacts(result)
         # Resolve bytes for identity, but retain invocation through the actual prepared venv.
         binding["requirements"][0]["argv"] = ["{python}", "-c",
@@ -492,6 +494,29 @@ class EvidenceCaptureTests(CandidateFixture):
         denied = evidence.run_check(self.repo, binding, "focused", self.root / "denied")
         self.assertEqual(denied["status"], "passed", denied)
         self.assertEqual(evidence.observe(self.repo, self.candidate), before)
+
+        # A command may not change tracked source in its disposable copy, even
+        # if it would restore the bytes after testing the modified value.
+        binding["requirements"][0]["argv"] = ["{python}", "-c",
+            "from pathlib import Path; p=Path('app.py'); original=p.read_bytes(); "
+            "p.write_text('VALUE = 2\\n'); assert p.read_text() == 'VALUE = 2\\n'; "
+            "p.write_bytes(original)"]
+        mutation = evidence.run_check(self.repo, binding, "focused", self.root / "mutation")
+        self.assertEqual(mutation["status"], "failed", mutation)
+        self.assertNotEqual(mutation["exit_code"], 0)
+        self.assertEqual(mutation["tested_source_before"], mutation["tested_source_after"])
+        self.assertEqual((self.root / "mutation/scratch/repository/app.py").read_bytes(),
+                         evidence.read_blob(self.repo, self.candidate, "app.py"))
+
+        binding["requirements"][0]["argv"] = ["{python}", "-c",
+            "import os; from pathlib import Path; "
+            "p=Path(os.environ['NUTRITION_REVIEW_OUTPUT_DIR'])/'proof.txt'; "
+            "p.write_text('generated output'); assert p.read_text() == 'generated output'"]
+        output = evidence.run_check(self.repo, binding, "focused", self.root / "output")
+        self.assertEqual(output["status"], "passed", output)
+        self.assertIn("bundle/proof.txt", output["artifacts"])
+        self.assertEqual(output["tested_source_before"], output["tested_source_after"])
+        evidence.validate_artifacts(output)
 
 
 class ManualEvidenceTests(CandidateFixture):

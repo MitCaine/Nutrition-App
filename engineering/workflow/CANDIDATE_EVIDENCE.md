@@ -91,14 +91,19 @@ A mere GitHub Actions success is not this dedicated-App qualification.
 
 `check` captures frozen argv, executable digest, elapsed time, exit code, stdout/stderr,
 sandbox policy, canonical review output artifacts when produced, and before/after source
-identity. The initial local transport is macOS-only and offline. It runs a full disposable
-clone without hardlinks inside writable scratch, with no write grant to the real candidate,
-Git metadata or controller evidence. Runtime ancestor paths and inherited log descriptors
+identity for both the protected candidate and the disposable clone actually tested. The
+initial local transport is macOS-only and offline. It runs a full disposable clone without
+hardlinks. The frozen command may write only to its scratch home, temporary and declared
+output directories; it cannot write tracked source or Git metadata in the clone, the real
+candidate, or controller evidence. The separately recorded offline npm preparation may
+populate the clone's dependencies, but tracked source is checked against C again before
+the frozen command. Runtime ancestor paths and inherited log descriptors
 have metadata-only reads; shell process substitution can read inherited `/dev/fd` handles.
 Git uses isolated configuration and the installed Xcode/Command Line Tools binary path.
 These runtime dependencies are selected reads, not a byte attestation of the entire toolchain.
-Commands see system/runtime reads and scratch, no
-inherited credentials. Required network/infrastructure work unavailable in this transport
+Commands see selected system/runtime reads and scratch, with no inherited credentials.
+Tracked clone source is checked against C after the command as well; a zero exit with source
+drift cannot become a passed exact-candidate record. Required network/infrastructure work unavailable in this transport
 blocks instead of being waived. The accepted remote qualification transport is unchanged.
 The canonical runner's real results and fingerprint files remain individual hashed artifacts.
 
