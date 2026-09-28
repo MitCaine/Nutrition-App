@@ -25,6 +25,8 @@ class DeltaFixture(unittest.TestCase):
         self.git("config", "user.email", "fixture@example.invalid")
         self.write("service.py", "def changed():\n    return 1\n\ndef removed():\n    return 0\n")
         self.write("View.tsx", "export function View() { return <Text>Old</Text>; }\n")
+        self.write("check.js", "function checkTotal() { return 1; }\n")
+        self.write("check.ts", "export function typedTotal(value: number): number { return value; }\n")
         self.write("imports.py", "import json\n")
         self.write("zero.py", "VALUE = 1\n")
         self.write("App.swift", "let value = 1\n")
@@ -33,6 +35,8 @@ class DeltaFixture(unittest.TestCase):
         self.planning = self.commit("planning")
         self.write("service.py", "def changed():\n    return 2\n\ndef added():\n    return 3\n")
         self.write("View.tsx", "export function View() { return <Text>New</Text>; }\n")
+        self.write("check.js", "function checkTotal() { return 2; }\n")
+        self.write("check.ts", "export function typedTotal(value: number): number { return value + 1; }\n")
         self.write("imports.py", "import os\n")
         self.write("zero.py", "VALUE = 2\n")
         self.write("App.swift", "let value = 2\n")
@@ -71,7 +75,7 @@ class DeltaFixture(unittest.TestCase):
                     "scope": {"logical_root": "nutrition-changed-files-v1", "language_choices": {}, "excluded_directories": [], "configuration": None}, "parser_contract": {"fixture": "pinned"},
                     "files": [{"path": p, "source_identity": {"relative_path": p, "raw_sha256": r["sha256"],
                                "byte_count": len(r["bytes"])}, "mapping_status": "navigation_only",
-                               "parser": {"adapter_version": self.lock["contracts"]["adapter"], "runtime_version": next(w["version"] for w in self.lock["wheels"] if w["name"] == "tree-sitter"), "grammar": "TSX" if p.endswith(".tsx") else "Python", "grammar_version": "0.23.2" if p.endswith(".tsx") else "0.25.0"},
+                               "parser": {"adapter_version": self.lock["contracts"]["adapter"], "runtime_version": next(w["version"] for w in self.lock["wheels"] if w["name"] == "tree-sitter"), "grammar": "TSX" if p.endswith(".tsx") else "TypeScript" if p.endswith(".ts") else "JavaScript" if p.endswith(".js") else "Python", "grammar_version": "0.23.2" if p.endswith((".tsx", ".ts")) else "0.25.0"},
                                "adapter_coverage": {"promised_node_count": 0, "mapped_node_count": 0, "unhandled_node_count": 0}, "structural": {"error_count": 0, "missing_count": 0, "diagnostic_count": 0, "declaration_count": 0}, "declarations": []} for p, r in items.items()]}
         changes = {"added": [], "removed": [], "modified": sorted(selected["candidate"]), "unchanged": []}
         return selected, {"planning": inventory(selected["planning"]), "candidate": inventory(selected["candidate"]),
@@ -94,8 +98,8 @@ class DeltaTests(DeltaFixture):
         selected = self.selected()
         self.assertIn(b"return 2", selected["candidate"]["service.py"]["bytes"])
         self.assertNotIn("new.py", selected["candidate"])
-        self.assertEqual(len(self.binding["structural_paths"]), 7)
-        self.assertEqual(len(selected["candidate"]), 4)
+        self.assertEqual(len(self.binding["structural_paths"]), 9)
+        self.assertEqual(len(selected["candidate"]), 6)
         with self.assertRaisesRegex(ri.RIError, "EXACT_COMMIT"):
             delta.tree(self.repo, "HEAD")
 
@@ -221,13 +225,69 @@ class ActualDeltaTests(DeltaFixture):
                         delta.MAX_REVIEW_ARTIFACT_BYTES)
         self.assertEqual(packet["status"], "comparable")
         counts = packet["compact_delta"]["declaration_counts"]
-        self.assertGreaterEqual(counts["added"], 1)
-        self.assertGreaterEqual(counts["removed"], 1)
-        self.assertGreaterEqual(counts["modified"], 2)
-        full = json.loads(Path(record["artifacts"]["candidate"]["path"]).read_text())
-        zero = next(x for x in full["files"] if x["path"] == "zero.py")
-        self.assertEqual(zero["declarations"], [])
-        self.assertEqual(len(full["files"]), 4)
+        self.assertEqual(counts, {"added": 1, "removed": 1, "modified": 4, "unchanged": 0})
+        expected_files = {"View.tsx", "check.js", "check.ts", "imports.py", "service.py", "zero.py"}
+        self.assertEqual(packet["compact_delta"]["file_changes"],
+                         {"added": [], "removed": [], "modified": sorted(expected_files), "unchanged": []})
+        expected_declarations = {
+            "planning": {
+                "View.tsx": [("View", "function", b"function View() { return <Text>Old</Text>; }")],
+                "check.js": [("checkTotal", "function", b"function checkTotal() { return 1; }")],
+                "check.ts": [("typedTotal", "function", b"function typedTotal(value: number): number { return value; }")],
+                "imports.py": [],
+                "service.py": [("changed", "function", b"def changed():\n    return 1"),
+                               ("removed", "function", b"def removed():\n    return 0")],
+                "zero.py": [],
+            },
+            "candidate": {
+                "View.tsx": [("View", "function", b"function View() { return <Text>New</Text>; }")],
+                "check.js": [("checkTotal", "function", b"function checkTotal() { return 2; }")],
+                "check.ts": [("typedTotal", "function", b"function typedTotal(value: number): number { return value + 1; }")],
+                "imports.py": [],
+                "service.py": [("changed", "function", b"def changed():\n    return 2"),
+                               ("added", "function", b"def added():\n    return 3")],
+                "zero.py": [],
+            },
+        }
+        grammar = {"View.tsx": "TSX", "check.js": "JavaScript", "check.ts": "TypeScript",
+                   "imports.py": "Python", "service.py": "Python", "zero.py": "Python"}
+        selected = self.selected()
+        for side, by_path in expected_declarations.items():
+            full = json.loads(Path(record["artifacts"][side]["path"]).read_text())
+            self.assertEqual({item["path"] for item in full["files"]}, expected_files)
+            for item in full["files"]:
+                path = item["path"]
+                raw = selected[side][path]["bytes"]
+                self.assertEqual(item["source_identity"]["raw_sha256"], ri.sha256(raw))
+                self.assertEqual(item["source_identity"]["byte_count"], len(raw))
+                self.assertEqual(item["source_identity"]["relative_path"], path)
+                self.assertEqual(item["parser"]["grammar"], grammar[path])
+                self.assertEqual(item["parser"]["adapter_version"], self.lock["contracts"]["adapter"])
+                self.assertEqual(len(item["declarations"]), len(by_path[path]))
+                for declaration, (name, kind, literal) in zip(item["declarations"], by_path[path]):
+                    start = raw.index(literal)
+                    self.assertEqual((declaration["qualified_name"], declaration["declaration_kind"]), (name, kind))
+                    self.assertEqual(declaration["byte_range"], {"start": start, "end": start + len(literal)})
+                    self.assertEqual(declaration["declaration_sha256"], ri.sha256(literal))
+        comparison = json.loads(Path(record["artifacts"]["comparison"]["path"]).read_text())
+        expected_changes = {
+            "added": {("service.py", "added")},
+            "removed": {("service.py", "removed")},
+            "modified": {("service.py", "changed"), ("View.tsx", "View"),
+                         ("check.js", "checkTotal"), ("check.ts", "typedTotal")},
+            "unchanged": set(),
+        }
+        for kind, expected in expected_changes.items():
+            actual = {(item["path"], (item["candidate"] or item["planning"])["qualified_name"])
+                      for item in comparison["declaration_changes"][kind]}
+            self.assertEqual(actual, expected)
+            self.assertEqual(len(comparison["declaration_changes"][kind]), len(expected))
+        self.assertEqual({item["path"] for item in comparison["file_changes"]["modified"]}, expected_files)
+        self.assertEqual(comparison["file_changes"]["added"], [])
+        self.assertEqual(comparison["file_changes"]["removed"], [])
+        for path in ("imports.py", "zero.py"):
+            self.assertEqual(next(item for item in comparison["file_changes"]["modified"]
+                                  if item["path"] == path)["candidate"]["declarations"], [])
         value = {"binding_sha256": self.binding["binding_sha256"], "record_sha256": record["record_sha256"],
                  "paths": [{"path": p, "decision": "expected", "authority": "fixture AC", "qualification": "fixture test"}
                            for p in self.binding["structural_paths"]]}

@@ -27,6 +27,7 @@ class SourceFixture(unittest.TestCase):
             "backend/service.py": b"def calculate_total(items):\n    return sum(items)\n",
             "mobile/View.tsx": b"export function TotalView() { return <Text>Total</Text>; }\n",
             "scripts/check.js": b"function checkTotal() { return 1; }\n",
+            "scripts/check.ts": b"export function typedTotal(value: number): number { return value; }\n",
             "backend/schema.sql": b"select 1;\n",
             "backend/generated/auto.py": b"def ignored(): pass\n",
         }
@@ -106,7 +107,7 @@ class SelectionTests(SourceFixture):
         selected, scope = ri.selected_source(
             self.repo, self.revision, ["backend", "mobile", "scripts"]
         )
-        self.assertEqual(len(selected), 3)
+        self.assertEqual(len(selected), 4)
         self.assertEqual(
             selected["backend/service.py"]["bytes"], self.sources["backend/service.py"]
         )
@@ -351,23 +352,34 @@ class ActualRuntimeTests(SourceFixture):
         packet = ri.navigate(
             self.repo,
             self.revision,
-            ["backend/service.py", "mobile/View.tsx", "scripts/check.js"],
+            ["backend/service.py", "mobile/View.tsx", "scripts/check.js", "scripts/check.ts"],
             "total",
             8,
             Path(runtime),
             self.root / "actual",
         )
         self.assertEqual(packet["mapping_status"], "navigation_only")
-        self.assertEqual(
-            {x["path"] for x in packet["matches"]},
-            {"backend/service.py", "mobile/View.tsx", "scripts/check.js"},
-        )
+        expected = {
+            "backend/service.py": ("calculate_total", "Python", b"def calculate_total(items):\n    return sum(items)"),
+            "mobile/View.tsx": ("TotalView", "TSX", b"function TotalView() { return <Text>Total</Text>; }"),
+            "scripts/check.js": ("checkTotal", "JavaScript", b"function checkTotal() { return 1; }"),
+            "scripts/check.ts": ("typedTotal", "TypeScript", b"function typedTotal(value: number): number { return value; }"),
+        }
+        self.assertEqual(packet["total_matches"], len(expected))
+        self.assertEqual({x["path"] for x in packet["matches"]}, set(expected))
         for match in packet["matches"]:
             raw = self.sources[match["path"]]
-            span = match["byte_range"]
-            self.assertEqual(
-                ri.sha256(raw[span["start"] : span["end"]]), match["declaration_sha256"]
-            )
+            name, grammar, literal = expected[match["path"]]
+            start = raw.index(literal)
+            self.assertEqual(match["name"], name)
+            self.assertEqual(match["parser"]["grammar"], grammar)
+            self.assertEqual(match["parser"]["adapter_version"], self.lock["contracts"]["adapter"])
+            self.assertEqual(match["source_sha256"], ri.sha256(raw))
+            self.assertEqual(match["byte_range"], {"start": start, "end": start + len(literal)})
+            self.assertEqual(raw[start : start + len(literal)], literal)
+            self.assertEqual(match["declaration_sha256"], ri.sha256(literal))
+            self.assertEqual(match["excerpt"], literal.decode())
+            self.assertFalse(match["excerpt_truncated"])
         self.assertFalse((self.root / "actual/source").exists())
         empty = ri.navigate(
             self.repo,
