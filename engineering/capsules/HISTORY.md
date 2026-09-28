@@ -4265,3 +4265,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 5dbebdabc66cfbd04ab67565258e164d3bc09ee7
 - **Full-capsule recovery path:** engineering/capsules/active/GH-236.md
 - **Historical capsule SHA-256:** 590500df02710994ef526731cb10fda1e80726a9983d8182af9551b91c85700e
+
+### GH-238 - Reconcile preserved local capsule responsibility map
+
+- **ID:** `GH-238`
+- **Title:** Reconcile preserved local capsule responsibility map
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** documentation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/238; implementation authorization comment 5872867419, preservation evidence comment 5872993092, and distinct terminal authorization comment 5873146236.
+- **Issue disposition:** Implementation C3 integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** 3f49e6f9e3cc12e0e04dada3be854f9e67563d7d
+- **Task branch:** task/GH-238-r3
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 015f9bf3f3862085b1a453c3f989e34a4ed8e184, 4b1f515cf13cc590614385d2d5a28e77d463a27e and 3a6d46aeb76c0806d2d3901d507ee639412ae8cc; only C3 integrated.
+- **Verified commit reference(s):** 3a6d46aeb76c0806d2d3901d507ee639412ae8cc
+- **Reviewed source commit:** 3a6d46aeb76c0806d2d3901d507ee639412ae8cc
+- **Reviewed task/checkpoint commit(s):** 3a6d46aeb76c0806d2d3901d507ee639412ae8cc
+- **Integration/merged commit:** 3a6d46aeb76c0806d2d3901d507ee639412ae8cc on main.
+- **Integration-related commit reference(s):** Protected C3 at 3a6d46aeb76c0806d2d3901d507ee639412ae8cc; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C3 reviewer for four ACs, six issue outcomes, two standards and all four Markdown paths with no findings. C1 stopped and was not approved.
+- **Verification summary:** Documentation validation passed 105 Markdown files and 653 local links; capsule validation and session-end 75 audit-tooling tests passed. Frozen checks passed in an offline clone. Owner comment 5872993092 authenticates the preserved draft map, original tracked patch, backup/stash hashes and full successful closeout log. The map now links from the index, correctly cites the #187 owner decision and grants no edit authority; superseded candidate-evidence wording was not copied.
+- **Specialized qualification:** Dedicated App 4708441 check 108996697230 passed exact C3 repository profile; planning P3 f668d2fbcc0f7448d520971f502e44e84c7e50a4 check 108994436480 passed. Terminal T requires a distinct repository check.
+- **Known warnings:** C1 015f9bf3f3862085b1a453c3f989e34a4ed8e184 review returned stop-replan for incomplete obligations and absent preservation/closeout proof; trace and outcome hashes remain in the recovery capsule. P2 1eba296f5464c4cb074102d624dce7f237a11819 qualified but attachment rejected invalid outcome IDs. The first C3 qualification watcher failed before dispatch because the App ID was absent; the corrected exact-C3 check passed. The existing migration-domain-token warning remains nonblocking.
+- **Deferred work/follow-up IDs:** Compatibility-interface retirement still requires a separate caller inventory and migration/recovery review; none is included here.
+- **Retrospective:** Authentication of preserved local draft and closeout bytes belongs in the evidence packet, not only in controller prose. Full Markdown review remains required when RI reports unsupported paths.
+- **Referenced commits:** Planning f668d2fbcc0f7448d520971f502e44e84c7e50a4; implementation 3a6d46aeb76c0806d2d3901d507ee639412ae8cc; full reviewed capsule 21adcff771c2a2f5c3a86367a5a4591d1cfbe037.
+- **Full-capsule recovery commit:** 21adcff771c2a2f5c3a86367a5a4591d1cfbe037
+- **Full-capsule recovery path:** engineering/capsules/active/GH-238.md
+- **Historical capsule SHA-256:** 11b3cc8d0d75d03f46601a05b180ba509bf7cad99e0ec83ae19c86cb1a1ea040
