@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 1
 id = "GH-226-lock-publication"
 title = "Guard dependency lock publication against checkout switches"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "low"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ Use Git's short-lived index lock to serialize normal branch switches. Recheck id
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four acceptance criteria and deterministic real-Git test. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Updater, transaction guard, tests and docs bounded. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-one owner authorization posted. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Exact planning and checkout boundary confirmed. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Git index publication guard, post-write identity recovery, focused tests and operator note implemented. |
 
 ## Completion record
 

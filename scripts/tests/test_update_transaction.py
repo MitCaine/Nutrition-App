@@ -151,6 +151,84 @@ class RealGitTransactionTest(unittest.TestCase):
                 if move == "head":
                     self.git("reset", "--hard", "HEAD~1")
 
+    def test_git_switch_is_blocked_at_single_lock_publication(self):
+        original_head = self.git("rev-parse", "HEAD")
+        self.git("branch", "other-task")
+        real_replace = module.os.replace
+        switch = []
+
+        def switch_at_write(source, target):
+            if Path(target) == self.backend_lock:
+                switch.append(subprocess.run(["git", "switch", "other-task"], cwd=self.root,
+                                             capture_output=True, text=True))
+            return real_replace(source, target)
+
+        with patch.object(module, "backend", side_effect=self.backend_proposal), \
+             patch.object(module.os, "replace", side_effect=switch_at_write):
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual((result, errors), (0, ""))
+        self.assertEqual(len(switch), 1)
+        self.assertNotEqual(switch[0].returncode, 0)
+        self.assertEqual(self.git("rev-parse", "HEAD"), original_head)
+        self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.1.0\n")
+
+    def test_out_of_band_ref_move_restores_only_updater_bytes(self):
+        moved = self.git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "moved")
+        real_replace = module.os.replace
+
+        def move_at_write(source, target):
+            result = real_replace(source, target)
+            if Path(target) == self.backend_lock:
+                self.git("update-ref", "HEAD", moved)
+            return result
+
+        with patch.object(module, "backend", side_effect=self.backend_proposal), \
+             patch.object(module.os, "replace", side_effect=move_at_write):
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("Checkout branch, HEAD or worktree changed", errors)
+        self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.0.0\n")
+        self.assertFalse(self.backend_lock.with_name(self.backend_lock.name + ".update-recovery").exists())
+
+    def test_new_branch_switch_at_write_cannot_leave_updater_lock_on_new_branch(self):
+        real_replace = module.os.replace
+        switch = []
+
+        def switch_at_write(source, target):
+            if Path(target) == self.backend_lock and Path(source).name.endswith(".update-tmp"):
+                switch.append(subprocess.run(["git", "switch", "-c", "new-task"], cwd=self.root,
+                                             capture_output=True, text=True))
+            return real_replace(source, target)
+
+        with patch.object(module, "backend", side_effect=self.backend_proposal), \
+             patch.object(module.os, "replace", side_effect=switch_at_write):
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertEqual(len(switch), 1)
+        self.assertIn("Checkout branch, HEAD or worktree changed", errors)
+        self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.0.0\n")
+        self.assertFalse(self.backend_lock.with_name(self.backend_lock.name + ".update-recovery").exists())
+
+    def test_identity_drift_preserves_intervening_user_edit_and_recovery_bytes(self):
+        moved = self.git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "moved")
+        real_replace = module.os.replace
+
+        def edit_at_write(source, target):
+            result = real_replace(source, target)
+            if Path(target) == self.backend_lock:
+                self.backend_lock.write_bytes(b"user edit\n")
+                self.git("update-ref", "HEAD", moved)
+            return result
+
+        with patch.object(module, "backend", side_effect=self.backend_proposal), \
+             patch.object(module.os, "replace", side_effect=edit_at_write):
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("intervening edits", errors)
+        self.assertEqual(self.backend_lock.read_bytes(), b"user edit\n")
+        self.assertEqual(self.backend_lock.with_name(self.backend_lock.name + ".update-recovery").read_bytes(),
+                         b"fastapi==1.0.0\n")
+
     def test_interrupted_publication_reconciles_only_exact_bytes(self):
         inputs = module.transaction_inputs(("backend",))
         transaction = UpdateTransaction.begin(self.root, "backend", [], ("backend",), inputs)

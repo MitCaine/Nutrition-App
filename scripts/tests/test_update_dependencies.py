@@ -32,6 +32,9 @@ class StubTransaction:
     def assert_identity(self):
         pass
 
+    def publication_guard(self):
+        return contextlib.nullcontext()
+
     def publishing(self, _area, _proposals):
         pass
 

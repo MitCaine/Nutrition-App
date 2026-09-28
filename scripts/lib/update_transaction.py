@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import subprocess
 
@@ -185,6 +186,33 @@ class UpdateTransaction:
     def assert_identity(self) -> None:
         if checkout_identity(self.root) != self.state["identity"]:
             raise TransactionError("Checkout branch, HEAD or worktree changed during dependency update.")
+
+    @contextmanager
+    def publication_guard(self):
+        """Hold Git's index lock across a single-file replacement.
+
+        Ordinary Git checkout/switch takes this same lock. A post-write identity
+        check still catches ref updates that do not use the index.
+        """
+        raw = Path(os.fsdecode(_git(self.root, "rev-parse", "--git-path", "index.lock")))
+        lock = raw if raw.is_absolute() else self.root / raw
+        self.assert_identity()
+        try:
+            descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        except FileExistsError as exc:
+            raise TransactionError("Git checkout is busy; retry dependency publication.") from exc
+        try:
+            owned = os.fstat(descriptor)
+            self.assert_identity()
+            yield
+        finally:
+            os.close(descriptor)
+            try:
+                current = lock.stat()
+            except FileNotFoundError:
+                current = None
+            if current and (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+                lock.unlink()
 
     def done(self, area: str) -> bool:
         return self.state["outcomes"].get(area) in {"applied", "current"}

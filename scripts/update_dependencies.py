@@ -35,6 +35,45 @@ class ResolutionConflict(UpdateError):
     """A resolver conflict that may benefit from bounded direct-package retry."""
 
 
+def publish_single_lock(transaction: UpdateTransaction, area: str, path: Path,
+                        before: bytes, after: bytes) -> None:
+    """Publish one validated lock under Git's checkout lock and verify afterward."""
+    staged = path.with_name(path.name + ".update-tmp")
+    recovery = path.with_name(path.name + ".update-recovery")
+    if staged.exists() or staged.is_symlink() or recovery.exists() or recovery.is_symlink():
+        raise UpdateError("Updater staging or recovery file exists; inspect it before publication.")
+    retain_recovery = False
+    try:
+        with transaction.publication_guard():
+            if path.read_bytes() != before:
+                raise UpdateError("Lockfile changed at publication boundary; refusing to overwrite it.")
+            transaction.publishing(area, [(path, before, after)])
+            recovery.write_bytes(before)
+            staged.write_bytes(after)
+            transaction.assert_identity()
+            os.replace(staged, path)
+            try:
+                transaction.applied(area)
+            except TransactionError:
+                try:
+                    transaction.assert_identity()
+                except TransactionError:
+                    if not path.is_symlink() and path.is_file() and path.read_bytes() == after:
+                        try:
+                            os.replace(recovery, path)
+                        except OSError as exc:
+                            retain_recovery = True
+                            raise UpdateError(f"Checkout changed; lock restoration failed. Recovery bytes: {recovery}") from exc
+                    else:
+                        retain_recovery = True
+                        raise UpdateError(f"Checkout changed and lockfile has intervening edits. Recovery bytes: {recovery}")
+                raise
+    finally:
+        staged.unlink(missing_ok=True)
+        if not retain_recovery:
+            recovery.unlink(missing_ok=True)
+
+
 @contextmanager
 def exclusive_update():
     """Serialize invocations for one checkout without leaving stale process locks."""
@@ -625,15 +664,7 @@ def _update(args: argparse.Namespace) -> int:
                             transaction.verify(transaction_inputs(areas))
                             if path.read_bytes() != before:
                                 raise UpdateError("Lockfile changed during preparation; refusing to overwrite it.")
-                            transaction.publishing(area, [(path, before, after)])
-                            staged = path.with_name(path.name + ".update-tmp")
-                            try:
-                                staged.write_bytes(after)
-                                transaction.assert_identity()
-                                os.replace(staged, path)
-                            finally:
-                                staged.unlink(missing_ok=True)
-                            transaction.applied(area)
+                            publish_single_lock(transaction, area, path, before, after)
                             print(f"{area}: applied validated lockfile; review exact changes before integration.")
                         changed = True
                     if before == after and transaction and not retry_failures:
