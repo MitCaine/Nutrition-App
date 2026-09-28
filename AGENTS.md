@@ -10,11 +10,19 @@ Use it as the entry point. Deeper operational authority remains in the linked re
 
 Run all commands from the repository root.
 
-At the start of work:
+At the start of each session in a VS Code or Codex desktop integrated zsh terminal,
+source the startup command so its selected tool paths remain in this terminal. It
+refreshes compatible dependencies and then runs the authoritative session report;
+independent checks still run if an earlier update fails:
 
-```bash
-./scripts/session-start.sh
+```zsh
+source ./scripts/start-work.zsh
 ```
+
+If zsh or automatic updates are unavailable, run `./scripts/session-start.sh`
+directly and follow the [dependency update guide](docs/project/development-guide.md#configuration-and-startup)
+before dependency work. A startup update failure is not a passing qualification;
+review the reported area and preserve its exact partial output for the task workflow.
 
 Before presenting work as complete or asking for commit approval:
 

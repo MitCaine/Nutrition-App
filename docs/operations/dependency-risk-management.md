@@ -35,49 +35,21 @@ If upstream facts change so that a supported remediation becomes available, the
 accepted-risk path stops. The record must be reevaluated and remediation handled
 as a bounded implementation task.
 
-## Current AUDIT-08 findings
+## Retained findings
 
-AUDIT-08 / issue #166 owns three current retained Dependabot alerts.
+The historical AUDIT-08 / issue #166 review covered three Dependabot alerts.
+The two `image-size` records were retired after the package left the mobile
+lockfile. The canonical register currently retains one `uuid` record. Do not
+reuse the historical installed paths or versions as a current dependency graph.
 
-Two alerts affect `image-size@1.2.1`. The exact installed path is:
-
-    nutrition-mobile@2.0.0
-      -> react-native@0.86.2
-      -> @react-native/community-cli-plugin@0.86.2
-      -> metro@0.84.4
-      -> image-size@1.2.1
-
-The package-manager graph contains exactly one installed path to this vulnerable
-package. Other installed Metro package copies do not own `image-size`.
-
-`metro@0.84.4` declares `image-size ^1.0.2` and uses it in Metro asset
-processing. Nutrition App application source does not directly reference
-`image-size`. The native nutrition-label OCR path instead uses Apple ImageIO and
-Vision.
-
-The current image-size advisories publish no patched release, so these findings
-are recorded as upstream-blocked accepted build-tooling risk rather than as
-application-runtime OCR exposure.
-
-One alert affects `uuid@7.0.3`. Its exact installed path is:
-
-    nutrition-mobile@2.0.0
-      -> expo-sharing@57.0.15
-      -> @expo/config-plugins@57.0.9
-      -> xcode@3.0.1
-      -> uuid@7.0.3
-
-The advisory concerns affected UUID v3, v5, and v6 caller-supplied-buffer
-behavior. Installed `xcode@3.0.1` contains one `uuid.v4()` call and no
-`uuid.v3`, `uuid.v5`, or `uuid.v6` call. The affected API path is therefore
-recorded as non-reachable through the current dependency owner.
-
-A patched UUID release exists, but current `xcode@3.0.1` still declares
-`uuid ^7.0.3`. Forcing a transitive replacement outside the supported dependency
-chain is not treated as a valid remediation.
-
-Exact advisory IDs, severities, dependency edge ranges, reviewed commit, and
-reevaluation triggers remain canonical in the risk register.
+The retained package is reached through `expo-sharing`, `@expo/config-plugins`,
+and `xcode`. The reviewed `xcode` caller uses `uuid.v4()`; the advisory concerns
+other UUID APIs with caller-supplied buffers. The exact versions, edges,
+advisory, reviewed commit, and reevaluation triggers live in the risk register.
+After every dependency refresh, run offline validation to detect any changed
+package, owner, version, or reachability boundary before relying on this
+disposition. A new upstream finding requires its own review rather than an
+automatic extension of this record.
 
 ## Offline validation
 

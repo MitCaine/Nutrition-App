@@ -110,7 +110,13 @@ on-device SQLite without FastAPI or PostgreSQL. USDA requires upstream network
 access and a configured personal credential. Native Apple Vision OCR requires
 an iOS native development or Release build and is not provided by Expo Go.
 
-Use Node 26 for the mobile project. On a fresh checkout, or whenever the locked
+At the beginning of a VS Code or Codex desktop zsh session in a working checkout,
+run `source ./scripts/start-work.zsh`. It selects the toolchain lines declared by
+`.nvmrc` and `.python-version`, checks compatible updates, and runs the session
+report. Follow the [session contract](docs/operations/session-contract.md) and
+[capsule/RI task workflow](engineering/workflow/START_HERE.md) for qualification.
+
+Use the Node line in `.nvmrc` for the mobile project. On a fresh checkout, or whenever the locked
 JavaScript dependencies need to be reconciled, install them once:
 
 ```bash
@@ -284,7 +290,7 @@ alembic current
 uvicorn app.main:app --reload
 ```
 
-`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.14 line, set `PYTHON_BIN` to a compatible executable such as `python3.14`; the same verified interpreter then creates `apps/backend/.venv`.
+`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the line declared by `.python-version`, set `PYTHON_BIN` to a matching executable; the same verified interpreter then creates `apps/backend/.venv`.
 
 `alembic current` must report `0033_complete_runtime_authority`.
 

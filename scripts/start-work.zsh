@@ -17,8 +17,13 @@ if source "$NUTRITION_APP_ROOT/scripts/dependency-modules/dependencies.zsh"; the
 else
   _nutrition_start_dependencies_status=$?
 fi
-if (( _nutrition_start_toolchain_status || _nutrition_start_dependencies_status )); then
-  print -u2 "Startup updates incomplete: toolchain status $_nutrition_start_toolchain_status; dependency status $_nutrition_start_dependencies_status. Successful updates remain applied; review the failures above and rerun."
+if "$NUTRITION_APP_ROOT/scripts/session-start.sh"; then
+  _nutrition_start_session_status=0
+else
+  _nutrition_start_session_status=$?
+fi
+if (( _nutrition_start_toolchain_status || _nutrition_start_dependencies_status || _nutrition_start_session_status )); then
+  print -u2 "Startup incomplete: toolchain status $_nutrition_start_toolchain_status; dependency status $_nutrition_start_dependencies_status; session report status $_nutrition_start_session_status. Successful updates remain applied; review the failures above and rerun."
   return 1
 fi
-print 'Nutrition App tool paths and dependency check are ready in this terminal.'
+print 'Nutrition App tool paths, dependency check, and session report are ready in this terminal.'

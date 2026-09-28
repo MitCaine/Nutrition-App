@@ -19,7 +19,13 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
 
 ## Current operating sequence
 
-1. Run the [session preflight](../../docs/operations/session-contract.md).
+1. In the working checkout, run `source ./scripts/start-work.zsh` in an
+   integrated zsh terminal. It refreshes compatible dependencies and invokes the
+   [session preflight](../../docs/operations/session-contract.md). Keep the
+   trusted controller checkout clean and synchronized; use its standalone
+   `./scripts/session-start.sh` when startup updates belong to a separate task.
+   A nonzero update result must be reported and resolved in its own bounded task;
+   it does not authorize changes outside the active capsule.
 2. From trusted main, use `./scripts/task prepare ISSUE` with the exact base, task
    ID, bounded allowed/forbidden paths and qualification profiles; then `authorize`.
 3. For a new task, create its bounded capsule, qualify the capsule-only planning
@@ -88,8 +94,8 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
 
 The complete command options and trusted qualification transport remain in the
 [testing guide](../../docs/operations/testing.md#trusted-task-controller-bootstrap).
-The [authority contract](AUTHORITY.md) distinguishes current enforcement from the
-capsule/RI migration target; it owns the binding design and compatibility inventory.
+The [authority contract](AUTHORITY.md) distinguishes current enforcement from
+remaining migration work; it owns the binding design and compatibility inventory.
 
 ## Status and boundaries
 

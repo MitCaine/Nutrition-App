@@ -58,7 +58,7 @@ alembic current
 uvicorn app.main:app --reload
 ```
 
-`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the repository-supported Python 3.14 line, set `PYTHON_BIN` to a compatible executable such as `python3.14`; the same verified interpreter then creates `apps/backend/.venv`.
+`PYTHON_BIN` defaults to `python3`. The repository toolchain check must succeed before `.venv` is created. If the default `python3` is not on the release line declared by `.python-version`, set `PYTHON_BIN` to a matching executable; the same verified interpreter then creates `apps/backend/.venv`.
 
 `alembic current` must report `0033_complete_runtime_authority`. Database
 provisioning or progression across 0021 remains an explicit operations task;
@@ -73,12 +73,12 @@ The current remote application migration head is
 `0033_complete_runtime_authority`.
 
 Root `VERSION` owns the canonical Version 2.0 repository release identity.
-`apps/backend/pyproject.toml` mirrors the root `VERSION`, requires the Python 3.14 release
-line, and Ruff targets `py314`. `requirements-dev.lock` remains the reproducible
+`apps/backend/pyproject.toml` mirrors the root `VERSION`, requires the Python release
+line declared by `.python-version`, and sets the matching Ruff target. `requirements-dev.lock` remains the reproducible
 dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
-Python 3.14 development and CI environment. At the start of work in either a VS Code or
+Python development and CI environment. At the start of work in either a VS Code or
 Codex desktop integrated **zsh** terminal, run one command from the repository root:
 
 ```zsh
@@ -91,7 +91,8 @@ that terminal, updates installed formulas within those lines when newer patches 
 package and toolchain versions, and applies compatible backend, mobile, and RI wheel-lock updates.
 Node and Python upgrades are attempted independently. A failed tool upgrade does not stop
 the dependency check, and a backend failure does not stop mobile updates (or vice versa).
-If a bulk dependency refresh fails, the command retries declared packages individually.
+After a package-local bulk resolver conflict, the command retries declared packages
+individually; shared registry or contract failures stop that area.
 Successful, validated updates remain applied; failures are named and the command returns
 nonzero. The updater records its own exact lock outputs outside the checkout. Fix the
 failed item and rerun the same command to resume pending areas without first committing
@@ -108,6 +109,9 @@ changes are resumable only on the original worktree, branch and HEAD, with uncha
 authority inputs and output bytes. Sourcing is required
 because a launched script cannot alter its parent terminal's `PATH`. The toolchain and
 dependency steps are separate files under `scripts/dependency-modules/`.
+The master command runs `./scripts/session-start.sh` afterward, even when an update
+fails, and returns nonzero if any step fails. Use it in a working checkout;
+keep the synchronized trusted controller checkout clean for capsule authorization.
 For a lockfile preview, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`.
 For a fully read-only update check, also set `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1`
 to skip Homebrew installs and upgrades.
@@ -155,15 +159,16 @@ To update only one declared backend dependency, use:
 The first command previews the resolved change; the second writes only the lockfile. The
 compiler is included in the ranged development dependencies and is bootstrapped into a
 temporary environment if no prepared backend environment is available. Set
-`NUTRITION_DEPS_PYTHON` if Python 3.14 is not available as `python3.14`.
+`NUTRITION_DEPS_PYTHON` if the interpreter line in `.python-version` is not
+available under its usual executable name.
 The preview lists every resolved package version change, including transitive changes,
 and names the required `repository` and `backend` qualification profiles. Select
 `postgresql` as well when the changed package affects database contracts.
 
 ### Mobile
 
-Version 2.0 mobile development and qualification use Node 26. The package engine contract
-accepts the Node 26 line; `.nvmrc` remains the repository toolchain pin. The dependency
+Mobile development and qualification use the Node line in `.nvmrc`; the package
+engine contract must accept that line. The dependency
 update wrapper selects a Homebrew-installed required Node line automatically when the active
 Node is another major version. Other Node installations can be selected on `PATH`.
 
@@ -192,7 +197,7 @@ their coordinated upgrade process. A new apply requires a clean worktree; an int
 apply can resume only on the same branch and HEAD with exact recorded updater output.
 Unrelated changes remain protected. Exact resolved versions remain pinned in
 lockfiles; declared ranges remain flexible. The mobile command accepts Python 3.9 or
-newer alongside the repository's Node 26 toolchain, and lists every resolved version
+newer alongside the repository's `.nvmrc` Node line, and lists every resolved version
 change plus the `repository`, `mobile`, and `ios-native` qualification profiles.
 
 For ordinary local-first JS/TS development with an appropriate native

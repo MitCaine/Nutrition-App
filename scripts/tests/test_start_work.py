@@ -176,25 +176,36 @@ class StartWorkTest(unittest.TestCase):
                 "  exit 2\n"
                 "fi\n")
             updater.chmod(0o755)
+            session = root / "scripts/session-start.sh"
+            session.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$NUTRITION_DEPS_PYTHON\" > \"$NUTRITION_START_WORK_SESSION_MARKER\"\n"
+                "exit \"${NUTRITION_START_WORK_SESSION_EXIT:-0}\"\n")
+            session.chmod(0o755)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(["git", "add", "."], cwd=root, check=True)
             subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
                             "commit", "-qm", "fixture"], cwd=root, check=True)
             marker = root / ".git/start-work-arguments"
+            session_marker = root / ".git/session-python"
             env = {**os.environ, "NUTRITION_START_WORK_SKIP_TOOL_UPDATES": "1",
-                   "NUTRITION_START_WORK_TEST_MARKER": str(marker)}
+                   "NUTRITION_START_WORK_TEST_MARKER": str(marker),
+                   "NUTRITION_START_WORK_SESSION_MARKER": str(session_marker)}
             command = "source ./scripts/start-work.zsh; node -v; $NUTRITION_DEPS_PYTHON --version"
             clean = subprocess.run(["zsh", "-c", command], cwd=root, env=env,
                                    text=True, capture_output=True, check=True)
             self.assertEqual(marker.read_text().strip(), "all --apply")
             self.assertIn("v26.", clean.stdout)
             self.assertIn("Python 3.14.", clean.stdout)
+            self.assertIn("python3.14", session_marker.read_text())
+            session_marker.unlink()
             (root / "local-work.txt").write_text("preserve")
             dirty = subprocess.run(["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
                                    cwd=root, env=env, text=True, capture_output=True)
             self.assertEqual(dirty.returncode, 1)
             self.assertEqual(marker.read_text().strip(), "all --apply")
             self.assertIn("Unrelated checkout change blocks safe resume", dirty.stderr)
+            self.assertIn("python3.14", session_marker.read_text())
             preview = subprocess.run(["zsh", "-c", command], cwd=root,
                                      env={**env, "NUTRITION_START_WORK_PREVIEW": "1"},
                                      text=True, capture_output=True, check=True)
@@ -209,6 +220,14 @@ class StartWorkTest(unittest.TestCase):
             self.assertEqual(marker.read_text().strip(), "all --apply")
             self.assertIn("simulated toolchain failure", failed.stderr)
             self.assertIn("Successful updates remain applied", failed.stderr)
+            self.assertTrue(session_marker.exists())
+            session_failed = subprocess.run(
+                ["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
+                cwd=root, env={**env, "NUTRITION_START_WORK_SESSION_EXIT": "7"},
+                text=True, capture_output=True)
+            self.assertEqual(session_failed.returncode, 1)
+            self.assertIn("session report status 7", session_failed.stderr)
+            self.assertEqual(marker.read_text().strip(), "all --apply")
 
 
 if __name__ == "__main__":

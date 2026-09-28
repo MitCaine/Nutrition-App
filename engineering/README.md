@@ -6,11 +6,15 @@
 
 ## Change lifecycle
 
-1. **Start with authoritative state.** Run `./scripts/session-start.sh`, then use
+1. **Start with authoritative state.** In an integrated zsh terminal, run
+   `source ./scripts/start-work.zsh` from the repository root; it refreshes
+   compatible updates and runs the session report. Then use
    [Project Onboarding](../docs/project/onboarding.md) to load only the context needed for the
    change.
-2. **Create a focused branch.** Branch from current `main`, use the naming convention below, and
-   keep unrelated work out of the branch.
+2. **Establish task authority.** Follow the
+   [current capsule/RI controller sequence](workflow/START_HERE.md) from a clean,
+   synchronized trusted `main` checkout. Keep candidate work in a separate branch
+   and checkout within the authorized capsule paths.
 3. **Implement at the owning boundary.** Follow the
    [Development Guide](../docs/project/development-guide.md) and preserve the applicable
    invariants. Avoid opportunistic cleanup that expands review scope.
@@ -18,21 +22,22 @@
    specialized qualification selected by the [Testing Guide](../docs/operations/testing.md).
 5. **Close the session.** Run `./scripts/session-end.sh`. A failure blocks completion; report
    opt-in suites as passed, failed, or not run.
-6. **Open a reviewable pull request.** Explain the problem, bounded solution, risks, validation,
-   and any intentionally deferred work. Use the repository pull request template.
-7. **Merge and release deliberately.** Merge only reviewed, green work. Release from a clean,
-   qualified `main` commit using the conventions below.
+6. **Review and integrate.** Present the exact committed candidate, required
+   qualification and independent review through the trusted controller. A pull
+   request is optional when the controller's guarded integration is used.
+7. **Close out and release deliberately.** Complete the separate capsule HISTORY
+   closeout before issue closure. Release from a clean, qualified `main` commit.
 
 
 ## Repository-owned task workflow
 
-The experimental [Workflow Foundation](workflow/README.md) defines
+The [Workflow Foundation](workflow/README.md) defines
 repository-owned [task states](workflow/STATES.md), the versioned
 [capsule contract](workflow/TASK_CAPSULE.md), [routing](workflow/ROUTING.md),
 [evidence](workflow/EVIDENCE.md), and the
 [failure taxonomy](workflow/FAILURE_TAXONOMY.md).
 
-When a task capsule is used, the full non-terminal execution contract remains
+For new tasks, the capsule/RI path is normal. The full non-terminal execution contract remains
 under `engineering/capsules/active/` through `REVIEWED` or the last
 non-terminal state. Successful integration or cancellation writes the task's
 unique terminal record to `engineering/capsules/HISTORY.md`, including the
@@ -44,10 +49,10 @@ Capsules coordinate bounded execution but do not replace Roadmaps, Grills,
 PRDs, Architecture Reviews, Implementation Backlogs, GitHub Issues, current
 architecture, invariants, or operations guidance.
 
-Workflow v3 remains formally `EXPERIMENTAL`. Until an accountable human
-approves promotion under the
-[Workflow Changelog](workflow/CHANGELOG.md), capsule adoption remains explicit
-and evidence-backed rather than the repository-wide default.
+The owner's [2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452)
+made the combined path normal for new tasks. In-flight unattached tasks and
+explicit compatibility exceptions retain their existing controller path; see
+the [workflow entrypoint](workflow/START_HERE.md) for current boundaries.
 ## Git conventions
 
 Use short-lived, kebab-case branches with one of these prefixes:

@@ -14,19 +14,29 @@ observed recovery cases; its old SHAs are evidence, not reusable authority.
 
 ## Repository session contract
 
-Every implementation session must run:
+At the beginning of each session in a VS Code or Codex desktop integrated zsh
+terminal, source the single startup command from the checkout root:
 
-```bash
-./scripts/session-start.sh
+```zsh
+source ./scripts/start-work.zsh
 ```
 
-before implementation, and:
+It selects the repository-declared Node and Python lines, checks and applies
+compatible dependency updates, and always runs `session-start.sh` afterward,
+even if an earlier update fails. Independent update areas continue after a
+failure. Review any partial changes and nonzero status before implementation;
+successful updates still require normal task qualification. When zsh or automatic
+updates are unavailable, use `./scripts/session-start.sh` directly and follow the
+[development guide](../project/development-guide.md#configuration-and-startup)
+for dependency updates.
+
+Before claiming completion, run:
 
 ```bash
 ./scripts/session-end.sh
 ```
 
-before claiming completion. A nonzero session-end exit is blocking: the implementation must not be
+A nonzero session-end exit is blocking: the implementation must not be
 described as complete. `WARN` findings are non-blocking unless configuration explicitly elevates
 them; `ERROR` findings are blocking. Reports must include the final session-end result and accurately
 identify opt-in infrastructure suites as passed, failed, or not run.
@@ -37,7 +47,8 @@ contract.”**
 
 ## Session start
 
-Run from any directory inside the checkout:
+The standalone read-only session report remains available from any directory
+inside the checkout:
 
 ```bash
 ./scripts/session-start.sh
