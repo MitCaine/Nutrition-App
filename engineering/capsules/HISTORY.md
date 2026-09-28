@@ -3794,3 +3794,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 6743aaf219a9d0d96c4c56ad99e48df1aed76a81
 - **Full-capsule recovery path:** engineering/capsules/active/GH-224-retry-stop.md
 - **Historical capsule SHA-256:** ac8b51c2017afd6367bd3638de88016f8c011207151e2341c6dd0e385d95b06f
+
+### GH-225-preflight-gate - Bind reviewer preflight into the normal qualification workflow
+
+- **ID:** GH-225-preflight-gate
+- **Title:** Bind reviewer preflight into the normal qualification workflow
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/225; implementation authorization comment 5860962076 and distinct terminal authorization comment 5861018065.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 4a003454a66217b82d532f403cfc2beb419bc479
+- **Task branch:** task/GH-225-preflight-gate-r3
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9
+- **Verified commit reference(s):** e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9
+- **Reviewed source commit:** e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9
+- **Reviewed task/checkpoint commit(s):** e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9
+- **Integration/merged commit:** e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9
+- **Integration-related commit reference(s):** Protected C at e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and nine changed paths with no findings.
+- **Verification summary:** Focused 39 tests passed with three explicit runtime-oracle skips; repository baseline passed; RI P-to-C comparable with nine controller path dispositions. Long single-line RI evidence is digest-bound and readable in bounded virtual lines.
+- **Specialized qualification:** Dedicated App check 108736042453 passed repository profile at C; terminal T requires distinct repository App check.
+- **Known warnings:** None for accepted candidate; this entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** #226.
+- **Retrospective:** Preflight before hosted qualification prevents wasting a run on unavailable reviewer selection; digest-authenticated RI evidence must remain readable to the independent reviewer.
+- **Referenced commits:** Planning 45b2a58f925505183aaffd453bdea9a52ec7ae87; implementation e14a3af9d0cc1f48c8f8858cc4938a7f050a2ea9; full reviewed capsule 15638c708cc135650af22f223c1ea3bf2b93b930.
+- **Full-capsule recovery commit:** 15638c708cc135650af22f223c1ea3bf2b93b930
+- **Full-capsule recovery path:** engineering/capsules/active/GH-225-preflight-gate.md
+- **Historical capsule SHA-256:** 8642a45a95e53cb3384ac3701b68c55207301f36ecbce6130bc4651136976fcd
