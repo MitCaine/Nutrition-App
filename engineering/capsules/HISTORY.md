@@ -3830,3 +3830,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 15638c708cc135650af22f223c1ea3bf2b93b930
 - **Full-capsule recovery path:** engineering/capsules/active/GH-225-preflight-gate.md
 - **Historical capsule SHA-256:** 8642a45a95e53cb3384ac3701b68c55207301f36ecbce6130bc4651136976fcd
+
+### GH-226-lock-publication - Guard dependency lock publication against checkout switches
+
+- **ID:** GH-226-lock-publication
+- **Title:** Guard dependency lock publication against checkout switches
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/226; implementation authorization comment 5861060754 and distinct terminal authorization comment 5861142363.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 831260aaaf1db64e7077205805c6b68e89f13c2e
+- **Task branch:** task/GH-226-lock-publication
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 115980c2b9891fed998e210376050ebe61d93551
+- **Verified commit reference(s):** 115980c2b9891fed998e210376050ebe61d93551
+- **Reviewed source commit:** 115980c2b9891fed998e210376050ebe61d93551
+- **Reviewed task/checkpoint commit(s):** 115980c2b9891fed998e210376050ebe61d93551
+- **Integration/merged commit:** 115980c2b9891fed998e210376050ebe61d93551
+- **Integration-related commit reference(s):** Protected C at 115980c2b9891fed998e210376050ebe61d93551; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and six changed paths with no findings.
+- **Verification summary:** Focused 44 updater tests and two subtests passed; repository baseline passed; RI P-to-C comparable with six controller path dispositions. Existing-branch switch, new-branch switch, out-of-band ref drift, user edit recovery and safe resume exercised.
+- **Specialized qualification:** Dedicated App check 108738893865 passed repository profile at C; terminal T requires distinct repository App check.
+- **Known warnings:** None for accepted candidate; this entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** Git index locking blocks ordinary branch switches but a new-branch switch can move HEAD first; post-write identity validation and conditional restoration are both required. Intervening user edits preserve a recovery copy.
+- **Referenced commits:** Planning c2675ebb9c7d6e89bf0d4ab1b9d70af3cd2b5cad; implementation 115980c2b9891fed998e210376050ebe61d93551; full reviewed capsule c153ed01cf9611293da9444c123d91a8dfbd208f.
+- **Full-capsule recovery commit:** c153ed01cf9611293da9444c123d91a8dfbd208f
+- **Full-capsule recovery path:** engineering/capsules/active/GH-226-lock-publication.md
+- **Historical capsule SHA-256:** b905067f4f6f40537845a37ed101c0bc9e3357300f5b8191d8165d646babf9fd
