@@ -10,8 +10,8 @@ backend, and documentation metadata mirror it. The Version 2.0 release was
 qualified with Node 24 and Python 3.12. Current development and qualification
 use the Node and Python lines declared by `.nvmrc` and `.python-version`.
 
-The v2.1.0 source release is being prepared; its GitHub tag and release will
-follow qualification, independent review, and repository closeout. The finalized
+The [v2.1.0 GitHub release](https://github.com/MitCaine/Nutrition-App/releases/tag/v2.1.0)
+records qualified source commit `95269ee1f252034ddecf1a15e2eb6e19dc977e95`. The finalized
 [Version 2.0 release record](../historical/releases/version-2.0-release.md)
 preserves that earlier release's qualification and publication evidence.
 
