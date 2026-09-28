@@ -367,10 +367,22 @@ class ActualRuntimeTests(SourceFixture):
         }
         self.assertEqual(packet["total_matches"], len(expected))
         self.assertEqual({x["path"] for x in packet["matches"]}, set(expected))
+        raw_evidence = Path(packet["raw_evidence"]["path"]).read_bytes()
+        self.assertEqual(ri.sha256(raw_evidence), packet["raw_evidence"]["sha256"])
+        raw_matches = json.loads(raw_evidence)["matches"]
+        self.assertEqual(len(raw_matches), len(expected))
+        by_path = {item["source_identity"]["relative_path"]: item for item in raw_matches}
+        self.assertEqual(set(by_path), set(expected))
         for match in packet["matches"]:
             raw = self.sources[match["path"]]
             name, grammar, literal = expected[match["path"]]
             start = raw.index(literal)
+            declaration = by_path[match["path"]]
+            self.assertEqual(declaration["qualified_name"], name)
+            self.assertEqual(declaration["declaration_kind"], "function")
+            self.assertEqual(declaration["source_identity"]["raw_sha256"], ri.sha256(raw))
+            self.assertEqual(declaration["byte_range"], {"start": start, "end": start + len(literal)})
+            self.assertEqual(declaration["declaration_sha256"], ri.sha256(literal))
             self.assertEqual(match["name"], name)
             self.assertEqual(match["parser"]["grammar"], grammar)
             self.assertEqual(match["parser"]["adapter_version"], self.lock["contracts"]["adapter"])
