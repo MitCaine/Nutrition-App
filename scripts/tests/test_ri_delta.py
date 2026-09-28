@@ -237,6 +237,11 @@ class ActualDeltaTests(DeltaFixture):
         with self.assertRaisesRegex(ri.RIError, "INCOMPLETE"):
             delta.disposition(self.binding, record, bad)
         bad = copy.deepcopy(value)
+        bad["paths"].append({"path": "unexpected.py", "decision": "expected",
+                             "authority": "fixture AC", "qualification": "fixture test"})
+        with self.assertRaisesRegex(ri.RIError, "INCOMPLETE"):
+            delta.disposition(self.binding, record, bad)
+        bad = copy.deepcopy(value)
         bad["paths"][0]["decision"] = "unexpected"
         with self.assertRaisesRegex(ri.RIError, "UNEXPECTED"):
             delta.disposition(self.binding, record, bad)
