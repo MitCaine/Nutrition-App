@@ -4156,3 +4156,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** fc7f818ca5698a74b09b7e40f5da1afa810dd74a
 - **Full-capsule recovery path:** engineering/capsules/active/GH-233.md
 - **Historical capsule SHA-256:** 9eb15da11da5e4ee015f270277579a89ccbcf3988f05b9ef0e5279a5e64177a9
+
+
+### GH-234 - Reconcile RI source selection with independent reviewer read limits
+
+- **ID:** `GH-234`
+- **Title:** Reconcile RI source selection with independent reviewer read limits
+- **Final state:** MERGED
+- **Capsule revision:** 4
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/234; revision-four implementation authorization comment 5867736979, corrected-C5 owner forensic retention comment 5867951695, and distinct terminal authorization comment 5868061287.
+- **Issue disposition:** Implementation C5 integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** e96aa87099ce99f8c77776f126e09c65e1d4d48c
+- **Task branch:** task/GH-234-r4
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 66d499f98f49403a96881c026b3c7780a7c36309 and f5665afb5f965d582826bff866075104310456e2.
+- **Verified commit reference(s):** f5665afb5f965d582826bff866075104310456e2
+- **Reviewed source commit:** f5665afb5f965d582826bff866075104310456e2
+- **Reviewed task/checkpoint commit(s):** f5665afb5f965d582826bff866075104310456e2
+- **Integration/merged commit:** f5665afb5f965d582826bff866075104310456e2 on main.
+- **Integration-related commit reference(s):** Protected implementation C5 at f5665afb5f965d582826bff866075104310456e2; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C5 reviewer for four ACs, four original outcomes, two standards and all six structural paths, no findings. Three prior stop-replan verdicts and C4 bounded-correction verdict remain preserved.
+- **Verification summary:** A 2.1 MB RI-admitted long-line file was reconstructed through bounded byte chunks; a committed immutable cache retains the 40 MB distinct-source materialization limit, 200-call limit, 399-line and 100 KB serialized response limits. Focused and baseline checks passed 46 and 62 affected tests respectively with visible runtime skips; session-end 75 tests passed.
+- **Specialized qualification:** Dedicated App check 108884402133 passed exact C5 repository profile. Terminal T requires a distinct repository check.
+- **Known warnings:** C1 stopped for incomplete original obligations and budget/range defects; C2 stopped because prior failure retention was not authenticated to its reviewer; C3 stopped because long source lines remained unreadable; C4 requested bounded correction for JSON-serialized line response size. All attempts and raw review artifacts are retained; owner forensic comment 5867951695 authenticates the saved negative verdicts and hashes.
+- **Deferred work/follow-up IDs:** #235–#236 remain separate.
+- **Retrospective:** Admission and reviewer access must cover long lines, not just file size; response limits apply to actual serialized callback bytes. Preserve and surface failed reviews in the next packet.
+- **Referenced commits:** Planning e5c8797d3c903b476ad0ce942086ceb981f49e74; implementation f5665afb5f965d582826bff866075104310456e2; full reviewed capsule 02c8a3a21946f2227ba07bd21e6e3222bf7f7f54.
+- **Full-capsule recovery commit:** 02c8a3a21946f2227ba07bd21e6e3222bf7f7f54
+- **Full-capsule recovery path:** engineering/capsules/active/GH-234.md
+- **Historical capsule SHA-256:** fd9c9d70fababc6abdcade23b1194010056c41e492f02a81168a7284132635ea
