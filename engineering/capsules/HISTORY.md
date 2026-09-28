@@ -3974,3 +3974,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 9dfb48bfd3a26af9d79c42803d251aec1354bf35
 - **Full-capsule recovery path:** engineering/capsules/active/GH-229.md
 - **Historical capsule SHA-256:** bbbf2159c2b17437d911f4520735006cd644b7575e86f6889e405b89192abee1
+
+### GH-230 - Record published v2.1.0 in Current State
+
+- **ID:** GH-230
+- **Title:** Record published v2.1.0 in Current State
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** documentation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/230; revision-two implementation authorization comment 5863065634, candidate-bound trusted-owner publication observation comment 5863087673, and distinct terminal authorization comment 5863142480. Revision-one failed review remains preserved.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 95269ee1f252034ddecf1a15e2eb6e19dc977e95
+- **Task branch:** task/GH-230-r2
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** dbc36448687f7af9d00eaa16d9c6b1964b074859
+- **Verified commit reference(s):** dbc36448687f7af9d00eaa16d9c6b1964b074859
+- **Reviewed source commit:** dbc36448687f7af9d00eaa16d9c6b1964b074859
+- **Reviewed task/checkpoint commit(s):** dbc36448687f7af9d00eaa16d9c6b1964b074859
+- **Integration/merged commit:** dbc36448687f7af9d00eaa16d9c6b1964b074859
+- **Integration-related commit reference(s):** Protected C at dbc36448687f7af9d00eaa16d9c6b1964b074859; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 2/2 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-2 and both changed Markdown paths with no findings.
+- **Verification summary:** Frozen documentation validation and repository baseline passed; trusted-owner publication observation #5863087673 records GitHub release v2.1.0 and annotated tag peeling to the qualified GH-229 terminal commit. Current State links the published release and exact source commit. Root VERSION and historical release records are unchanged.
+- **Specialized qualification:** Dedicated App check 108782052210 passed repository profile at exact C; terminal T requires a distinct repository App check.
+- **Known warnings:** Existing non-blocking DOMAIN_TOKEN_IN_OPS_MIGRATION. Revision-one reviewer STOP_REPLAN for missing external publication proof is preserved; revision two added a bound owner observation and repeated all gates.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** Offline documentation validation cannot establish a live GitHub publication. The exact candidate packet now includes owner-bound publication evidence, while the guide change remains two Markdown paths.
+- **Referenced commits:** Planning 85cfe0d08cd088f07da25e1604f5fac8a479e71e; implementation dbc36448687f7af9d00eaa16d9c6b1964b074859; full reviewed capsule 656c12c7ef0c914bbd9ca6575c67b4980e08696b.
+- **Full-capsule recovery commit:** 656c12c7ef0c914bbd9ca6575c67b4980e08696b
+- **Full-capsule recovery path:** engineering/capsules/active/GH-230.md
+- **Historical capsule SHA-256:** 56baccd827ad395a23a1e43e6f88af331bfe9044fee34d2a4aa7640dcd37b3a4
