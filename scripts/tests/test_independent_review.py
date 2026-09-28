@@ -294,7 +294,8 @@ class StructuralReviewerOracle(CandidateFixture):
         key = b"k" * 32
         receipt = review.run_review(self.repo, binding, packet, directory=self.root / "review-structural",
             executable=Path(os.environ["NUTRITION_REVIEW_RUNTIME"]),
-            expected_sha256=os.environ["NUTRITION_REVIEW_RUNTIME_SHA256"], key=key, timeout=300)
+            expected_sha256=os.environ["NUTRITION_REVIEW_RUNTIME_SHA256"], key=key, timeout=300,
+            model=os.environ.get("NUTRITION_REVIEW_MODEL"), effort=os.environ.get("NUTRITION_REVIEW_EFFORT"))
         destination = os.environ.get("NUTRITION_STRUCTURAL_ORACLE_RECORD")
         if destination:
             Path(destination).write_text(json.dumps(receipt, indent=2))

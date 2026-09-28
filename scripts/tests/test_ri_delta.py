@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lib import ri_consumer as ri, ri_delta as delta  # noqa: E402
+from lib import independent_review as review, ri_consumer as ri, ri_delta as delta  # noqa: E402
 
 
 class DeltaFixture(unittest.TestCase):
@@ -175,7 +175,22 @@ class DeltaTests(DeltaFixture):
                 with self.assertRaisesRegex(ri.RIError, "DURING_SCAN"):
                     delta.capture(self.repo, self.binding, runtime, self.root / "mutation")
             self.assertTrue((self.root / "mutation/failure.json").is_file())
-            self.assertFalse((self.root / "mutation/candidate-source").exists())
+        self.assertFalse((self.root / "mutation/candidate-source").exists())
+
+    def test_complete_review_artifact_budget_fails_closed(self):
+        directory = self.root / "budget"
+        directory.mkdir()
+        delta.write_json(directory / "candidate.json", {"source": "x" * 1_000_000}, compact=True)
+        delta.write_json(directory / "comparison.json", {"source": "y" * 900_000}, compact=True)
+        entries = delta.review_artifacts(directory)
+        self.assertEqual(set(entries), {"candidate", "comparison"})
+        delta.write_json(directory / "membership.json", {"source": "z" * 110_000}, compact=True)
+        with self.assertRaisesRegex(ri.RIError, "REVIEW_BUDGET"):
+            delta.review_artifacts(directory)
+        (directory / "membership.json").unlink()
+        (directory / "membership.json").symlink_to(directory / "candidate.json")
+        with self.assertRaisesRegex(ri.RIError, "NOT_REGULAR"):
+            delta.review_artifacts(directory)
 
 
 @unittest.skipUnless(os.environ.get("NUTRITION_RI_RUNTIME"), "actual pinned RI runtime required")
@@ -186,6 +201,24 @@ class ActualDeltaTests(DeltaFixture):
     def test_actual_mixed_complete_inventory_delta_disposition_and_correction(self):
         record = self.capture("mixed")
         packet = record["packet"]
+        evidence_packet = {"structural": {"record": record}}
+        total_virtual_lines = 0
+        for name in ("membership", "planning", "candidate", "comparison"):
+            entry = record["artifacts"][name]
+            original = Path(entry["path"]).read_text()
+            self.assertEqual(len(original.splitlines()), 1)
+            first = review.read_evidence(evidence_packet, {"check": "$structural", "artifact": name,
+                                                          "start_line": 1, "end_line": 1})
+            self.assertLess(first["total_lines"], 200)
+            total_virtual_lines += first["total_lines"]
+            chunks = [review.read_evidence(evidence_packet, {"check": "$structural", "artifact": name,
+                                                            "start_line": line, "end_line": line})["content"].split(": ", 1)[1]
+                      for line in range(1, first["total_lines"] + 1)]
+            self.assertEqual(json.loads("".join(chunks)), json.loads(original))
+            self.assertEqual(first["sha256"], entry["sha256"])
+        self.assertLess(total_virtual_lines, 100)
+        self.assertLess(sum(item["bytes"] for item in record["artifacts"].values()),
+                        delta.MAX_REVIEW_ARTIFACT_BYTES)
         self.assertEqual(packet["status"], "comparable")
         counts = packet["compact_delta"]["declaration_counts"]
         self.assertGreaterEqual(counts["added"], 1)

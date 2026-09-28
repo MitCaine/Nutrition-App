@@ -262,7 +262,14 @@ Use the accepted `scripts/task` from clean trusted main, with the candidate supp
 The controller stores complete planning/candidate inventories, full comparison, compact delta,
 Git membership/coverage and before/after stability records. Raw output is limited to 32MB,
 changed scope to 200 paths, selected source to the navigation byte/file budgets, and the review
-structural packet to 1MB. A larger task stops for decomposition; it is not silently truncated.
+structural packet to 1MB. Before attachment, the aggregate complete review artifacts
+(including raw output and manifests) are capped at 2MB. A larger task stops for
+decomposition; it is not silently truncated.
+The complete membership, planning, candidate and comparison JSON artifacts use compact
+serialization. Their contents and digests remain exact and are authenticated before each
+reviewer read. Oversized single lines are divided into stable 20,000-character virtual lines;
+the reviewer can request bounded pages without consuming a call per pretty-printed source row.
+The 100KB response and 200-call reviewer limits remain in force.
 
 Inspect the record and every changed path, then write an external controller disposition:
 

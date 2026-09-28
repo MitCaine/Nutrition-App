@@ -16,6 +16,7 @@ from lib import ri_consumer as ri
 POLICY = {"schema_version": 1, "scope": "changed-files-v1"}
 MAX_CHANGED = 200
 MAX_PACKET = 1_000_000
+MAX_REVIEW_ARTIFACT_BYTES = 2_000_000
 
 
 def configuration(capsule: str) -> dict | None:
@@ -219,8 +220,20 @@ def artifact(path: Path) -> dict:
     return {"path": str(path.resolve()), "sha256": ri.sha256(path.read_bytes()), "bytes": path.stat().st_size}
 
 
-def write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+def write_json(path: Path, value: object, *, compact: bool = False) -> None:
+    # Complete inventory artifacts are authenticated as bytes and paged by the
+    # reviewer. Compact encoding preserves every JSON value while avoiding
+    # thousands of pretty-print lines and exhausting its fixed read budget.
+    options = {"sort_keys": True, "separators": (",", ":")} if compact else {"indent": 2, "sort_keys": True}
+    path.write_text(json.dumps(value, **options) + "\n")
+
+
+def review_artifacts(directory: Path) -> dict:
+    """Fail closed before attachment if complete authenticated paging is too costly."""
+    entries = {p.stem: artifact(p) for p in sorted(directory.glob("*.json"))}
+    if sum(item["bytes"] for item in entries.values()) > MAX_REVIEW_ARTIFACT_BYTES:
+        raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
+    return entries
 
 
 def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
@@ -243,7 +256,7 @@ def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
     for side in trees:
         selected[side], coverage[side] = selection(repo, trees[side], paths)
     directory.mkdir(parents=True)
-    write_json(directory / "membership.json", {"trees": trees, "coverage": coverage, "changes": changes})
+    write_json(directory / "membership.json", {"trees": trees, "coverage": coverage, "changes": changes}, compact=True)
     roots = {side: directory / (side + "-source") for side in trees}
     try:
         for side in roots:
@@ -262,7 +275,7 @@ def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
         ri.verify_runtime(runtime, lock=lock)
         raw = json.loads((directory / "raw.json").read_text())
         for name in ("planning", "candidate", "comparison", "compact"):
-            write_json(directory / (name + ".json"), raw[name])
+            write_json(directory / (name + ".json"), raw[name], compact=name != "compact")
         validate_comparison(raw, selected, lock)
         has_supported = any(classification(p, trees[s].get(p)) == "supported" for p in paths for s in trees)
         packet = {"schema_version": 1, "binding_sha256": binding["binding_sha256"],
@@ -281,7 +294,7 @@ def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
         write_json(directory / "packet.json", packet)
         record = {"binding_sha256": binding["binding_sha256"], "planning": planning, "candidate": candidate,
                   "status": packet["status"], "packet": packet,
-                  "artifacts": {p.stem: artifact(p) for p in sorted(directory.glob("*.json"))}}
+                  "artifacts": review_artifacts(directory)}
         record["record_sha256"] = ri.digest(record)
         write_json(directory / "record.json", record)
         return record
