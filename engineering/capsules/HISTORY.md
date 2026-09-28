@@ -3902,3 +3902,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** f92ab176d8ff1cf1df1cd6b12352da3cf1ea1d5e
 - **Full-capsule recovery path:** engineering/capsules/active/GH-227-stale-index-lock.md
 - **Historical capsule SHA-256:** 184411f3ec9e1088c10b40f263168619d47162594fa30c0f4e8cab4ee85c97de
+
+### GH-228 - Align session startup and live workflow guidance
+
+- **ID:** GH-228
+- **Title:** Align session startup and live workflow guidance
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/228; revision-two implementation authorization comment 5861681418 and distinct terminal authorization comment 5861738989. Revision-one failed review remains preserved.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** ba2b00ee15ef18b5e817ab6fa89208040ab2b59c
+- **Task branch:** task/GH-228-r2
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 2faef92edb0f5b1fd1812e171e13dfead537ac29
+- **Verified commit reference(s):** 2faef92edb0f5b1fd1812e171e13dfead537ac29
+- **Reviewed source commit:** 2faef92edb0f5b1fd1812e171e13dfead537ac29
+- **Reviewed task/checkpoint commit(s):** 2faef92edb0f5b1fd1812e171e13dfead537ac29
+- **Integration/merged commit:** 2faef92edb0f5b1fd1812e171e13dfead537ac29
+- **Integration-related commit reference(s):** Protected C at 2faef92edb0f5b1fd1812e171e13dfead537ac29; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 5/5 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-5 and thirteen changed paths with no findings.
+- **Verification summary:** Focused startup tests and repository baseline passed; RI P-to-C comparable with thirteen controller path dispositions. Documentation validation, offline risk validation, shell syntax and diff checks passed.
+- **Specialized qualification:** Dedicated App check 108752706011 passed repository profile at C; terminal T requires distinct repository App check.
+- **Known warnings:** Existing non-blocking DOMAIN_TOKEN_IN_OPS_MIGRATION. Revision-one reviewer STOP_REPLAN on a wrong RI evidence-reader key is preserved; revision two clarified the exact key and independently repeated all gates.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** Current guidance now starts with the one-command updater in a working checkout and preserves a clean trusted controller checkout. Reviewers must use the exact `$structural` evidence-reader key for raw RI artifacts.
+- **Referenced commits:** Planning 1a8d4198e821497497ee75d85e5b133d16e4feca; implementation 2faef92edb0f5b1fd1812e171e13dfead537ac29; full reviewed capsule 90451faa2a88fbc46ac220d16481b295d07d4d70.
+- **Full-capsule recovery commit:** 90451faa2a88fbc46ac220d16481b295d07d4d70
+- **Full-capsule recovery path:** engineering/capsules/active/GH-228.md
+- **Historical capsule SHA-256:** 511a447656a6ad2823e140c2ccdf243e290adfe434373561eecbe5e52f39276f
