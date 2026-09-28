@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nutrition-backend"
-version = "2.0.2"
+version = "2.1.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "alembic>=1.13",

@@ -415,7 +415,7 @@ def test_current_document_contract_inventory_is_semantically_bounded() -> None:
     assert DOCS_VALIDATOR.CURRENT_STATUS_CONTRACTS[
         "docs/project/current-state.md"
     ] == (
-        "Version 2.0 is the current product line.",
+        "Root `VERSION` is the canonical",
         "Epic 4 — Nutrition History and Trends is implemented and qualified.",
         "Epic 5 — Recipe Reuse and Discovery is outcome complete "
         "and retired as a planning unit.",
@@ -491,6 +491,31 @@ def test_current_document_contract_detects_project_status_drift(
         "'Epic 5 — Recipe Reuse and Discovery is outcome complete "
         "and retired as a planning unit.'",
     ]
+
+
+def test_current_document_contract_tracks_root_release_version(tmp_path: Path) -> None:
+    (tmp_path / "VERSION").write_text("2.1.0\n")
+    _write_document_fixture(
+        tmp_path,
+        "docs/project/current-state.md",
+        "Root `VERSION` is the canonical repository release authority "
+        "with exact value `2.0.2`.\n",
+    )
+    current = tmp_path / "docs/project/current-state.md"
+    contracts = {
+        "docs/project/current-state.md": ("Root `VERSION` is the canonical",),
+    }
+
+    assert DOCS_VALIDATOR._current_status_contract_errors(
+        root=tmp_path, contracts=contracts,
+    ) == [
+        "docs/project/current-state.md: current release identity does not match VERSION '2.1.0'",
+    ]
+
+    current.write_text(current.read_text().replace("2.0.2", "2.1.0"))
+    assert DOCS_VALIDATOR._current_status_contract_errors(
+        root=tmp_path, contracts=contracts,
+    ) == []
 
 
 def test_current_document_contract_ignores_historical_and_pinned_predecessors(

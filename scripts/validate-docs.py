@@ -63,7 +63,7 @@ CURRENT_MIGRATION_HEAD_CONTRACTS: dict[str, tuple[str, ...]] = {
 
 CURRENT_STATUS_CONTRACTS: dict[str, tuple[str, ...]] = {
     "docs/project/current-state.md": (
-        "Version 2.0 is the current product line.",
+        "Root `VERSION` is the canonical",
         "Epic 4 — Nutrition History and Trends is implemented and qualified.",
         "Epic 5 — Recipe Reuse and Discovery is outcome complete "
         "and retired as a planning unit.",
@@ -272,6 +272,12 @@ def _current_status_contract_errors(
             continue
 
         text = path.read_text(encoding="utf-8")
+        if relative == "docs/project/current-state.md" and (root / "VERSION").is_file():
+            version = (root / "VERSION").read_text(encoding="utf-8").strip()
+            if not version or f"exact value `{version}`" not in text:
+                errors.append(
+                    f"{relative}: current release identity does not match VERSION {version!r}"
+                )
         for statement in required_statements:
             if statement not in text:
                 errors.append(

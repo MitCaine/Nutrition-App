@@ -4,15 +4,16 @@
 
 ## Release and product status
 
-Version 2.0 is the current product line. Root `VERSION` is the canonical
-repository release authority with exact value `2.0.0`; current mobile, Expo,
-backend, and documentation metadata mirror it. The finalized Version 2.0 release
-was qualified with Node 24 and Python 3.12. Current development and qualification
-use the updated Node 26 and Python 3.14 toolchain.
+Version 2.1 is the current source-release line. Root `VERSION` is the canonical
+repository release authority with exact value `2.1.0`; current mobile, Expo,
+backend, and documentation metadata mirror it. The Version 2.0 release was
+qualified with Node 24 and Python 3.12. Current development and qualification
+use the Node and Python lines declared by `.nvmrc` and `.python-version`.
 
-The finalized [Version 2.0 release record](../historical/releases/version-2.0-release.md)
-preserves the qualified integration commit, annotated tag, and GitHub Release
-publication evidence.
+The v2.1.0 source release is being prepared; its GitHub tag and release will
+follow qualification, independent review, and repository closeout. The finalized
+[Version 2.0 release record](../historical/releases/version-2.0-release.md)
+preserves that earlier release's qualification and publication evidence.
 
 Epic 4 — Nutrition History and Trends is implemented and qualified.
 Epic 5 — Recipe Reuse and Discovery is outcome complete and retired as a planning unit.
@@ -90,8 +91,12 @@ Use that index rather than maintaining a second routing table here.
 - Some nutrients intentionally have no established DRI/FDA goal and therefore default to amount-only presentation instead of inventing a target. Per-nutrient preferences can also explicitly select amount-only or ignored tracking.
 - The independent control gate is not consumed by ordinary local application requests. Remote provider routing, infrastructure backup/restore, and readback remain bounded operator/provider responsibilities distinct from the local user backup feature.
 - Local infrastructure qualification proves only its documented disposable topology/provider stand-ins; it is not production-vendor certification.
-- The repository currently has three open Dependabot alerts in the Expo/toolchain dependency graph: two high-severity `image-size` alerts and one medium-severity `uuid` alert. Compatible upstream remediation remains deferred; incompatible forced upgrades are not treated as valid remediation.
-- Version 2.0 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
+- Dependency-alert status changes independently of release metadata. The
+  [dependency-risk register](../../engineering/security/dependency-risk-register.json)
+  owns the reviewed residual `uuid` finding; the current mobile lock contains
+  the compatible patched `js-yaml` release. Check GitHub security alerts for
+  newly reported findings instead of relying on a fixed count in this guide.
+- Version 2.1.0 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
 
 ## Authority and maintenance
 
