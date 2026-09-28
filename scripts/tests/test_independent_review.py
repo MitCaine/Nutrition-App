@@ -107,6 +107,16 @@ class IndependentReviewTests(CandidateFixture):
             review.read_source(self.repo, binding, "nutrition_read_source", {
                 "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 2})
 
+    def test_serialized_line_response_includes_metadata_and_json_escaping(self):
+        for index, line in enumerate((b"x" * 99_990, b"\x01" * 20_000)):
+            (self.repo / "app.py").write_bytes(line + b"\n")
+            self.git("add", "app.py")
+            self.git("commit", "-qm", f"serialized response case {index}")
+            self.candidate = self.git("rev-parse", "HEAD")
+            with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_RESPONSE_LIMIT"):
+                review.read_source(self.repo, self.binding(), "nutrition_read_source", {
+                    "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 1})
+
     def test_pre_review_retry_is_classified_after_terminal_drain(self):
         binding = self.binding()
         identity = {"executable": str(Path(sys.executable).resolve()), "sha256": "fixture",

@@ -164,10 +164,11 @@ def read_source(repo: Path, binding: dict, tool: str, arguments: dict,
         if end > len(lines):
             raise EvidenceError("REVIEW_SOURCE_RANGE_EMPTY")
         content = "\n".join(f"{i + start}: {line}" for i, line in enumerate(lines[start - 1:end]))
-        if len(content.encode()) > 100_000:
+        result = {"commit": commit, "path": arguments["path"], "sha256": source_sha256,
+                  "total_lines": len(lines), "content": content}
+        if len(json.dumps(result).encode()) > 100_000:
             raise EvidenceError("REVIEW_SOURCE_RESPONSE_LIMIT")
-        return {"commit": commit, "path": arguments["path"], "sha256": source_sha256,
-                "total_lines": len(lines), "content": content}
+        return result
     if tool == "nutrition_read_source_bytes":
         if set(arguments) != {"revision", "path", "start_byte", "end_byte"}:
             raise EvidenceError("REVIEW_SOURCE_ARGUMENTS_INVALID")
