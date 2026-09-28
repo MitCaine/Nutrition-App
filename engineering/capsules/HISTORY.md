@@ -4229,3 +4229,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** af81de6c26c275f498085eb193385f2f531da14d
 - **Full-capsule recovery path:** engineering/capsules/active/GH-235.md
 - **Historical capsule SHA-256:** a8d658bcece8904b9c1061658bfa205526cb9282c5975c47ee17da13a5584bee
+
+### GH-236 - Update capsule and RI operator docs for the accepted default workflow
+
+- **ID:** `GH-236`
+- **Title:** Update capsule and RI operator docs for the accepted default workflow
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** documentation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/236; revision-two implementation authorization comment 5868878615, failed-review retention comment 5868916433, and distinct terminal authorization comment 5869049432.
+- **Issue disposition:** Implementation C2 integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** e6ef5102c92064c33667dc227453c801135624e1
+- **Task branch:** task/GH-236-r2
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 404b4dffa0f2e287b44814db97ebabe961f6de2c and 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b.
+- **Verified commit reference(s):** 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b
+- **Reviewed source commit:** 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b
+- **Reviewed task/checkpoint commit(s):** 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b
+- **Integration/merged commit:** 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b on main.
+- **Integration-related commit reference(s):** Protected C2 at 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C2 reviewer for six ACs, six original outcomes, two standards and all seven Markdown paths, no findings. The first review stopped without a verdict and remains preserved.
+- **Verification summary:** Candidate documentation validation passed 104 Markdown files and 636 local links; capsule validation and session-end 75 audit-tooling tests passed. Frozen docs/capsule checks passed in a clean offline clone. The six authorized guide/index files now describe the attached default, historical #193/#194 roles, compatibility exceptions, template evidence choices, direct index links and current RI coverage statuses. User dirty docs and historical pilot were untouched.
+- **Specialized qualification:** Dedicated App 4708441 check 108906653003 passed exact C2 repository profile; P 4b82ce243347287c922e91dc76a3dcd08e385ad5 check 108905374329 passed. Terminal T requires a distinct repository check.
+- **Known warnings:** C1 404b4dffa0f2e287b44814db97ebabe961f6de2c reviewer exhausted the 200-call budget with single-line evidence reads. It was not approved. Controller state, trace and outcome were retained with SHA-256 values in the reviewed capsule and owner comment 5868916433; no C1 decision was reused. The existing migration-domain-token session warning remained nonblocking.
+- **Deferred work/follow-up IDs:** Compatibility-interface retirement still requires a separate caller inventory and migration/recovery review; no retirement is included here.
+- **Retrospective:** Documentation-only changes still require direct full-diff review when RI classifies Markdown as unsupported; request useful bounded evidence ranges to avoid exhausting reviewer tool calls.
+- **Referenced commits:** Planning 4b82ce243347287c922e91dc76a3dcd08e385ad5; implementation 2d34ad1ee859eb0cb32dff2d31b90a91749b4c6b; full reviewed capsule 5dbebdabc66cfbd04ab67565258e164d3bc09ee7.
+- **Full-capsule recovery commit:** 5dbebdabc66cfbd04ab67565258e164d3bc09ee7
+- **Full-capsule recovery path:** engineering/capsules/active/GH-236.md
+- **Historical capsule SHA-256:** 590500df02710994ef526731cb10fda1e80726a9983d8182af9551b91c85700e
