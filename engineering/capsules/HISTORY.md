@@ -4193,3 +4193,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 02c8a3a21946f2227ba07bd21e6e3222bf7f7f54
 - **Full-capsule recovery path:** engineering/capsules/active/GH-234.md
 - **Historical capsule SHA-256:** fd9c9d70fababc6abdcade23b1194010056c41e492f02a81168a7284132635ea
+
+### GH-235 - Align RI navigation and structural source classification
+
+- **ID:** `GH-235`
+- **Title:** Align RI navigation and structural source classification
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/235; revision-two implementation authorization comment 5868431637, failed-review retention comment 5868466669, and distinct terminal authorization comment 5868586894.
+- **Issue disposition:** Implementation C2 integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** b4107459b80977268fbba42c632561e2e43d47da
+- **Task branch:** task/GH-235-r2
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e4b62abe3c914793a36f27aae195ef940e4b6015 and 2ea721191358a924863c9577fe812879ae5c1a1c.
+- **Verified commit reference(s):** 2ea721191358a924863c9577fe812879ae5c1a1c
+- **Reviewed source commit:** 2ea721191358a924863c9577fe812879ae5c1a1c
+- **Reviewed task/checkpoint commit(s):** 2ea721191358a924863c9577fe812879ae5c1a1c
+- **Integration/merged commit:** 2ea721191358a924863c9577fe812879ae5c1a1c on main.
+- **Integration-related commit reference(s):** Protected implementation C2 at 2ea721191358a924863c9577fe812879ae5c1a1c; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C2 reviewer for four ACs, four original outcomes, two standards and all five structural paths, no findings. The first review stopped without a verdict and remains preserved.
+- **Verification summary:** Shared classification and selection status preserve committed regular-file and exclusion checks. Uppercase Python navigated with real pinned RI, and excluded-only, unsupported-only and mixed fixtures passed. Native pinned RI tests passed 34 with two subtests; affected baseline passed 80 with three opt-in skips. Frozen focused and baseline checks passed.
+- **Specialized qualification:** Dedicated App check 108896322184 passed exact C2 repository profile; P b812e1110fbd8700d5a3e3136a764d7bb229bd97 planning check 108895042984 passed. Terminal T requires a distinct repository check.
+- **Known warnings:** Initial C1 e4b62abe3c914793a36f27aae195ef940e4b6015 review exhausted the 200-call budget with single-line artifact reads. It was not approved. Controller state, trace and outcome were retained with SHA-256 values in the reviewed capsule and owner comment 5868466669; none of its decisions were reused.
+- **Deferred work/follow-up IDs:** #236 documentation and workflow alignment remains separate.
+- **Retrospective:** Request useful bounded evidence ranges during independent review; one-line loops can exhaust a finite call budget without covering an artifact.
+- **Referenced commits:** Planning b812e1110fbd8700d5a3e3136a764d7bb229bd97; implementation 2ea721191358a924863c9577fe812879ae5c1a1c; full reviewed capsule af81de6c26c275f498085eb193385f2f531da14d.
+- **Full-capsule recovery commit:** af81de6c26c275f498085eb193385f2f531da14d
+- **Full-capsule recovery path:** engineering/capsules/active/GH-235.md
+- **Historical capsule SHA-256:** a8d658bcece8904b9c1061658bfa205526cb9282c5975c47ee17da13a5584bee
