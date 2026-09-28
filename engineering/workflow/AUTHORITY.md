@@ -119,8 +119,10 @@ authorization and dedicated-App qualification exactly like any other protected u
 `finalize-cancel` uses the same separately protected two-path terminal transaction
 with a full `CANCELLED` recovery capsule; it does not invent a reviewed implementation C.
 
-Execution and opted-in candidate/review attachment checks are mechanical. Terminal links
-still require the separate closeout transaction. Existing executable gates apply.
+Execution and attached candidate/review checks are mechanical for the normal new-task
+path. In-flight unattached tasks and explicit compatibility exceptions retain their
+established checks. Terminal links still require the separate closeout transaction.
+Existing executable gates apply.
 
 ## State, concurrency and recovery
 

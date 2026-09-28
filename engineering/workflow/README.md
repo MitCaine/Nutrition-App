@@ -30,6 +30,7 @@ commit/path and SHA-256 for the historical full capsule.
 | Artifact | Responsibility |
 | --- | --- |
 | [Start here](START_HERE.md) | Current operator sequence |
+| [Responsibility Map](RESPONSIBILITY_MAP.md) | Owners, crossing interfaces and decision boundaries |
 | [Authority](AUTHORITY.md) | Ownership, attachment design, compatibility and cutover boundaries |
 | [Bounded execution](EXECUTION.md) | Optional READY command transport and checkpoints |
 | [Candidate evidence](CANDIDATE_EVIDENCE.md) | Default attached candidate checks, RI evidence and observed independent review |
