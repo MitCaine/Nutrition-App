@@ -4082,3 +4082,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 498777e2795f2deae3ad31a940704e55c2de885d
 - **Full-capsule recovery path:** engineering/capsules/active/GH-231.md
 - **Historical capsule SHA-256:** 1967a2b15cd530807964fc6eaad5b74bededc04e58a82784325f945cd4fc9de8
+
+
+### GH-232 - Require explicit original-objective and standards dispositions
+
+- **ID:** `GH-232`
+- **Title:** Require explicit original-objective and standards dispositions
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/232; implementation authorization comment 5866065515 and distinct terminal authorization comment 5866411363.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** a906246d30f19cc31073adb76b750d499530426c
+- **Task branch:** task/GH-232
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e5c8761a7645dae61f0cdc407a3cf073e3c5dce2
+- **Verified commit reference(s):** e5c8761a7645dae61f0cdc407a3cf073e3c5dce2
+- **Reviewed source commit:** e5c8761a7645dae61f0cdc407a3cf073e3c5dce2
+- **Reviewed task/checkpoint commit(s):** e5c8761a7645dae61f0cdc407a3cf073e3c5dce2
+- **Integration/merged commit:** e5c8761a7645dae61f0cdc407a3cf073e3c5dce2 on main.
+- **Integration-related commit reference(s):** Protected implementation C at e5c8761a7645dae61f0cdc407a3cf073e3c5dce2; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and all seven structural changed paths, no findings.
+- **Verification summary:** Focused and baseline evidence/reviewer tests passed; a real isolated reviewer oracle exercised explicit matrices and expected nonapproval; pinned RI comparison and seven path dispositions passed; documentation and capsule validation passed.
+- **Specialized qualification:** Dedicated App check 108847366613 passed exact C repository profile. Terminal T requires a distinct repository check.
+- **Known warnings:** C was attached under the pre-integration controller, so its existing sealed binding lacks the new review-obligations field; the post-integration first-stage closeout uses that exact earlier controller. The fresh reviewer directly inspected all obligations and approved. Future attachments use the new schema.
+- **Deferred work/follow-up IDs:** #233–#236 remain separate.
+- **Retrospective:** A controller-format change must account for already sealed pre-integration state during terminal closeout; preserve exact original records and use their creating controller for recovery.
+- **Referenced commits:** Planning fcbee5e386a55d6b7a7a25e32f293b9be7048fc8; implementation e5c8761a7645dae61f0cdc407a3cf073e3c5dce2; full reviewed capsule 5a55748f1cc1de9a46094844b805fcf8fb9a14db.
+- **Full-capsule recovery commit:** 5a55748f1cc1de9a46094844b805fcf8fb9a14db
+- **Full-capsule recovery path:** engineering/capsules/active/GH-232.md
+- **Historical capsule SHA-256:** 95b0ba174e078490bdaf524fdaded412c38f012855194ad471cecb72e3888a22
