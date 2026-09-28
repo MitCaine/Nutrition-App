@@ -3938,3 +3938,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 90451faa2a88fbc46ac220d16481b295d07d4d70
 - **Full-capsule recovery path:** engineering/capsules/active/GH-228.md
 - **Historical capsule SHA-256:** 511a447656a6ad2823e140c2ccdf243e290adfe434373561eecbe5e52f39276f
+
+### GH-229 - Prepare Nutrition App v2.1.0 source release
+
+- **ID:** GH-229
+- **Title:** Prepare Nutrition App v2.1.0 source release
+- **Final state:** MERGED
+- **Capsule revision:** 5
+- **Task type:** release
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/229; revision-five implementation authorization comment 5862574013 and distinct terminal authorization comment 5862770445. Earlier stopped review candidates remain preserved.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize. GitHub tag/release publication follows accepted T.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** 2611b96b393040d71ede27bdca67ace1d9963b9a
+- **Task branch:** task/GH-229-r5
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 0c52475068844240206a24ee9e86806d61505939
+- **Verified commit reference(s):** 0c52475068844240206a24ee9e86806d61505939
+- **Reviewed source commit:** 0c52475068844240206a24ee9e86806d61505939
+- **Reviewed task/checkpoint commit(s):** 0c52475068844240206a24ee9e86806d61505939
+- **Integration/merged commit:** 0c52475068844240206a24ee9e86806d61505939
+- **Integration-related commit reference(s):** Protected C at 0c52475068844240206a24ee9e86806d61505939; distinct terminal T requires qualification and protected integration before GitHub publication.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and twelve changed paths with no findings after reading all fifteen authenticated raw RI pages.
+- **Verification summary:** Frozen offline dependency-risk, documentation tests, mobile npm ci plus installed js-yaml 3.15.2, and repository baseline passed. RI P-to-C comparable with twelve controller path dispositions. VERSION and current metadata mirror 2.1.0; current-state release wording remains pre-publication until the tag and GitHub Release are created.
+- **Specialized qualification:** Dedicated App check 108774138076 passed repository, backend, mobile and ios-native at exact C; terminal T requires distinct repository App check.
+- **Known warnings:** Existing non-blocking DOMAIN_TOKEN_IN_OPS_MIGRATION and retained reviewed uuid risk. Revision-two pre-publication wording correction, revision-three evidence response limit and revision-four incomplete independent review remain preserved as failed candidates.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** Release metadata and security prose are derived from the current source and risk register; an authenticated offline npm install is part of the exact-candidate packet. Reviewer evidence must be paged within the response limit, and planning READY versus candidate IMPLEMENTED states reflect the expected capsule lifecycle.
+- **Referenced commits:** Planning 68f472aabc2cd62ccf798be7b5a7014914a64aef; implementation 0c52475068844240206a24ee9e86806d61505939; full reviewed capsule 9dfb48bfd3a26af9d79c42803d251aec1354bf35.
+- **Full-capsule recovery commit:** 9dfb48bfd3a26af9d79c42803d251aec1354bf35
+- **Full-capsule recovery path:** engineering/capsules/active/GH-229.md
+- **Historical capsule SHA-256:** bbbf2159c2b17437d911f4520735006cd644b7575e86f6889e405b89192abee1
