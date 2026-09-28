@@ -1,6 +1,6 @@
 # Controller authority and capsule attachment
 
-> **Document role: Engineering Process.** Current ownership and the migration contract.
+> **Document role: Engineering Process.** Current ownership, attachment and compatibility contract.
 
 ## Current authority
 
@@ -38,7 +38,7 @@ instructions, but cannot manufacture a passed gate or silently revise fixed task
 | `scripts/lib/trusted_qualification.py` and trusted workflows | Candidate-independent plan/finalization and dedicated-App check | Retain GH-171 credential/cache isolation |
 | `scripts/lib/qualification_profiles.py` | Repository/backend/mobile/postgresql/ios-native registry | Retain selected profiles and mandatory-native floor |
 | `scripts/capsule`, `scripts/capsule.py` | Legacy capsule state transitions and legacy remote qualification | Retain lifecycle compatibility; legacy qualification cannot satisfy the trusted-App gate by itself |
-| `scripts/validate-task-capsules.py` | Capsule schema, READY overlay and HISTORY recovery | Retain; explicitly selected migration capsules use it |
+| `scripts/validate-task-capsules.py` | Capsule schema, READY overlay and HISTORY recovery | Retain for the normal attached path and compatibility capsules |
 | `scripts/render-task-handoff.py` | Authenticated READY handoff outside candidate source | Reuse for execution attachment; never use as external authorization |
 | `scripts/run-review.sh` | Source/log/check evidence bundle | Retain; a bundle is evidence, not an approval |
 | Session, documentation and phase-boundary scripts | Repository consistency checks | Retain, including deterministic control-plane inventory |
@@ -52,15 +52,19 @@ capsule/candidate, command records, dedicated-App qualification and observed ind
 The [bounded execution command](EXECUTION.md) separately attaches READY execution authority.
 Legacy capsule commands do not attach automatically. [Pinned RI navigation](../tooling/RI.md)
 is normal controller tooling for new tasks. Attached capsules can require
-[source-bound structural review](../tooling/RI.md#candidate-structural-evidence); #193 owns
-combined protected closeout; #194 owns promotion and retirement after pilots.
+[source-bound structural review](../tooling/RI.md#candidate-structural-evidence).
+Historical #193 owned the guarded `./scripts/task finalize` closeout now described in
+[START_HERE](START_HERE.md); historical #194 owned the pilot promotion decision recorded
+in the [workflow changelog](CHANGELOG.md). Neither is a pending command or permission to
+retire compatibility interfaces. A separate caller inventory and migration/recovery
+review must precede any retirement.
 
 ## Capsule attachment design
 
 This is the attachment contract. The [execution command](EXECUTION.md) implements
 planning/runtime binding for the initial bounded-command transport. The
 [candidate evidence lane](CANDIDATE_EVIDENCE.md) implements candidate/review binding;
-terminal closeout remains separately owned. It is not an added
+terminal closeout uses the separate guarded `task finalize` authority. It is not an added
 v1 capsule metadata key or authorization-v1 extension. Keep the capsule schema and authorization v1
 compatible until a separately reviewed implementation defines versioned storage.
 
@@ -128,8 +132,8 @@ state does not advance controller authority, and an integrated candidate does no
 an active capsule. Use [States](STATES.md) for legal capsule transitions and [Evidence](EVIDENCE.md)
 for terminal facts. No legacy state is silently renamed or discarded.
 
-For this migration, serialize integration and capsule planning against current main;
-only one non-administrative active migration capsule is allowed. Independent preparation
+For the current attached path, serialize integration and capsule planning against current main;
+only one non-administrative active capsule is allowed. Independent preparation
 may use separate worktrees, but it cannot assume an intermediate unpublished base. Refresh
 main before each consequential action. A moved base or incompatible active task requires
 replanning with preserved source/evidence, not an automatic rebase and reused approval.

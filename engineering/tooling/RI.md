@@ -113,7 +113,8 @@ truncate membership. The consumer selects only explicit committed Git regular fi
 materializes them outside the repository. Symlinks/submodules fail. Untracked/ignored working
 files are never implicitly scanned. `.gitignore` is not treated as a membership authority.
 
-Selected suffixes are Python, JS/JSX/MJS/CJS and TS/TSX/MTS/CTS. Hidden paths and directory
+Selected suffixes are Python, JS/JSX/MJS/CJS and TS/TSX/MTS/CTS, compared without suffix-case
+differences. Hidden paths and directory
 names node_modules, venv, __pycache__, target, dist, build and generated are excluded and
 reported. Unsupported/other committed paths are reported separately. Limits are1000 selected
 files,4MB per file,40MB total, query300characters, and1–20 matches. The bounded packet is at
@@ -140,8 +141,13 @@ commit an authorized candidate and query that exact revision.
 `excluded` yields exit2. Invalid input, runtime drift, source mismatch or failed acquisition
 stops with exit1. No status proves semantic completeness; zero matches never proves absence.
 Parser failures stay visible, and incomplete observations may contain useful neighboring
-locations without qualifying structural completeness. Unsupported-only selections explicitly
-return unsupported, rather than an empty success. Malformed source remains incomplete.
+locations without qualifying structural completeness. The top-level `selection_status`
+separately reports `supported-only`, `excluded-only`, `unsupported-only`, or `mixed` selection;
+the scope retains excluded and unsupported paths with counts. A selection with only excluded
+files has `mapping_status: excluded`; unsupported-only and excluded/unsupported mixtures
+remain non-successful `unsupported` mapping status. A selection with supported files can have
+`mapping_status: navigation_only` and `selection_status: mixed`; the latter explicitly warns
+that excluded or unsupported files were outside the RI scan. Malformed source remains incomplete.
 
 Raw RI directory JSON is larger than its match list and retains per-file metadata. The
 consumer packet is bounded separately. Full diff/direct-source review is mandatory for Swift,
@@ -287,9 +293,13 @@ Inspect the record and every changed path, then write an external controller dis
 
 Every changed path appears exactly once. Unexpected changes must be corrected or replanned;
 `expected` requires a concrete authority and qualification explanation. Import/config-only or
-empty callable deltas still need full-diff review. Unsupported-only changes receive the explicit
-`unsupported-only` coverage status, requiring path dispositions and ordinary/specialist/manual
-checks from the capsule. This status neither globally blocks Swift work nor proves its behavior.
+empty callable deltas still need full-diff review. Structural evidence reports
+`selection_status` across changed files as `supported-only`, `excluded-only`,
+`unsupported-only`, or `mixed`. With supported files its comparison status remains
+`comparable`; without them, the status identifies the excluded, unsupported, or mixed
+coverage limit. Every changed path still needs a disposition and the capsule's ordinary,
+specialist and manual checks. These statuses neither globally block Swift work nor prove its
+behavior.
 
 ```bash
 ./scripts/task --state-dir "$STATE" evidence ISSUE disposition \

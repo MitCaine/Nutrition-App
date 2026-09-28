@@ -1,11 +1,14 @@
 # Candidate evidence and independent review
 
-> **Document role: Engineering Process.** Optional attached lane implemented by GH-190.
+> **Document role: Engineering Process.** Current attached evidence lane for new tasks.
 
-Use the accepted controller from clean synchronized main, a separate committed candidate,
-and controller state outside that candidate. This lane preserves external authorization,
-trusted qualification and protected integration. It does not promote capsule/RI policy.
-Unattached compatibility tasks keep their existing explicit verifier/reviewer interface.
+New tasks normally use this capsule-attached lane with pinned RI evidence through the
+[trusted controller](START_HERE.md). Use the accepted controller from clean synchronized
+main, a separate committed candidate, and controller state outside that candidate.
+External authorization, trusted qualification, independent review and protected
+integration remain separate gates. An in-flight unattached task or an explicitly
+justified compatibility exception may retain the existing explicit verifier/reviewer
+interface; neither exception silently becomes attached or retires the legacy commands.
 
 ## Frozen evidence requirements
 

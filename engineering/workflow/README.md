@@ -24,12 +24,16 @@ The full capsule remains in `engineering/capsules/active/` through review.
 Terminal outcomes are represented by the task's unique record in
 `engineering/capsules/HISTORY.md`, which preserves an exact Git recovery
 commit/path and SHA-256 for the historical full capsule.
+
 ## Index
 
 | Artifact | Responsibility |
 | --- | --- |
 | [Start here](START_HERE.md) | Current operator sequence |
 | [Authority](AUTHORITY.md) | Ownership, attachment design, compatibility and cutover boundaries |
+| [Bounded execution](EXECUTION.md) | Optional READY command transport and checkpoints |
+| [Candidate evidence](CANDIDATE_EVIDENCE.md) | Default attached candidate checks, RI evidence and observed independent review |
+| [Repository Intelligence](../tooling/RI.md) | Pinned committed-source navigation and structural evidence |
 | [Workflow](WORKFLOW.md) | End-to-end gates, exceptions, human decisions, and automation eligibility |
 | [States](STATES.md) | Task state machine, blocking overlay, and readiness gate |
 | [Task Capsule Contract](TASK_CAPSULE.md) | Versioned Markdown/TOML capsule schema |

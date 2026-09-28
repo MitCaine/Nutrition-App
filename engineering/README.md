@@ -36,6 +36,10 @@ repository-owned [task states](workflow/STATES.md), the versioned
 [capsule contract](workflow/TASK_CAPSULE.md), [routing](workflow/ROUTING.md),
 [evidence](workflow/EVIDENCE.md), and the
 [failure taxonomy](workflow/FAILURE_TAXONOMY.md).
+Open the [bounded execution guide](workflow/EXECUTION.md),
+[attached candidate evidence guide](workflow/CANDIDATE_EVIDENCE.md), and
+[Repository Intelligence guide](tooling/RI.md) directly for the current
+controller tools and their authority limits.
 
 For new tasks, the capsule/RI path is normal. The full non-terminal execution contract remains
 under `engineering/capsules/active/` through `REVIEWED` or the last
@@ -53,6 +57,7 @@ The owner's [2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issu
 made the combined path normal for new tasks. In-flight unattached tasks and
 explicit compatibility exceptions retain their existing controller path; see
 the [workflow entrypoint](workflow/START_HERE.md) for current boundaries.
+
 ## Git conventions
 
 Use short-lived, kebab-case branches with one of these prefixes:

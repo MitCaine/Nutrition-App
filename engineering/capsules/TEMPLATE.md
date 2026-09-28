@@ -50,10 +50,13 @@ Provide only context a fresh executor needs; link rather than copy authority.
 - List authoritative repository artifacts in precedence order.
 - Name the issue/backlog authority, or `Not applicable — <reason>`.
 
-For an attached candidate, replace this example with exact issue-body outcome quotes and
-applicable standard paths/line ranges at `base_commit` before READY. Map an outcome to
-existing AC IDs, an unresolved reason, or a separately authenticated owner deferral.
+For a new task, plan capsule attachment before READY. Replace this example with exact
+issue-body outcome quotes and applicable standard paths/line ranges at `base_commit`.
+Map every outcome to existing AC IDs, an unresolved reason, or a separately authenticated
+owner deferral.
 The [candidate-evidence guide](../workflow/CANDIDATE_EVIDENCE.md) defines the fields.
+An in-flight unattached task or explicitly justified compatibility exception may use its
+established interface; record the exception rather than manufacturing an attachment.
 
 ```nutrition-review-obligations-v1
 {"schema_version":1,"outcomes":[{"id":"OUT-1","quote":"Exact requested outcome from issue body","mapping":{"type":"criteria","ids":["AC-1"]}}],"standards":[{"id":"STD-1","path":"AGENTS.md","start_line":53,"end_line":56,"reason":"Relevant repository invariant"}]}
@@ -84,12 +87,15 @@ The [candidate-evidence guide](../workflow/CANDIDATE_EVIDENCE.md) defines the fi
 
 ## Required verification
 
-For an explicitly attached candidate, declare frozen command requirements in the
-single `nutrition-evidence-v1` block described by
-[Candidate evidence](../workflow/CANDIDATE_EVIDENCE.md). Add the
-`nutrition-ri-v1` changed-files block only when structural RI evidence is required.
-Choose current profiles from changed authority and path impact; do not copy pilot
-versions or infer that a zero callable delta waives unsupported-file review.
+For the normal new-task attached path, declare focused and baseline frozen commands in
+exactly one `nutrition-evidence-v1` block before READY, as described by
+[Candidate evidence](../workflow/CANDIDATE_EVIDENCE.md). Decide before READY whether the
+`nutrition-ri-v1` changed-files block is required for structural review, and state the
+selection and reason. Pinned RI navigation remains source evidence even when structural
+selection is not required. Choose task-specific profiles from actual path impact and
+authority; do not copy pilot profiles or treat a zero callable delta as a waiver of
+unsupported-file or full-diff review. For a justified compatibility task, record its
+existing verification path and reason instead of adding unattached frozen blocks.
 
 ### Focused
 
