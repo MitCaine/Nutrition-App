@@ -4119,3 +4119,40 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 5a55748f1cc1de9a46094844b805fcf8fb9a14db
 - **Full-capsule recovery path:** engineering/capsules/active/GH-232.md
 - **Historical capsule SHA-256:** 95b0ba174e078490bdaf524fdaded412c38f012855194ad471cecb72e3888a22
+
+
+### GH-233 - Strengthen real RI consumer fixtures with independent expected results
+
+- **ID:** `GH-233`
+- **Title:** Strengthen real RI consumer fixtures with independent expected results
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** tooling
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/233; revision-three implementation authorization comment 5866647497, corrected-C2 native proof comment 5866851771, and distinct terminal authorization comment 5866986818.
+- **Issue disposition:** Implementation C2 integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** d27b1bf0e3960b7a42cc548dcd39e98c9ed2cecd
+- **Task branch:** task/GH-233-r3
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 72712db856fef59f410f3635c425059f3fdc2998 and d9ba0c2c005021507009d7be75fa54040792b285.
+- **Verified commit reference(s):** d9ba0c2c005021507009d7be75fa54040792b285
+- **Reviewed source commit:** d9ba0c2c005021507009d7be75fa54040792b285
+- **Reviewed task/checkpoint commit(s):** d9ba0c2c005021507009d7be75fa54040792b285
+- **Integration/merged commit:** d9ba0c2c005021507009d7be75fa54040792b285 on main.
+- **Integration-related commit reference(s):** Protected implementation C2 at d9ba0c2c005021507009d7be75fa54040792b285; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C2 reviewer for four ACs, four original outcomes, two standards and all three structural paths, no findings. Rejected C1 review remains preserved.
+- **Verification summary:** Native macOS arm64/Python 3.14 pinned-RI run passed 31 tests with zero skips and owner-bound manifest/lock/source proof; frozen command checks passed with four explicitly unqualified runtime skips; literal navigation and complete declaration/file-change assertions passed; session-end 75 tests passed.
+- **Specialized qualification:** Dedicated App check 108860896665 passed exact C2 repository profile; owner native proof comment 5866851771 authenticated. Terminal T requires a distinct repository check.
+- **Known warnings:** Revision-one planning lacked a native proof check; revision-two named a nonexistent baseline test; both were preserved. C1 independent review requested bounded correction for omitted raw navigation declaration kind; C2 corrected it and was freshly qualified and reviewed.
+- **Deferred work/follow-up IDs:** #234–#236 remain separate.
+- **Retrospective:** Independent fixture oracles should inspect raw RI kinds as well as bounded projection names/ranges, and distinguish skipped controller tests from native runtime proof.
+- **Referenced commits:** Planning 62b5b983eb7cc416157c36bdcfd387632b71bbdb; implementation d9ba0c2c005021507009d7be75fa54040792b285; full reviewed capsule fc7f818ca5698a74b09b7e40f5da1afa810dd74a.
+- **Full-capsule recovery commit:** fc7f818ca5698a74b09b7e40f5da1afa810dd74a
+- **Full-capsule recovery path:** engineering/capsules/active/GH-233.md
+- **Historical capsule SHA-256:** 9eb15da11da5e4ee015f270277579a89ccbcf3988f05b9ef0e5279a5e64177a9
