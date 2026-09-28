@@ -3,7 +3,7 @@ schema_version = 1
 capsule_revision = 1
 id = "GH-227-stale-index-lock"
 title = "Recover transaction-owned stale Git index locks"
-state = "READY"
+state = "IMPLEMENTED"
 task_type = "tooling"
 risk = "low"
 created = "2026-09-27"
@@ -118,6 +118,8 @@ Ownership is a random transaction nonce bound to exact checkout identity and sto
 | 2026-09-27 | GRILLED | SPECIFIED | controller | Four acceptance criteria and real-Git recovery tests. |
 | 2026-09-27 | SPECIFIED | DECOMPOSED | controller | Transaction, updater caller, tests and operator guidance bounded. |
 | 2026-09-27 | DECOMPOSED | READY | controller | Revision-one owner authorization posted by controller. |
+| 2026-09-27 | READY | IN_PROGRESS | Codex controller | Exact planning and checkout boundary confirmed. |
+| 2026-09-27 | IN_PROGRESS | IMPLEMENTED | Codex controller | Transaction-bound atomic Git lock ownership, exact stale recovery, crash tests and operator guidance implemented. |
 
 ## Completion record
 

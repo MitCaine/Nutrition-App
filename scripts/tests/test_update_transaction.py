@@ -15,7 +15,7 @@ from unittest.mock import patch
 SCRIPT = Path(__file__).resolve().parents[1] / "update_dependencies.py"
 sys.path.insert(0, str(SCRIPT.parent))
 import update_ri_lock  # noqa: E402
-from lib.update_transaction import UpdateTransaction, TransactionError, state_path  # noqa: E402
+from lib.update_transaction import UpdateTransaction, TransactionError, state_path, index_lock_path  # noqa: E402
 spec = importlib.util.spec_from_file_location("update_dependencies_transaction_test", SCRIPT)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -89,6 +89,102 @@ class RealGitTransactionTest(unittest.TestCase):
         data = json.loads(before)
         data["packages"]["node_modules/sample"]["version"] = "1.1.0"
         return self.mobile_lock, before, json.dumps(data).encode()
+
+    def crash_with_updater_index_lock(self, mode):
+        inputs = module.transaction_inputs(("backend",))
+        transaction = UpdateTransaction.begin(self.root, "backend", [], ("backend",), inputs)
+        code = """
+import fcntl, json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from lib.update_transaction import UpdateTransaction, state_path
+root = Path(sys.argv[2])
+state = json.loads(state_path(root).read_text())
+transaction = UpdateTransaction(root, state, state_path(root))
+process_lock = root.with_name(f'.{root.name}.update-dependencies.lock')
+descriptor = os.open(process_lock, os.O_CREAT | os.O_RDWR, 0o600)
+fcntl.flock(descriptor, fcntl.LOCK_EX)
+path = root / 'apps/backend/requirements-dev.lock'
+before = path.read_bytes()
+after = before.replace(b'1.0.0', b'1.1.0')
+with transaction.publication_guard():
+    transaction.publishing('backend', [(path, before, after)])
+    if sys.argv[3] == 'after':
+        path.write_bytes(after)
+    os._exit(73)
+"""
+        result = subprocess.run([sys.executable, "-c", code, str(SCRIPT.parent), str(self.root), mode],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 73, result.stderr)
+        lock = index_lock_path(transaction.state["identity"])
+        self.assertEqual(lock.read_bytes(), transaction._index_lock_token())
+        return lock
+
+    def test_crashed_updater_owned_index_lock_recovers_before_and_after_publication(self):
+        for mode in ("before", "after"):
+            with self.subTest(mode=mode):
+                if mode == "after":
+                    state_path(self.root).unlink()
+                    self.backend_lock.write_bytes(b"fastapi==1.0.0\n")
+                lock = self.crash_with_updater_index_lock(mode)
+                with patch.object(module, "backend", side_effect=self.backend_proposal) as resolver:
+                    result, output, errors = self.run_update("backend", "--apply")
+                self.assertEqual((result, errors), (0, ""))
+                self.assertFalse(lock.exists())
+                self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.1.0\n")
+                self.assertEqual(resolver.call_count, 0 if mode == "after" else 1)
+                if mode == "after":
+                    self.assertIn("previously validated transaction output retained", output)
+
+    def test_unknown_modified_and_mismatched_index_locks_remain_untouched(self):
+        inputs = module.transaction_inputs(("backend",))
+        transaction = UpdateTransaction.begin(self.root, "backend", [], ("backend",), inputs)
+        lock = index_lock_path(transaction.state["identity"])
+        other_state = {**transaction.state, "index_lock_nonce": "0" * 32}
+        other = UpdateTransaction(self.root, other_state, transaction.path)
+        for contents in (b"Git-owned lock", transaction._index_lock_token() + b"tampered",
+                         other._index_lock_token()):
+            with self.subTest(contents=contents[:25]):
+                lock.write_bytes(contents)
+                with patch.object(module, "backend", side_effect=self.backend_proposal) as resolver:
+                    result, _, errors = self.run_update("backend", "--apply")
+                self.assertEqual(result, 2)
+                self.assertIn("Unknown Git index lock", errors)
+                self.assertEqual(lock.read_bytes(), contents)
+                resolver.assert_not_called()
+                lock.unlink()
+
+    def test_active_updater_process_lock_prevents_stale_lock_recovery(self):
+        inputs = module.transaction_inputs(("backend",))
+        transaction = UpdateTransaction.begin(self.root, "backend", [], ("backend",), inputs)
+        lock = index_lock_path(transaction.state["identity"])
+        lock.write_bytes(transaction._index_lock_token())
+        with module.exclusive_update():
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("Another dependency update is running", errors)
+        self.assertEqual(lock.read_bytes(), transaction._index_lock_token())
+
+    def test_partial_prelink_stage_does_not_block_new_publication(self):
+        inputs = module.transaction_inputs(("backend",))
+        transaction = UpdateTransaction.begin(self.root, "backend", [], ("backend",), inputs)
+        partial = transaction._index_lock_stage()
+        partial.write_bytes(b"partial owner record")
+        with patch.object(module, "backend", side_effect=self.backend_proposal):
+            result, _, errors = self.run_update("backend", "--apply")
+        self.assertEqual((result, errors), (0, ""))
+        self.assertEqual(partial.read_bytes(), b"partial owner record")
+        self.assertEqual(self.backend_lock.read_bytes(), b"fastapi==1.1.0\n")
+
+    def test_other_pending_command_cannot_recover_matching_stale_index_lock(self):
+        inputs = module.transaction_inputs(("backend",))
+        transaction = UpdateTransaction.begin(self.root, "backend", [], ("backend",), inputs)
+        lock = index_lock_path(transaction.state["identity"])
+        lock.write_bytes(transaction._index_lock_token())
+        result, _, errors = self.run_update("mobile", "--apply")
+        self.assertEqual(result, 2)
+        self.assertIn("different dependency update is pending", errors)
+        self.assertEqual(lock.read_bytes(), transaction._index_lock_token())
 
     def test_partial_failure_then_resume_exact_outputs(self):
         failing = True

@@ -84,7 +84,7 @@ def exclusive_update():
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise UpdateError(f"Another dependency update is running for {ROOT}; wait for it to finish and retry.") from exc
-        yield
+        yield descriptor
     finally:
         os.close(descriptor)
 
@@ -564,7 +564,7 @@ def retry_direct_packages(area: str, scratch: Path) -> tuple[Path, bytes, bytes,
     return path, original, current, failures
 
 
-def _update(args: argparse.Namespace) -> int:
+def _update(args: argparse.Namespace, *, process_lock_fd: int | None = None) -> int:
     try:
         if args.area == "all" and args.packages:
             raise UpdateError("The all command takes no package names; use backend or mobile for selected packages.")
@@ -574,7 +574,7 @@ def _update(args: argparse.Namespace) -> int:
             if not state_path(ROOT).exists():
                 clean_checkout()
             transaction = UpdateTransaction.begin(ROOT, args.area, args.packages, areas,
-                                                  transaction_inputs(areas))
+                                                  transaction_inputs(areas), process_lock_fd=process_lock_fd)
             if transaction.state["status"] == "complete":
                 print("Recorded dependency update is already applied; review and integrate its exact lock changes.")
                 return 0
@@ -716,8 +716,8 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="write the validated lockfile")
     args = parser.parse_args()
     try:
-        with exclusive_update():
-            return _update(args)
+        with exclusive_update() as process_lock_fd:
+            return _update(args, process_lock_fd=process_lock_fd)
     except (UpdateError, OSError) as exc:
         print(f"Dependency update stopped: {exc}", file=sys.stderr)
         return 2
