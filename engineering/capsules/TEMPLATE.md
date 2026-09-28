@@ -50,6 +50,15 @@ Provide only context a fresh executor needs; link rather than copy authority.
 - List authoritative repository artifacts in precedence order.
 - Name the issue/backlog authority, or `Not applicable — <reason>`.
 
+For an attached candidate, replace this example with exact issue-body outcome quotes and
+applicable standard paths/line ranges at `base_commit` before READY. Map an outcome to
+existing AC IDs, an unresolved reason, or a separately authenticated owner deferral.
+The [candidate-evidence guide](../workflow/CANDIDATE_EVIDENCE.md) defines the fields.
+
+```nutrition-review-obligations-v1
+{"schema_version":1,"outcomes":[{"id":"OUT-1","quote":"Exact requested outcome from issue body","mapping":{"type":"criteria","ids":["AC-1"]}}],"standards":[{"id":"STD-1","path":"AGENTS.md","start_line":53,"end_line":56,"reason":"Relevant repository invariant"}]}
+```
+
 ## Dependencies and prerequisites
 
 - Task IDs, commits, services, decisions, environments, or generated artifacts.

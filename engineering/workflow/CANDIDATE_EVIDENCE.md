@@ -9,6 +9,25 @@ Unattached compatibility tasks keep their existing explicit verifier/reviewer in
 
 ## Frozen evidence requirements
 
+An attached READY capsule also requires exactly one `nutrition-review-obligations-v1`
+JSON object in its Authority and precedence section. List 1–16 original issue outcomes
+and 1–16 applicable standards. Each outcome quotes exact issue-body text and maps to
+existing AC IDs, an explicit unresolved reason, or a deferral bound to a required manual
+check and an exact owner comment ID. Each standard names an exact committed base path and
+line range, plus why it applies. Attachment verifies issue quotes, AC mappings and the
+committed standard source and binds the source SHA-256 and excerpt into the reviewer packet.
+The reviewer must return separate outcome and standards matrices in addition to the AC
+and, when selected, structural-path matrices. Missing or unresolved rows block approval;
+a deferred row requires the matching authenticated owner manual evidence. Reviewers compare
+the original issue body with the selected outcomes and flag omissions; the list cannot
+silently narrow the original request. Unattached compatibility review is unchanged.
+
+````markdown
+```nutrition-review-obligations-v1
+{"schema_version":1,"outcomes":[{"id":"OUT-1","quote":"Exact requested outcome from the issue body","mapping":{"type":"criteria","ids":["AC-1"]}}],"standards":[{"id":"STD-1","path":"AGENTS.md","start_line":53,"end_line":56,"reason":"Bounded changes and validation"}]}
+```
+````
+
 The READY capsule at planning commit P must contain exactly one fenced
 `nutrition-evidence-v1` JSON array in its body. No capsule metadata schema changes.
 For example:

@@ -101,6 +101,78 @@ def requirements(raw: bytes) -> list[dict]:
     return values
 
 
+def review_obligations(repo: Path, raw: bytes, authorization: ResolvedAuthorization,
+                       issue: dict, criteria: dict[str, str], required_checks: list[dict]) -> dict:
+    """Bind a small, frozen issue/standards checklist to exact source bytes."""
+    blocks = re.findall(r"```nutrition-review-obligations-v1\s*\n(.*?)\n```", raw.decode(), re.S)
+    if len(blocks) != 1:
+        raise EvidenceError("REVIEW_OBLIGATIONS_MISSING")
+    try:
+        value = json.loads(blocks[0])
+    except ValueError as exc:
+        raise EvidenceError("REVIEW_OBLIGATIONS_INVALID") from exc
+    if (not isinstance(value, dict) or set(value) != {"schema_version", "outcomes", "standards"}
+            or value["schema_version"] != 1 or not isinstance(value["outcomes"], list)
+            or not isinstance(value["standards"], list)
+            or not 1 <= len(value["outcomes"]) <= 16 or not 1 <= len(value["standards"]) <= 16):
+        raise EvidenceError("REVIEW_OBLIGATIONS_INVALID")
+    outcomes, standards = [], []
+    checks = {item["id"]: item for item in required_checks}
+    seen = set()
+    for item in value["outcomes"]:
+        if (not isinstance(item, dict) or set(item) != {"id", "quote", "mapping"}
+                or not isinstance(item["id"], str) or not re.fullmatch(r"OUT-[1-9][0-9]*", item["id"])
+                or item["id"] in seen or not isinstance(item["quote"], str)
+                or not 8 <= len(item["quote"]) <= 1000 or item["quote"] not in issue.get("body", "")
+                or not isinstance(item["mapping"], dict)):
+            raise EvidenceError("REVIEW_OUTCOME_INVALID")
+        seen.add(item["id"])
+        mapping = item["mapping"]
+        kind = mapping.get("type")
+        if kind == "criteria":
+            ids = mapping.get("ids")
+            if (set(mapping) != {"type", "ids"} or not isinstance(ids, list) or not ids
+                    or any(not isinstance(x, str) for x in ids) or len(set(ids)) != len(ids)
+                    or any(x not in criteria for x in ids)):
+                raise EvidenceError("REVIEW_OUTCOME_MAPPING_INVALID")
+        elif kind == "unresolved":
+            if (set(mapping) != {"type", "reason"} or not isinstance(mapping["reason"], str)
+                    or not 1 <= len(mapping["reason"].strip()) <= 500):
+                raise EvidenceError("REVIEW_OUTCOME_MAPPING_INVALID")
+        elif kind == "deferred":
+            check = mapping.get("manual_check")
+            if (set(mapping) != {"type", "manual_check", "comment_id", "reason"}
+                    or not isinstance(check, str) or checks.get(check, {}).get("kind") != "manual"
+                    or checks[check]["required"] is not True or type(mapping.get("comment_id")) is not int
+                    or mapping["comment_id"] < 1 or not isinstance(mapping.get("reason"), str)
+                    or not 1 <= len(mapping["reason"].strip()) <= 500):
+                raise EvidenceError("REVIEW_DEFERRAL_AUTHORITY_INVALID")
+        else:
+            raise EvidenceError("REVIEW_OUTCOME_MAPPING_INVALID")
+        outcomes.append(item)
+    seen.clear()
+    for item in value["standards"]:
+        if (not isinstance(item, dict) or set(item) != {"id", "path", "start_line", "end_line", "reason"}
+                or not isinstance(item["id"], str) or not re.fullmatch(r"STD-[1-9][0-9]*", item["id"])
+                or item["id"] in seen or not isinstance(item["path"], str)
+                or type(item["start_line"]) is not int or type(item["end_line"]) is not int
+                or not 1 <= item["start_line"] <= item["end_line"] <= item["start_line"] + 39
+                or not isinstance(item["reason"], str) or not 1 <= len(item["reason"].strip()) <= 500):
+            raise EvidenceError("REVIEW_STANDARD_INVALID")
+        seen.add(item["id"])
+        source = read_blob(repo, authorization.base_sha, item["path"])
+        lines = source.decode().splitlines()
+        if item["end_line"] > len(lines):
+            raise EvidenceError("REVIEW_STANDARD_SOURCE_RANGE_INVALID")
+        excerpt = "\n".join(lines[item["start_line"] - 1:item["end_line"]])
+        if len(excerpt.encode()) > 8_000:
+            raise EvidenceError("REVIEW_STANDARD_EXCERPT_LIMIT")
+        standards.append({**item, "revision": authorization.base_sha,
+                          "source_sha256": hashlib.sha256(source).hexdigest(),
+                          "excerpt": excerpt})
+    return {"schema_version": 1, "outcomes": outcomes, "standards": standards}
+
+
 def observe(repo: Path, candidate: str) -> dict:
     if git_text(repo, "rev-parse", "HEAD") != candidate:
         raise EvidenceError("CANDIDATE_HEAD_CHANGED")
@@ -211,12 +283,14 @@ def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,
     criteria = re.findall(r"(?m)^- \[[ xX]\] (AC-[A-Za-z0-9-]+):?\s+(.+)$", ac_section)
     if not criteria or len({x[0] for x in criteria}) != len(criteria):
         raise EvidenceError("CAPSULE_ACCEPTANCE_IDS_INVALID")
+    obligations = review_obligations(repo, original, authorization, issue, dict(criteria), planned)
     result = {"schema_version": 1, "authorization": authorization.to_dict(),
               "planning": planning, "candidate": candidate, "capsule_path": capsule_path,
               "capsule_sha256": hashlib.sha256(original).hexdigest(),
               "candidate_capsule_sha256": hashlib.sha256(current).hexdigest(),
               "capsule_text": original.decode(), "contract_sha256": digest(frozen_contract(original)),
               "branch": metadata["branch"], "criteria": dict(criteria), "requirements": planned,
+              "review_obligations": obligations,
               "issue": issue, "issue_sha256": digest(issue), "source": observed,
               "changed_paths": changed, "correction_limit": correction_limit}
     structural = ri_delta.configuration(original.decode())
@@ -270,7 +344,11 @@ def validate_commands(binding: dict, observations: dict) -> None:
 
 
 def validate_verdict(binding: dict, value: dict) -> str:
-    expected_fields = {"candidate", "binding_sha256", "disposition", "matrix", "findings", "summary"}
+    obligations = binding.get("review_obligations")
+    if not isinstance(obligations, dict):
+        raise EvidenceError("REVIEW_OBLIGATIONS_MISSING")
+    expected_fields = {"candidate", "binding_sha256", "disposition", "matrix", "findings", "summary",
+                       "outcome_review", "standards_review"}
     if binding.get("structural"):
         expected_fields.add("structural_review")
     if (not isinstance(value, dict) or set(value) != expected_fields
@@ -278,7 +356,8 @@ def validate_verdict(binding: dict, value: dict) -> str:
             or value["binding_sha256"] != binding["binding_sha256"]
             or value["disposition"] not in {"approved", "bounded-correction", "stop-replan"}
             or not isinstance(value["summary"], str) or not value["summary"].strip()
-            or not isinstance(value["findings"], list) or not isinstance(value["matrix"], list)):
+            or not isinstance(value["findings"], list) or not isinstance(value["matrix"], list)
+            or not isinstance(value["outcome_review"], list) or not isinstance(value["standards_review"], list)):
         raise EvidenceError("REVIEW_VERDICT_INVALID")
     rows = value["matrix"]
     if len(rows) != len(binding["criteria"]):
@@ -298,6 +377,20 @@ def validate_verdict(binding: dict, value: dict) -> str:
                 or not isinstance(finding["path"], str) or not finding["path"]
                 or not isinstance(finding["description"], str) or not finding["description"].strip()):
             raise EvidenceError("REVIEW_FINDING_INVALID")
+    outcome_ids = {item["id"] for item in obligations["outcomes"]}
+    standard_ids = {item["id"] for item in obligations["standards"]}
+    for name, expected, permitted in (("outcome_review", outcome_ids, {"PASS", "FAIL", "UNRESOLVED", "DEFERRED"}),
+                                      ("standards_review", standard_ids, {"PASS", "FAIL", "UNRESOLVED"})):
+        found = set()
+        for row in value[name]:
+            if (not isinstance(row, dict) or set(row) != {"id", "result", "evidence"}
+                    or row["id"] not in expected or row["id"] in found
+                    or row["result"] not in permitted or not isinstance(row["evidence"], str)
+                    or not row["evidence"].strip()):
+                raise EvidenceError("REVIEW_OBLIGATION_MATRIX_INVALID")
+            found.add(row["id"])
+        if found != expected:
+            raise EvidenceError("REVIEW_OBLIGATION_MATRIX_INCOMPLETE")
     structural_rows = value.get("structural_review", [])
     if binding.get("structural"):
         if (not isinstance(structural_rows, list)
@@ -307,8 +400,13 @@ def validate_verdict(binding: dict, value: dict) -> str:
             if (set(row) != {"path", "result", "evidence"} or row["result"] not in {"PASS", "FAIL"}
                     or not isinstance(row["evidence"], str) or not row["evidence"].strip()):
                 raise EvidenceError("REVIEW_STRUCTURAL_MATRIX_INVALID")
-    if value["disposition"] == "approved" and (value["findings"] or any(x["result"] != "PASS" for x in rows + structural_rows)):
-        raise EvidenceError("REVIEW_APPROVAL_CONTRADICTS_FINDINGS")
+    if value["disposition"] == "approved":
+        outcome_mapping = {item["id"]: item["mapping"]["type"] for item in obligations["outcomes"]}
+        outcome_bad = any(row["result"] != ("DEFERRED" if outcome_mapping[row["id"]] == "deferred" else "PASS")
+                          or outcome_mapping[row["id"]] == "unresolved" for row in value["outcome_review"])
+        if (value["findings"] or any(x["result"] != "PASS" for x in rows + structural_rows + value["standards_review"])
+                or outcome_bad):
+            raise EvidenceError("REVIEW_APPROVAL_CONTRADICTS_FINDINGS")
     return value["disposition"]
 
 
@@ -617,6 +715,15 @@ def evidence_packet(attached: dict) -> dict:
     validate_commands(binding, commands)
     for item in commands.values():
         validate_artifacts(item)
+    for outcome in binding["review_obligations"]["outcomes"]:
+        mapping = outcome["mapping"]
+        if mapping["type"] == "deferred":
+            manual = commands.get(mapping["manual_check"], {})
+            comment = manual.get("comment", {})
+            if (manual.get("status") != "passed" or comment.get("id") != mapping["comment_id"]
+                    or outcome["id"] not in manual.get("evidence", "")
+                    or mapping["reason"] not in manual.get("evidence", "")):
+                raise EvidenceError("REVIEW_DEFERRAL_AUTHORITY_MISSING")
     qualified = attached.get("qualified")
     if not qualified or qualified.get("binding_sha256") != binding["binding_sha256"]:
         raise EvidenceError("BOUND_QUALIFICATION_MISSING")

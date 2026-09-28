@@ -211,6 +211,8 @@ class IndependentReviewTests(CandidateFixture):
         schema = review.verdict_schema(binding)
         self.assertEqual(schema["properties"]["candidate"]["enum"], [self.candidate])
         self.assertEqual(schema["properties"]["matrix"]["items"]["properties"]["id"]["enum"], ["AC-1"])
+        self.assertEqual(schema["properties"]["outcome_review"]["items"]["properties"]["id"]["enum"], ["OUT-1"])
+        self.assertEqual(schema["properties"]["standards_review"]["items"]["properties"]["id"]["enum"], ["STD-1"])
         self.assertFalse(schema["additionalProperties"])
 
     def test_real_environment_free_reviewer(self):
@@ -229,7 +231,8 @@ class IndependentReviewTests(CandidateFixture):
         receipt = review.run_review(self.repo, binding,
             {"fixture": True, "qualification": "Fixture source review only, no production gate claim.",
              "instruction": "Inspect app.py and unchanged context.py with nutrition_read_source before assessing AC-1. The fixture has no external dependencies."},
-            directory=self.root / "review", executable=binary, expected_sha256=digest, key=key, timeout=240)
+            directory=self.root / "review", executable=binary, expected_sha256=digest, key=key, timeout=240,
+            model=os.environ.get("NUTRITION_REVIEW_MODEL"), effort=os.environ.get("NUTRITION_REVIEW_EFFORT"))
         destination = os.environ.get("NUTRITION_REVIEW_ORACLE_RECORD")
         if destination:
             Path(destination).write_text(json.dumps(receipt, indent=2))

@@ -74,6 +74,14 @@ def verdict_schema(binding: dict) -> dict:
             "id": {"type": "string", "enum": list(binding["criteria"])},
             "result": {"type": "string", "enum": ["PASS", "FAIL"]},
             "evidence": {"type": "string"}})},
+        "outcome_review": {"type": "array", "items": obj({
+            "id": {"type": "string", "enum": [x["id"] for x in binding["review_obligations"]["outcomes"]]},
+            "result": {"type": "string", "enum": ["PASS", "FAIL", "UNRESOLVED", "DEFERRED"]},
+            "evidence": {"type": "string"}})},
+        "standards_review": {"type": "array", "items": obj({
+            "id": {"type": "string", "enum": [x["id"] for x in binding["review_obligations"]["standards"]]},
+            "result": {"type": "string", "enum": ["PASS", "FAIL", "UNRESOLVED"]},
+            "evidence": {"type": "string"}})},
         "findings": {"type": "array", "items": obj({
             "priority": {"type": "integer", "minimum": 0, "maximum": 3},
             "path": {"type": "string"}, "line": {"type": "integer", "minimum": 1},
@@ -424,7 +432,11 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                           "You cannot implement, change authority or run commands. Required execution evidence is "
                           "controller/CI-owned. Read all changed source and necessary context. If evidence/context "
                           "is insufficient, fail the relevant criteria rather than inventing facts. Return one "
-                          "complete PASS/FAIL matrix plus findings. Approved requires every AC PASS and no findings. "
+                          "complete PASS/FAIL AC, original-outcome and applicable-standards matrices plus findings. "
+                          "Compare the original issue body with the frozen outcome list; omitted requested work is a finding, "
+                          "even if every listed AC passes. Verify each standard against its exact committed source lines. "
+                          "An unresolved outcome or standard blocks approval; a deferral requires authenticated owner evidence. "
+                          "Approved requires every AC, applicable standard and nondeferred outcome PASS and no findings. "
                           "Use bounded-correction for fixable in-scope defects, stop-replan for missing authority, "
                           "unavailable required proof or a material scope change.")}
             if model is not None:
@@ -450,7 +462,7 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                            provider=started.get("modelProvider"))
             turn = rpc.request("turn/start", {
                 "threadId": tid, "environments": [], "outputSchema": verdict_schema(binding),
-                "input": [{"type": "text", "text": "Review this exact candidate packet. If structural evidence is required, independently reconcile every structural_review path with capsule authority, full diff, full inventories and required checks; controller expected labels are claims, not approval. Raw inventory artifacts are readable with check=$structural.\n" + json.dumps(request_packet)}],
+                "input": [{"type": "text", "text": "Review this exact candidate packet. Reconcile every original issue outcome and selected standard independently of the AC matrix; inspect exact standard source and flag omitted issue outcomes. If structural evidence is required, independently reconcile every structural_review path with capsule authority, full diff, full inventories and required checks; controller expected labels are claims, not approval. Raw inventory artifacts are readable with check=$structural.\n" + json.dumps(request_packet)}],
             })["turn"]["id"]
             session["turn_id"] = turn
             messages = []

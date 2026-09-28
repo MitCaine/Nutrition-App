@@ -59,13 +59,19 @@ class CandidateFixture(unittest.TestCase):
             {"id": "baseline", "kind": "baseline", "required": True,
              "argv": ["{python}", "-c", "print('baseline')"]},
         ]
+        self.obligations = {"schema_version": 1,
+            "outcomes": [{"id": "OUT-1", "quote": "add returns sum",
+                          "mapping": {"type": "criteria", "ids": ["AC-1"]}}],
+            "standards": [{"id": "STD-1", "path": "context.py", "start_line": 1, "end_line": 1,
+                           "reason": "Existing offset invariant is outside the capsule AC"}]}
         self.original = ('+++\n' + '\n'.join([
             'id = "GH-1"', 'capsule_revision = 1', 'state = "READY"', 'blocked = false',
             'updated = "2026-09-26"', 'branch = "task/GH-1"', f'base_commit = "{self.base}"',
             'source_issue = "https://github.com/example/repo/issues/1"',
             'owned_paths = ["app.py", "engineering/capsules/active/GH-1.md"]',
             'allowed_paths = []', 'forbidden_paths = []', 'specialized_qualification = ["profile:repository"]',
-        ]) + '\n+++\n# Fixture\n\n## Goal\nReturn a sum.\n\n## Acceptance criteria\n'
+        ]) + '\n+++\n# Fixture\n\n## Goal\nReturn a sum.\n\n## Authority and precedence\n'
+            '```nutrition-review-obligations-v1\n' + json.dumps(self.obligations) + '\n```\n\n## Acceptance criteria\n'
             '- [ ] AC-1: add returns the sum.\n\n## Required verification\n'
             '```nutrition-evidence-v1\n' + json.dumps(self.requirements) + '\n```\n'
             '\n## State history\nREADY\n\n## Completion record\nPending.\n')
@@ -95,7 +101,9 @@ class CandidateFixture(unittest.TestCase):
     def verdict(self, binding):
         return {"candidate": self.candidate, "binding_sha256": binding["binding_sha256"],
                 "disposition": "approved", "findings": [], "summary": "sum is implemented",
-                "matrix": [{"id": "AC-1", "result": "PASS", "evidence": "app.py:2 returns a+b"}]}
+                "matrix": [{"id": "AC-1", "result": "PASS", "evidence": "app.py:2 returns a+b"}],
+                "outcome_review": [{"id": "OUT-1", "result": "PASS", "evidence": "Issue outcome maps to AC-1"}],
+                "standards_review": [{"id": "STD-1", "result": "PASS", "evidence": "context.py:1 retains OFFSET=0"}]}
 
 
 class CandidateEvidenceTests(CandidateFixture):
@@ -388,6 +396,63 @@ class CandidateEvidenceTests(CandidateFixture):
             evidence.validate_verdict(binding, wrong)
         wrong["disposition"] = "bounded-correction"
         self.assertEqual(evidence.validate_verdict(binding, wrong), "bounded-correction")
+
+    def test_original_outcome_and_governing_standard_cannot_disappear_from_approval(self):
+        binding = self.binding()
+        standard = binding["review_obligations"]["standards"][0]
+        self.assertEqual(standard["revision"], self.base)
+        self.assertEqual(standard["excerpt"], "OFFSET = 0")
+        verdict = self.verdict(binding)
+        for field in ("outcome_review", "standards_review"):
+            wrong = {**verdict, field: []}
+            with self.assertRaisesRegex(evidence.EvidenceError, "INCOMPLETE"):
+                evidence.validate_verdict(binding, wrong)
+            wrong = copy.deepcopy(verdict)
+            wrong[field][0]["result"] = "UNRESOLVED"
+            with self.assertRaisesRegex(evidence.EvidenceError, "CONTRADICTS"):
+                evidence.validate_verdict(binding, wrong)
+            wrong = copy.deepcopy(verdict)
+            wrong[field].append({"id": "invented", "result": "PASS", "evidence": "not selected"})
+            with self.assertRaisesRegex(evidence.EvidenceError, "INVALID"):
+                evidence.validate_verdict(binding, wrong)
+        wrong = copy.deepcopy(verdict)
+        wrong["standards_review"][0]["result"] = "FAIL"
+        wrong["disposition"] = "bounded-correction"
+        self.assertEqual(evidence.validate_verdict(binding, wrong), "bounded-correction")
+
+    def test_obligation_source_quote_and_deferral_authority_fail_closed(self):
+        criteria = {"AC-1": "add returns the sum."}
+        raw = self.original.replace("add returns sum\"", "invented outcome\"")
+        with self.assertRaisesRegex(evidence.EvidenceError, "OUTCOME_INVALID"):
+            evidence.review_obligations(self.repo, raw.encode(), self.auth, self.issue, criteria, self.requirements)
+        raw = self.original.replace('"start_line": 1, "end_line": 1', '"start_line": 99, "end_line": 99')
+        with self.assertRaisesRegex(evidence.EvidenceError, "SOURCE_RANGE"):
+            evidence.review_obligations(self.repo, raw.encode(), self.auth, self.issue, criteria, self.requirements)
+        deferred = copy.deepcopy(self.obligations)
+        deferred["outcomes"][0]["mapping"] = {"type": "deferred", "manual_check": "deferral",
+                                               "comment_id": 99, "reason": "Owner deferred OUT-1"}
+        raw = self.original.replace(json.dumps(self.obligations), json.dumps(deferred))
+        with self.assertRaisesRegex(evidence.EvidenceError, "DEFERRAL_AUTHORITY"):
+            evidence.review_obligations(self.repo, raw.encode(), self.auth, self.issue, criteria, self.requirements)
+        manual_checks = self.requirements + [{"id": "deferral", "kind": "manual", "required": True, "argv": None}]
+        parsed = evidence.review_obligations(self.repo, raw.encode(), self.auth, self.issue, criteria, manual_checks)
+        self.assertEqual(parsed["outcomes"][0]["mapping"]["comment_id"], 99)
+        binding = self.binding()
+        binding["review_obligations"] = parsed
+        binding["requirements"] = manual_checks
+        attached = {"binding": binding, "commands": {"deferral": {"status": "passed",
+                    "comment": {"id": 99}, "evidence": "unrelated owner statement"}},
+                    "qualified": {"binding_sha256": binding["binding_sha256"]}}
+        with mock.patch.object(evidence, "validate_commands"), mock.patch.object(evidence, "validate_artifacts"):
+            with self.assertRaisesRegex(evidence.EvidenceError, "DEFERRAL_AUTHORITY_MISSING"):
+                evidence.evidence_packet(attached)
+            attached["commands"]["deferral"]["evidence"] = "OUT-1: Owner deferred OUT-1"
+            self.assertIn("qualification", evidence.evidence_packet(attached))
+        verdict = self.verdict(binding)
+        with self.assertRaisesRegex(evidence.EvidenceError, "CONTRADICTS"):
+            evidence.validate_verdict(binding, verdict)
+        verdict["outcome_review"][0]["result"] = "DEFERRED"
+        self.assertEqual(evidence.validate_verdict(binding, verdict), "approved")
 
     def test_unsigned_forged_and_corrected_candidate_receipts_are_rejected(self):
         binding = self.binding()
