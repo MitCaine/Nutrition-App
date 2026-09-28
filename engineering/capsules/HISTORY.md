@@ -4046,3 +4046,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 7618d3c418be0de7393c97c6901016dd9516ef5d
 - **Full-capsule recovery path:** engineering/capsules/active/GH-237.md
 - **Historical capsule SHA-256:** 533d20de810752972c6b27eb403230d9e5129cf95b3b2fa0252564705ea33c0a
+
+### GH-231 - Bind command evidence to the source copy actually tested
+
+- **ID:** GH-231
+- **Title:** Bind command evidence to the source copy actually tested
+- **Final state:** MERGED
+- **Capsule revision:** 4
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/231; revision-four implementation authorization comment 5865618936, native proof comment 5865673135, distinct terminal authorization comment 5865882969. Revision-one native-host baseline failure, revision-two review budget failure, and revision-three missing-native-proof verdict remain preserved.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-28
+- **Base commit:** 3f489db4e27d671dd826a3fbdb4ce7f502978716
+- **Task branch:** task/GH-231-r4
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 57b0ec2 and b8d73834ab097b339cc8794b496488cc459dd9b0.
+- **Verified commit reference(s):** b8d73834ab097b339cc8794b496488cc459dd9b0
+- **Reviewed source commit:** b8d73834ab097b339cc8794b496488cc459dd9b0
+- **Reviewed task/checkpoint commit(s):** b8d73834ab097b339cc8794b496488cc459dd9b0
+- **Integration/merged commit:** b8d73834ab097b339cc8794b496488cc459dd9b0 on main.
+- **Integration-related commit reference(s):** Protected implementation C at b8d73834ab097b339cc8794b496488cc459dd9b0; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and all five structural changed paths, no findings, 78 reads. Prior stopped reviews remain independent failed attempts.
+- **Verification summary:** Frozen focused and affected baseline commands passed; explicitly enabled native macOS source-write denial, modify/restore, generated-output, tested-identity and output-symlink regressions passed 41 tests with two unrelated reviewer-oracle skips; pinned RI comparison and five controller path dispositions passed; documentation validation passed 104 files and 626 links.
+- **Specialized qualification:** Dedicated App check 108835934868 passed repository, backend and mobile profiles for exact C; native proof comment 5865673135 authenticated. Terminal T requires a distinct repository check.
+- **Known warnings:** Earlier broad local tooling run had seven pre-existing native capsule-execution host failures; revision-two review exhausted the old 200-call budget; revision-three reviewer stopped because the frozen commands skipped opt-in native tests. Those artifacts remain preserved.
+- **Deferred work/follow-up IDs:** #232–#236 remain separate.
+- **Retrospective:** Exact-candidate command evidence must protect and observe the disposable source actually tested. Native host-only regressions need explicit owner-bound proof in the sealed packet when the frozen command transport cannot run them.
+- **Referenced commits:** Planning 160b1e468a8110c32614927eeed09799b27f4eab; implementation b8d73834ab097b339cc8794b496488cc459dd9b0; full reviewed capsule 498777e2795f2deae3ad31a940704e55c2de885d.
+- **Full-capsule recovery commit:** 498777e2795f2deae3ad31a940704e55c2de885d
+- **Full-capsule recovery path:** engineering/capsules/active/GH-231.md
+- **Historical capsule SHA-256:** 1967a2b15cd530807964fc6eaad5b74bededc04e58a82784325f945cd4fc9de8
