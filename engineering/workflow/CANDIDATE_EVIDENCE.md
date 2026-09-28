@@ -179,6 +179,17 @@ stop the attempt. The controller owns all command execution evidence.
 The reviewer receives the entire frozen capsule, issue snapshot, authorization, full P-to-C
 diff, scope paths, exact qualification and command records. It can read committed regular
 files at B/P/C, list bounded committed paths and read declared hashed evidence artifacts.
+Source callbacks accept committed regular files through the RI selector's 4 MB per-file
+limit. Line requests return at most 399 lines and 100 KB. Long lines can be inspected
+with `nutrition_read_source_bytes`, which returns a zero-based, end-exclusive chunk of
+at most 60 KB raw source as base64, plus the whole-source and chunk SHA-256 digests.
+The review session may materialize at most 40 MB of distinct committed source blob bytes
+across its existing 200 total tool calls. The controller checks committed blob size
+against the remaining session budget before a cache miss; repeat bounded reads of the
+same immutable commit/path reuse its verified bytes.
+An out-of-range, oversized or exhausted request returns an explicit error; it does not
+count as successful source inspection. The reviewer must narrow a response that exceeds
+the per-request limit or withhold approval when required source cannot be inspected.
 Callbacks never accept arbitrary filesystem paths or run commands. Missing context fails the
 relevant AC. Review must return every AC exactly once with PASS/FAIL and evidence, findings
 with source locations, and one disposition. Approval requires all PASS and no findings.

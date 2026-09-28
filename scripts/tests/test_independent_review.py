@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -11,10 +12,101 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib import candidate_evidence as evidence  # noqa: E402
 from lib import independent_review as review  # noqa: E402
+from lib import ri_consumer as ri  # noqa: E402
 from test_candidate_evidence import CandidateFixture  # noqa: E402
 
 
 class IndependentReviewTests(CandidateFixture):
+    def test_admitted_large_long_line_is_fully_readable_in_bounded_cached_chunks(self):
+        source = b"x" * 120_001 + b"\n" + b"# filler\n" * 230_000
+        self.assertTrue(2_000_000 < len(source) < ri.MAX_FILE_BYTES)
+        (self.repo / "app.py").write_bytes(source)
+        self.git("add", "app.py")
+        self.git("commit", "-qm", "large source with long line")
+        self.candidate = self.git("rev-parse", "HEAD")
+        binding = self.binding()
+        self.assertEqual(ri.selected_source(self.repo, self.candidate, ["app.py"])[0]["app.py"]["bytes"], source)
+        budget, cache = {"bytes": 0}, {}
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_RESPONSE_LIMIT"):
+            review.read_source(self.repo, binding, "nutrition_read_source", {
+                "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 1}, budget, cache)
+        chunks = []
+        for start in range(0, len(source), 60_000):
+            end = min(start + 60_000, len(source))
+            result = review.read_source(self.repo, binding, "nutrition_read_source_bytes", {
+                "revision": "candidate", "path": "app.py", "start_byte": start, "end_byte": end}, budget, cache)
+            chunk = base64.b64decode(result["base64"], validate=True)
+            self.assertEqual(result["sha256"], hashlib.sha256(source).hexdigest())
+            self.assertEqual(result["chunk_sha256"], hashlib.sha256(chunk).hexdigest())
+            self.assertEqual(result["total_bytes"], len(source))
+            self.assertEqual((result["start_byte"], result["end_byte"]), (start, end))
+            self.assertLess(len(json.dumps(result).encode()), 100_000)
+            chunks.append(chunk)
+        self.assertEqual(b"".join(chunks), source)
+        self.assertEqual(budget["bytes"], len(source))
+        self.assertEqual(len(cache), 1)
+        self.assertIn("nutrition_read_source_bytes", {tool["name"] for tool in review.source_tools()})
+        for start, end, error in ((0, 60_001, "BYTE_LIMIT"), (0, len(source) + 1, "BYTE_LIMIT"),
+                                  (len(source), len(source), "BYTE_LIMIT"), (len(source) - 1, len(source) + 1, "RANGE_EMPTY")):
+            with self.assertRaisesRegex(evidence.EvidenceError, error):
+                review.read_source(self.repo, binding, "nutrition_read_source_bytes", {
+                    "revision": "candidate", "path": "app.py", "start_byte": start, "end_byte": end}, budget, cache)
+
+    def test_ri_admitted_large_source_has_bounded_review_access_and_work_limit(self):
+        source = b"VALUE = 1\n" + b"# filler\n" * 263_000
+        self.assertTrue(2_000_000 < len(source) < ri.MAX_FILE_BYTES)
+        (self.repo / "app.py").write_bytes(source)
+        self.git("add", "app.py")
+        self.git("commit", "-qm", "large supported source")
+        self.candidate = self.git("rev-parse", "HEAD")
+        binding = self.binding()
+        selected, _ = ri.selected_source(self.repo, self.candidate, ["app.py"])
+        self.assertEqual(selected["app.py"]["bytes"], source)
+        budget = {"bytes": 0}
+        result = review.read_source(self.repo, binding, "nutrition_read_source", {
+            "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 2}, budget)
+        self.assertEqual(result["content"], "1: VALUE = 1\n2: # filler")
+        self.assertEqual(result["sha256"], hashlib.sha256(source).hexdigest())
+        self.assertEqual(result["total_lines"], 263_001)
+        self.assertEqual(budget["bytes"], len(source))
+        bounded = review.read_source(self.repo, binding, "nutrition_read_source", {
+            "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 399})
+        self.assertEqual(len(bounded["content"].splitlines()), 399)
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_LINE_LIMIT"):
+            review.read_source(self.repo, binding, "nutrition_read_source", {
+                "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 400})
+        near_limit = {"bytes": review.MAX_REVIEW_SOURCE_WORK_BYTES - len(source)}
+        review.read_source(self.repo, binding, "nutrition_read_source", {
+            "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 1}, near_limit)
+        self.assertEqual(near_limit["bytes"], review.MAX_REVIEW_SOURCE_WORK_BYTES)
+        original_git = evidence.git
+        with mock.patch.object(evidence, "git", wraps=original_git) as commands:
+            for _ in range(2):
+                with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_WORK_LIMIT"):
+                    review.read_source(self.repo, binding, "nutrition_read_source", {
+                        "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 1}, near_limit)
+            self.assertFalse(any(call.args[1:3] == ("cat-file", "blob") for call in commands.call_args_list))
+        self.assertEqual(near_limit["bytes"], review.MAX_REVIEW_SOURCE_WORK_BYTES)
+
+    def test_large_response_and_line_window_fail_closed(self):
+        (self.repo / "app.py").write_bytes(b"x" * 100_001 + b"\n")
+        self.git("add", "app.py")
+        self.git("commit", "-qm", "wide source line")
+        self.candidate = self.git("rev-parse", "HEAD")
+        binding = self.binding()
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_RESPONSE_LIMIT"):
+            review.read_source(self.repo, binding, "nutrition_read_source", {
+                "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 1})
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_LINE_LIMIT"):
+            review.read_source(self.repo, binding, "nutrition_read_source", {
+                "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 401})
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_RANGE_EMPTY"):
+            review.read_source(self.repo, binding, "nutrition_read_source", {
+                "revision": "candidate", "path": "app.py", "start_line": 2, "end_line": 2})
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_SOURCE_RANGE_EMPTY"):
+            review.read_source(self.repo, binding, "nutrition_read_source", {
+                "revision": "candidate", "path": "app.py", "start_line": 1, "end_line": 2})
+
     def test_pre_review_retry_is_classified_after_terminal_drain(self):
         binding = self.binding()
         identity = {"executable": str(Path(sys.executable).resolve()), "sha256": "fixture",

@@ -11,7 +11,7 @@ import secrets
 import subprocess
 from pathlib import Path
 
-from lib import ri_delta
+from lib import ri_consumer, ri_delta
 from lib.capsule_execution import capsule_metadata, source_snapshot, verify_planning_bytes
 from lib.task_authorization import ResolvedAuthorization, canonical_json, validate_candidate_scope
 
@@ -35,7 +35,7 @@ def git_text(repo: Path, *args: str) -> str:
     return git(repo, *args).decode().strip()
 
 
-def read_blob(repo: Path, commit: str, path: str) -> bytes:
+def read_blob(repo: Path, commit: str, path: str, *, max_bytes: int | None = None) -> bytes:
     if (not re.fullmatch(r"[0-9a-f]{40}", commit) or path.startswith("/")
             or any(x in {"", ".", ".."} for x in path.split("/")) or "\\" in path):
         raise EvidenceError("SOURCE_LOCATOR_INVALID")
@@ -47,8 +47,10 @@ def read_blob(repo: Path, commit: str, path: str) -> bytes:
     if observed.decode() != path or kind != b"blob" or mode not in {b"100644", b"100755"}:
         raise EvidenceError("SOURCE_NOT_REGULAR")
     size = int(git_text(repo, "cat-file", "-s", oid.decode()))
-    if size > 2_000_000:
+    if size > ri_consumer.MAX_FILE_BYTES:
         raise EvidenceError("SOURCE_READ_LIMIT")
+    if max_bytes is not None and size > max_bytes:
+        raise EvidenceError("REVIEW_SOURCE_WORK_LIMIT")
     return git(repo, "cat-file", "blob", oid.decode())
 
 

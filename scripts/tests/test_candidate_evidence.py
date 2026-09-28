@@ -308,6 +308,14 @@ class CandidateEvidenceTests(CandidateFixture):
             with self.assertRaises(evidence.EvidenceError):
                 evidence.read_blob(self.repo, self.candidate, path)
 
+    def test_committed_source_above_ri_file_limit_is_rejected(self):
+        (self.repo / "app.py").write_bytes(b"x" * 4_000_001)
+        self.git("add", "app.py")
+        self.git("commit", "-qm", "source above admitted limit")
+        self.candidate = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(evidence.EvidenceError, "SOURCE_READ_LIMIT"):
+            evidence.read_blob(self.repo, self.candidate, "app.py")
+
     def test_changed_authority_profiles_and_forged_digest(self):
         binding = self.binding()
         for auth in (dataclasses.replace(self.auth, comment_id=2),
