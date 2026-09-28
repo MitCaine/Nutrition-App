@@ -52,10 +52,9 @@ def tree(repo: Path, revision: str) -> dict:
 def classification(path: str, record: dict | None) -> str:
     if record is None:
         return "absent"
-    if any(part.startswith(".") or part in ri.EXCLUDED_DIRECTORIES for part in Path(path).parts):
-        return "excluded"
-    if Path(path).suffix.lower() not in ri.SUPPORTED:
-        return "unsupported"
+    disposition = ri.source_classification(path)
+    if disposition != "supported":
+        return disposition
     if record["kind"] != "blob" or record["mode"] not in {"100644", "100755"}:
         raise ri.RIError("RI_NON_REGULAR_SUPPORTED_SOURCE: " + path)
     return "supported"
@@ -277,23 +276,26 @@ def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
         for name in ("planning", "candidate", "comparison", "compact"):
             write_json(directory / (name + ".json"), raw[name], compact=name != "compact")
         validate_comparison(raw, selected, lock)
-        has_supported = any(classification(p, trees[s].get(p)) == "supported" for p in paths for s in trees)
+        categories = {coverage[s][p]["classification"] for p in paths for s in trees}
+        categories.discard("absent")
+        coverage_status = ri.selection_status(categories)
+        status = "comparable" if "supported" in categories else coverage_status
         packet = {"schema_version": 1, "binding_sha256": binding["binding_sha256"],
                   "planning": planning, "candidate": candidate, "policy": POLICY,
                   "ri_revision": lock["revision"], "contracts": lock["contracts"],
                   "runtime_manifest_sha256": manifest["manifest_sha256"],
-                  "status": "comparable" if has_supported else "unsupported-only",
+                  "status": status, "selection_status": coverage_status,
                   "paths": paths, "file_changes": changes, "coverage": coverage,
                   "compact_delta": raw["compact"], "worker_source_writes_denied": True,
                   "source_stability_verified": True,
                   "limitations": ["Complete changed-file callable inventories only; not whole-repository or semantic coverage.",
                                   "All changed files and the full Git diff require direct review, even with no callable delta.",
-                                  "Unsupported-only is a coverage disposition, never structural proof or a native-check waiver."]}
+                                  "Selection status is a coverage disposition, never structural proof or a native-check waiver."]}
         if len(json.dumps(packet, indent=2).encode()) > MAX_PACKET:
             raise ri.RIError("RI_STRUCTURAL_PACKET_LIMIT")
         write_json(directory / "packet.json", packet)
         record = {"binding_sha256": binding["binding_sha256"], "planning": planning, "candidate": candidate,
-                  "status": packet["status"], "packet": packet,
+                  "status": packet["status"], "selection_status": coverage_status, "packet": packet,
                   "artifacts": review_artifacts(directory)}
         record["record_sha256"] = ri.digest(record)
         write_json(directory / "record.json", record)
@@ -310,7 +312,8 @@ def validate_record(binding: dict, record: dict) -> None:
     body = {k: v for k, v in record.items() if k != "record_sha256"}
     if (ri.digest(body) != record.get("record_sha256") or record.get("binding_sha256") != binding["binding_sha256"]
             or record.get("planning") != binding["planning"] or record.get("candidate") != binding["candidate"]
-            or record.get("status") not in {"comparable", "unsupported-only"}
+            or record.get("status") not in {"comparable", "unsupported-only", "excluded-only", "mixed"}
+            or record.get("selection_status") != record.get("packet", {}).get("selection_status")
             or record.get("packet", {}).get("paths") != binding["structural_paths"]):
         raise ri.RIError("RI_STRUCTURAL_RECORD_MISMATCH")
     for entry in record["artifacts"].values():

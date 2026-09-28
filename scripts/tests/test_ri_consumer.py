@@ -142,9 +142,41 @@ class SelectionTests(SourceFixture):
         )
         self.assertFalse(selected)
         self.assertEqual(scope["unsupported_or_other"], ["backend/schema.sql"])
+        self.assertEqual(scope["selection_status"], "unsupported-only")
+
+    def test_committed_uppercase_excluded_and_mixed_selection(self):
+        upper = self.repo / "backend/Upper.PY"
+        upper.write_bytes(b"def upper():\n    return 1\n")
+        self.git("add", "backend/Upper.PY")
+        self.git("commit", "-qm", "uppercase source")
+        revision = self.git("rev-parse", "HEAD")
+        selected, scope = ri.selected_source(self.repo, revision, ["backend/Upper.PY"])
+        self.assertEqual(selected["backend/Upper.PY"]["bytes"], upper.read_bytes())
+        self.assertEqual(scope["selection_status"], "supported-only")
+        selected, scope = ri.selected_source(self.repo, revision, ["backend/generated"])
+        self.assertFalse(selected)
+        self.assertEqual(scope["selection_status"], "excluded-only")
+        selected, scope = ri.selected_source(self.repo, revision, ["backend"])
+        self.assertEqual(scope["selection_status"], "mixed")
+        self.assertIn("backend/generated/auto.py", scope["excluded"])
+        self.assertIn("backend/schema.sql", scope["unsupported_or_other"])
+
+    def test_empty_navigation_reports_excluded_and_mixed_top_level(self):
+        runtime = self.root / "runtime" / "manifest.json"
+        for prefixes, expected in ((["backend/generated"], "excluded-only"),
+                                   (["backend/generated", "backend/schema.sql"], "mixed")):
+            with self.subTest(expected=expected), mock.patch.object(
+                ri, "verify_runtime", return_value=({"manifest_sha256": "fixture"}, runtime.parent / "environment")
+            ):
+                packet = ri.navigate(self.repo, self.revision, prefixes, "total", 8, runtime,
+                                     self.root / ("output-" + expected))
+                self.assertEqual(packet["selection_status"], expected)
+                self.assertEqual(packet["mapping_status"], "excluded" if expected == "excluded-only" else "unsupported")
+                self.assertEqual(packet["scan_scope"]["selection_status"], expected)
 
     def test_unsupported_only_packet_is_bounded_and_retains_full_selection(self):
-        scope = {"excluded": [], "unsupported_or_other": ["config/" + str(i) + ".sql" for i in range(1000)]}
+        scope = {"excluded": [], "unsupported_or_other": ["config/" + str(i) + ".sql" for i in range(1000)],
+                 "selection_status": "unsupported-only"}
         runtime = self.root / "runtime" / "manifest.json"
         with mock.patch.object(ri, "verify_runtime", return_value=({"manifest_sha256": "fixture"}, runtime.parent / "environment")), mock.patch.object(ri, "selected_source", return_value=({}, scope)):
             output = self.root / "unsupported-output"
@@ -343,6 +375,20 @@ class RuntimeTests(SourceFixture):
 
 
 class ActualRuntimeTests(SourceFixture):
+    def test_pinned_runtime_navigates_committed_uppercase_python(self):
+        runtime = os.environ.get("NUTRITION_RI_RUNTIME")
+        if not runtime:
+            self.skipTest("Explicit qualified private RI runtime required")
+        path = self.repo / "backend/Upper.PY"
+        path.write_text("def upper():\n    return 1\n")
+        self.git("add", "backend/Upper.PY")
+        self.git("commit", "-qm", "uppercase source")
+        packet = ri.navigate(self.repo, self.git("rev-parse", "HEAD"), ["backend/Upper.PY"],
+                             "upper", 3, Path(runtime), self.root / "uppercase")
+        self.assertEqual(packet["selection_status"], "supported-only")
+        self.assertEqual(packet["mapping_status"], "navigation_only")
+        self.assertEqual([item["name"] for item in packet["matches"]], ["upper"])
+
     def test_real_pinned_package_navigation_failure_cases_and_source_slices(self):
         runtime = os.environ.get("NUTRITION_RI_RUNTIME")
         if not runtime:

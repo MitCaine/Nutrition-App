@@ -130,6 +130,22 @@ class DeltaTests(DeltaFixture):
         for path in ("App.swift", "schema.sql", "config.json"):
             self.assertEqual(coverage[path]["classification"], "unsupported")
 
+    def test_shared_classification_of_committed_uppercase_excluded_and_unsupported(self):
+        self.write("Upper.PY", "def upper():\n    return 1\n")
+        (self.repo / "generated").mkdir()
+        self.write("generated/Hidden.PY", "def hidden():\n    return 1\n")
+        self.write("notes.SQL", "select 1;\n")
+        revision = self.commit("mixed classifications")
+        paths = ["Upper.PY", "generated/Hidden.PY", "notes.SQL"]
+        selected, coverage = delta.selection(self.repo, delta.tree(self.repo, revision), paths)
+        self.assertEqual(set(selected), {"Upper.PY"})
+        self.assertEqual({path: coverage[path]["classification"] for path in paths},
+                         {"Upper.PY": "supported", "generated/Hidden.PY": "excluded", "notes.SQL": "unsupported"})
+        self.assertEqual(ri.selection_status({row["classification"] for row in coverage.values()}), "mixed")
+        nav_selected, scope = ri.selected_source(self.repo, revision, paths)
+        self.assertEqual(set(nav_selected), set(selected))
+        self.assertEqual(scope["selection_status"], "mixed")
+
     def test_incomplete_stale_parser_policy_and_missing_membership_cannot_compare(self):
         selected, raw = self.raw()
         mutations = [lambda v: v["candidate"].update(status="incomplete"),
@@ -205,6 +221,8 @@ class ActualDeltaTests(DeltaFixture):
     def test_actual_mixed_complete_inventory_delta_disposition_and_correction(self):
         record = self.capture("mixed")
         packet = record["packet"]
+        self.assertEqual(packet["selection_status"], "mixed")
+        self.assertEqual(record["selection_status"], "mixed")
         evidence_packet = {"structural": {"record": record}}
         total_virtual_lines = 0
         for name in ("membership", "planning", "candidate", "comparison"):
@@ -323,6 +341,7 @@ class ActualDeltaTests(DeltaFixture):
         self.binding["structural_paths"] = ["App.swift"]
         record = self.capture("swift")
         self.assertEqual(record["status"], "unsupported-only")
+        self.assertEqual(record["selection_status"], "unsupported-only")
         self.assertFalse(record["packet"]["compact_delta"]["file_changes"]["added"])
         self.binding["planning"] = self.binding["candidate"]
         self.write("broken.py", "def broken(:\n")
@@ -332,6 +351,19 @@ class ActualDeltaTests(DeltaFixture):
             self.capture("broken")
         self.assertTrue((self.root / "broken/planning.json").exists())
         self.assertTrue((self.root / "broken/candidate.json").exists())
+
+    def test_actual_excluded_only_status_is_not_unsupported(self):
+        self.binding["planning"] = self.candidate
+        (self.repo / "generated").mkdir()
+        self.write("generated/Hidden.PY", "def hidden():\n    return 1\n")
+        self.binding["candidate"] = self.commit("excluded source")
+        self.binding["structural_paths"] = ["generated/Hidden.PY"]
+        record = self.capture("excluded")
+        self.assertEqual(record["status"], "excluded-only")
+        self.assertEqual(record["selection_status"], "excluded-only")
+        self.assertEqual(record["packet"]["coverage"]["candidate"]["generated/Hidden.PY"]["classification"],
+                         "excluded")
+        delta.validate_record(self.binding, record)
 
     def test_native_worker_cannot_write_source_or_network(self):
         directory = self.root / "native"

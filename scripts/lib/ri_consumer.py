@@ -36,6 +36,22 @@ MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES = 1000, 4_000_000, 40_000_000
 MAX_PACKET_BYTES, MAX_RAW_BYTES = 100_000, 32_000_000
 
 
+def source_classification(path: str) -> str:
+    """Classify a committed path identically for navigation and structural evidence."""
+    if any(part.startswith(".") or part in EXCLUDED_DIRECTORIES for part in Path(path).parts):
+        return "excluded"
+    return "supported" if Path(path).suffix.lower() in SUPPORTED else "unsupported"
+
+
+def selection_status(classifications: set[str]) -> str:
+    """Report coverage categories without implying a complete semantic scan."""
+    if len(classifications) > 1:
+        return "mixed"
+    if classifications:
+        return next(iter(classifications)) + "-only"
+    return "empty"
+
+
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -266,10 +282,11 @@ def selected_source(repo: Path, revision: str, prefixes: list[str]) -> tuple[dic
         mode, kind, oid = header.split()
         if kind != b"blob" or mode not in {b"100644", b"100755"}:
             raise RIError("RI_NON_REGULAR_COMMITTED_SOURCE: " + path)
-        if any(part.startswith(".") or part in EXCLUDED_DIRECTORIES for part in Path(path).parts):
+        classification = source_classification(path)
+        if classification == "excluded":
             excluded.append(path)
             continue
-        if Path(path).suffix not in SUPPORTED:
+        if classification == "unsupported":
             unsupported.append(path)
             continue
         size = int(git(repo, "cat-file", "-s", oid.decode()))
@@ -283,6 +300,9 @@ def selected_source(repo: Path, revision: str, prefixes: list[str]) -> tuple[dic
     scope = {"prefixes": prefixes, "membership": "explicit committed Git tree", "revision": revision,
              "selected_files": len(selected), "selected_bytes": total,
              "excluded": excluded, "unsupported_or_other": unsupported,
+             "selection_status": selection_status({category for category, present in
+                                                   (("supported", selected), ("excluded", excluded),
+                                                    ("unsupported", unsupported)) if present}),
              "selected_extensions": sorted(SUPPORTED), "gitignore_policy": "not consulted; committed membership is explicit"}
     return selected, scope
 
@@ -394,7 +414,8 @@ def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, direc
               "ri_revision": lock["revision"], "contracts": lock["contracts"],
               "runtime_manifest_sha256": manifest["manifest_sha256"],
               "source_manifest_sha256": digest(source_manifest),
-              "mapping_status": raw["mapping_status"], "total_matches": raw["total_matches"], "matches": matches,
+              "mapping_status": raw["mapping_status"], "selection_status": scope["selection_status"],
+              "total_matches": raw["total_matches"], "matches": matches,
               "scan_scope": bounded_scope(scope),
               "failures": [{**failure, "path": stable_failure_path(failure.get("path"), directory)}
                            for failure in raw.get("failures", [])[:20]], "failure_count": len(raw.get("failures", [])),
@@ -423,7 +444,9 @@ def navigate(repo: Path, revision: str, prefixes: list[str], query: str, limit: 
     directory.mkdir(parents=True)
     (directory / "selection.json").write_text(json.dumps(scope, indent=2))
     if not selected:
-        packet = {"schema_version": 1, "revision": revision, "mapping_status": "unsupported",
+        packet = {"schema_version": 1, "revision": revision,
+                  "mapping_status": "excluded" if scope["selection_status"] == "excluded-only" else "unsupported",
+                  "selection_status": scope["selection_status"],
                   "ri_revision": lock["revision"], "contracts": lock["contracts"],
                   "runtime_manifest_sha256": manifest["manifest_sha256"],
                   "matches": [], "scan_scope": bounded_scope(scope),
