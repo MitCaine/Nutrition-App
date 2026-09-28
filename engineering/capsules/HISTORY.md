@@ -3866,3 +3866,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** c153ed01cf9611293da9444c123d91a8dfbd208f
 - **Full-capsule recovery path:** engineering/capsules/active/GH-226-lock-publication.md
 - **Historical capsule SHA-256:** b905067f4f6f40537845a37ed101c0bc9e3357300f5b8191d8165d646babf9fd
+
+### GH-227-stale-index-lock - Recover transaction-owned stale Git index locks
+
+- **ID:** GH-227-stale-index-lock
+- **Title:** Recover transaction-owned stale Git index locks
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** tooling
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/227; implementation authorization comment 5861293940 and distinct terminal authorization comment 5861381593.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after separate T qualification, independent review and protected guarded finalize.
+- **Created:** 2026-09-27
+- **Completed/updated:** 2026-09-27
+- **Base commit:** f645c39b94722e06810b31da5caba6684500f349
+- **Task branch:** task/GH-227-stale-index-lock
+- **Controller:** Codex Nutrition controller
+- **Executor:** Codex bounded implementor
+- **Reviewer:** Fresh independent exact-candidate reviewer
+- **Delegation:** none
+- **Implementation commit(s):** fd8d1a3ada7f088b746d497609d33e1223a1a133
+- **Verified commit reference(s):** fd8d1a3ada7f088b746d497609d33e1223a1a133
+- **Reviewed source commit:** fd8d1a3ada7f088b746d497609d33e1223a1a133
+- **Reviewed task/checkpoint commit(s):** fd8d1a3ada7f088b746d497609d33e1223a1a133
+- **Integration/merged commit:** fd8d1a3ada7f088b746d497609d33e1223a1a133
+- **Integration-related commit reference(s):** Protected C at fd8d1a3ada7f088b746d497609d33e1223a1a133; distinct terminal T requires qualification and protected integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh isolated exact-C reviewer for AC-1..AC-4 and five changed paths with no findings.
+- **Verification summary:** Focused 49 updater tests and seven subtests passed; repository baseline passed; RI P-to-C comparable with five controller path dispositions. Abrupt subprocess death before and after publication recovers exact transaction-owned lock; unknown, modified, mismatched and active locks remain untouched.
+- **Specialized qualification:** Dedicated App check 108744489177 passed repository profile at C; terminal T requires distinct repository App check.
+- **Known warnings:** None for accepted candidate; this entry is ineffective until protected T and remote observation.
+- **Deferred work/follow-up IDs:** None.
+- **Retrospective:** A durable random transaction nonce and atomic hard-link creation distinguish updater-owned stale Git locks from unknown locks. Recovery requires the per-checkout process lock and retains exact-byte transaction reconciliation.
+- **Referenced commits:** Planning 98c9fc89151781933aca521d9c06e92ef060db2a; implementation fd8d1a3ada7f088b746d497609d33e1223a1a133; full reviewed capsule f92ab176d8ff1cf1df1cd6b12352da3cf1ea1d5e.
+- **Full-capsule recovery commit:** f92ab176d8ff1cf1df1cd6b12352da3cf1ea1d5e
+- **Full-capsule recovery path:** engineering/capsules/active/GH-227-stale-index-lock.md
+- **Historical capsule SHA-256:** 184411f3ec9e1088c10b40f263168619d47162594fa30c0f4e8cab4ee85c97de
