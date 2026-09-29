@@ -25,6 +25,18 @@ a deferred row requires the matching authenticated owner manual evidence. Review
 the original issue body with the selected outcomes and flag omissions; the list cannot
 silently narrow the original request. Unattached compatibility review is unchanged.
 
+The trusted controller supplies current authorization and workflow mode to strict
+READY planning and handoff validation. In attached mode, planning reuses the attachment
+parsers before executor handoff: evidence requirements, review outcome IDs and AC
+mappings, standard paths and line ranges at the authorized base, and a selected RI
+policy. It also checks quoted outcomes against the trusted issue body when that body is
+available. If issue text cannot be fetched, quote comparison is recorded as unavailable;
+capsule text is never treated as the issue source. Exact-C attachment fetches the issue
+again and repeats these checks before candidate evidence is bound. An explicitly
+authorized compatibility task may omit all attached-only blocks; any such blocks it
+does include are validated. Planning does not attach C, approve a reviewer, satisfy
+command evidence, or satisfy RI capture or disposition.
+
 ````markdown
 ```nutrition-review-obligations-v1
 {"schema_version":1,"outcomes":[{"id":"OUT-1","quote":"Exact requested outcome from the issue body","mapping":{"type":"criteria","ids":["AC-1"]}}],"standards":[{"id":"STD-1","path":"AGENTS.md","start_line":53,"end_line":56,"reason":"Bounded changes and validation"}]}
@@ -86,6 +98,11 @@ Lifecycle fields, acceptance checkboxes, State history and Completion record may
 all other capsule semantics are frozen. A changed contract requires new authority, not a
 correction. The issue body/title snapshot is recorded with its digest as review context;
 external authorization and the frozen capsule remain the execution contract.
+
+The strict READY validator accepts `--planning-context PATH` for a controller-supplied
+context file outside the repository. The public handoff renderer accepts the same
+option. The trusted `task execution prepare` route creates and removes this file around
+handoff validation; context must come from that controller route, never capsule fields.
 
 ### Governing issue revalidation
 

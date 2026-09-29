@@ -85,6 +85,8 @@ from lib.qualification_profiles import (
     QualificationProfileError,
     parse_profile_tokens,
 )
+from lib.candidate_evidence import EvidenceError
+from lib.ri_consumer import RIError
 
 SCHEMA_VERSION = 1
 ACTIVE_STATES = (
@@ -297,6 +299,7 @@ class CapsuleResult:
     warnings: list[Finding] = field(default_factory=list)
     metadata: dict[str, Any] | None = None
     execution: dict[str, Any] | None = None
+    planning_evidence: dict[str, Any] | None = None
 
     def error(self, code: str, message: str, field_name: str | None = None) -> None:
         self.valid = False
@@ -1642,6 +1645,7 @@ def validate_capsule(
     *,
     execution: bool,
     context: dict[str, Any],
+    planning_context: dict[str, Any] | None = None,
 ) -> CapsuleResult:
     result = CapsuleResult(path=relative_path(repo, path))
     resolved = path.resolve()
@@ -1976,6 +1980,19 @@ def validate_capsule(
                         f"expected {expected_overlay}, found {overlay}.",
                         "base_commit",
                     )
+        if state == "READY":
+            try:
+                from lib import candidate_evidence
+
+                result.planning_evidence = candidate_evidence.validate_ready_planning(
+                    repo, resolved.read_bytes(), planning_context)
+            except (EvidenceError, RIError, OSError, UnicodeError, ValueError,
+                    TypeError, KeyError) as exc:
+                # The shared parsers use stable error codes. Keep the strict
+                # validator's JSON route fail-closed for malformed context or
+                # parser input without hiding the parser's diagnostic.
+                code = str(exc).split(":", 1)[0] or "PLANNING_EVIDENCE_INVALID"
+                result.error(code, str(exc), "planning evidence")
     return result
 
 
@@ -2284,6 +2301,15 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--planning-context",
+        type=Path,
+        help=(
+            "External trusted-controller context for attached READY planning. "
+            "It binds the capsule to current authorization and any available issue text."
+        ),
+    )
+
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON.",
@@ -2321,6 +2347,9 @@ def main() -> int:
             "explicit capsule path"
         )
 
+    if args.planning_context and not args.execution:
+        parser.error("--planning-context requires --execution")
+
     repo = (
         args.repo_root
         or Path(__file__).resolve().parents[1]
@@ -2328,6 +2357,23 @@ def main() -> int:
 
     try:
         context = repository_context(repo)
+
+        planning_context = None
+        if args.planning_context:
+            context_path = args.planning_context.resolve()
+            try:
+                context_path.relative_to(repo)
+            except ValueError:
+                pass
+            else:
+                raise InvocationError("Planning context must be outside the repository.")
+            if (args.planning_context.is_symlink() or not context_path.is_file()
+                    or context_path.stat().st_nlink != 1 or context_path.stat().st_size > 2_000_000):
+                raise InvocationError("Planning context must be one external regular file.")
+            try:
+                planning_context = json.loads(context_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise InvocationError("Planning context is unreadable or malformed JSON.") from exc
 
         if args.paths:
             paths = [
@@ -2347,6 +2393,7 @@ def main() -> int:
                 path,
                 execution=args.execution,
                 context=context,
+                planning_context=planning_context,
             )
             for path in paths
         ]

@@ -195,6 +195,104 @@ Not applicable — no unresolved assumptions remain.
 '''
 
 
+def attached_planning_blocks(
+    *,
+    review: dict | str | None = None,
+    evidence: list | str | None = None,
+    ri: dict | str | None = None,
+) -> tuple[str, dict, str]:
+    issue_body = "Issue requests deterministic validation."
+    auth = {
+        "task_id": "GH-PLANNING",
+        "issue_number": 1,
+        "repository": "example/repo",
+        "base_sha": "",
+        "allowed_paths": ["scripts/validate-task-capsules.py"],
+        "forbidden_paths": [],
+        "profiles": ["repository"],
+        "revision": 1,
+        "nonce": "planning-nonce-123456",
+        "comment_id": 42,
+        "author_login": "example",
+        "payload_sha256": "a" * 64,
+        "identity_sha256": "b" * 64,
+    }
+    context = {"schema_version": 1, "workflow_mode": "attached",
+               "authorization": auth, "issue": {"number": 1, "body": issue_body}}
+    metadata = {"id": "GH-PLANNING", "source_issue": "https://github.com/example/repo/issues/1"}
+    review_value = {
+        "schema_version": 1,
+        "outcomes": [{"id": "OUT-1", "quote": issue_body,
+                      "mapping": {"type": "criteria", "ids": ["AC-1"]}}],
+        "standards": [{"id": "STD-1", "path": "docs/spec.md", "start_line": 1,
+                       "end_line": 1, "reason": "Applies to validation."}],
+    }
+    evidence_value = [
+        {"id": "focused", "kind": "focused", "required": True,
+         "argv": ["{python}", "-c", "print('focused')"]},
+        {"id": "baseline", "kind": "baseline", "required": True,
+         "argv": ["{python}", "-c", "print('baseline')"]},
+    ]
+    blocks = capsule_text("GH-PLANNING", "READY", "BASE").replace(
+        'source_issue = "github:#1"', f'source_issue = "{metadata["source_issue"]}"'
+    ).replace('specialized_qualification = []', 'specialized_qualification = ["profile:repository"]')
+    blocks = blocks.replace(
+        "\n## Dependencies and prerequisites\n",
+        "\n" + ("```nutrition-review-obligations-v1\n" +
+                 (json.dumps(review_value) if review is None else
+                  review if isinstance(review, str) else json.dumps(review)) + "\n```\n\n"
+                 if review is not False else "") + "## Dependencies and prerequisites\n",
+    )
+    blocks = blocks.replace(
+        "\n### Focused\n",
+        "\n" + ("```nutrition-evidence-v1\n" +
+                 (json.dumps(evidence_value) if evidence is None else
+                  evidence if isinstance(evidence, str) else json.dumps(evidence)) + "\n```\n\n"
+                 if evidence is not False else "") + "### Focused\n",
+    )
+    blocks = blocks.replace(
+        "\n## Required verification\n",
+        "\n" + ("```nutrition-ri-v1\n" +
+                 (json.dumps({"schema_version": 1, "scope": "changed-files-v1"}) if ri is None else
+                  ri if isinstance(ri, str) else json.dumps(ri)) + "\n```\n\n"
+                 if ri is not False else "") + "## Required verification\n",
+    )
+    return blocks, context, issue_body
+
+
+def ready_planning_case(tmp_path: Path, *, review: dict | str | None = None,
+                        evidence: list | str | None = None, ri: dict | str | None = None,
+                        issue_body: str | None = "Issue requests deterministic validation.") -> tuple[Path, Path, str]:
+    repo, base = setup_repo(tmp_path)
+    relative = Path("engineering/capsules/active/GH-PLANNING.md")
+    text, context, _ = attached_planning_blocks(review=review, evidence=evidence, ri=ri)
+    text = text.replace("base_commit = \"BASE\"", f'base_commit = "{base}"')
+    context["authorization"]["base_sha"] = base
+    if issue_body is None:
+        context["issue"] = None
+    else:
+        context["issue"]["body"] = issue_body
+    (repo / relative).write_text(text, encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "add attached ready capsule")
+    context_path = tmp_path / "planning-context.json"
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+    return repo, context_path, relative.as_posix()
+
+
+def duplicate_planning_block(repo: Path, relative: str, tag: str) -> None:
+    path = repo / relative
+    text = path.read_text(encoding="utf-8")
+    import re
+
+    match = re.search(rf"(?m)^```{tag}[ \t]*\r?\n.*?^```[ \t]*$", text, re.S)
+    assert match is not None
+    text = text.replace(match.group(0), match.group(0) + "\n\n" + match.group(0), 1)
+    path.write_text(text, encoding="utf-8")
+    git(repo, "add", relative)
+    git(repo, "commit", "-m", "duplicate planning block")
+
+
 
 def completed_capsule_text(
     capsule_id: str,
@@ -474,6 +572,111 @@ def test_ready_capsule_execution_preflight(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     document = json.loads(result.stdout)
     assert document["capsules"][0]["execution"]["overlay_paths"] == [relative.as_posix()]
+
+
+def test_attached_ready_planning_validates_obligations_against_trusted_context(tmp_path: Path) -> None:
+    repo, planning_context, relative = ready_planning_case(tmp_path)
+    result = run_validator(repo, "--execution", relative, "--planning-context",
+                          str(planning_context), "--json")
+    assert result.returncode == 0, result.stdout + result.stderr
+    planning = json.loads(result.stdout)["capsules"][0]["planning_evidence"]
+    assert planning == {
+        "workflow_mode": "attached",
+        "attached_blocks_checked": True,
+        "issue_text_checked": True,
+        "requirements": ["focused", "baseline"],
+        "outcomes": ["OUT-1"],
+        "standards": ["STD-1"],
+        "ri_selected": True,
+    }
+
+
+def test_attached_ready_planning_rejects_invalid_obligation_and_evidence_blocks(tmp_path: Path) -> None:
+    invalid_review = {
+        "schema_version": 1,
+        "outcomes": [{"id": "OUT-0", "quote": "Issue requests deterministic validation.",
+                      "mapping": {"type": "criteria", "ids": ["AC-1"]}}],
+        "standards": [{"id": "STD-1", "path": "docs/spec.md", "start_line": 1,
+                       "end_line": 1, "reason": "Applies to validation."}],
+    }
+    invalid_mapping = json.loads(json.dumps(invalid_review))
+    invalid_mapping["outcomes"][0]["id"] = "OUT-1"
+    invalid_mapping["outcomes"][0]["mapping"]["ids"] = ["AC-9"]
+    duplicate_mapping = json.loads(json.dumps(invalid_mapping))
+    duplicate_mapping["outcomes"][0]["mapping"]["ids"] = ["AC-1", "AC-1"]
+    invalid_range = json.loads(json.dumps(invalid_mapping))
+    invalid_range["outcomes"][0]["mapping"]["ids"] = ["AC-1"]
+    invalid_range["standards"][0]["start_line"] = 2
+    invalid_range["standards"][0]["end_line"] = 2
+    invalid_standard_id = json.loads(json.dumps(invalid_range))
+    invalid_standard_id["standards"][0]["start_line"] = 1
+    invalid_standard_id["standards"][0]["end_line"] = 1
+    invalid_standard_id["standards"][0]["id"] = "STD-0"
+    cases = [
+        ("invalid-id", {"review": invalid_review}, "REVIEW_OUTCOME_INVALID"),
+        ("absent-obligations", {"review": False}, "REVIEW_OBLIGATIONS_MISSING"),
+        ("invalid-ac-map", {"review": invalid_mapping}, "REVIEW_OUTCOME_MAPPING_INVALID"),
+        ("duplicate-ac-map", {"review": duplicate_mapping}, "REVIEW_OUTCOME_MAPPING_INVALID"),
+        ("bad-standard-range", {"review": invalid_range}, "REVIEW_STANDARD_SOURCE_RANGE_INVALID"),
+        ("invalid-standard-id", {"review": invalid_standard_id}, "REVIEW_STANDARD_INVALID"),
+        ("malformed-evidence", {"evidence": "{"}, "CAPSULE_EVIDENCE_REQUIREMENTS_INVALID"),
+        ("malformed-ri", {"ri": "{"}, "RI_CAPSULE_POLICY_INVALID"),
+        ("duplicate-review", {"duplicate": "nutrition-review-obligations-v1"}, "REVIEW_OBLIGATIONS_INVALID"),
+        ("duplicate-evidence", {"duplicate": "nutrition-evidence-v1"}, "CAPSULE_EVIDENCE_REQUIREMENTS_INVALID"),
+        ("duplicate-ri", {"duplicate": "nutrition-ri-v1"}, "RI_CAPSULE_POLICY_INVALID"),
+        ("quote-mismatch", {"issue_body": "Different trusted issue text."}, "REVIEW_OUTCOME_INVALID"),
+    ]
+    for name, overrides, expected in cases:
+        case_root = tmp_path / name
+        case_root.mkdir()
+        kwargs = {key: value for key, value in overrides.items()
+                  if key not in {"issue_body", "duplicate"}}
+        repo, planning_context, relative = ready_planning_case(
+            case_root, **kwargs, issue_body=overrides.get("issue_body", "Issue requests deterministic validation."))
+        if "duplicate" in overrides:
+            duplicate_planning_block(repo, relative, overrides["duplicate"])
+        result = run_validator(repo, "--execution", relative, "--planning-context",
+                              str(planning_context), "--json")
+        assert result.returncode == 1, f"{name}: {result.stdout}{result.stderr}"
+        assert expected in error_codes(result), f"{name}: {error_codes(result)}"
+
+
+def test_attached_planning_skips_quote_check_when_trusted_issue_text_is_unavailable(tmp_path: Path) -> None:
+    repo, planning_context, relative = ready_planning_case(tmp_path, issue_body=None)
+    result = run_validator(repo, "--execution", relative, "--planning-context",
+                          str(planning_context), "--json")
+    assert result.returncode == 0, result.stdout + result.stderr
+    planning = json.loads(result.stdout)["capsules"][0]["planning_evidence"]
+    assert planning["issue_text_checked"] is False
+
+
+def test_explicit_compatibility_ready_needs_no_attached_only_blocks(tmp_path: Path) -> None:
+    repo, base = setup_repo(tmp_path)
+    relative = Path("engineering/capsules/active/GH-COMPAT.md")
+    text = capsule_text("GH-COMPAT", "READY", base).replace(
+        'source_issue = "github:#1"', 'source_issue = "https://github.com/example/repo/issues/1"')
+    (repo / relative).write_text(text, encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "add compatibility ready capsule")
+    context = {
+        "schema_version": 1,
+        "workflow_mode": "compatibility",
+        "authorization": {
+            "task_id": "GH-COMPAT", "issue_number": 1, "repository": "example/repo",
+            "base_sha": base, "allowed_paths": [], "forbidden_paths": [], "profiles": [],
+            "revision": 1, "nonce": "compat-nonce-123456", "comment_id": 42,
+            "author_login": "example", "payload_sha256": "a" * 64, "identity_sha256": "b" * 64,
+        },
+        "issue": None,
+    }
+    planning_context = tmp_path / "compatibility-context.json"
+    planning_context.write_text(json.dumps(context), encoding="utf-8")
+    result = run_validator(repo, "--execution", relative.as_posix(), "--planning-context",
+                           str(planning_context), "--json")
+    assert result.returncode == 0, result.stdout + result.stderr
+    planning = json.loads(result.stdout)["capsules"][0]["planning_evidence"]
+    assert planning["workflow_mode"] == "compatibility"
+    assert planning["attached_blocks_checked"] is False
 
 
 def test_filename_must_match_id(tmp_path: Path) -> None:

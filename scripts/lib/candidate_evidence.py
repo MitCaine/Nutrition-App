@@ -112,9 +112,14 @@ def frozen_contract(raw: bytes) -> dict:
 
 
 def requirements(raw: bytes) -> list[dict]:
-    blocks = re.findall(r"```nutrition-evidence-v1\s*\n(.*?)\n```", raw.decode(), re.S)
-    if len(blocks) != 1:
+    text = raw.decode()
+    markers = re.findall(r"(?m)^```nutrition-evidence-v1[^\r\n]*$", text)
+    blocks = re.findall(
+        r"(?m)^```nutrition-evidence-v1[ \t]*\r?\n(.*?)\r?\n```[ \t]*$", text, re.S)
+    if not markers:
         raise EvidenceError("CAPSULE_EVIDENCE_REQUIREMENTS_MISSING")
+    if len(markers) != 1 or len(blocks) != 1:
+        raise EvidenceError("CAPSULE_EVIDENCE_REQUIREMENTS_INVALID")
     try:
         values = json.loads(blocks[0])
     except ValueError as exc:
@@ -127,7 +132,8 @@ def requirements(raw: bytes) -> list[dict]:
         if (not isinstance(item, dict) or not {"id", "kind", "required", "argv"}.issubset(item)
                 or set(item) - {"id", "kind", "required", "argv", "prepare"}
                 or not isinstance(item["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]*", item["id"])
-                or item["id"] in seen or item["kind"] not in kinds or type(item["required"]) is not bool):
+                or item["id"] in seen or not isinstance(item["kind"], str)
+                or item["kind"] not in kinds or type(item["required"]) is not bool):
             raise EvidenceError("CAPSULE_EVIDENCE_REQUIREMENT_INVALID")
         if "prepare" in item and (item["prepare"] != "mobile-npm-ci-offline-v1"
                                   or item["kind"] == "manual"):
@@ -146,11 +152,17 @@ def requirements(raw: bytes) -> list[dict]:
 
 
 def review_obligations(repo: Path, raw: bytes, authorization: ResolvedAuthorization,
-                       issue: dict, criteria: dict[str, str], required_checks: list[dict]) -> dict:
+                       issue: dict, criteria: dict[str, str], required_checks: list[dict], *,
+                       allow_unavailable_issue_text: bool = False) -> dict:
     """Bind a small, frozen issue/standards checklist to exact source bytes."""
-    blocks = re.findall(r"```nutrition-review-obligations-v1\s*\n(.*?)\n```", raw.decode(), re.S)
-    if len(blocks) != 1:
+    text = raw.decode()
+    markers = re.findall(r"(?m)^```nutrition-review-obligations-v1[^\r\n]*$", text)
+    blocks = re.findall(
+        r"(?m)^```nutrition-review-obligations-v1[ \t]*\r?\n(.*?)\r?\n```[ \t]*$", text, re.S)
+    if not markers:
         raise EvidenceError("REVIEW_OBLIGATIONS_MISSING")
+    if len(markers) != 1 or len(blocks) != 1:
+        raise EvidenceError("REVIEW_OBLIGATIONS_INVALID")
     try:
         value = json.loads(blocks[0])
     except ValueError as exc:
@@ -167,7 +179,9 @@ def review_obligations(repo: Path, raw: bytes, authorization: ResolvedAuthorizat
         if (not isinstance(item, dict) or set(item) != {"id", "quote", "mapping"}
                 or not isinstance(item["id"], str) or not re.fullmatch(r"OUT-[1-9][0-9]*", item["id"])
                 or item["id"] in seen or not isinstance(item["quote"], str)
-                or not 8 <= len(item["quote"]) <= 1000 or item["quote"] not in issue.get("body", "")
+                or not 8 <= len(item["quote"]) <= 1000
+                or (not isinstance(issue.get("body"), str) and not allow_unavailable_issue_text)
+                or (isinstance(issue.get("body"), str) and item["quote"] not in issue["body"])
                 or not isinstance(item["mapping"], dict)):
             raise EvidenceError("REVIEW_OUTCOME_INVALID")
         seen.add(item["id"])
@@ -215,6 +229,152 @@ def review_obligations(repo: Path, raw: bytes, authorization: ResolvedAuthorizat
                           "source_sha256": hashlib.sha256(source).hexdigest(),
                           "excerpt": excerpt})
     return {"schema_version": 1, "outcomes": outcomes, "standards": standards}
+
+
+PLANNING_CONTEXT_SCHEMA_VERSION = 1
+PLANNING_CONTEXT_FIELDS = {"schema_version", "workflow_mode", "authorization", "issue"}
+AUTHORIZATION_CONTEXT_FIELDS = {
+    "task_id", "issue_number", "repository", "base_sha", "allowed_paths",
+    "forbidden_paths", "profiles", "revision", "nonce", "comment_id",
+    "author_login", "payload_sha256", "identity_sha256",
+}
+PLANNING_BLOCK_TAGS = (
+    "nutrition-review-obligations-v1",
+    "nutrition-evidence-v1",
+    "nutrition-ri-v1",
+)
+
+
+def planning_context_document(authorization: ResolvedAuthorization, workflow_mode: str,
+                              issue: dict | None) -> dict:
+    """Build the narrow, trusted input used by strict READY planning validation."""
+    if workflow_mode not in {"attached", "compatibility"}:
+        raise EvidenceError("PLANNING_WORKFLOW_MODE_INVALID")
+    issue_context = None
+    if issue is not None:
+        if type(issue.get("number")) is not int or issue["number"] != authorization.issue_number:
+            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
+        body = issue.get("body")
+        if body is not None and not isinstance(body, str):
+            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
+        issue_context = {"number": issue["number"], "body": body}
+    return {"schema_version": PLANNING_CONTEXT_SCHEMA_VERSION,
+            "workflow_mode": workflow_mode, "authorization": authorization.to_dict(),
+            "issue": issue_context}
+
+
+def parse_planning_context(value: object) -> dict:
+    """Validate the controller-supplied planning context's exact shape."""
+    if (not isinstance(value, dict) or set(value) != PLANNING_CONTEXT_FIELDS
+            or type(value.get("schema_version")) is not int
+            or value["schema_version"] != PLANNING_CONTEXT_SCHEMA_VERSION
+            or value.get("workflow_mode") not in {"attached", "compatibility"}):
+        raise EvidenceError("PLANNING_CONTEXT_INVALID")
+    source = value.get("authorization")
+    if not isinstance(source, dict) or set(source) != AUTHORIZATION_CONTEXT_FIELDS:
+        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_INVALID")
+    try:
+        authorization = ResolvedAuthorization(
+            task_id=source["task_id"], issue_number=source["issue_number"],
+            repository=source["repository"], base_sha=source["base_sha"],
+            allowed_paths=tuple(source["allowed_paths"]),
+            forbidden_paths=tuple(source["forbidden_paths"]), profiles=tuple(source["profiles"]),
+            revision=source["revision"], nonce=source["nonce"], comment_id=source["comment_id"],
+            author_login=source["author_login"], payload_sha256=source["payload_sha256"],
+            identity_sha256=source["identity_sha256"],
+        )
+    except (KeyError, TypeError) as exc:
+        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_INVALID") from exc
+    if authorization.to_dict() != source:
+        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_INVALID")
+    issue = value.get("issue")
+    if issue is not None:
+        if (not isinstance(issue, dict) or set(issue) != {"number", "body"}
+                or type(issue.get("number")) is not int
+                or issue["number"] != authorization.issue_number
+                or (issue.get("body") is not None and not isinstance(issue["body"], str))):
+            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
+    return {"schema_version": PLANNING_CONTEXT_SCHEMA_VERSION,
+            "workflow_mode": value["workflow_mode"], "authorization": authorization,
+            "issue": issue}
+
+
+def _planning_criteria(raw: bytes) -> dict[str, str]:
+    sections = frozen_contract(raw)["sections"]
+    section = sections.get("Acceptance criteria", "")
+    matches = re.findall(r"(?m)^- \[[ xX]\] (AC-[A-Za-z0-9-]+):?\s+(.+)$", section)
+    if not matches or len({identifier for identifier, _ in matches}) != len(matches):
+        raise EvidenceError("CAPSULE_ACCEPTANCE_IDS_INVALID")
+    return dict(matches)
+
+
+def _has_planning_block_marker(raw: bytes) -> bool:
+    text = raw.decode()
+    return any(re.search(rf"(?m)^```{re.escape(tag)}(?:[ \t].*)?$", text)
+               for tag in PLANNING_BLOCK_TAGS)
+
+
+def validate_ready_planning(repo: Path, raw: bytes, context: dict | None) -> dict:
+    """Apply attachment parsers early when trusted controller context is present."""
+    if context is None:
+        if _has_planning_block_marker(raw):
+            raise EvidenceError("PLANNING_CONTEXT_REQUIRED")
+        # The generic offline validator also serves compatibility work. It has no
+        # authority to infer attached mode or fabricate its required context.
+        return {"workflow_mode": "unspecified", "attached_blocks_checked": False,
+                "issue_text_checked": False}
+    parsed_context = parse_planning_context(context)
+    authorization = parsed_context["authorization"]
+    mode = parsed_context["workflow_mode"]
+    metadata = capsule_metadata(raw)
+    expected = {"id": authorization.task_id, "capsule_revision": authorization.revision,
+                "base_commit": authorization.base_sha,
+                "source_issue": f"https://github.com/{authorization.repository}/issues/{authorization.issue_number}"}
+    if any(metadata.get(key) != value for key, value in expected.items()):
+        raise EvidenceError("PLANNING_AUTHORIZATION_MISMATCH")
+
+    text = raw.decode()
+    has_obligations = bool(re.search(r"(?m)^```nutrition-review-obligations-v1(?:[ \t].*)?$", text))
+    has_requirements = bool(re.search(r"(?m)^```nutrition-evidence-v1(?:[ \t].*)?$", text))
+    has_ri = bool(re.search(r"(?m)^```nutrition-ri-v1(?:[ \t].*)?$", text))
+    if mode == "attached" or has_obligations or has_requirements or has_ri:
+        planned = requirements(raw) if mode == "attached" or has_requirements else []
+        criteria = _planning_criteria(raw)
+        obligations = None
+        if mode == "attached" or has_obligations:
+            issue = parsed_context["issue"]
+            obligations = review_obligations(
+                repo, raw, authorization, issue or {"body": None}, criteria, planned,
+                allow_unavailable_issue_text=issue is None or issue.get("body") is None)
+        structural = ri_delta.configuration(text)
+        if mode == "attached" or has_ri:
+            # configuration() returns None for an absent optional block and raises
+            # for malformed or duplicate selected policies.
+            if has_ri and structural is None:
+                raise EvidenceError("RI_CAPSULE_POLICY_INVALID")
+        declared = {item["id"] for item in planned if item["required"]}
+        specialized = metadata.get("specialized_qualification", [])
+        if not isinstance(specialized, list):
+            raise EvidenceError("SPECIALIST_REQUIREMENT_NOT_MACHINE_BOUND")
+        for entry in specialized:
+            if not isinstance(entry, str) or not entry.startswith(("profile:", "evidence:")):
+                raise EvidenceError("SPECIALIST_REQUIREMENT_NOT_MACHINE_BOUND")
+            if entry.startswith("evidence:") and entry[9:] not in declared:
+                raise EvidenceError("SPECIALIST_REQUIREMENT_MISSING")
+        profiles = sorted(entry[8:] for entry in specialized
+                          if isinstance(entry, str) and entry.startswith("profile:"))
+        if profiles != sorted(authorization.profiles):
+            raise EvidenceError("CAPSULE_PROFILES_CHANGED")
+        issue = parsed_context["issue"]
+        return {"workflow_mode": mode, "attached_blocks_checked": True,
+                "issue_text_checked": issue is not None and issue.get("body") is not None,
+                "requirements": [item["id"] for item in planned],
+                "outcomes": [item["id"] for item in obligations["outcomes"]] if obligations else [],
+                "standards": [item["id"] for item in obligations["standards"]] if obligations else [],
+                "ri_selected": structural is not None}
+    return {"workflow_mode": mode, "attached_blocks_checked": False,
+            "issue_text_checked": parsed_context["issue"] is not None
+            and parsed_context["issue"].get("body") is not None}
 
 
 def observe(repo: Path, candidate: str) -> dict:
