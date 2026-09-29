@@ -17,6 +17,7 @@ from lib.task_authorization import (  # noqa: E402
     AuthorizationError,
     build_payload,
     render_authorization_comment,
+    required_profiles_for_paths,
     resolve_comments,
 )
 
@@ -190,6 +191,99 @@ class ResolveCommentsTests(unittest.TestCase):
             context.exception.code,
             "AUTHORIZATION_DIGEST_MISMATCH",
         )
+
+
+class RequiredProfilesForPathsTests(unittest.TestCase):
+    def test_profile_floors_use_component_boundaries_and_compose(self):
+        cases = (
+            (
+                ["apps/backend/tests/test_task_controller.py"],
+                {"backend"},
+            ),
+            (
+                ["apps/backend/**"],
+                {"backend"},
+            ),
+            (
+                ["apps/mobile/**"],
+                {"mobile"},
+            ),
+            (
+                ["apps/mobile/src/runtime/session.ts"],
+                {"mobile"},
+            ),
+            (
+                ["apps/backend/app/migrations/versions/0034_example.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/backend/app/models/food.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/backend/app/repositories/food_repository.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/backend/app/core/database.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/backend/app/operators/current_runtime_authority.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/backend/tests/test_phase5c4_roles_postgres.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/backend/tests/postgres_test_support.py"],
+                {"backend", "postgresql"},
+            ),
+            (
+                ["apps/mobile/app.json"],
+                {"ios-native", "mobile"},
+            ),
+            (
+                ["scripts/lib/task_authorization.py"],
+                {"ios-native"},
+            ),
+            (
+                ["apps/backend/app/models/food.py", "apps/mobile/app.json"],
+                {"backend", "ios-native", "mobile", "postgresql"},
+            ),
+            (
+                ["docs/operations/testing.md"],
+                set(),
+            ),
+            (
+                ["apps/backendish/app/models/food.py"],
+                set(),
+            ),
+            (
+                ["apps/mobileish/app.json"],
+                set(),
+            ),
+            (
+                ["apps/backend/app/migrations_extra/versions/0034_example.py"],
+                {"backend"},
+            ),
+            (
+                ["apps/backend/app/repositories_extra/food_repository.py"],
+                {"backend"},
+            ),
+            (
+                ["apps/backend/tests/test_task_controller_postgresish.py"],
+                {"backend"},
+            ),
+        )
+
+        for paths, expected in cases:
+            with self.subTest(paths=paths):
+                self.assertEqual(
+                    required_profiles_for_paths(paths),
+                    expected,
+                )
 
 
 if __name__ == "__main__":

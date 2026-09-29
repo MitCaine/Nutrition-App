@@ -170,6 +170,8 @@ def authorization_payload(
     allowed_paths: list[str] | None = None,
     forbidden_paths: list[str] | None = None,
     profiles: list[str] | None = None,
+    revision: int = 1,
+    nonce: str = "nonce-1234567890abcdef",
 ) -> dict:
     return build_payload(
         task_id="GH-999-P1",
@@ -191,11 +193,37 @@ def authorization_payload(
                 "backend",
             ]
         ),
-        revision=1,
-        nonce=(
-            "nonce-1234567890abcdef"
-        ),
+        revision=revision,
+        nonce=nonce,
     )
+
+
+def commit_paths(
+    repo: Path,
+    contents: dict[str, str],
+    *,
+    message: str = "candidate",
+) -> str:
+    for relative_path, content in contents.items():
+        path = repo / relative_path
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        path.write_text(
+            content,
+            encoding="utf-8",
+        )
+
+    git(repo, "add", ".")
+    git(
+        repo,
+        "commit",
+        "-q",
+        "-m",
+        message,
+    )
+    return git(repo, "rev-parse", "HEAD")
 
 
 def comment_for(
@@ -220,6 +248,7 @@ def resolve(
     *,
     comment_id: int = 12345,
     author: str = "trusted-owner",
+    revision: int = 1,
 ):
     return resolve_comment(
         comment_for(
@@ -231,7 +260,7 @@ def resolve(
         expected_repository="owner/repo",
         expected_issue_number=999,
         expected_task_id="GH-999-P1",
-        expected_revision=1,
+        expected_revision=revision,
         expected_comment_id=comment_id,
         expected_payload_sha256=payload[
             "payload_sha256"
@@ -797,6 +826,284 @@ def test_native_path_accepts_ios_native_profile(
     ) == [
         "apps/mobile/app.json",
     ]
+
+
+@pytest.mark.parametrize(
+    ("path", "profiles", "missing_profile"),
+    [
+        (
+            "apps/backend/tests/test_task_controller.py",
+            ["repository"],
+            "backend",
+        ),
+        (
+            "apps/mobile/src/runtime/session.ts",
+            ["repository"],
+            "mobile",
+        ),
+        (
+            "apps/backend/app/migrations/versions/0034_example.py",
+            ["repository", "backend"],
+            "postgresql",
+        ),
+        (
+            "scripts/lib/task_authorization.py",
+            ["repository", "backend"],
+            "ios-native",
+        ),
+    ],
+)
+def test_candidate_scope_rejects_each_missing_minimum_profile(
+    tmp_path: Path,
+    path: str,
+    profiles: list[str],
+    missing_profile: str,
+) -> None:
+    repo, base = init_repo(tmp_path)
+    candidate = commit_paths(
+        repo,
+        {path: "candidate change\n"},
+    )
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=[path],
+            profiles=profiles,
+        )
+    )
+    authorized_profiles = auth.profiles
+
+    with pytest.raises(
+        AuthorizationError,
+        match="QUALIFICATION_PROFILE_REQUIRED",
+    ) as context:
+        validate_candidate_scope(
+            repo,
+            auth,
+            candidate_sha=candidate,
+        )
+
+    assert missing_profile in str(context.value)
+    assert auth.profiles == authorized_profiles
+
+
+def test_candidate_scope_requires_combined_floor_without_changing_authorization(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+    changed = {
+        "apps/backend/app/models/food.py": "class Food: pass\n",
+        "apps/mobile/app.json": "{}\n",
+    }
+    candidate = commit_paths(repo, changed)
+    selected_profiles = ["repository", "backend"]
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=sorted(changed),
+            profiles=selected_profiles,
+        )
+    )
+    authorized_profiles = auth.profiles
+
+    with pytest.raises(
+        AuthorizationError,
+        match="QUALIFICATION_PROFILE_REQUIRED",
+    ) as context:
+        validate_candidate_scope(
+            repo,
+            auth,
+            candidate_sha=candidate,
+        )
+
+    message = str(context.value)
+    assert "mobile" in message
+    assert "postgresql" in message
+    assert "ios-native" in message
+    assert auth.profiles == authorized_profiles
+
+
+def test_planning_rejects_insufficient_profiles_then_accepts_owner_revision(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+    planning_path = "engineering/capsules/active/GH-999-P1.md"
+    owned_path = "apps/backend/app/models/food.py"
+    candidate = commit_paths(
+        repo,
+        {planning_path: "capsule-only planning change\n"},
+    )
+    selected_profiles = ["repository", "backend"]
+    allowed_paths = [planning_path, owned_path]
+    insufficient_payload = authorization_payload(
+        base,
+        allowed_paths=allowed_paths,
+        profiles=selected_profiles,
+    )
+    auth = resolve(
+        insufficient_payload,
+        comment_id=12345,
+        revision=1,
+    )
+    authorized_profiles = auth.profiles
+
+    with pytest.raises(
+        AuthorizationError,
+        match="QUALIFICATION_PROFILE_REQUIRED",
+    ) as context:
+        build_plan(
+            repo,
+            auth,
+            candidate_sha=candidate,
+            candidate_ref=(
+                "task-candidate/999/"
+                + candidate[:12]
+            ),
+        )
+
+    assert "planned or changed paths" in str(context.value)
+    assert auth.profiles == authorized_profiles
+
+    revised_profiles = [
+        "repository",
+        "backend",
+        "postgresql",
+        "mobile",
+    ]
+    revised_payload = authorization_payload(
+        base,
+        allowed_paths=allowed_paths,
+        profiles=revised_profiles,
+        revision=2,
+        nonce="nonce-2234567890abcdef",
+    )
+    revised_auth = resolve(
+        revised_payload,
+        comment_id=12346,
+        revision=2,
+    )
+    revised_plan = build_plan(
+        repo,
+        revised_auth,
+        candidate_sha=candidate,
+        candidate_ref=(
+            "task-candidate/999/"
+            + candidate[:12]
+        ),
+    )
+
+    assert revised_plan["authorization_revision"] == 2
+    assert revised_plan["authorization_comment_id"] == 12346
+    assert revised_plan["changed_paths"] == [planning_path]
+    assert revised_plan["profiles"] == revised_profiles
+
+
+def test_docs_only_plan_keeps_exact_owner_selected_profiles(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+    path = "docs/operations/testing.md"
+    candidate = commit_paths(
+        repo,
+        {path: "Documentation only.\n"},
+    )
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=[path],
+            profiles=["repository"],
+        )
+    )
+
+    plan = build_plan(
+        repo,
+        auth,
+        candidate_sha=candidate,
+        candidate_ref=(
+            "task-candidate/999/"
+            + candidate[:12]
+        ),
+    )
+
+    assert plan["changed_paths"] == [path]
+    assert plan["profiles"] == ["repository"]
+    assert auth.profiles == ("repository",)
+
+
+def test_ordinary_backend_scope_does_not_require_postgresql(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+    path = "apps/backend/tests/test_task_controller.py"
+    candidate = commit_paths(
+        repo,
+        {path: "ordinary backend regression\n"},
+    )
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=["apps/backend/**"],
+            profiles=["repository", "backend"],
+        )
+    )
+
+    plan = build_plan(
+        repo,
+        auth,
+        candidate_sha=candidate,
+        candidate_ref=(
+            "task-candidate/999/"
+            + candidate[:12]
+        ),
+    )
+
+    assert plan["profiles"] == ["repository", "backend"]
+
+
+@pytest.mark.parametrize(
+    ("path", "profiles"),
+    [
+        (
+            "apps/backendish/app/models/food.py",
+            ["repository"],
+        ),
+        (
+            "apps/mobileish/app.json",
+            ["repository"],
+        ),
+        (
+            "apps/backend/app/migrations_extra/versions/0034_example.py",
+            ["repository", "backend"],
+        ),
+        (
+            "apps/backend/app/repositories_extra/food_repository.py",
+            ["repository", "backend"],
+        ),
+    ],
+)
+def test_scope_path_lookalikes_do_not_trigger_neighboring_floors(
+    tmp_path: Path,
+    path: str,
+    profiles: list[str],
+) -> None:
+    repo, base = init_repo(tmp_path)
+    candidate = commit_paths(
+        repo,
+        {path: "lookalike path\n"},
+    )
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=[path],
+            profiles=profiles,
+        )
+    )
+
+    assert validate_candidate_scope(
+        repo,
+        auth,
+        candidate_sha=candidate,
+    ) == [path]
 
 
 def test_plan_profiles_come_from_external_authorization(

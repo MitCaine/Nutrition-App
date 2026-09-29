@@ -26,6 +26,35 @@ REPOSITORY_PATTERN = re.compile(
 NONCE_PATTERN = re.compile(r"^[A-Za-z0-9._-]{16,128}$")
 
 IOS_NATIVE_PROFILE = "ios-native"
+BACKEND_PROFILE = "backend"
+MOBILE_PROFILE = "mobile"
+POSTGRESQL_PROFILE = "postgresql"
+
+BACKEND_PATH_ROOT = "apps/backend"
+MOBILE_PATH_ROOT = "apps/mobile"
+
+POSTGRESQL_PATH_ROOTS = (
+    "apps/backend/app/control_migrations",
+    "apps/backend/app/db",
+    "apps/backend/app/migrations",
+    "apps/backend/app/models",
+    "apps/backend/app/operators",
+    "apps/backend/app/repositories",
+)
+POSTGRESQL_TEST_ROOT = "apps/backend/tests"
+
+POSTGRESQL_EXACT_PATHS = frozenset(
+    {
+        "apps/backend/.env.example",
+        "apps/backend/alembic-control.ini",
+        "apps/backend/alembic.ini",
+        "apps/backend/app/core/config.py",
+        "apps/backend/app/core/database.py",
+        "apps/backend/app/core/database_identity.py",
+        "apps/backend/app/dependencies/database.py",
+        "apps/backend/tests/postgres_test_support.py",
+    }
+)
 
 IOS_NATIVE_PATH_PATTERNS = (
     ".github/workflows/ios-native.yml",
@@ -765,19 +794,65 @@ def _path_matches(
     )
 
 
+def _path_is_within_component_tree(
+    path: str,
+    root: str,
+) -> bool:
+    """Match profile roots by path component without changing scope globs."""
+    return path == root or path.startswith(f"{root}/")
+
+
 def required_profiles_for_paths(
     paths: Iterable[str],
 ) -> set[str]:
     observed = tuple(paths)
+    required: set[str] = set()
+
+    if any(
+        _path_is_within_component_tree(
+            path,
+            BACKEND_PATH_ROOT,
+        )
+        for path in observed
+    ):
+        required.add(BACKEND_PROFILE)
+
+    if any(
+        _path_is_within_component_tree(
+            path,
+            MOBILE_PATH_ROOT,
+        )
+        for path in observed
+    ):
+        required.add(MOBILE_PROFILE)
+
+    if any(
+        path in POSTGRESQL_EXACT_PATHS
+        or any(
+            _path_is_within_component_tree(path, root)
+            for root in POSTGRESQL_PATH_ROOTS
+        )
+        or (
+            _path_is_within_component_tree(
+                path,
+                POSTGRESQL_TEST_ROOT,
+            )
+            and path.rsplit("/", maxsplit=1)[-1].endswith(
+                "_postgres.py"
+            )
+        )
+        for path in observed
+    ):
+        required.add(POSTGRESQL_PROFILE)
 
     if any(
         _path_matches(path, pattern)
         for path in observed
         for pattern in IOS_NATIVE_PATH_PATTERNS
     ):
-        return {IOS_NATIVE_PROFILE}
+        required.add(IOS_NATIVE_PROFILE)
 
-    return set()
+    return required
 
 
 def changed_paths(
@@ -953,10 +1028,10 @@ def validate_candidate_scope(
                 path,
             )
 
-    required_profiles = (
-        required_profiles_for_paths(
-            overlay
-        )
+    # A planning commit may change only its capsule; authorize floors for the
+    # exact planned scope as well as the paths already present in the overlay.
+    required_profiles = required_profiles_for_paths(
+        (*overlay, *authorization.allowed_paths)
     )
 
     missing_profiles = sorted(
@@ -968,7 +1043,7 @@ def validate_candidate_scope(
         raise AuthorizationError(
             "QUALIFICATION_PROFILE_REQUIRED",
             (
-                "changed paths require qualification "
+                "planned or changed paths require qualification "
                 "profile(s): "
                 + ", ".join(missing_profiles)
             ),

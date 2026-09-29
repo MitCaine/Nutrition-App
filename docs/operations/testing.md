@@ -106,6 +106,26 @@ local/file-backed SQLite and remote PostgreSQL proof. A repository or mobile PAS
 does not imply those specialist results; configuration and migration edits need
 their own affected-contract review and selected opt-in checks.
 
+Before building a qualification plan, the trusted controller enforces a path floor:
+`apps/backend/` requires `backend`, `apps/mobile/` requires `mobile`, and PostgreSQL
+migrations/configuration plus backend database, ORM model, repository, operator
+authority paths, and `apps/backend/tests/*_postgres.py` require `postgresql`. The
+existing iOS-native triggers remain additive, so `apps/mobile/app.json` requires
+both `mobile` and `ios-native`. These rules match complete path components. The
+controller checks observed changes and exact authorized paths or concrete scoped
+subtrees, including when a planning commit changes only its capsule. A broad
+`apps/backend/**` authorization requires `backend`; it does not imply `postgresql`
+unless the concrete scope names a PostgreSQL authority subtree or the changed paths
+enter one. The controller rejects an owner authorization that omits a required
+profile; it never edits the selected profile list to make the plan pass.
+
+If the external owner authorization is too narrow, stop before dispatch. The owner
+must issue a new authorization revision with the full profile set through
+`scripts/task prepare` and `scripts/task authorize`. Rebuild the plan against that
+new comment and rerun qualification for the exact planning and candidate commits.
+Do not edit the old comment or rely on a local capsule profile change to supply the
+missing authority.
+
 Pushing an exact commit to a temporary `qualification/TASK-ID/SHA-PREFIX` ref
 causes the normal CI workflow and the aggregator to run against that unchanged
 commit. Unknown or unavailable profiles fail closed.
