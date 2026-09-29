@@ -37,9 +37,25 @@ Resolve the real executable and compute its digest from installed bytes; do not 
 identity from PATH or reuse a stale manifest. The executable's installation prefix is
 its real path's parent-parent, so choose a dedicated installed runtime, not an executable
 placed in a broad home directory. That prefix is read-only; no package installation or
-credential provisioning occurs during a run.
+credential provisioning occurs during a run. macOS receives metadata-only access along
+the resolved runtime's directory ancestors for path resolution. When the runtime is the
+Homebrew Python framework build, process execution is allowed for its exact versioned
+Python.app backing binary alongside the recorded interpreter path; this does not grant
+general child-process execution.
 
 ## Prepare and run
+
+### Path pattern version
+
+The authenticated owner-comment marker and `schema_version` select scope semantics for
+capsule containment and execution. Existing v1 authority keeps Python `fnmatchcase`
+behavior and its saved authorization shape. New v2 authority uses exact literal paths,
+`*` for one complete component, and `**` for zero or more complete components. The
+explicit subtree form `root/**` covers `root` and its descendants; bare `root` is exact.
+Malformed repository-relative paths and unsupported v2 glob forms fail closed. The same
+selected matcher checks external allowed/forbidden patterns, capsule patterns, changed Git
+paths and runtime source changes, with forbidden patterns taking precedence. A missing or
+mismatched v2 marker/schema pair is invalid; retained v1 state is never upgraded by inference.
 
 Use trusted main code, a separate clean task checkout and state outside that checkout.
 Existing `task prepare` / `task authorize` must already bind the same issue/task,

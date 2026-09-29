@@ -13,7 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib import candidate_evidence as evidence  # noqa: E402
-from lib.task_authorization import ResolvedAuthorization  # noqa: E402
+from lib.task_authorization import AuthorizationError, ResolvedAuthorization, validate_candidate_scope  # noqa: E402
 
 
 class PreReviewRetryTests(unittest.TestCase):
@@ -47,6 +47,10 @@ class CandidateFixture(unittest.TestCase):
         self.git("config", "user.email", "fixture@example.invalid")
         (self.repo / "app.py").write_text("def add(a, b):\n    return a - b\n")
         (self.repo / "context.py").write_text("OFFSET = 0\n")
+        (self.repo / "src/nested").mkdir(parents=True)
+        (self.repo / "src/top.txt").write_text("rename me\n")
+        (self.repo / "src/change.txt").write_text("before\n")
+        (self.repo / "src/nested/keep.txt").write_text("keep\n")
         self.git("add", ".")
         self.git("commit", "-qm", "base")
         self.base = self.git("rev-parse", "HEAD")
@@ -68,7 +72,7 @@ class CandidateFixture(unittest.TestCase):
             'id = "GH-1"', 'capsule_revision = 1', 'state = "READY"', 'blocked = false',
             'updated = "2026-09-26"', 'branch = "task/GH-1"', f'base_commit = "{self.base}"',
             'source_issue = "https://github.com/example/repo/issues/1"',
-            'owned_paths = ["app.py", "engineering/capsules/active/GH-1.md"]',
+            'owned_paths = ["app.py", "engineering/capsules/active/GH-1.md", "src/*", "assets/**"]',
             'allowed_paths = []', 'forbidden_paths = []', 'specialized_qualification = ["profile:repository"]',
         ]) + '\n+++\n# Fixture\n\n## Goal\nReturn a sum.\n\n## Authority and precedence\n'
             '```nutrition-review-obligations-v1\n' + json.dumps(self.obligations) + '\n```\n\n## Acceptance criteria\n'
@@ -86,7 +90,8 @@ class CandidateFixture(unittest.TestCase):
         self.candidate = self.git("rev-parse", "HEAD")
         self.auth = ResolvedAuthorization(
             task_id="GH-1", issue_number=1, repository="example/repo", base_sha=self.base,
-            allowed_paths=("app.py", self.path), forbidden_paths=(), profiles=("repository",),
+            allowed_paths=("app.py", self.path, "src/*", "assets/**"),
+            forbidden_paths=(), profiles=("repository",),
             revision=1, nonce="nonce-123456789012", comment_id=1, author_login="example",
             payload_sha256="a" * 64, identity_sha256="b" * 64)
         self.issue = {"number": 1, "title": "sum", "body": "add returns sum",
@@ -108,6 +113,71 @@ class CandidateFixture(unittest.TestCase):
 
 
 class CandidateEvidenceTests(CandidateFixture):
+    def test_attachment_binds_the_authenticated_version_and_preserves_v1_shape(self):
+        legacy = self.binding()
+        self.assertNotIn("schema_version", legacy["authorization"])
+        evidence.authenticate_binding(legacy, self.auth, self.candidate)
+
+        authorization_v2 = dataclasses.replace(self.auth, schema_version=2)
+        current = evidence.attach(self.repo, authorization_v2, planning=self.planning,
+                                  candidate=self.candidate, issue=self.issue)
+        self.assertEqual(current["authorization"]["schema_version"], 2)
+        with self.assertRaisesRegex(evidence.EvidenceError, "AUTHORITY_OR_CANDIDATE"):
+            evidence.authenticate_binding(legacy, authorization_v2, self.candidate)
+
+    def test_capsule_path_patterns_cannot_expand_external_grants(self):
+        self.auth = dataclasses.replace(self.auth, allowed_paths=("app.py", self.path))
+        with self.assertRaisesRegex(evidence.EvidenceError, "CAPSULE_SCOPE_EXPANDS_AUTHORITY"):
+            self.binding()
+
+    def test_v2_attachment_applies_zero_depth_subtree_rule_to_a_real_git_path(self):
+        (self.repo / "assets").write_text("root file\n")
+        self.git("add", "assets")
+        self.git("commit", "-qm", "add root path selected by subtree grant")
+        self.candidate = self.git("rev-parse", "HEAD")
+
+        current = dataclasses.replace(self.auth, schema_version=2)
+        binding = evidence.attach(self.repo, current, planning=self.planning,
+                                  candidate=self.candidate, issue=self.issue)
+        self.assertIn("assets", binding["changed_paths"])
+
+        with self.assertRaisesRegex(AuthorizationError, "SCOPE_UNEXPECTED"):
+            evidence.attach(self.repo, self.auth, planning=self.planning,
+                            candidate=self.candidate, issue=self.issue)
+
+    def test_real_git_add_change_and_rename_use_the_authenticated_matcher(self):
+        (self.repo / "src/change.txt").write_text("after\n")
+        (self.repo / "src/new.txt").write_text("new\n")
+        self.git("mv", "src/top.txt", "src/nested/top.txt")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "add change and rename paths")
+        self.candidate = self.git("rev-parse", "HEAD")
+
+        self.assertEqual(
+            validate_candidate_scope(self.repo, self.auth, candidate_sha=self.candidate,
+                                     observed_main_sha=self.base),
+            ["app.py", self.path, "src/change.txt", "src/nested/top.txt", "src/new.txt", "src/top.txt"],
+        )
+        binding = self.binding()
+        self.assertIn("src/nested/top.txt", binding["changed_paths"])
+
+        authorization_v2 = dataclasses.replace(self.auth, schema_version=2)
+        with self.assertRaisesRegex(AuthorizationError, "SCOPE_UNEXPECTED"):
+            evidence.attach(self.repo, authorization_v2, planning=self.planning,
+                            candidate=self.candidate, issue=self.issue)
+
+    def test_real_git_overlapping_v2_forbidden_pattern_rejects_candidate_attachment(self):
+        (self.repo / "src/new.txt").write_text("new\n")
+        self.git("add", "src/new.txt")
+        self.git("commit", "-qm", "add path matched by both patterns")
+        self.candidate = self.git("rev-parse", "HEAD")
+        authorization_v2 = dataclasses.replace(
+            self.auth, schema_version=2, forbidden_paths=("src/new.txt",),
+        )
+        with self.assertRaisesRegex(AuthorizationError, "SCOPE_FORBIDDEN"):
+            evidence.attach(self.repo, authorization_v2, planning=self.planning,
+                            candidate=self.candidate, issue=self.issue)
+
     def test_ready_planning_reuses_attachment_parsers_without_approving_candidate(self):
         planning = evidence.validate_ready_planning(
             self.repo, self.original.encode(), authorization=self.auth,

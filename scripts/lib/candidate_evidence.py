@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import fnmatch
 import hashlib
 import hmac
 import json
@@ -11,13 +10,25 @@ import secrets
 import subprocess
 from pathlib import Path
 
-from lib import ri_consumer, ri_delta
+from lib import path_scope, ri_consumer, ri_delta
 from lib.capsule_execution import capsule_metadata, source_snapshot, verify_planning_bytes
 from lib.task_authorization import ResolvedAuthorization, canonical_json, validate_candidate_scope
 
 
 class EvidenceError(RuntimeError):
     pass
+
+
+def _capsule_scope_patterns(metadata: dict, field: str, version: int) -> list[str]:
+    patterns = metadata.get(field)
+    if not isinstance(patterns, list) or any(not isinstance(x, str) for x in patterns):
+        raise EvidenceError("CAPSULE_SCOPE_INVALID: " + field)
+    try:
+        for pattern in patterns:
+            path_scope.validate_pattern(pattern, version)
+    except path_scope.PathPatternError as exc:
+        raise EvidenceError("CAPSULE_SCOPE_INVALID: " + str(exc)) from exc
+    return patterns
 
 
 GOVERNING_ISSUE_REPLAN_REQUIRED = "GOVERNING_ISSUE_REPLAN_REQUIRED"
@@ -412,17 +423,29 @@ def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,
             raise EvidenceError("SPECIALIST_REQUIREMENT_NOT_MACHINE_BOUND")
         if entry.startswith("evidence:") and entry[9:] not in declared:
             raise EvidenceError("SPECIALIST_REQUIREMENT_MISSING")
-    allowed = metadata["owned_paths"] + metadata["allowed_paths"]
+    version = authorization.schema_version
+    allowed = (_capsule_scope_patterns(metadata, "owned_paths", version)
+               + _capsule_scope_patterns(metadata, "allowed_paths", version))
+    capsule_forbidden = _capsule_scope_patterns(metadata, "forbidden_paths", version)
     for pattern in allowed:
-        if pattern not in authorization.allowed_paths and (any(x in pattern for x in "*?[")
-                or not any(fnmatch.fnmatchcase(pattern, x) for x in authorization.allowed_paths)):
+        try:
+            expands = (path_scope.has_glob(pattern, version)
+                       or not path_scope.permitted(pattern, authorization.allowed_paths,
+                                                  authorization.forbidden_paths, version))
+        except path_scope.PathPatternError as exc:
+            raise EvidenceError("CAPSULE_SCOPE_INVALID: " + str(exc)) from exc
+        if pattern not in authorization.allowed_paths and expands:
             raise EvidenceError("CAPSULE_SCOPE_EXPANDS_AUTHORITY")
     changed = validate_candidate_scope(repo, authorization, candidate_sha=candidate,
                                        observed_main_sha=authorization.base_sha)
-    forbidden = list(authorization.forbidden_paths) + metadata["forbidden_paths"]
+    forbidden = list(authorization.forbidden_paths) + capsule_forbidden
     for path in changed:
-        if (not any(fnmatch.fnmatchcase(path, x) for x in allowed)
-                or any(fnmatch.fnmatchcase(path, x) for x in forbidden)):
+        try:
+            allowed_path = any(path_scope.matches(path, pattern, version) for pattern in allowed)
+            forbidden_path = any(path_scope.matches(path, pattern, version) for pattern in forbidden)
+        except path_scope.PathPatternError as exc:
+            raise EvidenceError("CAPSULE_SCOPE_INVALID: " + str(exc)) from exc
+        if not allowed_path or forbidden_path:
             raise EvidenceError("CANDIDATE_CAPSULE_SCOPE_MISMATCH")
     if frozen_contract(original) != frozen_contract(current):
         raise EvidenceError("CAPSULE_SEMANTIC_CHANGE_REQUIRES_REPLAN")

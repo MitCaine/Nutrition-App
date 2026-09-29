@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import json
 import re
@@ -9,13 +8,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from lib import path_scope
 from lib.qualification_profiles import (
     QualificationProfileError,
     required_checks_for_profiles,
 )
 
-AUTHORIZATION_MARKER = "<!-- nutrition-task-authorization:v1 -->"
-SCHEMA_VERSION = 1
+AUTHORIZATION_MARKER_V1 = "<!-- nutrition-task-authorization:v1 -->"
+AUTHORIZATION_MARKER_V2 = "<!-- nutrition-task-authorization:v2 -->"
+AUTHORIZATION_MARKERS = (AUTHORIZATION_MARKER_V1, AUTHORIZATION_MARKER_V2)
+AUTHORIZATION_MARKER = AUTHORIZATION_MARKER_V2
+SCHEMA_VERSION = path_scope.V2
 
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -118,9 +121,10 @@ class ResolvedAuthorization:
     author_login: str
     payload_sha256: str
     identity_sha256: str
+    schema_version: int = path_scope.V1
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "task_id": self.task_id,
             "issue_number": self.issue_number,
             "repository": self.repository,
@@ -135,6 +139,11 @@ class ResolvedAuthorization:
             "payload_sha256": self.payload_sha256,
             "identity_sha256": self.identity_sha256,
         }
+        if self.schema_version == path_scope.V2:
+            value["schema_version"] = path_scope.V2
+        elif self.schema_version != path_scope.V1:
+            raise ValueError("unsupported authorization schema version")
+        return value
 
 
 def canonical_json(value: Any) -> str:
@@ -172,6 +181,7 @@ def _normalize_paths(
     *,
     field: str,
     allow_empty: bool,
+    schema_version: int,
 ) -> list[str]:
     if not isinstance(value, list):
         raise AuthorizationError(
@@ -188,19 +198,13 @@ def _normalize_paths(
                 f"{field} contains a non-string or empty path",
             )
 
-        if item.startswith("/") or "\\" in item:
+        try:
+            path_scope.validate_pattern(item, schema_version)
+        except path_scope.PathPatternError as exc:
             raise AuthorizationError(
                 "AUTHORIZATION_PATH_INVALID",
-                f"{field} path must be repository-relative POSIX syntax: {item}",
-            )
-
-        pieces = item.split("/")
-
-        if any(piece in {"", ".", ".."} for piece in pieces):
-            raise AuthorizationError(
-                "AUTHORIZATION_PATH_INVALID",
-                f"{field} path contains an invalid segment: {item}",
-            )
+                f"{field} path is invalid: {item}: {exc}",
+            ) from exc
 
         normalized.append(item)
 
@@ -266,13 +270,11 @@ def _normalize_core(
             f"missing={missing} extra={extra}",
         )
 
-    if core["schema_version"] != SCHEMA_VERSION:
+    schema_version = core["schema_version"]
+    if type(schema_version) is not int or schema_version not in path_scope.SUPPORTED_VERSIONS:
         raise AuthorizationError(
             "AUTHORIZATION_SCHEMA_UNSUPPORTED",
-            (
-                "schema_version must equal "
-                f"{SCHEMA_VERSION}"
-            ),
+            "schema_version must equal 1 or 2",
         )
 
     task_id = core["task_id"]
@@ -338,12 +340,14 @@ def _normalize_core(
         core["allowed_paths"],
         field="allowed_paths",
         allow_empty=False,
+        schema_version=schema_version,
     )
 
     forbidden_paths = _normalize_paths(
         core["forbidden_paths"],
         field="forbidden_paths",
         allow_empty=True,
+        schema_version=schema_version,
     )
 
     profiles = _normalize_profiles(
@@ -351,7 +355,7 @@ def _normalize_core(
     )
 
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "task_id": task_id,
         "issue_number": issue_number,
         "repository": repository,
@@ -384,10 +388,11 @@ def build_payload(
     profiles: Iterable[str],
     revision: int,
     nonce: str,
+    schema_version: int = SCHEMA_VERSION,
 ) -> dict[str, Any]:
     core = _normalize_core(
         {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": schema_version,
             "task_id": task_id,
             "issue_number": issue_number,
             "repository": repository,
@@ -521,8 +526,12 @@ def render_authorization_comment(
 ) -> str:
     validated = validate_payload(payload)
 
+    marker = {
+        path_scope.V1: AUTHORIZATION_MARKER_V1,
+        path_scope.V2: AUTHORIZATION_MARKER_V2,
+    }[validated["schema_version"]]
     return (
-        f"{AUTHORIZATION_MARKER}\n"
+        f"{marker}\n"
         "```json\n"
         + json.dumps(
             validated,
@@ -536,10 +545,11 @@ def render_authorization_comment(
 def extract_payload(
     body: str,
 ) -> dict[str, Any]:
-    if body.count(AUTHORIZATION_MARKER) != 1:
+    present = [marker for marker in AUTHORIZATION_MARKERS if marker in body]
+    if len(present) != 1 or body.count(present[0]) != 1:
         raise AuthorizationError(
             "AUTHORIZATION_MARKER_INVALID",
-            "authorization marker must occur exactly once",
+            "exactly one recognized authorization marker must occur once",
         )
 
     matches = list(
@@ -566,6 +576,14 @@ def extract_payload(
         raise AuthorizationError(
             "AUTHORIZATION_JSON_INVALID",
             "authorization JSON must be an object",
+        )
+
+    marker_version = (path_scope.V1 if present[0] == AUTHORIZATION_MARKER_V1
+                      else path_scope.V2)
+    if payload.get("schema_version") != marker_version or type(payload.get("schema_version")) is not int:
+        raise AuthorizationError(
+            "AUTHORIZATION_MARKER_SCHEMA_MISMATCH",
+            "authorization marker and schema_version must select the same matcher",
         )
 
     return payload
@@ -670,6 +688,7 @@ def resolve_comment(
         identity_sha256=sha256_text(
             canonical_json(identity)
         ),
+        schema_version=payload["schema_version"],
     )
 
 
@@ -686,8 +705,7 @@ def resolve_comments(
         comment
         for comment in comments
         if isinstance(comment.get("body"), str)
-        and AUTHORIZATION_MARKER
-        in comment["body"]
+        and any(marker in comment["body"] for marker in AUTHORIZATION_MARKERS)
     ]
 
     if not marked:
@@ -785,13 +803,7 @@ def _path_matches(
     path: str,
     pattern: str,
 ) -> bool:
-    return (
-        path == pattern
-        or fnmatch.fnmatchcase(
-            path,
-            pattern,
-        )
-    )
+    return path_scope.matches(path, pattern, path_scope.V1)
 
 
 def _path_is_within_component_tree(
@@ -1009,7 +1021,7 @@ def validate_candidate_scope(
 
     for path in overlay:
         if any(
-            _path_matches(path, pattern)
+            path_scope.matches(path, pattern, authorization.schema_version)
             for pattern
             in authorization.forbidden_paths
         ):
@@ -1019,7 +1031,7 @@ def validate_candidate_scope(
             )
 
         if not any(
-            _path_matches(path, pattern)
+            path_scope.matches(path, pattern, authorization.schema_version)
             for pattern
             in authorization.allowed_paths
         ):
@@ -1062,7 +1074,7 @@ def validate_candidate_scope(
 
         for path in commit_paths:
             if any(
-                _path_matches(path, pattern)
+                path_scope.matches(path, pattern, authorization.schema_version)
                 for pattern
                 in authorization.forbidden_paths
             ):
@@ -1072,7 +1084,7 @@ def validate_candidate_scope(
                 )
 
             if not any(
-                _path_matches(path, pattern)
+                path_scope.matches(path, pattern, authorization.schema_version)
                 for pattern
                 in authorization.allowed_paths
             ):
