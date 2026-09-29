@@ -4,9 +4,11 @@ import copy
 import dataclasses
 import os
 import platform
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,6 +17,8 @@ from lib.task_authorization import ResolvedAuthorization  # noqa: E402
 
 
 class ExecutionTests(unittest.TestCase):
+    _nested_sandbox_probe_result: tuple[bool, str] | None = None
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="nutrition execution ")
         self.addCleanup(self.temp.cleanup)
@@ -26,6 +30,9 @@ class ExecutionTests(unittest.TestCase):
         self.git("config", "user.email", "fixture@example.invalid")
         (self.repo / "app.py").write_text("original\n")
         (self.repo / "forbidden.txt").write_text("preserve\n")
+        (self.repo / "src/nested").mkdir(parents=True)
+        (self.repo / "src/top.txt").write_text("rename me\n")
+        (self.repo / "src/nested/keep.txt").write_text("keep\n")
         self.git("add", ".")
         self.git("commit", "-qm", "base")
         self.base = self.git("rev-parse", "HEAD")
@@ -36,7 +43,7 @@ class ExecutionTests(unittest.TestCase):
             'id = "GH-1"', 'capsule_revision = 1', 'state = "READY"',
             'blocked = false', 'branch = "task/demo"', f'base_commit = "{self.base}"',
             'source_issue = "https://github.com/example/repo/issues/1"',
-            'owned_paths = ["app.py", "new.py"]', 'allowed_paths = []',
+            'owned_paths = ["app.py", "new.py", "src/*", "assets/**"]', 'allowed_paths = []',
             'forbidden_paths = ["forbidden.txt"]', 'specialized_qualification = ["profile:repository"]',
         ]) + '\n+++\n# Full fixture execution specification\n')
         self.git("add", ".")
@@ -44,7 +51,8 @@ class ExecutionTests(unittest.TestCase):
         self.planning = self.git("rev-parse", "HEAD")
         self.auth = ResolvedAuthorization(
             task_id="GH-1", issue_number=1, repository="example/repo", base_sha=self.base,
-            allowed_paths=("app.py", "new.py", self.capsule), forbidden_paths=("forbidden.txt",),
+            allowed_paths=("app.py", "new.py", "src/*", "assets/**", self.capsule),
+            forbidden_paths=("forbidden.txt",),
             profiles=("repository",), revision=1, nonce="nonce-123456789012",
             comment_id=1, author_login="example", payload_sha256="a" * 64,
             identity_sha256="b" * 64)
@@ -65,11 +73,69 @@ class ExecutionTests(unittest.TestCase):
         record["handoff_text"] = "Fixture handoff\n" + record["capsule_text"]
         return record
 
+    @classmethod
+    def nested_sandbox_capability(cls):
+        if cls._nested_sandbox_probe_result is not None:
+            return cls._nested_sandbox_probe_result
+
+        sandbox_exec = Path("/usr/bin/sandbox-exec")
+        if not sandbox_exec.is_file():
+            result = (False, f"{sandbox_exec} is unavailable")
+        else:
+            # This harmless `true` process proves whether this test process can
+            # start one nested macOS sandbox inside the evidence runner.
+            try:
+                completed = subprocess.run(
+                    [str(sandbox_exec), "-p", "(version 1) (allow default)", "/usr/bin/true"],
+                    capture_output=True, text=True, check=False, timeout=5,
+                )
+            except PermissionError as exc:
+                result = (False, f"nested invocation denied: {exc}")
+            except FileNotFoundError as exc:
+                result = (False, f"nested invocation unavailable: {exc}")
+            except subprocess.TimeoutExpired as exc:
+                raise AssertionError("nested sandbox capability probe timed out") from exc
+            else:
+                if completed.returncode == 0:
+                    result = (True, "nested /usr/bin/sandbox-exec invocation succeeded")
+                elif completed.returncode == 71:
+                    detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+                    result = (False, f"nested /usr/bin/sandbox-exec exited 71: {detail}")
+                else:
+                    detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic"
+                    raise AssertionError(
+                        "nested sandbox capability probe failed unexpectedly: "
+                        f"exit={completed.returncode}: {detail}"
+                    )
+
+        print(f"NESTED_SANDBOX_CAPABILITY available={result[0]} reason={result[1]}", flush=True)
+        cls._nested_sandbox_probe_result = result
+        return result
+
     def native(self):
         if platform.system() != "Darwin":
             if os.environ.get("NUTRITION_REQUIRE_EXECUTION_SANDBOX") == "1":
                 self.fail("Required native macOS proof is unavailable")
             self.skipTest("Native macOS isolation; controller-host qualification required")
+        available, reason = self.nested_sandbox_capability()
+        if not available:
+            if os.environ.get("NUTRITION_REQUIRE_EXECUTION_SANDBOX") == "1":
+                self.fail(
+                    "Required nested native macOS proof is unavailable: "
+                    f"{reason}"
+                )
+            self.skipTest(
+                "Nested macOS sandbox unavailable in evidence runner; "
+                f"fixture requires nested /usr/bin/sandbox-exec: {reason}"
+            )
+
+    def test_required_native_mode_fails_if_nested_sandbox_is_unavailable(self):
+        with patch.object(platform, "system", return_value="Darwin"), \
+                patch.object(self, "nested_sandbox_capability",
+                             return_value=(False, "probe fixture: denied")), \
+                patch.dict(os.environ, {"NUTRITION_REQUIRE_EXECUTION_SANDBOX": "1"}):
+            with self.assertRaisesRegex(AssertionError, "Required nested native"):
+                self.native()
 
     def run_native(self, code, corrections=0, timeout=5):
         self.native()
@@ -96,9 +162,18 @@ class ExecutionTests(unittest.TestCase):
         record = self.bind()
         self.assertEqual(record["capsule_text"], (self.repo / self.capsule).read_text())
         self.assertEqual(record["authorization"], self.auth.to_dict())
+        self.assertNotIn("schema_version", record["authorization"])
         self.assertFalse(record["qualified"])
         self.assertFalse(record["reviewed"])
         self.assertEqual(record["phase"], "PREPARED")
+
+    def test_execution_checkpoint_binds_v2_explicitly_and_cannot_resume_as_v1(self):
+        legacy = self.bind()
+        self.auth = dataclasses.replace(self.auth, schema_version=2)
+        current = self.bind()
+        self.assertEqual(current["authorization"]["schema_version"], 2)
+        with self.assertRaisesRegex(execution.ExecutionError, "AUTHORIZATION_CHANGED"):
+            execution.authenticate(legacy, self.auth)
 
     def test_wrong_branch_and_dirty_start(self):
         self.git("switch", "-qc", "wrong")
@@ -158,6 +233,41 @@ class ExecutionTests(unittest.TestCase):
     def test_actual_scope_includes_ignored_and_untracked_changes(self):
         record = self.bind()
         (self.repo / "forbidden.txt").write_text("changed")
+        with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
+            execution.authenticate(record, self.auth)
+
+    def test_authenticated_version_selects_execution_scope_for_real_rename_paths(self):
+        original = self.repo / "src/top.txt"
+        nested = self.repo / "src/nested/top.txt"
+        for version in (1, 2):
+            self.auth = dataclasses.replace(self.auth, schema_version=version)
+            record = self.bind()
+            original.rename(nested)
+            if version == 1:
+                self.assertEqual(execution.authenticate(record, self.auth), self.repo)
+            else:
+                with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
+                    execution.authenticate(record, self.auth)
+            nested.rename(original)
+
+    def test_execution_v2_subtree_pattern_includes_its_root_path(self):
+        root_path = self.repo / "assets"
+        for version in (1, 2):
+            self.auth = dataclasses.replace(self.auth, schema_version=version)
+            record = self.bind()
+            root_path.write_text("root path\n")
+            if version == 2:
+                self.assertEqual(execution.authenticate(record, self.auth), self.repo)
+            else:
+                with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
+                    execution.authenticate(record, self.auth)
+            root_path.unlink()
+
+    def test_v2_forbidden_scope_wins_for_a_real_tracked_path(self):
+        self.auth = dataclasses.replace(self.auth, schema_version=2,
+                                        forbidden_paths=("forbidden.txt", "src/top.txt"))
+        record = self.bind()
+        (self.repo / "src/top.txt").write_text("changed\n")
         with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
             execution.authenticate(record, self.auth)
 

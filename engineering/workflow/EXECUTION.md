@@ -41,6 +41,18 @@ credential provisioning occurs during a run.
 
 ## Prepare and run
 
+### Path pattern version
+
+The authenticated owner-comment marker and `schema_version` select scope semantics for
+capsule containment and execution. Existing v1 authority keeps Python `fnmatchcase`
+behavior and its saved authorization shape. New v2 authority uses exact literal paths,
+`*` for one complete component, and `**` for zero or more complete components. The
+explicit subtree form `root/**` covers `root` and its descendants; bare `root` is exact.
+Malformed repository-relative paths and unsupported v2 glob forms fail closed. The same
+selected matcher checks external allowed/forbidden patterns, capsule patterns, changed Git
+paths and runtime source changes, with forbidden patterns taking precedence. A missing or
+mismatched v2 marker/schema pair is invalid; retained v1 state is never upgraded by inference.
+
 Use trusted main code, a separate clean task checkout and state outside that checkout.
 Existing `task prepare` / `task authorize` must already bind the same issue/task,
 revision, base and machine qualification profiles. The READY capsule must be the sole

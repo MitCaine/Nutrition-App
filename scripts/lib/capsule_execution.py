@@ -5,7 +5,6 @@ launcher. Persistent state and this module must come from the trusted controller
 """
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import json
 import os
@@ -18,6 +17,7 @@ import time
 import tomllib
 from pathlib import Path
 
+from lib import path_scope
 from lib.task_authorization import ResolvedAuthorization
 
 
@@ -100,9 +100,20 @@ def source_snapshot(repo: Path) -> dict[str, dict]:
     return result
 
 
-def permitted(path: str, allowed: list[str], forbidden: list[str]) -> bool:
-    return (any(fnmatch.fnmatchcase(path, x) for x in allowed)
-            and not any(fnmatch.fnmatchcase(path, x) for x in forbidden))
+def permitted(path: str, allowed: list[str], forbidden: list[str], version: int) -> bool:
+    return path_scope.permitted(path, allowed, forbidden, version)
+
+
+def _capsule_scope_patterns(metadata: dict, field: str, version: int) -> list[str]:
+    patterns = metadata.get(field)
+    if not isinstance(patterns, list) or any(not isinstance(x, str) for x in patterns):
+        raise ExecutionError("CAPSULE_SCOPE_INVALID: " + field)
+    try:
+        for pattern in patterns:
+            path_scope.validate_pattern(pattern, version)
+    except path_scope.PathPatternError as exc:
+        raise ExecutionError("CAPSULE_SCOPE_INVALID: " + str(exc)) from exc
+    return patterns
 
 
 def changed_source(before: dict, after: dict) -> list[str]:
@@ -172,13 +183,19 @@ def bind(candidate: Path, authorization: ResolvedAuthorization, *, planning: str
     profiles = sorted(x[8:] for x in metadata["specialized_qualification"] if x.startswith("profile:"))
     if profiles != sorted(authorization.profiles):
         raise ExecutionError("CAPSULE_PROFILE_MISMATCH")
-    allowed = metadata["owned_paths"] + metadata["allowed_paths"]
+    version = authorization.schema_version
+    allowed = (_capsule_scope_patterns(metadata, "owned_paths", version)
+               + _capsule_scope_patterns(metadata, "allowed_paths", version))
+    capsule_forbidden = _capsule_scope_patterns(metadata, "forbidden_paths", version)
     for pattern in allowed:
         # Never try to prove arbitrary glob containment by matching one sample.
-        if pattern not in authorization.allowed_paths and (
-            any(x in pattern for x in "*?[") or not permitted(
-                pattern, list(authorization.allowed_paths), list(authorization.forbidden_paths))
-        ):
+        try:
+            expands = (path_scope.has_glob(pattern, version)
+                       or not permitted(pattern, list(authorization.allowed_paths),
+                                        list(authorization.forbidden_paths), version))
+        except path_scope.PathPatternError as exc:
+            raise ExecutionError("CAPSULE_SCOPE_INVALID: " + str(exc)) from exc
+        if pattern not in authorization.allowed_paths and expands:
             raise ExecutionError("CAPSULE_SCOPE_MISMATCH: " + pattern)
     snapshot = source_snapshot(candidate)
     verify_planning_bytes(candidate, planning, snapshot)
@@ -186,7 +203,7 @@ def bind(candidate: Path, authorization: ResolvedAuthorization, *, planning: str
             "authorization": authorization.to_dict(), "planning": planning,
             "branch": branch, "capsule_path": capsule, "capsule_sha256": digest(raw),
             "capsule_text": raw.decode(), "handoff_text": None, "allowed": allowed,
-            "forbidden": sorted(set(metadata["forbidden_paths"]) | set(authorization.forbidden_paths)),
+            "forbidden": sorted(set(capsule_forbidden) | set(authorization.forbidden_paths)),
             "runtime": runtime_identity(runtime), "correction_limit": correction_limit,
             "initial_source": snapshot, "phase": "PREPARED", "attempts": [],
             "qualified": False, "reviewed": False, "published": False}
@@ -208,7 +225,7 @@ def authenticate(record: dict, authorization: ResolvedAuthorization) -> Path:
         raise ExecutionError("EXECUTION_RUNTIME_CHANGED")
     current = source_snapshot(candidate)
     for path in changed_source(record["initial_source"], current):
-        if not permitted(path, record["allowed"], record["forbidden"]):
+        if not permitted(path, record["allowed"], record["forbidden"], authorization.schema_version):
             raise ExecutionError("EXECUTION_SCOPE_BREACH: " + path)
     return candidate
 
