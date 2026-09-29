@@ -56,7 +56,17 @@ Historical HISTORY records and exact Git recovery remain authoritative.
   absent from the current tree only when it still resolves as a file at the capsule's exact
   `base_commit`; deleting obsolete authority does not require rewriting the qualified capsule.
 - `owned_paths`, `allowed_paths`, and `forbidden_paths` use repository-relative POSIX paths or
-  patterns for mechanical scope enforcement.
+  patterns for mechanical scope enforcement. Their matcher version comes from the
+  authenticated external authorization comment, not capsule metadata.
+- External authorization v1 retains its original `fnmatchcase` behavior, marker, schema,
+  payload digest and serialized authorization shape. New owner comments use authorization
+  v2: literals are exact, `*` matches one complete component, `**` matches zero or more
+  complete components, and `root/**` explicitly includes `root` and its descendants. Bare
+  roots remain exact; malformed paths and unsupported glob syntax fail closed. The marker
+  and payload schema must agree. Authorization, capsule attachment and bounded execution
+  use the same selected matcher, and forbidden patterns take precedence. Moving retained
+  work from v1 to v2 requires fresh owner authorization, planning, qualification and review;
+  old qualification or review evidence does not carry forward.
 - `specialized_qualification` remains a string list. Machine-executable repository qualification
   profiles use explicit `profile:lowercase-name` tokens; other entries may remain human-readable
   specialist qualification requirements. Duplicate or malformed profile tokens fail validation.
