@@ -171,11 +171,11 @@ def run_renderer(
     output: Path,
     *,
     generated_at: str = "2026-08-04T20:00:00Z",
+    planning_context: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment["NUTRITION_TASK_HANDOFF_GENERATED_AT"] = generated_at
-    return subprocess.run(
-        [
+    command = [
             sys.executable,
             str(RENDERER),
             "--repo-root",
@@ -183,12 +183,64 @@ def run_renderer(
             "--output-dir",
             str(output),
             capsule.as_posix(),
-        ],
+        ]
+    if planning_context is not None:
+        command.extend(["--planning-context", str(planning_context)])
+    return subprocess.run(
+        command,
         text=True,
         capture_output=True,
         check=False,
         env=environment,
     )
+
+
+def attached_context(capsule_id: str, base: str, *, workflow_mode: str = "attached",
+                     issue_body: str | None = "Issue requires a valid planning handoff.") -> dict:
+    return {
+        "schema_version": 1,
+        "workflow_mode": workflow_mode,
+        "authorization": {
+            "task_id": capsule_id, "issue_number": 1, "repository": "example/repo",
+            "base_sha": base, "allowed_paths": ["scripts/render-task-handoff.py"],
+            "forbidden_paths": [], "profiles": [], "revision": 1,
+            "nonce": "handoff-nonce-123456", "comment_id": 42,
+            "author_login": "example", "payload_sha256": "a" * 64,
+            "identity_sha256": "b" * 64,
+        },
+        "issue": {"number": 1, "body": issue_body} if issue_body is not None else None,
+    }
+
+
+def commit_capsule(repo: Path, base: str, capsule_id: str, *, attached: bool,
+                   malformed_evidence: bool = False) -> Path:
+    relative = Path(f"engineering/capsules/active/{capsule_id}.md")
+    text = capsule_text(capsule_id, base).replace(
+        'source_issue = "workflow:step-3"', 'source_issue = "https://github.com/example/repo/issues/1"')
+    if attached:
+        review = {"schema_version": 1,
+                  "outcomes": [{"id": "OUT-1", "quote": "Issue requires a valid planning handoff.",
+                                "mapping": {"type": "criteria", "ids": ["AC-1"]}}],
+                  "standards": [{"id": "STD-1", "path": "docs/spec.md", "start_line": 1,
+                                 "end_line": 1, "reason": "Capsule handoff contract."}]}
+        requirements = [
+            {"id": "focused", "kind": "focused", "required": True,
+             "argv": ["{python}", "-c", "print('focused')"]},
+            {"id": "baseline", "kind": "baseline", "required": True,
+             "argv": ["{python}", "-c", "print('baseline')"]},
+        ]
+        review_block = "```nutrition-review-obligations-v1\n" + json.dumps(review) + "\n```\n\n"
+        evidence_json = "{" if malformed_evidence else json.dumps(requirements)
+        evidence_block = "```nutrition-evidence-v1\n" + evidence_json + "\n```\n\n"
+        ri_block = "```nutrition-ri-v1\n{\"schema_version\":1,\"scope\":\"changed-files-v1\"}\n```\n\n"
+        text = text.replace("\n## Dependencies and prerequisites\n",
+                            "\n" + review_block + "## Dependencies and prerequisites\n")
+        text = text.replace("\n### Focused\n", "\n" + evidence_block + "### Focused\n")
+        text = text.replace("\n## Required verification\n", "\n" + ri_block + "## Required verification\n")
+    (repo / relative).write_text(text, encoding="utf-8")
+    git(repo, "add", relative.as_posix())
+    git(repo, "commit", "-m", "add ready capsule")
+    return relative
 
 
 def test_ready_capsule_generates_complete_bundle(tmp_path: Path) -> None:
@@ -211,6 +263,47 @@ def test_ready_capsule_generates_complete_bundle(tmp_path: Path) -> None:
     assert handoff["execution"]["overlay_paths"] == [capsule.as_posix()]
     assert handoff["scope"]["owned_paths"] == ["scripts/render-task-handoff.py"]
     assert handoff["execution"]["preflight_status"] == "passed"
+
+
+def test_attached_handoff_uses_trusted_planning_context(tmp_path: Path) -> None:
+    repo, base = setup_repo(tmp_path)
+    capsule = commit_capsule(repo, base, "WF-ATTACHED", attached=True)
+    context = tmp_path / "planning-context.json"
+    context.write_text(json.dumps(attached_context("WF-ATTACHED", base)), encoding="utf-8")
+    output = tmp_path / "handoff"
+    result = run_renderer(repo, capsule, output, planning_context=context)
+    assert result.returncode == 0, result.stdout + result.stderr
+    validation = json.loads((output / "validation.json").read_text(encoding="utf-8"))
+    planning = validation["capsules"][0]["planning_evidence"]
+    assert planning["workflow_mode"] == "attached"
+    assert planning["issue_text_checked"] is True
+
+
+def test_attached_handoff_rejects_malformed_evidence_before_output(tmp_path: Path) -> None:
+    repo, base = setup_repo(tmp_path)
+    capsule = commit_capsule(repo, base, "WF-BAD-EVIDENCE", attached=True, malformed_evidence=True)
+    context = tmp_path / "planning-context.json"
+    context.write_text(json.dumps(attached_context("WF-BAD-EVIDENCE", base)), encoding="utf-8")
+    output = tmp_path / "handoff"
+    result = run_renderer(repo, capsule, output, planning_context=context)
+    assert result.returncode == 1
+    assert "CAPSULE_EVIDENCE_REQUIREMENTS_INVALID" in result.stderr
+    assert not output.exists()
+
+
+def test_compatibility_handoff_keeps_attached_blocks_optional(tmp_path: Path) -> None:
+    repo, base = setup_repo(tmp_path)
+    capsule = commit_capsule(repo, base, "WF-COMPAT", attached=False)
+    context = tmp_path / "planning-context.json"
+    context.write_text(json.dumps(attached_context(
+        "WF-COMPAT", base, workflow_mode="compatibility", issue_body=None)), encoding="utf-8")
+    output = tmp_path / "handoff"
+    result = run_renderer(repo, capsule, output, planning_context=context)
+    assert result.returncode == 0, result.stdout + result.stderr
+    validation = json.loads((output / "validation.json").read_text(encoding="utf-8"))
+    planning = validation["capsules"][0]["planning_evidence"]
+    assert planning["workflow_mode"] == "compatibility"
+    assert planning["attached_blocks_checked"] is False
 
 
 def test_handoff_contains_protocol_and_exact_capsule(tmp_path: Path) -> None:
