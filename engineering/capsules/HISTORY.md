@@ -4409,3 +4409,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** c4fd13c99b126f7db1fc79d7fb705008762e5a38
 - **Full-capsule recovery path:** engineering/capsules/active/GH-241.md
 - **Historical capsule SHA-256:** 9772b74b7062b141e32669219c452e8e7cbadd004d134908e5c5cd6195e205d2
+
+### GH-242 - Revalidate governing issue text and state at review and integration
+
+- **ID:** `GH-242`
+- **Title:** Revalidate governing issue text and state at review and integration
+- **Final state:** MERGED
+- **Capsule revision:** 2
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/242; initial implementation authorization comment 5885516301, fresh revision-two authorization comment 5886265481, and distinct terminal compatibility authorization comment 5886424338.
+- **Issue disposition:** C1 introduced the implementation; C2 re-attached and integrated under the fingerprint-aware trusted controller after C1's finalization stopped. This HISTORY entry becomes effective only after separate terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-29
+- **Completed/updated:** 2026-09-29
+- **Base commit:** 93074f16ec2526d6f17016b3345f8145fb301c0a for revision two; original implementation base 316edcdbcf9e97ca0a9a425ca8fc2d2654aa1c33.
+- **Task branch:** task/GH-242-r2
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 93074f16ec2526d6f17016b3345f8145fb301c0a introduced source; 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322 re-attached the existing source with capsule-only lifecycle evidence.
+- **Verified commit reference(s):** 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322
+- **Reviewed source commit:** 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322
+- **Reviewed task/checkpoint commit(s):** 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322
+- **Integration/merged commit:** 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322 on main.
+- **Integration-related commit reference(s):** Protected C2 at 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322; terminal T requires its own dedicated repository check and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by a fresh exact-C2 reviewer for all four original issue outcomes and ACs after inspecting committed integrated source, tests, guide and exact standards, with no findings.
+- **Verification summary:** C1 passed 88 controller tests, capsule validation, session-end and repository/backend check 109314163957, then first finalization stopped because its pre-feature attachment lacked the new fingerprint. The original STOP_REPLAN state remains preserved. C2 passed frozen focused/baseline checks, Python 3.14 session-end with 75 audit tests, a fresh material issue fingerprint and live rechecks. RI Markdown P2/C2 comparison was comparable with eight lifecycle units modified and 17 mapped units unchanged; full diffs and integrated source were directly reviewed.
+- **Specialized qualification:** Dedicated App 4708441 check 109318504041 and run 36541389256 passed exact C2 repository/backend profiles; terminal T needs a distinct repository-only check.
+- **Known warnings:** C1's original state remains STOP_REPLAN; no sealed evidence was altered to bypass the missing fingerprint. Existing migration domain-token warning is nonblocking.
+- **Deferred work/follow-up IDs:** None for #242.
+- **Retrospective:** A new trusted attachment field cannot be retroactively supplied to a sealed pre-feature candidate; a fresh authenticated attachment and independent review recovered the issue without weakening the gate.
+- **Referenced commits:** Revision-one planning 70a5bb819519421a6bb8a48f2513f6f1f79c35ff and implementation 93074f16ec2526d6f17016b3345f8145fb301c0a; revision-two planning bc2b0da8d240b66e30993f9f83eac7f0dd051ea8, candidate 3c4f226bdfb39f9c1e521142fa2e1c3955fdb322, full reviewed capsule 058f3b827bec8aae29a55fbad8090efc1a420fa2.
+- **Full-capsule recovery commit:** 058f3b827bec8aae29a55fbad8090efc1a420fa2
+- **Full-capsule recovery path:** engineering/capsules/active/GH-242.md
+- **Historical capsule SHA-256:** 24ec6a7f1396b63f99831b938aa2426a14d91c16ce8222330dfad858c88dec2c
