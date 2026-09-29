@@ -107,6 +107,7 @@ def output_is_outside_repo(repo: Path, output: Path) -> bool:
 def validate_capsule(
     repo: Path,
     capsule: Path,
+    planning_context: Path | None = None,
 ) -> dict[str, Any]:
     validator = repository_root_from_script() / "scripts" / "validate-task-capsules.py"
     if not validator.is_file():
@@ -114,8 +115,7 @@ def validate_capsule(
             "Missing task-capsule validator: scripts/validate-task-capsules.py"
         )
     relative = capsule.relative_to(repo).as_posix()
-    completed = run(
-        [
+    command = [
             sys.executable,
             str(validator),
             "--repo-root",
@@ -123,7 +123,11 @@ def validate_capsule(
             "--execution",
             relative,
             "--json",
-        ],
+        ]
+    if planning_context is not None:
+        command.extend(["--planning-context", str(planning_context.absolute())])
+    completed = run(
+        command,
         cwd=repo,
     )
     if not completed.stdout.strip():
@@ -426,6 +430,11 @@ def main() -> int:
         help="Exact output directory. It must be outside the repository and must not exist.",
     )
     parser.add_argument(
+        "--planning-context",
+        type=Path,
+        help="External context supplied by the trusted controller for attached planning validation.",
+    )
+    parser.add_argument(
         "--print-handoff",
         action="store_true",
         help="Print the generated handoff Markdown after writing the bundle.",
@@ -435,7 +444,7 @@ def main() -> int:
     try:
         repo = resolve_repo_root(args.repo_root)
         capsule = resolve_capsule(repo, args.capsule)
-        validation = validate_capsule(repo, capsule)
+        validation = validate_capsule(repo, capsule, args.planning_context)
         metadata = validation["capsules"][0]["metadata"]
         capsule_id = metadata["id"]
         if not isinstance(capsule_id, str) or not SAFE_ID_PATTERN.fullmatch(capsule_id):
