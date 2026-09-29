@@ -4481,3 +4481,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 40c4f300e1597f36f9c7f2e4b51c4fcf38d6d433
 - **Full-capsule recovery path:** engineering/capsules/active/GH-243.md
 - **Historical capsule SHA-256:** 6c171d99ceabb5161a5626edc6c80baa02092d4b160d101b86eb541a6f6d0ca1
+
+### GH-244 - Define component-aware authorized path pattern semantics
+
+- **ID:** `GH-244`
+- **Title:** Define component-aware authorized path pattern semantics
+- **Final state:** MERGED
+- **Capsule revision:** 5
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/244; revision-five implementation authorization comment 5898626082 and separate terminal compatibility authorization comment 5899183573. Earlier revision authority, candidates and failed evidence remain preserved.
+- **Issue disposition:** Exact independently approved C5 is integrated on main. This HISTORY record becomes effective only after separately authorized terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-29
+- **Completed/updated:** 2026-09-29
+- **Base commit:** 6fd94572bfe5cedff2dbeca90a1d727231830f2b
+- **Task branch:** task/GH-244-r5
+- **Controller:** Nutrition trusted task controller
+- **Executor:** GH-244 bounded native implementor subagent
+- **Reviewer:** Fresh environment-free enforced read-only reviewer 01a0ef09-46c7-7a22-9ccb-cb5c7795c9d2
+- **Delegation:** bounded planner and implementor; controller owns authority and integration; reviewer has only committed-source and retained-evidence read callbacks.
+- **Implementation commit(s):** 4a4b601836e1fe82347bfa65e2b3d2be62c15fff; earlier R1-R4 candidates were not integrated.
+- **Verified commit reference(s):** 4a4b601836e1fe82347bfa65e2b3d2be62c15fff
+- **Reviewed source commit:** 4a4b601836e1fe82347bfa65e2b3d2be62c15fff
+- **Reviewed task/checkpoint commit(s):** 4a4b601836e1fe82347bfa65e2b3d2be62c15fff
+- **Integration/merged commit:** 4a4b601836e1fe82347bfa65e2b3d2be62c15fff on main.
+- **Integration-related commit reference(s):** Guarded C5 integration; terminal T is a separate direct child with repository-only qualification and its own fresh read-only review.
+- **Acceptance result:** 5/5 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C5 reviewer for AC-1 through AC-5, OUT-1 through OUT-4 and STD-1 through STD-5 with no findings. The authenticated receipt and source-read trace remain in controller evidence.
+- **Verification summary:** Protected exact-C5 focused check passed 71 tests and 55 subtests with eight explicitly identified native-fixture skips; stdout includes every skipped node ID/reason and the actual nested sandbox capability probe (available false, sandbox-exec exited 71). Seven execution skips are unavailable nested-native fixtures; one candidate-evidence skip requires explicit opt-in native capture. Protected frozen session-end passed all mechanical checks and 82 audit tests. Source and tested-source identities remained unchanged before and after both commands. The full twelve-path implementation diff was inspected; unrelated R4 runtime-permission prose was removed.
+- **Specialized qualification:** Dedicated App 4708441 check 109624380471 and run 36630741047 passed exact C5 with repository and ios-native profiles. iOS native was launched once after candidate stabilization. Terminal T requires its own repository-only qualification; C5 results do not substitute for it.
+- **Known warnings:** Existing DOMAIN_TOKEN_IN_OPS_MIGRATION and isolated pytest-cache write warning were retained. The eight authenticated skips are scoped native-fixture proof limits and do not imply those fixtures passed. R1 omitted capsule owner scope, R2 attempted an unavailable nested sandbox, R3 used an incompatible Bash here-document in the protected runner, and R4 failed review for missing protected skip/probe detail plus unrelated documentation. Original failed states and receipts remain preserved; none supplies C5 approval.
+- **Deferred work/follow-up IDs:** None for issue #244. PostgreSQL, MinIO, Docker, T0 and physical-device gates are outside this matcher-tooling task.
+- **Retrospective:** Complete exact path/profile and requirement-to-evidence gates before dispatch; rehearse the frozen commands in their intended environment; inspect every changed-file meaning before review; retain native skip IDs, reasons and capability-probe results inside the authenticated packet. A successful qualification alone does not authorize integration or issue closeout.
+- **Referenced commits:** Planning P5 0c15bb97da8a596c8f8501647823ca88225727b4; implementation C5 4a4b601836e1fe82347bfa65e2b3d2be62c15fff; full reviewed capsule R 35e764ff8adaa8212e36c0f8d324e30101db6b3a.
+- **Full-capsule recovery commit:** 35e764ff8adaa8212e36c0f8d324e30101db6b3a
+- **Full-capsule recovery path:** engineering/capsules/active/GH-244.md
+- **Historical capsule SHA-256:** b19efbe4407603029b3e1d2470e044eddcbd840a510f61cdb442c076ea864377
