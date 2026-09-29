@@ -4301,3 +4301,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 21adcff771c2a2f5c3a86367a5a4591d1cfbe037
 - **Full-capsule recovery path:** engineering/capsules/active/GH-238.md
 - **Historical capsule SHA-256:** 11b3cc8d0d75d03f46601a05b180ba509bf7cad99e0ec83ae19c86cb1a1ea040
+
+### GH-239 - Reject forbidden changes in intermediate candidate commits
+
+- **ID:** `GH-239`
+- **Title:** Reject forbidden changes in intermediate candidate commits
+- **Final state:** MERGED
+- **Capsule revision:** 3
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/239; implementation authorization comment 5883755211 and distinct terminal authorization comment 5884484167.
+- **Issue disposition:** Implementation C integrated; this HISTORY entry becomes effective only after distinct terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-28
+- **Completed/updated:** 2026-09-28
+- **Base commit:** 49cef860e882655cfcaee3f868e834ba39edfc75
+- **Task branch:** task/GH-239-r5
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh read-only Codex reviewer
+- **Delegation:** none
+- **Implementation commit(s):** e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd; earlier failed attempts remain preserved separately.
+- **Verified commit reference(s):** e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd
+- **Reviewed source commit:** e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd
+- **Reviewed task/checkpoint commit(s):** e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd
+- **Integration/merged commit:** e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd on main.
+- **Integration-related commit reference(s):** Protected C at e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh exact-C reviewer for four ACs, five issue outcomes and two standards with no findings.
+- **Verification summary:** Frozen focused controller tests, baseline capsule validation, full diff review and session-end checks passed. RI record 0d018fd59800a0d35fa654805ee796279df79bd5039ff5dd3bf23e994bcafdfe was comparable mixed and all three changed paths were dispositioned; the Markdown capsule was directly reviewed.
+- **Specialized qualification:** Dedicated App 4708441 check 109270211432 and run 36525322513 passed exact C with repository, backend and ios-native profiles; terminal T requires a distinct repository check.
+- **Known warnings:** Earlier failed candidate attempts remain preserved. Existing migration domain-token warning is nonblocking.
+- **Deferred work/follow-up IDs:** Path-glob semantics belong to #244; none for #239.
+- **Retrospective:** Per-commit path scope must be enforced before protected integration; final-tree comparison alone can hide forbidden history.
+- **Referenced commits:** Planning a0b38175a26015f03b818974a3f5934fc06f0a05; implementation e0f3242d3dbbe8dfc0ffa1dedf9c94384841d8bd; full reviewed capsule 2ecb2e87f10d0577b47e0ee66571775a02ac4ee1.
+- **Full-capsule recovery commit:** 2ecb2e87f10d0577b47e0ee66571775a02ac4ee1
+- **Full-capsule recovery path:** engineering/capsules/active/GH-239.md
+- **Historical capsule SHA-256:** 2a84352c58a0876f4a4f349b0fd0b2a996ebb175f6e89a4634214fa7d34b91d9
