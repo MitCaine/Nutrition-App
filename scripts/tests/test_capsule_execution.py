@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -117,10 +118,23 @@ class ExecutionTests(unittest.TestCase):
             self.skipTest("Native macOS isolation; controller-host qualification required")
         available, reason = self.nested_sandbox_capability()
         if not available:
+            if os.environ.get("NUTRITION_REQUIRE_EXECUTION_SANDBOX") == "1":
+                self.fail(
+                    "Required nested native macOS proof is unavailable: "
+                    f"{reason}"
+                )
             self.skipTest(
                 "Nested macOS sandbox unavailable in evidence runner; "
                 f"fixture requires nested /usr/bin/sandbox-exec: {reason}"
             )
+
+    def test_required_native_mode_fails_if_nested_sandbox_is_unavailable(self):
+        with patch.object(platform, "system", return_value="Darwin"), \
+                patch.object(self, "nested_sandbox_capability",
+                             return_value=(False, "probe fixture: denied")), \
+                patch.dict(os.environ, {"NUTRITION_REQUIRE_EXECUTION_SANDBOX": "1"}):
+            with self.assertRaisesRegex(AssertionError, "Required nested native"):
+                self.native()
 
     def run_native(self, code, corrections=0, timeout=5):
         self.native()
