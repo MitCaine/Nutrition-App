@@ -740,10 +740,62 @@ def evidence_packet(attached: dict) -> dict:
     return packet
 
 
+def _workflow_mode(state: dict) -> str:
+    workflow = state.get("workflow")
+    authorization = state.get("authorization")
+    authorization = authorization if isinstance(authorization, dict) else {}
+    if workflow is None:
+        if "workflow_selection_sha256" in authorization:
+            raise EvidenceError("WORKFLOW_MODE_STATE_INCOMPLETE")
+        return "attached" if "capsule_evidence" in state else "compatibility"
+
+    if not isinstance(workflow, dict) or set(workflow) != {
+        "mode", "reason", "selection_sha256", "authority"
+    }:
+        raise EvidenceError("WORKFLOW_MODE_STATE_INVALID")
+    mode = workflow["mode"]
+    reason = workflow["reason"]
+    if mode == "attached":
+        if reason is not None:
+            raise EvidenceError("WORKFLOW_MODE_STATE_INVALID")
+    elif mode == "compatibility":
+        if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500 or reason != reason.strip():
+            raise EvidenceError("WORKFLOW_MODE_STATE_INVALID")
+    else:
+        raise EvidenceError("WORKFLOW_MODE_STATE_INVALID")
+
+    selection = {"schema_version": 1, "mode": mode, "reason": reason}
+    selection_sha256 = hashlib.sha256(canonical_json(selection).encode()).hexdigest()
+    authority = workflow["authority"]
+    if (
+        workflow["selection_sha256"] != selection_sha256
+        or authorization.get("workflow_selection_sha256") != selection_sha256
+        or not isinstance(authority, dict)
+        or set(authority) != {
+            "comment_id", "author_login", "authorization_identity_sha256", "selection_sha256"
+        }
+        or type(authority["comment_id"]) is not int
+        or authority["comment_id"] < 1
+        or not isinstance(authority["author_login"], str)
+        or not authority["author_login"]
+        or not isinstance(authority["authorization_identity_sha256"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", authority["authorization_identity_sha256"])
+        or authority["selection_sha256"] != selection_sha256
+        or authority["comment_id"] != authorization.get("comment_id")
+        or authority["author_login"] != authorization.get("author_login")
+        or authority["authorization_identity_sha256"] != authorization.get("identity_sha256")
+    ):
+        raise EvidenceError("WORKFLOW_AUTHORITY_INVALID")
+    return mode
+
+
 def gate(state: dict, candidate: str, *, review_required: bool = False) -> None:
-    """Compatibility tasks are unchanged; attached tasks cannot use assertion-only gates."""
-    if "capsule_evidence" not in state:
+    """Enforce attached evidence while preserving authorized legacy compatibility."""
+    mode = _workflow_mode(state)
+    if mode == "compatibility" and "capsule_evidence" not in state:
         return
+    if mode == "attached" and "capsule_evidence" not in state:
+        raise EvidenceError("CANDIDATE_ATTACHMENT_REQUIRED")
     attached = state["capsule_evidence"]
     binding = attached.get("binding")
     if not binding or binding["candidate"] != candidate or attached.get("requires_fresh_candidate"):

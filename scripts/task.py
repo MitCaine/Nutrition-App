@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from lib.task_authorization import (
     AuthorizationError,
     ResolvedAuthorization,
     build_payload,
+    canonical_json,
     render_authorization_comment,
     resolve_comment,
     resolve_comments,
@@ -34,6 +36,14 @@ from lib.candidate_evidence import EvidenceError
 
 class TaskControllerError(RuntimeError):
     pass
+
+
+WORKFLOW_MODE_MARKER = "<!-- nutrition-task-workflow:v1 -->"
+WORKFLOW_MODE_BLOCK_PATTERN = re.compile(
+    r"```nutrition-task-workflow-v1[ \t]*\r?\n(?P<body>.*?)[ \t]*\r?\n```",
+    re.DOTALL,
+)
+WORKFLOW_MODE_REASON_MAX_LENGTH = 500
 
 
 class IssueAuthorizationTransport(Protocol):
@@ -402,6 +412,159 @@ def emit(
     )
 
 
+def _normalize_workflow_selection(
+    mode: str,
+    reason: str | None,
+) -> dict[str, Any]:
+    if not isinstance(mode, str) or mode not in {"attached", "compatibility"}:
+        raise TaskControllerError("WORKFLOW_MODE_INVALID")
+
+    if mode == "compatibility":
+        if not isinstance(reason, str):
+            raise TaskControllerError("WORKFLOW_COMPATIBILITY_REASON_REQUIRED")
+        normalized_reason = reason.strip()
+        if (
+            not 1 <= len(normalized_reason) <= WORKFLOW_MODE_REASON_MAX_LENGTH
+            or WORKFLOW_MODE_MARKER in normalized_reason
+        ):
+            raise TaskControllerError("WORKFLOW_COMPATIBILITY_REASON_INVALID")
+        reason = normalized_reason
+    elif reason is not None and reason != "":
+        raise TaskControllerError("WORKFLOW_REASON_NOT_APPLICABLE")
+    else:
+        reason = None
+
+    return {"schema_version": 1, "mode": mode, "reason": reason}
+
+
+def _workflow_selection_digest(selection: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(selection).encode()).hexdigest()
+
+
+def _render_workflow_selection(
+    selection: dict[str, Any],
+) -> str:
+    return (
+        f"{WORKFLOW_MODE_MARKER}\n"
+        "```nutrition-task-workflow-v1\n"
+        + json.dumps(selection, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n```\n"
+    )
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _parse_workflow_selection(body: Any) -> tuple[dict[str, Any], str]:
+    if not isinstance(body, str) or body.count(WORKFLOW_MODE_MARKER) != 1:
+        raise TaskControllerError("WORKFLOW_SELECTION_MARKER_INVALID")
+
+    matches = list(WORKFLOW_MODE_BLOCK_PATTERN.finditer(body))
+    marker_at = body.index(WORKFLOW_MODE_MARKER)
+    if len(matches) != 1 or matches[0].start() < marker_at:
+        raise TaskControllerError("WORKFLOW_SELECTION_BLOCK_INVALID")
+
+    try:
+        parsed = json.loads(
+            matches[0].group("body"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise TaskControllerError("WORKFLOW_SELECTION_JSON_INVALID") from exc
+
+    if not isinstance(parsed, dict) or set(parsed) != {"schema_version", "mode", "reason"}:
+        raise TaskControllerError("WORKFLOW_SELECTION_FIELDS_INVALID")
+    if type(parsed["schema_version"]) is not int or parsed["schema_version"] != 1:
+        raise TaskControllerError("WORKFLOW_SELECTION_SCHEMA_UNSUPPORTED")
+
+    selection = _normalize_workflow_selection(parsed["mode"], parsed["reason"])
+    if parsed != selection:
+        raise TaskControllerError("WORKFLOW_SELECTION_NOT_CANONICAL")
+    return selection, _workflow_selection_digest(selection)
+
+
+def workflow_mode_for_state(
+    state: dict[str, Any],
+    *,
+    require_authority: bool = True,
+) -> str:
+    """Return the explicit mode, retaining the pre-change compatibility route."""
+    workflow = state.get("workflow")
+    authorization = state.get("authorization")
+    authorization = authorization if isinstance(authorization, dict) else {}
+
+    if workflow is None:
+        if "workflow_selection_sha256" in authorization:
+            raise TaskControllerError("WORKFLOW_MODE_STATE_INCOMPLETE")
+        return "attached" if "capsule_evidence" in state else "compatibility"
+
+    if not isinstance(workflow, dict) or set(workflow) != {
+        "mode", "reason", "selection_sha256", "authority"
+    }:
+        raise TaskControllerError("WORKFLOW_MODE_STATE_INVALID")
+
+    selection = _normalize_workflow_selection(workflow["mode"], workflow["reason"])
+    selection_sha256 = _workflow_selection_digest(selection)
+    if (
+        workflow["selection_sha256"] != selection_sha256
+        or authorization.get("workflow_selection_sha256") != selection_sha256
+    ):
+        raise TaskControllerError("WORKFLOW_SELECTION_DIGEST_MISMATCH")
+
+    authority = workflow["authority"]
+    if authority is None:
+        if require_authority:
+            raise TaskControllerError("WORKFLOW_AUTHORITY_REQUIRED")
+        return selection["mode"]
+
+    if not isinstance(authority, dict) or set(authority) != {
+        "comment_id", "author_login", "authorization_identity_sha256", "selection_sha256"
+    }:
+        raise TaskControllerError("WORKFLOW_AUTHORITY_INVALID")
+    if (
+        type(authority["comment_id"]) is not int
+        or authority["comment_id"] < 1
+        or not isinstance(authority["author_login"], str)
+        or not authority["author_login"]
+        or not isinstance(authority["authorization_identity_sha256"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", authority["authorization_identity_sha256"])
+        or authority["selection_sha256"] != selection_sha256
+        or authority["comment_id"] != authorization.get("comment_id")
+        or authority["author_login"] != authorization.get("author_login")
+        or authority["authorization_identity_sha256"] != authorization.get("identity_sha256")
+    ):
+        raise TaskControllerError("WORKFLOW_AUTHORITY_MISMATCH")
+    return selection["mode"]
+
+
+def _require_workflow_candidate_attachment(
+    state: dict[str, Any],
+    *,
+    mode: str,
+    candidate_sha: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    attached = state.get("capsule_evidence")
+    if mode != "attached" and "capsule_evidence" not in state:
+        return None, None
+
+    if not isinstance(attached, dict):
+        raise EvidenceError("FRESH_CANDIDATE_ATTACHMENT_REQUIRED")
+    binding = attached.get("binding")
+    if (
+        not isinstance(binding, dict)
+        or binding.get("candidate") != candidate_sha
+        or attached.get("requires_fresh_candidate")
+    ):
+        raise EvidenceError("FRESH_CANDIDATE_ATTACHMENT_REQUIRED")
+    return attached, binding
+
+
 def prepare_task(
     *,
     repo: Path,
@@ -416,6 +579,8 @@ def prepare_task(
     profiles: list[str],
     revision: int,
     nonce: str,
+    workflow_mode: str = "attached",
+    compatibility_reason: str | None = None,
 ) -> dict[str, Any]:
     current_main = git(
         repo,
@@ -433,6 +598,12 @@ def prepare_task(
             )
         )
 
+    workflow_selection = _normalize_workflow_selection(
+        workflow_mode,
+        compatibility_reason,
+    )
+    workflow_selection_sha256 = _workflow_selection_digest(workflow_selection)
+
     payload = build_payload(
         task_id=task_id,
         issue_number=issue_number,
@@ -445,8 +616,8 @@ def prepare_task(
         nonce=nonce,
     )
 
-    body = render_authorization_comment(
-        payload
+    body = render_authorization_comment(payload).rstrip() + "\n\n" + _render_workflow_selection(
+        workflow_selection
     )
 
     draft = authorization_draft_path(
@@ -472,6 +643,12 @@ def prepare_task(
         "task_id": task_id,
         "repository": repository,
         "trusted_author": trusted_author,
+        "workflow": {
+            "mode": workflow_selection["mode"],
+            "reason": workflow_selection["reason"],
+            "selection_sha256": workflow_selection_sha256,
+            "authority": None,
+        },
         "authorization": {
             "revision": revision,
             "nonce": nonce,
@@ -482,6 +659,7 @@ def prepare_task(
             "draft_path": str(draft),
             "comment_id": None,
             "identity_sha256": None,
+            "workflow_selection_sha256": workflow_selection_sha256,
         },
         "qualification": None,
         "verification": None,
@@ -546,6 +724,18 @@ def authorize_task(
     body = draft_path.read_text(
         encoding="utf-8"
     )
+    prepared_mode = workflow_mode_for_state(
+        state,
+        require_authority=False,
+    )
+    prepared_selection, prepared_selection_sha256 = _parse_workflow_selection(body)
+    workflow = state["workflow"]
+    if (
+        prepared_selection["mode"] != prepared_mode
+        or prepared_selection["reason"] != workflow["reason"]
+        or prepared_selection_sha256 != workflow["selection_sha256"]
+    ):
+        raise TaskControllerError("WORKFLOW_DRAFT_SELECTION_MISMATCH")
 
     created = transport.create_issue_comment(
         state["repository"],
@@ -592,6 +782,14 @@ def authorize_task(
             "payload_sha256"
         ],
     )
+    observed_selection, observed_selection_sha256 = _parse_workflow_selection(
+        observed.get("body")
+    )
+    if (
+        observed_selection != prepared_selection
+        or observed_selection_sha256 != prepared_selection_sha256
+    ):
+        raise TaskControllerError("WORKFLOW_AUTHORIZATION_SELECTION_MISMATCH")
 
     updated = json.loads(
         json.dumps(state)
@@ -624,6 +822,13 @@ def authorize_task(
         if isinstance(html_url, str)
         else None
     )
+
+    updated["workflow"]["authority"] = {
+        "comment_id": resolved.comment_id,
+        "author_login": resolved.author_login,
+        "authorization_identity_sha256": resolved.identity_sha256,
+        "selection_sha256": observed_selection_sha256,
+    }
 
     updated["phase"] = "AUTHORIZED"
 
@@ -1279,6 +1484,42 @@ def resolve_current_authorization(
         ],
     )
 
+    matching_comments = [
+        comment for comment in comments
+        if comment.get("id") == resolved.comment_id
+    ]
+    if len(matching_comments) != 1:
+        raise TaskControllerError("AUTHORIZATION_COMMENT_REFETCH_INVALID")
+    comment_body = matching_comments[0].get("body")
+    workflow = state.get("workflow")
+    mode_marker_present = (
+        isinstance(comment_body, str)
+        and WORKFLOW_MODE_MARKER in comment_body
+    )
+    if workflow is None:
+        if (
+            mode_marker_present
+            or "workflow_selection_sha256" in authorization_state
+        ):
+            raise TaskControllerError("WORKFLOW_MODE_STATE_INCOMPLETE")
+    else:
+        mode = workflow_mode_for_state(state)
+        selection, selection_sha256 = _parse_workflow_selection(comment_body)
+        authority = workflow.get("authority")
+        expected_authority = {
+            "comment_id": resolved.comment_id,
+            "author_login": resolved.author_login,
+            "authorization_identity_sha256": resolved.identity_sha256,
+            "selection_sha256": selection_sha256,
+        }
+        if (
+            selection["mode"] != mode
+            or selection["reason"] != workflow.get("reason")
+            or selection_sha256 != workflow.get("selection_sha256")
+            or authority != expected_authority
+        ):
+            raise TaskControllerError("WORKFLOW_AUTHORITY_CURRENT_IDENTITY_MISMATCH")
+
     expected = {
         "comment_id": authorization_state.get(
             "comment_id"
@@ -1564,6 +1805,7 @@ def qualify_task(
             transport,
         )
     )
+    mode = workflow_mode_for_state(state)
 
     if controller_main_sha != authorization.base_sha:
         raise TaskControllerError(
@@ -1597,15 +1839,17 @@ def qualify_task(
         observed_main_sha=controller_main_sha,
     )
 
-    if "capsule_evidence" in state:
-        attached = state["capsule_evidence"]
-        if not attached.get("binding"):
-            raise EvidenceError("FRESH_CANDIDATE_ATTACHMENT_REQUIRED")
-        candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
+    attached, binding = _require_workflow_candidate_attachment(
+        state,
+        mode=mode,
+        candidate_sha=candidate_sha,
+    )
+    if attached is not None and binding is not None:
+        candidate_evidence.authenticate_binding(binding, authorization, candidate_sha)
         if not candidate_evidence.source_matches(
-            attached["binding"]["source"], candidate_evidence.observe(candidate_repo, candidate_sha)):
+            binding["source"], candidate_evidence.observe(candidate_repo, candidate_sha)):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
-        require_review_preflight(attached, attached["binding"], candidate_sha)
+        require_review_preflight(attached, binding, candidate_sha)
 
     nonce = (
         dispatch_nonce
@@ -1840,6 +2084,7 @@ def integrate_task(
             transport,
         )
     )
+    workflow_mode_for_state(state)
 
     if controller_main_sha != authorization.base_sha:
         raise TaskControllerError(
@@ -2131,7 +2376,9 @@ def record_qualification(
     check_id: int,
     check_app_id: int,
     result: str,
+    authorization: ResolvedAuthorization | None = None,
 ) -> dict[str, Any]:
+    mode = workflow_mode_for_state(state)
     if result not in {
         "PASS",
         "FAIL",
@@ -2139,6 +2386,31 @@ def record_qualification(
         raise TaskControllerError(
             "QUALIFICATION_RESULT_INVALID"
         )
+
+    attached, binding = _require_workflow_candidate_attachment(
+        state,
+        mode=mode,
+        candidate_sha=candidate_sha,
+    )
+    if attached is not None and binding is not None:
+        if authorization is None:
+            raise EvidenceError("ATTACHED_AUTHORIZATION_REQUIRED")
+        authorization_state = state.get("authorization") or {}
+        if (
+            authorization.task_id != state.get("task_id")
+            or authorization.issue_number != state.get("issue_number")
+            or authorization.repository != state.get("repository")
+            or authorization.base_sha != authorization_state.get("base_sha")
+            or authorization.revision != authorization_state.get("revision")
+            or authorization.nonce != authorization_state.get("nonce")
+            or authorization.comment_id != authorization_state.get("comment_id")
+            or authorization.author_login != authorization_state.get("author_login")
+            or authorization.payload_sha256 != authorization_state.get("payload_sha256")
+            or authorization.identity_sha256 != authorization_state.get("identity_sha256")
+        ):
+            raise EvidenceError("ATTACHED_AUTHORIZATION_MISMATCH")
+        candidate_evidence.authenticate_binding(binding, authorization, candidate_sha)
+        require_review_preflight(attached, binding, candidate_sha)
 
     updated = dict(state)
 
@@ -2175,6 +2447,13 @@ def record_verification(
             "VERIFICATION_DECISION_INVALID"
         )
 
+    mode = workflow_mode_for_state(state)
+    _require_workflow_candidate_attachment(
+        state,
+        mode=mode,
+        candidate_sha=candidate_sha,
+    )
+
     if decision == "pass":
         qualification = (
             state.get("qualification")
@@ -2196,8 +2475,7 @@ def record_verification(
                 )
             )
 
-    if decision == "pass":
-        candidate_evidence.gate(state, candidate_sha)
+    candidate_evidence.gate(state, candidate_sha)
 
     updated = dict(state)
 
@@ -2233,6 +2511,15 @@ def record_review(
             "REVIEW_DECISION_INVALID"
         )
 
+    mode = workflow_mode_for_state(state)
+    attached, _ = _require_workflow_candidate_attachment(
+        state,
+        mode=mode,
+        candidate_sha=candidate_sha,
+    )
+    if attached is not None:
+        raise EvidenceError("OBSERVED_REVIEW_COMMAND_REQUIRED")
+
     if decision == "approved":
         verification = (
             state.get("verification")
@@ -2253,9 +2540,6 @@ def record_review(
                     "EXACT_VERIFICATION"
                 )
             )
-
-    if "capsule_evidence" in state:
-        raise EvidenceError("OBSERVED_REVIEW_COMMAND_REQUIRED")
 
     updated = dict(state)
 
@@ -2344,6 +2628,8 @@ def command_prepare(
         profiles=args.profile,
         revision=args.revision,
         nonce=nonce,
+        workflow_mode=getattr(args, "workflow_mode", "attached"),
+        compatibility_reason=getattr(args, "compatibility_reason", None),
     )
 
     emit(
@@ -2368,6 +2654,7 @@ def command_prepare(
             ][
                 "draft_path"
             ],
+            "workflow_mode": state["workflow"]["mode"],
             "next": "authorize",
         }
     )
@@ -2419,6 +2706,7 @@ def command_authorize(
     authorization = updated[
         "authorization"
     ]
+    mode = workflow_mode_for_state(updated)
 
     emit(
         {
@@ -2442,7 +2730,8 @@ def command_authorize(
                     "author_login"
                 ]
             ),
-            "next": "qualify",
+            "workflow_mode": mode,
+            "next": "plan_capsule" if mode == "attached" else "qualify",
         }
     )
 
@@ -2524,6 +2813,7 @@ def command_qualify(
     qualification = updated[
         "qualification"
     ]
+    mode = workflow_mode_for_state(updated)
 
     emit(
         {
@@ -2560,12 +2850,10 @@ def command_qualify(
                     "candidate_ref_removed"
                 ]
             ),
+            "workflow_mode": mode,
             "next": (
-                "verify"
-                if qualification[
-                    "result"
-                ]
-                == "PASS"
+                ("seal_evidence" if mode == "attached" else "verify")
+                if qualification["result"] == "PASS"
                 else "rework"
             ),
         }
@@ -2616,6 +2904,10 @@ def command_verify(
             "repository"
         ],
     )
+    resolve_current_authorization(
+        state,
+        GhQualificationTransport(),
+    )
 
     updated = record_verification(
         state,
@@ -2624,6 +2916,7 @@ def command_verify(
         decision=args.decision,
         evidence=args.evidence,
     )
+    mode = workflow_mode_for_state(updated)
 
     atomic_write_json(
         state_path(
@@ -2644,10 +2937,14 @@ def command_verify(
                 args.candidate_sha
             ),
             "decision": args.decision,
+            "workflow_mode": mode,
             "next": (
-                "review"
-                if args.decision == "pass"
-                else "rework"
+                (
+                    "evidence_review"
+                    if mode == "attached"
+                    else "review"
+                )
+                if args.decision == "pass" else "rework"
             ),
         }
     )
@@ -2680,6 +2977,10 @@ def command_review(
             "repository"
         ],
     )
+    resolve_current_authorization(
+        state,
+        GhQualificationTransport(),
+    )
 
     updated = record_review(
         state,
@@ -2688,6 +2989,7 @@ def command_review(
         decision=args.decision,
         summary=args.summary,
     )
+    mode = workflow_mode_for_state(updated)
 
     atomic_write_json(
         state_path(
@@ -2708,6 +3010,7 @@ def command_review(
                 args.candidate_sha
             ),
             "decision": args.decision,
+            "workflow_mode": mode,
             "next": (
                 "integrate"
                 if args.decision == "approved"
@@ -3537,6 +3840,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prepare.add_argument(
         "--nonce",
+    )
+    prepare.add_argument(
+        "--workflow-mode",
+        choices=("attached", "compatibility"),
+        default="attached",
+        help="New tasks default to capsule-attached workflow mode.",
+    )
+    prepare.add_argument(
+        "--compatibility-reason",
+        help="Required owner-authenticated reason for compatibility mode.",
     )
     prepare.set_defaults(
         handler=command_prepare

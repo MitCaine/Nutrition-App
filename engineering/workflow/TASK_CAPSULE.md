@@ -23,6 +23,13 @@ and later pilots are recorded in the [changelog](CHANGELOG.md). The owner's
 retiring compatibility callers. No new TOML keys or authorization-v1 fields
 are introduced by that policy change.
 
+The trusted task controller records an explicit workflow selection in its prepared state and
+defaults new tasks to `attached`. Selecting `compatibility` requires a nonempty reason in a
+separate versioned block of the same trusted-owner comment; the controller binds that block to
+the trusted author's comment identity, then revalidates it at later gates. Authorized
+states created before this selection was recorded keep their established route and do not gain
+retroactive capsule obligations.
+
 Never create a capsule as a fallback around a rejected controller, dedicated-App check or
 protected-main update. A capsule state transition is not a trusted-controller gate transition.
 Historical HISTORY records and exact Git recovery remain authoritative.

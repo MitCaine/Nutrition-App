@@ -1102,6 +1102,9 @@ def test_prepare_emits_external_authorization_draft(
     )
 
     assert state["phase"] == "PREPARED"
+    assert state["workflow"]["mode"] == "attached"
+    assert state["workflow"]["reason"] is None
+    assert state["workflow"]["authority"] is None
 
     draft = Path(
         state["authorization"][
@@ -1116,6 +1119,7 @@ def test_prepare_emits_external_authorization_draft(
             encoding="utf-8"
         )
     )
+    assert TASK.WORKFLOW_MODE_MARKER in draft.read_text(encoding="utf-8")
 
     persisted = json.loads(
         TASK.state_path(
@@ -1245,6 +1249,9 @@ class FakeIssueAuthorizationTransport:
 
 def prepared_external_state(
     tmp_path: Path,
+    *,
+    workflow_mode: str = "attached",
+    compatibility_reason: str | None = None,
 ) -> dict:
     repo, base = init_repo(tmp_path)
     state_dir = tmp_path / "controller-state"
@@ -1262,6 +1269,8 @@ def prepared_external_state(
         profiles=["repository"],
         revision=1,
         nonce="nonce-1234567890abcdef",
+        workflow_mode=workflow_mode,
+        compatibility_reason=compatibility_reason,
     )
 
 
@@ -1310,6 +1319,130 @@ def test_authorize_records_refetched_external_comment_identity(
     assert len(transport.created) == 1
 
 
+def test_compatibility_mode_is_bound_to_the_trusted_owner_comment(
+    tmp_path: Path,
+) -> None:
+    state = prepared_external_state(
+        tmp_path,
+        workflow_mode="compatibility",
+        compatibility_reason="Existing automation is still in flight.",
+    )
+    transport = FakeIssueAuthorizationTransport()
+    authorized = TASK.authorize_task(state, transport=transport)
+
+    assert authorized["workflow"]["mode"] == "compatibility"
+    assert authorized["workflow"]["reason"] == "Existing automation is still in flight."
+    assert authorized["workflow"]["authority"]["comment_id"] == 7001
+    assert authorized["workflow"]["authority"]["author_login"] == "owner"
+
+    class CommentReader:
+        def list_issue_comments(self, repository: str, issue_number: int) -> list[dict]:
+            assert repository == "owner/repo"
+            assert issue_number == 999
+            return list(transport.comments.values())
+
+    TASK.resolve_current_authorization(authorized, CommentReader())
+    authorized_body = transport.comments[7001]["body"]
+    transport.comments[7001]["body"] = authorized_body.split(
+        TASK.WORKFLOW_MODE_MARKER, 1
+    )[0].rstrip()
+    with pytest.raises(TASK.TaskControllerError, match="WORKFLOW_SELECTION_MARKER_INVALID"):
+        TASK.resolve_current_authorization(authorized, CommentReader())
+    transport.comments[7001]["body"] = authorized_body
+
+    transport.comments[7001]["body"] = transport.comments[7001]["body"].replace(
+        "Existing automation is still in flight.",
+        "The mode reason was edited.",
+    )
+    with pytest.raises(TASK.TaskControllerError, match="WORKFLOW_AUTHORITY_CURRENT_IDENTITY_MISMATCH"):
+        TASK.resolve_current_authorization(authorized, CommentReader())
+
+
+def test_compatibility_mode_requires_a_nonempty_reason(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(TASK.TaskControllerError, match="WORKFLOW_COMPATIBILITY_REASON_REQUIRED"):
+        prepared_external_state(tmp_path, workflow_mode="compatibility")
+
+
+def test_pre_change_authorization_state_keeps_legacy_gates(
+    tmp_path: Path,
+) -> None:
+    _, base, candidate, authorized, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="compatibility",
+        compatibility_reason="Existing work remains on its established route.",
+    )
+    # This was a valid pre-change nonce value and must not identify the new mode by shape.
+    legacy_nonce = "wf-" + ("a" * 64) + "." + ("b" * 32)
+    legacy_payload = build_payload(
+        task_id=authorized["task_id"],
+        issue_number=authorized["issue_number"],
+        repository=authorized["repository"],
+        base_sha=authorized["authorization"]["base_sha"],
+        allowed_paths=["src/**"],
+        forbidden_paths=[],
+        profiles=["repository"],
+        revision=authorized["authorization"]["revision"],
+        nonce=legacy_nonce,
+    )
+    comment["body"] = render_authorization_comment(legacy_payload)
+    legacy_authorization = resolve_comment(
+        comment,
+        trusted_author="owner",
+        expected_repository="owner/repo",
+        expected_issue_number=999,
+        expected_task_id="GH-999-P1",
+        expected_revision=1,
+        expected_comment_id=7001,
+    )
+    authorized.pop("workflow")
+    authorized["authorization"].pop("workflow_selection_sha256")
+    authorized["authorization"].update(
+        {
+            "nonce": legacy_authorization.nonce,
+            "payload_sha256": legacy_authorization.payload_sha256,
+            "identity_sha256": legacy_authorization.identity_sha256,
+        }
+    )
+    assert "workflow" not in authorized
+
+    qualification_transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=legacy_authorization.identity_sha256,
+    )
+    qualified = TASK.qualify_task(
+        authorized,
+        candidate_repo=tmp_path / "repo",
+        controller_main_sha=base,
+        expected_app_id=424242,
+        transport=qualification_transport,
+        ref_transport=FakeCandidateRefTransport(),
+        poll_attempts=2,
+        sleep_seconds=0,
+        sleep_fn=lambda _: None,
+    )
+    assert qualified["phase"] == "QUALIFIED"
+    assert qualification_transport.dispatch_inputs is not None
+    verified = TASK.record_verification(
+        qualified,
+        candidate_sha=candidate,
+        actor="verifier",
+        decision="pass",
+        evidence="legacy check record",
+    )
+    reviewed = TASK.record_review(
+        verified,
+        candidate_sha=candidate,
+        actor="reviewer",
+        decision="approved",
+        summary="legacy review",
+    )
+    assert reviewed["phase"] == "REVIEWED_APPROVED"
+
+
 def test_authorize_rejects_untrusted_comment_author(
     tmp_path: Path,
 ) -> None:
@@ -1339,12 +1472,11 @@ def test_authorize_rejects_posted_content_digest_drift(
     state = prepared_external_state(
         tmp_path
     )
+    nonce = state["authorization"]["nonce"]
+    changed_nonce = nonce[:-1] + ("0" if nonce[-1] != "0" else "1")
 
     def mutate(body: str) -> str:
-        return body.replace(
-            '"nonce": "nonce-1234567890abcdef"',
-            '"nonce": "nonce-1234567890abcdeg"',
-        )
+        return body.replace(f'"nonce": "{nonce}"', f'"nonce": "{changed_nonce}"')
 
     transport = (
         FakeIssueAuthorizationTransport(
@@ -2033,6 +2165,8 @@ def authorized_repo_state(
     tmp_path: Path,
     *,
     forbidden_paths: list[str] | None = None,
+    workflow_mode: str = "compatibility",
+    compatibility_reason: str | None = "Existing test caller retains the compatibility route.",
 ):
     repo, base = init_repo(tmp_path)
 
@@ -2051,6 +2185,8 @@ def authorized_repo_state(
         profiles=["repository"],
         revision=1,
         nonce="nonce-1234567890abcdef",
+        workflow_mode=workflow_mode,
+        compatibility_reason=compatibility_reason,
     )
 
     issue_transport = (
@@ -2105,6 +2241,9 @@ def authorized_repo_state(
 
 def qualify_fixture(
     tmp_path: Path,
+    *,
+    workflow_mode: str = "compatibility",
+    compatibility_reason: str | None = "Existing test caller retains the compatibility route.",
     **transport_kwargs,
 ):
     (
@@ -2114,7 +2253,9 @@ def qualify_fixture(
         state,
         comment,
     ) = authorized_repo_state(
-        tmp_path
+        tmp_path,
+        workflow_mode=workflow_mode,
+        compatibility_reason=compatibility_reason,
     )
 
     transport = (
@@ -2154,6 +2295,265 @@ def qualify_fixture(
         transport,
         refs,
     )
+
+
+def test_explicit_compatibility_mode_uses_its_authenticated_legacy_route(
+    tmp_path: Path,
+) -> None:
+    (
+        _,
+        _,
+        candidate,
+        qualified,
+        transport,
+        _,
+    ) = qualify_fixture(
+        tmp_path,
+        workflow_mode="compatibility",
+        compatibility_reason="Existing caller has no capsule transport yet.",
+    )
+
+    assert qualified["workflow"]["mode"] == "compatibility"
+    assert qualified["phase"] == "QUALIFIED"
+    assert transport.dispatch_inputs is not None
+
+    verified = TASK.record_verification(
+        qualified,
+        candidate_sha=candidate,
+        actor="verifier",
+        decision="pass",
+        evidence="candidate check passed",
+    )
+    reviewed = TASK.record_review(
+        verified,
+        candidate_sha=candidate,
+        actor="reviewer",
+        decision="approved",
+        summary="compatibility review passed",
+    )
+    assert reviewed["phase"] == "REVIEWED_APPROVED"
+
+
+def test_attached_default_requires_evidence_across_public_gates(
+    tmp_path: Path,
+) -> None:
+    from lib.candidate_evidence import EvidenceError
+
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="attached",
+        compatibility_reason=None,
+    )
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    refs = FakeCandidateRefTransport()
+    with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
+        TASK.qualify_task(
+            state,
+            candidate_repo=repo,
+            controller_main_sha=base,
+            expected_app_id=424242,
+            transport=transport,
+            ref_transport=refs,
+            poll_attempts=1,
+            sleep_seconds=0,
+            sleep_fn=lambda _: None,
+        )
+    assert transport.dispatch_inputs is None
+
+    with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
+        TASK.record_qualification(
+            state,
+            candidate_sha=candidate,
+            workflow_run_id=8800,
+            check_id=9900,
+            check_app_id=424242,
+            result="PASS",
+        )
+
+    state["qualification"] = {"result": "PASS", "candidate_sha": candidate}
+    with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
+        TASK.record_verification(
+            state,
+            candidate_sha=candidate,
+            actor="verifier",
+            decision="pass",
+            evidence="assertion only",
+        )
+    with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
+        TASK.record_review(
+            state,
+            candidate_sha=candidate,
+            actor="reviewer",
+            decision="approved",
+            summary="assertion only",
+        )
+
+    state.update(
+        phase="REVIEWED_APPROVED",
+        verification={"decision": "pass", "candidate_sha": candidate},
+        review={"decision": "approved", "candidate_sha": candidate},
+        qualification={
+            "result": "PASS",
+            "candidate_sha": candidate,
+            "check_app_id": 424242,
+            "candidate_ref_removed": True,
+            "check_id": 9900,
+            "workflow_run_id": 8800,
+        },
+    )
+    with pytest.raises(EvidenceError, match="CANDIDATE_ATTACHMENT_REQUIRED"):
+        TASK.integrate_task(
+            state,
+            candidate_repo=repo,
+            controller_main_sha=base,
+            expected_app_id=424242,
+            transport=transport,
+            ref_transport=refs,
+            human_owner_authorized=True,
+        )
+
+
+def test_record_qualification_authenticates_binding_and_review_preflight(
+    tmp_path: Path,
+) -> None:
+    from lib.candidate_evidence import EvidenceError
+
+    _, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="attached",
+        compatibility_reason=None,
+    )
+    authorization = resolve_comment(
+        comment,
+        trusted_author="owner",
+        expected_repository="owner/repo",
+        expected_issue_number=999,
+        expected_task_id="GH-999-P1",
+        expected_revision=1,
+        expected_comment_id=7001,
+    )
+
+    state["capsule_evidence"] = {"binding": {"candidate": candidate}}
+    with pytest.raises(EvidenceError, match="ATTACHMENT_DIGEST_MISMATCH"):
+        TASK.record_qualification(
+            state,
+            candidate_sha=candidate,
+            workflow_run_id=8800,
+            check_id=9900,
+            check_app_id=424242,
+            result="PASS",
+            authorization=authorization,
+        )
+
+    binding = {"authorization": authorization.to_dict(), "candidate": candidate}
+    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
+    state["capsule_evidence"] = {"binding": binding}
+    with pytest.raises(EvidenceError, match="REVIEW_PREFLIGHT_REQUIRED_OR_STALE"):
+        TASK.record_qualification(
+            state,
+            candidate_sha=candidate,
+            workflow_run_id=8800,
+            check_id=9900,
+            check_app_id=424242,
+            result="PASS",
+            authorization=authorization,
+        )
+
+    state["capsule_evidence"]["review_preflight"] = {
+        "binding_sha256": binding["binding_sha256"],
+        "candidate_sha": candidate,
+        "failure_count": 0,
+        "model": "gpt-6-sol",
+        "effort": "medium",
+        "runtime": {"executable": str(Path(sys.executable).resolve()), "sha256": "a" * 64},
+    }
+    qualified = TASK.record_qualification(
+        state,
+        candidate_sha=candidate,
+        workflow_run_id=8800,
+        check_id=9900,
+        check_app_id=424242,
+        result="PASS",
+        authorization=authorization,
+    )
+    assert qualified["phase"] == "QUALIFIED"
+
+
+def test_authorize_and_qualify_guidance_tracks_workflow_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    for mode, reason, expected_authorize, expected_qualify in (
+        ("attached", None, "plan_capsule", "seal_evidence"),
+        ("compatibility", "Existing caller is not capsule-ready.", "qualify", "verify"),
+    ):
+        case_root = tmp_path / mode
+        case_root.mkdir(parents=True)
+        prepared = prepared_external_state(
+            case_root,
+            workflow_mode=mode,
+            compatibility_reason=reason,
+        )
+        authorized = TASK.authorize_task(
+            prepared,
+            transport=FakeIssueAuthorizationTransport(),
+        )
+        outputs: list[dict] = []
+        repo = case_root / "repo"
+        state_dir = case_root / "controller-state"
+
+        monkeypatch.setattr(TASK, "load_state", lambda *_args, value=prepared: value)
+        monkeypatch.setattr(TASK, "resolve_repo_root", lambda _root: repo)
+        monkeypatch.setattr(TASK, "git", lambda *_args: "")
+        monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: prepared["authorization"]["base_sha"])
+        monkeypatch.setattr(TASK, "authorize_task", lambda _state, *, transport, value=authorized: value)
+        monkeypatch.setattr(TASK, "state_path", lambda *_args: state_dir / "state.json")
+        monkeypatch.setattr(TASK, "atomic_write_json", lambda *_args: None)
+        monkeypatch.setattr(TASK, "emit", outputs.append)
+
+        TASK.command_authorize(
+            SimpleNamespace(repo_root=repo, state_dir=state_dir, issue_number=999)
+        )
+        assert outputs[-1]["workflow_mode"] == mode
+        assert outputs[-1]["next"] == expected_authorize
+
+        candidate_sha = "a" * 40
+        qualified = dict(authorized)
+        qualified.update(
+            phase="QUALIFIED",
+            qualification={
+                "candidate_sha": candidate_sha,
+                "workflow_run_id": 8800,
+                "check_id": 9900,
+                "check_app_id": 424242,
+                "result": "PASS",
+                "candidate_ref_removed": True,
+            },
+        )
+        monkeypatch.setattr(TASK, "load_state", lambda *_args, value=authorized: value)
+        monkeypatch.setattr(TASK, "require_candidate_repository", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(TASK, "configured_qualification_app_id", lambda: 424242)
+        monkeypatch.setattr(TASK, "qualify_task", lambda *_args, value=qualified, **_kwargs: value)
+        monkeypatch.setattr(TASK, "GitCandidateRefTransport", lambda _repo: object())
+
+        TASK.command_qualify(
+            SimpleNamespace(
+                repo_root=repo,
+                state_dir=state_dir,
+                issue_number=999,
+                candidate_root=repo,
+            )
+        )
+        assert outputs[-1]["workflow_mode"] == mode
+        assert outputs[-1]["next"] == expected_qualify
+        monkeypatch.undo()
 
 
 def test_qualify_binds_exact_run_check_and_cleans_ref(
@@ -2871,7 +3271,7 @@ def test_trusted_qualification_cli_runs_as_standalone_script() -> None:
 def test_attached_lane_cannot_use_assertion_only_review():
     from lib.candidate_evidence import EvidenceError
     state = {"capsule_evidence": {}, "verification": {"decision": "pass", "candidate_sha": "a" * 40}}
-    with pytest.raises(EvidenceError, match="OBSERVED_REVIEW"):
+    with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
         TASK.record_review(state, candidate_sha="a" * 40, actor="author", decision="approved", summary="looks good")
 
 
@@ -2881,3 +3281,36 @@ def test_attached_lane_cannot_verify_missing_or_corrected_evidence():
         state = {"capsule_evidence": attached, "qualification": {"result": "PASS", "candidate_sha": "a" * 40}}
         with pytest.raises(EvidenceError, match="FRESH_CANDIDATE"):
             TASK.record_verification(state, candidate_sha="a" * 40, actor="author", decision="pass", evidence="tests passed")
+
+
+def test_pre_change_sealed_candidate_evidence_remains_usable():
+    candidate = "a" * 40
+    binding_sha256 = "b" * 64
+    state = {
+        "authorization": {"nonce": "legacy-nonce-123456"},
+        "qualification": {"result": "PASS", "candidate_sha": candidate},
+        "capsule_evidence": {
+            "binding": {
+                "candidate": candidate,
+                "binding_sha256": binding_sha256,
+                "requirements": [],
+                "review_obligations": {"outcomes": []},
+            },
+            "commands": {},
+            "qualified": {"binding_sha256": binding_sha256},
+        },
+    }
+    original = json.loads(json.dumps(state))
+
+    verified = TASK.record_verification(
+        state,
+        candidate_sha=candidate,
+        actor="verifier",
+        decision="pass",
+        evidence="sealed legacy qualification and command packet",
+    )
+
+    assert verified["phase"] == "VERIFIED"
+    assert verified["capsule_evidence"] == original["capsule_evidence"]
+    assert "workflow" not in verified
+    assert state == original
