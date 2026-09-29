@@ -24,7 +24,11 @@ def configuration(capsule: str) -> dict | None:
     blocks = re.findall(r"```nutrition-ri-v1\s*\n(.*?)\n```", capsule, re.S)
     if not markers and not blocks:
         return None
-    if len(markers) != 1 or len(blocks) != 1 or json.loads(blocks[0]) != POLICY:
+    try:
+        value = json.loads(blocks[0]) if len(blocks) == 1 else None
+    except (TypeError, ValueError) as exc:
+        raise ri.RIError("RI_CAPSULE_POLICY_INVALID") from exc
+    if len(markers) != 1 or len(blocks) != 1 or value != POLICY:
         raise ri.RIError("RI_CAPSULE_POLICY_INVALID")
     return dict(POLICY)
 

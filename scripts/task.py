@@ -3650,9 +3650,31 @@ def command_execution(args: argparse.Namespace) -> int:
                                     branch=args.branch, runtime=runtime,
                                     correction_limit=args.corrections)
             handoff = directory / f"execution-{args.issue_number}-handoff"
-            result = run([sys.executable, str(repo / "scripts/render-task-handoff.py"),
-                          record["capsule_path"], "--repo-root", str(candidate),
-                          "--output-dir", str(handoff)], cwd=repo)
+            issue_context = None
+            try:
+                issue_context = GhIssueAuthorizationTransport().get_issue(
+                    authorization.repository, authorization.issue_number)
+                if (type(issue_context.get("number")) is not int
+                        or issue_context["number"] != authorization.issue_number
+                        or (issue_context.get("body") is not None
+                            and not isinstance(issue_context.get("body"), str))):
+                    issue_context = None
+            except (TaskControllerError, UnicodeError, OSError, subprocess.SubprocessError):
+                # Quote matching is performed only against an available trusted
+                # issue body. Attachment still retrieves and rechecks the issue.
+                issue_context = None
+            planning_context = candidate_evidence.planning_context_document(
+                authorization, workflow_mode_for_state(state), issue_context)
+            planning_context_path = directory / (
+                f"execution-{args.issue_number}-planning-context-{secrets.token_hex(8)}.json")
+            execution.write_json(planning_context_path, planning_context)
+            try:
+                result = run([sys.executable, str(repo / "scripts/render-task-handoff.py"),
+                              record["capsule_path"], "--repo-root", str(candidate),
+                              "--output-dir", str(handoff), "--planning-context",
+                              str(planning_context_path)], cwd=repo)
+            finally:
+                planning_context_path.unlink(missing_ok=True)
             if result.returncode:
                 raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + result.stdout + result.stderr)
             record["handoff_dir"] = str(handoff)
