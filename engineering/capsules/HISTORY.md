@@ -4445,3 +4445,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 058f3b827bec8aae29a55fbad8090efc1a420fa2
 - **Full-capsule recovery path:** engineering/capsules/active/GH-242.md
 - **Historical capsule SHA-256:** 24ec6a7f1396b63f99831b938aa2426a14d91c16ce8222330dfad858c88dec2c
+
+### GH-243 - Validate attached evidence obligations before READY dispatch
+
+- **ID:** `GH-243`
+- **Title:** Validate attached evidence obligations before READY dispatch
+- **Final state:** MERGED
+- **Capsule revision:** 6
+- **Task type:** implementation
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/243; revision-six implementation authorization comment 5894787044 and distinct terminal compatibility authorization comment 5895357860. Earlier revisions and their failed attempts remain preserved.
+- **Issue disposition:** Exact approved C8 is integrated on main; this HISTORY record becomes effective only after separately authorized terminal T qualification, independent review and guarded finalization.
+- **Created:** 2026-09-29
+- **Completed/updated:** 2026-09-29
+- **Base commit:** 52c7c110326d5c89f238e350d45e7da5039ba3cf
+- **Task branch:** task/GH-243-r6
+- **Controller:** Nutrition trusted task controller
+- **Executor:** Codex bounded implementation lane
+- **Reviewer:** Fresh protected read-only reviewer
+- **Delegation:** none
+- **Implementation commit(s):** 88e1fc47acb93ca3a017509dae23e5a144d44b39; earlier revision candidates were not integrated.
+- **Verified commit reference(s):** 88e1fc47acb93ca3a017509dae23e5a144d44b39
+- **Reviewed source commit:** 88e1fc47acb93ca3a017509dae23e5a144d44b39
+- **Reviewed task/checkpoint commit(s):** 88e1fc47acb93ca3a017509dae23e5a144d44b39
+- **Integration/merged commit:** 88e1fc47acb93ca3a017509dae23e5a144d44b39 on main.
+- **Integration-related commit reference(s):** Protected C8 at 88e1fc47acb93ca3a017509dae23e5a144d44b39; terminal T requires its own dedicated repository qualification and guarded integration.
+- **Acceptance result:** 5/5 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh protected exact-C8 reviewer for five ACs, four original issue outcomes and three standards with no findings.
+- **Verification summary:** Frozen focused, `./scripts/session-end.sh` baseline and exact B-to-C diff-check evidence passed. Public planning and handoff regressions covered malformed obligations, evidence and RI blocks, AC/ID/base-range/available-quote failures, forged context rejection and authenticated compatibility. Local final-source focused tests, isolated Git-config clone fixtures, Ruff and capsule/history validation passed. The ordinary local backend selection had nine process-identity failures reproduced at exact B; the dedicated-App repository/backend qualification passed exact C8. Full Git diff and every changed path were directly reviewed; optional structural RI was not selected after an earlier measured 2 MB packet-budget stop.
+- **Specialized qualification:** Dedicated App 4708441 check 109532740234 and run 36604919728 passed exact C8 with repository/backend profiles; terminal T requires a distinct repository check.
+- **Known warnings:** Earlier C1 profile-floor attachment stop, C3 structural review budget stop, C4 frozen Bash heredoc sandbox failure, C5 missing reviewer packet proof, P5/C6 bounded-correction review, and C7 Linux Git author fixture failure are retained in their original worktrees and evidence. None of those results was reused as C8 approval. The existing local process-identity failures reproduced at B; remote backend qualification passed C8.
+- **Deferred work/follow-up IDs:** None for #243.
+- **Retrospective:** Planning evidence must bind to owner-authenticated workflow mode and authorization; caller-authored compatibility context cannot waive attached obligations. Test repositories cloned under isolated Git config need local author identity. Keep large optional RI structural packets within the consumer budget, and choose frozen commands compatible with the evidence sandbox.
+- **Referenced commits:** Planning P6 80925e891816729957215de93e88b0cd37b3dbfc; implementation C8 88e1fc47acb93ca3a017509dae23e5a144d44b39; full reviewed capsule R 40c4f300e1597f36f9c7f2e4b51c4fcf38d6d433.
+- **Full-capsule recovery commit:** 40c4f300e1597f36f9c7f2e4b51c4fcf38d6d433
+- **Full-capsule recovery path:** engineering/capsules/active/GH-243.md
+- **Historical capsule SHA-256:** 6c171d99ceabb5161a5626edc6c80baa02092d4b160d101b86eb541a6f6d0ca1
