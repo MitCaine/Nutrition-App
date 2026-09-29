@@ -889,32 +889,42 @@ def validate_candidate_scope(
             ),
         )
 
+    introduced = _git(
+        repo,
+        "rev-list",
+        "--reverse",
+        f"{authorization.base_sha}..{candidate_sha}",
+    ).splitlines()
+
+    def check_paths(paths: list[str]) -> None:
+        for path in paths:
+            if any(
+                _path_matches(path, pattern)
+                for pattern in authorization.forbidden_paths
+            ):
+                raise AuthorizationError("SCOPE_FORBIDDEN", path)
+            if not any(
+                _path_matches(path, pattern)
+                for pattern in authorization.allowed_paths
+            ):
+                raise AuthorizationError("SCOPE_UNEXPECTED", path)
+
+    for commit in introduced:
+        parents = _git(repo, "rev-list", "--parents", "-n", "1", commit).split()
+        if len(parents) != 2:
+            raise AuthorizationError(
+                "SCOPE_MERGE_UNSUPPORTED",
+                f"introduced commit {commit} must have exactly one parent",
+            )
+        check_paths(changed_paths(repo, base_sha=parents[1], candidate_sha=commit))
+
     overlay = changed_paths(
         repo,
         base_sha=authorization.base_sha,
         candidate_sha=candidate_sha,
     )
 
-    for path in overlay:
-        if any(
-            _path_matches(path, pattern)
-            for pattern
-            in authorization.forbidden_paths
-        ):
-            raise AuthorizationError(
-                "SCOPE_FORBIDDEN",
-                path,
-            )
-
-        if not any(
-            _path_matches(path, pattern)
-            for pattern
-            in authorization.allowed_paths
-        ):
-            raise AuthorizationError(
-                "SCOPE_UNEXPECTED",
-                path,
-            )
+    check_paths(overlay)
 
     required_profiles = (
         required_profiles_for_paths(
