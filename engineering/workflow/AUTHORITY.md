@@ -34,7 +34,7 @@ instructions, but cannot manufacture a passed gate or silently revise fixed task
 | Surface | Current responsibility | Migration disposition |
 | --- | --- | --- |
 | `scripts/task`, `scripts/task.py` | Prepare/authorize, trusted qualify, explicit verify/review, guarded integrate/reconcile | Retain as the public controller entrypoint; extend in bounded slices |
-| `scripts/lib/task_authorization.py` | External authorization v1, exact base/scope/profile and required-native checks | Retain; no schema change in #188 |
+| `scripts/lib/task_authorization.py` | External authorization v1 compatibility and default v2 path-scope checks, exact base/profile and required-native checks | Retain both authenticated versions |
 | `scripts/lib/trusted_qualification.py` and trusted workflows | Candidate-independent plan/finalization and dedicated-App check | Retain GH-171 credential/cache isolation |
 | `scripts/lib/qualification_profiles.py` | Repository/backend/mobile/postgresql/ios-native registry | Retain selected profiles and mandatory-native floor |
 | `scripts/capsule`, `scripts/capsule.py` | Legacy capsule state transitions and legacy remote qualification | Retain lifecycle compatibility; legacy qualification cannot satisfy the trusted-App gate by itself |
@@ -64,9 +64,10 @@ review must precede any retirement.
 This is the attachment contract. The [execution command](EXECUTION.md) implements
 planning/runtime binding for the initial bounded-command transport. The
 [candidate evidence lane](CANDIDATE_EVIDENCE.md) implements candidate/review binding;
-terminal closeout uses the separate guarded `task finalize` authority. It is not an added
-v1 capsule metadata key or authorization-v1 extension. Keep the capsule schema and authorization v1
-compatible until a separately reviewed implementation defines versioned storage.
+terminal closeout uses the separate guarded `task finalize` authority. This implementation
+adds no capsule metadata key and does not extend authorization v1. The capsule schema
+remains unchanged; the distinct authorization-v2 representation and v1 compatibility rule
+are defined below.
 
 The controller records an attachment outside candidate-controlled authority. It contains
 repository, issue/task ID, external comment ID/revision/identity digest, exact base B,
@@ -83,6 +84,27 @@ requirements; free text cannot silently add a machine profile. Semantic capsule 
 require a new revision/attachment; lifecycle-only edits retain the frozen execution
 contract and have append-only evidence. The planning capsule's hash identifies the frozen
 contract; a later reviewed-capsule hash identifies the recoverable lifecycle artifact.
+
+### Versioned authorized path patterns
+
+External authorization v1 comments keep their original `fnmatchcase` behavior, including
+`*` matching across `/`. Their v1 marker, schema, payload digest, serialized authorization
+shape and identity digest remain unchanged. Retained attachment, checkpoint and qualified
+state continues to use v1 when it is reauthenticated from that comment.
+
+New authorization comments use the distinct v2 marker and `schema_version = 2`. The pair
+must agree; neither controller state nor observed paths can infer or upgrade a version. V2
+matches literal paths exactly, `*` as one complete path component and `**` as zero or more
+complete components. `root/**` explicitly covers `root` and descendants on component
+boundaries; bare `root` remains exact. Absolute paths, malformed components, embedded
+wildcards, `?` and bracket classes fail closed. Authorization scope, capsule containment,
+candidate Git paths and bounded execution all use the matcher selected by the authenticated
+comment. Forbidden patterns take precedence when both allowed and forbidden patterns match.
+
+Moving retained work from v1 to v2 requires a fresh trusted-owner v2 comment with a new
+nonce/revision/comment identity, a new planning and candidate sequence, and fresh
+qualification and review. Existing v1 evidence is not reusable for that transition. The
+capsule TOML schema remains version 1.
 
 ### Worked binding example (illustrative, not executable authority)
 

@@ -26,6 +26,9 @@ class ExecutionTests(unittest.TestCase):
         self.git("config", "user.email", "fixture@example.invalid")
         (self.repo / "app.py").write_text("original\n")
         (self.repo / "forbidden.txt").write_text("preserve\n")
+        (self.repo / "src/nested").mkdir(parents=True)
+        (self.repo / "src/top.txt").write_text("rename me\n")
+        (self.repo / "src/nested/keep.txt").write_text("keep\n")
         self.git("add", ".")
         self.git("commit", "-qm", "base")
         self.base = self.git("rev-parse", "HEAD")
@@ -36,7 +39,7 @@ class ExecutionTests(unittest.TestCase):
             'id = "GH-1"', 'capsule_revision = 1', 'state = "READY"',
             'blocked = false', 'branch = "task/demo"', f'base_commit = "{self.base}"',
             'source_issue = "https://github.com/example/repo/issues/1"',
-            'owned_paths = ["app.py", "new.py"]', 'allowed_paths = []',
+            'owned_paths = ["app.py", "new.py", "src/*", "assets/**"]', 'allowed_paths = []',
             'forbidden_paths = ["forbidden.txt"]', 'specialized_qualification = ["profile:repository"]',
         ]) + '\n+++\n# Full fixture execution specification\n')
         self.git("add", ".")
@@ -44,7 +47,8 @@ class ExecutionTests(unittest.TestCase):
         self.planning = self.git("rev-parse", "HEAD")
         self.auth = ResolvedAuthorization(
             task_id="GH-1", issue_number=1, repository="example/repo", base_sha=self.base,
-            allowed_paths=("app.py", "new.py", self.capsule), forbidden_paths=("forbidden.txt",),
+            allowed_paths=("app.py", "new.py", "src/*", "assets/**", self.capsule),
+            forbidden_paths=("forbidden.txt",),
             profiles=("repository",), revision=1, nonce="nonce-123456789012",
             comment_id=1, author_login="example", payload_sha256="a" * 64,
             identity_sha256="b" * 64)
@@ -96,9 +100,18 @@ class ExecutionTests(unittest.TestCase):
         record = self.bind()
         self.assertEqual(record["capsule_text"], (self.repo / self.capsule).read_text())
         self.assertEqual(record["authorization"], self.auth.to_dict())
+        self.assertNotIn("schema_version", record["authorization"])
         self.assertFalse(record["qualified"])
         self.assertFalse(record["reviewed"])
         self.assertEqual(record["phase"], "PREPARED")
+
+    def test_execution_checkpoint_binds_v2_explicitly_and_cannot_resume_as_v1(self):
+        legacy = self.bind()
+        self.auth = dataclasses.replace(self.auth, schema_version=2)
+        current = self.bind()
+        self.assertEqual(current["authorization"]["schema_version"], 2)
+        with self.assertRaisesRegex(execution.ExecutionError, "AUTHORIZATION_CHANGED"):
+            execution.authenticate(legacy, self.auth)
 
     def test_wrong_branch_and_dirty_start(self):
         self.git("switch", "-qc", "wrong")
@@ -161,6 +174,56 @@ class ExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
             execution.authenticate(record, self.auth)
 
+    def test_authenticated_version_selects_execution_scope_for_real_rename_paths(self):
+        original = self.repo / "src/top.txt"
+        nested = self.repo / "src/nested/top.txt"
+        for version in (1, 2):
+            self.auth = dataclasses.replace(self.auth, schema_version=version)
+            record = self.bind()
+            original.rename(nested)
+            if version == 1:
+                self.assertEqual(execution.authenticate(record, self.auth), self.repo)
+            else:
+                with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
+                    execution.authenticate(record, self.auth)
+            nested.rename(original)
+
+    def test_execution_v2_subtree_pattern_includes_its_root_path(self):
+        root_path = self.repo / "assets"
+        for version in (1, 2):
+            self.auth = dataclasses.replace(self.auth, schema_version=version)
+            record = self.bind()
+            root_path.write_text("root path\n")
+            if version == 2:
+                self.assertEqual(execution.authenticate(record, self.auth), self.repo)
+            else:
+                with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
+                    execution.authenticate(record, self.auth)
+            root_path.unlink()
+
+    def test_v2_forbidden_scope_wins_for_a_real_tracked_path(self):
+        self.auth = dataclasses.replace(self.auth, schema_version=2,
+                                        forbidden_paths=("forbidden.txt", "src/top.txt"))
+        record = self.bind()
+        (self.repo / "src/top.txt").write_text("changed\n")
+        with self.assertRaisesRegex(execution.ExecutionError, "SCOPE_BREACH"):
+            execution.authenticate(record, self.auth)
+
+    def test_sandbox_policy_limits_runtime_path_access_and_keeps_denials(self):
+        runtime = Path(sys.executable).resolve()
+        profile = execution.sandbox_profile(
+            self.repo, self.repo / self.capsule, self.root / "scratch", runtime,
+        )
+        self.assertIn("(allow file-read-metadata", profile)
+        self.assertIn(str(runtime.parent), profile)
+        self.assertNotIn('(subpath "/opt")', profile)
+        self.assertIn("(deny network*)", profile)
+        self.assertIn(str(self.repo / ".git"), profile)
+        prefix = runtime.parent.parent
+        framework_runtime = prefix / "Resources/Python.app/Contents/MacOS/Python"
+        if framework_runtime.is_file() and framework_runtime.resolve().is_relative_to(prefix):
+            self.assertIn(str(framework_runtime.resolve()), profile)
+
     def test_native_success_reads_capsule_and_changes_authorized_source(self):
         code = ("import os\nfrom pathlib import Path\n"
                 "assert 'Full fixture' in Path(os.environ['NUTRITION_CAPSULE']).read_text()\n"
@@ -186,6 +249,19 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(record["phase"], "COMPLETED", record["attempts"])
         self.assertEqual(sentinel.read_text(), "preserve")
         self.assertEqual(self.git("rev-parse", "HEAD"), self.planning)
+
+    def test_native_exact_framework_runtime_does_not_enable_child_processes(self):
+        self.native()
+        runtime = Path(sys.executable).resolve()
+        prefix = runtime.parent.parent
+        framework_runtime = prefix / "Resources/Python.app/Contents/MacOS/Python"
+        executable = framework_runtime if framework_runtime.is_file() else runtime
+        code = "import errno, os\n"
+        code += f"try:\n os.posix_spawn({str(executable)!r}, [{str(executable)!r}, '-c', 'pass'], os.environ.copy())\n"
+        code += "except OSError as error:\n assert error.errno == errno.EPERM, error\n"
+        code += "else:\n raise AssertionError('child process permitted')\n"
+        record = self.run_native(code + self.report())
+        self.assertEqual(record["phase"], "COMPLETED", record["attempts"])
 
     def test_native_linked_git_network_reads_and_authority_aliases_denied(self):
         self.native()
