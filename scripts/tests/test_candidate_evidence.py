@@ -89,7 +89,8 @@ class CandidateFixture(unittest.TestCase):
             allowed_paths=("app.py", self.path), forbidden_paths=(), profiles=("repository",),
             revision=1, nonce="nonce-123456789012", comment_id=1, author_login="example",
             payload_sha256="a" * 64, identity_sha256="b" * 64)
-        self.issue = {"number": 1, "title": "sum", "body": "add returns sum", "updated_at": "fixed"}
+        self.issue = {"number": 1, "title": "sum", "body": "add returns sum",
+                      "state": "open", "updated_at": "fixed"}
 
     def git(self, *args):
         return evidence.git_text(self.repo, *args)
@@ -107,6 +108,41 @@ class CandidateFixture(unittest.TestCase):
 
 
 class CandidateEvidenceTests(CandidateFixture):
+    def test_ready_planning_reuses_attachment_parsers_without_approving_candidate(self):
+        planning = evidence.validate_ready_planning(
+            self.repo, self.original.encode(), authorization=self.auth,
+            workflow_mode="attached", issue=self.issue)
+        binding = self.binding()
+        self.assertEqual(planning["outcomes"], [item["id"] for item in binding["review_obligations"]["outcomes"]])
+        self.assertEqual(planning["standards"], [item["id"] for item in binding["review_obligations"]["standards"]])
+        self.assertEqual(planning["requirements"], [item["id"] for item in binding["requirements"]])
+        self.assertTrue(planning["issue_text_checked"])
+        self.assertNotIn("candidate", planning)
+        self.assertNotIn("approval", planning)
+
+        result = evidence.validate_ready_planning(
+            self.repo, self.original.encode(), authorization=self.auth,
+            workflow_mode="attached", issue=None)
+        self.assertFalse(result["issue_text_checked"])
+        with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_OUTCOME_INVALID"):
+            evidence.validate_ready_planning(
+                self.repo, self.original.replace("add returns sum", "different quote").encode(),
+                authorization=self.auth, workflow_mode="attached", issue=self.issue)
+
+    def test_ready_planning_rejects_serialized_authority_claims(self):
+        with self.assertRaisesRegex(evidence.EvidenceError, "PLANNING_AUTHORIZATION_CONTEXT_REQUIRED"):
+            evidence.validate_ready_planning(
+                self.repo, self.original.encode(), authorization=self.auth.to_dict(),
+                workflow_mode="compatibility", issue=None)
+
+    def test_candidate_attachment_rejects_missing_or_none_live_issue_body(self):
+        for issue in ({key: value for key, value in self.issue.items() if key != "body"},
+                      {**self.issue, "body": None}):
+            with self.subTest(body=issue.get("body", "<missing>")):
+                with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_OUTCOME_INVALID"):
+                    evidence.attach(self.repo, self.auth, planning=self.planning,
+                                    candidate=self.candidate, issue=issue)
+
     def test_attached_qualification_requires_candidate_bound_reviewer_preflight(self):
         import importlib.util
         from unittest.mock import Mock
@@ -662,7 +698,8 @@ class ControllerEvidenceTests(CandidateFixture):
         state_dir.mkdir()
         state = {"repository": "example/repo", "issue_number": 1, "task_id": "GH-1", "phase": "AUTHORIZED"}
         issue_transport = Mock()
-        issue_transport._api.return_value = {**self.issue, "html_url": "https://github.com/example/repo/issues/1"}
+        issue_transport.get_issue.return_value = {
+            **self.issue, "html_url": "https://github.com/example/repo/issues/1"}
         args = SimpleNamespace(repo_root=self.repo, candidate_root=self.repo, state_dir=state_dir, issue_number=1,
                                action="attach", planning=self.planning, corrections=1)
         with patch.object(task, "load_state", return_value=state), patch.object(task, "git", return_value=self.candidate), \

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -3650,13 +3651,26 @@ def command_execution(args: argparse.Namespace) -> int:
                                     branch=args.branch, runtime=runtime,
                                     correction_limit=args.corrections)
             handoff = directory / f"execution-{args.issue_number}-handoff"
-            result = run([sys.executable, str(repo / "scripts/render-task-handoff.py"),
-                          record["capsule_path"], "--repo-root", str(candidate),
-                          "--output-dir", str(handoff)], cwd=repo)
-            if result.returncode:
-                raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + result.stdout + result.stderr)
+            issue_context = None
+            try:
+                issue_context = GhIssueAuthorizationTransport().get_issue(
+                    authorization.repository, authorization.issue_number)
+                if (type(issue_context.get("number")) is not int
+                        or issue_context["number"] != authorization.issue_number
+                        or (issue_context.get("body") is not None
+                            and not isinstance(issue_context.get("body"), str))):
+                    issue_context = None
+            except (TaskControllerError, UnicodeError, OSError, subprocess.SubprocessError):
+                # Quote matching is performed only against an available trusted
+                # issue body. Attachment still retrieves and rechecks the issue.
+                issue_context = None
+            mode = workflow_mode_for_state(state)
+            record["handoff_text"] = _render_authenticated_execution_handoff(
+                repo=repo, candidate=candidate, record=record,
+                authorization=authorization, workflow_mode=mode,
+                issue=issue_context, output_dir=handoff, execution=execution)
             record["handoff_dir"] = str(handoff)
-            record["handoff_text"] = execution.execution_packet((handoff / "handoff.md").read_text())
+            record["handoff_text"] = execution.execution_packet(record["handoff_text"])
             record["handoff_sha256"] = execution.digest(record["handoff_text"].encode())
             execution.authenticate(record, authorization)
             execution.write_json(checkpoint, record)
@@ -3675,6 +3689,70 @@ def command_execution(args: argparse.Namespace) -> int:
               "attempts": len(record["attempts"]), "qualified": False,
               "reviewed": False, "published": False})
         return 1 if record["phase"] in {"STOP_REPLAN", "RUNNING"} else 0
+
+
+def _load_controller_script(repo: Path, relative: str, module_name: str):
+    path = (repo / relative).resolve()
+    loaded = sys.modules.get(module_name)
+    if loaded is not None and Path(loaded.__file__).resolve() == path:
+        return loaded
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ExecutionError("TRUSTED_HANDOFF_SCRIPT_UNAVAILABLE: " + relative)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+def _render_authenticated_execution_handoff(
+    *, repo: Path, candidate: Path, record: dict[str, Any],
+    authorization: ResolvedAuthorization, workflow_mode: str,
+    issue: dict[str, Any] | None, output_dir: Path, execution: Any,
+) -> str:
+    """Validate and render without serializing controller authority across a CLI boundary."""
+    validator = _load_controller_script(
+        repo, "scripts/validate-task-capsules.py", "_nutrition_trusted_capsule_validator")
+    renderer = _load_controller_script(
+        repo, "scripts/render-task-handoff.py", "_nutrition_trusted_task_handoff_renderer")
+    try:
+        execution.authenticate(record, authorization)
+        context = validator.repository_context(candidate)
+        result = validator.validate_capsule(
+            candidate, candidate / record["capsule_path"], execution=True, context=context,
+            planning_authorization=authorization, planning_workflow_mode=workflow_mode,
+            planning_issue=issue)
+        document = validator.result_document(context, [result], "execution")
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError,
+            validator.InvocationError) as exc:
+        raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + str(exc)) from exc
+    if document["summary"]["status"] != "passed":
+        errors = [
+            f"{finding['code']}: {finding['message']}"
+            for capsule in document.get("capsules", [])
+            for finding in capsule.get("errors", [])
+        ]
+        raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + "; ".join(errors))
+    capsules = document.get("capsules", [])
+    planning = capsules[0].get("planning_evidence") if len(capsules) == 1 else None
+    if (not isinstance(planning, dict) or planning.get("workflow_mode") != workflow_mode
+            or workflow_mode not in {"attached", "compatibility"}):
+        raise ExecutionError("EXECUTION_HANDOFF_AUTHORITY_MISMATCH")
+    execution.authenticate(record, authorization)
+    execution.require_external(output_dir, candidate)
+    generated_at, _ = renderer.fixed_or_current_time()
+    try:
+        renderer.write_bundle(
+            repo=candidate, capsule_path=candidate / record["capsule_path"],
+            validation=document, output_dir=output_dir, generated_at=generated_at)
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError,
+            renderer.HandoffError) as exc:
+        raise ExecutionError("EXECUTION_HANDOFF_INVALID: " + str(exc)) from exc
+    return (output_dir / "handoff.md").read_text(encoding="utf-8")
 
 
 def record_pre_review_failure(state: dict, attached: dict, binding: dict, packet: dict,

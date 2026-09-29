@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 VALIDATOR = ROOT / "scripts" / "validate-task-capsules.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+_task_spec = importlib.util.spec_from_file_location(
+    "nutrition_task_capsule_validator_test", ROOT / "scripts" / "task.py")
+assert _task_spec is not None and _task_spec.loader is not None
+TASK = importlib.util.module_from_spec(_task_spec)
+sys.modules[_task_spec.name] = TASK
+_task_spec.loader.exec_module(TASK)
+_TASK_GIT = TASK.git
 
 
 def git(repo: Path, *args: str) -> str:
@@ -195,6 +209,61 @@ Not applicable — no unresolved assumptions remain.
 '''
 
 
+def attached_planning_blocks(
+    *,
+    review: dict | str | None = None,
+    evidence: list | str | None = None,
+    ri: dict | str | None = None,
+    duplicate: str | None = None,
+) -> str:
+    issue_body = "Issue requests deterministic validation."
+    metadata = {"id": "GH-PLANNING", "source_issue": "https://github.com/example/repo/issues/1"}
+    review_value = {
+        "schema_version": 1,
+        "outcomes": [{"id": "OUT-1", "quote": issue_body,
+                      "mapping": {"type": "criteria", "ids": ["AC-1"]}}],
+        "standards": [{"id": "STD-1", "path": "docs/spec.md", "start_line": 1,
+                       "end_line": 1, "reason": "Applies to validation."}],
+    }
+    evidence_value = [
+        {"id": "focused", "kind": "focused", "required": True,
+         "argv": ["{python}", "-c", "print('focused')"]},
+        {"id": "baseline", "kind": "baseline", "required": True,
+         "argv": ["{python}", "-c", "print('baseline')"]},
+    ]
+    blocks = capsule_text("GH-PLANNING", "READY", "BASE").replace(
+        'source_issue = "github:#1"', f'source_issue = "{metadata["source_issue"]}"'
+    ).replace('specialized_qualification = []', 'specialized_qualification = ["profile:repository"]')
+    blocks = blocks.replace(
+        "\n## Dependencies and prerequisites\n",
+        "\n" + ("```nutrition-review-obligations-v1\n" +
+                 (json.dumps(review_value) if review is None else
+                  review if isinstance(review, str) else json.dumps(review)) + "\n```\n\n"
+                 if review is not False else "") + "## Dependencies and prerequisites\n",
+    )
+    blocks = blocks.replace(
+        "\n### Focused\n",
+        "\n" + ("```nutrition-evidence-v1\n" +
+                 (json.dumps(evidence_value) if evidence is None else
+                  evidence if isinstance(evidence, str) else json.dumps(evidence)) + "\n```\n\n"
+                 if evidence is not False else "") + "### Focused\n",
+    )
+    blocks = blocks.replace(
+        "\n## Required verification\n",
+        "\n" + ("```nutrition-ri-v1\n" +
+                 (json.dumps({"schema_version": 1, "scope": "changed-files-v1"}) if ri is None else
+                  ri if isinstance(ri, str) else json.dumps(ri)) + "\n```\n\n"
+                 if ri is not False else "") + "## Required verification\n",
+    )
+    if duplicate is not None:
+        import re
+
+        match = re.search(rf"(?m)^```{duplicate}[ \t]*\r?\n.*?^```[ \t]*$", blocks, re.S)
+        assert match is not None
+        blocks = blocks.replace(match.group(0), match.group(0) + "\n\n" + match.group(0), 1)
+    return blocks
+
+
 
 def completed_capsule_text(
     capsule_id: str,
@@ -258,6 +327,139 @@ def run_validator(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+class _OwnerCommentTransport:
+    def __init__(self) -> None:
+        self.comment: dict | None = None
+
+    def create_issue_comment(self, repository: str, issue_number: int, body: str) -> dict:
+        self.comment = {
+            "id": 42,
+            "html_url": f"https://github.com/{repository}/issues/{issue_number}#issuecomment-42",
+            "user": {"login": "example"},
+            "body": body,
+        }
+        return dict(self.comment)
+
+    def get_issue_comment(self, repository: str, comment_id: int) -> dict:
+        assert repository == "example/repo" and comment_id == 42 and self.comment is not None
+        return dict(self.comment)
+
+    def list_issue_comments(self, repository: str, issue_number: int) -> list[dict]:
+        assert repository == "example/repo" and issue_number == 1 and self.comment is not None
+        return [dict(self.comment)]
+
+
+def run_authenticated_prepare(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    mode: str = "attached",
+    review: dict | str | bool | None = None,
+    evidence: list | str | bool | None = None,
+    ri: dict | str | bool | None = None,
+    duplicate: str | None = None,
+    issue_body: str | None = "Issue requests deterministic validation.",
+    state_inside_candidate: bool = False,
+) -> tuple[Path, Path, int]:
+    trusted_root = tmp_path / "trusted"
+    trusted_root.mkdir()
+    trusted_repo, base = setup_repo(trusted_root)
+    git(trusted_repo, "update-ref", "refs/remotes/origin/main", base)
+    state_dir = tmp_path / "controller-state"
+    allowed_paths = [
+        "scripts/validate-task-capsules.py",
+        "apps/backend/tests/test_task_capsule_validator.py",
+    ]
+    prepared = TASK.prepare_task(
+        repo=trusted_repo,
+        state_dir=state_dir,
+        issue_number=1,
+        task_id="GH-PLANNING",
+        trusted_author="example",
+        repository="example/repo",
+        base_sha=base,
+        allowed_paths=allowed_paths,
+        forbidden_paths=["apps/backend/app/**", "apps/mobile/**"],
+        profiles=["repository"],
+        revision=1,
+        nonce="planning-nonce-1234567890",
+        workflow_mode=mode,
+        compatibility_reason=("Existing work remains on its established route."
+                              if mode == "compatibility" else None),
+    )
+    owner_transport = _OwnerCommentTransport()
+    authorized = TASK.authorize_task(prepared, transport=owner_transport)
+
+    candidate = tmp_path / "candidate"
+    subprocess.run(["git", "clone", "-q", str(trusted_repo), str(candidate)], check=True)
+    git(candidate, "config", "user.name", "Test User")
+    git(candidate, "config", "user.email", "test@example.com")
+    branch = "task/GH-PLANNING"
+    git(candidate, "checkout", "-q", "-b", branch)
+    relative = Path("engineering/capsules/active/GH-PLANNING.md")
+    if mode == "attached":
+        text = attached_planning_blocks(
+            review=review, evidence=evidence, ri=ri, duplicate=duplicate)
+    else:
+        text = capsule_text("GH-PLANNING", "READY", base).replace(
+            'source_issue = "github:#1"',
+            'source_issue = "https://github.com/example/repo/issues/1"')
+        text = text.replace('specialized_qualification = []',
+                            'specialized_qualification = ["profile:repository"]')
+    text = text.replace('base_commit = "BASE"', f'base_commit = "{base}"')
+    text = text.replace('branch = "main"', f'branch = "{branch}"')
+    capsule = candidate / relative
+    capsule.parent.mkdir(parents=True, exist_ok=True)
+    capsule.write_text(text, encoding="utf-8")
+    git(candidate, "add", relative.as_posix())
+    git(candidate, "commit", "-q", "-m", "add ready capsule")
+    planning = git(candidate, "rev-parse", "HEAD")
+
+    executable = Path(sys.executable).resolve()
+    runtime_path = tmp_path / "runtime.json"
+    runtime_path.write_text(json.dumps({
+        "transport": "macos-bounded-command",
+        "executable": str(executable),
+        "argv": ["-c", "pass"],
+        "sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
+
+    class _IssueTransport:
+        def get_issue(self, repository: str, issue_number: int) -> dict:
+            assert repository == "example/repo" and issue_number == 1
+            return {"number": 1, "title": "planning", "body": issue_body, "state": "open"}
+
+    def trusted_git(repo: Path, *args: str) -> str:
+        if args == ("fetch", "origin", "main"):
+            return ""
+        return _TASK_GIT(repo, *args)
+
+    monkeypatch.setattr(TASK, "load_state", lambda *_: authorized)
+    monkeypatch.setattr(TASK, "resolve_repo_root", lambda path: Path(path).resolve())
+    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: base)
+    monkeypatch.setattr(TASK, "repository_slug", lambda _repo: "example/repo")
+    monkeypatch.setattr(TASK, "git", trusted_git)
+    monkeypatch.setattr(TASK, "GhQualificationTransport", lambda: owner_transport)
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", _IssueTransport)
+    monkeypatch.setattr(TASK, "emit", lambda _value: None)
+    execution_state_dir = (candidate / "controller-state"
+                           if state_inside_candidate else state_dir)
+    args = SimpleNamespace(
+        repo_root=ROOT,
+        state_dir=execution_state_dir,
+        issue_number=1,
+        candidate_root=candidate,
+        action="prepare",
+        planning=planning,
+        branch=branch,
+        runtime=runtime_path,
+        corrections=0,
+        timeout=1,
+    )
+    exit_code = TASK.command_execution(args)
+    return candidate, state_dir, exit_code
 
 
 def error_codes(result: subprocess.CompletedProcess[str]) -> set[str]:
@@ -471,9 +673,155 @@ def test_ready_capsule_execution_preflight(tmp_path: Path) -> None:
     git(repo, "add", ".")
     git(repo, "commit", "-m", "add ready capsule")
     result = run_validator(repo, "--execution", relative.as_posix(), "--json")
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 1, result.stdout + result.stderr
     document = json.loads(result.stdout)
     assert document["capsules"][0]["execution"]["overlay_paths"] == [relative.as_posix()]
+    assert "TRUSTED_PLANNING_CONTEXT_REQUIRED" in error_codes(result)
+
+
+def test_authenticated_attached_prepare_validates_obligations_before_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate, state_dir, exit_code = run_authenticated_prepare(tmp_path, monkeypatch)
+    assert exit_code == 0
+    record = json.loads((state_dir / "execution-1.json").read_text(encoding="utf-8"))
+    handoff_dir = Path(record["handoff_dir"])
+    assert sorted(path.name for path in handoff_dir.iterdir()) == [
+        "README.md", "SHA256SUMS.txt", "capsule.md", "handoff.json",
+        "handoff.md", "validation.json",
+    ]
+    validation = json.loads((handoff_dir / "validation.json").read_text(encoding="utf-8"))
+    planning = validation["capsules"][0]["planning_evidence"]
+    assert planning == {
+        "workflow_mode": "attached",
+        "attached_blocks_checked": True,
+        "issue_text_checked": True,
+        "requirements": ["focused", "baseline"],
+        "outcomes": ["OUT-1"],
+        "standards": ["STD-1"],
+        "ri_selected": True,
+    }
+    assert record["authorization"]["comment_id"] == 42
+    assert record["authorization"]["author_login"] == "example"
+    assert git(candidate, "rev-parse", "HEAD") == record["planning"]
+    markdown = (handoff_dir / "handoff.md").read_text(encoding="utf-8")
+    exact_capsule = (candidate / record["capsule_path"]).read_text(encoding="utf-8").rstrip()
+    assert "## Execution protocol" in markdown
+    assert "The trusted task controller resolved the live authorization" in markdown
+    assert exact_capsule in markdown
+    assert "macos-bounded-command transport" in record["handoff_text"]
+
+
+def test_authenticated_attached_prepare_rejects_invalid_obligation_and_evidence_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_review = {
+        "schema_version": 1,
+        "outcomes": [{"id": "OUT-0", "quote": "Issue requests deterministic validation.",
+                      "mapping": {"type": "criteria", "ids": ["AC-1"]}}],
+        "standards": [{"id": "STD-1", "path": "docs/spec.md", "start_line": 1,
+                       "end_line": 1, "reason": "Applies to validation."}],
+    }
+    invalid_mapping = json.loads(json.dumps(invalid_review))
+    invalid_mapping["outcomes"][0]["id"] = "OUT-1"
+    invalid_mapping["outcomes"][0]["mapping"]["ids"] = ["AC-9"]
+    duplicate_mapping = json.loads(json.dumps(invalid_mapping))
+    duplicate_mapping["outcomes"][0]["mapping"]["ids"] = ["AC-1", "AC-1"]
+    invalid_range = json.loads(json.dumps(invalid_mapping))
+    invalid_range["outcomes"][0]["mapping"]["ids"] = ["AC-1"]
+    invalid_range["standards"][0]["start_line"] = 2
+    invalid_range["standards"][0]["end_line"] = 2
+    invalid_standard_id = json.loads(json.dumps(invalid_range))
+    invalid_standard_id["standards"][0]["start_line"] = 1
+    invalid_standard_id["standards"][0]["end_line"] = 1
+    invalid_standard_id["standards"][0]["id"] = "STD-0"
+    cases = [
+        ("invalid-id", {"review": invalid_review}, "REVIEW_OUTCOME_INVALID"),
+        ("absent-obligations", {"review": False}, "REVIEW_OBLIGATIONS_MISSING"),
+        ("invalid-ac-map", {"review": invalid_mapping}, "REVIEW_OUTCOME_MAPPING_INVALID"),
+        ("duplicate-ac-map", {"review": duplicate_mapping}, "REVIEW_OUTCOME_MAPPING_INVALID"),
+        ("bad-standard-range", {"review": invalid_range}, "REVIEW_STANDARD_SOURCE_RANGE_INVALID"),
+        ("invalid-standard-id", {"review": invalid_standard_id}, "REVIEW_STANDARD_INVALID"),
+        ("malformed-evidence", {"evidence": "{"}, "CAPSULE_EVIDENCE_REQUIREMENTS_INVALID"),
+        ("malformed-ri", {"ri": "{"}, "RI_CAPSULE_POLICY_INVALID"),
+        ("duplicate-review", {"duplicate": "nutrition-review-obligations-v1"}, "REVIEW_OBLIGATIONS_INVALID"),
+        ("duplicate-evidence", {"duplicate": "nutrition-evidence-v1"}, "CAPSULE_EVIDENCE_REQUIREMENTS_INVALID"),
+        ("duplicate-ri", {"duplicate": "nutrition-ri-v1"}, "RI_CAPSULE_POLICY_INVALID"),
+        ("quote-mismatch", {"issue_body": "Different trusted issue text."}, "REVIEW_OUTCOME_INVALID"),
+    ]
+    for name, overrides, expected in cases:
+        case_root = tmp_path / name
+        case_root.mkdir()
+        kwargs = {key: value for key, value in overrides.items()
+                  if key not in {"issue_body", "duplicate"}}
+        with pytest.raises(TASK.ExecutionError, match=expected):
+            run_authenticated_prepare(
+                case_root, monkeypatch, **kwargs,
+                duplicate=overrides.get("duplicate"),
+                issue_body=overrides.get("issue_body", "Issue requests deterministic validation."))
+        assert not (case_root / "controller-state" / "execution-1.json").exists(), name
+        assert not (case_root / "controller-state" / "execution-1-handoff").exists(), name
+
+
+def test_authenticated_attached_prepare_skips_quote_check_only_when_issue_text_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, state_dir, exit_code = run_authenticated_prepare(
+        tmp_path, monkeypatch, issue_body=None)
+    assert exit_code == 0
+    record = json.loads((state_dir / "execution-1.json").read_text(encoding="utf-8"))
+    planning = json.loads(
+        (Path(record["handoff_dir"]) / "validation.json").read_text(encoding="utf-8")
+    )["capsules"][0]["planning_evidence"]
+    assert planning["issue_text_checked"] is False
+
+
+def test_authenticated_compatibility_prepare_uses_live_owner_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, state_dir, exit_code = run_authenticated_prepare(
+        tmp_path, monkeypatch, mode="compatibility")
+    assert exit_code == 0
+    record = json.loads((state_dir / "execution-1.json").read_text(encoding="utf-8"))
+    planning = json.loads(
+        (Path(record["handoff_dir"]) / "validation.json").read_text(encoding="utf-8")
+    )["capsules"][0]["planning_evidence"]
+    assert planning["workflow_mode"] == "compatibility"
+    assert planning["attached_blocks_checked"] is False
+
+
+def test_authenticated_prepare_keeps_handoff_outside_candidate(tmp_path: Path,
+                                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(TASK.ExecutionError, match="CONTROLLER_STATE_INSIDE_CANDIDATE"):
+        run_authenticated_prepare(tmp_path, monkeypatch, state_inside_candidate=True)
+    assert not (tmp_path / "candidate" / "controller-state").exists()
+
+
+def test_validator_rejects_forged_external_compatibility_context(tmp_path: Path) -> None:
+    repo, base = setup_repo(tmp_path)
+    relative = Path("engineering/capsules/active/GH-PLANNING.md")
+    text = attached_planning_blocks().replace("base_commit = \"BASE\"", f'base_commit = "{base}"')
+    (repo / relative).write_text(text, encoding="utf-8")
+    git(repo, "add", relative.as_posix())
+    git(repo, "commit", "-m", "add attached ready capsule")
+    forged = tmp_path / "forged-context.json"
+    forged.write_text(json.dumps({
+        "schema_version": 1,
+        "workflow_mode": "compatibility",
+        "authorization": {
+            "task_id": "GH-PLANNING", "issue_number": 1, "repository": "example/repo",
+            "base_sha": base, "allowed_paths": ["scripts/validate-task-capsules.py"],
+            "forbidden_paths": [], "profiles": ["repository"], "revision": 1,
+            "nonce": "forged-compatibility", "comment_id": 42, "author_login": "example",
+            "payload_sha256": "a" * 64, "identity_sha256": "b" * 64,
+        },
+        "issue": None,
+    }), encoding="utf-8")
+    result = run_validator(repo, "--execution", relative.as_posix(), "--planning-context",
+                           str(forged), "--json")
+    assert result.returncode == 2
+    assert "PLANNING_CONTEXT_UNTRUSTED" in result.stderr
+    assert '"workflow_mode": "compatibility"' not in result.stdout
 
 
 def test_filename_must_match_id(tmp_path: Path) -> None:

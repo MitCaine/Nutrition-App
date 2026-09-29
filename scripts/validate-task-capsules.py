@@ -85,6 +85,8 @@ from lib.qualification_profiles import (
     QualificationProfileError,
     parse_profile_tokens,
 )
+from lib.candidate_evidence import EvidenceError
+from lib.ri_consumer import RIError
 
 SCHEMA_VERSION = 1
 ACTIVE_STATES = (
@@ -297,6 +299,7 @@ class CapsuleResult:
     warnings: list[Finding] = field(default_factory=list)
     metadata: dict[str, Any] | None = None
     execution: dict[str, Any] | None = None
+    planning_evidence: dict[str, Any] | None = None
 
     def error(self, code: str, message: str, field_name: str | None = None) -> None:
         self.valid = False
@@ -1642,6 +1645,9 @@ def validate_capsule(
     *,
     execution: bool,
     context: dict[str, Any],
+    planning_authorization: Any | None = None,
+    planning_workflow_mode: str | None = None,
+    planning_issue: dict[str, Any] | None = None,
 ) -> CapsuleResult:
     result = CapsuleResult(path=relative_path(repo, path))
     resolved = path.resolve()
@@ -1976,6 +1982,27 @@ def validate_capsule(
                         f"expected {expected_overlay}, found {overlay}.",
                         "base_commit",
                     )
+        if state == "READY":
+            if execution and planning_authorization is None:
+                result.error(
+                    "TRUSTED_PLANNING_CONTEXT_REQUIRED",
+                    "Strict execution preflight requires context resolved by the trusted task controller.",
+                    "planning evidence",
+                )
+            else:
+                try:
+                    from lib import candidate_evidence
+
+                    result.planning_evidence = candidate_evidence.validate_ready_planning(
+                        repo, resolved.read_bytes(), authorization=planning_authorization,
+                        workflow_mode=planning_workflow_mode, issue=planning_issue)
+                except (EvidenceError, RIError, OSError, UnicodeError, ValueError,
+                        TypeError, KeyError) as exc:
+                    # The shared parsers use stable error codes. Keep the strict
+                    # validator's JSON route fail-closed without accepting an
+                    # unsigned serialized claim as controller authority.
+                    code = str(exc).split(":", 1)[0] or "PLANNING_EVIDENCE_INVALID"
+                    result.error(code, str(exc), "planning evidence")
     return result
 
 
@@ -2284,6 +2311,15 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--planning-context",
+        type=Path,
+        help=(
+            "Rejected: external JSON cannot authenticate authorization or workflow mode; "
+            "use `./scripts/task execution prepare`."
+        ),
+    )
+
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON.",
@@ -2321,6 +2357,9 @@ def main() -> int:
             "explicit capsule path"
         )
 
+    if args.planning_context and not args.execution:
+        parser.error("--planning-context requires --execution")
+
     repo = (
         args.repo_root
         or Path(__file__).resolve().parents[1]
@@ -2328,6 +2367,12 @@ def main() -> int:
 
     try:
         context = repository_context(repo)
+
+        if args.planning_context:
+            raise InvocationError(
+                "PLANNING_CONTEXT_UNTRUSTED: use `./scripts/task execution prepare`; "
+                "the validator CLI cannot authenticate caller-supplied authorization."
+            )
 
         if args.paths:
             paths = [
