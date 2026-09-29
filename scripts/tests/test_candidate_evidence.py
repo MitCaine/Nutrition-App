@@ -109,8 +109,9 @@ class CandidateFixture(unittest.TestCase):
 
 class CandidateEvidenceTests(CandidateFixture):
     def test_ready_planning_reuses_attachment_parsers_without_approving_candidate(self):
-        context = evidence.planning_context_document(self.auth, "attached", self.issue)
-        planning = evidence.validate_ready_planning(self.repo, self.original.encode(), context)
+        planning = evidence.validate_ready_planning(
+            self.repo, self.original.encode(), authorization=self.auth,
+            workflow_mode="attached", issue=self.issue)
         binding = self.binding()
         self.assertEqual(planning["outcomes"], [item["id"] for item in binding["review_obligations"]["outcomes"]])
         self.assertEqual(planning["standards"], [item["id"] for item in binding["review_obligations"]["standards"]])
@@ -119,12 +120,20 @@ class CandidateEvidenceTests(CandidateFixture):
         self.assertNotIn("candidate", planning)
         self.assertNotIn("approval", planning)
 
-        unavailable = evidence.planning_context_document(self.auth, "attached", None)
-        result = evidence.validate_ready_planning(self.repo, self.original.encode(), unavailable)
+        result = evidence.validate_ready_planning(
+            self.repo, self.original.encode(), authorization=self.auth,
+            workflow_mode="attached", issue=None)
         self.assertFalse(result["issue_text_checked"])
         with self.assertRaisesRegex(evidence.EvidenceError, "REVIEW_OUTCOME_INVALID"):
             evidence.validate_ready_planning(
-                self.repo, self.original.replace("add returns sum", "different quote").encode(), context)
+                self.repo, self.original.replace("add returns sum", "different quote").encode(),
+                authorization=self.auth, workflow_mode="attached", issue=self.issue)
+
+    def test_ready_planning_rejects_serialized_authority_claims(self):
+        with self.assertRaisesRegex(evidence.EvidenceError, "PLANNING_AUTHORIZATION_CONTEXT_REQUIRED"):
+            evidence.validate_ready_planning(
+                self.repo, self.original.encode(), authorization=self.auth.to_dict(),
+                workflow_mode="compatibility", issue=None)
 
     def test_candidate_attachment_rejects_missing_or_none_live_issue_body(self):
         for issue in ({key: value for key, value in self.issue.items() if key != "body"},

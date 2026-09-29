@@ -35,10 +35,13 @@ Preserve dirty or in-flight work; do not replace an active capsule to free the q
    while unsupported files still require direct review. Keep the capsule lifecycle
    through terminal closeout. An in-flight unattached task or explicit compatibility
    exception may retain its existing path without inventing a capsule after the fact.
-   Strict attached READY validation uses current controller authorization and validates
-   the evidence, review-obligation and selected RI blocks before handoff. Available trusted
-   issue text is used to check quoted outcomes; unavailable issue text is reported as
-   unchecked and is never replaced with capsule-authored claims. Exact-C attachment
+   `./scripts/task execution prepare` resolves the current owner authorization and
+   controller-selected workflow mode, validates the evidence, review-obligation and
+   selected RI blocks in-process, then renders the handoff. Available trusted issue text
+   is used to check quoted outcomes; unavailable issue text is reported as unchecked and
+   is never replaced with capsule-authored claims. The validator and renderer CLIs reject
+   serialized planning context because it cannot authenticate mode or identity; offline
+   validation is diagnostic only and cannot emit an executor handoff. Exact-C attachment
    repeats the checks and retains the live issue, reviewer-preflight, qualification,
    command-evidence and independent-review gates. Explicit compatibility work may omit
    attached-only blocks.

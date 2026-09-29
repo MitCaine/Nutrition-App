@@ -243,55 +243,42 @@ def commit_capsule(repo: Path, base: str, capsule_id: str, *, attached: bool,
     return relative
 
 
-def test_ready_capsule_generates_complete_bundle(tmp_path: Path) -> None:
+def test_standalone_renderer_does_not_create_an_unauthenticated_handoff(tmp_path: Path) -> None:
     repo, base = setup_repo(tmp_path)
     capsule = commit_ready_capsule(repo, base)
     output = tmp_path / "handoff"
     result = run_renderer(repo, capsule, output)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert sorted(path.name for path in output.iterdir()) == [
-        "README.md",
-        "SHA256SUMS.txt",
-        "capsule.md",
-        "handoff.json",
-        "handoff.md",
-        "validation.json",
-    ]
-    handoff = json.loads((output / "handoff.json").read_text(encoding="utf-8"))
-    assert handoff["task"]["id"] == "WF-003"
-    assert handoff["execution"]["base_commit"] == base
-    assert handoff["execution"]["overlay_paths"] == [capsule.as_posix()]
-    assert handoff["scope"]["owned_paths"] == ["scripts/render-task-handoff.py"]
-    assert handoff["execution"]["preflight_status"] == "passed"
+    assert result.returncode == 1
+    assert "TRUSTED_PLANNING_CONTEXT_REQUIRED" in result.stderr
+    assert not output.exists()
 
 
-def test_attached_handoff_uses_trusted_planning_context(tmp_path: Path) -> None:
+def test_renderer_rejects_caller_authored_attached_context(tmp_path: Path) -> None:
     repo, base = setup_repo(tmp_path)
     capsule = commit_capsule(repo, base, "WF-ATTACHED", attached=True)
     context = tmp_path / "planning-context.json"
     context.write_text(json.dumps(attached_context("WF-ATTACHED", base)), encoding="utf-8")
     output = tmp_path / "handoff"
     result = run_renderer(repo, capsule, output, planning_context=context)
-    assert result.returncode == 0, result.stdout + result.stderr
-    validation = json.loads((output / "validation.json").read_text(encoding="utf-8"))
-    planning = validation["capsules"][0]["planning_evidence"]
-    assert planning["workflow_mode"] == "attached"
-    assert planning["issue_text_checked"] is True
-
-
-def test_attached_handoff_rejects_malformed_evidence_before_output(tmp_path: Path) -> None:
-    repo, base = setup_repo(tmp_path)
-    capsule = commit_capsule(repo, base, "WF-BAD-EVIDENCE", attached=True, malformed_evidence=True)
-    context = tmp_path / "planning-context.json"
-    context.write_text(json.dumps(attached_context("WF-BAD-EVIDENCE", base)), encoding="utf-8")
-    output = tmp_path / "handoff"
-    result = run_renderer(repo, capsule, output, planning_context=context)
     assert result.returncode == 1
-    assert "CAPSULE_EVIDENCE_REQUIREMENTS_INVALID" in result.stderr
+    assert "PLANNING_CONTEXT_UNTRUSTED" in result.stderr
     assert not output.exists()
 
 
-def test_compatibility_handoff_keeps_attached_blocks_optional(tmp_path: Path) -> None:
+def test_renderer_rejects_forged_compatibility_context_before_output(tmp_path: Path) -> None:
+    repo, base = setup_repo(tmp_path)
+    capsule = commit_capsule(repo, base, "WF-COMPAT", attached=True)
+    context = tmp_path / "planning-context.json"
+    context.write_text(json.dumps(attached_context(
+        "WF-COMPAT", base, workflow_mode="compatibility", issue_body=None)), encoding="utf-8")
+    output = tmp_path / "handoff"
+    result = run_renderer(repo, capsule, output, planning_context=context)
+    assert result.returncode == 1
+    assert "PLANNING_CONTEXT_UNTRUSTED" in result.stderr
+    assert not output.exists()
+
+
+def test_renderer_refuses_to_assert_compatibility_from_unsigned_context(tmp_path: Path) -> None:
     repo, base = setup_repo(tmp_path)
     capsule = commit_capsule(repo, base, "WF-COMPAT", attached=False)
     context = tmp_path / "planning-context.json"
@@ -299,25 +286,9 @@ def test_compatibility_handoff_keeps_attached_blocks_optional(tmp_path: Path) ->
         "WF-COMPAT", base, workflow_mode="compatibility", issue_body=None)), encoding="utf-8")
     output = tmp_path / "handoff"
     result = run_renderer(repo, capsule, output, planning_context=context)
-    assert result.returncode == 0, result.stdout + result.stderr
-    validation = json.loads((output / "validation.json").read_text(encoding="utf-8"))
-    planning = validation["capsules"][0]["planning_evidence"]
-    assert planning["workflow_mode"] == "compatibility"
-    assert planning["attached_blocks_checked"] is False
-
-
-def test_handoff_contains_protocol_and_exact_capsule(tmp_path: Path) -> None:
-    repo, base = setup_repo(tmp_path)
-    capsule = commit_ready_capsule(repo, base)
-    output = tmp_path / "handoff"
-    result = run_renderer(repo, capsule, output)
-    assert result.returncode == 0, result.stdout + result.stderr
-    markdown = (output / "handoff.md").read_text(encoding="utf-8")
-    exact_capsule = (repo / capsule).read_text(encoding="utf-8").rstrip()
-    assert "## Execution protocol" in markdown
-    assert "Do not mark `VERIFIED`, `REVIEWED`, or `MERGED` yourself" in markdown
-    assert exact_capsule in markdown
-    assert "NUTRITION_TASK_HANDOFF_GENERATED_AT" not in markdown
+    assert result.returncode == 1
+    assert "PLANNING_CONTEXT_UNTRUSTED" in result.stderr
+    assert not output.exists()
 
 
 def test_dirty_repository_is_rejected_without_output(tmp_path: Path) -> None:
@@ -337,32 +308,5 @@ def test_output_inside_repository_is_rejected(tmp_path: Path) -> None:
     output = repo / "generated-handoff"
     result = run_renderer(repo, capsule, output)
     assert result.returncode == 1
-    assert "outside the repository" in result.stderr
+    assert "TRUSTED_PLANNING_CONTEXT_REQUIRED" in result.stderr
     assert not output.exists()
-
-
-def test_fixed_timestamp_produces_deterministic_content(tmp_path: Path) -> None:
-    repo, base = setup_repo(tmp_path)
-    capsule = commit_ready_capsule(repo, base)
-    first = tmp_path / "first"
-    second = tmp_path / "second"
-    first_result = run_renderer(repo, capsule, first)
-    second_result = run_renderer(repo, capsule, second)
-    assert first_result.returncode == 0
-    assert second_result.returncode == 0
-    for name in (
-        "README.md",
-        "capsule.md",
-        "handoff.json",
-        "handoff.md",
-    ):
-        assert (first / name).read_bytes() == (second / name).read_bytes()
-    first_validation = json.loads(
-        (first / "validation.json").read_text(encoding="utf-8")
-    )
-    second_validation = json.loads(
-        (second / "validation.json").read_text(encoding="utf-8")
-    )
-    first_validation.pop("generated_at")
-    second_validation.pop("generated_at")
-    assert first_validation == second_validation

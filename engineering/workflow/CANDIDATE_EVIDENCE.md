@@ -99,10 +99,19 @@ all other capsule semantics are frozen. A changed contract requires new authorit
 correction. The issue body/title snapshot is recorded with its digest as review context;
 external authorization and the frozen capsule remain the execution contract.
 
-The strict READY validator accepts `--planning-context PATH` for a controller-supplied
-context file outside the repository. The public handoff renderer accepts the same
-option. The trusted `task execution prepare` route creates and removes this file around
-handoff validation; context must come from that controller route, never capsule fields.
+Strict READY planning runs in-process through `./scripts/task execution prepare` from
+trusted main. It resolves the current owner comment and authorization identity, derives
+workflow mode from controller state, and uses issue text only from the trusted issue GET.
+The controller passes those resolved values directly to the existing obligation parsers,
+then renders the handoff from the validated result. It does not serialize authority into
+a caller-readable context file.
+
+The validator CLI cannot authenticate a caller's workflow mode or authorization. Its
+strict `--execution` route therefore fails without trusted controller context, and
+`--planning-context PATH` is rejected as untrusted input. Offline validation can report
+syntax findings but cannot label a task attached or compatibility. The standalone handoff
+renderer likewise refuses external planning context and cannot create an executor bundle;
+only the trusted controller route emits one after strict validation passes.
 
 ### Governing issue revalidation
 

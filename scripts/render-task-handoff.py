@@ -109,6 +109,11 @@ def validate_capsule(
     capsule: Path,
     planning_context: Path | None = None,
 ) -> dict[str, Any]:
+    if planning_context is not None:
+        raise HandoffError(
+            "PLANNING_CONTEXT_UNTRUSTED: executor handoffs can only be prepared by "
+            "`./scripts/task execution prepare` after live authorization resolution."
+        )
     validator = repository_root_from_script() / "scripts" / "validate-task-capsules.py"
     if not validator.is_file():
         raise HandoffError(
@@ -218,9 +223,9 @@ def render_markdown(
 1. Read every authority artifact listed below before editing.
 2. Verify and report the actual model, tool, and any delegated model identity. Do not claim an
    identity that cannot be verified.
-3. Re-run the strict preflight before editing:
-
-   `python3 scripts/validate-task-capsules.py --execution {capsule_relative}`
+3. The trusted task controller resolved the live authorization and ran strict READY preflight
+   before creating this handoff. The validator CLI accepts no serialized controller authority;
+   rerun `./scripts/task execution prepare` from trusted main if a fresh preflight is needed.
 
 4. Change the capsule from `READY` to `IN_PROGRESS`, update `updated`, and append State History
    before implementation. Do not change contract fields or `capsule_revision` unless the controller
@@ -432,7 +437,7 @@ def main() -> int:
     parser.add_argument(
         "--planning-context",
         type=Path,
-        help="External context supplied by the trusted controller for attached planning validation.",
+        help="Rejected: external JSON cannot authenticate planning authority; use the trusted task controller.",
     )
     parser.add_argument(
         "--print-handoff",

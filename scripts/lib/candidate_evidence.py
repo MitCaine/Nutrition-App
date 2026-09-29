@@ -231,72 +231,11 @@ def review_obligations(repo: Path, raw: bytes, authorization: ResolvedAuthorizat
     return {"schema_version": 1, "outcomes": outcomes, "standards": standards}
 
 
-PLANNING_CONTEXT_SCHEMA_VERSION = 1
-PLANNING_CONTEXT_FIELDS = {"schema_version", "workflow_mode", "authorization", "issue"}
-AUTHORIZATION_CONTEXT_FIELDS = {
-    "task_id", "issue_number", "repository", "base_sha", "allowed_paths",
-    "forbidden_paths", "profiles", "revision", "nonce", "comment_id",
-    "author_login", "payload_sha256", "identity_sha256",
-}
 PLANNING_BLOCK_TAGS = (
     "nutrition-review-obligations-v1",
     "nutrition-evidence-v1",
     "nutrition-ri-v1",
 )
-
-
-def planning_context_document(authorization: ResolvedAuthorization, workflow_mode: str,
-                              issue: dict | None) -> dict:
-    """Build the narrow, trusted input used by strict READY planning validation."""
-    if workflow_mode not in {"attached", "compatibility"}:
-        raise EvidenceError("PLANNING_WORKFLOW_MODE_INVALID")
-    issue_context = None
-    if issue is not None:
-        if type(issue.get("number")) is not int or issue["number"] != authorization.issue_number:
-            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
-        body = issue.get("body")
-        if body is not None and not isinstance(body, str):
-            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
-        issue_context = {"number": issue["number"], "body": body}
-    return {"schema_version": PLANNING_CONTEXT_SCHEMA_VERSION,
-            "workflow_mode": workflow_mode, "authorization": authorization.to_dict(),
-            "issue": issue_context}
-
-
-def parse_planning_context(value: object) -> dict:
-    """Validate the controller-supplied planning context's exact shape."""
-    if (not isinstance(value, dict) or set(value) != PLANNING_CONTEXT_FIELDS
-            or type(value.get("schema_version")) is not int
-            or value["schema_version"] != PLANNING_CONTEXT_SCHEMA_VERSION
-            or value.get("workflow_mode") not in {"attached", "compatibility"}):
-        raise EvidenceError("PLANNING_CONTEXT_INVALID")
-    source = value.get("authorization")
-    if not isinstance(source, dict) or set(source) != AUTHORIZATION_CONTEXT_FIELDS:
-        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_INVALID")
-    try:
-        authorization = ResolvedAuthorization(
-            task_id=source["task_id"], issue_number=source["issue_number"],
-            repository=source["repository"], base_sha=source["base_sha"],
-            allowed_paths=tuple(source["allowed_paths"]),
-            forbidden_paths=tuple(source["forbidden_paths"]), profiles=tuple(source["profiles"]),
-            revision=source["revision"], nonce=source["nonce"], comment_id=source["comment_id"],
-            author_login=source["author_login"], payload_sha256=source["payload_sha256"],
-            identity_sha256=source["identity_sha256"],
-        )
-    except (KeyError, TypeError) as exc:
-        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_INVALID") from exc
-    if authorization.to_dict() != source:
-        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_INVALID")
-    issue = value.get("issue")
-    if issue is not None:
-        if (not isinstance(issue, dict) or set(issue) != {"number", "body"}
-                or type(issue.get("number")) is not int
-                or issue["number"] != authorization.issue_number
-                or (issue.get("body") is not None and not isinstance(issue["body"], str))):
-            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
-    return {"schema_version": PLANNING_CONTEXT_SCHEMA_VERSION,
-            "workflow_mode": value["workflow_mode"], "authorization": authorization,
-            "issue": issue}
 
 
 def _planning_criteria(raw: bytes) -> dict[str, str]:
@@ -314,18 +253,28 @@ def _has_planning_block_marker(raw: bytes) -> bool:
                for tag in PLANNING_BLOCK_TAGS)
 
 
-def validate_ready_planning(repo: Path, raw: bytes, context: dict | None) -> dict:
-    """Apply attachment parsers early when trusted controller context is present."""
-    if context is None:
+def validate_ready_planning(repo: Path, raw: bytes, *,
+                            authorization: ResolvedAuthorization | None = None,
+                            workflow_mode: str | None = None,
+                            issue: dict | None = None) -> dict:
+    """Validate READY obligations using context resolved by the trusted controller."""
+    if authorization is None and workflow_mode is None and issue is None:
         if _has_planning_block_marker(raw):
             raise EvidenceError("PLANNING_CONTEXT_REQUIRED")
-        # The generic offline validator also serves compatibility work. It has no
-        # authority to infer attached mode or fabricate its required context.
+        # Offline validation is syntax-only: it cannot select a workflow mode.
         return {"workflow_mode": "unspecified", "attached_blocks_checked": False,
                 "issue_text_checked": False}
-    parsed_context = parse_planning_context(context)
-    authorization = parsed_context["authorization"]
-    mode = parsed_context["workflow_mode"]
+    if not isinstance(authorization, ResolvedAuthorization):
+        raise EvidenceError("PLANNING_AUTHORIZATION_CONTEXT_REQUIRED")
+    if workflow_mode not in {"attached", "compatibility"}:
+        raise EvidenceError("PLANNING_WORKFLOW_MODE_INVALID")
+    mode = workflow_mode
+    if issue is not None:
+        if (not isinstance(issue, dict)
+                or type(issue.get("number")) is not int
+                or issue["number"] != authorization.issue_number
+                or (issue.get("body") is not None and not isinstance(issue.get("body"), str))):
+            raise EvidenceError("PLANNING_ISSUE_CONTEXT_INVALID")
     metadata = capsule_metadata(raw)
     expected = {"id": authorization.task_id, "capsule_revision": authorization.revision,
                 "base_commit": authorization.base_sha,
@@ -342,7 +291,6 @@ def validate_ready_planning(repo: Path, raw: bytes, context: dict | None) -> dic
         criteria = _planning_criteria(raw)
         obligations = None
         if mode == "attached" or has_obligations:
-            issue = parsed_context["issue"]
             obligations = review_obligations(
                 repo, raw, authorization, issue or {"body": None}, criteria, planned,
                 allow_unavailable_issue_text=issue is None or issue.get("body") is None)
@@ -365,7 +313,6 @@ def validate_ready_planning(repo: Path, raw: bytes, context: dict | None) -> dic
                           if isinstance(entry, str) and entry.startswith("profile:"))
         if profiles != sorted(authorization.profiles):
             raise EvidenceError("CAPSULE_PROFILES_CHANGED")
-        issue = parsed_context["issue"]
         return {"workflow_mode": mode, "attached_blocks_checked": True,
                 "issue_text_checked": issue is not None and issue.get("body") is not None,
                 "requirements": [item["id"] for item in planned],
@@ -373,8 +320,7 @@ def validate_ready_planning(repo: Path, raw: bytes, context: dict | None) -> dic
                 "standards": [item["id"] for item in obligations["standards"]] if obligations else [],
                 "ri_selected": structural is not None}
     return {"workflow_mode": mode, "attached_blocks_checked": False,
-            "issue_text_checked": parsed_context["issue"] is not None
-            and parsed_context["issue"].get("body") is not None}
+            "issue_text_checked": issue is not None and issue.get("body") is not None}
 
 
 def observe(repo: Path, candidate: str) -> dict:
