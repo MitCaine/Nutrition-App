@@ -3199,6 +3199,495 @@ def reviewed_qualified_fixture(
     )
 
 
+def governing_issue_fixture(**changes) -> dict:
+    issue = {
+        "number": 999,
+        "title": "Bounded controller task",
+        "body": "Keep the implementation within its authorized scope.",
+        "state": "open",
+        "updated_at": "2026-09-29T12:00:00Z",
+        "html_url": "https://github.com/owner/repo/issues/999",
+    }
+    issue.update(changes)
+    return issue
+
+
+class FakeGoverningIssueTransport:
+    def __init__(self, response) -> None:
+        self.response = response
+        self.calls: list[tuple[str, int]] = []
+
+    def get_issue(self, repository: str, issue_number: int) -> dict:
+        self.calls.append((repository, issue_number))
+        if isinstance(self.response, BaseException):
+            raise self.response
+        return dict(self.response)
+
+
+def attach_synthetic_issue_binding(
+    reviewed: dict,
+    repo: Path,
+    candidate: str,
+    issue: dict,
+    qualification_transport,
+) -> None:
+    authorization = TASK.resolve_current_authorization(
+        reviewed, qualification_transport
+    )
+    binding = {
+        "authorization": authorization.to_dict(),
+        "candidate": candidate,
+        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
+            issue, authorization.issue_number
+        ),
+        "source": TASK.candidate_evidence.observe(repo, candidate),
+    }
+    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
+    reviewed["capsule_evidence"] = {"binding": binding, "commands": {}}
+
+
+def test_governing_issue_fingerprint_uses_only_material_fields() -> None:
+    original = governing_issue_fixture()
+    binding = {
+        "authorization": {"issue_number": 999},
+        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
+            original, 999
+        ),
+    }
+    noisy = {
+        **original,
+        "updated_at": "2026-09-30T12:00:00Z",
+        "html_url": "https://github.com/owner/repo/issues/999?view=timeline",
+        "labels": [{"name": "triage"}],
+        "comments": 37,
+    }
+
+    TASK.candidate_evidence.revalidate_governing_issue(binding, noisy)
+
+    for changed in (
+        {**original, "title": "Expanded controller task"},
+        {**original, "body": original["body"] + " Include another subsystem."},
+        {**original, "state": "closed"},
+    ):
+        with pytest.raises(
+            TASK.EvidenceError,
+            match="GOVERNING_ISSUE_REPLAN_REQUIRED",
+        ):
+            TASK.candidate_evidence.revalidate_governing_issue(binding, changed)
+
+    with pytest.raises(
+        TASK.EvidenceError,
+        match="GOVERNING_ISSUE_REVALIDATION_INVALID",
+    ):
+        TASK.candidate_evidence.revalidate_governing_issue(
+            binding, {"number": 999, "title": "missing body and state"}
+        )
+
+
+def test_capsule_attachment_persists_canonical_open_issue_fingerprint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo, base = init_repo(tmp_path)
+    authorization = resolve(authorization_payload(base))
+    planning = "e" * 40
+    candidate = "f" * 40
+    capsule_path = "engineering/capsules/active/GH-999-P1.md"
+    metadata = {
+        "id": "GH-999-P1",
+        "capsule_revision": 1,
+        "base_commit": base,
+        "state": "READY",
+        "blocked": False,
+        "source_issue": "https://github.com/owner/repo/issues/999",
+        "specialized_qualification": ["profile:backend", "profile:repository"],
+        "owned_paths": ["src/**"],
+        "allowed_paths": [],
+        "forbidden_paths": [],
+        "branch": "task/GH-999-P1-r1",
+    }
+    monkeypatch.setattr(
+        TASK.candidate_evidence,
+        "git_text",
+        lambda _repo, *args: (
+            f"{planning} {base}" if args[0] == "rev-list" else capsule_path
+        ),
+    )
+    monkeypatch.setattr(TASK.candidate_evidence, "git", lambda *_args: b"")
+    monkeypatch.setattr(
+        TASK.candidate_evidence,
+        "read_blob",
+        lambda _repo, commit, _path: b"planning" if commit == planning else b"candidate",
+    )
+    monkeypatch.setattr(
+        TASK.candidate_evidence,
+        "capsule_metadata",
+        lambda raw: {**metadata, "state": "READY" if raw == b"planning" else "IMPLEMENTED"},
+    )
+    monkeypatch.setattr(
+        TASK.candidate_evidence,
+        "frozen_contract",
+        lambda _raw: {"sections": {"Acceptance criteria": "- [ ] AC-1: Preserve scope."}},
+    )
+    monkeypatch.setattr(TASK.candidate_evidence, "requirements", lambda _raw: [])
+    monkeypatch.setattr(TASK.candidate_evidence, "validate_candidate_scope", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        TASK.candidate_evidence,
+        "observe",
+        lambda *_args: {"branch": metadata["branch"], "candidate": candidate},
+    )
+    monkeypatch.setattr(
+        TASK.candidate_evidence,
+        "review_obligations",
+        lambda *_args: {"outcomes": [], "standards": []},
+    )
+    monkeypatch.setattr(TASK.candidate_evidence.ri_delta, "configuration", lambda _text: None)
+
+    issue = governing_issue_fixture()
+    binding = TASK.candidate_evidence.attach(
+        repo,
+        authorization,
+        planning=planning,
+        candidate=candidate,
+        issue=issue,
+    )
+
+    assert binding["issue_fingerprint"] == TASK.candidate_evidence.governing_issue_fingerprint(
+        issue, authorization.issue_number
+    )
+    assert binding["issue"] == issue
+
+    with pytest.raises(
+        TASK.EvidenceError,
+        match="GOVERNING_ISSUE_REPLAN_REQUIRED",
+    ):
+        TASK.candidate_evidence.attach(
+            repo,
+            authorization,
+            planning=planning,
+            candidate=candidate,
+            issue={**issue, "state": "closed"},
+        )
+
+
+def test_review_revalidates_issue_before_independent_review(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from types import SimpleNamespace
+
+    repo, base = init_repo(tmp_path)
+    candidate = git(repo, "rev-parse", "HEAD")
+    authorization = resolve(authorization_payload(base))
+    attached_issue = governing_issue_fixture()
+    live_issue = {
+        **attached_issue,
+        "updated_at": "2026-09-30T12:00:00Z",
+        "labels": [{"name": "changed"}],
+        "comments": 8,
+    }
+    issue_transport = FakeGoverningIssueTransport(live_issue)
+    state_dir = tmp_path / "controller-state"
+    binding = {
+        "authorization": authorization.to_dict(),
+        "candidate": candidate,
+        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
+            attached_issue, 999
+        ),
+        "source": TASK.candidate_evidence.observe(repo, candidate),
+    }
+    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
+    attached = {
+        "binding": binding,
+        "commands": {},
+        "key_path": str(state_dir / "review-key.bin"),
+    }
+    state = {
+        "task_id": "GH-999-P1",
+        "repository": "owner/repo",
+        "phase": "VERIFIED",
+        "capsule_evidence": attached,
+    }
+    events: list[str] = []
+
+    monkeypatch.setattr(TASK, "load_state", lambda *_: state)
+    monkeypatch.setattr(TASK, "git", lambda _repo, *args: candidate if args[:2] == ("rev-parse", "HEAD") else "")
+    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: base)
+    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_args: authorization)
+    monkeypatch.setattr(TASK, "repository_slug", lambda _repo: "owner/repo")
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
+    monkeypatch.setattr(TASK, "require_review_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK.candidate_evidence, "evidence_packet", lambda *_args: {})
+    monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
+    monkeypatch.setattr(TASK, "emit", lambda _value: None)
+
+    def fake_review(*_args, **_kwargs):
+        events.append("review")
+        assert events == ["issue_get", "review"]
+        return {
+            "verdict": {"disposition": "approved", "summary": "Approved."},
+            "session": {"thread_id": "fresh-reviewer"},
+        }
+
+    original_get_issue = issue_transport.get_issue
+
+    def get_issue(repository: str, issue_number: int) -> dict:
+        events.append("issue_get")
+        return dict(original_get_issue(repository, issue_number))
+
+    monkeypatch.setattr(issue_transport, "get_issue", get_issue)
+    monkeypatch.setattr("lib.independent_review.run_review", fake_review)
+
+    result = TASK.command_evidence(
+        SimpleNamespace(
+            repo_root=repo,
+            candidate_root=repo,
+            state_dir=state_dir,
+            issue_number=999,
+            action="review",
+            runtime="/trusted/reviewer",
+            runtime_sha256="b" * 64,
+            model="gpt-6-sol",
+            effort="medium",
+            timeout=1,
+        )
+    )
+
+    assert result == 0
+    assert events == ["issue_get", "review"]
+    assert issue_transport.calls == [("owner/repo", 999)]
+    assert state["phase"] == "REVIEWED_APPROVED"
+
+
+@pytest.mark.parametrize(
+    ("response", "error", "phase"),
+    [
+        (TASK.TaskControllerError("GITHUB_API_ERROR: offline"), "GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE", "VERIFIED"),
+        ({"number": 999, "title": "missing material fields"}, "GOVERNING_ISSUE_REVALIDATION_INVALID", "VERIFIED"),
+        ({**governing_issue_fixture(), "title": "Edited governing issue"},
+         "GOVERNING_ISSUE_REPLAN_REQUIRED", "STOP_REPLAN"),
+    ],
+)
+def test_review_fails_closed_on_issue_drift_or_unavailable_or_malformed(
+    tmp_path: Path, monkeypatch, response, error, phase
+) -> None:
+    from types import SimpleNamespace
+
+    repo, base = init_repo(tmp_path)
+    candidate = git(repo, "rev-parse", "HEAD")
+    authorization = resolve(authorization_payload(base))
+    attached_issue = governing_issue_fixture()
+    issue_transport = FakeGoverningIssueTransport(response)
+    state_dir = tmp_path / "controller-state"
+    binding = {
+        "authorization": authorization.to_dict(),
+        "candidate": candidate,
+        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
+            attached_issue, 999
+        ),
+        "source": TASK.candidate_evidence.observe(repo, candidate),
+    }
+    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
+    state = {
+        "repository": "owner/repo",
+        "phase": "VERIFIED",
+        "capsule_evidence": {
+            "binding": binding,
+            "commands": {},
+            "key_path": str(state_dir / "review-key.bin"),
+        },
+    }
+    review_calls: list[bool] = []
+
+    monkeypatch.setattr(TASK, "load_state", lambda *_: state)
+    monkeypatch.setattr(TASK, "git", lambda _repo, *args: candidate if args[:2] == ("rev-parse", "HEAD") else "")
+    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: base)
+    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_args: authorization)
+    monkeypatch.setattr(TASK, "repository_slug", lambda _repo: "owner/repo")
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
+    monkeypatch.setattr(TASK, "require_review_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
+    monkeypatch.setattr(TASK.candidate_evidence, "evidence_packet", lambda *_args: {})
+    monkeypatch.setattr(TASK, "emit", lambda _value: None)
+
+    def fake_review(*_args, **_kwargs):
+        review_calls.append(True)
+        raise AssertionError("reviewer ran without a valid live issue")
+
+    monkeypatch.setattr("lib.independent_review.run_review", fake_review)
+
+    with pytest.raises(TASK.EvidenceError, match=error):
+        TASK.command_evidence(
+            SimpleNamespace(
+                repo_root=repo,
+                candidate_root=repo,
+                state_dir=state_dir,
+                issue_number=999,
+                action="review",
+                runtime="/trusted/reviewer",
+                runtime_sha256="b" * 64,
+                model="gpt-6-sol",
+                effort="medium",
+                timeout=1,
+            )
+        )
+
+    assert issue_transport.calls == [("owner/repo", 999)]
+    assert review_calls == []
+    assert state["phase"] == phase
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("title", "Changed governing title"),
+        ("body", "Expanded governing scope."),
+        ("state", "closed"),
+    ],
+)
+def test_integrate_rejects_live_issue_drift(
+    tmp_path: Path, monkeypatch, field: str, value: str
+) -> None:
+    repo, base, candidate, reviewed, qualification, refs = reviewed_qualified_fixture(
+        tmp_path
+    )
+    attached_issue = governing_issue_fixture()
+    issue = {**attached_issue, field: value}
+    issue_transport = FakeGoverningIssueTransport(issue)
+    attach_synthetic_issue_binding(
+        reviewed, repo, candidate, attached_issue, qualification
+    )
+    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
+
+    with pytest.raises(
+        TASK.EvidenceError,
+        match="GOVERNING_ISSUE_REPLAN_REQUIRED",
+    ):
+        TASK.integrate_task(
+            reviewed,
+            candidate_repo=repo,
+            controller_main_sha=base,
+            expected_app_id=424242,
+            transport=qualification,
+            ref_transport=refs,
+            human_owner_authorized=True,
+        )
+
+    assert issue_transport.calls == [("owner/repo", 999)]
+    assert refs.main_pushes == []
+
+
+def test_integrate_ignores_issue_metadata_and_rechecks_on_recovery(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo, base, candidate, reviewed, qualification, refs = reviewed_qualified_fixture(
+        tmp_path
+    )
+    attached_issue = governing_issue_fixture()
+    live_issue = {
+        **attached_issue,
+        "updated_at": "2026-10-01T12:00:00Z",
+        "labels": [{"name": "changed"}],
+        "comments": 42,
+    }
+    issue_transport = FakeGoverningIssueTransport(live_issue)
+    attach_synthetic_issue_binding(
+        reviewed, repo, candidate, attached_issue, qualification
+    )
+    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
+
+    pending = TASK.integrate_task(
+        reviewed,
+        candidate_repo=repo,
+        controller_main_sha=base,
+        expected_app_id=424242,
+        transport=qualification,
+        ref_transport=refs,
+        human_owner_authorized=True,
+    )
+    assert pending["phase"] == "INTEGRATION_PENDING"
+    assert issue_transport.calls == [("owner/repo", 999)]
+
+    issue_transport.response = {**live_issue, "body": live_issue["body"] + " Expanded."}
+    with pytest.raises(
+        TASK.EvidenceError,
+        match="GOVERNING_ISSUE_REPLAN_REQUIRED",
+    ):
+        TASK.revalidate_integration_state(
+            pending,
+            candidate_repo=repo,
+            expected_app_id=424242,
+            transport=qualification,
+            ref_transport=refs,
+        )
+
+    assert issue_transport.calls == [("owner/repo", 999), ("owner/repo", 999)]
+    assert refs.main_pushes == []
+
+
+@pytest.mark.parametrize(
+    ("response", "error"),
+    [
+        (TASK.TaskControllerError("GITHUB_API_ERROR: offline"), "GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE"),
+        ({"number": 999, "title": "missing material fields"}, "GOVERNING_ISSUE_REVALIDATION_INVALID"),
+    ],
+)
+def test_integrate_fails_closed_when_issue_get_is_unavailable_or_malformed(
+    tmp_path: Path, monkeypatch, response, error
+) -> None:
+    repo, base, candidate, reviewed, qualification, refs = reviewed_qualified_fixture(
+        tmp_path
+    )
+    attached_issue = governing_issue_fixture()
+    issue_transport = FakeGoverningIssueTransport(response)
+    attach_synthetic_issue_binding(
+        reviewed, repo, candidate, attached_issue, qualification
+    )
+    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
+
+    with pytest.raises(TASK.EvidenceError, match=error):
+        TASK.integrate_task(
+            reviewed,
+            candidate_repo=repo,
+            controller_main_sha=base,
+            expected_app_id=424242,
+            transport=qualification,
+            ref_transport=refs,
+            human_owner_authorized=True,
+        )
+
+    assert issue_transport.calls == [("owner/repo", 999)]
+    assert refs.main_pushes == []
+
+
+def test_compatibility_lane_keeps_its_separate_terminal_authority(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo, base, _, reviewed, qualification, refs = reviewed_qualified_fixture(tmp_path)
+
+    class UnexpectedIssueTransport:
+        def get_issue(self, *_args, **_kwargs):
+            raise AssertionError("compatibility integration must retain its established authority lane")
+
+    monkeypatch.setattr(
+        TASK,
+        "GhIssueAuthorizationTransport",
+        UnexpectedIssueTransport,
+    )
+    pending = TASK.integrate_task(
+        reviewed,
+        candidate_repo=repo,
+        controller_main_sha=base,
+        expected_app_id=424242,
+        transport=qualification,
+        ref_transport=refs,
+        human_owner_authorized=True,
+    )
+
+    assert pending["phase"] == "INTEGRATION_PENDING"
+
+
 def test_integrate_requires_explicit_human_owner_authority(
     tmp_path: Path,
 ) -> None:
@@ -3470,11 +3959,18 @@ def test_attached_revalidation_allows_only_receipted_main_fetch(tmp_path: Path, 
     original = {"candidate": candidate, "branch": "task/fixture", "source_sha256": "source",
                 "index_sha256": "index", "refs_sha256": "before",
                 "refs": {"refs/remotes/origin/main": base, "refs/heads/main": base}}
-    reviewed["capsule_evidence"] = {"binding": {"source": original}}
+    issue = governing_issue_fixture()
+    issue_transport = FakeGoverningIssueTransport(issue)
+    reviewed["capsule_evidence"] = {"binding": {
+        "source": original,
+        "authorization": {"repository": "owner/repo", "issue_number": 999},
+        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(issue, 999),
+    }}
     monkeypatch.setattr(TASK.candidate_evidence, "authenticate_binding", lambda *_args: None)
     monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
     monkeypatch.setattr(TASK.candidate_evidence, "qualify", lambda *_args: None)
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
     observed = dict(original)
     monkeypatch.setattr(TASK.candidate_evidence, "observe", lambda *_args: observed)
     pending = TASK.integrate_task(

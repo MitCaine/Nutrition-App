@@ -87,6 +87,31 @@ all other capsule semantics are frozen. A changed contract requires new authorit
 correction. The issue body/title snapshot is recorded with its digest as review context;
 external authorization and the frozen capsule remain the execution contract.
 
+### Governing issue revalidation
+
+At attachment, the controller also stores a canonical SHA-256 fingerprint over
+the issue number, title, body and whether the issue is open. It performs a live
+trusted issue GET immediately before independent review and on every guarded
+integration attempt, including recovery of a pending or already integrated
+attempt. A changed title or body, a closed issue, or a malformed attached
+fingerprint returns `GOVERNING_ISSUE_REPLAN_REQUIRED` and records
+`STOP_REPLAN`. Labels, comments, `updated_at` and other response fields do not
+affect the material fingerprint. The existing issue snapshot remains available
+as reviewer context, and the evidence packet shape is unchanged.
+
+If GitHub is unavailable or the live issue response is malformed, review or
+integration fails closed before its protected action with
+`GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE` or
+`GOVERNING_ISSUE_REVALIDATION_INVALID`. An operator may retry that same gate
+after the GET works, but cannot proceed on the failed attempt. If the material
+fields changed or the issue closed, stop the candidate and preserve its
+evidence. Resume through trusted planning against the current issue, obtain a
+fresh owner authorization for the revised scope and profiles, attach a new
+capsule and candidate, and collect new qualification and review evidence. The
+earlier authorization and approval do not carry forward; changed issue text
+does not grant retrospective authority. Terminal closeout keeps its separate
+owner authorization and issue-closing behavior.
+
 ## Operator sequence
 
 All examples run from trusted main. `STATE` and `CANDIDATE` below mean absolute paths;

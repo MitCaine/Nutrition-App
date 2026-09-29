@@ -169,6 +169,61 @@ class GhIssueAuthorizationTransport:
             ),
         )
 
+    def get_issue(
+        self,
+        repository: str,
+        issue_number: int,
+    ) -> dict[str, Any]:
+        return self._api(
+            method="GET",
+            path=f"/repos/{repository}/issues/{issue_number}",
+        )
+
+
+def revalidate_attached_governing_issue(attached: dict[str, Any]) -> None:
+    """Fail closed unless the live issue still matches its attached material fields."""
+    binding = attached.get("binding")
+    authorization = binding.get("authorization") if isinstance(binding, dict) else None
+    if not isinstance(authorization, dict):
+        raise EvidenceError(candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED)
+
+    repository = authorization.get("repository")
+    issue_number = authorization.get("issue_number")
+    if (not isinstance(repository, str) or not repository
+            or type(issue_number) is not int):
+        raise EvidenceError(candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED)
+
+    try:
+        issue = GhIssueAuthorizationTransport().get_issue(repository, issue_number)
+    except TaskControllerError as exc:
+        code = (candidate_evidence.GOVERNING_ISSUE_REVALIDATION_INVALID
+                if str(exc) == "GITHUB_API_RESPONSE_INVALID"
+                else candidate_evidence.GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE)
+        raise EvidenceError(code) from exc
+    except UnicodeError as exc:
+        raise EvidenceError(
+            candidate_evidence.GOVERNING_ISSUE_REVALIDATION_INVALID
+        ) from exc
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise EvidenceError(
+            candidate_evidence.GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE
+        ) from exc
+
+    candidate_evidence.revalidate_governing_issue(binding, issue)
+
+
+def persist_governing_issue_replan(
+    state: dict[str, Any],
+    path: Path,
+    candidate_sha: str | None = None,
+) -> None:
+    state["phase"] = "STOP_REPLAN"
+    state["governing_issue_replan"] = {
+        "reason": candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED,
+        "candidate_sha": candidate_sha,
+    }
+    atomic_write_json(path, state)
+
 
 def run(
     command: list[str],
@@ -2212,6 +2267,7 @@ def integrate_task(
     if "capsule_evidence" in state:
         attached = state["capsule_evidence"]
         candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
+        revalidate_attached_governing_issue(attached)
         candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
         candidate_evidence.qualify(attached["binding"], qualification, check, expected_app_id)
         integration_receipt = state.get("integration") or {}
@@ -3077,27 +3133,33 @@ def command_integrate(
             )
         )
 
-        pending = integrate_task(
-            state,
-            candidate_repo=candidate_repo,
-            controller_main_sha=(
-                controller_main_sha
-            ),
-            expected_app_id=(
-                expected_app_id
-            ),
-            transport=(
-                GhQualificationTransport()
-            ),
-            ref_transport=(
-                GitCandidateRefTransport(
-                    candidate_repo
-                )
-            ),
-            human_owner_authorized=(
-                args.human_owner_authorized
-            ),
-        )
+        try:
+            pending = integrate_task(
+                state,
+                candidate_repo=candidate_repo,
+                controller_main_sha=(
+                    controller_main_sha
+                ),
+                expected_app_id=(
+                    expected_app_id
+                ),
+                transport=(
+                    GhQualificationTransport()
+                ),
+                ref_transport=(
+                    GitCandidateRefTransport(
+                        candidate_repo
+                    )
+                ),
+                human_owner_authorized=(
+                    args.human_owner_authorized
+                ),
+            )
+        except EvidenceError as exc:
+            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                persist_governing_issue_replan(
+                    state, state_file, candidate_sha)
+            raise
 
         # Durably record integration intent and all
         # revalidated authority before mutating remote main.
@@ -3170,13 +3232,19 @@ def command_integrate(
 
         # Recovery is another integration attempt, not a license to reuse
         # yesterday's check, authorization, source, or review evidence.
-        revalidate_integration_state(
-            state,
-            candidate_repo=candidate_repo,
-            expected_app_id=expected_app_id,
-            transport=GhQualificationTransport(),
-            ref_transport=GitCandidateRefTransport(candidate_repo),
-        )
+        try:
+            revalidate_integration_state(
+                state,
+                candidate_repo=candidate_repo,
+                expected_app_id=expected_app_id,
+                transport=GhQualificationTransport(),
+                ref_transport=GitCandidateRefTransport(candidate_repo),
+            )
+        except EvidenceError as exc:
+            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                persist_governing_issue_replan(
+                    state, state_file, candidate_sha)
+            raise
 
     else:
         raise TaskControllerError(
@@ -3280,11 +3348,19 @@ def validated_finalize_terminal(state: dict[str, Any], args: argparse.Namespace,
                                        expected_contract_sha256=attached_binding.get("contract_sha256"),
                                        task_id=state["task_id"])
     if terminal_state["phase"] in {"INTEGRATION_PENDING", "INTEGRATED"}:
-        revalidate_integration_state(
-            terminal_state, candidate_repo=terminal_repo,
-            expected_app_id=configured_qualification_app_id(),
-            transport=GhQualificationTransport(),
-            ref_transport=GitCandidateRefTransport(terminal_repo))
+        try:
+            revalidate_integration_state(
+                terminal_state, candidate_repo=terminal_repo,
+                expected_app_id=configured_qualification_app_id(),
+                transport=GhQualificationTransport(),
+                ref_transport=GitCandidateRefTransport(terminal_repo))
+        except EvidenceError as exc:
+            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                persist_governing_issue_replan(
+                    terminal_state,
+                    state_path(args.terminal_state_dir, args.issue_number),
+                    terminal)
+            raise
         if (terminal_state["phase"] == "INTEGRATED"
                 and terminal_state["integration"]["origin_main_after"] != terminal):
             raise TaskControllerError("FINALIZE_TERMINAL_NOT_INTEGRATED")
@@ -3337,13 +3413,19 @@ def command_finalize(args: argparse.Namespace) -> int:
                 source_main_after = current_main
             elif current_main != implementation:
                 raise TaskControllerError("FINALIZE_REMOTE_MAIN_DIVERGED")
-        revalidate_integration_state(
-            state, candidate_repo=candidate_repo,
-            expected_app_id=configured_qualification_app_id(),
-            transport=GhQualificationTransport(),
-            ref_transport=GitCandidateRefTransport(candidate_repo),
-            source_main_after=source_main_after,
-            source_added_refs=terminal_context[4] if terminal_context is not None else None)
+        try:
+            revalidate_integration_state(
+                state, candidate_repo=candidate_repo,
+                expected_app_id=configured_qualification_app_id(),
+                transport=GhQualificationTransport(),
+                ref_transport=GitCandidateRefTransport(candidate_repo),
+                source_main_after=source_main_after,
+                source_added_refs=terminal_context[4] if terminal_context is not None else None)
+        except EvidenceError as exc:
+            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                persist_governing_issue_replan(
+                    state, state_path(state_dir, args.issue_number), implementation)
+            raise
     if state["phase"] != "INTEGRATED" or state["integration"]["origin_main_after"] != implementation:
         raise TaskControllerError("FINALIZE_IMPLEMENTATION_NOT_INTEGRATED")
     existing = json.loads(intent_path.read_text())
@@ -3382,11 +3464,19 @@ def command_finalize(args: argparse.Namespace) -> int:
             human_owner_authorized=args.human_owner_authorized))
         terminal_state = load_state(args.terminal_state_dir, args.issue_number)
     else:
-        revalidate_integration_state(
-            terminal_state, candidate_repo=terminal_repo,
-            expected_app_id=configured_qualification_app_id(),
-            transport=GhQualificationTransport(),
-            ref_transport=GitCandidateRefTransport(terminal_repo))
+        try:
+            revalidate_integration_state(
+                terminal_state, candidate_repo=terminal_repo,
+                expected_app_id=configured_qualification_app_id(),
+                transport=GhQualificationTransport(),
+                ref_transport=GitCandidateRefTransport(terminal_repo))
+        except EvidenceError as exc:
+            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                persist_governing_issue_replan(
+                    terminal_state,
+                    state_path(args.terminal_state_dir, args.issue_number),
+                    terminal)
+            raise
     if (terminal_state["phase"] != "INTEGRATED"
             or terminal_state["integration"]["origin_main_after"] != terminal):
         raise TaskControllerError("FINALIZE_TERMINAL_NOT_INTEGRATED")
@@ -3494,11 +3584,19 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
             human_owner_authorized=args.human_owner_authorized))
         state = load_state(args.terminal_state_dir, args.issue_number)
     else:
-        revalidate_integration_state(
-            state, candidate_repo=terminal_repo,
-            expected_app_id=configured_qualification_app_id(),
-            transport=GhQualificationTransport(),
-            ref_transport=GitCandidateRefTransport(terminal_repo))
+        try:
+            revalidate_integration_state(
+                state, candidate_repo=terminal_repo,
+                expected_app_id=configured_qualification_app_id(),
+                transport=GhQualificationTransport(),
+                ref_transport=GitCandidateRefTransport(terminal_repo))
+        except EvidenceError as exc:
+            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                persist_governing_issue_replan(
+                    state,
+                    state_path(args.terminal_state_dir, args.issue_number),
+                    terminal)
+            raise
     if state["phase"] != "INTEGRATED" or state["integration"]["origin_main_after"] != terminal:
         raise TaskControllerError("FINALIZE_CANCEL_TERMINAL_NOT_INTEGRATED")
     git(repo, "fetch", "origin", "main")
@@ -3630,9 +3728,14 @@ def command_evidence(args: argparse.Namespace) -> int:
                 limit = prior["correction_limit"]
             else:
                 limit = args.corrections
-            issue = GhIssueAuthorizationTransport()._api(method="GET",
-                path=f"/repos/{state['repository']}/issues/{args.issue_number}")
-            issue = {k: issue[k] for k in ("number", "title", "body", "updated_at", "html_url")}
+            issue = GhIssueAuthorizationTransport().get_issue(
+                state["repository"], args.issue_number)
+            issue = {k: issue.get(k) for k in (
+                "number", "title", "body", "state", "updated_at", "html_url")}
+            if (not isinstance(issue["updated_at"], str)
+                    or not isinstance(issue["html_url"], str)):
+                raise EvidenceError(
+                    candidate_evidence.GOVERNING_ISSUE_REVALIDATION_INVALID)
             binding = candidate_evidence.attach(candidate, authorization, planning=args.planning,
                 candidate=sha, issue=issue, correction_limit=limit)
             attached = {"binding": binding, "commands": {}, "key_path": str(key_path),
@@ -3695,6 +3798,18 @@ def command_evidence(args: argparse.Namespace) -> int:
                 require_review_preflight(attached, binding, sha, runtime=args.runtime,
                                          runtime_sha256=args.runtime_sha256,
                                          model=args.model, effort=args.effort)
+                try:
+                    revalidate_attached_governing_issue(attached)
+                except EvidenceError as exc:
+                    if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+                        state["phase"] = "STOP_REPLAN"
+                        attached["review_failure"] = {
+                            "reason": str(exc),
+                            "candidate": sha,
+                            "binding_sha256": binding["binding_sha256"],
+                        }
+                        atomic_write_json(state_path(directory, args.issue_number), state)
+                    raise
                 candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
                 packet = candidate_evidence.evidence_packet(attached)
                 if attached.get("pre_review_failures") and attached["pre_review_failures"][-1]["evidence_sha256"] != candidate_evidence.digest(packet):

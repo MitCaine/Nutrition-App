@@ -20,8 +20,50 @@ class EvidenceError(RuntimeError):
     pass
 
 
+GOVERNING_ISSUE_REPLAN_REQUIRED = "GOVERNING_ISSUE_REPLAN_REQUIRED"
+GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE = "GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE"
+GOVERNING_ISSUE_REVALIDATION_INVALID = "GOVERNING_ISSUE_REVALIDATION_INVALID"
+
+
 def digest(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+
+
+def governing_issue_material(issue: object, expected_number: int) -> dict:
+    """Project the governing issue onto its four material authority fields."""
+    if not isinstance(issue, dict):
+        raise EvidenceError(GOVERNING_ISSUE_REVALIDATION_INVALID)
+
+    number = issue.get("number")
+    title = issue.get("title")
+    body = issue.get("body")
+    state = issue.get("state")
+    if (type(expected_number) is not int or type(number) is not int
+            or number != expected_number or not isinstance(title, str)
+            or (body is not None and not isinstance(body, str))
+            or not isinstance(state, str) or state not in {"open", "closed"}):
+        raise EvidenceError(GOVERNING_ISSUE_REVALIDATION_INVALID)
+
+    return {"number": number, "title": title, "body": body, "open": state == "open"}
+
+
+def governing_issue_fingerprint(issue: object, expected_number: int) -> str:
+    return digest(governing_issue_material(issue, expected_number))
+
+
+def revalidate_governing_issue(binding: dict, issue: object) -> None:
+    """Require an attached material issue fingerprint to match a live issue GET."""
+    authorization = binding.get("authorization")
+    expected_fingerprint = binding.get("issue_fingerprint")
+    if (not isinstance(authorization, dict)
+            or type(authorization.get("issue_number")) is not int
+            or not isinstance(expected_fingerprint, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint)):
+        raise EvidenceError(GOVERNING_ISSUE_REPLAN_REQUIRED)
+
+    material = governing_issue_material(issue, authorization["issue_number"])
+    if not material["open"] or digest(material) != expected_fingerprint:
+        raise EvidenceError(GOVERNING_ISSUE_REPLAN_REQUIRED)
 
 
 def git(repo: Path, *args: str) -> bytes:
@@ -234,6 +276,9 @@ def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,
            candidate: str, issue: dict, correction_limit: int = 1) -> dict:
     if type(correction_limit) is not int or correction_limit not in (0, 1):
         raise EvidenceError("CORRECTION_LIMIT_INVALID")
+    issue_material = governing_issue_material(issue, authorization.issue_number)
+    if not issue_material["open"]:
+        raise EvidenceError(GOVERNING_ISSUE_REPLAN_REQUIRED)
     for sha in (planning, candidate):
         if not re.fullmatch(r"[0-9a-f]{40}", sha):
             raise EvidenceError("EXACT_COMMIT_REQUIRED")
@@ -293,7 +338,8 @@ def attach(repo: Path, authorization: ResolvedAuthorization, *, planning: str,
               "capsule_text": original.decode(), "contract_sha256": digest(frozen_contract(original)),
               "branch": metadata["branch"], "criteria": dict(criteria), "requirements": planned,
               "review_obligations": obligations,
-              "issue": issue, "issue_sha256": digest(issue), "source": observed,
+              "issue": issue, "issue_sha256": digest(issue),
+              "issue_fingerprint": digest(issue_material), "source": observed,
               "changed_paths": changed, "correction_limit": correction_limit}
     structural = ri_delta.configuration(original.decode())
     if structural is not None:
