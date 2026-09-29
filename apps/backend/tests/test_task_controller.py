@@ -453,6 +453,140 @@ def test_scope_rejects_forbidden_path_even_when_allowed(
         )
 
 
+def test_scope_rejects_forbidden_commit_hidden_by_restore(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+
+    forbidden = repo / "src/forbidden/item.py"
+    forbidden.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    forbidden.write_text(
+        "TEMPORARY = True\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "introduce forbidden path")
+
+    forbidden.unlink()
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "restore forbidden path")
+
+    allowed = repo / "src/final.py"
+    allowed.write_text(
+        "VALUE = 1\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "add allowed final change")
+
+    candidate = git(repo, "rev-parse", "HEAD")
+    assert git(
+        repo,
+        "diff",
+        "--name-only",
+        f"{base}..{candidate}",
+    ) == "src/final.py"
+
+    auth = resolve(
+        authorization_payload(
+            base,
+            allowed_paths=["src/**"],
+            forbidden_paths=["src/forbidden/**"],
+        )
+    )
+
+    with pytest.raises(
+        AuthorizationError,
+        match="SCOPE_FORBIDDEN",
+    ):
+        validate_candidate_scope(
+            repo,
+            auth,
+            candidate_sha=candidate,
+        )
+
+
+def test_scope_accepts_allowed_multi_commit_history(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+
+    for name in ("first.py", "second.py"):
+        path = repo / "src" / name
+        path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        path.write_text(
+            f"NAME = {name!r}\n",
+            encoding="utf-8",
+        )
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", f"add {name}")
+
+    candidate = git(repo, "rev-parse", "HEAD")
+    auth = resolve(authorization_payload(base))
+
+    assert validate_candidate_scope(
+        repo,
+        auth,
+        candidate_sha=candidate,
+    ) == [
+        "src/first.py",
+        "src/second.py",
+    ]
+
+
+def test_scope_rejects_implementation_merge_history(
+    tmp_path: Path,
+) -> None:
+    repo, base = init_repo(tmp_path)
+    git(repo, "branch", "-m", "candidate")
+
+    main_change = repo / "src/main.py"
+    main_change.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    main_change.write_text(
+        "MAIN = True\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "candidate change")
+
+    git(repo, "checkout", "-q", "-b", "side", base)
+    side_change = repo / "src/side.py"
+    side_change.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    side_change.write_text(
+        "SIDE = True\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "side change")
+
+    git(repo, "checkout", "-q", "candidate")
+    git(repo, "merge", "--no-ff", "-q", "side", "-m", "merge side history")
+    candidate = git(repo, "rev-parse", "HEAD")
+    auth = resolve(authorization_payload(base))
+
+    with pytest.raises(
+        AuthorizationError,
+        match="SCOPE_MERGE_UNSUPPORTED",
+    ):
+        validate_candidate_scope(
+            repo,
+            auth,
+            candidate_sha=candidate,
+        )
+
+
 def test_scope_checks_both_sides_of_rename(
     tmp_path: Path,
 ) -> None:
@@ -1897,6 +2031,8 @@ class FakeCandidateRefTransport:
 
 def authorized_repo_state(
     tmp_path: Path,
+    *,
+    forbidden_paths: list[str] | None = None,
 ):
     repo, base = init_repo(tmp_path)
 
@@ -1911,7 +2047,7 @@ def authorized_repo_state(
         repository="owner/repo",
         base_sha=base,
         allowed_paths=["src/**"],
-        forbidden_paths=[],
+        forbidden_paths=forbidden_paths or [],
         profiles=["repository"],
         revision=1,
         nonce="nonce-1234567890abcdef",
@@ -2057,6 +2193,69 @@ def test_qualify_binds_exact_run_check_and_cleans_ref(
     ] is True
     assert len(refs.published) == 1
     assert len(refs.deleted) == 1
+
+
+def test_public_qualification_rejects_restored_forbidden_commit(
+    tmp_path: Path,
+) -> None:
+    repo, base, _, state, comment = authorized_repo_state(
+        tmp_path,
+        forbidden_paths=["src/forbidden/**"],
+    )
+
+    forbidden = repo / "src/forbidden/item.py"
+    forbidden.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    forbidden.write_text(
+        "TEMPORARY = True\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "introduce forbidden path")
+
+    forbidden.unlink()
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "restore forbidden path")
+
+    allowed = repo / "src/final.py"
+    allowed.write_text(
+        "VALUE = 2\n",
+        encoding="utf-8",
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "add allowed final change")
+    candidate = git(repo, "rev-parse", "HEAD")
+
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"][
+            "identity_sha256"
+        ],
+    )
+    refs = FakeCandidateRefTransport()
+
+    with pytest.raises(
+        AuthorizationError,
+        match="SCOPE_FORBIDDEN",
+    ):
+        TASK.qualify_task(
+            state,
+            candidate_repo=repo,
+            controller_main_sha=base,
+            expected_app_id=424242,
+            transport=transport,
+            ref_transport=refs,
+            poll_attempts=1,
+            sleep_seconds=0,
+            sleep_fn=lambda _: None,
+        )
+
+    assert transport.dispatch_inputs is None
+    assert refs.published == []
 
 
 def test_qualify_records_failed_authoritative_check_and_cleans_ref(

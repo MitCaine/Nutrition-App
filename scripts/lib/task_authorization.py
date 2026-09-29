@@ -825,6 +825,43 @@ def changed_paths(
     return sorted(paths)
 
 
+def _introduced_commits(
+    repo: Path,
+    *,
+    base_sha: str,
+    candidate_sha: str,
+) -> list[tuple[str, str]]:
+    lines = _git(
+        repo,
+        "rev-list",
+        "--reverse",
+        "--topo-order",
+        "--parents",
+        f"{base_sha}..{candidate_sha}",
+    ).splitlines()
+
+    commits: list[tuple[str, str]] = []
+
+    for line in lines:
+        pieces = line.split()
+
+        if len(pieces) > 2:
+            raise AuthorizationError(
+                "SCOPE_MERGE_UNSUPPORTED",
+                pieces[0],
+            )
+
+        if len(pieces) != 2:
+            raise AuthorizationError(
+                "SCOPE_HISTORY_INVALID",
+                line,
+            )
+
+        commits.append((pieces[0], pieces[1]))
+
+    return commits
+
+
 def validate_candidate_scope(
     repo: Path,
     authorization: ResolvedAuthorization,
@@ -936,5 +973,37 @@ def validate_candidate_scope(
                 + ", ".join(missing_profiles)
             ),
         )
+
+    for commit_sha, parent_sha in _introduced_commits(
+        repo,
+        base_sha=authorization.base_sha,
+        candidate_sha=candidate_sha,
+    ):
+        commit_paths = changed_paths(
+            repo,
+            base_sha=parent_sha,
+            candidate_sha=commit_sha,
+        )
+
+        for path in commit_paths:
+            if any(
+                _path_matches(path, pattern)
+                for pattern
+                in authorization.forbidden_paths
+            ):
+                raise AuthorizationError(
+                    "SCOPE_FORBIDDEN",
+                    f"{path} in commit {commit_sha}",
+                )
+
+            if not any(
+                _path_matches(path, pattern)
+                for pattern
+                in authorization.allowed_paths
+            ):
+                raise AuthorizationError(
+                    "SCOPE_UNEXPECTED",
+                    f"{path} in commit {commit_sha}",
+                )
 
     return overlay
