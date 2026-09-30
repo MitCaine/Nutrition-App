@@ -4661,3 +4661,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** bce68f9dad650297eb0c9799166b47e0bf596954
 - **Full-capsule recovery path:** engineering/capsules/active/GH-255.md
 - **Historical capsule SHA-256:** 8f75edb87cbd31a9acb024455c5070815234fcd2efdee87057686517d7bc8a2e
+
+### GH-254 - Bound complete plain RI retention and separate reviewer context
+
+- **ID:** `GH-254`
+- **Title:** Bound complete plain RI retention and separate reviewer context
+- **Final state:** MERGED
+- **Capsule revision:** 4
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/254; implementation authorization5918721624 revision4; terminal compatibility authorization5919226316; owner sequencing5918212797.
+- **Issue disposition:** Approved exact C guarded-integrated on main. This record becomes effective after separately qualified/reviewed terminal T and guarded finalization.
+- **Created:** 2026-09-30
+- **Completed/updated:** 2026-09-30
+- **Base commit:** db7aa9760d614d48fae7cecae593b015341a46ee
+- **Task branch:** task/GH-254-r4
+- **Controller:** Codex accountable controller
+- **Executor:** Separate implementor via pinned bounded Perl handoff
+- **Reviewer:** Fresh enforced read-only reviewer 01a0f400-f225-7960-b131-2acd3f8da3d0
+- **Delegation:** Separate implementor, fresh scope challenger and enforced read-only exact-C reviewer; controller owns authority and guarded acceptance.
+- **Implementation commit(s):** a33a3c25bc4e0df834b015a0f758f9e052aad833
+- **Verified commit reference(s):** a33a3c25bc4e0df834b015a0f758f9e052aad833
+- **Reviewed source commit:** a33a3c25bc4e0df834b015a0f758f9e052aad833
+- **Reviewed task/checkpoint commit(s):** a33a3c25bc4e0df834b015a0f758f9e052aad833
+- **Integration/merged commit:** a33a3c25bc4e0df834b015a0f758f9e052aad833 on main.
+- **Integration-related commit reference(s):** Guarded C integration and separate direct-child terminal T; full REVIEWED capsule preserved at R 39dcd59d4d1e4698dca8a941e4c832c318eaff98.
+- **Acceptance result:** 6/6 checked in the terminal source capsule.
+- **Review disposition:** Approved all6AC/3standards/6paths, OUT1-4PASS and OUT5/6 owner-authenticated timingDEFERRED; no findings; exact source unchanged.
+- **Verification summary:** Three protected checks passed; complete installed2MB RI1591704bytes authenticated. Authentic current-C literal13PASS and all previous failures preserved. Complete 49logical proof files in96payloadparts plus manifest8437761bytes retained digest-bound. Actual own full handoff45285bytes passed installed64KB and published. Fresh independent review54calls,100.872seconds.
+- **Specialized qualification:** ExactC dedicated App4708441 check110082813359 run36772439162 repositoryPASS. Terminal T requires distinct repositoryQ and fresh read-onlyR.
+- **Known warnings:** All prior GH254 candidates, qualifications, reviews and publication failure preserved. Prior GH2542MB evidence and60KB publication limits required separately scoped prerequisites; all experiments/failures preserved, current packing changed only delivery segmentation without reducing completeness. Existing baseline warning/opt-in testskip retained.
+- **Deferred work/follow-up IDs:** After GH254 terminal acceptance, reassess and resume preserved GH246 with reused implementation and fresh source-bound authority/P/C/Q/R. All later gates mandatory; no later completion claimed.
+- **Retrospective:** yes — distinguish retention, model paging, publication body resources and workflow sequencing; provide exact bounded ranges before review, retain historical recovery objects through isolated clone transport, and measure actual review effort.
+- **Referenced commits:** Bdb7aa9760d614d48fae7cecae593b015341a46ee; P6bc18e50c3968a434f0491bfa9622b5bcc97fb0d; Ca33a3c25bc4e0df834b015a0f758f9e052aad833; R39dcd59d4d1e4698dca8a941e4c832c318eaff98.
+- **Full-capsule recovery commit:** 39dcd59d4d1e4698dca8a941e4c832c318eaff98
+- **Full-capsule recovery path:** engineering/capsules/active/GH-254.md
+- **Historical capsule SHA-256:** 60d434d154bc8f19a2a83f3f1e47fa35b64a6b532cdec963abbfc466fd3a766d
