@@ -4517,3 +4517,17 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 35e764ff8adaa8212e36c0f8d324e30101db6b3a
 - **Full-capsule recovery path:** engineering/capsules/active/GH-244.md
 - **Historical capsule SHA-256:** b19efbe4407603029b3e1d2470e044eddcbd840a510f61cdb442c076ea864377
+
+### GH-245 - Require controller test qualification for controller and RI changes
+
+- **Final state:** MERGED
+- **Integration/merged commit:** a999eb2aa54d49bc46c595e878a6e333e95bb118
+- **Full-capsule recovery commit:** 22f3094578798b510c9adebb655425b7d847cb1c
+- **Full-capsule recovery path:** engineering/capsules/active/GH-245.md
+- **Historical capsule SHA-256:** 50ad7c11ebc359d7cb15c84b40836886805f997f50fa5191cd45836cdb0f065f
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Verification:** Final protected focused302pass17explicit skips121subtests; frozen baseline82auditPASS; unchanged source and tested-source identities. Whole eleven-path diff inspected.
+- **Qualification:** C App4708441 repository/backend/ios-native old-gate success check 109694259672. Installed fast-suite negative/positive exact-SHA proof: negative: candidate bafcb482cd1901b10cf1be34ec5b0f7115269d26, App check 109695864190, execution 36654418540, selected canary failure, repository job 2026-09-30T01:18:03Z to 2026-09-30T01:18:54Z; positive: candidate 5edfccb051597397c9b4d59e0687529fe21289f5, App check 109696249559, execution 36654543977, selected canary success, repository job 2026-09-30T01:19:38Z to 2026-09-30T01:20:29Z.
+- **Review:** Fresh enforced read-only implementation reviewer 01a0efdf-e279-7372-a88c-cd7a4fb83bdb approved AC1..4, OUT1..4 and STD1..4; terminal independently qualified/reviewed before acceptance.
+- **Proof limits:** Explicit native/private RI/reviewer, PostgreSQL/MinIO/Docker/performance/device oracles remain opt-in; no skipped oracle claimed passed.
+- **Retrospective:** R1 missed owned iOS assertions; R2 missed backend trusted-checkout assertion/profile; R3 host-only subprocess rehearsal missed protected ancestor collection. R4 added candidate collection cutoff, real Git floor rejection, full protected pre-freeze and exact-C proof. Prior failed evidence and unintegrated canaries retained.
