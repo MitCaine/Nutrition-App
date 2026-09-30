@@ -4589,3 +4589,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 0af4be01c7377178e082dd17c77748e320ab2941
 - **Full-capsule recovery path:** engineering/capsules/active/GH-252.md
 - **Historical capsule SHA-256:** ee94623817312d6e6cf1dca056261fd46dbbaee444e7a8cac5fa8cccdadd851f
+
+### GH-253 - Refresh current dependency docs after UUID risk retirement
+
+- **ID:** `GH-253`
+- **Title:** Refresh current dependency docs after UUID risk retirement
+- **Final state:** MERGED
+- **Capsule revision:** 1
+- **Task type:** documentation
+- **Risk:** low
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/253; implementation authorization comment 5904060166 revision1; owner documentation refresh request; terminal compatibility authorization comment 5904285192.
+- **Issue disposition:** Approved exact C guarded-integrated on main. Current dependency docs reconciled with exact source; runtime/dependency code and historical records preserved. This record becomes effective only after separately qualified/reviewed terminal T and guarded finalization.
+- **Created:** 2026-09-29
+- **Completed/updated:** 2026-09-29
+- **Base commit:** 9fb128cbb8d11b47db3d0d71dcd8ef586b42c9b8
+- **Task branch:** task/GH-253-docs
+- **Controller:** Nutrition trusted task controller
+- **Executor:** bounded documentation implementor
+- **Reviewer:** Fresh enforced read-only reviewer 01a0f0a3-8958-7ce1-ab2a-b14ea84fbede
+- **Delegation:** Bounded documentation audit/implementor; controller owns shared contracts, authority and integration; fresh reviewer has enforced read-only callbacks.
+- **Implementation commit(s):** ffc9375bc1da404853e9ee946480af6b58718864; first documentation candidate, with preceding security-remediation history preserved.
+- **Verified commit reference(s):** ffc9375bc1da404853e9ee946480af6b58718864
+- **Reviewed source commit:** ffc9375bc1da404853e9ee946480af6b58718864
+- **Reviewed task/checkpoint commit(s):** ffc9375bc1da404853e9ee946480af6b58718864
+- **Integration/merged commit:** ffc9375bc1da404853e9ee946480af6b58718864 on main.
+- **Integration-related commit reference(s):** Guarded C integration and separate direct-child terminal T; full REVIEWED capsule preserved at R a666d6691212eae02cc44207fb0700d1db770078.
+- **Acceptance result:** 3/3 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh enforced read-only reviewer 01a0f0a3-8958-7ce1-ab2a-b14ea84fbede for AC1..3, OUT1..3 and three selected standards; no findings.
+- **Verification summary:** Protected exact-C documentation, offline canonical risk and portable session-end baseline passed with unchanged source; authenticated dependency-doc inventory reconciled current guides against exact pins/manifests/lock/register/updater/validator. Full four-path B/P/C diff inspected.
+- **Specialized qualification:** Exact C dedicated App4708441 check 109742264144 dispatch run 36669771881 passed repository-only profile. No runtime/dependency change; no new native/mobile/backend qualification claimed. Terminal requires distinct repository-only qualification and fresh review.
+- **Known warnings:** Existing migration/cache and portable historical-object limits retained. No mandatory docs proof waived; historical release/capsule records and runtime/dependency source unchanged. Terminal historical recovery objects were hydrated and strictly validated before binding.
+- **Deferred work/follow-up IDs:** None for original documentation outcomes; repository-only documentation qualification makes no new mobile/native/backend claim.
+- **Retrospective:** no — narrow documentation follow-up after accepted security remediation; direct current-vs-historical dependency inventory and exact protected rehearsals completed before dispatch.
+- **Referenced commits:** B 9fb128cbb8d11b47db3d0d71dcd8ef586b42c9b8; P 4d25cc9180297ad9f8aa6daeff883fce4c80abe0; C ffc9375bc1da404853e9ee946480af6b58718864; R a666d6691212eae02cc44207fb0700d1db770078.
+- **Full-capsule recovery commit:** a666d6691212eae02cc44207fb0700d1db770078
+- **Full-capsule recovery path:** engineering/capsules/active/GH-253.md
+- **Historical capsule SHA-256:** 93dbbd400d2b8b61845cab923d0ca2fa6c6af293cc69e888f3236703c98fa8a8
