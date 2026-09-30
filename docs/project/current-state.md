@@ -93,9 +93,16 @@ Use that index rather than maintaining a second routing table here.
 - Local infrastructure qualification proves only its documented disposable topology/provider stand-ins; it is not production-vendor certification.
 - Dependency-alert status changes independently of release metadata. The
   [dependency-risk register](../../engineering/security/dependency-risk-register.json)
-  owns the reviewed residual `uuid` finding; the current mobile lock contains
-  the compatible patched `js-yaml` release. Check GitHub security alerts for
-  newly reported findings instead of relying on a fixed count in this guide.
+  preserves the historical UUID 7 assessment as a retired record, with no active
+  accepted-risk records. [Issue #252](https://github.com/MitCaine/Nutrition-App/issues/252)
+  fixed the installed UUID resolution to 11.1.1 through the tested, owner-authorized
+  `xcode`-only override, and patched brace-expansion to 5.0.12 plus four nested
+  1.1.21 copies. Upstream `xcode` 3.0.1 still declares `uuid ^7.0.3`; the scoped
+  replacement is a repository compatibility exception, not upstream support.
+  The current mobile lock also contains the compatible patched `js-yaml` release.
+  Follow [dependency risk management](../operations/dependency-risk-management.md)
+  for validation and retained evidence. Check GitHub security alerts for newly
+  reported findings instead of relying on a fixed count in this guide.
 - Version 2.1.0 is a source/GitHub release boundary. No iOS `buildNumber` or Android `versionCode` is introduced by this release, and no App Store or Play Store binary publication is implied.
 
 ## Authority and maintenance

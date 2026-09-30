@@ -90,7 +90,7 @@ For layer responsibilities, persistence boundaries, and migration streams, read 
 
 | Area | Technology |
 | --- | --- |
-| Primary mobile application | React Native 0.86, Expo 57, TypeScript 6, React Navigation 7, TanStack Query, Zod |
+| Primary mobile application | React Native 0.86, Expo 57, TypeScript 6, TanStack Query, Zod |
 | Primary application data | `expo-sqlite`, fresh semantic SQLite schema, schema-version migration engine |
 | Native OCR | Swift Expo module using Apple Vision |
 | External nutrition data | USDA FoodData Central API through the local runtime or preserved remote backend |

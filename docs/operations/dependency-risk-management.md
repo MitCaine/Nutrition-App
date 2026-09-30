@@ -35,21 +35,24 @@ If upstream facts change so that a supported remediation becomes available, the
 accepted-risk path stops. The record must be reevaluated and remediation handled
 as a bounded implementation task.
 
-## Retained findings
+## Current findings and retained history
 
 The historical AUDIT-08 / issue #166 review covered three Dependabot alerts.
 The two `image-size` records were retired after the package left the mobile
-lockfile. Issue #252 retires the remaining `uuid` active record into `retired_records`,
-with its historical assessment preserved and its exact fixed replacement validated. Do not
-reuse the historical installed paths or versions as a current dependency graph.
+lockfile. Completed [issue #252](https://github.com/MitCaine/Nutrition-App/issues/252)
+retired the remaining `uuid` active record into `retired_records`, preserving its
+historical UUID 7 assessment and validating the fixed UUID 11.1.1 replacement.
+There are no active accepted-risk records. The same task patched brace-expansion
+to 5.0.12 and its four nested copies to 1.1.21. Do not reuse historical installed
+paths or versions as a current dependency graph.
 
 The replacement package is reached through `expo-sharing`, `@expo/config-plugins`,
-and `xcode`. The reviewed `xcode` caller uses `uuid.v4()`; the advisory concerns
-other UUID APIs with caller-supplied buffers. The exact versions, edges,
+and `xcode`. The reviewed `xcode` caller uses `uuid.v4()`; the historical UUID 7
+finding concerned other UUID APIs with caller-supplied buffers. The exact versions, edges,
 advisory, reviewed commit, and reevaluation triggers live in the risk register.
 After every dependency refresh, run offline validation to detect any changed
-package, owner, version, or reachability boundary before relying on this
-disposition. A new upstream finding requires its own review rather than an
+package, owner, version, or reachability boundary before relying on the recorded
+replacement. A new upstream finding requires its own review rather than an
 automatic extension of this record.
 
 ## Offline validation
@@ -76,10 +79,28 @@ After installing the exact mobile lockfile, run:
     python scripts/dependency_risk.py validate-installed
 
 Installed validation derives the current dependency paths with `npm ls`, checks
-ownership with `npm explain`, verifies Metro's installed image-size asset
-surface, and inspects the installed xcode package for UUID API usage.
+ownership with `npm explain`, and inspects the installed xcode package for exactly
+one `uuid.v4()` call and no `uuid.v3`, `uuid.v5`, or `uuid.v6` calls. Currently this
+validates the UUID replacement path; it does not validate an installed Metro /
+image-size asset surface.
 
 This separates package-manager proof from assumptions encoded only in prose.
+
+### Focused security check
+
+After the same locked `npm ci` installation, run from the repository root:
+
+    node apps/mobile/scripts/check-security-dependencies.cjs
+
+The check compares installed and locked brace-expansion/UUID versions and checks
+that the UUID override is scoped to xcode. It exercises ordinary brace expansion
+and five hostile inputs against every installed brace-expansion copy, with each
+hostile case in a separate process bounded by a 15-second deadline. It checks
+UUID v3/v5/v6 invalid output-buffer bounds, unchanged buffers on rejected writes,
+and valid writes, then invokes the actual xcode caller to generate 1,000 unique
+uppercase 24-character hexadecimal identifiers. This focused check complements
+installed-graph validation; it does not replace Jest, repository/mobile/iOS native
+qualification, or independent review.
 
 ## Remote monitoring
 
@@ -147,6 +168,12 @@ Upstream advisory and dependency-owner monitoring remains active after retiremen
 The top-level `reviewed_at`/`reviewed_commit` fields and preserved historical
 assessment identify the original accepted-risk review; they do not attest to
 review of the replacement candidate. Replacement acceptance is bound to the
-issue #252 controller's exact candidate qualification and independent-review
-records. The register records authorization and validation requirements, not a
-claim that those later lifecycle gates have already passed.
+completed issue #252 controller's exact candidate qualification and
+independent-review records, indexed in the
+[GH-252 capsule history](../../engineering/capsules/HISTORY.md#gh-252---patch-mobile-brace-expansion-and-scoped-xcode-uuid-vulnerabilities).
+The accepted candidate passed protected security checks, risk-retirement tests,
+offline/installed validation, repository/mobile/iOS native qualification, and
+fresh independent review before guarded integration. Separate qualified and
+reviewed terminal closeout retained the full reviewed capsule. The register
+records authorization and validation requirements; its original review fields
+remain historical evidence rather than proof of these replacement gates.
