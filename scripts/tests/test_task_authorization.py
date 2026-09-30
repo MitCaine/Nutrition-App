@@ -326,7 +326,7 @@ class RequiredProfilesForPathsTests(unittest.TestCase):
             ),
             (
                 ["scripts/lib/task_authorization.py"],
-                {"ios-native"},
+                {"repository", "ios-native"},
             ),
             (
                 ["apps/backend/app/models/food.py", "apps/mobile/app.json"],

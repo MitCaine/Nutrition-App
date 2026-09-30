@@ -606,3 +606,37 @@ the operator-facing controller commands remain unchanged:
 and producing App match the controller's trusted configuration.
 `NUTRITION_QUALIFICATION_APP_INTEGRATION_ID` must identify the dedicated qualification App; the
 generic GitHub Actions integration ID 15368 is never an acceptable substitute.
+
+## Automatic fast controller qualification
+
+The trusted repository profile now has a mechanical tooling floor for the scripts
+component tree (including its root), engineering/tooling, .python-version and the
+two trusted qualification workflows. Planned wildcard authority conservatively
+selects this floor; lookalike directory prefixes do not. Existing backend, mobile,
+PostgreSQL and iOS native floors still compose independently.
+
+Trusted planning digests the tooling decision. The repository job checks out the
+trusted runner separately from the exact candidate, installs accepted Python 3.14
+and requirements-dev.lock (pytest 9.1.1), and executes the fixed seventeen-file
+selection in scripts/lib/tooling_qualification.py. Candidate configuration,
+selectors, credentials and native opt-in environment cannot select weaker tests.
+The runner uses --noconftest, an empty pytest configuration, verbose skip details
+and no pytest cache. The job has read-only contents permission, no App secret and
+no cache; the finalizer alone publishes the dedicated-App result.
+
+The sixteen-file pre-dispatch diagnostic took about 39 seconds: 296 passed,
+17 explicitly skipped native fixtures, and seven stale iOS composition assertions
+failed. That diagnostic is not candidate proof. Expect approximately one minute
+for the fast test subprocess, plus checkout and locked installation. The final
+revision3 local selection passed 301 tests and 118 subtests with 17 explicit
+opt-in/unsupported-host skips in 59.35 seconds; session-end additionally passed
+82 audit-tooling tests in 13.74 seconds. These are local diagnostics, not remote
+qualification or installed canary proof. Exact final
+local and installed CI timings are retained in controller/terminal evidence.
+
+Private RI runtime, native transport/reviewer, iOS/device, PostgreSQL, MinIO,
+Docker and performance opt-in oracles remain separate. Their explicit skips do
+not imply those suites passed. Initial implementation qualification uses the old
+installed workflow. After approved guarded installation, exact-SHA negative and
+positive dedicated-App canaries must prove the new failure/success gate before
+terminal issue closeout. Pre-install success cannot replace that proof.

@@ -296,3 +296,16 @@ For the real reviewer roundtrip, set `NUTRITION_REQUIRE_REVIEW_RUNTIME=1`,
 The fixture proves source access, freshness and non-mutation; it explicitly lacks production
 qualification and must not approve the fixture as a production candidate. Skipped host tests
 are not transport qualification. Product native/device and PostgreSQL tests remain distinct.
+
+## Automatic fast controller qualification
+
+Tooling authorization and changed paths mechanically require the repository
+profile in addition to every other applicable floor. See the
+[automatic fast controller qualification contract](../../docs/operations/testing.md#automatic-fast-controller-qualification)
+for trusted selection, the fixed suite, locked tools, measured cost and opt-in
+proof limits. Focused capsule evidence does not replace that remote floor.
+
+The first implementation candidate uses the old installed workflow. Guarded
+installation must be followed by separately authorized exact-SHA negative and
+positive dedicated-App canaries before terminal issue closeout; pre-install
+qualification cannot prove the newly installed gate.

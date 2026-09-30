@@ -51,7 +51,7 @@ class IosNativeQualificationTests(
                     required_profiles_for_paths(
                         [path]
                     ),
-                    {"ios-native"},
+                    ({"mobile", "ios-native"} if path.startswith("apps/mobile/") else {"repository", "ios-native"} if path.startswith("scripts/") or path == ".github/workflows/trusted-qualification-execute.yml" else {"ios-native"}),
                 )
 
     def test_documentation_does_not_force_native(self):
