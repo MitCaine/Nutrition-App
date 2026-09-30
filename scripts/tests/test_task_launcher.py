@@ -32,3 +32,7 @@ def test_missing_host_python_never_probes_candidate_venv(tmp_path: Path):
     assert result.returncode == 1
     assert "Unable to locate trusted Python 99.99" in result.stderr
     assert not marker.exists()
+
+
+def test_gh245_installed_gate_canary():
+    assert False
