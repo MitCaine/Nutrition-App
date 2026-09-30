@@ -627,10 +627,11 @@ no cache; the finalizer alone publishes the dedicated-App result.
 The sixteen-file pre-dispatch diagnostic took about 39 seconds: 296 passed,
 17 explicitly skipped native fixtures, and seven stale iOS composition assertions
 failed. That diagnostic is not candidate proof. Expect approximately one minute
-for the fast test subprocess, plus checkout and locked installation. The final
-revision3 local selection passed 301 tests and 118 subtests with 17 explicit
-opt-in/unsupported-host skips in 59.35 seconds; session-end additionally passed
-82 audit-tooling tests in 13.74 seconds. These are local diagnostics, not remote
+for the fast test subprocess, plus checkout and locked installation. The revision4
+protected local transport rehearsal passed 302 tests and 121 subtests with 17
+explicit opt-in/unsupported-host skips in 40.60 seconds; session-end additionally
+passed 82 audit-tooling tests in 12.45 seconds. Original and tested source identities
+remained unchanged. These are pre-freeze rehearsals, not attached remote
 qualification or installed canary proof. Exact final
 local and installed CI timings are retained in controller/terminal evidence.
 
