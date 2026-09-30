@@ -4625,3 +4625,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** a666d6691212eae02cc44207fb0700d1db770078
 - **Full-capsule recovery path:** engineering/capsules/active/GH-253.md
 - **Historical capsule SHA-256:** 93dbbd400d2b8b61845cab923d0ca2fa6c6af293cc69e888f3236703c98fa8a8
+
+### GH-255 - Publish complete bounded candidate handoff
+
+- **ID:** `GH-255`
+- **Title:** Publish complete bounded candidate handoff
+- **Final state:** MERGED
+- **Capsule revision:** 5
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/255; implementation authorization5917391886 revision5; terminal compatibility authorization5917839081; owner sequencing5916779979.
+- **Issue disposition:** Approved exact C guarded-integrated on main. This record becomes effective after separately qualified/reviewed terminal T and guarded finalization.
+- **Created:** 2026-09-30
+- **Completed/updated:** 2026-09-30
+- **Base commit:** 3b652ced30b03198a22dafffc23386806d4a686b
+- **Task branch:** task/GH-255-r5
+- **Controller:** Codex accountable controller
+- **Executor:** Separate implementor via pinned bounded Perl handoff
+- **Reviewer:** Fresh enforced read-only reviewer 01a0f3b0-9d98-7113-a535-80a03b3799b1
+- **Delegation:** Separate implementor, fresh scope challenger and enforced read-only exact-C reviewer; controller owns authority and guarded acceptance.
+- **Implementation commit(s):** 288407de0b1fdd0a19cf8e62f12797cd723996f3
+- **Verified commit reference(s):** 288407de0b1fdd0a19cf8e62f12797cd723996f3
+- **Reviewed source commit:** 288407de0b1fdd0a19cf8e62f12797cd723996f3
+- **Reviewed task/checkpoint commit(s):** 288407de0b1fdd0a19cf8e62f12797cd723996f3
+- **Integration/merged commit:** 288407de0b1fdd0a19cf8e62f12797cd723996f3 on main.
+- **Integration-related commit reference(s):** Guarded C integration and separate direct-child terminal T; full REVIEWED capsule preserved at R bce68f9dad650297eb0c9799166b47e0bf596954.
+- **Acceptance result:** 5/5 checked in the terminal source capsule.
+- **Review disposition:** Approved all5AC/2standards/3paths, OUT1-3PASS and OUT4/5 owner-authenticated timingDEFERRED; no findings; exact source unchanged.
+- **Verification summary:** Four protected checks passed; complete installed2MB RI1328017bytes authenticated. Authentic corrective literal13PASS, original failedrun and targeted repairedsession preserved. Complete process31files844823bytes and fixture120021bytes retained digest-bound. Actual own full handoff32051bytes passed installed60KB and published. Fresh independent review90calls.
+- **Specialized qualification:** ExactC dedicated App4708441 check110048096281 run36762242466 repositoryPASS. Terminal T requires distinct repositoryQ and fresh read-onlyR.
+- **Known warnings:** Prior authorization ambiguity, process-proof and sequencing review failures preserved. R4 incorrect callback ranges/oversizedpages stopped structural review; R5 orientation fixed without limit change. First R5 literal failed missing17recoveryobjects; complete failure preserved, exactobjects restored and strict validationPASS before authentic corrective launcher13PASS. Existing baseline warning/opt-in testskip retained.
+- **Deferred work/follow-up IDs:** After GH255 terminal acceptance, reassess GH254 with fresh authority/P/C/Q/R and reused implementation, then resume preserved GH246. All later gates mandatory; no later completion claimed.
+- **Retrospective:** yes — distinguish retention, model paging, publication body resources and workflow sequencing; provide exact bounded ranges before review, retain historical recovery objects through isolated clone transport, and measure actual review effort.
+- **Referenced commits:** B3b652ced30b03198a22dafffc23386806d4a686b; P9b2cc4f9ecc6a4cc898c09bae0ac83d48f6096f8; C288407de0b1fdd0a19cf8e62f12797cd723996f3; Rbce68f9dad650297eb0c9799166b47e0bf596954.
+- **Full-capsule recovery commit:** bce68f9dad650297eb0c9799166b47e0bf596954
+- **Full-capsule recovery path:** engineering/capsules/active/GH-255.md
+- **Historical capsule SHA-256:** 8f75edb87cbd31a9acb024455c5070815234fcd2efdee87057686517d7bc8a2e
