@@ -858,3 +858,64 @@ class StructuralEvidenceTests(CandidateFixture):
         args["artifact"] = "../../undeclared"
         with self.assertRaisesRegex(evidence.EvidenceError, "NOT_DECLARED"):
             independent_review.read_evidence(packet, args)
+
+
+class PublicHandoffBoundaryTests(unittest.TestCase):
+    def attached(self):
+        return {"binding": {"candidate": "c" * 40, "planning": "p" * 40,
+                "binding_sha256": "b" * 64, "capsule_sha256": "a" * 64,
+                "authorization": {"identity": "owner"}, "issue_sha256": "i" * 64,
+                "structural": True},
+                "qualified": {"check_url": "https://example.invalid/check", "result": "PASS"},
+                "review": {"verdict": {"disposition": "approved", "matrix": [{"id": "AC-1", "reason": "é雪"}]},
+                    "session": {"id": "session"}, "runtime": {"executable": "/private/runtime", "version": "pinned"},
+                    "trace_sha256": "t" * 64},
+                "commands": {"focused": {"kind": "focused", "status": "passed", "exit_code": 0,
+                    "record_sha256": "r" * 64, "comment": {"html_url": "https://example.invalid/comment"},
+                    "artifacts": {"stdout": {"sha256": "s" * 64, "bytes": 42, "path": "/private/log"}}}},
+                "structural": {"record_sha256": "d" * 64, "status": "supported", "planning": "p" * 40,
+                    "candidate": "c" * 40, "artifacts": {"packet": {"sha256": "e" * 64, "bytes": 99, "path": "/private/packet"}}},
+                "structural_disposition": [{"path": "source.py", "decision": "reviewed"}]}
+
+    def decode(self, body):
+        return json.loads(body.split("```json\n", 1)[1].rsplit("\n```", 1)[0])
+
+    def test_complete_semantic_inventory_compact_serialization_and_redaction(self):
+        attached = self.attached()
+        before = copy.deepcopy(attached)
+        body = evidence.public_handoff(attached)
+        expected = {k: attached["binding"][k] for k in (
+            "candidate", "planning", "binding_sha256", "capsule_sha256", "authorization", "issue_sha256")}
+        expected.update(qualification=attached["qualified"], review=attached["review"]["verdict"],
+            session={"id": "session"}, runtime={"version": "pinned"}, trace_sha256="t" * 64,
+            commands={"focused": {"kind": "focused", "status": "passed", "exit_code": 0,
+                "record_sha256": "r" * 64, "manual_locator": "https://example.invalid/comment",
+                "artifacts": {"stdout": {"sha256": "s" * 64, "bytes": 42, "locator": "controller-local:" + "s" * 64}}}},
+            structural={"record_sha256": "d" * 64, "status": "supported", "planning": "p" * 40,
+                "candidate": "c" * 40, "controller_disposition": attached["structural_disposition"],
+                "artifacts": {"packet": {"sha256": "e" * 64, "bytes": 99, "locator": "controller-local:" + "e" * 64}}})
+        self.assertEqual(self.decode(body), expected)
+        self.assertIn(json.dumps(expected, separators=(",", ":")), body)
+        self.assertIn("\\u00e9\\u96ea", body)
+        self.assertNotIn("/private/", body)
+        self.assertEqual(attached, before)
+
+    def test_complete_wrapper_exact_boundary_and_overflow_with_non_ascii(self):
+        attached = self.attached()
+        attached["review"]["verdict"]["padding"] = ""
+        empty_body = evidence.public_handoff(attached)
+        padding = "x" * (64_000 - len(empty_body.encode("utf-8")))
+        attached["review"]["verdict"]["padding"] = padding
+        body = evidence.public_handoff(attached)
+        self.assertEqual(len(body.encode("utf-8")), 64_000)
+        self.assertEqual(self.decode(body)["review"]["padding"], padding)
+        self.assertEqual(self.decode(body)["review"]["matrix"][0]["reason"], "é雪")
+        self.assertLess(len(body.split("```json\n", 1)[1].rsplit("\n```", 1)[0].encode("utf-8")), 64_000)
+        attached["review"]["verdict"]["padding"] += "x"
+        with self.assertRaisesRegex(evidence.EvidenceError, "PUBLIC_HANDOFF_TOO_LARGE"):
+            evidence.public_handoff(attached)
+        # Non-ASCII stays escaped under the existing ensure_ascii default and
+        # therefore consumes its actual serialized bytes, without truncation.
+        attached["review"]["verdict"]["padding"] = padding[:-5] + "é"
+        with self.assertRaisesRegex(evidence.EvidenceError, "PUBLIC_HANDOFF_TOO_LARGE"):
+            evidence.public_handoff(attached)

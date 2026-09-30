@@ -1012,8 +1012,8 @@ def public_handoff(attached: dict) -> str:
                                               for name, entry in record["artifacts"].items()}}
     body = "## Capsule candidate evidence\n\nRaw local logs remain controller-owned; digests are locators, not remote availability claims. "
     body += "The exact qualification is retrievable from GitHub; the observed review decision and matrix are recorded below.\n\n```json\n"
-    body += json.dumps(public, indent=2) + "\n```\n"
-    if len(body.encode()) > 60_000:
+    body += json.dumps(public, separators=(",", ":")) + "\n```\n"
+    if len(body.encode()) > 64_000:
         raise EvidenceError("PUBLIC_HANDOFF_TOO_LARGE")
     return body
 
