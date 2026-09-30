@@ -269,13 +269,28 @@ The controller stores complete planning/candidate inventories, full comparison, 
 Git membership/coverage and before/after stability records. Raw output is limited to 32MB,
 changed scope to 200 paths, selected source to the navigation byte/file budgets, and the review
 structural packet to 1MB. Before attachment, the aggregate complete review artifacts
-(including raw output and manifests) are capped at 2MB. A larger task stops for
-decomposition; it is not silently truncated.
+(including raw output and manifests) are capped at 4,000,000 bytes. The measured complete #246 capture uses
+2,622,690 bytes and an existing indivisible-file capture exceeds 2MB; 4MB provides
+about 52 percent headroom without a compression or record-format migration. A larger
+task stops for decomposition; evidence is never silently truncated. Exact eleven-name
+inventory, regular single-link files, declared and physical byte counts, hashes and
+packet identity/consistency are authenticated. Aggregate and individual bounds are
+checked before retained content is read or hashed, at capture and record validation.
+The independent 32MB raw/file and 1MB packet limits remain unchanged; the initial
+review request remains capped at 2MB.
 The complete membership, planning, candidate and comparison JSON artifacts use compact
 serialization. Their contents and digests remain exact and are authenticated before each
 reviewer read. Oversized single lines are divided into stable 20,000-character virtual lines;
 the reviewer can request bounded pages without consuming a call per pretty-printed source row.
-The 100KB response and 200-call reviewer limits remain in force.
+The 100KB response and 200-call reviewer limits remain in force. Start source reads
+with line 1 to learn `total_lines`, then request valid ranges of at most 399 lines.
+Start structural evidence pages with at most four virtual lines and reduce the page
+on response-limit failure; character count does not guarantee UTF-8 response size.
+Deterministic authentication establishes complete retained bytes and inventory, not
+semantic acceptance. The independent reviewer inspects the full diff and every changed
+path, and uses relevant exact source and inventory/comparison sections to substantiate
+every original outcome, acceptance criterion and applicable standard. Complete
+inventories stay available; selective inspection must support every required judgment.
 
 Inspect the record and every changed path, then write an external controller disposition:
 

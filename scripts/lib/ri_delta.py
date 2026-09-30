@@ -6,6 +6,7 @@ Git membership, coverage policy, stability and reviewer attachment, not acceptan
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import stat
@@ -16,7 +17,13 @@ from lib import ri_consumer as ri
 POLICY = {"schema_version": 1, "scope": "changed-files-v1"}
 MAX_CHANGED = 200
 MAX_PACKET = 1_000_000
-MAX_REVIEW_ARTIFACT_BYTES = 2_000_000
+MAX_REVIEW_ARTIFACT_BYTES = 4_000_000
+MAX_REVIEW_ARTIFACT_FILE_BYTES = 32_000_000
+REVIEW_ARTIFACT_NAMES = frozenset({
+    "membership", "planning-source-manifest", "candidate-source-manifest",
+    "stability-before", "stability-after", "raw", "planning", "candidate",
+    "comparison", "compact", "packet",
+})
 
 
 def configuration(capsule: str) -> dict | None:
@@ -217,10 +224,73 @@ def validate_comparison(raw: dict, selected: dict, lock: dict) -> None:
         raise ri.RIError("RI_GIT_DELTA_NOT_RECONCILED")
 
 
-def artifact(path: Path) -> dict:
-    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+def artifact_stat(path: Path):
+    try:
+        info = path.lstat()
+    except OSError as exc:
+        raise ri.RIError("RI_ARTIFACT_NOT_REGULAR") from exc
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise ri.RIError("RI_ARTIFACT_NOT_REGULAR")
-    return {"path": str(path.resolve()), "sha256": ri.sha256(path.read_bytes()), "bytes": path.stat().st_size}
+    if info.st_size > MAX_REVIEW_ARTIFACT_FILE_BYTES:
+        raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
+    return info
+
+
+def artifact_bytes(path: Path, *, expected_size: int | None = None) -> bytes:
+    before = artifact_stat(path)
+    if expected_size is not None and before.st_size != expected_size:
+        raise ri.RIError("RI_STRUCTURAL_ARTIFACT_CHANGED")
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        if identity(os.fstat(stream.fileno())) != identity(before):
+            raise ri.RIError("RI_STRUCTURAL_ARTIFACT_CHANGED")
+        raw = stream.read(before.st_size + 1)
+        after = os.fstat(stream.fileno())
+    if len(raw) != before.st_size or identity(after) != identity(before) or identity(path.lstat()) != identity(before):
+        raise ri.RIError("RI_STRUCTURAL_ARTIFACT_CHANGED")
+    return raw
+
+
+def artifact(path: Path, *, expected_size: int | None = None) -> dict:
+    raw = artifact_bytes(path, expected_size=expected_size)
+    return {"path": str(path.resolve()), "sha256": ri.sha256(raw), "bytes": len(raw)}
+
+
+def artifact_metadata(entries: dict) -> None:
+    """Check the complete physical inventory and budgets before any content read."""
+    if not isinstance(entries, dict) or set(entries) != REVIEW_ARTIFACT_NAMES:
+        raise ri.RIError("RI_STRUCTURAL_ARTIFACT_INVENTORY")
+    parents = set()
+    declared_total = physical_total = 0
+    for name, entry in entries.items():
+        if (not isinstance(entry, dict) or set(entry) != {"path", "sha256", "bytes"}
+                or not isinstance(entry["path"], str)
+                or not isinstance(entry["sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None
+                or type(entry["bytes"]) is not int or entry["bytes"] < 0):
+            raise ri.RIError("RI_STRUCTURAL_ARTIFACT_METADATA")
+        path = Path(entry["path"])
+        if not path.is_absolute() or path.name != name + ".json" or str(path.resolve()) != entry["path"]:
+            raise ri.RIError("RI_STRUCTURAL_ARTIFACT_METADATA")
+        info = artifact_stat(path)
+        declared_total += entry["bytes"]
+        physical_total += info.st_size
+        if (entry["bytes"] > MAX_REVIEW_ARTIFACT_FILE_BYTES
+                or (name == "packet" and max(entry["bytes"], info.st_size) > MAX_PACKET)):
+            raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
+        parents.add(path.parent)
+    if declared_total > MAX_REVIEW_ARTIFACT_BYTES or physical_total > MAX_REVIEW_ARTIFACT_BYTES:
+        raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
+    if len(parents) != 1:
+        raise ri.RIError("RI_STRUCTURAL_ARTIFACT_INVENTORY")
+    directory = next(iter(parents))
+    if {p.stem for p in directory.glob("*.json")} - {"record"} != REVIEW_ARTIFACT_NAMES:
+        raise ri.RIError("RI_STRUCTURAL_ARTIFACT_INVENTORY")
+    for entry in entries.values():
+        if Path(entry["path"]).lstat().st_size != entry["bytes"]:
+            raise ri.RIError("RI_STRUCTURAL_ARTIFACT_CHANGED")
 
 
 def write_json(path: Path, value: object, *, compact: bool = False) -> None:
@@ -232,10 +302,15 @@ def write_json(path: Path, value: object, *, compact: bool = False) -> None:
 
 
 def review_artifacts(directory: Path) -> dict:
-    """Fail closed before attachment if complete authenticated paging is too costly."""
-    entries = {p.stem: artifact(p) for p in sorted(directory.glob("*.json"))}
-    if sum(item["bytes"] for item in entries.values()) > MAX_REVIEW_ARTIFACT_BYTES:
+    """Authenticate complete retained plain artifacts after physical preflight."""
+    paths = {p.stem: p for p in directory.glob("*.json")}
+    if set(paths) != REVIEW_ARTIFACT_NAMES:
+        raise ri.RIError("RI_STRUCTURAL_ARTIFACT_INVENTORY")
+    sizes = {name: artifact_stat(path).st_size for name, path in paths.items()}
+    if sum(sizes.values()) > MAX_REVIEW_ARTIFACT_BYTES or sizes["packet"] > MAX_PACKET:
         raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
+    entries = {name: artifact(path, expected_size=sizes[name]) for name, path in sorted(paths.items())}
+    artifact_metadata(entries)
     return entries
 
 
@@ -276,7 +351,13 @@ def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
         if before != after:
             raise ri.RIError("RI_SOURCE_CHANGED_DURING_SCAN")
         ri.verify_runtime(runtime, lock=lock)
-        raw = json.loads((directory / "raw.json").read_text())
+        # Bound the retained producer output before parsing; the complete eleven
+        # artifacts receive another physical aggregate preflight after rendering.
+        producer_sizes = {path: artifact_stat(path).st_size for path in directory.glob("*.json")}
+        if sum(producer_sizes.values()) > MAX_REVIEW_ARTIFACT_BYTES:
+            raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
+        raw_path = directory / "raw.json"
+        raw = json.loads(artifact_bytes(raw_path, expected_size=producer_sizes[raw_path]))
         for name in ("planning", "candidate", "comparison", "compact"):
             write_json(directory / (name + ".json"), raw[name], compact=name != "compact")
         validate_comparison(raw, selected, lock)
@@ -313,17 +394,36 @@ def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
 
 
 def validate_record(binding: dict, record: dict) -> None:
+    if (not isinstance(record, dict) or set(record) != {"binding_sha256", "planning", "candidate",
+            "status", "selection_status", "packet", "artifacts", "record_sha256"}):
+        raise ri.RIError("RI_STRUCTURAL_RECORD_MISMATCH")
+    artifact_metadata(record.get("artifacts"))
     body = {k: v for k, v in record.items() if k != "record_sha256"}
-    if (ri.digest(body) != record.get("record_sha256") or record.get("binding_sha256") != binding["binding_sha256"]
+    packet = record.get("packet")
+    if (not isinstance(packet, dict) or ri.digest(body) != record.get("record_sha256")
+            or binding.get("structural") != POLICY
+            or type(binding["structural"]["schema_version"]) is not int
+            or record.get("binding_sha256") != binding["binding_sha256"]
             or record.get("planning") != binding["planning"] or record.get("candidate") != binding["candidate"]
             or record.get("status") not in {"comparable", "unsupported-only", "excluded-only", "mixed"}
-            or record.get("selection_status") != record.get("packet", {}).get("selection_status")
-            or record.get("packet", {}).get("paths") != binding["structural_paths"]):
+            or record.get("selection_status") not in {"supported-only", "unsupported-only", "excluded-only", "mixed"}
+            or record.get("selection_status") != packet.get("selection_status")
+            or record.get("status") != packet.get("status")
+            or type(packet.get("schema_version")) is not int or packet.get("schema_version") != 1
+            or packet.get("policy") != POLICY or type(packet["policy"]["schema_version"]) is not int
+            or packet.get("binding_sha256") != binding["binding_sha256"]
+            or packet.get("planning") != binding["planning"] or packet.get("candidate") != binding["candidate"]
+            or packet.get("paths") != binding["structural_paths"]):
         raise ri.RIError("RI_STRUCTURAL_RECORD_MISMATCH")
-    for entry in record["artifacts"].values():
-        if artifact(Path(entry["path"])) != entry:
+    packet_bytes = None
+    for name, entry in record["artifacts"].items():
+        path = Path(entry["path"])
+        raw = artifact_bytes(path, expected_size=entry["bytes"])
+        if {"path": str(path.resolve()), "sha256": ri.sha256(raw), "bytes": len(raw)} != entry:
             raise ri.RIError("RI_STRUCTURAL_ARTIFACT_CHANGED")
-    if json.loads(Path(record["artifacts"]["packet"]["path"]).read_text()) != record["packet"]:
+        if name == "packet":
+            packet_bytes = raw
+    if json.loads(packet_bytes) != packet:
         raise ri.RIError("RI_STRUCTURAL_PACKET_CHANGED")
 
 

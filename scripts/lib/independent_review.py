@@ -13,11 +13,12 @@ import re
 import secrets
 import selectors
 import signal
+import stat
 import subprocess
 import time
 from pathlib import Path
 
-from lib.candidate_evidence import EvidenceError, artifact, digest, git, observe, read_blob, sign_receipt, validate_verdict
+from lib.candidate_evidence import EvidenceError, digest, git, observe, read_blob, sign_receipt, validate_verdict
 
 QUALIFIED_VERSION = "codex-cli 0.153.4"
 MAX_REVIEW_SOURCE_WORK_BYTES = 40_000_000
@@ -102,13 +103,13 @@ def verdict_schema(binding: dict) -> dict:
 def source_tools() -> list[dict]:
     return [
         {"type": "function", "name": "nutrition_read_evidence",
-         "description": "Read bounded lines from one declared controller evidence artifact, authenticated by its digest.",
+         "description": "Read bounded lines from one declared controller evidence artifact, authenticated by its digest. Start with one line to learn total_lines; for structural artifacts start with at most four virtual lines and reduce the page on response-limit failure.",
          "inputSchema": {"type": "object", "additionalProperties": False,
                          "properties": {"check": {"type": "string"}, "artifact": {"type": "string"},
                                         "start_line": {"type": "integer"}, "end_line": {"type": "integer"}},
                          "required": ["check", "artifact", "start_line", "end_line"]}},
         {"type": "function", "name": "nutrition_read_source",
-         "description": "Read bounded lines of a regular committed file at a fixed review revision. No working files or commands.",
+         "description": "Read bounded lines of a regular committed file at a fixed review revision. First read line 1 to learn total_lines, then use valid ranges of at most 399 lines; reduce the range on response-limit failure. No working files or commands.",
          "inputSchema": {"type": "object", "additionalProperties": False,
                          "properties": {"revision": {"type": "string", "enum": ["base", "planning", "candidate"]},
                                         "path": {"type": "string"}, "start_line": {"type": "integer"},
@@ -198,6 +199,34 @@ def read_source(repo: Path, binding: dict, tool: str, arguments: dict,
     raise EvidenceError("REVIEW_TOOL_NOT_ALLOWED")
 
 
+def evidence_bytes(entry: dict, limit: int) -> bytes:
+    """Authenticate bounded regular bytes before decoding a selected artifact."""
+    if (not isinstance(entry, dict) or set(entry) != {"path", "sha256", "bytes"}
+            or not isinstance(entry["path"], str) or not Path(entry["path"]).is_absolute()
+            or not isinstance(entry["sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None
+            or type(entry["bytes"]) is not int or not 0 <= entry["bytes"] <= limit):
+        raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
+    path = Path(entry["path"])
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    try:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size != entry["bytes"]:
+            raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as stream:
+            if identity(os.fstat(stream.fileno())) != identity(before):
+                raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
+            raw = stream.read(entry["bytes"] + 1)
+            after = os.fstat(stream.fileno())
+        if (len(raw) != entry["bytes"] or identity(before) != identity(after) or identity(path.lstat()) != identity(before)
+                or hashlib.sha256(raw).hexdigest() != entry["sha256"]):
+            raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
+        return raw
+    except OSError as exc:
+        raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE") from exc
+
+
 def read_evidence(packet: dict, arguments: dict) -> dict:
     if not isinstance(arguments, dict) or set(arguments) != {"check", "artifact", "start_line", "end_line"}:
         raise EvidenceError("REVIEW_EVIDENCE_ARGUMENTS_INVALID")
@@ -210,14 +239,12 @@ def read_evidence(packet: dict, arguments: dict) -> dict:
         entry = entries[arguments["artifact"]]
     except (KeyError, TypeError) as exc:
         raise EvidenceError("REVIEW_EVIDENCE_NOT_DECLARED") from exc
-    path = Path(entry["path"])
-    if artifact(path) != entry or entry["bytes"] > (32_000_000 if arguments["check"] == "$structural" else 8_000_000):
-        raise EvidenceError("REVIEW_EVIDENCE_CHANGED_OR_TOO_LARGE")
+    raw = evidence_bytes(entry, 32_000_000 if arguments["check"] == "$structural" else 8_000_000)
     # RI may emit one minified JSON line larger than a callback response. Split
     # only oversized lines into stable virtual lines after authenticating the
     # complete artifact, so the reviewer can page through every byte of text.
     lines = []
-    for line in path.read_text().splitlines():
+    for line in raw.decode().splitlines():
         if len(line) > 20_000:
             lines.extend(line[i:i + 20_000] for i in range(0, len(line), 20_000))
         else:
@@ -506,7 +533,7 @@ def run_review(repo: Path, binding: dict, packet: dict, *, directory: Path,
                            provider=started.get("modelProvider"))
             turn = rpc.request("turn/start", {
                 "threadId": tid, "environments": [], "outputSchema": verdict_schema(binding),
-                "input": [{"type": "text", "text": "Review this exact candidate packet. Reconcile every original issue outcome and selected standard independently of the AC matrix; inspect exact standard source and flag omitted issue outcomes. If structural evidence is required, independently reconcile every structural_review path with capsule authority, full diff, full inventories and required checks; controller expected labels are claims, not approval. Raw inventory artifacts are readable with check=$structural.\n" + json.dumps(request_packet)}],
+                "input": [{"type": "text", "text": "Review this exact candidate packet. Reconcile every original issue outcome and selected standard independently of the AC matrix; inspect exact standard source and flag omitted issue outcomes. If structural evidence is required, independently reconcile every structural_review path with capsule authority, full diff and required checks, using relevant exact source and complete inventory/comparison sections to substantiate every path, outcome, AC and applicable standard; controller expected labels are claims, not approval. Deterministic authentication proves complete retained bytes and inventory, never semantic acceptance. Complete inventories remain readable with check=$structural; selective inspection must support every required independent judgment. First read source line 1 to learn total_lines, then request valid ranges of at most 399 lines. Start structural pages at at most four virtual lines and reduce pages on response-limit failure.\n" + json.dumps(request_packet)}],
             })["turn"]["id"]
             session["turn_id"] = turn
             messages = []

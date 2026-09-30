@@ -197,20 +197,170 @@ class DeltaTests(DeltaFixture):
             self.assertTrue((self.root / "mutation/failure.json").is_file())
         self.assertFalse((self.root / "mutation/candidate-source").exists())
 
-    def test_complete_review_artifact_budget_fails_closed(self):
-        directory = self.root / "budget"
+    def complete_artifacts(self, directory, *, total=None):
         directory.mkdir()
-        delta.write_json(directory / "candidate.json", {"source": "x" * 1_000_000}, compact=True)
-        delta.write_json(directory / "comparison.json", {"source": "y" * 900_000}, compact=True)
-        entries = delta.review_artifacts(directory)
-        self.assertEqual(set(entries), {"candidate", "comparison"})
-        delta.write_json(directory / "membership.json", {"source": "z" * 110_000}, compact=True)
-        with self.assertRaisesRegex(ri.RIError, "REVIEW_BUDGET"):
-            delta.review_artifacts(directory)
-        (directory / "membership.json").unlink()
-        (directory / "membership.json").symlink_to(directory / "candidate.json")
-        with self.assertRaisesRegex(ri.RIError, "NOT_REGULAR"):
-            delta.review_artifacts(directory)
+        for name in delta.REVIEW_ARTIFACT_NAMES:
+            delta.write_json(directory / (name + ".json"), {})
+        if total is not None:
+            current = sum(p.stat().st_size for p in directory.glob("*.json"))
+            # JSON string padding retains valid plain JSON at an exact byte total.
+            path = directory / "candidate.json"
+            path.write_text(json.dumps("x" * (total - current + path.stat().st_size - 3)) + "\n")
+        return delta.review_artifacts(directory)
+
+    def retained_record(self, directory):
+        self.complete_artifacts(directory)
+        packet = {"schema_version": 1, "binding_sha256": self.binding["binding_sha256"],
+                  "planning": self.planning, "candidate": self.candidate, "policy": delta.POLICY,
+                  "paths": self.binding["structural_paths"], "status": "comparable", "selection_status": "mixed"}
+        delta.write_json(directory / "packet.json", packet)
+        record = {"binding_sha256": self.binding["binding_sha256"], "planning": self.planning,
+                  "candidate": self.candidate, "packet": packet, "status": "comparable", "selection_status": "mixed",
+                  "artifacts": delta.review_artifacts(directory)}
+        record["record_sha256"] = ri.digest(record)
+        return record
+
+    def test_complete_plain_budget_above_two_mb_and_exact_boundary(self):
+        for size in (2_622_690, 4_000_000):
+            directory = self.root / str(size)
+            entries = self.complete_artifacts(directory, total=size)
+            self.assertEqual(set(entries), delta.REVIEW_ARTIFACT_NAMES)
+            self.assertEqual(sum(e["bytes"] for e in entries.values()), size)
+            self.assertEqual(entries["candidate"]["sha256"], ri.sha256((directory / "candidate.json").read_bytes()))
+        directory = self.root / "4000000"
+        with (directory / "candidate.json").open("a") as stream:
+            stream.write(" ")
+        with mock.patch.object(Path, "read_bytes", side_effect=AssertionError("content read")), \
+                mock.patch.object(os, "open", side_effect=AssertionError("content read")):
+            with self.assertRaisesRegex(ri.RIError, "REVIEW_BUDGET"):
+                delta.review_artifacts(directory)
+
+    def test_missing_extra_and_nonregular_full_inventory(self):
+        for kind in ("missing", "extra", "symlink", "hardlink", "fifo", "directory"):
+            with self.subTest(kind=kind):
+                directory = self.root / kind
+                self.complete_artifacts(directory)
+                path = directory / "candidate.json"
+                if kind == "extra":
+                    delta.write_json(directory / "extra.json", {})
+                else:
+                    path.unlink()
+                    if kind == "symlink":
+                        path.symlink_to(directory / "planning.json")
+                    elif kind == "hardlink":
+                        os.link(directory / "planning.json", path)
+                    elif kind == "fifo":
+                        os.mkfifo(path)
+                    elif kind == "directory":
+                        path.mkdir()
+                with self.assertRaises(ri.RIError):
+                    delta.review_artifacts(directory)
+
+    def test_single_oversize_and_packet_limit_before_content_reads(self):
+        for name, size in (("raw", delta.MAX_REVIEW_ARTIFACT_FILE_BYTES + 1), ("packet", delta.MAX_PACKET + 1)):
+            directory = self.root / name
+            self.complete_artifacts(directory)
+            with (directory / (name + ".json")).open("wb") as stream:
+                stream.truncate(size)
+            with mock.patch.object(os, "open", side_effect=AssertionError("content read")):
+
+                with self.assertRaisesRegex(ri.RIError, "REVIEW_BUDGET"):
+                    delta.review_artifacts(directory)
+
+    def test_validation_strict_metadata_inventory_and_packet_identity(self):
+        record = self.retained_record(self.root / "record")
+        delta.validate_record(self.binding, record)
+        mutations = [lambda r: r["artifacts"].pop("raw"),
+                     lambda r: r["artifacts"].update(extra=r["artifacts"]["raw"]),
+                     lambda r: r["artifacts"]["raw"].update(bytes=True),
+                     lambda r: r["artifacts"]["raw"].update(bytes=-1),
+                     lambda r: r["artifacts"]["raw"].update(sha256="bad"),
+                     lambda r: r["artifacts"]["raw"].update(extra=True),
+                     lambda r: r["artifacts"]["raw"].update(path=r["artifacts"]["candidate"]["path"]),
+                     lambda r: r["packet"].update(schema_version=True),
+                     lambda r: r["packet"].update(policy={"schema_version": True, "scope": "changed-files-v1"}),
+                     lambda r: (r.update(selection_status="invalid"), r["packet"].update(selection_status="invalid"))]
+        mutations += [lambda r, key=key: r["packet"].update({key: "wrong"})
+                      for key in ("planning", "candidate", "binding_sha256", "policy", "status")]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                wrong = copy.deepcopy(record)
+                mutate(wrong)
+                wrong["record_sha256"] = ri.digest({k: v for k, v in wrong.items() if k != "record_sha256"})
+                with self.assertRaises(ri.RIError):
+                    delta.validate_record(self.binding, wrong)
+        wrong = copy.deepcopy(record)
+        wrong["artifacts"]["raw"]["sha256"] = "0" * 64
+        wrong["record_sha256"] = ri.digest({k: v for k, v in wrong.items() if k != "record_sha256"})
+        with self.assertRaisesRegex(ri.RIError, "ARTIFACT_CHANGED"):
+            delta.validate_record(self.binding, wrong)
+        (self.root / "record/raw.json").write_text("tampered")
+        with self.assertRaisesRegex(ri.RIError, "ARTIFACT_CHANGED"):
+            delta.validate_record(self.binding, record)
+
+    def test_record_declared_and_physical_aggregate_rejected_before_content(self):
+        record = self.retained_record(self.root / "aggregate")
+        for physical in (False, True):
+            wrong = copy.deepcopy(record)
+            if physical:
+                with Path(wrong["artifacts"]["raw"]["path"]).open("wb") as stream:
+                    stream.truncate(delta.MAX_REVIEW_ARTIFACT_BYTES + 1)
+            else:
+                wrong["artifacts"]["raw"]["bytes"] = delta.MAX_REVIEW_ARTIFACT_BYTES + 1
+            with mock.patch.object(os, "open", side_effect=AssertionError("content read")):
+
+                with self.assertRaisesRegex(ri.RIError, "REVIEW_BUDGET"):
+                    delta.validate_record(self.binding, wrong)
+
+    def test_retained_packet_content_must_match_even_with_resealed_artifact(self):
+        record = self.retained_record(self.root / "packet-content")
+        delta.write_json(Path(record["artifacts"]["packet"]["path"]), {**record["packet"], "extra": "tampered"})
+        record["artifacts"] = delta.review_artifacts(self.root / "packet-content")
+        record["record_sha256"] = ri.digest({k: v for k, v in record.items() if k != "record_sha256"})
+        with self.assertRaisesRegex(ri.RIError, "PACKET_CHANGED"):
+            delta.validate_record(self.binding, record)
+
+    def test_packet_decode_uses_authenticated_bytes_after_replacement(self):
+        record = self.retained_record(self.root / "packet-replacement")
+        original = delta.artifact_bytes
+        def replace_after_read(path, **kwargs):
+            raw = original(path, **kwargs)
+            if path.name == "packet.json":
+                path.write_text('{"tampered": true}')
+            return raw
+        with mock.patch.object(delta, "artifact_bytes", side_effect=replace_after_read), \
+                mock.patch.object(Path, "read_text", side_effect=AssertionError("separate unbounded decode read")):
+            delta.validate_record(self.binding, record)
+        # A subsequent gate still rejects the changed retained file.
+        with self.assertRaisesRegex(ri.RIError, "ARTIFACT_CHANGED"):
+            delta.validate_record(self.binding, record)
+
+    def test_complete_large_capture_legacy_record_and_actual_callback(self):
+        runtime = self.root / "runtime/manifest.json"
+        selected, raw = self.raw()
+        raw["candidate"]["padding"] = "x" * 1_100_000
+        def worker(*args, **kwargs):
+            delta.write_json(kwargs["log"], raw, compact=True)
+        with mock.patch.object(ri, "verify_runtime", return_value=({"manifest_sha256": "fixture"}, runtime.parent / "environment")), \
+                mock.patch.object(ri, "offline_run", side_effect=worker), \
+                mock.patch.object(ri, "read_lock", return_value=self.lock), \
+                mock.patch.object(Path, "read_text", side_effect=AssertionError("separate unbounded decode read")):
+            record = delta.capture(self.repo, self.binding, runtime, self.root / "large-capture")
+        self.assertGreater(sum(e["bytes"] for e in record["artifacts"].values()), 2_000_000)
+        self.assertEqual(record["record_sha256"], ri.digest({k: v for k, v in record.items() if k != "record_sha256"}))
+        delta.validate_record(self.binding, record)
+        packet = {"structural": {"record": record}}
+        for name, entry in record["artifacts"].items():
+            args = {"check": "$structural", "artifact": name, "start_line": 1, "end_line": 1}
+            first = review.read_evidence(packet, args)
+            chunks = []
+            for line in range(1, first["total_lines"] + 1):
+                page = review.read_evidence(packet, {**args, "start_line": line, "end_line": line})
+                self.assertEqual(page["sha256"], entry["sha256"])
+                chunks.append(page["content"].split(": ", 1)[1])
+            original = Path(entry["path"]).read_text()
+            joined = "".join(chunks) if len(original.splitlines()) == 1 else "\n".join(chunks)
+            self.assertEqual(json.loads(joined), json.loads(original))
 
 
 @unittest.skipUnless(os.environ.get("NUTRITION_RI_RUNTIME"), "actual pinned RI runtime required")

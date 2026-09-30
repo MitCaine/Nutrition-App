@@ -355,7 +355,11 @@ class EvidenceCallbackTests(CandidateFixture):
         path = self.root / "raw.json"
         path.write_text("{" + "x" * 160_000 + "}")
         entry = evidence.artifact(path)
-        packet = {"structural": {"record": {"artifacts": {"raw": entry}}}}
+        from lib import ri_delta
+        for name in ri_delta.REVIEW_ARTIFACT_NAMES - {"raw"}:
+            ri_delta.write_json(self.root / (name + ".json"), {})
+        entries = ri_delta.review_artifacts(self.root)
+        packet = {"structural": {"record": {"artifacts": entries}}}
         args = {"check": "$structural", "artifact": "raw", "start_line": 1, "end_line": 1}
         first = review.read_evidence(packet, args)
         self.assertGreater(first["total_lines"], 1)
@@ -363,6 +367,68 @@ class EvidenceCallbackTests(CandidateFixture):
         chunks = [review.read_evidence(packet, {**args, "start_line": line, "end_line": line})["content"].split(": ", 1)[1]
                   for line in range(1, first["total_lines"] + 1)]
         self.assertEqual("".join(chunks), path.read_text())
+
+    def test_selected_evidence_bounds_and_metadata_precede_content_reads(self):
+        path = self.root / "bounded.json"
+        path.write_text("{}")
+        entry = evidence.artifact(path)
+        for size, check in ((32_000_001, "$structural"), (8_000_001, "focused")):
+            with path.open("wb") as stream:
+                stream.truncate(size)
+            oversized = {**entry, "bytes": size}
+            packet = ({"structural": {"record": {"artifacts": {"candidate": oversized}}}} if check == "$structural"
+                      else {"commands": {check: {"artifacts": {"candidate": oversized}}}})
+            with mock.patch.object(os, "open", side_effect=AssertionError("content read")):
+                with self.assertRaisesRegex(evidence.EvidenceError, "TOO_LARGE"):
+                    review.read_evidence(packet, {"check": check, "artifact": "candidate", "start_line": 1, "end_line": 1})
+        path.write_text("{}")
+        for wrong in ({**entry, "bytes": True}, {**entry, "bytes": -1}, {**entry, "sha256": "bad"},
+                      {**entry, "extra": True}, {**entry, "bytes": 1}):
+            with mock.patch.object(os, "open", side_effect=AssertionError("content read")):
+                with self.assertRaises(evidence.EvidenceError):
+                    review.evidence_bytes(wrong, 32_000_000)
+        for kind in ("symlink", "hardlink", "fifo"):
+            other = self.root / kind
+            if kind == "symlink":
+                other.symlink_to(path)
+            elif kind == "hardlink":
+                os.link(path, other)
+            else:
+                os.mkfifo(other)
+            with self.assertRaises(evidence.EvidenceError):
+                review.evidence_bytes({**entry, "path": str(other)}, 32_000_000)
+            other.unlink()
+
+    def test_selected_evidence_rejects_growth_during_bounded_read(self):
+        path = self.root / "growing.json"
+        path.write_text("{}")
+        entry = evidence.artifact(path)
+        original = os.fdopen
+        class GrowingStream:
+            def __init__(self, descriptor, mode):
+                self.stream = original(descriptor, mode)
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.stream.close()
+            def fileno(self):
+                return self.stream.fileno()
+            def read(self, size):
+                if size != entry["bytes"] + 1:
+                    raise AssertionError("unbounded read")
+                with path.open("ab") as writer:
+                    writer.write(b"tampered")
+                return self.stream.read(size)
+        with mock.patch.object(os, "fdopen", side_effect=GrowingStream):
+            with self.assertRaisesRegex(evidence.EvidenceError, "CHANGED"):
+                review.evidence_bytes(entry, 32_000_000)
+
+    def test_callback_descriptions_explain_valid_source_and_structural_pages(self):
+        descriptions = {tool["name"]: tool["description"] for tool in review.source_tools()}
+        self.assertIn("total_lines", descriptions["nutrition_read_source"])
+        self.assertIn("399", descriptions["nutrition_read_source"])
+        self.assertIn("four virtual lines", descriptions["nutrition_read_evidence"])
+        self.assertIn("response-limit", descriptions["nutrition_read_evidence"])
 
     def test_evidence_callback_is_declared_digest_bound_and_bounded(self):
         path = self.root / "log"
