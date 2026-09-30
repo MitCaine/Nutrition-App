@@ -4517,3 +4517,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 35e764ff8adaa8212e36c0f8d324e30101db6b3a
 - **Full-capsule recovery path:** engineering/capsules/active/GH-244.md
 - **Historical capsule SHA-256:** b19efbe4407603029b3e1d2470e044eddcbd840a510f61cdb442c076ea864377
+
+### GH-245 - Require controller test qualification for controller and RI changes
+
+- **ID:** `GH-245`
+- **Title:** Require controller test qualification for controller and RI changes
+- **Final state:** MERGED
+- **Capsule revision:** 4
+- **Task type:** tooling
+- **Risk:** high
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/245; implementation authorization comment 5901887659 revision4 and terminal compatibility authorization comment 5902157947. Prior failed authority/candidates preserved.
+- **Issue disposition:** Exact approved C is guarded-integrated on main; installed negative/positive proof has its expected rejection/acceptance. This record becomes effective only after separate terminal qualification, fresh review and guarded finalization; issue closure is not inferred from this draft.
+- **Created:** 2026-09-29
+- **Completed/updated:** 2026-09-29
+- **Base commit:** 0225fec0af660599d55a1bc85a3d805d1dd61007
+- **Task branch:** task/GH-245-r4
+- **Controller:** Nutrition trusted task controller
+- **Executor:** GH-245 bounded native implementor
+- **Reviewer:** Fresh enforced read-only reviewer 01a0efdf-e279-7372-a88c-cd7a4fb83bdb
+- **Delegation:** bounded planner and implementor; controller owns shared contracts/authority/integration; reviewer has bounded read callbacks only.
+- **Implementation commit(s):** a999eb2aa54d49bc46c595e878a6e333e95bb118; failed R2/R3 attempts not integrated.
+- **Verified commit reference(s):** a999eb2aa54d49bc46c595e878a6e333e95bb118
+- **Reviewed source commit:** a999eb2aa54d49bc46c595e878a6e333e95bb118
+- **Reviewed task/checkpoint commit(s):** a999eb2aa54d49bc46c595e878a6e333e95bb118
+- **Integration/merged commit:** a999eb2aa54d49bc46c595e878a6e333e95bb118 on main.
+- **Integration-related commit reference(s):** Guarded C integration and separate direct-child terminal T. Negative bafcb482cd1901b10cf1be34ec5b0f7115269d26 and positive 5edfccb051597397c9b4d59e0687529fe21289f5 remain unintegrated proof candidates.
+- **Acceptance result:** 4/4 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh enforced read-only reviewer 01a0efdf-e279-7372-a88c-cd7a4fb83bdb for AC-1..AC-4, OUT-1..OUT-4 and selected standards; no findings.
+- **Verification summary:** Fresh protected frozen seventeen-file focused and session-end baseline passed with unchanged source identities; full eleven-path diff inspected. Explicit native skip IDs/reasons/probe and existing warnings retained. Trusted-runner subprocess negative and positive regressions passed. Installed Linux negative selected fixture: 1 failed as intended, 301 passed, 18 skipped, 121 subtests, 27.34 seconds; positive: 302 passed, 18 skipped, 121 subtests, 26.21 seconds. Actual node verdicts, skip detail, trusted plan selection/workflow identity and exact App checks retained.
+- **Specialized qualification:** Exact C old-gate repository/backend/ios-native passed check 109694259672. After approved guarded installation, new trusted workflow at C selected fast tooling under dedicated App4708441: negative: candidate bafcb482cd1901b10cf1be34ec5b0f7115269d26, App check 109695864190, execution 36654418540, selected canary failure, repository job 2026-09-30T01:18:03Z to 2026-09-30T01:18:54Z; positive: candidate 5edfccb051597397c9b4d59e0687529fe21289f5, App check 109696249559, execution 36654543977, selected canary success, repository job 2026-09-30T01:19:38Z to 2026-09-30T01:20:29Z. Both unintegrated candidates and full digested logs/plans are preserved. Original dispatch run 36652958376; terminal requires distinct repository-only qualification and fresh review.
+- **Known warnings:** Seventeen explicitly identified protected macOS native/RI/reviewer fixture skips; retained migration/cache warnings. Live Linux canary test totals and timings retained in installed proof. Failed R2 implementation and R3 protected candidate preserved; no failed candidate integrated. First terminal draft 3a7f89ed341ce825c9cd2afd9123a94087ab9b28 failed protected HISTORY schema validation; that draft/log are preserved and no qualification or review inferred.
+- **Deferred work/follow-up IDs:** None for original issue outcomes. Native/private RI/reviewer and unrelated product infrastructure remain explicit opt-in proof limits; terminal gates still required.
+- **Retrospective:** yes — include full trusted workflow regression expectations in scope before freezing; rehearse the complete subprocess command under protected collection boundaries, then prove installed rejection and acceptance under dedicated App before terminal completion.
+- **Referenced commits:** Planning P4 878ab4d0a132ebdb024b9592f6864048d47966fa; C a999eb2aa54d49bc46c595e878a6e333e95bb118; R 22f3094578798b510c9adebb655425b7d847cb1c; negative bafcb482cd1901b10cf1be34ec5b0f7115269d26 and positive 5edfccb051597397c9b4d59e0687529fe21289f5.
+- **Full-capsule recovery commit:** 22f3094578798b510c9adebb655425b7d847cb1c
+- **Full-capsule recovery path:** engineering/capsules/active/GH-245.md
+- **Historical capsule SHA-256:** 50ad7c11ebc359d7cb15c84b40836886805f997f50fa5191cd45836cdb0f065f
