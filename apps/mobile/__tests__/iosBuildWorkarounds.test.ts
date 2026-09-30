@@ -1,3 +1,7 @@
+/**
+ * @jest-environment node
+ * @jest-environment-options {"customExportConditions":["node","node-addons"]}
+ */
 const { readFileSync } = require("node:fs") as {
   readFileSync(path: string, encoding: "utf8"): string;
 };

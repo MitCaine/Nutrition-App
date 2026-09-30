@@ -60,77 +60,135 @@
     "network_monitoring_is_separate_from_offline_validation": true,
     "unsupported_transitive_forcing_is_prohibited": true
   },
-  "records": [
+  "records": [],
+  "retired_records": [
     {
-      "advisory_id": "GHSA-w5hq-g745-h8pq",
       "alert_number": 2,
-      "classification": "Expo/Xcode configuration build tooling",
-      "dependency_path": [
-        {
-          "location": "",
-          "name": "nutrition-mobile",
-          "requested": null,
-          "version": "2.1.0"
-        },
-        {
-          "location": "node_modules/expo-sharing",
-          "name": "expo-sharing",
-          "requested": "~57.0.22",
-          "version": "57.0.22"
-        },
-        {
-          "location": "node_modules/@expo/config-plugins",
-          "name": "@expo/config-plugins",
-          "requested": "^57.0.9",
-          "version": "57.0.9"
-        },
-        {
-          "location": "node_modules/xcode",
-          "name": "xcode",
-          "requested": "^3.0.1",
-          "version": "3.0.1"
-        },
-        {
-          "location": "node_modules/uuid",
-          "name": "uuid",
-          "requested": "^7.0.3",
-          "version": "7.0.3"
-        }
-      ],
-      "disposition": "non-reachable residual dependency risk",
-      "first_patched_version": "11.1.1",
-      "installed_version": "7.0.3",
-      "manifest_path": "apps/mobile/package-lock.json",
-      "owner": "repository owner",
-      "package": "uuid",
-      "reevaluation_triggers": [
-        "xcode publishes a new release",
-        "xcode removes or changes its uuid dependency",
-        "@expo/config-plugins changes its xcode dependency",
-        "the installed npm dependency path changes",
-        "xcode source begins using uuid.v3, uuid.v5, or uuid.v6",
-        "a new advisory affects uuid@7.0.3"
-      ],
-      "remediation": {
-        "reason": "uuid 11.1.1 patches the installed affected range, but current xcode@3.0.1 still declares uuid ^7.0.3 and current Expo configuration tooling still uses xcode ^3.0.1. Unsupported transitive forcing is prohibited.",
-        "supported_fix_available": false
+      "authority": {
+        "authorization": "You have permission to update UUID 7 to the fixed version",
+        "authorized_at": "2026-09-29",
+        "owner": "repository owner",
+        "source_issue": 252
       },
-      "repository_reachability": {
-        "conclusion": "Installed xcode@3.0.1 uses uuid.v4 once and contains no uuid.v3, uuid.v5, or uuid.v6 call, so the advisory's affected API path is not reachable through the current dependency owner.",
-        "evidence": [
-          "npm ls resolves exactly one uuid path through expo-sharing@57.0.22, @expo/config-plugins@57.0.9, and xcode@3.0.1.",
-          "npm explain binds uuid@7.0.3 to xcode@3.0.1.",
-          "Installed xcode@3.0.1 contains one uuid.v4 call.",
-          "Installed xcode@3.0.1 contains zero uuid.v3/v5/v6 calls."
-        ]
+      "disposition": "fixed by owner-authorized tested compatibility override",
+      "historical_assessment": {
+        "advisory_id": "GHSA-w5hq-g745-h8pq",
+        "alert_number": 2,
+        "classification": "Expo/Xcode configuration build tooling",
+        "dependency_path": [
+          {
+            "location": "",
+            "name": "nutrition-mobile",
+            "requested": null,
+            "version": "2.1.0"
+          },
+          {
+            "location": "node_modules/expo-sharing",
+            "name": "expo-sharing",
+            "requested": "~57.0.22",
+            "version": "57.0.22"
+          },
+          {
+            "location": "node_modules/@expo/config-plugins",
+            "name": "@expo/config-plugins",
+            "requested": "^57.0.9",
+            "version": "57.0.9"
+          },
+          {
+            "location": "node_modules/xcode",
+            "name": "xcode",
+            "requested": "^3.0.1",
+            "version": "3.0.1"
+          },
+          {
+            "location": "node_modules/uuid",
+            "name": "uuid",
+            "requested": "^7.0.3",
+            "version": "7.0.3"
+          }
+        ],
+        "disposition": "non-reachable residual dependency risk",
+        "first_patched_version": "11.1.1",
+        "installed_version": "7.0.3",
+        "manifest_path": "apps/mobile/package-lock.json",
+        "owner": "repository owner",
+        "package": "uuid",
+        "reevaluation_triggers": [
+          "xcode publishes a new release",
+          "xcode removes or changes its uuid dependency",
+          "@expo/config-plugins changes its xcode dependency",
+          "the installed npm dependency path changes",
+          "xcode source begins using uuid.v3, uuid.v5, or uuid.v6",
+          "a new advisory affects uuid@7.0.3"
+        ],
+        "remediation": {
+          "reason": "uuid 11.1.1 patches the installed affected range, but current xcode@3.0.1 still declares uuid ^7.0.3 and current Expo configuration tooling still uses xcode ^3.0.1. Unsupported transitive forcing is prohibited.",
+          "supported_fix_available": false
+        },
+        "repository_reachability": {
+          "conclusion": "Installed xcode@3.0.1 uses uuid.v4 once and contains no uuid.v3, uuid.v5, or uuid.v6 call, so the advisory's affected API path is not reachable through the current dependency owner.",
+          "evidence": [
+            "npm ls resolves exactly one uuid path through expo-sharing@57.0.22, @expo/config-plugins@57.0.9, and xcode@3.0.1.",
+            "npm explain binds uuid@7.0.3 to xcode@3.0.1.",
+            "Installed xcode@3.0.1 contains one uuid.v4 call.",
+            "Installed xcode@3.0.1 contains zero uuid.v3/v5/v6 calls."
+          ]
+        },
+        "reviewed_at": "2026-09-26",
+        "reviewed_commit": "a854342d90c36bf0a9176c27e630b487ab18bc3d",
+        "risk_id": "dependabot-2-uuid-GHSA-w5hq-g745-h8pq",
+        "severity": "medium",
+        "source_issue": 166,
+        "vulnerable_precondition": "The affected UUID v3, v5, or v6 API must be invoked with a caller-supplied output buffer that can trigger the advisory's missing bounds check.",
+        "vulnerable_version_range": "< 11.1.1"
       },
-      "reviewed_at": "2026-09-26",
-      "reviewed_commit": "a854342d90c36bf0a9176c27e630b487ab18bc3d",
-      "risk_id": "dependabot-2-uuid-GHSA-w5hq-g745-h8pq",
-      "severity": "medium",
-      "source_issue": 166,
-      "vulnerable_precondition": "The affected UUID v3, v5, or v6 API must be invoked with a caller-supplied output buffer that can trigger the advisory's missing bounds check.",
-      "vulnerable_version_range": "< 11.1.1"
+      "replacement": {
+        "dependency_path": [
+          {
+            "location": "",
+            "name": "nutrition-mobile",
+            "requested": null,
+            "version": "2.1.0"
+          },
+          {
+            "location": "node_modules/expo-sharing",
+            "name": "expo-sharing",
+            "requested": "~57.0.22",
+            "version": "57.0.22"
+          },
+          {
+            "location": "node_modules/@expo/config-plugins",
+            "name": "@expo/config-plugins",
+            "requested": "^57.0.9",
+            "version": "57.0.9"
+          },
+          {
+            "location": "node_modules/xcode",
+            "name": "xcode",
+            "requested": "^3.0.1",
+            "version": "3.0.1"
+          },
+          {
+            "location": "node_modules/uuid",
+            "name": "uuid",
+            "requested": "^7.0.3",
+            "version": "11.1.1"
+          }
+        ],
+        "installed_version": "11.1.1",
+        "override": {
+          "xcode": {
+            "uuid": "11.1.1"
+          }
+        },
+        "upstream_uuid_request": "^7.0.3"
+      },
+      "required_evidence": [
+        "apps/mobile/scripts/check-security-dependencies.cjs",
+        "apps/mobile/__tests__/iosBuildWorkarounds.test.ts",
+        "repository/mobile/ios-native qualification and independent review"
+      ],
+      "risk_id": "dependabot-2-uuid-GHSA-w5hq-g745-h8pq"
     }
   ],
   "reviewed_at": "2026-09-26",

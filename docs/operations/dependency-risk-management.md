@@ -39,10 +39,11 @@ as a bounded implementation task.
 
 The historical AUDIT-08 / issue #166 review covered three Dependabot alerts.
 The two `image-size` records were retired after the package left the mobile
-lockfile. The canonical register currently retains one `uuid` record. Do not
+lockfile. Issue #252 retires the remaining `uuid` active record into `retired_records`,
+with its historical assessment preserved and its exact fixed replacement validated. Do not
 reuse the historical installed paths or versions as a current dependency graph.
 
-The retained package is reached through `expo-sharing`, `@expo/config-plugins`,
+The replacement package is reached through `expo-sharing`, `@expo/config-plugins`,
 and `xcode`. The reviewed `xcode` caller uses `uuid.v4()`; the advisory concerns
 other UUID APIs with caller-supplied buffers. The exact versions, edges,
 advisory, reviewed commit, and reevaluation triggers live in the risk register.
@@ -123,3 +124,29 @@ vulnerable package disappears.
 
 Historical security work remains historical. AUDIT-08 does not reopen completed
 SEC-01 work.
+
+## Owner-authorized UUID compatibility exception
+
+For issue #252 the repository owner explicitly authorized: “You have permission
+to update UUID 7 to the fixed version”. The exception is limited to
+`overrides.xcode.uuid = "11.1.1"`. Upstream xcode 3.0.1 still declares
+`uuid ^7.0.3`; this is a tested repository compatibility exception, not a claim
+that upstream supports UUID 11. The general prohibition on unsupported forcing
+solely to silence findings remains in force.
+
+The retired record preserves the previous UUID 7 assessment and owner authority.
+Offline validation permits zero active records only with a validated retirement;
+it checks the exact replacement path, upstream declaration, and scoped manifest
+override. Installed validation still derives the replacement's npm path and owner
+and inspects the actual xcode caller. Missing authority, downgrade, owner drift,
+or a missing/global override fails closed. Acceptance also requires the focused
+hostile UUID bounds and xcode caller checks, existing Node-host Jest fixture,
+repository/mobile/iOS native qualification, and fresh independent review.
+Upstream advisory and dependency-owner monitoring remains active after retirement.
+
+The top-level `reviewed_at`/`reviewed_commit` fields and preserved historical
+assessment identify the original accepted-risk review; they do not attest to
+review of the replacement candidate. Replacement acceptance is bound to the
+issue #252 controller's exact candidate qualification and independent-review
+records. The register records authorization and validation requirements, not a
+claim that those later lifecycle gates have already passed.

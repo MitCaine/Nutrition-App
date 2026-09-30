@@ -152,7 +152,7 @@ def validate_register_schema(
 
     require(
         isinstance(records, list)
-        and bool(records),
+        and (bool(records) or bool(register.get("retired_records"))),
         (
             "register must contain at least "
             "one active risk record"
@@ -444,6 +444,111 @@ def validate_register_schema(
         "active alert set invalid",
     )
 
+    retired_records = register.get("retired_records", [])
+    require(
+        isinstance(retired_records, list),
+        "retired_records must be a list",
+    )
+    for retired in retired_records:
+        require(
+            isinstance(retired, dict),
+            "retirement must be an object",
+        )
+        require(
+            retired.get("alert_number") == 2,
+            "unexpected retired alert",
+        )
+        require(
+            2 not in seen_alerts,
+            "duplicate active/retired alert",
+        )
+        historical = retired.get("historical_assessment")
+        require(
+            isinstance(historical, dict),
+            "historical assessment missing",
+        )
+        historical_register = {
+            **register,
+            "records": [historical],
+            "retired_records": [],
+        }
+        validate_register_schema(historical_register)
+        require(
+            historical.get("alert_number") == 2
+            and historical.get("installed_version")
+            == "7.0.3",
+            "historical UUID identity drift",
+        )
+        require(
+            retired.get("risk_id") == historical["risk_id"],
+            "retired risk identity drift",
+        )
+        require(
+            retired.get("disposition")
+            == "fixed by owner-authorized tested compatibility override",
+            "retirement disposition missing",
+        )
+        authority = retired.get("authority")
+        require(
+            authority
+            == {
+                "source_issue": 252,
+                "owner": "repository owner",
+                "authorization": "You have permission to update UUID 7 to the fixed version",
+                "authorized_at": "2026-09-29",
+            },
+            "retirement owner authority missing or changed",
+        )
+        replacement = retired.get("replacement")
+        require(
+            isinstance(replacement, dict),
+            "replacement missing",
+        )
+        expected_path = [
+            dict(node)
+            for node in historical["dependency_path"]
+        ]
+        expected_path[-1]["version"] = "11.1.1"
+        require(
+            replacement
+            == {
+                "installed_version": "11.1.1",
+                "dependency_path": expected_path,
+                "upstream_uuid_request": "^7.0.3",
+                "override": {"xcode": {"uuid": "11.1.1"}},
+            },
+            "replacement identity or override drift",
+        )
+        require(
+            historical["dependency_path"][-2]
+            == {
+                "location": "node_modules/xcode",
+                "name": "xcode",
+                "requested": "^3.0.1",
+                "version": "3.0.1",
+            }
+            and historical["dependency_path"][-1][
+                "requested"
+            ]
+            == "^7.0.3",
+            "retired UUID owner drift",
+        )
+        require(
+            retired.get("required_evidence")
+            == [
+                "apps/mobile/scripts/check-security-dependencies.cjs",
+                "apps/mobile/__tests__/iosBuildWorkarounds.test.ts",
+                "repository/mobile/ios-native qualification and independent review",
+            ],
+            "retirement evidence routes missing",
+        )
+        seen_alerts.add(2)
+        require(
+            retired["risk_id"] not in seen_ids,
+            "duplicate retired risk_id",
+        )
+        seen_ids.add(retired["risk_id"])
+
     baseline = register.get(
         "monitor_baseline"
     )
@@ -555,6 +660,46 @@ def validate_lock_path(
                 f"observed={observed_request}"
             ),
         )
+
+
+def replacement_record(
+    retired: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        **retired["historical_assessment"],
+        "installed_version": retired["replacement"][
+            "installed_version"
+        ],
+        "dependency_path": retired["replacement"][
+            "dependency_path"
+        ],
+    }
+
+
+def validate_retired_replacement(
+    retired: dict[str, Any],
+    lock_document: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    require(
+        manifest.get("overrides")
+        == retired["replacement"]["override"],
+        "owner-authorized xcode-only override missing or changed",
+    )
+    validate_lock_path(
+        replacement_record(retired), lock_document
+    )
+    uuid_locations = {
+        location
+        for location, node in lock_document[
+            "packages"
+        ].items()
+        if location.endswith("node_modules/uuid")
+    }
+    require(
+        uuid_locations == {"node_modules/uuid"},
+        "unreviewed UUID install location",
+    )
 
 
 def relevant_application_files(
@@ -752,6 +897,10 @@ def validate_offline(
             lock_document,
         )
 
+    for retired in register.get("retired_records", []):
+        validate_retired_replacement(retired, lock_document,
+                                    read_json(repo_root / MOBILE_RELATIVE / "package.json"))
+
     validate_reachability_boundary(
         repo_root
     )
@@ -766,6 +915,7 @@ def validate_offline(
         "records": len(
             register["records"]
         ),
+        "retired_records": len(register.get("retired_records", [])),
         "reviewed_commit": (
             register[
                 "reviewed_commit"
@@ -1045,9 +1195,11 @@ def validate_installed(
         list[dict[str, Any]],
     ] = {}
 
-    for record in register[
-        "records"
-    ]:
+    current_records = register["records"] + [
+        replacement_record(item)
+        for item in register.get("retired_records", [])
+    ]
+    for record in current_records:
         records_by_package.setdefault(
             record["package"],
             [],
@@ -1118,7 +1270,7 @@ def validate_installed(
     require(
         (
             "uuid",
-            "7.0.3",
+            records_by_package["uuid"][0]["installed_version"],
             "node_modules/uuid",
         )
         in uuid_identities,
@@ -1188,9 +1340,8 @@ def validate_installed(
     return {
         **offline,
         "mode": "installed",
-        "active_packages": sorted(
-            observed_paths
-        ),
+        "active_packages": sorted({record["package"] for record in register["records"]}),
+        "validated_packages": sorted(observed_paths),
         "uuid_path_count": len(
             observed_paths[
                 "uuid"
