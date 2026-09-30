@@ -59,5 +59,10 @@
     "setupFilesAfterEnv": [
       "<rootDir>/config/jestReactNativeCompat.cjs"
     ]
+  },
+  "overrides": {
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   }
 }
