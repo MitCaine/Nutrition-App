@@ -1955,7 +1955,7 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
         executor_text.count(
             "ref: ${{ github.event.workflow_run.head_sha }}"
         )
-        == 2
+        == 3
     )
 
     direct_shell_inputs = [
@@ -2017,6 +2017,12 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
 
     for binding in shell_bindings:
         assert executor_text.count(binding) == 2
+
+    repository_job = workflow_job_slice("repository", "backend")
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" in repository_job
+    assert "path: trusted" in repository_job
+    assert "trusted/scripts/lib/tooling_qualification.py" in repository_job
+    assert "persist-credentials: false" in repository_job
 
 def test_candidate_jobs_have_no_dedicated_app_secret_or_environment() -> None:
     job_pairs = (

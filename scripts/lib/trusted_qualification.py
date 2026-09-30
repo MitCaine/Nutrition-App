@@ -29,6 +29,8 @@ from lib.task_authorization import (  # noqa: E402
     validate_candidate_scope,
 )
 
+from lib.tooling_qualification import selected as tooling_selected
+
 CHECK_NAME = "Main qualification"
 
 
@@ -110,6 +112,8 @@ def build_plan(
             for profile, names in checks.items()
         },
         "changed_paths": overlay,
+        "tooling_paths": sorted(set((*overlay, *authorization.allowed_paths))),
+        "tooling_tests": tooling_selected((*overlay, *authorization.allowed_paths)),
     }
 
     return {
@@ -170,6 +174,10 @@ def revalidate_plan_authorization(
                     f"observed={plan.get(key)}"
                 )
             )
+
+    expected_paths = sorted(set((*plan.get("changed_paths", []), *authorization.allowed_paths)))
+    if plan.get("tooling_paths") != expected_paths or plan.get("tooling_tests") != tooling_selected(expected_paths):
+        raise TrustedQualificationError("TOOLING_PLAN_SELECTION_DRIFT")
 
     core = {
         key: value

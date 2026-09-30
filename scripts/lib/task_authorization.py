@@ -814,11 +814,17 @@ def _path_is_within_component_tree(
     return path == root or path.startswith(f"{root}/")
 
 
+from lib.tooling_qualification import selected as tooling_selected
+
+
 def required_profiles_for_paths(
     paths: Iterable[str],
 ) -> set[str]:
     observed = tuple(paths)
     required: set[str] = set()
+
+    if tooling_selected(observed):
+        required.add("repository")
 
     if any(
         _path_is_within_component_tree(

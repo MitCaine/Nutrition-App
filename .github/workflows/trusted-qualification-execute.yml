@@ -192,6 +192,7 @@ jobs:
       plan_sha256: ${{ steps.plan-outputs.outputs.plan_sha256 }}
       profiles_json: ${{ steps.plan-outputs.outputs.profiles_json }}
       repository: ${{ steps.plan-outputs.outputs.repository }}
+      tooling_tests: ${{ steps.plan-outputs.outputs.tooling_tests }}
       backend: ${{ steps.plan-outputs.outputs.backend }}
       mobile: ${{ steps.plan-outputs.outputs.mobile }}
       postgresql: ${{ steps.plan-outputs.outputs.postgresql }}
@@ -274,6 +275,7 @@ jobs:
           echo "candidate_ref=${CANDIDATE_REF}" >> "$GITHUB_OUTPUT"
           echo "dispatch_nonce=${DISPATCH_NONCE}" >> "$GITHUB_OUTPUT"
           echo "plan_sha256=$(jq -r '.plan_sha256' trusted-plan.json)" >> "$GITHUB_OUTPUT"
+          echo "tooling_tests=$(jq -r '.tooling_tests' trusted-plan.json)" >> "$GITHUB_OUTPUT"
           echo "profiles_json=$(jq -c '.profiles' trusted-plan.json)" >> "$GITHUB_OUTPUT"
           for profile in repository backend mobile postgresql; do
             selected="$(jq -r --arg profile "$profile" '.profiles | index($profile) != null' trusted-plan.json)"
@@ -281,6 +283,12 @@ jobs:
           done
           selected="$(jq -r '.profiles | index("ios-native") != null' trusted-plan.json)"
           echo "ios_native=${selected}" >> "$GITHUB_OUTPUT"
+
+      - name: Retain trusted plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: trusted-tooling-plan
+          path: trusted-plan.json
 
   repository:
     name: Trusted repository validation
@@ -290,18 +298,55 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout trusted tooling runner
+        if: needs.plan.outputs.tooling_tests == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: trusted
+          persist-credentials: false
+
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.plan.outputs.candidate_sha }}
+          path: candidate
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Download trusted tooling plan
+        if: needs.plan.outputs.tooling_tests == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: trusted-tooling-plan
+          path: tooling-plan
+
+      - uses: actions/setup-python@v7
+        if: needs.plan.outputs.tooling_tests == 'true'
+        with:
+          python-version-file: trusted/.python-version
+
+      - name: Install trusted locked tools
+        if: needs.plan.outputs.tooling_tests == 'true'
+        run: python -m pip install -r trusted/apps/backend/requirements-dev.lock
+
+      - name: Trusted fast controller suite
+        if: needs.plan.outputs.tooling_tests == 'true'
+        env:
+          EXPECTED_PLAN_SHA256: ${{ needs.plan.outputs.plan_sha256 }}
+          CANDIDATE_SHA: ${{ needs.plan.outputs.candidate_sha }}
+        run: |
+          test "$(python -c 'import json; print(json.load(open("tooling-plan/trusted-plan.json"))["plan_sha256"])')" = "$EXPECTED_PLAN_SHA256"
+          python trusted/scripts/lib/tooling_qualification.py --candidate-root candidate --candidate-sha "$CANDIDATE_SHA" --plan tooling-plan/trusted-plan.json
+
       - name: Validate docs
+        working-directory: candidate
         run: python scripts/validate-docs.py
 
       - name: Shell syntax
+        working-directory: candidate
         run: git ls-files -z '*.sh' | xargs -0 -r bash -n
+
 
   backend:
     name: Trusted backend baseline
