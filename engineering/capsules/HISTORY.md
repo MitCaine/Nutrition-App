@@ -4553,3 +4553,39 @@ than being rewritten as successful verification.
 - **Full-capsule recovery commit:** 22f3094578798b510c9adebb655425b7d847cb1c
 - **Full-capsule recovery path:** engineering/capsules/active/GH-245.md
 - **Historical capsule SHA-256:** 50ad7c11ebc359d7cb15c84b40836886805f997f50fa5191cd45836cdb0f065f
+
+### GH-252 - Patch mobile brace-expansion and scoped xcode uuid vulnerabilities
+
+- **ID:** `GH-252`
+- **Title:** Patch mobile brace-expansion and scoped xcode uuid vulnerabilities
+- **Final state:** MERGED
+- **Capsule revision:** 7
+- **Task type:** implementation
+- **Risk:** medium
+- **Source issue/authority:** https://github.com/MitCaine/Nutrition-App/issues/252; implementation authorization comment 5903548590 revision7; explicit owner UUID upgrade permission; terminal compatibility authorization comment 5903872178.
+- **Issue disposition:** Approved exact C guarded-integrated on main. Five target alerts fixed without dismissal and overlapping PR250 reconciled. This record becomes effective only after separately qualified/reviewed terminal T and guarded finalization.
+- **Created:** 2026-09-29
+- **Completed/updated:** 2026-09-29
+- **Base commit:** 2724f03b9f77c38101d93f1231415c0d3b01210a
+- **Task branch:** task/GH-252-r7
+- **Controller:** Nutrition trusted task controller
+- **Executor:** bounded security dependency implementor
+- **Reviewer:** Fresh enforced read-only reviewer 01a0f07c-83a5-7981-b585-97c60a67fb75
+- **Delegation:** Bounded planner/implementor; controller owns shared contracts, authority and integration; fresh reviewer has enforced read-only callbacks.
+- **Implementation commit(s):** 22450a5ccfbf7c99b195342f8b50fa7f45c63ca9; prior superseded/failed revisions preserved and unintegrated.
+- **Verified commit reference(s):** 22450a5ccfbf7c99b195342f8b50fa7f45c63ca9
+- **Reviewed source commit:** 22450a5ccfbf7c99b195342f8b50fa7f45c63ca9
+- **Reviewed task/checkpoint commit(s):** 22450a5ccfbf7c99b195342f8b50fa7f45c63ca9
+- **Integration/merged commit:** 22450a5ccfbf7c99b195342f8b50fa7f45c63ca9 on main.
+- **Integration-related commit reference(s):** Guarded C integration and separate direct-child terminal T; full REVIEWED capsule preserved at R 0af4be01c7377178e082dd17c77748e320ab2941.
+- **Acceptance result:** 5/5 checked in the terminal source capsule.
+- **Review disposition:** Approved by fresh enforced read-only reviewer 01a0f07c-83a5-7981-b585-97c60a67fb75 for AC-1..AC-5, OUT-1..OUT-4 and five selected standards; no findings.
+- **Verification summary:** Protected exact-C focused brace hostile inputs, UUID bounds/Xcode caller, Node-host fixture, eighteen risk-retirement unit tests, offline/installed validations and portable session-end baseline passed with unchanged source. Exact-C GitHub dependency-risk validation passed. Full nine-path B/P/C diff inspected.
+- **Specialized qualification:** Exact C dedicated App4708441 check 109733694921 dispatch run 36666082119 passed repository/mobile/ios-native. Native ran once for this stable candidate; retain actual manifest. Terminal requires distinct repository-only qualification and fresh review.
+- **Known warnings:** Existing migration/cache warnings and portable historical-ref limits retained. Full mobile opt-in database fixture skips remain explicit, not passed. Prior stopped execution attempts and failed C4/C5, qualified unintegrated C6 preserved. Terminal historical recovery objects were hydrated and strictly validated before binding.
+- **Deferred work/follow-up IDs:** None for original issue outcomes. Native simulator does not establish physical-device or opt-in database/infrastructure proof.
+- **Retrospective:** yes — inventory canonical dependency risk records, executable validators and independent monitors as controlling requirements before freezing scope. Rehearse exact minimal environment and real log descriptors, publish branch before attachment, and complete every protected check before qualification.
+- **Referenced commits:** B 2724f03b9f77c38101d93f1231415c0d3b01210a; P7 8dc75c921d209f0a6551acfc5b9a299eda08f458; C 22450a5ccfbf7c99b195342f8b50fa7f45c63ca9; R 0af4be01c7377178e082dd17c77748e320ab2941.
+- **Full-capsule recovery commit:** 0af4be01c7377178e082dd17c77748e320ab2941
+- **Full-capsule recovery path:** engineering/capsules/active/GH-252.md
+- **Historical capsule SHA-256:** ee94623817312d6e6cf1dca056261fd46dbbaee444e7a8cac5fa8cccdadd851f
