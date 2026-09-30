@@ -21,7 +21,9 @@ ruff check .
 python -m compileall -q app tests scripts
 ```
 
-The canonical ordinary backend baseline is `scripts/run-backend-baseline.sh`. It excludes the
+The canonical substantive backend baseline is defined by `scripts/lib/backend_qualification.py`;
+`scripts/run-backend-baseline.sh` preserves the ordinary local interface, including
+`--print-marker-expression` and explicit arguments such as `--collect-only -q`. It excludes the
 registered PostgreSQL concurrency, Phase 5C T0 performance, Phase 5C4 control-PostgreSQL, MinIO,
 and Docker-integration marker families. Those suites remain explicit qualification and must be
 selected directly when their claims are in scope. Do not replace the ordinary runner with bare
@@ -82,8 +84,62 @@ repository registry owns five profiles:
 | `postgresql` | `Backend PostgreSQL 16 contracts` |
 | `ios-native` | `iOS native qualification` |
 
-The existing CI jobs remain the qualification authorities; `Main qualification`
-aggregates their exact-SHA results rather than duplicating their test commands.
+Ordinary CI and dedicated-App trusted qualification have separate jobs. The trusted
+planner selects only authorized profiles; its finalizer aggregates those job results into
+an exact-candidate-SHA dedicated-App `Main qualification` check. Ordinary CI remains a
+separate regression signal. Shared substantive commands prevent drift without running
+another copy of a suite within a selected job.
+
+| Dedicated-App profile | Covered checks |
+| --- | --- |
+| `repository` | Documentation, shell syntax, and the fixed trusted fast controller suite when tooling paths select it |
+| `backend` | Ruff, canonical ordinary pytest marker exclusion, and portable repository session audit |
+| `postgresql` | PostgreSQL16 version, the fixed eleven runtime/completed Epic4 contract files, and isolated schema/database cleanup assertions |
+| `mobile` | Locked npm install, Expo configuration/compatibility/health, TypeScript and Jest |
+| `ios-native` | Existing selected iOS native qualification route; separate physical/device attestations remain explicit |
+
+Backend and PostgreSQL jobs each execute their selected pytest suite once. Ordinary CI
+loads `scripts/lib/backend_qualification.py` from its checked-out SHA. Trusted jobs load
+that helper from the authenticated dispatch workflow head's separate `trusted` checkout,
+select its Python pin and locked dependencies, and pass the exact candidate root and SHA.
+Candidate gate scripts do not supply the trusted definitions. Trusted backend/PostgreSQL
+jobs install only trusted locked packages; they do not execute candidate editable-build
+hooks. Explicit backend import path preserves candidate application/test imports. Candidate
+pytest and conftest code execute as a separately provisioned nonroot `nutrition-candidate`
+account, launched by the trusted helper through fixed sudo/env commands with an allowlisted
+environment. The helper validates the account differs from its own UID. Candidate code
+cannot write the runner-owned trusted checkout, installed packages or qualification
+artifacts. The helper sets only the child HOME to its passwd home and child TMPDIR to
+`NUTRITION_BACKEND_TEST_TMPDIR=/home/nutrition-candidate/tmp`, validating account
+ownership and mode0700. Runner TMPDIR remains unchanged for trusted setup and installs. Fixed Git safe-directory configuration permits read-only exact-SHA validation
+across checkout ownership. The ordinary CI helper interface remains unchanged.
+
+Isolated Python execution, explicit selection, cleared pytest addopts and disabled plugin
+auto-loading prevent selector/config/environment overrides while retaining required backend
+conftest fixtures. The repository tooling job provisions the same account for actual UID
+negative/positive write-denial regression proof. Actual candidate Python remains untrusted;
+separate-account execution protects trusted files rather than granting that Python approval
+or privilege. These guarantees rely on disposable Ubuntu jobs, distinct UIDs, runner/root
+ownership of trusted runtime/source/artifacts, and the candidate account having no sudo or
+other escalation grants. Required UID proof fails closed when that host boundary is absent.
+
+The PostgreSQL helper owns the fixed eleven-file selection, PostgreSQL16 assertion and
+nine isolated schema/two database prefix families. Cleanup asserts absence, without
+removing residual objects. Both workflows run cleanup with `always()` after successful
+dependency installation, including when the selected suite fails; missing infrastructure
+or residual objects fail the job. Baseline exclusion still leaves performance, control
+PostgreSQL, MinIO and Docker integration opt-in; the PostgreSQL profile does not claim
+all marked PostgreSQL or infrastructure suites executed.
+
+Changed trusted gate installation requires separately authorized exact-SHA diagnostic
+canaries against the installed workflow before terminal issue closeout. A negative
+baseline candidate includes a deliberately failing ordinary test and hostile candidate
+helper/pytest addopts: installed trusted selection must execute and fail that test. A
+negative PostgreSQL candidate leaves a selected-family residual schema after a passing
+contract test: installed cleanup must fail. Separate clean positive controls must execute
+and pass. Each probe uses explicit diagnostic compatibility authority based at installed
+C, selected profiles, retained source refs and dedicated-App job/check evidence; probes
+are never integrated. Pre-install Q(C) cannot replace these installed-gate observations.
 Fresh GitHub Actions checkouts can omit terminal capsule recovery commits retained
 only in local controller refs. The two CI workflows explicitly pass
 `--portable-recovery` to the session audit; the default command remains strict
@@ -617,7 +673,7 @@ PostgreSQL and iOS native floors still compose independently.
 
 Trusted planning digests the tooling decision. The repository job checks out the
 trusted runner separately from the exact candidate, installs accepted Python 3.14
-and requirements-dev.lock (pytest 9.1.1), and executes the fixed seventeen-file
+and requirements-dev.lock (pytest 9.1.1), and executes the fixed eighteen-file
 selection in scripts/lib/tooling_qualification.py. Candidate configuration,
 selectors, credentials and native opt-in environment cannot select weaker tests.
 The runner uses --noconftest, an empty pytest configuration, verbose skip details

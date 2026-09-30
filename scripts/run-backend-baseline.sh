@@ -4,13 +4,6 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_ROOT="$REPO_ROOT/apps/backend"
 
-ORDINARY_BACKEND_MARKERS='not postgres_concurrency and not phase5c_performance_t0 and not phase5c4_control_postgres and not phase5c4_minio and not phase5c4_docker_integration'
-
-if [[ "${1:-}" == "--print-marker-expression" ]]; then
-    printf '%s\n' "$ORDINARY_BACKEND_MARKERS"
-    exit 0
-fi
-
 if [[ -n "${NUTRITION_BACKEND_PYTHON:-}" ]]; then
     BACKEND_PYTHON="$NUTRITION_BACKEND_PYTHON"
 elif [[ -x "$BACKEND_ROOT/.venv/bin/python" ]]; then
@@ -34,8 +27,10 @@ else
     }
 fi
 
-cd "$BACKEND_ROOT"
+if [[ "${1:-}" == "--print-marker-expression" ]]; then
+    exec "$BACKEND_PYTHON" -I "$REPO_ROOT/scripts/lib/backend_qualification.py" \
+        baseline --print-marker-expression
+fi
 
-exec "$BACKEND_PYTHON" -m pytest \
-    -m "$ORDINARY_BACKEND_MARKERS" \
-    "$@"
+exec "$BACKEND_PYTHON" -I "$REPO_ROOT/scripts/lib/backend_qualification.py" \
+    baseline --candidate-root "$REPO_ROOT" -- "$@"

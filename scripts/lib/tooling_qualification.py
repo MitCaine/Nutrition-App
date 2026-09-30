@@ -15,7 +15,7 @@ TEST_FILES = tuple("scripts/tests/" + name + ".py" for name in (
     "test_task_authorization", "test_path_scope", "test_task_launcher",
     "test_candidate_evidence", "test_capsule_execution", "test_candidate_review_runtime",
     "test_independent_review", "test_task_closeout", "test_ri_consumer", "test_ri_delta",
-    "test_update_ri_lock", "test_ios_native_qualification", "test_tooling_qualification",
+    "test_update_ri_lock", "test_ios_native_qualification", "test_tooling_qualification", "test_backend_qualification",
 )) + tuple("apps/backend/tests/" + name + ".py" for name in (
     "test_task_controller", "test_task_capsule_validator", "test_task_handoff_renderer", "test_capsule_orchestrator",
 ))

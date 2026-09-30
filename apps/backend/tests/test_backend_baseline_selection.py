@@ -28,6 +28,8 @@ EXPECTED_MARKER_EXPRESSION = " and ".join(
 def _environment() -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop("PYTEST_ADDOPTS", None)
+    environment.pop("PYTHONPATH", None)
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     environment["NUTRITION_BACKEND_PYTHON"] = sys.executable
     return environment
 
@@ -45,7 +47,7 @@ def _run_runner(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 def _run_pytest(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "pytest", *arguments],
+        [sys.executable, "-I", "-m", "pytest", "-o", "addopts=", *arguments],
         cwd=BACKEND_ROOT,
         env=_environment(),
         capture_output=True,

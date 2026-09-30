@@ -1955,7 +1955,7 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
         executor_text.count(
             "ref: ${{ github.event.workflow_run.head_sha }}"
         )
-        == 3
+        == 5
     )
 
     direct_shell_inputs = [
@@ -2016,7 +2016,8 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
     ]
 
     for binding in shell_bindings:
-        assert executor_text.count(binding) == 2
+        expected_count = 6 if binding == '--candidate-sha "${CANDIDATE_SHA}"' else 2
+        assert executor_text.count(binding) == expected_count
 
     repository_job = workflow_job_slice("repository", "backend")
     assert "ref: ${{ github.event.workflow_run.head_sha }}" in repository_job
