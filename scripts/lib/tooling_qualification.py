@@ -29,9 +29,9 @@ def selected(paths):
             return True
         if path in EXACT or any(path == root or path.startswith(root + "/") for root in ROOTS):
             return True
-        if pieces[0] == "engineering" and len(pieces) > 1 and pieces[1] in ("*", "**"):
+        if pieces[0] == "engineering" and len(pieces) > 1 and any(character in pieces[1] for character in "*?["):
             return True
-        if pieces[0] == ".github" and len(pieces) > 1 and pieces[1] in ("*", "**", "workflows") and any("*" in x for x in pieces[1:]):
+        if pieces[0] == ".github" and len(pieces) > 1 and (pieces[1] == "workflows" or any(character in pieces[1] for character in "*?[")) and any(character in component for component in pieces[1:] for character in "*?["):
             return True
     return False
 

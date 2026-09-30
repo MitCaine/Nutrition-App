@@ -22,7 +22,7 @@ def plan_for(sha):
 
 class ToolingQualificationTests(unittest.TestCase):
     def test_component_and_pattern_floor(self):
-        for path in ('scripts', 'scripts/task.py', 'scripts/lib/a.py', 'scripts/**', 'engineering/tooling', 'engineering/tooling/ri/a', '.python-version', '.github/workflows/trusted-qualification.yml', '.github/workflows/trusted-qualification-execute.yml', '**', '*/x', 's*/x', 'engineering/*/x'):
+        for path in ('scripts', 'scripts/task.py', 'scripts/lib/a.py', 'scripts/**', 'engineering/tooling', 'engineering/tooling/ri/a', '.python-version', '.github/workflows/trusted-qualification.yml', '.github/workflows/trusted-qualification-execute.yml', '**', '*/x', 's*/x', 'engineering/*/x', 'engineering/tool*', 'engineering/toolin?', '.github/workflows/trusted-qualificatio?.yml'):
             with self.subTest(path=path):
                 self.assertTrue(tooling.selected([path]))
                 self.assertIn('repository', required_profiles_for_paths([path]))
