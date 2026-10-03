@@ -224,9 +224,10 @@ class BackendQualificationTests(unittest.TestCase):
     def test_isolated_child_has_fixed_identity_and_environment(self):
         helper = load_helper()
         account = SimpleNamespace(pw_name="nutrition-candidate", pw_dir="/home/nutrition-candidate")
-        with patch.object(helper, "isolated_account", return_value=(account, Path("/private-child-tmp"))), patch.object(helper.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
+        with patch.object(helper, "isolated_account", return_value=(account, Path("/private-child-tmp"))), patch.object(helper, "assert_runtime_confined") as confinement, patch.object(helper.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             with patch.dict(os.environ, {"GITHUB_ENV": "/step-files/env", "GITHUB_PATH": "/step-files/path", "GH_TOKEN": "fixture-secret"}):
                 self.assertEqual(helper.run_pytest(Path("/candidate/apps/backend"), False, []), 0)
+        confinement.assert_called_once_with(account)
         command = run.call_args.args[0]
         self.assertEqual(command[:7], ["/usr/bin/sudo", "-n", "-u", "nutrition-candidate", "--", "/usr/bin/env", "-i"])
         self.assertIn("HOME=/home/nutrition-candidate", command)
@@ -237,6 +238,43 @@ class BackendQualificationTests(unittest.TestCase):
         self.assertFalse(any(arg.startswith(("GITHUB_ENV=", "GITHUB_PATH=", "GH_TOKEN=")) for arg in command))
         self.assertIn("addopts=", command)
         self.assertIn(EXPECTED_EXPRESSION, command)
+
+    def test_unsafe_runtime_rejects_before_candidate_command(self):
+        helper = load_helper()
+        account = SimpleNamespace(pw_name="nutrition-candidate", pw_uid=1002)
+        with patch.object(helper, "isolated_account", return_value=(account, Path("/private-child-tmp"))), patch.object(helper, "assert_runtime_confined", side_effect=ValueError("BACKEND_RUNTIME_WRITABLE")), patch.object(helper.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "RUNTIME_WRITABLE"):
+                helper.run_pytest(Path("/candidate/apps/backend"), False, [])
+            run.assert_not_called()
+
+    def test_runtime_hardlink_rejects_before_permission_modifiers(self):
+        helper = load_helper()
+        account = SimpleNamespace(pw_name="nutrition-candidate", pw_uid=1002)
+        with patch.object(helper.Path, "is_file", return_value=True), patch.object(helper, "runtime_paths", side_effect=ValueError("BACKEND_RUNTIME_HARDLINK_UNSUPPORTED")), patch.object(helper.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "HARDLINK_UNSUPPORTED"):
+                helper.protect_runtime(account)
+            run.assert_not_called()
+
+    def test_default_runtime_acl_preserves_named_child_read_execute(self):
+        helper = load_helper()
+        account = SimpleNamespace(pw_name="nutrition-candidate", pw_uid=1002, pw_gid=1002)
+        base = "default:user::rwx\ndefault:group::---\ndefault:mask::rwx\ndefault:other::---\n"
+        for permissions, expected in (("r-x", "r-x"), ("rwx", "r-x"), ("rw-", "r--")):
+            with self.subTest(permissions=permissions), patch.object(helper.subprocess, "run", return_value=SimpleNamespace(stdout=base + "default:user:1002:" + permissions + "\n")):
+                self.assertEqual(helper.default_runtime_acl(Path("/fixture"), account), expected)
+
+    def test_default_runtime_acl_absent_and_unrepresentable_mask(self):
+        helper = load_helper()
+        account = SimpleNamespace(pw_name="nutrition-candidate", pw_uid=1002, pw_gid=1002)
+        with patch.object(helper.subprocess, "run", return_value=SimpleNamespace(stdout="user::rwx\ngroup::r-x\nother::r-x\n")):
+            self.assertIsNone(helper.default_runtime_acl(Path("/fixture"), account))
+        acl = "default:user::rwx\ndefault:group::---\ndefault:other::r-x\n"
+        with patch.object(helper.subprocess, "run", return_value=SimpleNamespace(stdout=acl)), patch.object(helper.os, "getuid", return_value=1001), patch.object(helper.os, "getgid", return_value=1001), patch.object(helper.os, "getgrouplist", return_value=[1002]), patch.object(helper.Path, "stat", return_value=SimpleNamespace(st_gid=1001, st_mode=0o755)):
+            with self.assertRaisesRegex(ValueError, "DEFAULT_MASK_UNSUPPORTED"):
+                helper.default_runtime_acl(Path("/fixture"), account)
+        with patch.object(helper.subprocess, "run", return_value=SimpleNamespace(stdout=acl + "default:user:1002:r-x\n")):
+            with self.assertRaisesRegex(ValueError, "DEFAULT_ACL_INVALID"):
+                helper.default_runtime_acl(Path("/fixture"), account)
 
     def test_requested_identity_cannot_be_root_or_current_runner(self):
         helper = load_helper()

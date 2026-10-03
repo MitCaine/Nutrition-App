@@ -291,6 +291,8 @@ jobs:
           path: trusted-plan.json
 
   repository:
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     name: Trusted repository validation
     if: needs.plan.outputs.repository == 'true'
     needs: plan
@@ -336,6 +338,13 @@ jobs:
           sudo useradd --create-home --shell /usr/sbin/nologin nutrition-candidate
           sudo install -d -o nutrition-candidate -g nutrition-candidate -m 700 /home/nutrition-candidate/tmp
 
+      - name: Protect selected runtime from candidate writes
+        if: needs.plan.outputs.tooling_tests == 'true'
+        env:
+          NUTRITION_BACKEND_TEST_USER: nutrition-candidate
+          NUTRITION_BACKEND_TEST_TMPDIR: /home/nutrition-candidate/tmp
+        run: python -I -B trusted/scripts/lib/backend_qualification.py protect-runtime
+
       - name: Trusted fast controller suite
         if: needs.plan.outputs.tooling_tests == 'true'
         env:
@@ -362,6 +371,7 @@ jobs:
     permissions:
       contents: read
     env:
+      PYTHONDONTWRITEBYTECODE: "1"
       NUTRITION_BACKEND_TEST_USER: nutrition-candidate
       NUTRITION_BACKEND_TEST_TMPDIR: /home/nutrition-candidate/tmp
     defaults:
@@ -396,6 +406,9 @@ jobs:
       - name: Install locked dependencies
         run: |
           python -m pip install -r ../../../trusted/apps/backend/requirements-dev.lock
+
+      - name: Protect selected runtime from candidate writes
+        run: python -I -B ../../../trusted/scripts/lib/backend_qualification.py protect-runtime
 
       - name: Ruff
         run: ruff check .
@@ -433,6 +446,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      PYTHONDONTWRITEBYTECODE: "1"
       NUTRITION_BACKEND_TEST_USER: nutrition-candidate
       NUTRITION_BACKEND_TEST_TMPDIR: /home/nutrition-candidate/tmp
       NUTRITION_TEST_POSTGRES_URL: >-
@@ -471,6 +485,9 @@ jobs:
         name: Install locked dependencies
         run: |
           python -m pip install -r ../../../trusted/apps/backend/requirements-dev.lock
+
+      - name: Protect selected runtime from candidate writes
+        run: python -I -B ../../../trusted/scripts/lib/backend_qualification.py protect-runtime
 
       - name: Verify PostgreSQL major version
         env:
