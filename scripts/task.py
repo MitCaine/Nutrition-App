@@ -29,6 +29,7 @@ from lib.task_authorization import (
 from lib.trusted_qualification import CHECK_NAME
 from lib.capsule_execution import ExecutionError
 from lib import candidate_evidence as candidate_evidence
+from lib import independent_review
 from lib import ri_delta
 from lib import task_closeout
 from lib.ri_consumer import RIError
@@ -1802,9 +1803,154 @@ def _wait_for_authoritative_check(
     return None
 
 
+REVIEW_SETUP_MARKER = "<!-- nutrition-review-setup:v1 -->"
+
+
+def review_setup_owner_payload(args: argparse.Namespace, attached: dict, binding: dict,
+                               authorization: ResolvedAuthorization, candidate_sha: str) -> dict:
+    """The owner approves this exact current observation, not an anonymous file."""
+    observed = attached.get("review_readiness")
+    if (not isinstance(observed, dict) or observed.get("candidate_sha") != candidate_sha
+            or observed.get("binding_sha256") != binding["binding_sha256"]
+            or observed.get("authorization_identity_sha256") != authorization.identity_sha256
+            or observed.get("failure_count") != len(attached.get("pre_review_failures", []))
+            or observed.get("failure_count") != 0):
+        raise EvidenceError("REVIEW_SETUP_READINESS_STALE_OR_MISSING")
+    return {"schema_version": 1, "repository": authorization.repository,
+        "issue_number": authorization.issue_number, "authorization_identity_sha256": authorization.identity_sha256,
+        "candidate_sha": candidate_sha, "binding_sha256": binding["binding_sha256"],
+        "failure_count": 0, "attempt": observed["attempt"], "destination": "OpenAI Codex app-server",
+        "runtime": observed["runtime"], "model": observed["model"], "effort": observed["effort"],
+        "workflow_commit": observed["workflow_commit"], "workflow_manifest": observed["workflow_manifest"],
+        "readiness_sha256": observed["readiness_sha256"], "account_identity_hmac_sha256": observed["account_identity_hmac_sha256"],
+        "route": observed["route"], "launch_limit": 1, "retries": 0}
+
+
+def authenticate_review_setup_comment(comment: dict, expected: dict, authorization: ResolvedAuthorization,
+                                      comment_id: int) -> str:
+    """Authenticate one exact live owner issue comment, with no public write."""
+    if not isinstance(comment, dict) or not isinstance(comment.get("user"), dict):
+        raise EvidenceError("REVIEW_SETUP_OWNER_COMMENT_INVALID")
+    body = comment.get("body")
+    expected_url = f"https://github.com/{authorization.repository}/issues/{authorization.issue_number}#issuecomment-{comment_id}"
+    if (type(comment_id) is not int or comment_id < 1 or type(comment.get("id")) is not int or comment.get("id") != comment_id
+            or comment.get("user", {}).get("login") != authorization.author_login
+            or comment.get("html_url") != expected_url or not isinstance(body, str)
+            or len(body.encode()) > 100_000 or body.count(REVIEW_SETUP_MARKER) != 1):
+        raise EvidenceError("REVIEW_SETUP_OWNER_COMMENT_INVALID")
+    blocks = re.findall(r"```json[ \t]*\n(\{.*?\})[ \t]*\n```", body, re.DOTALL)
+    def unique_fields(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise ValueError("duplicate owner approval field")
+            result[name] = value
+        return result
+    try:
+        value = json.loads(blocks[0], object_pairs_hook=unique_fields) if len(blocks) == 1 else None
+    except (ValueError, UnicodeError):
+        value = None
+    if value != expected:
+        raise EvidenceError("REVIEW_SETUP_OWNER_COMMENT_MISMATCH")
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def revalidate_review_setup_owner(args: argparse.Namespace, attached: dict, binding: dict,
+                                  authorization: ResolvedAuthorization, candidate_sha: str) -> None:
+    authority = attached.get("review_setup_authority", {})
+    expected = review_setup_owner_payload(args, attached, binding, authorization, candidate_sha)
+    comment_id = authority.get("owner_comment_id")
+    comment = GhIssueAuthorizationTransport().get_issue_comment(authorization.repository, comment_id)
+    observed = authenticate_review_setup_comment(comment, expected, authorization, comment_id)
+    if (observed != authority.get("owner_comment_sha256")
+            or authority.get("authorization_identity_sha256") != authorization.identity_sha256):
+        raise EvidenceError("REVIEW_SETUP_OWNER_COMMENT_CHANGED")
+
+
+def _review_setup_inputs(args: argparse.Namespace, attached: dict, binding: dict, candidate_sha: str) -> tuple[dict, dict]:
+    """Authenticate setup against the existing controller-owned attachment record.
+
+    Files are inputs, never independent owner authority. The controller must have
+    recorded their exact bytes after authenticating the human decision; this CLI
+    does not create that authority or reset a consumed dispatch allowance.
+    """
+    names = ("workflow_repo", "workflow_commit", "workflow_manifest", "account_route_approval",
+             "account_readiness", "owner_authority_provenance")
+    values = {name: getattr(args, name, None) for name in names}
+    selected = any(value is not None for value in values.values())
+    if not selected and args.runtime_version == independent_review.QUALIFIED_VERSION:
+        return {}, {}
+    if selected and args.runtime_version != independent_review.ACCOUNT_EVENT_VERSION:
+        raise EvidenceError("REVIEW_SETUP_ACCOUNT_RUNTIME_UNSUPPORTED")
+    if any(values[name] is None for name in names):
+        raise EvidenceError("REVIEW_SETUP_COMPLETE_INPUTS_REQUIRED")
+    def read_json(path: Path) -> tuple[dict, str]:
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 2_000_000:
+            raise EvidenceError("REVIEW_SETUP_LOCAL_FILE_REQUIRED")
+        raw = path.read_bytes()
+        try:
+            value = json.loads(raw)
+        except (ValueError, UnicodeError) as exc:
+            raise EvidenceError("REVIEW_SETUP_JSON_INVALID") from exc
+        if not isinstance(value, dict):
+            raise EvidenceError("REVIEW_SETUP_JSON_INVALID")
+        return value, hashlib.sha256(raw).hexdigest()
+    manifest, manifest_sha = read_json(values["workflow_manifest"])
+    approval, approval_sha = read_json(values["account_route_approval"])
+    readiness, readiness_sha = read_json(values["account_readiness"])
+    provenance, provenance_sha = read_json(values["owner_authority_provenance"])
+    runtime = {"executable": str(args.runtime.resolve()), "sha256": args.runtime_sha256,
+               "version": args.runtime_version, "transport": "codex-app-server-environment-free-v1"}
+    witness = readiness.get("witness")
+    route = approval.get("route")
+    independent_review.validate_expected_account_witness(witness, route)
+    expected_approval = {"attempt": approval.get("attempt"), "destination": "OpenAI Codex app-server",
+        "model": args.model, "effort": args.effort, "launch_limit": 1, "retries": 0, "route": route,
+        "readiness_sha256": readiness_sha, "runtime": runtime,
+        "account_identity_hmac_sha256": witness["identity_hmac_sha256"]}
+    if (not isinstance(approval.get("attempt"), str) or not approval["attempt"]
+            or approval != expected_approval or readiness.get("runtime") != runtime
+            or readiness.get("phase") != "routeObservedNotApproved"
+            or provenance.get("approval_sha256") != approval_sha
+            or not isinstance(provenance.get("source_thread"), str) or not provenance["source_thread"]
+            or not isinstance(provenance.get("human_turn"), str) or not provenance["human_turn"]):
+        raise EvidenceError("REVIEW_SETUP_OWNER_BINDING_MISMATCH")
+    bundle = independent_review.prepare_workflow_instructions(values["workflow_repo"], values["workflow_commit"], tuple(manifest))
+    instruction_identity, _ = independent_review.authenticate_workflow_instructions(bundle, values["workflow_commit"], manifest)
+    identity = {"binding_sha256": binding["binding_sha256"], "candidate_sha": candidate_sha,
+        "failure_count": len(attached.get("pre_review_failures", [])),
+        "workflow_repo": str(values["workflow_repo"].resolve()), "workflow_commit": values["workflow_commit"],
+        "workflow_manifest_sha256": manifest_sha, "workflow_instructions": instruction_identity,
+        "approval_sha256": approval_sha, "readiness_sha256": readiness_sha,
+        "provenance_sha256": provenance_sha, "attempt": approval["attempt"], "runtime": runtime,
+        "model": args.model, "effort": args.effort, "route": route,
+        "account_identity_hmac_sha256": witness["identity_hmac_sha256"]}
+    return identity, {"workflow_repo": values["workflow_repo"], "workflow_commit": values["workflow_commit"],
+        "workflow_manifest": manifest, "workflow_instructions": bundle,
+        "expected_account_route": route, "expected_account_witness": witness}
+
+
+def resolve_review_setup(args: argparse.Namespace, attached: dict, binding: dict, candidate_sha: str) -> tuple[dict, dict]:
+    identity, kwargs = _review_setup_inputs(args, attached, binding, candidate_sha)
+    if not identity:
+        return identity, kwargs
+    authority = attached.get("review_setup_authority")
+    if (not isinstance(authority, dict)
+            or set(authority) != {"identity", "launches_used", "owner_comment_id", "owner_comment_sha256", "authorization_identity_sha256"}
+            or type(authority["owner_comment_id"]) is not int or authority["owner_comment_id"] < 1
+            or any(not isinstance(authority[name], str) or not re.fullmatch(r"[0-9a-f]{64}", authority[name])
+                   for name in ("owner_comment_sha256", "authorization_identity_sha256"))
+            or authority["identity"] != identity or type(authority["launches_used"]) is not int
+            or authority["launches_used"] != 0):
+        raise EvidenceError("REVIEW_SETUP_CONTROLLER_AUTHORITY_REQUIRED_OR_CONSUMED")
+    return identity, kwargs
+
+
 def require_review_preflight(attached: dict, binding: dict, candidate_sha: str, *,
                              runtime: Path | None = None, runtime_sha256: str | None = None,
-                             model: str | None = None, effort: str | None = None) -> dict:
+                             model: str | None = None, effort: str | None = None,
+                             runtime_version: str = independent_review.QUALIFIED_VERSION,
+                             setup_identity: dict | None = None) -> dict:
     """Bind the selected reviewer to this exact attached candidate and retry epoch."""
     preflight = attached.get("review_preflight")
     if (not isinstance(preflight, dict)
@@ -1816,14 +1962,18 @@ def require_review_preflight(attached: dict, binding: dict, candidate_sha: str, 
             or not isinstance(preflight.get("runtime"), dict)
             or not isinstance(preflight["runtime"].get("executable"), str)
             or not Path(preflight["runtime"]["executable"]).is_absolute()
+            or preflight["runtime"].get("version", independent_review.QUALIFIED_VERSION) not in independent_review.SUPPORTED_ADAPTER_VERSIONS
             or not isinstance(preflight["runtime"].get("sha256"), str)
             or not re.fullmatch(r"[0-9a-f]{64}", preflight["runtime"].get("sha256", ""))):
         raise EvidenceError("REVIEW_PREFLIGHT_REQUIRED_OR_STALE")
     if runtime is not None and (
             str(runtime.resolve()) != preflight["runtime"]["executable"]
             or runtime_sha256 != preflight["runtime"]["sha256"]
+            or runtime_version != preflight["runtime"].get("version", independent_review.QUALIFIED_VERSION)
             or model != preflight["model"] or effort != preflight["effort"]):
         raise EvidenceError("REVIEW_SELECTION_NOT_PREFLIGHTED")
+    if preflight.get("setup_identity", {}) != (setup_identity or {}):
+        raise EvidenceError("REVIEW_SETUP_NOT_PREFLIGHTED")
     return preflight
 
 
@@ -3772,6 +3922,7 @@ def command_evidence(args: argparse.Namespace) -> int:
     from lib import independent_review
     from lib.capsule_execution import require_external
 
+    args.runtime_version = getattr(args, "runtime_version", independent_review.QUALIFIED_VERSION)
     repo = resolve_repo_root(args.repo_root)
     candidate = resolve_repo_root(args.candidate_root)
     directory = require_external(args.state_dir, candidate)
@@ -3791,6 +3942,10 @@ def command_evidence(args: argparse.Namespace) -> int:
         sha = git(candidate, "rev-parse", "HEAD")
         attached = state.get("capsule_evidence", {})
         key_path = directory / "review-key.bin"
+        if args.action in {"readiness", "setup"} and (
+                not attached.get("binding") or not key_path.is_file()
+                or attached.get("key_path") != str(key_path)):
+            raise EvidenceError("REVIEW_SETUP_EXISTING_ATTACHMENT_KEY_REQUIRED")
         key = candidate_evidence.create_key(key_path)
         if args.action == "attach":
             if state["phase"] != "AUTHORIZED" or not args.planning:
@@ -3826,16 +3981,122 @@ def command_evidence(args: argparse.Namespace) -> int:
             candidate_evidence.authenticate_binding(binding, authorization, sha)
             if not candidate_evidence.source_matches(binding["source"], candidate_evidence.observe(candidate, sha)):
                 raise EvidenceError("ATTACHED_SOURCE_CHANGED")
-            if args.action == "preflight":
+            if args.action in {"readiness", "setup"}:
+                if (state["phase"] not in {"AUTHORIZED", "QUALIFIED", "VERIFIED"}
+                        or attached.get("pre_review_failures") or attached.get("review")
+                        or attached.get("review_setup_authority")):
+                    raise EvidenceError("REVIEW_SETUP_PHASE_OR_ALLOWANCE_INVALID")
+                revalidate_attached_governing_issue(attached)
+                if (args.runtime_version != independent_review.ACCOUNT_EVENT_VERSION
+                        or args.model != "gpt-6.1-sol" or args.effort != "low"
+                        or not args.runtime or not args.runtime_sha256):
+                    raise EvidenceError("REVIEW_SETUP_EXACT_SELECTION_REQUIRED")
+                def output_file(value: Path | None) -> Path:
+                    if (value is None or value.is_symlink() or value.exists()
+                            or value.parent.resolve() != directory.resolve()):
+                        raise EvidenceError("REVIEW_SETUP_NEW_CONTROLLER_FILE_REQUIRED")
+                    return value
+                if args.action == "readiness":
+                    if attached.get("review_readiness"):
+                        raise EvidenceError("REVIEW_READINESS_ALREADY_OBSERVED")
+                    output = output_file(args.account_readiness)
+                    if not args.workflow_repo or not args.workflow_commit or not args.workflow_manifest:
+                        raise EvidenceError("REVIEW_SETUP_COMPLETE_INPUTS_REQUIRED")
+                    manifest_path = args.workflow_manifest
+                    if (manifest_path.is_symlink() or not manifest_path.is_file()
+                            or manifest_path.stat().st_nlink != 1 or manifest_path.stat().st_size > 2_000_000):
+                        raise EvidenceError("REVIEW_SETUP_LOCAL_FILE_REQUIRED")
+                    manifest_raw = manifest_path.read_bytes()
+                    manifest = json.loads(manifest_raw)
+                    bundle = independent_review.prepare_workflow_instructions(
+                        args.workflow_repo, args.workflow_commit, tuple(manifest))
+                    instructions, _ = independent_review.authenticate_workflow_instructions(bundle, args.workflow_commit, manifest)
+                    attempt = directory / f"readiness-{args.issue_number}-{secrets.token_hex(8)}"
+                    route = {"backendOrigin": "https://chatgpt.com", "accountRoutingOverride": args.account_routing_override}
+                    try:
+                        observation = independent_review.account_readiness(args.runtime, args.runtime_sha256,
+                            directory=attempt, key=key, route=route, timeout=min(args.timeout, 60))
+                    except (EvidenceError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+                        state["phase"] = "STOP_REPLAN"
+                        attached["review_setup_failure"] = {"reason": str(exc), "diagnostics": str(attempt),
+                            "candidate_sha": sha, "binding_sha256": binding["binding_sha256"]}
+                        atomic_write_json(state_path(directory, args.issue_number), state)
+                        raise
+                    current = resolve_current_authorization(state, transport)
+                    if (current.identity_sha256 != authorization.identity_sha256
+                            or not candidate_evidence.source_matches(binding["source"], candidate_evidence.observe(candidate, sha))):
+                        raise EvidenceError("REVIEW_SETUP_AUTHORITY_OR_SOURCE_CHANGED")
+                    record = {"phase": "routeObservedNotApproved", **observation,
+                        "candidate_sha": sha, "binding_sha256": binding["binding_sha256"],
+                        "authorization_identity_sha256": authorization.identity_sha256, "failure_count": 0,
+                        "attempt": attempt.name, "model": args.model, "effort": args.effort,
+                        "workflow_commit": args.workflow_commit, "workflow_manifest": manifest,
+                        "workflow_manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
+                        "workflow_repo": str(args.workflow_repo.resolve()), "workflow_instructions": instructions,
+                        "route": route, "account_identity_hmac_sha256": observation["witness"]["identity_hmac_sha256"]}
+                    atomic_write_json(output, record)
+                    attached["review_readiness"] = {**record, "readiness_sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
+                else:
+                    if type(args.comment_id) is not int or args.comment_id < 1:
+                        raise EvidenceError("REVIEW_SETUP_OWNER_COMMENT_INVALID")
+                    approval_path = output_file(args.account_route_approval)
+                    provenance_path = output_file(args.owner_authority_provenance)
+                    if approval_path == provenance_path or args.account_readiness is None:
+                        raise EvidenceError("REVIEW_SETUP_NEW_CONTROLLER_FILE_REQUIRED")
+                    expected = review_setup_owner_payload(args, attached, binding, authorization, sha)
+                    comment = GhIssueAuthorizationTransport().get_issue_comment(state["repository"], args.comment_id)
+                    comment_sha = authenticate_review_setup_comment(comment, expected, authorization, args.comment_id)
+                    observed = attached["review_readiness"]
+                    if (args.account_readiness.is_symlink() or not args.account_readiness.is_file()
+                            or hashlib.sha256(args.account_readiness.read_bytes()).hexdigest() != observed["readiness_sha256"]):
+                        raise EvidenceError("REVIEW_SETUP_READINESS_CHANGED")
+                    selected = independent_review.runtime(args.runtime, args.runtime_sha256, args.runtime_version)
+                    if selected != observed["runtime"] or args.model != observed["model"] or args.effort != observed["effort"]:
+                        raise EvidenceError("REVIEW_SETUP_SELECTION_CHANGED")
+                    approval = {k: expected[k] for k in ("attempt", "destination", "model", "effort", "launch_limit", "retries", "route", "readiness_sha256", "runtime", "account_identity_hmac_sha256")}
+                    atomic_write_json(approval_path, approval)
+                    provenance = {"source_thread": comment["html_url"], "human_turn": str(args.comment_id),
+                        "approval_sha256": hashlib.sha256(approval_path.read_bytes()).hexdigest(),
+                        "owner_comment_sha256": comment_sha, "authorization_identity_sha256": authorization.identity_sha256}
+                    atomic_write_json(provenance_path, provenance)
+                    identity, _ = _review_setup_inputs(args, attached, binding, sha)
+                    if (identity["workflow_repo"] != observed["workflow_repo"]
+                            or identity["workflow_commit"] != observed["workflow_commit"]
+                            or identity["workflow_manifest_sha256"] != observed["workflow_manifest_sha256"]
+                            or identity["workflow_instructions"] != observed["workflow_instructions"]):
+                        raise EvidenceError("REVIEW_SETUP_INSTRUCTIONS_CHANGED")
+                    current = resolve_current_authorization(state, transport)
+                    final_comment = GhIssueAuthorizationTransport().get_issue_comment(state["repository"], args.comment_id)
+                    if (current.identity_sha256 != authorization.identity_sha256
+                            or authenticate_review_setup_comment(final_comment, expected, current, args.comment_id) != comment_sha
+                            or not candidate_evidence.source_matches(binding["source"], candidate_evidence.observe(candidate, sha))):
+                        raise EvidenceError("REVIEW_SETUP_AUTHORITY_OR_SOURCE_CHANGED")
+                    attached["review_setup_authority"] = {"identity": identity, "launches_used": 0,
+                        "owner_comment_id": args.comment_id, "owner_comment_sha256": comment_sha,
+                        "authorization_identity_sha256": authorization.identity_sha256}
+                    attached.pop("review_preflight", None)
+            elif args.action == "preflight":
                 if state["phase"] not in {"AUTHORIZED", "QUALIFIED", "VERIFIED"} or not args.runtime or not args.runtime_sha256 or not args.model or not args.effort:
                     raise EvidenceError("REVIEW_PREFLIGHT_REQUIRES_PINNED_RUNTIME_AND_MODEL")
+                setup_identity, _ = resolve_review_setup(args, attached, binding, sha)
+                if setup_identity:
+                    revalidate_review_setup_owner(args, attached, binding, authorization, sha)
                 attempt = directory / f"preflight-{args.issue_number}-{secrets.token_hex(8)}"
                 preflight = independent_review.preflight_model(
                     args.runtime, args.runtime_sha256, args.model, args.effort,
-                    directory=attempt, timeout=min(args.timeout, 60))
+                    directory=attempt, timeout=min(args.timeout, 60),
+                    expected_runtime_version=args.runtime_version)
+                final_setup, _ = resolve_review_setup(args, attached, binding, sha)
+                if final_setup:
+                    current = resolve_current_authorization(state, transport)
+                    if current.identity_sha256 != authorization.identity_sha256:
+                        raise EvidenceError("REVIEW_SETUP_AUTHORITY_CHANGED_DURING_PREFLIGHT")
+                    revalidate_review_setup_owner(args, attached, binding, current, sha)
+                if final_setup != setup_identity:
+                    raise EvidenceError("REVIEW_SETUP_CHANGED_DURING_PREFLIGHT")
                 preflight.update(binding_sha256=binding["binding_sha256"], candidate_sha=sha,
                                  failure_count=len(attached.get("pre_review_failures", [])),
-                                 diagnostics=str(attempt))
+                                 diagnostics=str(attempt), setup_identity=setup_identity)
                 if attached.get("review_preflight"):
                     attached.setdefault("review_preflight_history", []).append(attached["review_preflight"])
                 attached["review_preflight"] = preflight
@@ -3873,9 +4134,12 @@ def command_evidence(args: argparse.Namespace) -> int:
             elif args.action == "review":
                 if state["phase"] != "VERIFIED" or not args.runtime or not args.runtime_sha256:
                     raise EvidenceError("REVIEW_REQUIRES_VERIFICATION_AND_PINNED_RUNTIME")
-                require_review_preflight(attached, binding, sha, runtime=args.runtime,
+                setup_identity, setup_kwargs = resolve_review_setup(args, attached, binding, sha)
+                if setup_identity:
+                    revalidate_review_setup_owner(args, attached, binding, authorization, sha)
+                selected_preflight = require_review_preflight(attached, binding, sha, runtime=args.runtime,
                                          runtime_sha256=args.runtime_sha256,
-                                         model=args.model, effort=args.effort)
+                                         model=args.model, effort=args.effort, runtime_version=args.runtime_version, setup_identity=setup_identity)
                 try:
                     revalidate_attached_governing_issue(attached)
                 except EvidenceError as exc:
@@ -3893,10 +4157,23 @@ def command_evidence(args: argparse.Namespace) -> int:
                 if attached.get("pre_review_failures") and attached["pre_review_failures"][-1]["evidence_sha256"] != candidate_evidence.digest(packet):
                     raise EvidenceError("REVIEW_RETRY_EVIDENCE_CHANGED")
                 attempt = directory / f"review-{args.issue_number}-{secrets.token_hex(8)}"
+                final_setup, final_kwargs = resolve_review_setup(args, attached, binding, sha)
+                if final_setup:
+                    current = resolve_current_authorization(state, transport)
+                    if current.identity_sha256 != authorization.identity_sha256:
+                        raise EvidenceError("REVIEW_SETUP_AUTHORITY_CHANGED_BEFORE_DISPATCH")
+                    revalidate_review_setup_owner(args, attached, binding, current, sha)
+                if final_setup != setup_identity or final_kwargs != setup_kwargs:
+                    raise EvidenceError("REVIEW_SETUP_CHANGED_BEFORE_DISPATCH")
+                if setup_identity:
+                    attached["review_setup_authority"]["launches_used"] = 1
+                    atomic_write_json(state_path(directory, args.issue_number), state)
                 try:
                     receipt = independent_review.run_review(candidate, binding, packet, directory=attempt,
                         executable=args.runtime, expected_sha256=args.runtime_sha256, key=key,
-                        timeout=args.timeout, model=args.model, effort=args.effort)
+                        timeout=args.timeout, model=args.model, effort=args.effort,
+                        expected_runtime_version=args.runtime_version,
+                        expected_runtime_identity=selected_preflight["runtime"], **setup_kwargs)
                 except independent_review.PreReviewTransportError as exc:
                     record_pre_review_failure(state, attached, binding, packet, sha, attempt, str(exc))
                     atomic_write_json(state_path(directory, args.issue_number), state)
@@ -3906,6 +4183,18 @@ def command_evidence(args: argparse.Namespace) -> int:
                     attached["review_failure"] = {"reason": str(exc), "diagnostics": str(attempt)}
                     atomic_write_json(state_path(directory, args.issue_number), state)
                     raise
+                if final_setup:
+                    try:
+                        current = resolve_current_authorization(state, transport)
+                        if current.identity_sha256 != authorization.identity_sha256:
+                            raise EvidenceError("REVIEW_SETUP_AUTHORITY_CHANGED_BEFORE_IMPORT")
+                        revalidate_review_setup_owner(args, attached, binding, current, sha)
+                    except (EvidenceError, AuthorizationError, TaskControllerError, OSError, ValueError, KeyError, TypeError) as exc:
+                        state["phase"] = "STOP_REPLAN"
+                        attached["review_failure"] = {"reason": str(exc), "diagnostics": str(attempt),
+                            "candidate": sha, "report_retained_not_imported": True}
+                        atomic_write_json(state_path(directory, args.issue_number), state)
+                        raise
                 attached["review"] = receipt
                 disposition = receipt["verdict"]["disposition"]
                 state["phase"] = {"approved": "REVIEWED_APPROVED", "bounded-correction": "REVIEWED_CHANGES_REQUESTED",
@@ -3924,9 +4213,12 @@ def command_evidence(args: argparse.Namespace) -> int:
                 attached["public_handoff"] = {"url": comment["html_url"], "id": comment["id"],
                                               "body_sha256": candidate_evidence.digest(body)}
         atomic_write_json(state_path(directory, args.issue_number), state)
-        emit({"task": state["task_id"], "phase": state["phase"], "candidate": sha,
+        result = {"task": state["task_id"], "phase": state["phase"], "candidate": sha,
               "binding": state.get("capsule_evidence", {}).get("binding", {}).get("binding_sha256"),
-              "action": args.action})
+              "action": args.action}
+        if args.action == "readiness":
+            result["owner_setup_request"] = review_setup_owner_payload(args, attached, binding, authorization, sha)
+        emit(result)
         return 1 if state["phase"] == "STOP_REPLAN" else 0
 
 
@@ -3956,7 +4248,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     evidence = subparsers.add_parser("evidence")
     evidence.add_argument("issue_number", type=int)
-    evidence.add_argument("action", choices=("attach", "preflight", "check", "structural", "disposition", "manual", "seal", "review", "correct", "publish", "status"))
+    evidence.add_argument("action", choices=("attach", "readiness", "setup", "preflight", "check", "structural", "disposition", "manual", "seal", "review", "correct", "publish", "status"))
     evidence.add_argument("--candidate-root", type=Path, required=True)
     evidence.add_argument("--planning")
     evidence.add_argument("--ri-runtime", type=Path)
@@ -3965,6 +4257,15 @@ def build_parser() -> argparse.ArgumentParser:
     evidence.add_argument("--comment-id", type=int)
     evidence.add_argument("--runtime", type=Path)
     evidence.add_argument("--runtime-sha256")
+    evidence.add_argument("--account-routing-override", choices=("NO_CONSTRAINT", "us", "us_cr"), default="NO_CONSTRAINT")
+    evidence.add_argument("--runtime-version", choices=independent_review.SUPPORTED_ADAPTER_VERSIONS,
+                          default=independent_review.QUALIFIED_VERSION)
+    evidence.add_argument("--workflow-repo", type=Path)
+    evidence.add_argument("--workflow-commit")
+    evidence.add_argument("--workflow-manifest", type=Path)
+    evidence.add_argument("--account-route-approval", type=Path)
+    evidence.add_argument("--account-readiness", type=Path)
+    evidence.add_argument("--owner-authority-provenance", type=Path)
     evidence.add_argument("--model")
     evidence.add_argument("--effort")
     evidence.add_argument("--corrections", type=int, choices=(0, 1), default=1)

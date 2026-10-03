@@ -1,0 +1,18 @@
+{
+  "specimen_only": true,
+  "thread_id": "synthetic-thread",
+  "turn_id": "synthetic-turn",
+  "trace": [
+    {
+      "direction": "received",
+      "message": {
+        "method": "account/updated",
+        "params": {
+          "authMode": "chatgpt",
+          "planType": "prolite"
+        },
+        "emittedAtMs": 1
+      }
+    }
+  ]
+}
