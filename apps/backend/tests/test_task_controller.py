@@ -3421,7 +3421,8 @@ def test_review_revalidates_issue_before_independent_review(
     monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_args: authorization)
     monkeypatch.setattr(TASK, "repository_slug", lambda _repo: "owner/repo")
     monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
-    monkeypatch.setattr(TASK, "require_review_preflight", lambda *_args, **_kwargs: None)
+    selected_runtime = {"fixture_identity": "exact-selected-review-runtime"}
+    monkeypatch.setattr(TASK, "require_review_preflight", lambda *_args, **_kwargs: {"runtime": selected_runtime})
     monkeypatch.setattr(TASK.candidate_evidence, "evidence_packet", lambda *_args: {})
     monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
     monkeypatch.setattr(TASK, "emit", lambda _value: None)
@@ -3429,6 +3430,7 @@ def test_review_revalidates_issue_before_independent_review(
     def fake_review(*_args, **_kwargs):
         events.append("review")
         assert events == ["issue_get", "review"]
+        assert _kwargs["expected_runtime_identity"] is selected_runtime
         return {
             "verdict": {"disposition": "approved", "summary": "Approved."},
             "session": {"thread_id": "fresh-reviewer"},
