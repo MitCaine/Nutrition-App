@@ -792,7 +792,7 @@ class BackendQualificationTests(unittest.TestCase):
                             os.killpg(process.pid, signal.SIGKILL)
                             output, error = process.communicate(timeout=5)
                             print("EXTERNAL_INCLUDE_RED_TIMEOUT", section, supplied_sha, output, error)
-                            self.fail("external FIFO include was accessed before rejection")
+                            self.fail("external include rejection deadline exceeded; blocked operation and FIFO access are unproved")
                         print("EXTERNAL_INCLUDE_REJECTED", section, supplied_sha, process.returncode, error)
                         self.assertNotEqual(process.returncode, 0)
                         self.assertIn("GIT_OBJECT_BOUNDARY_UNSUPPORTED", error)
