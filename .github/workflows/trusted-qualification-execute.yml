@@ -386,6 +386,10 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: trusted/.python-version
+
       - name: Prepare ordinary exact candidate checkout
         working-directory: ${{ github.workspace }}
         env:
@@ -393,10 +397,6 @@ jobs:
         run: >-
           python -I -B trusted/scripts/lib/backend_qualification.py checkout
           --candidate-root candidate --candidate-sha "${CANDIDATE_SHA}"
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version-file: trusted/.python-version
 
       - name: Prepare unprivileged candidate account
         run: |
@@ -464,6 +464,10 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: trusted/.python-version
+
       - name: Prepare ordinary exact candidate checkout
         working-directory: ${{ github.workspace }}
         env:
@@ -471,10 +475,6 @@ jobs:
         run: >-
           python -I -B trusted/scripts/lib/backend_qualification.py checkout
           --candidate-root candidate --candidate-sha "${CANDIDATE_SHA}"
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version-file: trusted/.python-version
 
       - name: Prepare unprivileged candidate account
         run: |

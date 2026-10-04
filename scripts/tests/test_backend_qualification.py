@@ -85,6 +85,9 @@ class BackendQualificationTests(unittest.TestCase):
             self.assertIn("working-directory: ${{ github.workspace }}", step)
             self.assertNotIn("GH_TOKEN", step)
             self.assertNotIn("github.token", step)
+            self.assertLess(job.index("path: trusted"), job.index("uses: actions/setup-python@v7"))
+            self.assertLess(job.index("uses: actions/setup-python@v7"), job.index("Prepare ordinary exact candidate checkout"))
+            self.assertIn("python-version-file: trusted/.python-version", job)
             command = step.split("        run: >-\n", 1)[1]
             launches.append(shlex.split(" ".join(line.strip() for line in command.splitlines())))
         self.assertEqual(launches[0], launches[1])
