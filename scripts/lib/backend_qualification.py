@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -44,6 +45,7 @@ MARKERS = (
 
 
 def candidate_backend(root: Path, sha: str | None) -> Path:
+    original_root = root.absolute()
     root = root.resolve(strict=True)
     backend = root / "apps/backend"
     if not backend.is_dir():
@@ -51,6 +53,7 @@ def candidate_backend(root: Path, sha: str | None) -> Path:
     if sha is not None:
         if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
             raise ValueError("BACKEND_CANDIDATE_SHA_INVALID")
+        _validate_source_git_nodes(root)
         result = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             check=True, capture_output=True, text=True,
@@ -60,7 +63,428 @@ def candidate_backend(root: Path, sha: str | None) -> Path:
         )
         if result.stdout.strip() != sha:
             raise ValueError("BACKEND_CANDIDATE_SHA_MISMATCH")
+    if sha is not None:
+        inventory = source_inventory(root, sha)
+        print(f"BACKEND_SOURCE_IDENTITY original={original_root} resolved={root} sha={sha} "
+              f"tree={inventory['tree']} files={len(inventory['entries'])}", flush=True)
     return backend
+
+
+# Source limits bound both parent object reads and trusted child probe input.
+SOURCE_MAX_FILES = 100000
+SOURCE_MAX_BYTES = 512 * 1024 * 1024
+SOURCE_MAX_OBJECT = 64 * 1024 * 1024
+SOURCE_MAX_CONFIG = 64 * 1024
+SOURCE_MAX_CONFIG_LINE = 4096
+SOURCE_MAX_CONFIG_LINES = 4096
+
+
+def source_git(root: Path, *arguments: str) -> bytes:
+    env = {"PATH": os.defpath, "LANG": "C", "GIT_CONFIG_GLOBAL": os.devnull,
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_NO_REPLACE_OBJECTS": "1",
+           "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1"}
+    return subprocess.run(["git", "-c", "core.hooksPath=" + os.devnull,
+                           "-c", "core.fsmonitor=false", "-c", "core.attributesFile=" + os.devnull,
+                           "-c", "safe.directory=" + str(root), "-C", str(root), *arguments],
+                          env=env, check=True, capture_output=True).stdout
+
+
+def _validate_source_git_nodes(root):
+    gitdir = root / ".git"
+    if not gitdir.is_dir() or gitdir.is_symlink():
+        raise ValueError("BACKEND_SOURCE_GIT_LAYOUT_UNSUPPORTED")
+    if (gitdir / "objects/info/alternates").exists() or (gitdir / "objects/info/http-alternates").exists():
+        raise ValueError("BACKEND_SOURCE_ALTERNATES_UNSUPPORTED")
+    count = 0
+    git_total = 0
+    for directory, directories, files in os.walk(gitdir, followlinks=False):
+        for name in directories + files:
+            info = (Path(directory) / name).lstat()
+            count += 1
+            git_total += info.st_size if stat.S_ISREG(info.st_mode) else 0
+            if info.st_size > SOURCE_MAX_OBJECT or git_total > SOURCE_MAX_BYTES:
+                raise ValueError("BACKEND_SOURCE_GIT_BOUNDS_EXCEEDED")
+            if count > SOURCE_MAX_FILES:
+                raise ValueError("BACKEND_SOURCE_GIT_BOUNDS_EXCEEDED")
+            if (not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
+                    or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)):
+                raise ValueError("BACKEND_SOURCE_GIT_ALIAS_UNSUPPORTED")
+
+    # Parse bounded local bytes with includes disabled, outside every checkout.
+    # Ordinary Git reads must never encounter an external include/worktree source.
+    if ((gitdir / "config.worktree").exists() or (gitdir / "commondir").exists()
+            or any((gitdir / "objects/pack").glob("*.promisor"))):
+        raise ValueError("BACKEND_SOURCE_GIT_OBJECT_BOUNDARY_UNSUPPORTED")
+    config_path = gitdir / "config"
+    config = config_path.read_bytes() if config_path.exists() else b""
+    lines = config.split(b"\n")
+    if (len(config) > SOURCE_MAX_CONFIG or len(lines) > SOURCE_MAX_CONFIG_LINES
+            or any(len(line) > SOURCE_MAX_CONFIG_LINE or line.rstrip().endswith(b"\\") for line in lines)):
+        # Limit native parser key expansion before it can allocate output; folded
+        # lines are unsupported rather than following unbounded continuation keys.
+        raise ValueError("BACKEND_SOURCE_GIT_CONFIG_BOUNDS_UNSUPPORTED")
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_NO_REPLACE_OBJECTS": "1", "GIT_OPTIONAL_LOCKS": "0"}
+    parsed = subprocess.run(["git", "config", "--no-includes", "--file", "-", "--null", "--name-only", "--list"],
+                            cwd="/", env=env, input=config, check=True, capture_output=True).stdout
+    if len(parsed) > SOURCE_MAX_OBJECT:
+        raise ValueError("BACKEND_SOURCE_GIT_BOUNDS_EXCEEDED")
+    keys = [record.decode("utf-8", "strict").lower()
+            for record in parsed.split(b"\0") if record]
+    if any(key.startswith(("include.", "includeif."))
+           or key in {"extensions.partialclone", "extensions.worktreeconfig", "core.worktree"}
+           or key.endswith(".promisor") for key in keys):
+        raise ValueError("BACKEND_SOURCE_GIT_OBJECT_BOUNDARY_UNSUPPORTED")
+
+
+def source_inventory(root: Path, sha: str, *, restricted: bool = False):
+    """Authenticate live tracked bytes; committed bytes never repair live drift."""
+    import hashlib
+    import unicodedata
+
+    _validate_source_git_nodes(root)
+    if source_git(root, "rev-parse", "HEAD").decode().strip() != sha:
+        raise ValueError("BACKEND_CANDIDATE_SHA_MISMATCH")
+    entries, names, total = [], set(), 0
+    for record in source_git(root, "ls-tree", "-rz", sha).split(b"\0"):
+        if not record:
+            continue
+        metadata, raw = record.split(b"\t", 1)
+        mode, kind, blob = metadata.decode("ascii").split()
+        name = raw.decode("utf-8", "strict")
+        parts = name.split("/")
+        normalized = unicodedata.normalize("NFC", name).casefold()
+        if (any(part in {"", ".", ".."} or part.casefold() == ".git" for part in parts)
+                or name.startswith("/") or "\\" in name or normalized in names):
+            raise ValueError("BACKEND_SOURCE_PATH_UNSUPPORTED")
+        names.add(normalized)
+        if kind != "blob" or mode not in {"100644", "100755", "120000"}:
+            raise ValueError("BACKEND_SOURCE_TYPE_UNSUPPORTED")
+        if restricted and mode == "120000":
+            raise ValueError("BACKEND_SOURCE_SYMLINK_UNSUPPORTED")
+        size = int(source_git(root, "cat-file", "-s", blob))
+        total += size
+        if size > SOURCE_MAX_OBJECT or total > SOURCE_MAX_BYTES or len(entries) >= SOURCE_MAX_FILES:
+            raise ValueError("BACKEND_SOURCE_BOUNDS_EXCEEDED")
+        data = source_git(root, "cat-file", "blob", blob)
+        path = root / name
+        for parent in [path.parent, *path.parent.parents]:
+            if parent == root.parent:
+                break
+            if parent.is_symlink():
+                raise ValueError("BACKEND_SOURCE_ALIAS_UNSUPPORTED")
+        info = path.lstat()
+        if restricted and (info.st_nlink != 1 or info.st_mode & 0o7000):
+            raise ValueError("BACKEND_SOURCE_HARDLINK_OR_MODE_UNSUPPORTED")
+        if mode == "120000":
+            actual = os.readlink(path).encode()
+        elif stat.S_ISREG(info.st_mode):
+            actual = path.read_bytes()
+            if bool(info.st_mode & 0o111) != (mode == "100755"):
+                raise ValueError("BACKEND_SOURCE_MODE_CHANGED")
+        else:
+            raise ValueError("BACKEND_SOURCE_TYPE_CHANGED")
+        if actual != data:
+            raise ValueError("BACKEND_SOURCE_CONTENT_CHANGED")
+        entries.append({"path": name, "mode": mode, "blob": blob,
+                        "bytes": size, "sha256": hashlib.sha256(data).hexdigest()})
+    expected_index = b"".join((entry["mode"] + " " + entry["blob"] + " 0\t" + entry["path"]).encode() + b"\0"
+                              for entry in sorted(entries, key=lambda entry: entry["path"].encode()))
+    if source_git(root, "ls-files", "--stage", "-z") != expected_index:
+        raise ValueError("BACKEND_SOURCE_INDEX_CHANGED")
+    return {"sha": sha, "tree": source_git(root, "rev-parse", sha + "^{tree}").decode().strip(),
+            "entries": entries}
+
+
+# This literal runs only standard-library code under the selected isolated runtime.
+SOURCE_PROBE = r'''
+import errno, hashlib, json, os, stat, subprocess, sys
+payload = json.load(sys.stdin)
+result = {"uid": os.getuid(), "errno": 0, "error": ""}
+try:
+    root = payload["root"]
+    for path in payload["controls"]:
+        info = os.lstat(path)
+        if info.st_uid == os.getuid() or stat.S_ISLNK(info.st_mode):
+            raise ValueError("OWNED_OR_ALIAS")
+        if stat.S_ISREG(info.st_mode) and info.st_nlink != 1:
+            raise ValueError("HARDLINK")
+        # Sticky root-owned /tmp cannot replace another owner's child.
+        sticky = path == "/tmp" and stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and info.st_mode & stat.S_ISVTX
+        if os.access(path, os.W_OK) and not sticky:
+            raise ValueError("WRITABLE")
+    for entry in payload["inventory"]["entries"]:
+        path = os.path.join(root, entry["path"])
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("TYPE_OR_HARDLINK")
+        if bool(info.st_mode & 0o111) != (entry["mode"] == "100755"):
+            raise ValueError("MODE")
+        with open(path, "rb") as stream:
+            data = stream.read(entry["bytes"] + 1)
+        if len(data) != entry["bytes"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
+            raise ValueError("CONTENT")
+    for path, digest in payload["git_files"]:
+        with open(path, "rb") as stream:
+            if hashlib.sha256(stream.read()).hexdigest() != digest:
+                raise ValueError("GIT_CONTENT")
+    git_env = {"PATH": os.defpath, "GIT_CONFIG_GLOBAL": os.devnull,
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1"}
+    git_command = ["/usr/bin/git", "-c", "core.hooksPath=" + os.devnull,
+                   "-c", "core.fsmonitor=false", "-c", "safe.directory=" + root, "-C", root]
+    for arguments, expected in [(["rev-parse", "HEAD"], payload["inventory"]["sha"]),
+                                (["rev-parse", "HEAD^{tree}"], payload["inventory"]["tree"]),
+                                (["ls-files", "--stage", "-z"], payload["index"])]:
+        checked = subprocess.run(git_command + arguments, env=git_env, capture_output=True, text=True)
+        if checked.returncode or checked.stdout.rstrip("\n") != expected:
+            raise ValueError("GIT_IDENTITY_OR_STATUS")
+except OSError as error:
+    result["errno"] = error.errno
+    result["error"] = "ACCESS"
+except ValueError as error:
+    result["error"] = str(error)
+json.dump(result, sys.stdout)
+'''
+
+
+def source_probe(root, inventory, account, *, private_receipt=None):
+    import hashlib
+
+    controls = {root, *root.parents}
+    git_files = []
+    if private_receipt is not None:
+        info = private_receipt.lstat()
+        if (private_receipt.parent != root / ".git" or info.st_uid != os.getuid()
+                or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) != 0o600):
+            raise ValueError("BACKEND_SOURCE_RETENTION_RECEIPT_UNSAFE")
+    for base in (root / ".git",):
+        for directory, directories, files in os.walk(base, followlinks=False):
+            controls.add(Path(directory))
+            for name in directories + files:
+                path = Path(directory) / name
+                info = path.lstat()
+                if stat.S_ISLNK(info.st_mode) or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1):
+                    raise ValueError("BACKEND_SOURCE_GIT_ALIAS_UNSUPPORTED")
+                controls.add(path)
+                if stat.S_ISREG(info.st_mode) and path != private_receipt:
+                    # Only this context-owned private receipt omits child content
+                    # reads; ownership/write checks and trusted snapshots cover it.
+                    git_files.append((str(path), hashlib.sha256(path.read_bytes()).hexdigest()))
+    for entry in inventory["entries"]:
+        path = root / entry["path"]
+        controls.update((path, *path.parents))
+    for path in controls:
+        info = path.lstat()
+        if info.st_uid == account.pw_uid:
+            raise ValueError("BACKEND_SOURCE_CHILD_OWNED")
+        if stat.S_ISLNK(info.st_mode):
+            raise ValueError("BACKEND_SOURCE_ALIAS_UNSUPPORTED")
+    payload = {"root": str(root), "inventory": inventory,
+               "controls": [str(path) for path in sorted(controls)], "git_files": git_files,
+               "index": source_git(root, "ls-files", "--stage", "-z").decode()}
+    completed = subprocess.run(["/usr/bin/sudo", "-n", "-u", account.pw_name, "--",
+                                "/usr/bin/env", "-i", sys.executable, "-I", "-B", "-c", SOURCE_PROBE],
+                               input=json.dumps(payload), text=True, capture_output=True, check=True)
+    result = json.loads(completed.stdout)
+    if (not isinstance(result, dict) or set(result) != {"uid", "errno", "error"}
+            or type(result["uid"]) is not int or result["uid"] != account.pw_uid
+            or type(result["errno"]) is not int or not isinstance(result["error"], str)
+            or result["errno"] < 0 or (result["errno"] != 0 and result["error"] != "ACCESS")):
+        raise ValueError("BACKEND_SOURCE_PROBE_INVALID")
+    return result
+
+
+def source_snapshot(root, inventory):
+    import hashlib
+
+    paths = {root, *root.parents}
+    for entry in inventory["entries"]:
+        path = root / entry["path"]
+        paths.update((path, *path.parents))
+    paths.update((root / ".git").rglob("*"))
+    paths.add(root / ".git")
+    snapshot = []
+    for path in sorted(paths):
+        info = path.lstat()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_relative_to(root / ".git") and stat.S_ISREG(info.st_mode) else None
+        external = not path.is_relative_to(root)
+        acl = subprocess.run(["/usr/bin/getfacl", "-cpn", "--", str(path)],
+                             check=True, capture_output=True).stdout
+        snapshot.append((str(path), info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+                         info.st_gid, 0 if external else info.st_nlink,
+                         0 if external else info.st_mtime_ns, 0 if external else info.st_ctime_ns, digest, acl))
+    return snapshot
+
+
+def materialize_source(root, inventory, account):
+    """Write only the exact C object closure, with no candidate Git configuration."""
+    import tempfile
+    import zlib
+
+    temporary = Path("/tmp")
+    info = temporary.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+            or not info.st_mode & stat.S_ISVTX or not info.st_mode & stat.S_IXOTH):
+        raise ValueError("BACKEND_SOURCE_TMP_UNSAFE")
+    stage = Path(tempfile.mkdtemp(prefix="nutrition-source-", dir="/tmp"))
+    identity = stage.lstat()
+    try:
+        if (not stat.S_ISDIR(identity.st_mode) or identity.st_uid != os.getuid()
+                or identity.st_mode & 0o077):
+            raise ValueError("BACKEND_SOURCE_STAGE_CREATION_UNSAFE")
+        gitdir = stage / ".git"
+        (gitdir / "objects").mkdir(parents=True)
+        (gitdir / "refs").mkdir()
+        (gitdir / "HEAD").write_text(inventory["sha"] + "\n")
+        (gitdir / "shallow").write_text(inventory["sha"] + "\n")
+        (gitdir / "config").write_text("[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tlogallrefupdates = false\n")
+        objects = {inventory["sha"]: "commit", inventory["tree"]: "tree"}
+        for record in source_git(root, "ls-tree", "-rtz", inventory["sha"]).split(b"\0"):
+            if record:
+                mode, kind, oid = record.split(b"\t", 1)[0].decode().split()
+                objects[oid] = kind
+        object_total = 0
+        if len(objects) > SOURCE_MAX_FILES * 2:
+            raise ValueError("BACKEND_SOURCE_OBJECT_BOUNDS")
+        for oid, kind in objects.items():
+            size = int(source_git(root, "cat-file", "-s", oid))
+            object_total += size
+            if size > SOURCE_MAX_OBJECT or object_total > SOURCE_MAX_BYTES:
+                raise ValueError("BACKEND_SOURCE_OBJECT_BOUNDS")
+            data = source_git(root, "cat-file", kind, oid)
+            import hashlib
+            raw_object = kind.encode() + b" " + str(len(data)).encode() + b"\0" + data
+            if hashlib.sha1(raw_object).hexdigest() != oid:
+                raise ValueError("BACKEND_SOURCE_OBJECT_IDENTITY_CHANGED")
+            destination = gitdir / "objects" / oid[:2] / oid[2:]
+            destination.parent.mkdir(exist_ok=True)
+            destination.write_bytes(zlib.compress(kind.encode() + b" " + str(len(data)).encode() + b"\0" + data))
+        for entry in inventory["entries"]:
+            destination = stage / entry["path"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source_git(root, "cat-file", "blob", entry["blob"]))
+            destination.chmod(0o700 if entry["mode"] == "100755" else 0o600)
+        source_git(stage, "read-tree", inventory["sha"])
+        paths = [stage, *stage.rglob("*")]
+        # Keep the root closed until EVERY descendant loses inherited writes.
+        modes = {}
+        for path in paths:
+            info = path.lstat()
+            if (info.st_uid != os.getuid() or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
+                    or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1)):
+                raise ValueError("BACKEND_SOURCE_STAGE_SEAL_IDENTITY_INVALID")
+            subprocess.run(["/usr/bin/setfacl", "-b", "-k", "--", str(path)], check=True, capture_output=True)
+            mode = 0o700 if stat.S_ISDIR(info.st_mode) or info.st_mode & 0o111 else 0o600
+            path.chmod(mode)
+            modes[path] = mode
+        for path, mode in modes.items():
+            if stat.S_IMODE(path.lstat().st_mode) != mode:
+                raise ValueError("BACKEND_SOURCE_STAGE_SEAL_MODE_INVALID")
+            acl = subprocess.run(["/usr/bin/getfacl", "-cpn", "--", str(path)],
+                                 check=True, capture_output=True, text=True).stdout
+            expected = {"user::rwx" if mode == 0o700 else "user::rw-", "group::---", "other::---"}
+            if set(acl.split()) != expected:
+                raise ValueError("BACKEND_SOURCE_STAGE_SEAL_ACL_INVALID")
+        # Descendants receive final read/search permissions first; root opens LAST.
+        for path in [*paths[1:], stage]:
+            permission = "r-x" if modes[path] == 0o700 else "r--"
+            subprocess.run(["/usr/bin/setfacl", "-m", f"u:{account.pw_uid}:{permission}",
+                            "--", str(path)], check=True, capture_output=True)
+        if source_inventory(stage, inventory["sha"], restricted=True) != inventory:
+            raise ValueError("BACKEND_SOURCE_STAGE_IDENTITY_CHANGED")
+        if source_git(stage, "status", "--porcelain", "--untracked-files=no"):
+            raise ValueError("BACKEND_SOURCE_STAGE_DIRTY")
+        return stage, (identity.st_dev, identity.st_ino)
+    except BaseException:
+        remove_source_stage(stage, (identity.st_dev, identity.st_ino))
+        raise
+
+
+def remove_source_stage(stage, identity):
+    import shutil
+
+    info = stage.lstat()
+    if (info.st_dev, info.st_ino) != identity or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError("BACKEND_SOURCE_CLEANUP_IDENTITY_CHANGED")
+    if not shutil.rmtree.avoids_symlink_attacks:
+        raise ValueError("BACKEND_SOURCE_CLEANUP_UNSUPPORTED")
+    shutil.rmtree(stage)
+
+
+@contextmanager
+def _prepared_source(backend, sha, isolation):
+    if isolation is None:
+        yield backend
+        return
+    import errno
+
+    account, _temporary = isolation
+    assert_runtime_confined(account)
+    root = backend.parent.parent
+    authenticated = sha is not None
+    if sha is None:
+        _validate_source_git_nodes(root)
+        sha = source_git(root, "rev-parse", "HEAD").decode().strip()
+    inventory = source_inventory(root, sha, restricted=True)
+    original_snapshot = source_snapshot(root, inventory)
+    stage = None
+    retained = False
+    result = source_probe(root, inventory, account)
+    try:
+        if result["errno"] == errno.EACCES:
+            if not authenticated:
+                raise ValueError("BACKEND_SOURCE_INACCESSIBLE_SHA_REQUIRED")
+            print(f"BACKEND_SOURCE_ACCESS EACCES sha={sha} tree={inventory['tree']} uid={account.pw_uid}", flush=True)
+            stage, identity = materialize_source(root, inventory, account)
+            selected = stage
+            # Bind exact owned identity privately BEFORE yielding any possible launch.
+            import tempfile
+
+            descriptor, receipt = tempfile.mkstemp(prefix=".launch-state-", suffix=".json", dir=stage / ".git")
+            with os.fdopen(descriptor, "w") as output:
+                json.dump({"version": 1, "sha": sha, "tree": inventory["tree"],
+                           "runner_uid": os.getuid(), "candidate_uid": account.pw_uid,
+                           "stage": str(stage), "identity": identity,
+                           "launch_budget": 1, "quiescence": "unproved",
+                           "cleanup": "ephemeral job teardown; persistent cleanup requires exact identity and verified quiescence"},
+                          output, sort_keys=True)
+            info = Path(receipt).lstat()
+            if (info.st_uid != os.getuid() or info.st_nlink != 1
+                    or stat.S_IMODE(info.st_mode) != 0o600 or not stat.S_ISREG(info.st_mode)):
+                raise ValueError("BACKEND_SOURCE_RETENTION_RECEIPT_UNSAFE")
+        elif result["error"]:
+            raise ValueError("BACKEND_SOURCE_PREFLIGHT_FAILED:" + str(result))
+        else:
+            selected = root
+        selected_snapshot = source_snapshot(selected, inventory)
+        def recheck():
+            if source_snapshot(root, inventory) != original_snapshot or source_snapshot(selected, inventory) != selected_snapshot:
+                raise ValueError("BACKEND_SOURCE_IDENTITY_CHANGED")
+            if source_inventory(root, sha, restricted=True) != inventory:
+                raise ValueError("BACKEND_SOURCE_ORIGINAL_CHANGED")
+            result = source_probe(selected, inventory, account,
+                                  private_receipt=Path(receipt) if stage is not None else None)
+            if result["error"] or result["errno"]:
+                raise ValueError("BACKEND_SOURCE_PREFLIGHT_FAILED:" + str(result))
+            if source_snapshot(root, inventory) != original_snapshot or source_snapshot(selected, inventory) != selected_snapshot:
+                raise ValueError("BACKEND_SOURCE_CHANGED_DURING_PROBE")
+        recheck()
+        print(f"BACKEND_SOURCE_READY root={selected} sha={sha} tree={inventory['tree']} uid={account.pw_uid}", flush=True)
+        if stage is not None:
+            retained = True
+            print(f"BACKEND_SOURCE_RETAINED root={stage} receipt={receipt} launch_budget=1 quiescence=unproved", flush=True)
+        try:
+            yield selected / "apps/backend"
+        finally:
+            recheck()
+    finally:
+        # A yielded context permits launch, even when spawn/cancellation is unknown.
+        # Leader exit never proves descendants quiescent. Only prelaunch setup cleans.
+        if stage is not None and not retained:
+            remove_source_stage(stage, identity)
+
 
 
 def pytest_environment(postgresql: bool) -> dict[str, str]:
@@ -341,7 +765,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("additional pytest arguments are only supported by the local baseline")
     backend = candidate_backend(args.candidate_root, args.candidate_sha)
     if args.mode in {"baseline", "postgresql"}:
-        return run_pytest(backend, args.mode == "postgresql", extra)
+        with _prepared_source(backend, args.candidate_sha, isolated_account()) as selected:
+            return run_pytest(selected, args.mode == "postgresql", extra)
     check_database(args.mode)
     return 0
 
