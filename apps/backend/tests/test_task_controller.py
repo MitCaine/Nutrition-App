@@ -2016,7 +2016,7 @@ def test_trusted_workflow_is_dispatch_only_and_anchors_trusted_checkout() -> Non
     ]
 
     for binding in shell_bindings:
-        expected_count = 6 if binding == '--candidate-sha "${CANDIDATE_SHA}"' else 2
+        expected_count = 8 if binding == '--candidate-sha "${CANDIDATE_SHA}"' else 2
         assert executor_text.count(binding) == expected_count
 
     repository_job = workflow_job_slice("repository", "backend")
@@ -2047,10 +2047,19 @@ def test_candidate_jobs_have_no_dedicated_app_secret_or_environment() -> None:
         assert (
             "environment:" not in body
         )
-        assert (
-            "ref: ${{ needs.plan.outputs.candidate_sha }}"
-            in body
-        )
+        if job in {"backend", "backend-postgres"}:
+            assert "Prepare ordinary exact candidate checkout" in body
+            assert "working-directory: ${{ github.workspace }}" in body
+            assert "CANDIDATE_SHA: ${{ needs.plan.outputs.candidate_sha }}" in body
+            assert "trusted/scripts/lib/backend_qualification.py checkout" in body
+            assert '--candidate-root candidate --candidate-sha "${CANDIDATE_SHA}"' in body
+            assert "github.token" not in body
+            assert "GH_TOKEN" not in body
+        else:
+            assert (
+                "ref: ${{ needs.plan.outputs.candidate_sha }}"
+                in body
+            )
 
 
 def test_finalizer_isolated_and_app_action_is_sha_pinned() -> None:

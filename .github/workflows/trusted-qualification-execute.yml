@@ -386,13 +386,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Checkout exact candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ needs.plan.outputs.candidate_sha }}
-          path: candidate
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Prepare ordinary exact candidate checkout
+        working-directory: ${{ github.workspace }}
+        env:
+          CANDIDATE_SHA: ${{ needs.plan.outputs.candidate_sha }}
+        run: >-
+          python -I -B trusted/scripts/lib/backend_qualification.py checkout
+          --candidate-root candidate --candidate-sha "${CANDIDATE_SHA}"
 
       - uses: actions/setup-python@v7
         with:
@@ -464,13 +464,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Checkout exact candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ needs.plan.outputs.candidate_sha }}
-          path: candidate
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Prepare ordinary exact candidate checkout
+        working-directory: ${{ github.workspace }}
+        env:
+          CANDIDATE_SHA: ${{ needs.plan.outputs.candidate_sha }}
+        run: >-
+          python -I -B trusted/scripts/lib/backend_qualification.py checkout
+          --candidate-root candidate --candidate-sha "${CANDIDATE_SHA}"
 
       - uses: actions/setup-python@v7
         with:

@@ -44,6 +44,53 @@ MARKERS = (
 )
 
 
+def checkout_candidate(root: Path, sha: str) -> None:
+    """Deliver this public repository without checkout-action credential metadata."""
+    if os.environ.get("GITHUB_REPOSITORY") != "MitCaine/Nutrition-App":
+        raise ValueError("BACKEND_CHECKOUT_REPOSITORY_INVALID")
+    if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+        raise ValueError("BACKEND_CANDIDATE_SHA_INVALID")
+    workspace = Path(os.environ["GITHUB_WORKSPACE"])
+    if not workspace.is_absolute() or workspace.resolve(strict=True) != workspace:
+        raise ValueError("BACKEND_CHECKOUT_WORKSPACE_INVALID")
+    root = root.absolute()
+    if root != workspace / "candidate" or root.exists() or root.is_symlink():
+        raise ValueError("BACKEND_CHECKOUT_DESTINATION_INVALID")
+    # Anonymous access is intentional: this fixed repository is public. No token,
+    # credential helper, header, proxy, include, template or inherited Git option.
+    env = {"PATH": os.defpath, "LANG": "C", "HOME": os.devnull,
+           "XDG_CONFIG_HOME": os.devnull,
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1",
+           "GIT_NO_LAZY_FETCH": "1", "GIT_ALLOW_PROTOCOL": "https"}
+    command = ["/usr/bin/git", "-c", "core.hooksPath=" + os.devnull,
+               "-c", "core.fsmonitor=false", "-c", "core.attributesFile=" + os.devnull,
+               "-c", "credential.helper=", "-c", "http.followRedirects=false"]
+
+    def run(arguments, timeout=30):
+        try:
+            return subprocess.run(command + arguments, cwd=workspace, env=env,
+                                  capture_output=True, check=True, timeout=timeout).stdout
+        except (OSError, subprocess.SubprocessError):
+            # Never echo transport output, ambient diagnostics or credentials.
+            raise ValueError("BACKEND_CHECKOUT_COMMAND_FAILED") from None
+
+    run(["init", "--template=", str(root)])
+    run(["-C", str(root), "fetch", "--no-tags", "--no-recurse-submodules",
+         "https://github.com/MitCaine/Nutrition-App.git", sha], timeout=120)
+    if run(["-C", str(root), "rev-parse", "FETCH_HEAD"]).decode().strip() != sha:
+        raise ValueError("BACKEND_CANDIDATE_SHA_MISMATCH")
+    # Empty templates disable hooks; no candidate or submodule code is executed.
+    run(["-C", str(root), "checkout", "--detach", sha])
+    if (root / ".git/shallow").exists():
+        raise ValueError("BACKEND_CHECKOUT_SHALLOW_UNSUPPORTED")
+    _validate_source_git_nodes(root)
+    inventory = source_inventory(root, sha, restricted=True)
+    if run(["-C", str(root), "status", "--porcelain", "--untracked-files=all"]):
+        raise ValueError("BACKEND_CHECKOUT_DIRTY")
+    print(f"BACKEND_CHECKOUT_IDENTITY sha={sha} tree={inventory['tree']}", flush=True)
+
+
 def candidate_backend(root: Path, sha: str | None) -> Path:
     original_root = root.absolute()
     root = root.resolve(strict=True)
@@ -741,13 +788,18 @@ def check_database(mode: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("baseline", "postgresql", "version", "cleanup", "protect-runtime"))
+    parser.add_argument("mode", choices=("baseline", "postgresql", "version", "cleanup", "protect-runtime", "checkout"))
     parser.add_argument("--candidate-root", type=Path)
     parser.add_argument("--candidate-sha")
     parser.add_argument("--print-marker-expression", action="store_true")
     args, extra = parser.parse_known_args(argv)
     if extra and extra[0] == "--":
         extra = extra[1:]
+    if args.mode == "checkout":
+        if extra or args.candidate_root is None or args.candidate_sha is None or args.print_marker_expression:
+            parser.error("checkout requires only exact candidate root and SHA")
+        checkout_candidate(args.candidate_root, args.candidate_sha)
+        return 0
     if args.print_marker_expression:
         if args.mode != "baseline" or extra or args.candidate_sha:
             parser.error("marker printing only supports baseline without extra arguments")

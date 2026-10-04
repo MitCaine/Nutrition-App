@@ -59,6 +59,153 @@ def remove_synchronous_fixture_stage(completed):
 
 
 class BackendQualificationTests(unittest.TestCase):
+    def checkout_fixture(self, base):
+        source = base / "remote"
+        source.mkdir()
+        git(source, "init", "-q")
+        git(source, "config", "user.name", "Fixture")
+        git(source, "config", "user.email", "fixture@example.invalid")
+        (source / "apps/backend").mkdir(parents=True)
+        (source / "apps/backend/sample.py").write_text("raise RuntimeError('never execute candidate')\n")
+        first = commit(source)
+        (source / "apps/backend/second.txt").write_text("second\n")
+        second = commit(source)
+        workspace = base / "workspace"
+        workspace.mkdir()
+        return source, workspace, first, second
+
+    def checkout_launcher_arguments(self):
+        import shlex
+
+        workflow = (ROOT / ".github/workflows/trusted-qualification-execute.yml").read_text()
+        launches = []
+        for name, following in (("backend", "backend-postgres"), ("backend-postgres", "mobile")):
+            job = workflow.split(f"  {name}:\n", 1)[1].split(f"\n  {following}:", 1)[0]
+            step = job.split("      - name: Prepare ordinary exact candidate checkout\n", 1)[1].split("\n      - ", 1)[0]
+            self.assertIn("working-directory: ${{ github.workspace }}", step)
+            self.assertNotIn("GH_TOKEN", step)
+            self.assertNotIn("github.token", step)
+            command = step.split("        run: >-\n", 1)[1]
+            launches.append(shlex.split(" ".join(line.strip() for line in command.splitlines())))
+        self.assertEqual(launches[0], launches[1])
+        self.assertEqual(launches[0][:4], ["python", "-I", "-B", "trusted/scripts/lib/backend_qualification.py"])
+        self.assertEqual(launches[0][4:], ["checkout", "--candidate-root", "candidate", "--candidate-sha", "${CANDIDATE_SHA}"])
+        return launches[0][4:]
+
+    def test_actual_checkout_launcher_with_hermetic_full_git_delivery(self):
+        import contextlib
+        import io
+
+        helper = load_helper()
+        arguments = self.checkout_launcher_arguments()
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            source, workspace, first, sha = self.checkout_fixture(base)
+            poison = base / "poison"
+            poison.mkdir()
+            (poison / "hooks").mkdir()
+            (poison / "hooks/post-checkout").write_text("#!/bin/sh\ntouch " + str(base / "hook-ran") + "\n")
+            (poison / "hooks/post-checkout").chmod(0o755)
+            global_config = base / "global-config"
+            global_config.write_text('[include]\n path = ' + str(base / 'must-not-read') + '\n[init]\n templateDir = ' + str(poison) + '\n')
+            captured = []
+
+            def transport(command, **kwargs):
+                # Only offline transport changes: all Git operations, actual launcher
+                # argv, clean environment and source guard run unchanged.
+                if "fetch" in command and "https://github.com/MitCaine/Nutrition-App.git" in command:
+                    captured.append((list(command), dict(kwargs["env"])))
+                    command = [str(source) if value == "https://github.com/MitCaine/Nutrition-App.git" else value for value in command]
+                    kwargs["env"] = dict(kwargs["env"], GIT_ALLOW_PROTOCOL="file")
+                return real_run(command, **kwargs)
+
+            environment = {"GITHUB_REPOSITORY": "MitCaine/Nutrition-App", "GITHUB_WORKSPACE": str(workspace),
+                           "GIT_CONFIG_GLOBAL": str(global_config), "GIT_TEMPLATE_DIR": str(poison),
+                           "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraheader",
+                           "GIT_CONFIG_VALUE_0": "PRIVATE-TEST-HEADER", "GH_TOKEN": "PRIVATE-TEST-TOKEN",
+                           "GIT_DIR": str(source / ".git"), "GIT_WORK_TREE": str(source)}
+            output = io.StringIO()
+            previous = Path.cwd()
+            try:
+                os.chdir(workspace)
+                with patch.dict(os.environ, environment), patch.object(helper.subprocess, "run", side_effect=transport), contextlib.redirect_stdout(output):
+                    self.assertEqual(helper.main([sha if value == "${CANDIDATE_SHA}" else value for value in arguments]), 0)
+            finally:
+                os.chdir(previous)
+            candidate = workspace / "candidate"
+            self.assertEqual(git(candidate, "rev-parse", "HEAD"), sha)
+            self.assertEqual(git(candidate, "rev-parse", "HEAD~1"), first)
+            self.assertFalse((candidate / ".git/shallow").exists())
+            self.assertFalse((candidate / ".git/hooks").exists())
+            self.assertFalse((base / "hook-ran").exists())
+            self.assertFalse((candidate / ".git/objects/info/alternates").exists())
+            self.assertEqual(git(candidate, "status", "--porcelain"), "")
+            self.assertEqual(helper.source_inventory(candidate, sha, restricted=True)["sha"], sha)
+            self.assertEqual(len(captured), 1)
+            fetch, env = captured[0]
+            self.assertNotIn("--depth", fetch)
+            self.assertNotIn("--filter", fetch)
+            self.assertNotIn("GIT_CONFIG_COUNT", env)
+            self.assertNotIn("GH_TOKEN", env)
+            self.assertEqual(env["HOME"], os.devnull)
+            self.assertEqual(env["GIT_ALLOW_PROTOCOL"], "https")
+            self.assertIn("BACKEND_CHECKOUT_IDENTITY sha=" + sha, output.getvalue())
+            for path in (candidate / ".git").rglob("*"):
+                if path.is_file():
+                    self.assertNotIn(b"PRIVATE-TEST", path.read_bytes())
+            self.assertNotIn("PRIVATE-TEST", output.getvalue())
+            # Delivery never relaxes the existing include boundary.
+            with (candidate / ".git/config").open("a") as stream:
+                stream.write('[include]\n path = ' + str(base / 'must-not-read') + '\n')
+            with self.assertRaisesRegex(ValueError, "BACKEND_SOURCE_GIT_OBJECT_BOUNDARY_UNSUPPORTED"):
+                helper.candidate_backend(candidate, sha)
+
+    def test_checkout_invalid_inputs_fail_before_git_or_directory_creation(self):
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            workspace = base / "workspace"
+            workspace.mkdir()
+            environment = {"GITHUB_REPOSITORY": "MitCaine/Nutrition-App", "GITHUB_WORKSPACE": str(workspace)}
+            cases = [(workspace / "candidate", "bad"), (workspace / "outside", "a" * 40)]
+            with patch.dict(os.environ, environment), patch.object(helper.subprocess, "run") as launched:
+                for root, sha in cases:
+                    with self.subTest(root=root, sha=sha), self.assertRaises(ValueError):
+                        helper.checkout_candidate(root, sha)
+                (workspace / "candidate").symlink_to(base / "missing")
+                with self.assertRaisesRegex(ValueError, "DESTINATION_INVALID"):
+                    helper.checkout_candidate(workspace / "candidate", "a" * 40)
+                with patch.dict(os.environ, {"GITHUB_REPOSITORY": "other/repository"}):
+                    with self.assertRaisesRegex(ValueError, "REPOSITORY_INVALID"):
+                        helper.checkout_candidate(workspace / "candidate", "a" * 40)
+                launched.assert_not_called()
+
+    def test_checkout_missing_exact_sha_and_transport_output_fail_closed(self):
+        helper = load_helper()
+        real_run = subprocess.run
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            source, workspace, _, _ = self.checkout_fixture(base)
+            def transport(command, **kwargs):
+                if "fetch" in command:
+                    command = [str(source) if value == "https://github.com/MitCaine/Nutrition-App.git" else value for value in command]
+                    kwargs["env"] = dict(kwargs["env"], GIT_ALLOW_PROTOCOL="file")
+                return real_run(command, **kwargs)
+            environment = {"GITHUB_REPOSITORY": "MitCaine/Nutrition-App", "GITHUB_WORKSPACE": str(workspace)}
+            with patch.dict(os.environ, environment), patch.object(helper.subprocess, "run", side_effect=transport):
+                with self.assertRaisesRegex(ValueError, "^BACKEND_CHECKOUT_COMMAND_FAILED$"):
+                    helper.checkout_candidate(workspace / "candidate", "f" * 40)
+            self.assertFalse((workspace / "candidate/.git/HEAD").read_text().startswith("f" * 40))
+            second_workspace = base / "second-workspace"
+            second_workspace.mkdir()
+            environment["GITHUB_WORKSPACE"] = str(second_workspace)
+            with patch.dict(os.environ, environment), patch.object(helper.subprocess, "run") as launched:
+                launched.side_effect = subprocess.CalledProcessError(1, ["git"], stderr=b"PRIVATE-TEST-TOKEN")
+                with self.assertRaisesRegex(ValueError, "^BACKEND_CHECKOUT_COMMAND_FAILED$") as error:
+                    helper.checkout_candidate(second_workspace / "candidate", "a" * 40)
+                self.assertNotIn("PRIVATE-TEST", str(error.exception))
+
     def test_canonical_selection_and_residual_families(self):
         helper = load_helper()
         self.assertEqual(helper.BASELINE_MARKER_EXPRESSION, EXPECTED_EXPRESSION)
@@ -1149,7 +1296,10 @@ class BackendQualificationTests(unittest.TestCase):
             job = trusted.split(f"  {name}:\n", 1)[1].split(f"\n  {following}:", 1)[0]
             self.assertIn("ref: ${{ github.event.workflow_run.head_sha }}", job)
             self.assertIn("path: trusted", job)
-            self.assertIn("path: candidate", job)
+            self.assertIn("Prepare ordinary exact candidate checkout", job)
+            self.assertIn("working-directory: ${{ github.workspace }}", job)
+            self.assertIn("backend_qualification.py checkout", job)
+            self.assertIn("--candidate-root candidate", job)
             self.assertIn("trusted/scripts/lib/backend_qualification.py", job)
             self.assertIn("--candidate-sha", job)
             self.assertIn("CANDIDATE_SHA", job)
