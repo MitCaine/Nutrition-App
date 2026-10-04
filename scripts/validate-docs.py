@@ -359,7 +359,8 @@ def main() -> int:
             )
 
     unexpected_root_documents = sorted(
-        path for path in (ROOT / "docs").glob("*.md") if path.name != "README.md"
+        path for path in (ROOT / "docs").glob("*.md")
+        if path.name not in {"README.md", "local_project_map.md"}
     )
     for path in unexpected_root_documents:
         errors.append(

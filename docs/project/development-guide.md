@@ -111,7 +111,7 @@ because a launched script cannot alter its parent terminal's `PATH`. The toolcha
 dependency steps are separate files under `scripts/dependency-modules/`.
 The master command runs `./scripts/session-start.sh` afterward, even when an update
 fails, and returns nonzero if any step fails. Use it in a working checkout;
-keep the synchronized trusted controller checkout clean for capsule authorization.
+keep the synchronized trusted controller checkout clean for task authorization.
 For a lockfile preview, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`.
 For a fully read-only update check, also set `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1`
 to skip Homebrew installs and upgrades.

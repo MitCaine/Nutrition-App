@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import stat
 from pathlib import Path
 
@@ -113,12 +112,6 @@ def selection(repo: Path, records: dict, paths: list[str]) -> tuple[dict, dict]:
     return selected, coverage
 
 
-def freeze(directory: Path) -> None:
-    for path in directory.rglob("*"):
-        path.chmod(0o555 if path.is_dir() else 0o444)
-    directory.chmod(0o555)
-
-
 def stability(directory: Path, selected: dict) -> dict:
     ri.verify_materialization(directory, selected)
     result = {}
@@ -129,15 +122,6 @@ def stability(directory: Path, selected: dict) -> dict:
         result[path.relative_to(directory).as_posix()] = [info.st_dev, info.st_ino, info.st_mode,
                                                         info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
     return result
-
-
-def discard_materialization(directory: Path) -> None:
-    if directory.exists():
-        directory.chmod(0o700)
-        for path in directory.rglob("*"):
-            if path.is_dir() and not path.is_symlink():
-                path.chmod(0o700)
-        shutil.rmtree(directory)
 
 
 WORKER = """
@@ -293,14 +277,6 @@ def artifact_metadata(entries: dict) -> None:
             raise ri.RIError("RI_STRUCTURAL_ARTIFACT_CHANGED")
 
 
-def write_json(path: Path, value: object, *, compact: bool = False) -> None:
-    # Complete inventory artifacts are authenticated as bytes and paged by the
-    # reviewer. Compact encoding preserves every JSON value while avoiding
-    # thousands of pretty-print lines and exhausting its fixed read budget.
-    options = {"sort_keys": True, "separators": (",", ":")} if compact else {"indent": 2, "sort_keys": True}
-    path.write_text(json.dumps(value, **options) + "\n")
-
-
 def review_artifacts(directory: Path) -> dict:
     """Authenticate complete retained plain artifacts after physical preflight."""
     paths = {p.stem: p for p in directory.glob("*.json")}
@@ -312,85 +288,6 @@ def review_artifacts(directory: Path) -> dict:
     entries = {name: artifact(path, expected_size=sizes[name]) for name, path in sorted(paths.items())}
     artifact_metadata(entries)
     return entries
-
-
-def capture(repo: Path, binding: dict, runtime: Path, directory: Path) -> dict:
-    if binding.get("structural") != POLICY:
-        raise ri.RIError("RI_FROZEN_POLICY_REQUIRED")
-    planning, candidate = binding["planning"], binding["candidate"]
-    ri.git(repo, "merge-base", "--is-ancestor", planning, candidate)
-    lock = ri.read_lock()
-    manifest, environment = ri.verify_runtime(runtime, lock=lock)
-    directory = ri.external(directory, repo)
-    if directory.exists() or directory.is_relative_to(runtime.resolve().parent):
-        raise ri.RIError("RI_EVIDENCE_DIRECTORY_INVALID")
-    paths = changed_paths(repo, planning, candidate)
-    if paths != binding["structural_paths"] or not paths or len(paths) > MAX_CHANGED:
-        raise ri.RIError("RI_CHANGED_SCOPE_MISMATCH_OR_LIMIT")
-    trees = {side: tree(repo, sha) for side, sha in (("planning", planning), ("candidate", candidate))}
-    changes = file_changes(repo, planning, candidate)
-    check_transitions(changes, trees)
-    selected, coverage = {}, {}
-    for side in trees:
-        selected[side], coverage[side] = selection(repo, trees[side], paths)
-    directory.mkdir(parents=True)
-    write_json(directory / "membership.json", {"trees": trees, "coverage": coverage, "changes": changes}, compact=True)
-    roots = {side: directory / (side + "-source") for side in trees}
-    try:
-        for side in roots:
-            source_manifest = ri.materialize(selected[side], roots[side])
-            write_json(directory / (side + "-source-manifest.json"), source_manifest)
-            freeze(roots[side])
-        before = {side: stability(roots[side], selected[side]) for side in roots}
-        write_json(directory / "stability-before.json", before)
-        ri.offline_run([str(environment / "bin/python"), "-I", "-B", "-c", WORKER,
-                        str(roots["planning"]), str(roots["candidate"])], cwd=directory,
-                       log=directory / "raw.json", readonly_roots=list(roots.values()))
-        after = {side: stability(roots[side], selected[side]) for side in roots}
-        write_json(directory / "stability-after.json", after)
-        if before != after:
-            raise ri.RIError("RI_SOURCE_CHANGED_DURING_SCAN")
-        ri.verify_runtime(runtime, lock=lock)
-        # Bound the retained producer output before parsing; the complete eleven
-        # artifacts receive another physical aggregate preflight after rendering.
-        producer_sizes = {path: artifact_stat(path).st_size for path in directory.glob("*.json")}
-        if sum(producer_sizes.values()) > MAX_REVIEW_ARTIFACT_BYTES:
-            raise ri.RIError("RI_STRUCTURAL_REVIEW_BUDGET_EXCEEDED")
-        raw_path = directory / "raw.json"
-        raw = json.loads(artifact_bytes(raw_path, expected_size=producer_sizes[raw_path]))
-        for name in ("planning", "candidate", "comparison", "compact"):
-            write_json(directory / (name + ".json"), raw[name], compact=name != "compact")
-        validate_comparison(raw, selected, lock)
-        categories = {coverage[s][p]["classification"] for p in paths for s in trees}
-        categories.discard("absent")
-        coverage_status = ri.selection_status(categories)
-        status = "comparable" if "supported" in categories else coverage_status
-        packet = {"schema_version": 1, "binding_sha256": binding["binding_sha256"],
-                  "planning": planning, "candidate": candidate, "policy": POLICY,
-                  "ri_revision": lock["revision"], "contracts": lock["contracts"],
-                  "runtime_manifest_sha256": manifest["manifest_sha256"],
-                  "status": status, "selection_status": coverage_status,
-                  "paths": paths, "file_changes": changes, "coverage": coverage,
-                  "compact_delta": raw["compact"], "worker_source_writes_denied": True,
-                  "source_stability_verified": True,
-                  "limitations": ["Complete changed-file callable inventories only; not whole-repository or semantic coverage.",
-                                  "All changed files and the full Git diff require direct review, even with no callable delta.",
-                                  "Selection status is a coverage disposition, never structural proof or a native-check waiver."]}
-        if len(json.dumps(packet, indent=2).encode()) > MAX_PACKET:
-            raise ri.RIError("RI_STRUCTURAL_PACKET_LIMIT")
-        write_json(directory / "packet.json", packet)
-        record = {"binding_sha256": binding["binding_sha256"], "planning": planning, "candidate": candidate,
-                  "status": packet["status"], "selection_status": coverage_status, "packet": packet,
-                  "artifacts": review_artifacts(directory)}
-        record["record_sha256"] = ri.digest(record)
-        write_json(directory / "record.json", record)
-        return record
-    except (OSError, ValueError, KeyError, TypeError, ri.RIError) as exc:
-        write_json(directory / "failure.json", {"error": str(exc), "planning": planning, "candidate": candidate})
-        raise
-    finally:
-        for root in roots.values():
-            discard_materialization(root)
 
 
 def validate_record(binding: dict, record: dict) -> None:

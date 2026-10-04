@@ -1,5 +1,8 @@
 # Current state
 
+Use the [local project map](../local_project_map.md) for current task execution, RI source,
+role permissions and completion routing. This guide retains its product/planning authority.
+
 > **Document role: Current Guide.** This is the single authoritative starting point for the current repository state. Update it when the active product line, runtime authority, roadmap status, migration heads, operational availability, or supported deployment boundary changes.
 
 ## Release and product status

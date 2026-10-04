@@ -11,13 +11,9 @@ Every implementation session must follow the single
 start command before editing and its end command before claiming completion.
 
 
-The experimental
-[Repository-owned Task Workflow](engineering/workflow/README.md) provides versioned capsules
-for explicit bounded execution trials. When a task uses a capsule, the full capsule remains active
-through review; terminal outcomes are recorded in `engineering/capsules/HISTORY.md`, and terminal
-closeout removes the active capsule. A capsule never overrides product, architecture, invariant,
-operations, backlog, or GitHub Issue authority. Formal workflow promotion remains governed by the
-[Workflow Changelog](engineering/workflow/CHANGELOG.md).
+Use [local project map](docs/local_project_map.md) for the current lightweight RI route
+and normal trusted controller acceptance. Existing paused capsules and historical evidence
+retain their original identities; replacement maintenance does not resume product work.
 
 Before changing behavior, identify the invariant that owns it in the
 [Architecture Decision Index](docs/architecture/decisions.md) or the relevant domain guide. Keep

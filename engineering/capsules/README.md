@@ -5,44 +5,21 @@
 
 | Path | Purpose |
 | --- | --- |
-| [TEMPLATE.md](TEMPLATE.md) | Canonical active capsule schema version 1 template |
+| [Historical template](TEMPLATE.md) | Preserved TOML recovery shape; not new task dispatch |
 | [active/](active/README.md) | Full capsules for `DRAFT` through `REVIEWED`, including blocked/correction work |
 | [HISTORY.md](HISTORY.md) | Durable records for terminal `MERGED`, `RETROSPECTED`, and `CANCELLED` outcomes |
 
-## Validation
+## Current task records and historical validation
 
-```bash
-python3 scripts/validate-task-capsules.py --all
-python3 scripts/validate-task-capsules.py \
-  --execution engineering/capsules/active/TASK-ID.md
-```
+New tasks use the bounded Markdown [template](../tasks/TEMPLATE.md) under `engineering/tasks/`
+and [local project map](../../docs/local_project_map.md). No JSON report or capsule-only READY overlay
+is required for the ordinary route.
 
-Both commands support `--json` and `--output`.
-
-Repository-wide validation checks all active capsules plus `HISTORY.md`. It verifies terminal-record
-structure, unique task IDs, historical full-capsule recovery locators and SHA-256 bindings, and
-rejects retained per-task terminal capsules under `engineering/capsules/completed/`.
-
-A repository with no active capsules and no terminal history is valid. Strict execution preflight
-still requires one clean, committed `READY` capsule as the only overlay above its exact
-implementation baseline.
-
-## Execution handoff
-
-After strict preflight passes, render the durable executor bundle:
-
-```bash
-python3 scripts/render-task-handoff.py \
-  engineering/capsules/active/TASK-ID.md
-```
-
-The renderer writes `handoff.md`, `handoff.json`, the exact capsule, validation evidence, and
-checksums outside the repository. `handoff.md` is the executor prompt. Generation fails closed when
-the capsule, branch, base commit, worktree, or committed overlay is invalid.
-
-Use the stable task ID as the filename, for example
-`engineering/capsules/active/E1-17-stage-3.md`; front matter `id` must match the filename stem.
-Never reuse an ID, including an ID already recorded in `HISTORY.md`.
+`python3 scripts/validate-task-capsules.py --all` remains a consistency/recovery reader
+for existing active TOML capsules and HISTORY. It preserves terminal-record uniqueness,
+reachable full-capsule Git bytes and SHA-256 bindings. Strict legacy execution validation
+and its old renderer are historical tools, not current dispatch or permission.
+#246/#256 remain paused. Do not replace their original contract with the new template.
 
 ## Terminal closeout
 

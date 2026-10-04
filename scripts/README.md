@@ -5,9 +5,9 @@
 
 Run the commands below from the repository root. Each script resolves repository paths internally
 and does not depend on the caller's shell configuration.
-For new tasks, follow the [capsule/RI default sequence](../engineering/workflow/START_HERE.md)
-through the trusted `./scripts/task` controller. Unattached and legacy capsule
-commands remain compatibility interfaces for in-flight or explicitly justified work.
+For new tasks follow [local project map](../docs/local_project_map.md), the ordinary
+standard controller and serial native-subagent route. Historical attached records remain
+preserved; RI SDK execution/evidence commands are retired.
 
 ## Repository lifecycle and validation
 
@@ -22,14 +22,13 @@ commands remain compatibility interfaces for in-flight or explicitly justified w
 | `./scripts/update-dependencies backend PACKAGE` or `mobile PACKAGE` | Preview a selected direct package update; add `--apply` to write its lockfile. |
 | `python3 scripts/validate-docs.py` | Validates repository Markdown links, anchors, navigation reachability, executable references, and required current-state contracts. |
 | `python3 scripts/validate-task-capsules.py --all` | Validates task-capsule schema, authority paths, state transitions, scope metadata, completion records, and execution prerequisites. |
-| `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Runs strict READY preflight and writes a deterministic executor handoff bundle outside the repository. |
+| `python3 scripts/render-task-handoff.py engineering/capsules/active/TASK-ID.md` | Historical capsule recovery helper; not a current dispatch route. |
 | `./scripts/capsule status TASK-ID` | Reports exact active-capsule, branch, HEAD, base, cleanliness, and selected qualification-profile identity using the repository Python 3.14 authority even from linked worktrees. |
 | `./scripts/capsule transition TASK-ID STATE --actor ... --reason ...` | Performs one legal non-terminal Task Capsule state transition, appends State History, revalidates, and commits only the capsule transition. Semantic aliases include `start`, `implemented`, `verify`, and `review`. |
 | `./scripts/capsule qualify TASK-ID --evidence-dir PATH` | Publishes the exact clean task HEAD to a temporary `qualification/TASK-ID/SHA` ref, waits for the repository-owned `Main qualification` check, retains its artifact/evidence, and removes the temporary ref after PASS. |
 | `./scripts/task prepare ISSUE ...` | Creates a canonical candidate-independent authorization draft and compact local controller state. The trusted author defaults to the repository owner or `NUTRITION_TASK_TRUSTED_AUTHOR`. |
 | `./scripts/task authorize ISSUE` | Posts that exact authorization to the GitHub Issue, refetches the exact comment, and fails closed unless comment ID, trusted author, payload identity, and SHA-256 digest all match the prepared authority. |
-| `./scripts/task evidence ISSUE preflight --candidate-root PATH --runtime CODEX --runtime-sha256 SHA256 --model MODEL --effort EFFORT` | After attaching C, checks the pinned review runtime's available model and reasoning effort before costly qualification. An unsupported choice stops early. A review transport failure before reviewer activity retains diagnostics and permits one fresh review on unchanged sealed evidence; ambiguous or substantive failures remain fail-closed. |
-| `./scripts/task qualify ISSUE --candidate-root PATH` | From trusted synchronized `main`, validates current authorization and candidate scope; attached new-task candidates first require exact-C reviewer runtime/model/effort preflight. It then publishes the exact SHA to a temporary ref, dispatches the trusted default-branch workflow, waits for its dedicated-App check, records evidence, and removes the ref. Unattached compatibility and terminal tasks retain their existing path. |
+| `./scripts/task qualify ISSUE --candidate-root PATH` | From trusted synchronized `main`, validates current authorization and candidate scope; standard tasks use independent source/diff review. It then publishes the exact SHA to a temporary ref, dispatches the trusted default-branch workflow, waits for its dedicated-App check, records evidence, and removes the ref. Historical compatibility and terminal tasks retain their own bindings. |
 | `./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized` | Revalidates authorization, exact-SHA qualification, explicit verification/review decisions, dedicated App check identity, and explicit human-owner authority before attempting the protected exact-SHA main update. |
 | `.github/workflows/trusted-qualification.yml` | Default-branch-only trusted qualification controller. It validates external authorization, runs selected exact-SHA candidate profiles without App credentials, then uses an isolated environment-backed finalizer to publish the dedicated-App `Main qualification` check. |
 | `python scripts/main-governance.py plan --integration-id ID` | Builds and validates the future main ruleset against a dedicated qualification-App integration ID. P3 is dry-run only and rejects the generic GitHub Actions App ID. |
@@ -37,12 +36,6 @@ commands remain compatibility interfaces for in-flight or explicitly justified w
 The [Repository Session Contract](../docs/operations/session-contract.md) defines the meaning and
 required use of these commands. Use the higher-level session scripts unless a guide explicitly
 requires a lower-level audit subcommand.
-
-The optional `./scripts/task execution` interface binds a READY capsule and external
-authorization to the [bounded macOS command transport](../engineering/workflow/EXECUTION.md).
-It retains external checkpoints and never substitutes for qualification or review.
-Its implementation is `scripts/lib/capsule_execution.py`; consumer regressions are in
-`scripts/tests/test_capsule_execution.py`.
 
 ## Local runtime
 
@@ -126,29 +119,5 @@ authentication, dry-run behavior, state-file handling, and rerun guarantees.
 
 ## Attached candidate evidence
 
-`./scripts/task evidence` adds optional exact capsule/candidate evidence to the accepted
-controller. Follow [Candidate evidence](../engineering/workflow/CANDIDATE_EVIDENCE.md) for
-frozen requirements, command capture, qualification sealing, observed independent review,
-bounded correction and public handoff. Attached tasks cannot use assertion-only review.
-Unattached compatibility and dedicated-App qualification remain unchanged. The helpers
-`scripts/lib/candidate_evidence.py` and `scripts/lib/independent_review.py` are implementation
-modules behind that public entrypoint, not alternate authorities.
-
-## Pinned Repository Intelligence navigation
-
-`./scripts/ri` bootstraps or verifies an external pinned private RI installation and emits
-bounded navigation packets for exact committed Python/JS/TS/TSX source. See the
-[RI consumer guide](../engineering/tooling/RI.md) for offline acquisition/install, source
-selection, result limits and Nutrition's authority boundaries. RI is optional controller
-tooling, not an app dependency or edit/approval authority. No private source or credentials
-belong in this public repository or candidate CI.
-
-`task evidence ISSUE structural --candidate-root PATH --ri-runtime MANIFEST` captures full
-changed-file inventories and Git reconciliation. `task evidence ISSUE disposition` records
-controller path explanations; the independent reviewer must confirm every path. See the
-[structural evidence contract](../engineering/tooling/RI.md#candidate-structural-evidence).
-
-The [combined pilot record](../engineering/workflow/PILOT_2026-09-26.md) gives the
-observed macOS setup, failure/recovery cases and default decision boundary. The
-current command list above remains the operator inventory; no duplicate command is
-retired solely because the pilot completed.
+Historical attached evidence/launcher readers live under `scripts/lib/legacy_ri/` only
+for paused records and C/R/T recovery. New work does not use their packet or report gates.

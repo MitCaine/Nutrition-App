@@ -560,3 +560,68 @@ def test_current_document_contracts_accept_reconciled_repository_guides() -> Non
     ) == []
 
     assert DOCS_VALIDATOR._current_status_contract_errors() == []
+
+
+def test_standard_map_root_location_preserves_taxonomy_in_disposable_repository(
+    tmp_path: Path,
+) -> None:
+    """Exercise the real validator, including its existing root README, on copied docs."""
+    import shutil
+
+    fixture = tmp_path / "documentation-repository"
+
+    def copy_file(source: Path) -> None:
+        destination = fixture / source.relative_to(ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+
+    for source in DOCS_VALIDATOR.MARKDOWN_FILES:
+        copy_file(source)
+        visible, _, _ = DOCS_VALIDATOR._scan_document(source)
+        for match in DOCS_VALIDATOR.LINK_PATTERN.finditer(visible):
+            raw = match.group(1)
+            if raw.startswith(("http://", "https://", "mailto:")):
+                continue
+            relative, _ = DOCS_VALIDATOR._split_target(raw)
+            target = (source.parent / relative).resolve() if relative else source
+            if target.is_file():
+                copy_file(target)
+            elif target.is_dir():
+                (fixture / target.relative_to(ROOT)).mkdir(parents=True, exist_ok=True)
+        for match in DOCS_VALIDATOR.EXECUTABLE_PATTERN.finditer(
+            DOCS_VALIDATOR._executable_reference_text(source)
+        ):
+            for target in DOCS_VALIDATOR._script_candidates(match.group("path")):
+                if target.is_file():
+                    copy_file(target)
+                    break
+
+    for relative in ("scripts/validate-docs.py", "scripts/project-audit.json", "VERSION"):
+        copy_file(ROOT / relative)
+
+    def validate() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-B", str(fixture / "scripts/validate-docs.py")],
+            cwd=fixture,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    # The exact standard path and the original root index both retain their bytes
+    # and pass the actual validator, without monkeypatching validation requirements.
+    assert (fixture / "docs/README.md").read_bytes() == (ROOT / "docs/README.md").read_bytes()
+    assert (fixture / "docs/local_project_map.md").read_bytes() == (
+        ROOT / "docs/local_project_map.md"
+    ).read_bytes()
+    result = validate()
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    wrong_name = fixture / "docs/another_project_map.md"
+    wrong_name.write_text("# Unapproved root map\n", encoding="utf-8")
+    result = validate()
+    assert result.returncode == 1
+    assert "docs/another_project_map.md: active taxonomy requires Markdown" in result.stderr
+    wrong_name.unlink()
+    result = validate()
+    assert result.returncode == 0, result.stdout + result.stderr

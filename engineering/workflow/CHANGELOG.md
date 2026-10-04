@@ -1,8 +1,25 @@
 # Workflow changelog
 
+## 2026-10-02 — Standard local map location
+
+The owner requires the stable repository-root path [docs/local_project_map.md](../../docs/local_project_map.md).
+Current entrypoints route there; START_HERE and RESPONSIBILITY_MAP are pointers only.
+This local routing adaptation does not repin published shared instructions or the compatible
+producer. Prior workflow entries and paused product history remain preserved.
+
+## 2026-10-02 — Owner-authorized lightweight RI replacement
+
+New tasks use the complete byte-pinned shared procedure and START_HERE local map, serial
+native planner/implementor/independent reviewer handoffs, ordinary source/diff/log evidence
+and the trusted standard controller route. Retired RI SDK/packet/structural/frozen-launcher
+gates are not current prerequisites. External authorization, dedicated-App profile checks,
+protected integration, security/domain tests and paused C/R/T recovery remain independent.
+Historical failures remain failures. #246/#256 remain paused.
+
+
 ## 2026-09-27 — Owner selects combined capsule/RI as normal for new tasks
 
-**Current status:** the combined capsule/RI workflow is the normal route for new
+**Historical status (superseded by the owner-authorized lightweight replacement):** the combined capsule/RI workflow was the normal route for new
 Nutrition tasks under the owner's [#187 rollout decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452).
 The accepted `./scripts/task` controller continues to own trusted external
 authorization, exact-SHA dedicated-App qualification, independent review,

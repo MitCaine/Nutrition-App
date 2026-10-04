@@ -1,5 +1,8 @@
 # Project onboarding
 
+Use the [local project map](../local_project_map.md) for current task execution, RI source,
+role permissions and completion routing. This guide retains its product/planning authority.
+
 > **Document role: Current Guide.** This page defines the minimum useful
 > context for an engineer or implementation agent before changing the
 > repository.

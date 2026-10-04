@@ -1,13 +1,12 @@
 # Repository Intelligence for Nutrition
 
-> **Document role: Engineering Tooling.** Controller-owned source navigation and structural evidence.
+> **Document role: Engineering Tooling.** Compatible source navigation and comparison.
 
 RI supplies locations and source facts. Nutrition owns domain meaning, edit scope, tests,
-review and approval. Start from the [workflow entrypoint](../workflow/START_HERE.md), then
-use this guide to assemble bounded source context. The owner's
-[2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452)
-makes the combined workflow normal for new tasks. RI remains evidence only: it
-cannot authorize edits, approve review or replace full-diff and required runtime checks.
+review and approval. Start from the [workflow entrypoint](../../docs/local_project_map.md), then
+use this guide to navigate exact committed source. The current owner-authorized lightweight
+route uses ordinary source/diff review. RI cannot authorize edits, approve review or replace
+required runtime checks. Missing coverage requires direct source inspection, not a transport stop.
 
 ## Pinned installation and private access
 
@@ -130,7 +129,7 @@ copy is deleted after the query. Raw JSON, source-selection manifest and bounded
 in the chosen external evidence directory; there is no saved navigation index. An existing
 output directory is not overwritten, and output cannot be inside the installed runtime.
 
-Use the packet's revision and digests when attaching it to a capsule handoff. Requery after
+Use the navigation result's revision and digests when citing source context. Requery after
 source changes. A location at P is not automatically a current location at C. Do not use the
 wrapper to claim knowledge of uncommitted implementation edits; inspect those directly or
 commit an authorized candidate and query that exact revision.
@@ -215,122 +214,9 @@ and its hash are synchronized in both lock files. As with the pip refresh, boots
 a new external runtime and requalify it; do not edit an accepted manifest or environment
 in place. No private source distribution is published by this workflow.
 
-## Candidate structural evidence
+## Comparison and review
 
-Explicit attached capsules can require structural evidence before review by including this
-frozen block at READY:
-
-```nutrition-ri-v1
-{"schema_version":1,"scope":"changed-files-v1"}
-```
-
-This policy inventories **every supported file in the union of paths changed from P to C**,
-completely on both sides, including zero-callable files. It does not scan unchanged repository
-context or claim whole-repository coverage. P is the exact direct capsule-only planning overlay
-above authorized B; C descends from P. The comparison is P→C, never a newly chosen merge-base.
-The capsule's lifecycle change stays in the full Git list as ordinary Markdown bookkeeping.
-The independent reviewer can also read any committed source context at B/P/C.
-
-The trusted controller reads both complete committed Git tree memberships, selects the same
-union of changed paths, and records additions, deletions, modifications, mode changes and
-Git-detected rename pairs. Scope does not follow `.gitignore`. Hidden/build/generated paths
-remain explicit excluded coverage records in the full changed-file list. A selected source
-renamed into an excluded path, or the reverse, blocks instead of becoming an ordinary callable
-addition/deletion. Git may represent a sufficiently changed rename as delete-plus-add; both
-paths remain review obligations, and RI never claims semantic rename identity.
-
-Only Python/JS/TS source is materialized. Swift, SQL, configuration, shell, native and other
-unsupported paths remain explicit direct-review obligations. Both materializations are made
-read-only; the native worker policy denies writes to them and denies network. Before/after
-checks cover exact Git-derived bytes and filesystem identity, mode, link count, modification
-and change timestamps. Even a write followed by restoring the original bytes invalidates the
-scan. This is a controller-established stable evidence window, not trust in RI's
-`caller_asserted_stable` label. Materializations are removed after the attempt; raw evidence
-and failure diagnostics remain outside Git. Independent actors with host administrator access
-remain outside this controller's trust boundary.
-
-Each supported selected path must appear exactly once in a complete inventory, even when it
-contains no callable. Returned source identities and complete declaration byte ranges/hashes
-are checked against committed bytes. Both sides use the same logical scope, parser contract,
-language choices and exclusions. Incomplete mapping, malformed/read failures, missing source,
-changed metadata, unexpected inclusion/exclusion or incompatible comparisons block. Ranked
-navigation hits and truncated structural summaries never substitute for full inventories.
-The pinned RI comparison checks inventory consistency; the consumer independently reconciles
-its file changes against Git source identities.
-
-Use the accepted `scripts/task` from clean trusted main, with the candidate supplied separately:
-
-```bash
-./scripts/task --state-dir "$STATE" evidence ISSUE structural \
-  --candidate-root "$CANDIDATE" --ri-runtime "$RI_RUNTIME/manifest.json"
-```
-
-The controller stores complete planning/candidate inventories, full comparison, compact delta,
-Git membership/coverage and before/after stability records. Raw output is limited to 32MB,
-changed scope to 200 paths, selected source to the navigation byte/file budgets, and the review
-structural packet to 1MB. Before attachment, the aggregate complete review artifacts
-(including raw output and manifests) are capped at 4,000,000 bytes. The measured complete #246 capture uses
-2,622,690 bytes and an existing indivisible-file capture exceeds 2MB; 4MB provides
-about 52 percent headroom without a compression or record-format migration. A larger
-task stops for decomposition; evidence is never silently truncated. Exact eleven-name
-inventory, regular single-link files, declared and physical byte counts, hashes and
-packet identity/consistency are authenticated. Aggregate and individual bounds are
-checked before retained content is read or hashed, at capture and record validation.
-The independent 32MB raw/file and 1MB packet limits remain unchanged; the initial
-review request remains capped at 2MB.
-The complete membership, planning, candidate and comparison JSON artifacts use compact
-serialization. Their contents and digests remain exact and are authenticated before each
-reviewer read. Oversized single lines are divided into stable 20,000-character virtual lines;
-the reviewer can request bounded pages without consuming a call per pretty-printed source row.
-The 100KB response and 200-call reviewer limits remain in force. Start source reads
-with line 1 to learn `total_lines`, then request valid ranges of at most 399 lines.
-Start structural evidence pages with at most four virtual lines and reduce the page
-on response-limit failure; character count does not guarantee UTF-8 response size.
-Deterministic authentication establishes complete retained bytes and inventory, not
-semantic acceptance. The independent reviewer inspects the full diff and every changed
-path, and uses relevant exact source and inventory/comparison sections to substantiate
-every original outcome, acceptance criterion and applicable standard. Complete
-inventories stay available; selective inspection must support every required judgment.
-
-Inspect the record and every changed path, then write an external controller disposition:
-
-```json
-{
-  "binding_sha256": "EXACT_ATTACHMENT_DIGEST",
-  "record_sha256": "EXACT_STRUCTURAL_RECORD_DIGEST",
-  "paths": [
-    {"path":"apps/backend/app/example.py","decision":"expected",
-     "authority":"AC-1 and owned path in the frozen capsule",
-     "qualification":"Focused test plus the selected backend profile"}
-  ]
-}
-```
-
-Every changed path appears exactly once. Unexpected changes must be corrected or replanned;
-`expected` requires a concrete authority and qualification explanation. Import/config-only or
-empty callable deltas still need full-diff review. Structural evidence reports
-`selection_status` across changed files as `supported-only`, `excluded-only`,
-`unsupported-only`, or `mixed`. With supported files its comparison status remains
-`comparable`; without them, the status identifies the excluded, unsupported, or mixed
-coverage limit. Every changed path still needs a disposition and the capsule's ordinary,
-specialist and manual checks. These statuses neither globally block Swift work nor prove its
-behavior.
-
-```bash
-./scripts/task --state-dir "$STATE" evidence ISSUE disposition \
-  --candidate-root "$CANDIDATE" --disposition-file /external/controller/disposition.json
-```
-
-Then complete required command evidence, exact App qualification, seal, verify and independent
-review as described in [candidate evidence](../workflow/CANDIDATE_EVIDENCE.md). Controller path
-labels are claims for the independent reviewer to evaluate. The observed review must return
-PASS/FAIL and evidence for every structural path as well as every acceptance criterion.
-All PASS with no findings is required for approval. The receipt binds the complete evidence
-packet; raw artifacts are rehashed at each gate. Corrections archive old structural evidence
-and require fresh inventories, disposition, tests, qualification and independent review.
-
-No private RI source or package credential enters candidate execution or GitHub CI. This
-consumer uses the existing external pinned installation; upstream changes require the same
-upgrade procedure. Run `scripts/tests/test_ri_delta.py` with `NUTRITION_RI_RUNTIME` on the
-qualified native controller to exercise real mixed Python/TSX inventories, unsupported-only
-coverage, malformed input, correction and source-write/network denial.
+Use ordinary `git diff BASE CANDIDATE` and direct source inspection alongside navigation.
+There is no mandatory callable inventory, declaration disposition or signed RI report.
+The separate runtime pin is unchanged; dependency updates remain proposals until the
+consumer contract and actual installed bytes are verified. Do not upload private RI source.

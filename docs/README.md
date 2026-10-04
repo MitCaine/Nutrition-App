@@ -8,6 +8,9 @@
 
 ### Implementing a change
 
+Use [local_project_map.md](local_project_map.md) for RI instructions, role/controller routing
+and the active task/checkpoint locations before dispatching work.
+
 1. Follow the mandatory [Repository Session Contract](operations/session-contract.md#repository-session-contract).
 2. Read [Current State](project/current-state.md) for what is true now.
 3. Read the [Project Constitution](project/constitution.md) and [Project Invariants](project/invariants.md).

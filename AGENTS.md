@@ -155,34 +155,28 @@ For dependency-only pull requests:
 - Merge narrow security patches one at a time.
 - Do not merge grouped major upgrades merely because Dependabot opened them.
 
-## Task capsules and workflow
+## Task workflow
 
-Start at [the current workflow entrypoint](engineering/workflow/START_HERE.md).
-Use the accepted trusted task controller for external authorization, qualification and
-protected integration. The combined capsule/RI workflow is the normal path for new tasks
-under the [owner's 2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452).
-Capsules attach a full specification within that authority; RI supplies source evidence,
-never edit or approval authority. Read the [combined pilot and rollout record](engineering/workflow/PILOT_2026-09-26.md)
-for historical outcomes and limits, and [START_HERE](engineering/workflow/START_HERE.md)
-for the current sequence and compatibility exceptions.
+Start at [the local execution map](docs/local_project_map.md) and deliver its complete
+byte-pinned shared procedure to every role. New tasks use the owner-authorized lightweight
+route: one serial planner, implementor and distinct independent reviewer with native completion,
+bounded Markdown records and ordinary source/diff/test evidence. The sequence is orient →
+capsule → implement → independent review → authorized integration → verify closeout. RI
+requires no cryptographic receipt chain, custom gateway or multiple human operators. Pins
+record instruction/runtime provenance. The trusted task controller
+still owns authenticated external authorization, required qualification and protected integration.
+No RI SDK transport, mandatory declaration report, frozen launcher or timed model gateway applies.
 
-A task that already has an active capsule must follow the repository's
-task-capsule process.
+Preserve existing active capsule contracts, state/history, branches, evidence, pending decisions,
+C/R/T recovery and consumed allowances. #246 and #256 remain paused. Do not silently convert or
+resume them. Historical attached RI readers are recovery tools, not current dispatch entrypoints.
 
-- Read the active capsule before implementation.
-- Preserve its state, boundaries, acceptance criteria, and artifact requirements.
-- Do not invent missing implementation-result artifacts or scripts.
-- When a capsule is blocked, revised, or returned to an earlier state, do not
-  silently resume or broaden it.
-- Update capsule state only through the repository's documented workflow.
-- Keep the full capsule under `engineering/capsules/active/` through
-  `REVIEWED` or the last non-terminal state.
-- Record `MERGED`, `CANCELLED`, and `RETROSPECTED` outcomes in
-  `engineering/capsules/HISTORY.md`; terminal closeout removes the active
-  capsule rather than retaining a per-task completed copy.
-- New tasks normally create a capsule under the current combined workflow;
-  preserve in-flight unattached tasks and explicit compatibility exceptions.
-  Do not infer a capsule retroactively for historical changes.
+For this owner-authorized bounded replacement, use meaningful focused tooling/document checks
+and independent review; do not run the retired adoption lifecycle or unrelated broad/native
+suites merely because old RI instructions required them. Normal project profile floors,
+secret/permission controls and protected Git acceptance still apply. Automatic dependency updates
+are not required for source/document maintenance that leaves dependency inputs unchanged.
+
 ## Documentation
 
 - Update documentation when behavior, authority, commands, migration heads, or operational procedures change.

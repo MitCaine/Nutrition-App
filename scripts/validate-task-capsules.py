@@ -85,7 +85,7 @@ from lib.qualification_profiles import (
     QualificationProfileError,
     parse_profile_tokens,
 )
-from lib.candidate_evidence import EvidenceError
+from lib.legacy_ri.candidate_evidence import EvidenceError
 from lib.ri_consumer import RIError
 
 SCHEMA_VERSION = 1
@@ -1991,7 +1991,7 @@ def validate_capsule(
                 )
             else:
                 try:
-                    from lib import candidate_evidence
+                    from lib.legacy_ri import candidate_evidence
 
                     result.planning_evidence = candidate_evidence.validate_ready_planning(
                         repo, resolved.read_bytes(), authorization=planning_authorization,
@@ -2315,7 +2315,7 @@ def main() -> int:
         type=Path,
         help=(
             "Rejected: external JSON cannot authenticate authorization or workflow mode; "
-            "use `./scripts/task execution prepare`."
+            "current dispatch uses docs/local_project_map.md; this is historical planning validation."
         ),
     )
 
@@ -2370,7 +2370,7 @@ def main() -> int:
 
         if args.planning_context:
             raise InvocationError(
-                "PLANNING_CONTEXT_UNTRUSTED: use `./scripts/task execution prepare`; "
+                "PLANNING_CONTEXT_UNTRUSTED: current dispatch uses docs/local_project_map.md; this is historical planning validation; "
                 "the validator CLI cannot authenticate caller-supplied authorization."
             )
 

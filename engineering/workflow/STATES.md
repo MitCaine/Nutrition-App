@@ -1,6 +1,8 @@
 # Task states
 
-> **Document role: Engineering Process.** This page defines task state machine version 1.
+> **Preserved capsule recovery contract.** This state machine applies to existing TOML capsules.
+> Current standard tasks use [local project map](../../docs/local_project_map.md) and bounded Markdown records.
+> #246/#256 remain paused; no historical state or allowance is reset.
 
 | State | Meaning | Owner |
 | --- | --- | --- |

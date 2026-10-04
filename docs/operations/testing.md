@@ -131,8 +131,12 @@ or residual objects fail the job. Baseline exclusion still leaves performance, c
 PostgreSQL, MinIO and Docker integration opt-in; the PostgreSQL profile does not claim
 all marked PostgreSQL or infrastructure suites executed.
 
-Changed trusted gate installation requires separately authorized exact-SHA diagnostic
-canaries against the installed workflow before terminal issue closeout. A negative
+The original trusted-gate introduction specified separately authorized exact-SHA diagnostic
+canaries against the installed workflow before terminal issue closeout. This is historical
+gate-installation scope, not a recurring RI adoption requirement. The current lightweight
+adoption preserves the already installed workflow/backend helper and follows ordinary
+required candidate qualification plus installed routing verification; it adds no diagnostic
+project. A negative
 baseline candidate includes a deliberately failing ordinary test and hostile candidate
 helper/pytest addopts: installed trusted selection must execute and fail that test. A
 negative PostgreSQL candidate leaves a selected-family residual schema after a passing
@@ -531,9 +535,9 @@ dumps, or screenshots containing personal data are not included.
 
 ## Trusted task-controller bootstrap
 
-The accepted operator entrypoint is [Start here](../../engineering/workflow/START_HERE.md).
+The accepted operator entrypoint is [local project map](../local_project_map.md).
 The [authority contract](../../engineering/workflow/AUTHORITY.md) records retained
-interfaces and the explicitly unimplemented parts of the capsule/RI migration. The
+project interfaces and historical recovery contracts. The
 bootstrap history below explains the trust boundary; it is not an instruction to
 recreate the existing App or reactivate an already active ruleset.
 
@@ -646,17 +650,10 @@ default workflow for new tasks. GH-171 changes the internal GitHub Actions trans
 single dispatch execution to the dispatch-handoff plus `workflow_run` executor described above;
 the operator-facing controller commands remain unchanged:
 
-1. `./scripts/task prepare ISSUE ...`
-2. `./scripts/task authorize ISSUE`
-3. bounded candidate implementation
-4. for an attached new-task candidate, `./scripts/task evidence ISSUE attach ...`,
-   `./scripts/task evidence ISSUE preflight ... --runtime CODEX --runtime-sha256 SHA256 --model MODEL --effort EFFORT`,
-   and required command/RI evidence; unattached compatibility tasks skip this attachment lane
-5. `./scripts/task qualify ISSUE --candidate-root PATH`
-6. attached candidates seal evidence, then explicit verification and review with the same
-   preflighted reviewer selection; compatibility tasks use explicit `verify` and `review`
-7. explicit human-owner authorization followed by
-   `./scripts/task integrate ISSUE --candidate-root PATH --human-owner-authorized`
+Use [local project map](../local_project_map.md) for the normal standard workflow.
+The owner-bound task controller prepares/authorizes, runs selected qualification, records
+explicit verification and independent source/diff review, then performs owner-authorized
+protected integration. Attached RI SDK preflight/evidence commands are retired.
 
 `Main qualification` is valid only when its exact SHA, name, conclusion, authorization identity,
 and producing App match the controller's trusted configuration.
@@ -673,7 +670,7 @@ PostgreSQL and iOS native floors still compose independently.
 
 Trusted planning digests the tooling decision. The repository job checks out the
 trusted runner separately from the exact candidate, installs accepted Python 3.14
-and requirements-dev.lock (pytest 9.1.1), and executes the fixed eighteen-file
+and requirements-dev.lock (pytest 9.1.1), and executes the fixed project-control
 selection in scripts/lib/tooling_qualification.py. Candidate configuration,
 selectors, credentials and native opt-in environment cannot select weaker tests.
 The runner uses --noconftest, an empty pytest configuration, verbose skip details
@@ -691,9 +688,25 @@ remained unchanged. These are pre-freeze rehearsals, not attached remote
 qualification or installed canary proof. Exact final
 local and installed CI timings are retained in controller/terminal evidence.
 
-Private RI runtime, native transport/reviewer, iOS/device, PostgreSQL, MinIO,
+Private RI runtime, iOS/device, PostgreSQL, MinIO,
 Docker and performance opt-in oracles remain separate. Their explicit skips do
-not imply those suites passed. Initial implementation qualification uses the old
-installed workflow. After approved guarded installation, exact-SHA negative and
-positive dedicated-App canaries must prove the new failure/success gate before
-terminal issue closeout. Pre-install success cannot replace that proof.
+not imply those suites passed. The preceding timings and canary obligations describe
+the historical trusted-gate installation, not the current lightweight RI replacement.
+That replacement retains the installed gate and requires normal exact-candidate
+qualification, independent review and installed routing/entrypoint verification.
+
+
+Isolated backend source access authenticates exact tracked commit bytes, modes and real Git
+identity before execution. A bounded no-includes parser rejects external/included, worktree
+and promisor configuration before ordinary Git reads (local config: 64 KiB, 4,096 lines and
+bytes per line; continued lines unsupported). Only an authenticated EACCES probe may create
+a runner-owned full tracked tree beneath validated `/tmp`, bounded to 100,000 files,
+512 MiB and 64 MiB per object. All ACLs and special modes are sealed before descendant
+read/search grants, with root access last. Before any possible launch, a runner-private
+receipt binds C/tree/inode/UID and the existing job's single launch. Success, failure,
+cancellation and unknown launch state retain that read-only stage; leader exit proves no
+process quiescence. Existing ephemeral job teardown owns its lifetime. Persistent-host
+retained stages are never silently reused or removed: later cleanup requires their exact
+owned identity and verified quiescence. Prelaunch setup failures alone remove their exact
+owned stage. Original home/source permissions, child temporary state, substantive test
+selection and runtime protection remain unchanged.

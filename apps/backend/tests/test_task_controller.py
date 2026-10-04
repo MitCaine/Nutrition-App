@@ -55,45 +55,23 @@ def load_task_module():
 TASK = load_task_module()
 
 
-def test_execution_command_refuses_stale_authority_before_checkpoint(tmp_path, monkeypatch):
-    from types import SimpleNamespace
-    from lib.capsule_execution import ExecutionError
-
-    repo, base = init_repo(tmp_path)
-    authorization = resolve(authorization_payload(base))
+def test_retired_execution_command_cannot_create_a_checkpoint(tmp_path):
     state_dir = tmp_path / "controller"
-    monkeypatch.setattr(TASK, "resolve_repo_root", lambda _: repo)
-    monkeypatch.setattr(TASK, "load_state", lambda *_: {"repository": "owner/repo", "phase": "AUTHORIZED"})
-    monkeypatch.setattr(TASK, "git", lambda *_: "")
-    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_, **__: "f" * 40)
-    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_: authorization)
-    args = SimpleNamespace(repo_root=repo, state_dir=state_dir, issue_number=999)
-    with pytest.raises(ExecutionError, match="AUTHORITY_NOT_CURRENT"):
-        TASK.command_execution(args)
+    with pytest.raises(SystemExit) as result:
+        TASK.build_parser().parse_args(["--state-dir", str(state_dir), "execution", "999", "prepare"])
+    assert result.value.code == 2
     assert not state_dir.exists()
 
 
-def test_execution_command_does_not_overwrite_existing_attempt(tmp_path, monkeypatch):
-    from types import SimpleNamespace
-    from lib.capsule_execution import ExecutionError
-
-    repo, base = init_repo(tmp_path)
-    authorization = resolve(authorization_payload(base))
+def test_retired_execution_command_preserves_existing_attempt(tmp_path):
     state_dir = tmp_path / "controller"
     state_dir.mkdir()
     checkpoint = state_dir / "execution-999.json"
-    checkpoint.write_text('{"phase":"RUNNING"}')
-    monkeypatch.setattr(TASK, "resolve_repo_root", lambda _: repo)
-    monkeypatch.setattr(TASK, "load_state", lambda *_: {"repository": "owner/repo", "phase": "AUTHORIZED"})
-    monkeypatch.setattr(TASK, "git", lambda *_: "")
-    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_, **__: base)
-    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_: authorization)
-    monkeypatch.setattr(TASK, "repository_slug", lambda _: "owner/repo")
-    args = SimpleNamespace(repo_root=repo, state_dir=state_dir, issue_number=999,
-                           candidate_root=repo, action="prepare")
-    with pytest.raises(ExecutionError, match="CHECKPOINT_EXISTS"):
-        TASK.command_execution(args)
-    assert checkpoint.read_text() == '{"phase":"RUNNING"}'
+    original = b'{"phase":"STOP_REPLAN","allowance_used":1}'
+    checkpoint.write_bytes(original)
+    with pytest.raises(SystemExit):
+        TASK.build_parser().parse_args(["--state-dir", str(state_dir), "execution", "999", "resume"])
+    assert checkpoint.read_bytes() == original
 
 
 def git(
@@ -1409,7 +1387,7 @@ def test_prepare_emits_external_authorization_draft(
     )
 
     assert state["phase"] == "PREPARED"
-    assert state["workflow"]["mode"] == "attached"
+    assert state["workflow"]["mode"] == "standard"
     assert state["workflow"]["reason"] is None
     assert state["workflow"]["authority"] is None
 
@@ -2660,7 +2638,7 @@ def test_explicit_compatibility_mode_uses_its_authenticated_legacy_route(
 def test_attached_default_requires_evidence_across_public_gates(
     tmp_path: Path,
 ) -> None:
-    from lib.candidate_evidence import EvidenceError
+    from lib.legacy_ri.candidate_evidence import EvidenceError
 
     repo, base, candidate, state, comment = authorized_repo_state(
         tmp_path,
@@ -2744,7 +2722,7 @@ def test_attached_default_requires_evidence_across_public_gates(
 def test_record_qualification_authenticates_binding_and_review_preflight(
     tmp_path: Path,
 ) -> None:
-    from lib.candidate_evidence import EvidenceError
+    from lib.legacy_ri.candidate_evidence import EvidenceError
 
     _, base, candidate, state, comment = authorized_repo_state(
         tmp_path,
@@ -2814,6 +2792,7 @@ def test_authorize_and_qualify_guidance_tracks_workflow_mode(
     from types import SimpleNamespace
 
     for mode, reason, expected_authorize, expected_qualify in (
+        ("standard", None, "qualify", "verify"),
         ("attached", None, "plan_capsule", "seal_evidence"),
         ("compatibility", "Existing caller is not capsule-ready.", "qualify", "verify"),
     ):
@@ -3385,172 +3364,9 @@ def test_capsule_attachment_persists_canonical_open_issue_fingerprint(
         )
 
 
-def test_review_revalidates_issue_before_independent_review(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from types import SimpleNamespace
-
-    repo, base = init_repo(tmp_path)
-    candidate = git(repo, "rev-parse", "HEAD")
-    authorization = resolve(authorization_payload(base))
-    attached_issue = governing_issue_fixture()
-    live_issue = {
-        **attached_issue,
-        "updated_at": "2026-09-30T12:00:00Z",
-        "labels": [{"name": "changed"}],
-        "comments": 8,
-    }
-    issue_transport = FakeGoverningIssueTransport(live_issue)
-    state_dir = tmp_path / "controller-state"
-    binding = {
-        "authorization": authorization.to_dict(),
-        "candidate": candidate,
-        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
-            attached_issue, 999
-        ),
-        "source": TASK.candidate_evidence.observe(repo, candidate),
-    }
-    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
-    attached = {
-        "binding": binding,
-        "commands": {},
-        "key_path": str(state_dir / "review-key.bin"),
-    }
-    state = {
-        "task_id": "GH-999-P1",
-        "repository": "owner/repo",
-        "phase": "VERIFIED",
-        "capsule_evidence": attached,
-    }
-    events: list[str] = []
-
-    monkeypatch.setattr(TASK, "load_state", lambda *_: state)
-    monkeypatch.setattr(TASK, "git", lambda _repo, *args: candidate if args[:2] == ("rev-parse", "HEAD") else "")
-    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: base)
-    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_args: authorization)
-    monkeypatch.setattr(TASK, "repository_slug", lambda _repo: "owner/repo")
-    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
-    selected_runtime = {"fixture_identity": "exact-selected-review-runtime"}
-    monkeypatch.setattr(TASK, "require_review_preflight", lambda *_args, **_kwargs: {"runtime": selected_runtime})
-    monkeypatch.setattr(TASK.candidate_evidence, "evidence_packet", lambda *_args: {})
-    monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
-    monkeypatch.setattr(TASK, "emit", lambda _value: None)
-
-    def fake_review(*_args, **_kwargs):
-        events.append("review")
-        assert events == ["issue_get", "review"]
-        assert _kwargs["expected_runtime_identity"] is selected_runtime
-        return {
-            "verdict": {"disposition": "approved", "summary": "Approved."},
-            "session": {"thread_id": "fresh-reviewer"},
-        }
-
-    original_get_issue = issue_transport.get_issue
-
-    def get_issue(repository: str, issue_number: int) -> dict:
-        events.append("issue_get")
-        return dict(original_get_issue(repository, issue_number))
-
-    monkeypatch.setattr(issue_transport, "get_issue", get_issue)
-    monkeypatch.setattr("lib.independent_review.run_review", fake_review)
-
-    result = TASK.command_evidence(
-        SimpleNamespace(
-            repo_root=repo,
-            candidate_root=repo,
-            state_dir=state_dir,
-            issue_number=999,
-            action="review",
-            runtime="/trusted/reviewer",
-            runtime_sha256="b" * 64,
-            model="gpt-6-sol",
-            effort="medium",
-            timeout=1,
-        )
-    )
-
-    assert result == 0
-    assert events == ["issue_get", "review"]
-    assert issue_transport.calls == [("owner/repo", 999)]
-    assert state["phase"] == "REVIEWED_APPROVED"
 
 
-@pytest.mark.parametrize(
-    ("response", "error", "phase"),
-    [
-        (TASK.TaskControllerError("GITHUB_API_ERROR: offline"), "GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE", "VERIFIED"),
-        ({"number": 999, "title": "missing material fields"}, "GOVERNING_ISSUE_REVALIDATION_INVALID", "VERIFIED"),
-        ({**governing_issue_fixture(), "title": "Edited governing issue"},
-         "GOVERNING_ISSUE_REPLAN_REQUIRED", "STOP_REPLAN"),
-    ],
-)
-def test_review_fails_closed_on_issue_drift_or_unavailable_or_malformed(
-    tmp_path: Path, monkeypatch, response, error, phase
-) -> None:
-    from types import SimpleNamespace
 
-    repo, base = init_repo(tmp_path)
-    candidate = git(repo, "rev-parse", "HEAD")
-    authorization = resolve(authorization_payload(base))
-    attached_issue = governing_issue_fixture()
-    issue_transport = FakeGoverningIssueTransport(response)
-    state_dir = tmp_path / "controller-state"
-    binding = {
-        "authorization": authorization.to_dict(),
-        "candidate": candidate,
-        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
-            attached_issue, 999
-        ),
-        "source": TASK.candidate_evidence.observe(repo, candidate),
-    }
-    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
-    state = {
-        "repository": "owner/repo",
-        "phase": "VERIFIED",
-        "capsule_evidence": {
-            "binding": binding,
-            "commands": {},
-            "key_path": str(state_dir / "review-key.bin"),
-        },
-    }
-    review_calls: list[bool] = []
-
-    monkeypatch.setattr(TASK, "load_state", lambda *_: state)
-    monkeypatch.setattr(TASK, "git", lambda _repo, *args: candidate if args[:2] == ("rev-parse", "HEAD") else "")
-    monkeypatch.setattr(TASK, "require_trusted_main_controller", lambda *_args, **_kwargs: base)
-    monkeypatch.setattr(TASK, "resolve_current_authorization", lambda *_args: authorization)
-    monkeypatch.setattr(TASK, "repository_slug", lambda _repo: "owner/repo")
-    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
-    monkeypatch.setattr(TASK, "require_review_preflight", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
-    monkeypatch.setattr(TASK.candidate_evidence, "evidence_packet", lambda *_args: {})
-    monkeypatch.setattr(TASK, "emit", lambda _value: None)
-
-    def fake_review(*_args, **_kwargs):
-        review_calls.append(True)
-        raise AssertionError("reviewer ran without a valid live issue")
-
-    monkeypatch.setattr("lib.independent_review.run_review", fake_review)
-
-    with pytest.raises(TASK.EvidenceError, match=error):
-        TASK.command_evidence(
-            SimpleNamespace(
-                repo_root=repo,
-                candidate_root=repo,
-                state_dir=state_dir,
-                issue_number=999,
-                action="review",
-                runtime="/trusted/reviewer",
-                runtime_sha256="b" * 64,
-                model="gpt-6-sol",
-                effort="medium",
-                timeout=1,
-            )
-        )
-
-    assert issue_transport.calls == [("owner/repo", 999)]
-    assert review_calls == []
-    assert state["phase"] == phase
 
 
 @pytest.mark.parametrize(
@@ -4090,14 +3906,14 @@ def test_trusted_qualification_cli_runs_as_standalone_script() -> None:
 
 
 def test_attached_lane_cannot_use_assertion_only_review():
-    from lib.candidate_evidence import EvidenceError
+    from lib.legacy_ri.candidate_evidence import EvidenceError
     state = {"capsule_evidence": {}, "verification": {"decision": "pass", "candidate_sha": "a" * 40}}
     with pytest.raises(EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
         TASK.record_review(state, candidate_sha="a" * 40, actor="author", decision="approved", summary="looks good")
 
 
 def test_attached_lane_cannot_verify_missing_or_corrected_evidence():
-    from lib.candidate_evidence import EvidenceError
+    from lib.legacy_ri.candidate_evidence import EvidenceError
     for attached in ({}, {"requires_fresh_candidate": True}):
         state = {"capsule_evidence": attached, "qualification": {"result": "PASS", "candidate_sha": "a" * 40}}
         with pytest.raises(EvidenceError, match="FRESH_CANDIDATE"):
@@ -4135,3 +3951,46 @@ def test_pre_change_sealed_candidate_evidence_remains_usable():
     assert verified["capsule_evidence"] == original["capsule_evidence"]
     assert "workflow" not in verified
     assert state == original
+
+
+def test_standard_route_completes_qualification_verification_and_source_review(tmp_path):
+    repo, base, candidate, qualified, transport, refs = qualify_fixture(
+        tmp_path, workflow_mode="standard", compatibility_reason=None)
+    assert qualified["workflow"]["mode"] == "standard"
+    assert qualified["phase"] == "QUALIFIED"
+    assert transport.dispatch_inputs is not None
+    assert qualified["qualification"]["candidate_sha"] == candidate
+    assert len(refs.published) == len(refs.deleted) == 1
+    verified = TASK.record_verification(qualified, candidate_sha=candidate, actor="controller",
+        decision="pass", evidence="actual exact-candidate check")
+    reviewed = TASK.record_review(verified, candidate_sha=candidate, actor="fresh-independent-reviewer",
+        decision="approved", summary="exact source/diff and all task criteria reviewed")
+    assert reviewed["phase"] == "REVIEWED_APPROVED"
+    assert "capsule_evidence" not in reviewed
+    # Standard mode never bypasses the separate human integration permission.
+    with pytest.raises(TASK.TaskControllerError, match="HUMAN_OWNER_AUTHORIZATION_REQUIRED"):
+        TASK.integrate_task(reviewed, candidate_repo=repo, controller_main_sha=base,
+            expected_app_id=424242, transport=transport, ref_transport=refs,
+            human_owner_authorized=False)
+
+
+def test_public_prepare_defaults_to_owner_bound_standard_and_rejects_new_attachment():
+    parser = TASK.build_parser()
+    args = parser.parse_args(["prepare", "999", "--task-id", "GH-999", "--allowed-path", "src/**", "--profile", "repository"])
+    assert args.workflow_mode == "standard"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["prepare", "999", "--task-id", "GH-999", "--allowed-path", "src/**", "--profile", "repository", "--workflow-mode", "attached"])
+
+
+def test_new_prepare_preserves_stopped_state_and_consumed_allowance(tmp_path):
+    repo, base = init_repo(tmp_path)
+    state_dir = tmp_path / "preserved-state"
+    path = TASK.state_path(state_dir, 999)
+    path.parent.mkdir(parents=True)
+    original = b'{"phase":"STOP_REPLAN","launches_used":1,"candidate":"retained"}'
+    path.write_bytes(original)
+    with pytest.raises(TASK.TaskControllerError, match="TASK_STATE_EXISTS_PRESERVE_HISTORY"):
+        TASK.prepare_task(repo=repo, state_dir=state_dir, issue_number=999, task_id="GH-999-new",
+            trusted_author="owner", repository="owner/repo", base_sha=base, allowed_paths=["src/**"],
+            forbidden_paths=[], profiles=["repository"], revision=2, nonce="new-nonce-123456789")
+    assert path.read_bytes() == original

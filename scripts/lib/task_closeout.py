@@ -7,8 +7,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from lib.candidate_evidence import EvidenceError, digest as contract_digest, frozen_contract
-from lib.capsule_execution import ExecutionError, capsule_metadata
+from lib.legacy_ri.candidate_evidence import EvidenceError, digest as contract_digest, frozen_contract
+from lib.legacy_ri.capsule_execution import ExecutionError, capsule_metadata
 
 
 class CloseoutError(RuntimeError):

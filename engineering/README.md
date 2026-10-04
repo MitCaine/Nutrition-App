@@ -12,9 +12,9 @@
    [Project Onboarding](../docs/project/onboarding.md) to load only the context needed for the
    change.
 2. **Establish task authority.** Follow the
-   [current capsule/RI controller sequence](workflow/START_HERE.md) from a clean,
+   [current lightweight controller sequence](../docs/local_project_map.md) from a clean,
    synchronized trusted `main` checkout. Keep candidate work in a separate branch
-   and checkout within the authorized capsule paths.
+   and checkout within the authorized task paths.
 3. **Implement at the owning boundary.** Follow the
    [Development Guide](../docs/project/development-guide.md) and preserve the applicable
    invariants. Avoid opportunistic cleanup that expands review scope.
@@ -25,38 +25,25 @@
 6. **Review and integrate.** Present the exact committed candidate, required
    qualification and independent review through the trusted controller. A pull
    request is optional when the controller's guarded integration is used.
-7. **Close out and release deliberately.** Complete the separate capsule HISTORY
-   closeout before issue closure. Release from a clean, qualified `main` commit.
+7. **Close out and release deliberately.** For an ordinary Markdown task, the controller
+   records the exact reviewed, qualified and integrated commit, integration receipt and
+   remaining obligations in the task record before authorized issue closure. Existing
+   capsule lifecycles additionally require their separate guarded capsule HISTORY closeout;
+   do not create a capsule for an ordinary task. Release from a clean, qualified `main` commit.
 
 
 ## Repository-owned task workflow
 
-The [Workflow Foundation](workflow/README.md) defines
-repository-owned [task states](workflow/STATES.md), the versioned
-[capsule contract](workflow/TASK_CAPSULE.md), [routing](workflow/ROUTING.md),
-[evidence](workflow/EVIDENCE.md), and the
-[failure taxonomy](workflow/FAILURE_TAXONOMY.md).
-Open the [bounded execution guide](workflow/EXECUTION.md),
-[attached candidate evidence guide](workflow/CANDIDATE_EVIDENCE.md), and
-[Repository Intelligence guide](tooling/RI.md) directly for the current
-controller tools and their authority limits.
+Use [local project map](../docs/local_project_map.md), the sole current local map, and its complete
+pinned shared instructions. New work uses bounded Markdown tasks under `engineering/tasks/`,
+serial native planner/implementor/independent reviewer returns, ordinary source/diff/log
+review and the trusted standard controller. RI-only SDK/report/structural gates are retired.
+Protected main, authenticated owner authority, required profile checks, domain/security
+contracts and independent review remain. #246/#256 and their original capsules remain paused.
 
-For new tasks, the capsule/RI path is normal. The full non-terminal execution contract remains
-under `engineering/capsules/active/` through `REVIEWED` or the last
-non-terminal state. Successful integration or cancellation writes the task's
-unique terminal record to `engineering/capsules/HISTORY.md`, including the
-historical full-capsule recovery locator and SHA-256, and removes the active
-capsule. Do not retain new per-task terminal copies under a `completed/`
-directory.
-
-Capsules coordinate bounded execution but do not replace Roadmaps, Grills,
-PRDs, Architecture Reviews, Implementation Backlogs, GitHub Issues, current
-architecture, invariants, or operations guidance.
-
-The owner's [2026-09-27 decision](https://github.com/MitCaine/Nutrition-App/issues/187#issuecomment-5859326452)
-made the combined path normal for new tasks. In-flight unattached tasks and
-explicit compatibility exceptions retain their existing controller path; see
-the [workflow entrypoint](workflow/START_HERE.md) for current boundaries.
+[AUTHORITY](workflow/AUTHORITY.md) owns project acceptance; [RI tooling](tooling/RI.md)
+retains the compatible source-navigation runtime. Historical capsule state/history and C/R/T
+recovery remain in [capsules](capsules/README.md), without becoming prerequisites for new tasks.
 
 ## Git conventions
 

@@ -122,5 +122,7 @@ class ToolingQualificationTests(unittest.TestCase):
         self.assertIn('trusted/apps/backend/requirements-dev.lock', job)
         self.assertIn('persist-credentials: false', job)
         self.assertLess(job.index('Trusted fast controller suite'), job.index('Validate docs'))
-        self.assertEqual(len(tooling.TEST_FILES), 18)
+        self.assertTrue({"scripts/tests/test_task_authorization.py", "scripts/tests/test_path_scope.py",
+                         "scripts/tests/test_task_closeout.py", "apps/backend/tests/test_task_controller.py"}.issubset(tooling.TEST_FILES))
+        self.assertNotIn("scripts/tests/test_independent_review.py", tooling.TEST_FILES)
         self.assertIn("scripts/tests/test_backend_qualification.py", tooling.TEST_FILES)

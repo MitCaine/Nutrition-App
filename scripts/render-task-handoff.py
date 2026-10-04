@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a validated READY task capsule into deterministic execution-handoff artifacts."""
+"""Historical capsule handoff reader; not a dispatch route for current standard tasks."""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def validate_capsule(
     if planning_context is not None:
         raise HandoffError(
             "PLANNING_CONTEXT_UNTRUSTED: executor handoffs can only be prepared by "
-            "`./scripts/task execution prepare` after live authorization resolution."
+            "the retained historical controller; current tasks use docs/local_project_map.md."
         )
     validator = repository_root_from_script() / "scripts" / "validate-task-capsules.py"
     if not validator.is_file():
@@ -187,8 +187,9 @@ def render_markdown(
             return f"- {empty}"
         return "\n".join(f"- `{value}`" for value in values)
 
-    return f"""# Execution handoff — {metadata['id']}: {metadata['title']}
+    return f"""# Historical execution handoff — {metadata['id']}: {metadata['title']}
 
+> HISTORICAL ONLY: not authorization to dispatch or resume a paused task.
 > Generated from a mechanically validated `READY` task capsule. Do not reinterpret, broaden, or
 > replace the capsule from conversation context. Repository authority outranks this generated view.
 
@@ -225,7 +226,7 @@ def render_markdown(
    identity that cannot be verified.
 3. The trusted task controller resolved the live authorization and ran strict READY preflight
    before creating this handoff. The validator CLI accepts no serialized controller authority;
-   rerun `./scripts/task execution prepare` from trusted main if a fresh preflight is needed.
+   This is historical evidence, not current dispatch permission. New tasks use docs/local_project_map.md.
 
 4. Change the capsule from `READY` to `IN_PROGRESS`, update `updated`, and append State History
    before implementation. Do not change contract fields or `capsule_revision` unless the controller

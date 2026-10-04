@@ -7,8 +7,8 @@ agent interpretation. These tools do not replace architectural review. They esta
 state, identify mechanical boundary violations, inventory the Phase 5C4 control plane, and compare
 PostgreSQL privilege manifests.
 
-For an authorized capsule/RI task, orient from current remote main, issue authorization,
-active capsule and HISTORY using the [workflow entrypoint](../../engineering/workflow/START_HERE.md).
+For an authorized task, orient from current remote main, issue authorization,
+active capsule and HISTORY using the [workflow entrypoint](../local_project_map.md).
 The [combined pilot record](../../engineering/workflow/PILOT_2026-09-26.md) describes
 observed recovery cases; its old SHAs are evidence, not reusable authority.
 

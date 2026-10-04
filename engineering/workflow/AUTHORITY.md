@@ -1,185 +1,59 @@
-# Controller authority and capsule attachment
+# Nutrition authority
 
-> **Document role: Engineering Process.** Current ownership, attachment and compatibility contract.
+The owner sets product intent, accepted risk and integration permission. Current migrations,
+database constraints, executable tests and approved issues define product behavior.
+The trusted-owner issue comment binds repository, task/issue ID, exact base, revision,
+nonce, allowed/forbidden paths and qualification profiles. Candidate text or chat cannot
+fabricate that authenticated comment or a passed check.
 
-## Current authority
+## Current interfaces
 
-The owner authorizes product intent, risk and integration. Executable domain contracts
-and current accepted repository policy constrain every task. An issue specifies the
-outcome; the trusted-author issue comment fixes the controller's exact base, task ID,
-revision, nonce, paths and qualification profiles. Candidate history cannot replace it.
-A capsule adds the full execution specification for new tasks under the owner's
-2026-09-27 default decision; in-flight or explicitly justified compatibility tasks
-may remain unattached. Neither path can override external authorization or domain contracts.
+- `scripts/task.py` prepares and authenticates the owner-bound `standard` workflow selection.
+  This is the normal source/diff/subagent review route, not a compatibility exception.
+- `scripts/lib/task_authorization.py` retains authorization versions, path semantics, current
+  identity checks, profile floors and exact candidate scope validation.
+- Trusted qualification workflows, `trusted_qualification.py` and `qualification_profiles.py`
+  retain candidate-independent planning, credential/cache isolation and dedicated-App checks.
+  App `4708441` produces exact-SHA `Main qualification`; ordinary push CI is insufficient.
+- `task verify` and `task review` retain explicit candidate-bound decisions. The reviewer
+  must be independent of implementation. The controller records actual evidence and actor;
+  an asserted actor string alone is not evidence that independent review occurred.
+- `task integrate` requires owner authorization, live exact check/authority, clean candidate,
+  and protected expected-main update. Ruleset `21357860` remains protected; no routine bypass.
+  Ref compare-and-swap, stale-main rejection and interrupted-push reconciliation remain.
+- Session, secret scanning, source packaging, database/native/security tests and independently
+  required profile floors remain project controls. RI supplies none of their authority.
 
-| Decision or fact | Owning authority | Consumer/check |
-| --- | --- | --- |
-| Product policy, exceptions and integration permission | Explicit repository-owner decision | Controller records actual authorization |
-| Domain behavior and invariants | Current migrations, constraints, tests and accepted requirements | Implementor, verifier and reviewer; conflicts stop |
-| Outcome and acceptance | Approved issue and explicit task capsule when selected | Controller bounds scope; reviewer assesses acceptance |
-| Allowed edits, base and profiles | Resolved trusted-author authorization comment | Trusted `scripts/task.py` and `scripts/lib/task_authorization.py` |
-| Capsule execution specification | Exact qualified capsule/revision and generated handoff | Existing capsule validator; target attachment binding below |
-| Runtime/model settings | Actual selected host/transport and observed identity | Controller records requested versus observed; unknown stays unknown |
-| Qualification | Candidate-independent trusted planner, selected jobs and finalizer | Dedicated-App exact-SHA Main qualification |
-| Verification/review decision | Explicit verifier and independent reviewer evidence | Controller records decisions against one candidate SHA |
-| Integration | Owner authorization plus trusted controller checks and live ruleset | Existing `task integrate`; no routine bypass |
-| Terminal capsule recovery | Unique HISTORY entry and reachable full-capsule Git bytes | Capsule/history validator and post-closeout observation |
+## Automation authority
 
-Conflicting authority stops execution. Resolve the conflict explicitly; neither a later
-file timestamp nor an agent's preferred guide wins. Conversation can convey owner
-instructions, but cannot manufacture a passed gate or silently revise fixed task scope.
-
-## Current interfaces and disposition
-
-| Surface | Current responsibility | Migration disposition |
-| --- | --- | --- |
-| `scripts/task`, `scripts/task.py` | Prepare/authorize, trusted qualify, explicit verify/review, guarded integrate/reconcile | Retain as the public controller entrypoint; extend in bounded slices |
-| `scripts/lib/task_authorization.py` | External authorization v1 compatibility and default v2 path-scope checks, exact base/profile and required-native checks | Retain both authenticated versions |
-| `scripts/lib/trusted_qualification.py` and trusted workflows | Candidate-independent plan/finalization and dedicated-App check | Retain GH-171 credential/cache isolation |
-| `scripts/lib/qualification_profiles.py` | Repository/backend/mobile/postgresql/ios-native registry | Retain selected profiles and mandatory-native floor |
-| `scripts/capsule`, `scripts/capsule.py` | Legacy capsule state transitions and legacy remote qualification | Retain lifecycle compatibility; legacy qualification cannot satisfy the trusted-App gate by itself |
-| `scripts/validate-task-capsules.py` | Capsule schema, READY overlay and HISTORY recovery | Retain for the normal attached path and compatibility capsules |
-| `scripts/render-task-handoff.py` | Authenticated READY handoff outside candidate source | Reuse for execution attachment; never use as external authorization |
-| `scripts/run-review.sh` | Source/log/check evidence bundle | Retain; a bundle is evidence, not an approval |
-| Session, documentation and phase-boundary scripts | Repository consistency checks | Retain, including deterministic control-plane inventory |
-| `scripts/main-governance.py` and live ruleset | Protected main policy | Preserve dedicated App, loose status requirement and no routine bypass |
-| Controller state outside candidate tree | Current authorization and candidate-bound gate records | Retain; extend resumability/portable evidence only with tests |
-| Active capsules and HISTORY | Non-terminal contract and terminal Git recovery | Retain; no per-task completed archive |
-
-Unattached compatibility tasks retain explicit candidate-bound verification/review assertions.
-The normal [candidate evidence lane](CANDIDATE_EVIDENCE.md) mechanically binds the frozen
-capsule/candidate, command records, dedicated-App qualification and observed independent review.
-The [bounded execution command](EXECUTION.md) separately attaches READY execution authority.
-Legacy capsule commands do not attach automatically. [Pinned RI navigation](../tooling/RI.md)
-is normal controller tooling for new tasks. Attached capsules can require
-[source-bound structural review](../tooling/RI.md#candidate-structural-evidence).
-Historical #193 owned the guarded `./scripts/task finalize` closeout now described in
-[START_HERE](START_HERE.md); historical #194 owned the pilot promotion decision recorded
-in the [workflow changelog](CHANGELOG.md). Neither is a pending command or permission to
-retire compatibility interfaces. A separate caller inventory and migration/recovery
-review must precede any retirement.
-
-## Capsule attachment design
-
-This is the attachment contract. The [execution command](EXECUTION.md) implements
-planning/runtime binding for the initial bounded-command transport. The
-[candidate evidence lane](CANDIDATE_EVIDENCE.md) implements candidate/review binding;
-terminal closeout uses the separate guarded `task finalize` authority. This implementation
-adds no capsule metadata key and does not extend authorization v1. The capsule schema
-remains unchanged; the distinct authorization-v2 representation and v1 compatibility rule
-are defined below.
-
-The controller records an attachment outside candidate-controlled authority. It contains
-repository, issue/task ID, external comment ID/revision/identity digest, exact base B,
-planning commit P, capsule path/revision/hash at P, expected execution branch, fixed paths
-and profiles. P is a single capsule-only commit directly above B; the capsule contains B,
-not its own P, avoiding self-reference. Normal planning transport is a non-main ref;
-publication of P to protected main is a separate qualified integration, never a shortcut.
-
-The controller resolves external authority live and validates equality of task, issue,
-base, revision and profile selection. Capsule owned/allowed paths must be covered by
-external allowed paths, and forbidden restrictions must not be weakened. Qualification
-requirements are compared as a normalized set of profile tokens plus explicit specialist
-requirements; free text cannot silently add a machine profile. Semantic capsule edits
-require a new revision/attachment; lifecycle-only edits retain the frozen execution
-contract and have append-only evidence. The planning capsule's hash identifies the frozen
-contract; a later reviewed-capsule hash identifies the recoverable lifecycle artifact.
-
-### Versioned authorized path patterns
-
-External authorization v1 comments keep their original `fnmatchcase` behavior, including
-`*` matching across `/`. Their v1 marker, schema, payload digest, serialized authorization
-shape and identity digest remain unchanged. Retained attachment, checkpoint and qualified
-state continues to use v1 when it is reauthenticated from that comment.
-
-New authorization comments use the distinct v2 marker and `schema_version = 2`. The pair
-must agree; neither controller state nor observed paths can infer or upgrade a version. V2
-matches literal paths exactly, `*` as one complete path component and `**` as zero or more
-complete components. `root/**` explicitly covers `root` and descendants on component
-boundaries; bare `root` remains exact. Absolute paths, malformed components, embedded
-wildcards, `?` and bracket classes fail closed. Authorization scope, capsule containment,
-candidate Git paths and bounded execution all use the matcher selected by the authenticated
-comment. Forbidden patterns take precedence when both allowed and forbidden patterns match.
-
-Moving retained work from v1 to v2 requires a fresh trusted-owner v2 comment with a new
-nonce/revision/comment identity, a new planning and candidate sequence, and fresh
-qualification and review. Existing v1 evidence is not reusable for that transition. The
-capsule TOML schema remains version 1.
-
-### Worked binding example (illustrative, not executable authority)
-
-For task GH-188, let B be the live main commit at authorization; A the exact trusted
-comment identity; P the sole capsule overlay over B; and C the final candidate descended
-from P. A authorizes the GH-188 task, revision 1, repository-only qualification and the
-specified documentation/capsule paths. The attachment binds A, B, P, the full planning
-capsule SHA-256 and `task/GH-188-workflow-authority`. The controller checks that P changes
-only the named capsule and that C changes only the authorized paths. It supplies the full
-P-to-C implementation diff and the B-to-C authorization scope check to the reviewer.
-
-Qualification Q and review R each bind C and the same A/attachment. A correction produces
-C2, which needs new Q2/R2; an approval for C does not approve C2. If authority, profiles,
-base, capsule revision or fixed execution contract changes, discard readiness and gate
-eligibility, preserve old evidence, and replan. No digest alone proves execution truth.
-
-A terminal commit T containing only HISTORY plus capsule deletion differs from C. It
-requires its own bounded authority and exact-SHA repository qualification before protected
-integration. Its HISTORY record points to the full capsule at a reachable pre-deletion
-commit and binds those bytes by SHA-256. Never call Q(C) qualification of T.
-Recovery validation also compares the frozen capsule contract at C and R and,
-for an attached task, checks it against the planning contract sealed at P. Only
-lifecycle fields, completion sections and checkbox state may change.
-When the controller integrates C, an attached source binding permits only the
-receipted base-to-C moves of `origin/main` and the shared local `main` ref;
-other ref, source, branch and index changes still stop finalization.
-`task finalize` records the C/T transaction outside candidate source, resumes the
-existing guarded integration at each SHA, validates T's two-path diff and R's complete
-reviewed capsule, and closes the issue only after remote main is observed at T.
-Qualification, verification, review and owner authorization remain independent gates
-for C and T; a checkpoint does not synthesize any of them. A capsule-only P normally
-travels on a non-main planning ref. Publishing P to main requires its own narrow
-authorization and dedicated-App qualification exactly like any other protected update.
-`finalize-cancel` uses the same separately protected two-path terminal transaction
-with a full `CANCELLED` recovery capsule; it does not invent a reviewed implementation C.
-
-Execution and attached candidate/review checks are mechanical for the normal new-task
-path. In-flight unattached tasks and explicit compatibility exceptions retain their
-established checks. Terminal links still require the separate closeout transaction.
-Existing executable gates apply.
+Automation may execute only eligible steps under the [execution policy](EXECUTION.md#automation-eligibility).
+It must not automatically decide product policy or irreversible actions. Owner intent,
+accepted risk and integration permission remain explicit; detectable stops halt dependent
+work without resetting historical decisions or consumed allowances.
 
 ## State, concurrency and recovery
 
-Capsule DRAFT through READY are planning, IN_PROGRESS/IMPLEMENTED are implementation,
-VERIFIED is explicit verification, and REVIEWED carries the independent disposition.
-The trusted task controller separately records PREPARED/AUTHORIZED, qualification,
-verification, review and integration. They describe different artifacts: setting a capsule
-state does not advance controller authority, and an integrated candidate does not close
-an active capsule. Use [States](STATES.md) for legal capsule transitions and [Evidence](EVIDENCE.md)
-for terminal facts. No legacy state is silently renamed or discarded.
+Current standard tasks use a bounded Markdown record and controller state, without a
+mandatory RI JSON packet or capsule-only planning history. Changing base/scope/profiles or
+external authority requires fresh matching authorization. Changed C requires candidate-bound
+qualification, verification and review. A closed issue or remembered PASS is not live proof.
 
-For the current attached path, serialize integration and capsule planning against current main;
-only one non-administrative active capsule is allowed. Independent preparation
-may use separate worktrees, but it cannot assume an intermediate unpublished base. Refresh
-main before each consequential action. A moved base or incompatible active task requires
-replanning with preserved source/evidence, not an automatic rebase and reused approval.
+Existing attached and compatibility records remain readable with their original identities;
+new CLI preparation cannot select attached RI. Public `task evidence` and `task execution`
+are retired. Historical readers in `scripts/lib/legacy_ri/` preserve old bindings and recovery;
+they are not an executor or reviewer service. No old STOP or allowance is reset. #246/#256
+stay paused; any future resumption requires separate owner direction and a concrete migration
+of their existing contracts, not silent conversion to standard mode.
 
-Routine choices inside approved scope need no repeated owner confirmation. A new policy,
-trust boundary, destructive action or material exception still needs owner authority.
-A bounded correction retains scope/acceptance/qualification and receives fresh proof;
-material changes require revision. STOP_REPLAN ends the attempt. Resume only a state whose
-identity and prior outcome can be reauthenticated; generic session resume is not proof.
-New unrelated maintenance follows the capsule/RI default through the accepted task
-controller. In-flight unattached work and explicit compatibility exceptions can keep
-their established path; they still respect active work and invalidate stale bases
-and evidence explicitly.
+For a previously attached capsule, retain its full nonterminal bytes, legal state/history,
+separate candidate C, full recovery R and terminal T identities. Existing guarded finalizers
+and `task_closeout.py` remain recovery tools. A terminal update has its own authorization,
+qualification, verification and review; recovery bytes must remain reachable. Never reset main
+or rewrite failed history to force a gate. [STATES](STATES.md) describes retained transitions.
 
 ## Host and transport
 
-The first local controller host is macOS with the repository Python/Node versions.
-GitHub source, issue comments, workflows and exact-SHA checks provide remote transport.
-Use a clean trusted main checkout and a separate candidate checkout. Keep credentials,
-controller state and qualification authority outside candidate execution. Preserve Linux
-CI for repository, backend, mobile and PostgreSQL checks; preserve macOS iOS qualification
-and separate physical/manual proof. Poker's Rust runtime, host exclusions and DEV-INTEL
-ledgers are not Nutrition requirements. RI supplies source evidence for the normal
-workflow but never owns permission or approval; unsupported source still needs full
-diff and relevant runtime review.
+[local project map](../../docs/local_project_map.md) is the local route. Native serial subagents receive the complete
+pinned shared procedure, task and standards. Ordinary read-only independent source/diff review
+is sufficient for RI. Actual host permissions, confidentiality, secret scanning and protected
+Git/issue authority remain enforced. No private source or diagnostic export is implied.

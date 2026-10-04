@@ -1,152 +1,19 @@
-# Task capsule contract
+# Task records and preserved capsules
 
-> **Document role: Engineering Process.** This page defines task capsule schema version 1.
+For current work use the bounded [Markdown template](../tasks/TEMPLATE.md), stored under
+`engineering/tasks/`, with objective/issue, exact base/branch, owner authority, allowed and
+forbidden scope, checkable criteria, actual commands, results and gaps. Deliver it with
+[local project map](../../docs/local_project_map.md), the complete shared procedure and AGENTS to each serial role.
+No RI JSON schema, qualification of a capsule-only planning overlay or frozen launcher
+is required for these new records.
 
-A capsule is human-first Markdown with TOML front matter delimited by `+++`. TOML keeps execution
-metadata readable by Python's standard library; Markdown owns rationale, scope, acceptance,
-verification, evidence, and escalation. Copy the
-[canonical template](../capsules/TEMPLATE.md).
+## Historical capsule contracts
 
-## Authority status and controller cutover
-
-`./scripts/task` is the accepted public controller entrypoint. Its external trusted-author
-issue comment remains the edit/profile authority. A capsule is the full execution contract
-for new tasks under the owner's 2026-09-27 default decision; it does not replace
-that authorization. In-flight unattached and explicit compatibility tasks may keep
-their established path.
-
-Existing active capsules retain this schema and normal terminal recovery. The owner-approved
-#187 migration began with bounded capsule trials. Its attachment design, compatibility
-inventory and enforcement limits are in [Authority](AUTHORITY.md); historical #194
-and later pilots are recorded in the [changelog](CHANGELOG.md). The owner's
-2026-09-27 decision made the combined workflow normal for new tasks, without
-retiring compatibility callers. No new TOML keys or authorization-v1 fields
-are introduced by that policy change.
-
-The trusted task controller records an explicit workflow selection in its prepared state and
-defaults new tasks to `attached`. Selecting `compatibility` requires a nonempty reason in a
-separate versioned block of the same trusted-owner comment; the controller binds that block to
-the trusted author's comment identity, then revalidates it at later gates. Authorized
-states created before this selection was recorded keep their established route and do not gain
-retroactive capsule obligations.
-
-Never create a capsule as a fallback around a rejected controller, dedicated-App check or
-protected-main update. A capsule state transition is not a trusted-controller gate transition.
-Historical HISTORY records and exact Git recovery remain authoritative.
-
-## Required metadata
-
-`schema_version`, `capsule_revision`, `id`, `title`, `state`, `task_type`, `risk`, `created`,
-`updated`, `source_issue`, `base_commit`, `branch`, `controller`, `executor`, `reviewer`,
-`delegation`, `delegation_constraints`, `blocked`, `blocked_reason`, `blocked_since`,
-`dependencies`, `planning_artifacts`, `owned_paths`, `allowed_paths`, `forbidden_paths`, and
-`specialized_qualification`.
-
-- `schema_version` is `1`; `capsule_revision` is a positive integer identifying the current
-  execution-contract revision.
-- `task_type` is `product`, `architecture`, `implementation`, `correction`, `audit`,
-  `documentation`, `tooling`, `operations`, or `release`.
-- `risk` is `low`, `medium`, `high`, or `critical`.
-- `state` comes from [Task States](STATES.md).
-- `delegation` is `none` or `bounded`; bounded delegation requires explicit constraints.
-- `base_commit` may be empty before `READY`. At `READY`, it is an exact lowercase 40-character
-  commit identifying the implementation baseline, and `branch` names the expected branch.
-- `planning_artifacts` contains repository-relative authority paths. A Markdown fragment may follow
-  `#`. At `READY` or later, an artifact intentionally removed by bounded implementation may be
-  absent from the current tree only when it still resolves as a file at the capsule's exact
-  `base_commit`; deleting obsolete authority does not require rewriting the qualified capsule.
-- `owned_paths`, `allowed_paths`, and `forbidden_paths` use repository-relative POSIX paths or
-  patterns for mechanical scope enforcement. Their matcher version comes from the
-  authenticated external authorization comment, not capsule metadata.
-- External authorization v1 retains its original `fnmatchcase` behavior, marker, schema,
-  payload digest and serialized authorization shape. New owner comments use authorization
-  v2: literals are exact, `*` matches one complete component, `**` matches zero or more
-  complete components, and `root/**` explicitly includes `root` and its descendants. Bare
-  roots remain exact; malformed paths and unsupported glob syntax fail closed. The marker
-  and payload schema must agree. Authorization, capsule attachment and bounded execution
-  use the same selected matcher, and forbidden patterns take precedence. Moving retained
-  work from v1 to v2 requires fresh owner authorization, planning, qualification and review;
-  old qualification or review evidence does not carry forward.
-- `specialized_qualification` remains a string list. Machine-executable repository qualification
-  profiles use explicit `profile:lowercase-name` tokens; other entries may remain human-readable
-  specialist qualification requirements. Duplicate or malformed profile tokens fail validation.
-  A profile may be syntactically valid before its executor exists, but remote qualification fails
-  closed until that profile is registered by repository tooling. Once a capsule reaches `READY`,
-  its `specialized_qualification` list is bound to that capsule revision; an in-place change in
-  `IN_PROGRESS` through `REVIEWED` fails validation and requires the normal
-  `DECOMPOSED`/revision/requalification path.
-- Unknown schema versions or metadata keys are rejected rather than guessed.
-
-## Required sections
-
-Goal; Outcome; Non-goals; Background; Authority and precedence; Dependencies and prerequisites;
-Owned surface; Allowed changes; Forbidden changes; Acceptance criteria; Required verification;
-Return evidence; Escalation conditions; Decisions and assumptions; State history; Completion
-record.
-
-A section may say `Not applicable — <reason>` but may not disappear. `Required verification`
-contains `Focused`, `Baseline`, and `Specialized qualification` subsections in that order.
-
-## Mechanical validation
-
-Validate all active capsules and the terminal history index:
-
-```bash
-python3 scripts/validate-task-capsules.py --all
-```
-
-Produce machine-readable evidence:
-
-```bash
-python3 scripts/validate-task-capsules.py --all --json
-python3 scripts/validate-task-capsules.py --all --output /tmp/capsule-validation.json
-```
-
-Before execution, set `base_commit` to the exact commit containing approved planning authority,
-advance the capsule to `READY`, and commit only the capsule overlay. Then run:
-
-```bash
-python3 scripts/validate-task-capsules.py \
-  --execution engineering/capsules/active/TASK-ID.md
-```
-
-Execution preflight requires a clean worktree, the expected branch, `READY`, no blocking overlay,
-an existing base commit, and exactly one committed path after the base: that capsule. This avoids
-the self-reference problem of requiring a capsule to contain the hash of its own commit.
-
-
-Render the qualified executor handoff:
-
-```bash
-python3 scripts/render-task-handoff.py \
-  engineering/capsules/active/TASK-ID.md
-```
-
-The renderer repeats strict execution validation, embeds the exact capsule and execution protocol,
-records repository/routing/scope metadata in JSON, and writes all output outside the repository so
-preflight cleanliness is preserved.
-
-## Rules
-
-- Acceptance describes observable outcomes, not implementation steps. At `READY` or later, every
-  checkbox has a stable ID such as `AC-1`; at `VERIFIED` or later, every acceptance checkbox is
-  checked.
-- `Owned surface` names expected files/modules/contracts; `Allowed changes` permits narrow adjacent
-  work; `Forbidden changes` names explicit boundaries and preserved invariants.
-- Necessary work outside the boundary stops execution until the controller revises the capsule or
-  creates another task.
-- After `READY`, changing goal, authority, acceptance, risk, scope, delegation, qualification, or
-  escalation invalidates readiness. Increment `capsule_revision`, return `READY` to `DECOMPOSED`,
-  append State History, and requalify.
-- Executor notes do not change scope.
-- State History is append-only. Its final state matches TOML `state`, and its final date matches
-  `updated`.
-- Keep the full capsule in `active/` through `REVIEWED` or the last non-terminal state.
-- After successful integration, write exactly one `MERGED` record to `engineering/capsules/HISTORY.md` with final completion evidence and an exact historical full-capsule commit/path plus SHA-256; remove the active capsule in the same closeout change.
-- Cancellation uses the same history-plus-removal closeout with `CANCELLED`, preserving the cancellation reason and partial-work disposition.
-- A later retrospective updates the existing unique terminal record to `RETROSPECTED`; do not recreate the full capsule.
-- Never retain per-task terminal capsules under `engineering/capsules/completed/`.
-- Never rename, recycle, or repurpose an ID after execution begins or after it appears in `HISTORY.md`.
-
-Schema changes require a changelog entry, migration guidance, and a new `schema_version`.
-Historical full capsules remain readable through the exact Git recovery locators recorded in `engineering/capsules/HISTORY.md`.
+Existing `engineering/capsules/active/` TOML capsules remain historical live-state records,
+not templates for new RI work. Their original metadata, allowed/forbidden paths, acceptance,
+blocking/state history, immutable evidence and C/R/T identities stay intact. Original schema
+and strict planning contracts remain recoverable from Git baseline
+`8a358139194d42004fbff289a51a1601b7715788` and historical readers/validator.
+Use [STATES](STATES.md) for their legal recovery transitions and [AUTHORITY](AUTHORITY.md)
+for separate guarded terminal acceptance. #246/#256 remain paused; replacing the RI route
+neither changes their attempts nor resumes them. Never synthesize missing historical proof.

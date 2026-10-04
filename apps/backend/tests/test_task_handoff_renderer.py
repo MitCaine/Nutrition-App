@@ -262,6 +262,7 @@ def test_renderer_rejects_caller_authored_attached_context(tmp_path: Path) -> No
     result = run_renderer(repo, capsule, output, planning_context=context)
     assert result.returncode == 1
     assert "PLANNING_CONTEXT_UNTRUSTED" in result.stderr
+    assert "current tasks use docs/local_project_map.md" in result.stderr
     assert not output.exists()
 
 
@@ -310,3 +311,29 @@ def test_output_inside_repository_is_rejected(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "TRUSTED_PLANNING_CONTEXT_REQUIRED" in result.stderr
     assert not output.exists()
+
+
+def test_historical_rendered_orientation_selects_standard_map(tmp_path: Path) -> None:
+    import importlib.util
+    import tomllib
+
+    specification = importlib.util.spec_from_file_location("historical_handoff_renderer", RENDERER)
+    assert specification is not None and specification.loader is not None
+    renderer = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(renderer)
+    repo, base = setup_repo(tmp_path)
+    relative = commit_ready_capsule(repo, base)
+    text = (repo / relative).read_text(encoding="utf-8")
+    metadata = tomllib.loads(text.split("+++", 2)[1])
+    rendered = renderer.render_markdown(
+        repo=repo,
+        capsule_path=repo / relative,
+        capsule_text=text,
+        validation={"capsules": [{"metadata": metadata}], "repository": {
+            "root": str(repo), "head": git(repo, "rev-parse", "HEAD")}},
+        generated_at="2026-10-02T00:00:00Z",
+        capsule_sha256=renderer.sha256_bytes(text.encode()),
+    )
+    assert "HISTORICAL ONLY: not authorization to dispatch or resume a paused task" in rendered
+    assert "New tasks use docs/local_project_map.md" in rendered
+    assert "START_HERE.md" not in rendered

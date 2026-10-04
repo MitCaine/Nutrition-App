@@ -1,5 +1,8 @@
 # GitHub implementation workflow
 
+Use the [local project map](../local_project_map.md) for current task execution, RI source,
+role permissions and completion routing. This guide retains its product/planning authority.
+
 > **Document role: Engineering Process.** This guide explains how approved planning artifacts
 > become GitHub execution records. Product and architecture decisions remain authoritative in the
 > repository documents; GitHub organizes delivery without replacing those documents.

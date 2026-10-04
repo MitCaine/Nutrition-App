@@ -29,6 +29,9 @@ specialized_qualification = []
 
 # TASK-ID — Outcome-oriented task title
 
+> HISTORICAL TOML RECOVERY TEMPLATE ONLY. New tasks use `engineering/tasks/TEMPLATE.md`
+> and [the local project map](../../docs/local_project_map.md). This template cannot resume #246/#256 or authorize new RI dispatch.
+
 ## Goal
 
 State the problem this task resolves.
