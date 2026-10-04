@@ -721,6 +721,32 @@ class BackendQualificationTests(unittest.TestCase):
                     with self.assertRaises((ValueError,TypeError)):
                         helper.source_probe(root,inventory,account)
 
+    def test_external_includes_reject_before_runtime_inventory_or_source_git(self):
+        helper = load_helper()
+        account = SimpleNamespace(pw_uid=65534)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "candidate"
+            backend = root / "apps/backend"
+            backend.mkdir(parents=True)
+            git(root, "init", "-q")
+            config = root / ".git/config"
+            original = config.read_text()
+            fifo = Path(directory) / "external-include"
+            os.mkfifo(fifo, 0o600)
+            for section in ("include", 'includeIf "gitdir:/**"'):
+                config.write_text(original + f"\n[{section}]\n path = {fifo}\n")
+                for sha in (None, "a" * 40):
+                    with self.subTest(section=section, authenticated=sha is not None):
+                        with patch.object(helper, "assert_runtime_confined") as runtime, \
+                             patch.object(helper, "source_git") as source_git, \
+                             patch.object(helper, "source_probe") as probe:
+                            with self.assertRaisesRegex(ValueError, "GIT_OBJECT_BOUNDARY_UNSUPPORTED"):
+                                with helper._prepared_source(backend, sha, (account, Path(directory))):
+                                    self.fail("unsafe source yielded a launch path")
+                            runtime.assert_not_called()
+                            source_git.assert_not_called()
+                            probe.assert_not_called()
+
     def test_actual_linux_external_git_includes_reject_before_first_git_read(self):
         if sys.platform != "linux":
             self.skipTest("actual CLI configuration boundary requires Linux")

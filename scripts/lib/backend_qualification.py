@@ -421,11 +421,13 @@ def _prepared_source(backend, sha, isolation):
     import errno
 
     account, _temporary = isolation
-    assert_runtime_confined(account)
     root = backend.parent.parent
+    # Reject unsafe source metadata before the broader runtime inventory. This
+    # boundary cannot require runtime access or invoke checkout-aware Git.
+    _validate_source_git_nodes(root)
+    assert_runtime_confined(account)
     authenticated = sha is not None
     if sha is None:
-        _validate_source_git_nodes(root)
         sha = source_git(root, "rev-parse", "HEAD").decode().strip()
     inventory = source_inventory(root, sha, restricted=True)
     original_snapshot = source_snapshot(root, inventory)
