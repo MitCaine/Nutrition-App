@@ -2795,7 +2795,12 @@ def test_authorize_and_qualify_guidance_tracks_workflow_mode(
 
     for mode, reason, expected_authorize, expected_qualify in (
         ("standard", None, "qualify", "verify"),
-        ("attached", None, "plan_capsule", "seal_evidence"),
+        (
+            "attached",
+            None,
+            "plan_capsule",
+            "historical_evidence_sealing_unsupported_owner_decision_required",
+        ),
         ("compatibility", "Existing caller is not capsule-ready.", "qualify", "verify"),
     ):
         case_root = tmp_path / mode

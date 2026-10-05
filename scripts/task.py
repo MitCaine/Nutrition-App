@@ -2932,7 +2932,11 @@ def command_qualify(
             ),
             "workflow_mode": mode,
             "next": (
-                ("seal_evidence" if mode == "attached" else "verify")
+                (
+                    "historical_evidence_sealing_unsupported_owner_decision_required"
+                    if mode == "attached"
+                    else "verify"
+                )
                 if qualification["result"] == "PASS"
                 else "rework"
             ),
