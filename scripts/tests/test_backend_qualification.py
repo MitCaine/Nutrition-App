@@ -1279,6 +1279,38 @@ class BackendQualificationTests(unittest.TestCase):
                             "import pathlib,sys;[pathlib.Path(p).unlink(missing_ok=True) for p in sys.argv[1:]]",
                             str(marker), str(unrelated_marker)], check=True, capture_output=True)
 
+    def test_ordinary_checkout_composes_with_source_authentication(self):
+        ordinary = (ROOT / ".github/workflows/ci.yml").read_text()
+        for name, following in (("backend", "backend-postgres"), ("backend-postgres", "mobile")):
+            with self.subTest(job=name):
+                job = ordinary.split(f"  {name}:\n", 1)[1].split(f"\n  {following}:", 1)[0]
+                checkout = job.split("      - uses: actions/checkout@v7\n", 1)[1].split("\n      - ", 1)[0]
+                self.assertIn("          fetch-depth: 0\n", checkout)
+                self.assertIn("          persist-credentials: false", checkout)
+                self.assertLess(job.index("actions/checkout@v7"), job.index("backend_qualification.py"))
+                self.assertIn('--candidate-sha "${GITHUB_SHA}"', job)
+
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            source, _, _, sha = self.checkout_fixture(Path(directory))
+            # A full ordinary checkout without persisted credentials is accepted.
+            original = (source / ".git/config").read_text()
+            expected = helper.source_inventory(source, sha)
+            self.assertEqual(len(expected["entries"]), 2)
+            # Reproduce checkout v7's external credential include. It must fail
+            # before source reads even if the external config would be readable.
+            external = Path(directory) / "checkout-credentials"
+            external.write_text("[http]\n extraheader = fixture-only\n")
+            config = source / ".git/config"
+            config.write_text(original + f'\n[includeIf "gitdir:{source}/.git"]\n path = {external}\n')
+            with patch.object(helper, "source_git") as source_git:
+                with self.assertRaisesRegex(ValueError, "GIT_OBJECT_BOUNDARY_UNSUPPORTED"):
+                    helper.source_inventory(source, sha)
+                source_git.assert_not_called()
+            # Credential removal restores the same exact tracked source identity.
+            config.write_text(original)
+            self.assertEqual(helper.source_inventory(source, sha), expected)
+
     def test_shared_workflow_source_and_cleanup_order(self):
         ordinary = (ROOT / ".github/workflows/ci.yml").read_text()
         trusted = (ROOT / ".github/workflows/trusted-qualification-execute.yml").read_text()

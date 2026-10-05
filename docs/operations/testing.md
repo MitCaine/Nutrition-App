@@ -114,6 +114,12 @@ artifacts. The helper sets only the child HOME to its passwd home and child TMPD
 ownership and mode0700. Runner TMPDIR remains unchanged for trusted setup and installs. Fixed Git safe-directory configuration permits read-only exact-SHA validation
 across checkout ownership. The ordinary CI helper interface remains unchanged.
 
+The two ordinary backend jobs use full-history checkout with
+`persist-credentials: false`. Checkout removes its authentication configuration before
+the shared helper authenticates source. Persisted external Git `include`/`includeIf`
+configuration is unsupported and remains rejected before source object reads; do not
+relax that boundary to accommodate checkout credentials.
+
 Isolated Python execution, explicit selection, cleared pytest addopts and disabled plugin
 auto-loading prevent selector/config/environment overrides while retaining required backend
 conftest fixtures. The repository tooling job provisions the same account for actual UID
