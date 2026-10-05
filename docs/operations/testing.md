@@ -195,9 +195,20 @@ new comment and rerun qualification for the exact planning and candidate commits
 Do not edit the old comment or rely on a local capsule profile change to supply the
 missing authority.
 
-Pushing an exact commit to a temporary `qualification/TASK-ID/SHA-PREFIX` ref
-causes the normal CI workflow and the aggregator to run against that unchanged
-commit. Unknown or unavailable profiles fail closed.
+For fresh lightweight `standard` tasks, obtain ordinary CI through a pull request
+from the published task branch to `main`. Both ordinary backend jobs explicitly
+check out `github.event.pull_request.head.sha || github.sha` and pass that same SHA
+to every shared-helper invocation. This authenticates the task head on pull requests
+and the pushed commit on pushes. Record the candidate and actual tested identities;
+repository/mobile jobs retain GitHub's default pull-request merge revision, so do not
+label their execution as task-head proof. Ordinary CI remains separate from the trusted
+controller's exact-SHA dedicated-App qualification.
+
+The `qualification/**` namespace belongs to retained legacy capsule qualification.
+Pushing a temporary `qualification/TASK-ID/SHA-PREFIX` ref also triggers its legacy
+aggregator, which requires the historical capsule contract. Fresh standard tasks
+must not use that namespace solely to obtain ordinary CI or select a paused capsule
+to satisfy the legacy aggregator. Unknown or unavailable profiles fail closed.
 
 `./scripts/capsule qualify TASK-ID --evidence-dir PATH` is the retained legacy
 capsule qualification interface. It cannot replace the trusted controller or supply

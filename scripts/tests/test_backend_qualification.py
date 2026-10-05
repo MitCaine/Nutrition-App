@@ -1288,7 +1288,14 @@ class BackendQualificationTests(unittest.TestCase):
                 self.assertIn("          fetch-depth: 0\n", checkout)
                 self.assertIn("          persist-credentials: false", checkout)
                 self.assertLess(job.index("actions/checkout@v7"), job.index("backend_qualification.py"))
-                self.assertIn('--candidate-sha "${GITHUB_SHA}"', job)
+                identity = "${{ github.event.pull_request.head.sha || github.sha }}"
+                self.assertIn(f"          ref: {identity}", checkout.splitlines())
+                modes = ("baseline",) if name == "backend" else ("version", "postgresql", "cleanup")
+                for mode in modes:
+                    command = job.split(f"backend_qualification.py {mode}\n", 1)[1].split("\n", 1)[0]
+                    self.assertEqual(command.strip(), f'--candidate-root ../.. --candidate-sha "{identity}"')
+                self.assertEqual(job.count(f'--candidate-sha "{identity}"'), len(modes))
+                self.assertNotIn("${GITHUB_SHA}", job)
 
         helper = load_helper()
         with tempfile.TemporaryDirectory() as directory:

@@ -24,6 +24,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
@@ -64,7 +65,7 @@ jobs:
       - name: Pytest
         run: >-
           python -I ../../scripts/lib/backend_qualification.py baseline
-          --candidate-root ../.. --candidate-sha "${GITHUB_SHA}"
+          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
       - name: Repository session contract
         run: ../../scripts/session-end.sh --portable-recovery
 
@@ -96,6 +97,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version-file: .python-version
@@ -135,16 +137,16 @@ jobs:
       - name: Verify PostgreSQL major version
         run: >-
           python -I ../../scripts/lib/backend_qualification.py version
-          --candidate-root ../.. --candidate-sha "${GITHUB_SHA}"
+          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
       - name: Runtime and completed Epic 4 PostgreSQL contracts
         run: >-
           python -I ../../scripts/lib/backend_qualification.py postgresql
-          --candidate-root ../.. --candidate-sha "${GITHUB_SHA}"
+          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
       - name: Verify isolated schema cleanup
         if: ${{ always() && steps.install.outcome == 'success' }}
         run: >-
           python -I ../../scripts/lib/backend_qualification.py cleanup
-          --candidate-root ../.. --candidate-sha "${GITHUB_SHA}"
+          --candidate-root ../.. --candidate-sha "${{ github.event.pull_request.head.sha || github.sha }}"
 
   mobile:
     name: Mobile baseline
