@@ -8,12 +8,10 @@ import hashlib
 import os
 import stat
 import subprocess
-import tomllib
 from pathlib import Path
 
 
-class ExecutionError(RuntimeError):
-    pass
+from lib.capsule_contract import ExecutionError, capsule_metadata as capsule_metadata
 
 
 def digest(data: bytes) -> str:
@@ -75,13 +73,3 @@ def verify_planning_bytes(candidate: Path, planning: str, snapshot: dict) -> Non
         observed = hashlib.new(algorithm, b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
         if observed != oid or bool(snapshot[path]["mode"] & 0o111) != (mode == "100755"):
             raise ExecutionError("PLANNING_SOURCE_BYTES_CHANGED: " + path)
-
-
-def capsule_metadata(data: bytes) -> dict:
-    try:
-        parts = data.decode().split("+++", 2)
-        if parts[0].strip() or len(parts) != 3:
-            raise ValueError("missing front matter")
-        return tomllib.loads(parts[1])
-    except (ValueError, UnicodeError) as exc:
-        raise ExecutionError("CAPSULE_PARSE_INVALID") from exc

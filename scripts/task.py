@@ -3,13 +3,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 import re
 import secrets
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -27,11 +25,17 @@ from lib.task_authorization import (
 )
 
 from lib.trusted_qualification import CHECK_NAME
-from lib.legacy_ri.capsule_execution import ExecutionError
-from lib.legacy_ri import candidate_evidence as candidate_evidence
+from lib.capsule_contract import (ExecutionError, EvidenceError,
+    GOVERNING_ISSUE_REPLAN_REQUIRED, GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE,
+    GOVERNING_ISSUE_REVALIDATION_INVALID)
 from lib import task_closeout
 from lib.ri_consumer import RIError
-from lib.legacy_ri.candidate_evidence import EvidenceError
+
+
+def _legacy_evidence():
+    """Load mutating historical recovery capabilities only for an explicit old lane."""
+    from lib.legacy_ri import candidate_evidence
+    return candidate_evidence
 
 
 class TaskControllerError(RuntimeError):
@@ -185,31 +189,31 @@ def revalidate_attached_governing_issue(attached: dict[str, Any]) -> None:
     binding = attached.get("binding")
     authorization = binding.get("authorization") if isinstance(binding, dict) else None
     if not isinstance(authorization, dict):
-        raise EvidenceError(candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED)
+        raise EvidenceError(GOVERNING_ISSUE_REPLAN_REQUIRED)
 
     repository = authorization.get("repository")
     issue_number = authorization.get("issue_number")
     if (not isinstance(repository, str) or not repository
             or type(issue_number) is not int):
-        raise EvidenceError(candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED)
+        raise EvidenceError(GOVERNING_ISSUE_REPLAN_REQUIRED)
 
     try:
         issue = GhIssueAuthorizationTransport().get_issue(repository, issue_number)
     except TaskControllerError as exc:
-        code = (candidate_evidence.GOVERNING_ISSUE_REVALIDATION_INVALID
+        code = (GOVERNING_ISSUE_REVALIDATION_INVALID
                 if str(exc) == "GITHUB_API_RESPONSE_INVALID"
-                else candidate_evidence.GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE)
+                else GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE)
         raise EvidenceError(code) from exc
     except UnicodeError as exc:
         raise EvidenceError(
-            candidate_evidence.GOVERNING_ISSUE_REVALIDATION_INVALID
+            GOVERNING_ISSUE_REVALIDATION_INVALID
         ) from exc
     except (OSError, subprocess.SubprocessError) as exc:
         raise EvidenceError(
-            candidate_evidence.GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE
+            GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE
         ) from exc
 
-    candidate_evidence.revalidate_governing_issue(binding, issue)
+    _legacy_evidence().revalidate_governing_issue(binding, issue)
 
 
 def persist_governing_issue_replan(
@@ -219,7 +223,7 @@ def persist_governing_issue_replan(
 ) -> None:
     state["phase"] = "STOP_REPLAN"
     state["governing_issue_replan"] = {
-        "reason": candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED,
+        "reason": GOVERNING_ISSUE_REPLAN_REQUIRED,
         "candidate_sha": candidate_sha,
     }
     atomic_write_json(path, state)
@@ -604,6 +608,8 @@ def _require_workflow_candidate_attachment(
     mode: str,
     candidate_sha: str,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if mode == "standard" and "capsule_evidence" in state:
+        raise EvidenceError("FRESH_CANDIDATE_ATTACHMENT_REQUIRED")
     attached = state.get("capsule_evidence")
     if mode != "attached" and "capsule_evidence" not in state:
         return None, None
@@ -1908,9 +1914,9 @@ def qualify_task(
         candidate_sha=candidate_sha,
     )
     if attached is not None and binding is not None:
-        candidate_evidence.authenticate_binding(binding, authorization, candidate_sha)
-        if not candidate_evidence.source_matches(
-            binding["source"], candidate_evidence.observe(candidate_repo, candidate_sha)):
+        _legacy_evidence().authenticate_binding(binding, authorization, candidate_sha)
+        if not _legacy_evidence().source_matches(
+            binding["source"], _legacy_evidence().observe(candidate_repo, candidate_sha)):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
         require_review_preflight(attached, binding, candidate_sha)
 
@@ -2147,7 +2153,7 @@ def integrate_task(
             transport,
         )
     )
-    workflow_mode_for_state(state)
+    mode = workflow_mode_for_state(state)
 
     if controller_main_sha != authorization.base_sha:
         raise TaskControllerError(
@@ -2271,13 +2277,16 @@ def integrate_task(
             "INTEGRATION_CHECK_REVALIDATION_FAILED"
         )
 
-    candidate_evidence.gate(state, candidate_sha, review_required=True)
+    if mode == "standard":
+        _require_workflow_candidate_attachment(state, mode=mode, candidate_sha=candidate_sha)
+    if mode == "attached" or "capsule_evidence" in state:
+        _legacy_evidence().gate(state, candidate_sha, review_required=True)
     if "capsule_evidence" in state:
         attached = state["capsule_evidence"]
-        candidate_evidence.authenticate_binding(attached["binding"], authorization, candidate_sha)
+        _legacy_evidence().authenticate_binding(attached["binding"], authorization, candidate_sha)
         revalidate_attached_governing_issue(attached)
-        candidate_evidence.revalidate_manual(attached, GhIssueAuthorizationTransport())
-        candidate_evidence.qualify(attached["binding"], qualification, check, expected_app_id)
+        _legacy_evidence().revalidate_manual(attached, GhIssueAuthorizationTransport())
+        _legacy_evidence().qualify(attached["binding"], qualification, check, expected_app_id)
         integration_receipt = state.get("integration") or {}
         main_transition = None
         if (integration_receipt.get("candidate_sha") == candidate_sha
@@ -2285,8 +2294,8 @@ def integrate_task(
                 and integration_receipt.get("human_owner_authorized") is True
                 and type(integration_receipt.get("check_id")) is int):
             main_transition = (controller_main_sha, source_main_after or candidate_sha)
-        if not candidate_evidence.source_matches(
-            attached["binding"]["source"], candidate_evidence.observe(candidate_repo, candidate_sha),
+        if not _legacy_evidence().source_matches(
+            attached["binding"]["source"], _legacy_evidence().observe(candidate_repo, candidate_sha),
             main_transition=main_transition, added_refs=source_added_refs):
             raise EvidenceError("ATTACHED_SOURCE_CHANGED")
 
@@ -2475,7 +2484,7 @@ def record_qualification(
             or authorization.identity_sha256 != authorization_state.get("identity_sha256")
         ):
             raise EvidenceError("ATTACHED_AUTHORIZATION_MISMATCH")
-        candidate_evidence.authenticate_binding(binding, authorization, candidate_sha)
+        _legacy_evidence().authenticate_binding(binding, authorization, candidate_sha)
         require_review_preflight(attached, binding, candidate_sha)
 
     updated = dict(state)
@@ -2543,7 +2552,8 @@ def record_verification(
                 )
             )
 
-    candidate_evidence.gate(state, candidate_sha)
+    if "capsule_evidence" in state:
+        _legacy_evidence().gate(state, candidate_sha)
 
     updated = dict(state)
 
@@ -3010,7 +3020,7 @@ def command_verify(
             "workflow_mode": mode,
             "next": (
                 (
-                    "evidence_review"
+                    "historical_review_unsupported_owner_decision_required"
                     if mode == "attached"
                     else "review"
                 )
@@ -3170,7 +3180,7 @@ def command_integrate(
                 ),
             )
         except EvidenceError as exc:
-            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+            if str(exc) == GOVERNING_ISSUE_REPLAN_REQUIRED:
                 persist_governing_issue_replan(
                     state, state_file, candidate_sha)
             raise
@@ -3255,7 +3265,7 @@ def command_integrate(
                 ref_transport=GitCandidateRefTransport(candidate_repo),
             )
         except EvidenceError as exc:
-            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+            if str(exc) == GOVERNING_ISSUE_REPLAN_REQUIRED:
                 persist_governing_issue_replan(
                     state, state_file, candidate_sha)
             raise
@@ -3369,7 +3379,7 @@ def validated_finalize_terminal(state: dict[str, Any], args: argparse.Namespace,
                 transport=GhQualificationTransport(),
                 ref_transport=GitCandidateRefTransport(terminal_repo))
         except EvidenceError as exc:
-            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+            if str(exc) == GOVERNING_ISSUE_REPLAN_REQUIRED:
                 persist_governing_issue_replan(
                     terminal_state,
                     state_path(args.terminal_state_dir, args.issue_number),
@@ -3436,7 +3446,7 @@ def command_finalize(args: argparse.Namespace) -> int:
                 source_main_after=source_main_after,
                 source_added_refs=terminal_context[4] if terminal_context is not None else None)
         except EvidenceError as exc:
-            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+            if str(exc) == GOVERNING_ISSUE_REPLAN_REQUIRED:
                 persist_governing_issue_replan(
                     state, state_path(state_dir, args.issue_number), implementation)
             raise
@@ -3485,7 +3495,7 @@ def command_finalize(args: argparse.Namespace) -> int:
                 transport=GhQualificationTransport(),
                 ref_transport=GitCandidateRefTransport(terminal_repo))
         except EvidenceError as exc:
-            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+            if str(exc) == GOVERNING_ISSUE_REPLAN_REQUIRED:
                 persist_governing_issue_replan(
                     terminal_state,
                     state_path(args.terminal_state_dir, args.issue_number),
@@ -3605,7 +3615,7 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
                 transport=GhQualificationTransport(),
                 ref_transport=GitCandidateRefTransport(terminal_repo))
         except EvidenceError as exc:
-            if str(exc) == candidate_evidence.GOVERNING_ISSUE_REPLAN_REQUIRED:
+            if str(exc) == GOVERNING_ISSUE_REPLAN_REQUIRED:
                 persist_governing_issue_replan(
                     state,
                     state_path(args.terminal_state_dir, args.issue_number),

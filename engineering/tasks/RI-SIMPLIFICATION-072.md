@@ -1,5 +1,28 @@
 # RI-SIMPLIFICATION-072 — Replace entangled RI adoption
 
+## Verified completion annotation — 2026-10-04
+
+Completed: installed exact candidate `9b7022943ae26269bd8b53903f0d00eb048895f4`
+on base `2f1dd7fe120491d76059c1ab1a5fc42044c3508e`. All six acceptance criteria
+below were satisfied by exact backend + repository App4708441 qualification
+(run37222955210/check111497911577), fresh independent full-candidate approval,
+normal guarded integration, installed links/entrypoints/standard preparation and
+actual pinned RI launcher verification using Python3.14.8. #257 is completed;
+#246/#256 and every historical stop remain preserved.
+
+Authoritative result: the existing controller checkpoint
+`adoption-installation/supervision-prerequisite/adoption-continuation053/execution-map.json`
+and `normal-adoption-installed-verification/CLOSEOUT.md` in the selected controller
+workspace, plus [public closeout](https://github.com/MitCaine/Nutrition-App/issues/257#issuecomment-5983050352).
+This completed record authorizes no new work; select the active task via
+[the current map](../../docs/local_project_map.md).
+
+## Frozen preparation snapshot
+
+Everything below preserves the original preparation text, including then-unchecked
+criteria and pending status. Those historical assertions are not current task status;
+the verified annotation above resolves them without rewriting the original evidence.
+
 Owner-authorized bounded source/document maintenance. Product #246/#256 stay paused.
 Current base: `2f1dd7fe120491d76059c1ab1a5fc42044c3508e`; branch: `codex/ri-lightweight-installed-final`.
 Historical preparation base: `8a358139194d42004fbff289a51a1601b7715788`; branch: `maintenance/lightweight-ri-final-088`.

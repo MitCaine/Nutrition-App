@@ -1,4 +1,6 @@
-"""Historical attached-capsule evidence readers, retained for paused task recovery.
+"""Explicit historical attached-capsule recovery capabilities.
 
-Not a dispatch or review interface for current standard tasks.
+Includes passive readers and legacy attachment/signing/correction mutators. Mutators
+require their original recovery authority; no dispatch/review API serves new tasks.
+Passive receipt authentication never creates a key. #246/#256 remain paused.
 """

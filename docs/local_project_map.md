@@ -52,12 +52,12 @@ New portable task records live at `engineering/tasks/TASK-ID.md`, using the
 phase, actors, authority, checks, stops, pending obligations and evidence identities there.
 The trusted controller's supported private state is `~/.nutrition-app/task-controller/issue-N.json`,
 or the explicitly selected `NUTRITION_TASK_STATE_DIR` / `--state-dir`; authenticate that actual
-selection before resuming. The current portable record is
-[RI-SIMPLIFICATION-072](../engineering/tasks/RI-SIMPLIFICATION-072.md). For this migration, the existing private root checkpoint remains
-`adoption-installation/supervision-prerequisite/adoption-continuation053/execution-map.json`
-in the controller's project workspace, with source/evidence handoffs in the existing
-`simple-ri-replacement072` and successor directories. Private state is not portable source
-or an additional gate; do not copy private diagnostic contents into the repository.
+selection before resuming. Select the active task's portable record and authenticate
+its matching controller state/checkpoint; this map does not select a permanent task.
+Completed migration [RI-SIMPLIFICATION-072](../engineering/tasks/RI-SIMPLIFICATION-072.md)
+retains its preparation snapshot with an explicit verified completion annotation.
+Private evidence stays in the selected controller workspace; it is not portable source
+or an additional gate, and private diagnostics must not be copied into this repository.
 
 ## Checks and boundaries
 
@@ -67,22 +67,25 @@ Nutrition's existing trusted controller (`./scripts/task prepare`, `authorize`, 
 separately enforce live owner authorization, exact-SHA dedicated-App qualification,
 project-selected profiles and protected expected-main integration. They are existing
 Nutrition constraints, not RI requirements. This documentation does not retire or weaken
-them. The full adoption candidate retains its backend + repository requirements. The separate
-amended bootstrap additionally requires iOS-native; the current successor preserves those installed workflow/helper bytes and is classified
-against its installed base, rather than inheriting a historical result.
+them. The existing path classifier selects the profiles for each exact candidate; historical
+profile results never transfer to changed source.
 
-The one-time Nutrition bootstrap is resolved: installed commit
-`2f1dd7fe120491d76059c1ab1a5fc42044c3508e` received backend, repository and iOS-native
-qualification through dedicated App4708441, and the original repository rule was restored.
-The current adoption successor is based on that installed commit. The actual trusted route
-can now qualify this adoption normally; no further protection exception, operator arrangement,
-custom gateway or infrastructure prerequisite is part of RI adoption. Historical bootstrap
-failures, preparation and stops remain evidence of their original attempts.
+The lightweight adoption was installed at
+`9b7022943ae26269bd8b53903f0d00eb048895f4`, after exact backend + repository
+qualification through dedicated App4708441 and fresh independent review. Installed
+entrypoints, links, standard CLI preparation and the pinned RI launcher were verified;
+#257 is completed. The prior bootstrap `2f1dd7fe120491d76059c1ab1a5fc42044c3508e`
+passed backend + repository + iOS-native, with the original repository rule restored.
+No protection exception, operator arrangement, custom gateway or infrastructure
+prerequisite is part of normal RI adoption.
 
-The adoption itself remains pending exact-candidate qualification, fresh review, normal
-protected integration and installed entrypoint verification. Local checks are preparation,
-not installed success or product approval. The private088 checkpoint and successor records
-retain their original source/check identities; none transfers approval to changed source.
+Authenticated installed completion is retained in the existing controller checkpoint
+`adoption-installation/supervision-prerequisite/adoption-continuation053/execution-map.json`
+and `normal-adoption-installed-verification/CLOSEOUT.md` in that workspace, alongside
+[the public closeout](https://github.com/MitCaine/Nutrition-App/issues/257#issuecomment-5983050352).
+Authenticate the selected current checkpoint and live source before action; these
+completion records do not authorize a new task. Historical bootstrap failures and
+preparation stops retain their original identities and outcomes.
 
 Run focused checks on changed interfaces and the profiles selected by the existing
 [trusted qualification](operations/testing.md#trusted-task-controller-bootstrap).
@@ -99,8 +102,8 @@ The [repository standards](../AGENTS.md), [domain invariants](project/invariants
 own normal test commands and required profiles. Unsupported RI coverage requires direct
 source/diff inspection.
 
-The actual compatible launcher uses Python 3.14 (tested 3.14.7), a verified external
-runtime manifest and an exact commit. From the candidate repository root:
+The actual compatible launcher uses Python 3.14 (installed closeout tested 3.14.8), a verified external
+runtime manifest and an exact commit. From the selected repository root:
 
 ```bash
 NUTRITION_CONTROLLER_PYTHON=/absolute/python3.14 ./scripts/ri query \
@@ -116,7 +119,7 @@ is the platform's explicitly authorized outer execution (`require_escalated`), w
 RI's nested network denial intact. Use it only under applicable host/task authority; otherwise
 report the denial and hold the dependent command. Generic environment or catalog probes are
 insufficient. Retained navigation proofs keep their original C/command/runtime identities;
-this documentation migration does not claim a newly executed launcher or product proof.
+unchanged setup proof is retained rather than claimed as newly executed or product approval.
 
 #246 and #256 remain paused. Their capsules, branches, C/R/T recovery, historical evidence,
 authority decisions, attempts and consumed allowances remain unchanged. Historical attached

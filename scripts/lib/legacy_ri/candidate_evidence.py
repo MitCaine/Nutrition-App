@@ -16,8 +16,9 @@ from lib.legacy_ri.capsule_execution import capsule_metadata, source_snapshot, v
 from lib.task_authorization import ResolvedAuthorization, canonical_json, validate_candidate_scope
 
 
-class EvidenceError(RuntimeError):
-    pass
+from lib.capsule_contract import (EvidenceError, digest, frozen_contract,
+    GOVERNING_ISSUE_REPLAN_REQUIRED, GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE as GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE,
+    GOVERNING_ISSUE_REVALIDATION_INVALID)
 
 
 def _capsule_scope_patterns(metadata: dict, field: str, version: int) -> list[str]:
@@ -30,15 +31,6 @@ def _capsule_scope_patterns(metadata: dict, field: str, version: int) -> list[st
     except path_scope.PathPatternError as exc:
         raise EvidenceError("CAPSULE_SCOPE_INVALID: " + str(exc)) from exc
     return patterns
-
-
-GOVERNING_ISSUE_REPLAN_REQUIRED = "GOVERNING_ISSUE_REPLAN_REQUIRED"
-GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE = "GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE"
-GOVERNING_ISSUE_REVALIDATION_INVALID = "GOVERNING_ISSUE_REVALIDATION_INVALID"
-
-
-def digest(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
 def governing_issue_material(issue: object, expected_number: int) -> dict:
@@ -106,21 +98,6 @@ def read_blob(repo: Path, commit: str, path: str, *, max_bytes: int | None = Non
     if max_bytes is not None and size > max_bytes:
         raise EvidenceError("REVIEW_SOURCE_WORK_LIMIT")
     return git(repo, "cat-file", "blob", oid.decode())
-
-
-def frozen_contract(raw: bytes) -> dict:
-    metadata = capsule_metadata(raw)
-    for key in ("state", "updated", "blocked", "blocked_reason", "blocked_since"):
-        metadata.pop(key, None)
-    body = raw.decode().split("+++", 2)[2]
-    parts = re.split(r"(?m)^## (.+)\n", body)
-    sections = {"preamble": parts[0]}
-    for name, text in zip(parts[1::2], parts[2::2]):
-        if name in sections:
-            raise EvidenceError("CAPSULE_DUPLICATE_SECTION")
-        if name not in {"State history", "Completion record"}:
-            sections[name] = re.sub(r"(?m)^- \[[ xX]\] (AC-)", r"- [ ] \1", text).strip()
-    return {"metadata": metadata, "sections": sections}
 
 
 def requirements(raw: bytes) -> list[dict]:
@@ -628,6 +605,26 @@ def correction(state: dict) -> dict:
     return updated
 
 
+def read_key(path: Path) -> bytes:
+    """Passive recovery authentication never provisions a signing key."""
+    if path.is_symlink():
+        raise EvidenceError("REVIEW_KEY_INVALID")
+    try:
+        if not path.is_file():
+            raise EvidenceError("REVIEW_KEY_UNAVAILABLE")
+        info = path.stat()
+        if info.st_nlink != 1:
+            raise EvidenceError("REVIEW_KEY_INVALID")
+        if info.st_mode & 0o077:
+            raise EvidenceError("CONTROLLER_KEY_PERMISSIONS_INVALID")
+        key = path.read_bytes()
+    except OSError as exc:
+        raise EvidenceError("REVIEW_KEY_UNAVAILABLE") from exc
+    if len(key) != 32:
+        raise EvidenceError("REVIEW_KEY_INVALID")
+    return key
+
+
 def create_key(path: Path) -> bytes:
     if path.is_symlink():
         raise EvidenceError("CONTROLLER_KEY_LINK_FORBIDDEN")
@@ -750,7 +747,7 @@ def gate(state: dict, candidate: str, *, review_required: bool = False) -> None:
     packet = evidence_packet(attached)
     if review_required:
         receipt = attached.get("review", {})
-        authenticate_receipt(receipt, create_key(Path(attached["key_path"])), binding)
+        authenticate_receipt(receipt, read_key(Path(attached["key_path"])), binding)
         if receipt.get("evidence_sha256") != digest(packet):
             raise EvidenceError("REVIEW_EVIDENCE_CHANGED")
         if receipt["verdict"]["disposition"] != "approved":

@@ -73,3 +73,19 @@ def test_sticky_stop_cannot_be_cleared_by_later_success():
         with pytest.raises(task.TaskControllerError, match="STOP_REPLAN_PRESERVE_ATTEMPT"):
             action(stopped, **kwargs)
         assert stopped == original
+
+
+def test_standard_startup_does_not_import_historical_runtime():
+    import subprocess
+    result = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, 'scripts'); "
+        "import task; task.build_parser(); "
+        "assert not any(n.startswith('lib.legacy_ri') for n in sys.modules)"],
+        cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_standard_rejects_even_valid_injected_historical_binding():
+    candidate = "a" * 40
+    state = {"capsule_evidence": {"binding": {"candidate": candidate}}}
+    with pytest.raises(task.EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
+        task._require_workflow_candidate_attachment(state, mode="standard", candidate_sha=candidate)

@@ -53,6 +53,8 @@ def load_task_module():
 
 
 TASK = load_task_module()
+# Explicit historical fixtures do not make these modules standard startup dependencies.
+from lib.legacy_ri import candidate_evidence as LEGACY_EVIDENCE  # noqa: E402
 
 
 def test_retired_execution_command_cannot_create_a_checkpoint(tmp_path):
@@ -2752,7 +2754,7 @@ def test_record_qualification_authenticates_binding_and_review_preflight(
         )
 
     binding = {"authorization": authorization.to_dict(), "candidate": candidate}
-    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
+    binding["binding_sha256"] = LEGACY_EVIDENCE.digest(binding)
     state["capsule_evidence"] = {"binding": binding}
     with pytest.raises(EvidenceError, match="REVIEW_PREFLIGHT_REQUIRED_OR_STALE"):
         TASK.record_qualification(
@@ -3232,12 +3234,12 @@ def attach_synthetic_issue_binding(
     binding = {
         "authorization": authorization.to_dict(),
         "candidate": candidate,
-        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
+        "issue_fingerprint": LEGACY_EVIDENCE.governing_issue_fingerprint(
             issue, authorization.issue_number
         ),
-        "source": TASK.candidate_evidence.observe(repo, candidate),
+        "source": LEGACY_EVIDENCE.observe(repo, candidate),
     }
-    binding["binding_sha256"] = TASK.candidate_evidence.digest(binding)
+    binding["binding_sha256"] = LEGACY_EVIDENCE.digest(binding)
     reviewed["capsule_evidence"] = {"binding": binding, "commands": {}}
 
 
@@ -3245,7 +3247,7 @@ def test_governing_issue_fingerprint_uses_only_material_fields() -> None:
     original = governing_issue_fixture()
     binding = {
         "authorization": {"issue_number": 999},
-        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(
+        "issue_fingerprint": LEGACY_EVIDENCE.governing_issue_fingerprint(
             original, 999
         ),
     }
@@ -3257,7 +3259,7 @@ def test_governing_issue_fingerprint_uses_only_material_fields() -> None:
         "comments": 37,
     }
 
-    TASK.candidate_evidence.revalidate_governing_issue(binding, noisy)
+    LEGACY_EVIDENCE.revalidate_governing_issue(binding, noisy)
 
     for changed in (
         {**original, "title": "Expanded controller task"},
@@ -3268,13 +3270,13 @@ def test_governing_issue_fingerprint_uses_only_material_fields() -> None:
             TASK.EvidenceError,
             match="GOVERNING_ISSUE_REPLAN_REQUIRED",
         ):
-            TASK.candidate_evidence.revalidate_governing_issue(binding, changed)
+            LEGACY_EVIDENCE.revalidate_governing_issue(binding, changed)
 
     with pytest.raises(
         TASK.EvidenceError,
         match="GOVERNING_ISSUE_REVALIDATION_INVALID",
     ):
-        TASK.candidate_evidence.revalidate_governing_issue(
+        LEGACY_EVIDENCE.revalidate_governing_issue(
             binding, {"number": 999, "title": "missing body and state"}
         )
 
@@ -3301,44 +3303,44 @@ def test_capsule_attachment_persists_canonical_open_issue_fingerprint(
         "branch": "task/GH-999-P1-r1",
     }
     monkeypatch.setattr(
-        TASK.candidate_evidence,
+        LEGACY_EVIDENCE,
         "git_text",
         lambda _repo, *args: (
             f"{planning} {base}" if args[0] == "rev-list" else capsule_path
         ),
     )
-    monkeypatch.setattr(TASK.candidate_evidence, "git", lambda *_args: b"")
+    monkeypatch.setattr(LEGACY_EVIDENCE, "git", lambda *_args: b"")
     monkeypatch.setattr(
-        TASK.candidate_evidence,
+        LEGACY_EVIDENCE,
         "read_blob",
         lambda _repo, commit, _path: b"planning" if commit == planning else b"candidate",
     )
     monkeypatch.setattr(
-        TASK.candidate_evidence,
+        LEGACY_EVIDENCE,
         "capsule_metadata",
         lambda raw: {**metadata, "state": "READY" if raw == b"planning" else "IMPLEMENTED"},
     )
     monkeypatch.setattr(
-        TASK.candidate_evidence,
+        LEGACY_EVIDENCE,
         "frozen_contract",
         lambda _raw: {"sections": {"Acceptance criteria": "- [ ] AC-1: Preserve scope."}},
     )
-    monkeypatch.setattr(TASK.candidate_evidence, "requirements", lambda _raw: [])
-    monkeypatch.setattr(TASK.candidate_evidence, "validate_candidate_scope", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(LEGACY_EVIDENCE, "requirements", lambda _raw: [])
+    monkeypatch.setattr(LEGACY_EVIDENCE, "validate_candidate_scope", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
-        TASK.candidate_evidence,
+        LEGACY_EVIDENCE,
         "observe",
         lambda *_args: {"branch": metadata["branch"], "candidate": candidate},
     )
     monkeypatch.setattr(
-        TASK.candidate_evidence,
+        LEGACY_EVIDENCE,
         "review_obligations",
         lambda *_args: {"outcomes": [], "standards": []},
     )
-    monkeypatch.setattr(TASK.candidate_evidence.ri_delta, "configuration", lambda _text: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE.ri_delta, "configuration", lambda _text: None)
 
     issue = governing_issue_fixture()
-    binding = TASK.candidate_evidence.attach(
+    binding = LEGACY_EVIDENCE.attach(
         repo,
         authorization,
         planning=planning,
@@ -3346,7 +3348,7 @@ def test_capsule_attachment_persists_canonical_open_issue_fingerprint(
         issue=issue,
     )
 
-    assert binding["issue_fingerprint"] == TASK.candidate_evidence.governing_issue_fingerprint(
+    assert binding["issue_fingerprint"] == LEGACY_EVIDENCE.governing_issue_fingerprint(
         issue, authorization.issue_number
     )
     assert binding["issue"] == issue
@@ -3355,7 +3357,7 @@ def test_capsule_attachment_persists_canonical_open_issue_fingerprint(
         TASK.EvidenceError,
         match="GOVERNING_ISSUE_REPLAN_REQUIRED",
     ):
-        TASK.candidate_evidence.attach(
+        LEGACY_EVIDENCE.attach(
             repo,
             authorization,
             planning=planning,
@@ -3389,7 +3391,7 @@ def test_integrate_rejects_live_issue_drift(
     attach_synthetic_issue_binding(
         reviewed, repo, candidate, attached_issue, qualification
     )
-    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "gate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
 
     with pytest.raises(
@@ -3427,7 +3429,7 @@ def test_integrate_ignores_issue_metadata_and_rechecks_on_recovery(
     attach_synthetic_issue_binding(
         reviewed, repo, candidate, attached_issue, qualification
     )
-    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "gate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
 
     pending = TASK.integrate_task(
@@ -3477,7 +3479,7 @@ def test_integrate_fails_closed_when_issue_get_is_unavailable_or_malformed(
     attach_synthetic_issue_binding(
         reviewed, repo, candidate, attached_issue, qualification
     )
-    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "gate", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
 
     with pytest.raises(TASK.EvidenceError, match=error):
@@ -3798,15 +3800,15 @@ def test_attached_revalidation_allows_only_receipted_main_fetch(tmp_path: Path, 
     reviewed["capsule_evidence"] = {"binding": {
         "source": original,
         "authorization": {"repository": "owner/repo", "issue_number": 999},
-        "issue_fingerprint": TASK.candidate_evidence.governing_issue_fingerprint(issue, 999),
+        "issue_fingerprint": LEGACY_EVIDENCE.governing_issue_fingerprint(issue, 999),
     }}
-    monkeypatch.setattr(TASK.candidate_evidence, "authenticate_binding", lambda *_args: None)
-    monkeypatch.setattr(TASK.candidate_evidence, "gate", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(TASK.candidate_evidence, "revalidate_manual", lambda *_args: None)
-    monkeypatch.setattr(TASK.candidate_evidence, "qualify", lambda *_args: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "authenticate_binding", lambda *_args: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "revalidate_manual", lambda *_args: None)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "qualify", lambda *_args: None)
     monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
     observed = dict(original)
-    monkeypatch.setattr(TASK.candidate_evidence, "observe", lambda *_args: observed)
+    monkeypatch.setattr(LEGACY_EVIDENCE, "observe", lambda *_args: observed)
     pending = TASK.integrate_task(
         reviewed, candidate_repo=repo, controller_main_sha=base, expected_app_id=424242,
         transport=transport, ref_transport=refs, human_owner_authorized=True)
@@ -3994,3 +3996,34 @@ def test_new_prepare_preserves_stopped_state_and_consumed_allowance(tmp_path):
             trusted_author="owner", repository="owner/repo", base_sha=base, allowed_paths=["src/**"],
             forbidden_paths=[], profiles=["repository"], revision=2, nonce="new-nonce-123456789")
     assert path.read_bytes() == original
+
+
+def test_standard_authorized_full_path_never_loads_historical_capabilities(tmp_path, monkeypatch):
+    """Actual acceptance calls; only external service/ref operations are fixtures."""
+    def retired(*_args, **_kwargs):
+        pytest.fail("standard acceptance entered historical RI machinery")
+
+    monkeypatch.setattr(TASK, "_legacy_evidence", retired)
+    monkeypatch.setattr(TASK, "require_review_preflight", retired)
+    repo, base, candidate, qualified, transport, refs = qualify_fixture(
+        tmp_path, workflow_mode="standard", compatibility_reason=None,
+    )
+    assert qualified["phase"] == "QUALIFIED"
+    assert TASK.workflow_mode_for_state(qualified) == "standard"
+    assert qualified["qualification"]["candidate_ref_removed"] is True
+    verified = TASK.record_verification(qualified, candidate_sha=candidate,
+        actor="controller", decision="pass", evidence="exact source and required checks")
+    reviewed = TASK.record_review(verified, candidate_sha=candidate,
+        actor="distinct-native-reviewer", decision="approved", summary="full diff, criteria and standards")
+    pending = TASK.integrate_task(reviewed, candidate_repo=repo, controller_main_sha=base,
+        expected_app_id=424242, transport=transport, ref_transport=refs, human_owner_authorized=True)
+    refs.main_sha = base
+    integrated = TASK.reconcile_integration(pending, candidate_sha=candidate, ref_transport=refs)
+    assert integrated["phase"] == "INTEGRATED"
+    assert integrated["integration"]["origin_main_after"] == candidate
+    assert refs.main_pushes == [candidate]
+    assert "capsule_evidence" not in integrated
+    # Idempotent recovery must not push twice or create a signing key.
+    again = TASK.reconcile_integration(integrated, candidate_sha=candidate, ref_transport=refs)
+    assert again == integrated
+    assert refs.main_pushes == [candidate]
