@@ -15,12 +15,23 @@ for domain/security standards and [AUTHORITY](../engineering/workflow/AUTHORITY.
 
 ## Local route
 
+Under explicit owner authorization, the controller creates a new non-main task branch
+on GitHub. The capsule creator publishes the bounded capsule on that branch before the
+implementor publishes implementation commits on the same branch. A fresh distinct reviewer
+then reviews the exact published candidate commit and complete base-to-candidate diff.
+Accepted work merges only through the actual protected checks and owner acceptance.
+Branch publication is a separately authorized action; it does not require or establish
+main-acceptance qualification. This sequence grants no blanket Git permission, protection
+bypass or authority to change settings. Record late publication/reconciliation truthfully;
+local dirty-source review does not become exact published-commit review retroactively.
+
+
 | Stage / actor | Literal interface and inputs | Output / permission / completion |
 | --- | --- | --- |
-| Orient / controller | Read issue, current checkout, owner authorization, this map and shared instructions; use `./scripts/ri query` when useful | Identify objective, exact base/branch, permitted actions and relevant project checks; preserve dirty work and paused states |
-| Capsule / planner | One native subagent; [Markdown task template](../engineering/tasks/TEMPLATE.md), issue and relevant source/diff | Bounded Markdown task/capsule under `engineering/tasks/`, branch/base, scope, criteria, checks and gaps; native terminal return; no integration permission |
-| Implement / implementor | One native subagent with task, shared instructions, AGENTS and permitted checkout | In-scope edits, source/diff and real command results, exact candidate/path list and limitations; native terminal return; no settings or issue authority |
-| Independent review / reviewer | Fresh different native subagent, exact candidate and complete diff, task, AGENTS and retained command results | Read-only verdict covering every criterion and applicable standards; native terminal return; no custom gateway, signed receipt chain or fixed review timeout |
+| Orient / controller | Read issue, current checkout, owner authorization, this map and shared instructions; use `./scripts/ri query` when useful | Identify objective, exact base, permitted actions and checks; create the new GitHub non-main task branch when authorized; preserve dirty work and paused states |
+| Capsule / planner | One native subagent; [Markdown task template](../engineering/tasks/TEMPLATE.md), issue and relevant source/diff | Publish bounded Markdown task/capsule under `engineering/tasks/` on the authorized task branch; return published commit, branch/base, scope, criteria, checks and gaps; no integration permission |
+| Implement / implementor | One native subagent with task, shared instructions, AGENTS and permitted checkout | In-scope edits and checks; publish implementation on the same authorized task branch; return exact published candidate/diff, results and limitations; no settings or issue authority |
+| Independent review / reviewer | Fresh different native subagent, exact published candidate commit and complete diff, task, AGENTS and retained command results | Read-only verdict covering every criterion and applicable standards; native terminal return; no custom gateway, signed receipt chain or fixed review timeout |
 | Authorized integration / controller | Reviewed candidate, owner authorization and the actually supported Nutrition integration route | Integrate only within live repository protections and project-required checks; no implied bypass or settings permission; retain exact resulting source identity |
 | Verify closeout / controller | Installed result, current links/entrypoints, actual project check results and authorized issue actions | Verify installed behavior and remaining obligations, record limitations, retain useful evidence, and close/clean only when authorized and safe; no product resumption from this maintenance |
 
@@ -92,7 +103,18 @@ Run focused checks on changed interfaces and the profiles selected by the existi
 Do not equate skips, RI output, fixture success or automatic push CI with mandatory
 candidate qualification. Source changes under review invalidate that candidate's verdict.
 Record actual commands, interpreter, source/job/log identities, failures/skips and remaining
-obligations in the existing task/controller record. Native subagent evidence is sufficient
+obligations in the existing task/controller record. Use the [task template's append-only attempt inventory](../engineering/tasks/TEMPLATE.md#check-attempts)
+for every check attempt: exact source (commit and complete dirty diff identity when relevant),
+literal command/environment, status, exit code (or unknown), unique log location and digest.
+Preserve earlier rows and log bytes on rerun. Keep this handoff bounded by linking large logs
+in the selected evidence workspace; never copy private payloads or secrets into source.
+Independent review receives the complete relevant attempt inventory and logs, including failures.
+Only the latest eligible complete success on the required source satisfies a check. Skips,
+unavailable checks, partial/ambiguous delivery, unknown exit code, missing logs and mismatched
+source cannot satisfy it. Explicitly resolve any later failed or ambiguous attempt before
+relying on a prior success. Reference this inventory from existing verification evidence;
+no new runner, signed format or historical evidence retrofit is required.
+Native subagent evidence is sufficient
 for RI; controller review records are explicit decisions, not test-inferred approval.
 
 Use [RI tooling](../engineering/tooling/RI.md): producer `2f28da4d326ff12da5dc9270eb57910303e4a737`,

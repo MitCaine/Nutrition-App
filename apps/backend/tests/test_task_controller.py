@@ -4032,3 +4032,44 @@ def test_standard_authorized_full_path_never_loads_historical_capabilities(tmp_p
     again = TASK.reconcile_integration(integrated, candidate_sha=candidate, ref_transport=refs)
     assert again == integrated
     assert refs.main_pushes == [candidate]
+
+
+@pytest.mark.parametrize("phase", ["QUALIFIED", "VERIFIED", "REVIEWED"])
+def test_prepare_preserves_active_state_and_all_retained_artifacts(tmp_path, phase):
+    repo, base = init_repo(tmp_path)
+    state_dir = tmp_path / "retained-controller"
+    path = TASK.state_path(state_dir, 999)
+    path.parent.mkdir(parents=True)
+    state = {
+        "phase": phase,
+        "launches_used": 1,
+        "candidate": base,
+        "capsule_evidence": {"commands": {}, "signed_receipt": "retained"},
+    }
+    # Deliberately preserve noncanonical JSON bytes, not only equivalent values.
+    path.write_text(json.dumps(state, indent=1) + "\n\n")
+    artifacts = {
+        "authorization-999.md": b"existing owner authorization draft\n",
+        "review-999.json": b'{"signature":"retained-review"}\n',
+        "integration-999.json": b'{"candidate":"retained-integration"}\n',
+        "failed-attempt.log": b"failure exit 1\n",
+        "passed-attempt.log": b"success exit 0\n",
+    }
+    for name, content in artifacts.items():
+        (state_dir / name).write_bytes(content)
+    before = {p.name: p.read_bytes() for p in state_dir.iterdir()}
+
+    with pytest.raises(TASK.TaskControllerError, match="TASK_STATE_EXISTS_PRESERVE_HISTORY"):
+        TASK.prepare_task(
+            repo=repo, state_dir=state_dir, issue_number=999, task_id="GH-999-new",
+            trusted_author="owner", repository="owner/repo", base_sha=base,
+            allowed_paths=["src/**"], forbidden_paths=[], profiles=["repository"],
+            revision=2, nonce="new-nonce-123456789",
+        )
+
+    # Existing recovery entrypoint reloads the retained state without normalizing
+    # state/receipt bytes, repairing keys, or resetting the consumed allowance.
+    recovered = TASK.load_state(state_dir, 999)
+    assert recovered == state
+    assert recovered["launches_used"] == 1
+    assert {p.name: p.read_bytes() for p in state_dir.iterdir()} == before
