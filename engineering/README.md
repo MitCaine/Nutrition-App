@@ -25,17 +25,21 @@
 6. **Review and integrate.** Present the exact committed candidate, required
    qualification and independent review through the trusted controller. A pull
    request is optional when the controller's guarded integration is used.
-7. **Close out and release deliberately.** For an ordinary Markdown task, the controller
-   records the exact reviewed, qualified and integrated commit, integration receipt and
-   remaining obligations in the task record before authorized issue closure. Existing
-   capsule lifecycles additionally require their separate guarded capsule HISTORY closeout;
+7. **Close out and release deliberately.** Finalize tracked preparation snapshots BEFORE
+   final candidate review, label them historical, and point current status to the live issue
+   and existing external controller checkpoint. After review, record qualification,
+   integration, issue closure and safe branch cleanup in those existing operational records.
+   Do not create another candidate solely to append completion evidence. A genuine later
+   tracked-document correction requires affected checks, review and authorized publication.
+   Existing capsule lifecycles additionally require their separate guarded capsule HISTORY closeout;
    do not create a capsule for an ordinary task. Release from a clean, qualified `main` commit.
 
 
 ## Repository-owned task workflow
 
 Use [local project map](../docs/local_project_map.md), the sole current local map, and its complete
-pinned shared instructions. New work uses bounded Markdown tasks under `engineering/tasks/`,
+pinned [daily issue procedure](workflow/shared/start-an-issue.md).
+The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work uses bounded Markdown tasks under `engineering/tasks/`,
 serial native planner/implementor/independent reviewer returns, ordinary source/diff/log
 review and the trusted standard controller. RI-only SDK/report/structural gates are retired.
 Protected main, authenticated owner authority, required profile checks, domain/security

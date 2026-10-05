@@ -1,7 +1,8 @@
 # Nutrition workflow
 
 Start at [local project map](../../docs/local_project_map.md), the sole current local execution map, with the
-complete [shared instructions](shared/capsule-controller-workflow.md) and [identity](shared/SOURCE.md).
+complete [daily issue procedure](shared/start-an-issue.md) and [identity](shared/SOURCE.md).
+The [adoption guide](shared/capsule-controller-workflow.md) is conditional on setup or replacement.
 Project controls: [AUTHORITY](AUTHORITY.md), [EXECUTION](EXECUTION.md) and
 [CANDIDATE_EVIDENCE](CANDIDATE_EVIDENCE.md). Paused capsule recovery:
 [TASK_CAPSULE](TASK_CAPSULE.md), [STATES](STATES.md), [HISTORY](../capsules/HISTORY.md).

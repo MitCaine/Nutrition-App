@@ -33,9 +33,18 @@ def test_retired_model_evidence_cli_cannot_dispatch():
 
 def test_complete_shared_role_resources_and_separate_compatible_runtime_pin():
     import hashlib, json
-    shared = ROOT / "engineering/workflow/shared/capsule-controller-workflow.md"
-    assert hashlib.sha256(shared.read_bytes()).hexdigest() == "5623e53ef9bc72978b5d78e646966238dae72b55684bf2a51a722b6d00736339"
-    assert shared.stat().st_size == 9024
+    shared = ROOT / "engineering/workflow/shared"
+    identities = {
+        "start-an-issue.md": (15243, "43cacf4b2cbb2ad12a180402efa341287e4146dc7f5a08352e74bfc95247dd13"),
+        "capsule-controller-workflow.md": (14131, "64e3b311c5a9524c8b14708d1805c3676425347d3ba498fb101274ea946f1179"),
+    }
+    provenance = (shared / "SOURCE.md").read_text()
+    assert "99e0e656f68b3605b7538d691135572ea5a2428c" in provenance
+    for name, (size, digest) in identities.items():
+        data = (shared / name).read_bytes()
+        assert len(data) == size
+        assert hashlib.sha256(data).hexdigest() == digest
+        assert name in provenance and str(size) in provenance and digest in provenance
     lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
     assert lock["revision"] == "2f28da4d326ff12da5dc9270eb57910303e4a737"
     assert lock["contracts"]["navigation"] == 6
@@ -89,3 +98,85 @@ def test_standard_rejects_even_valid_injected_historical_binding():
     state = {"capsule_evidence": {"binding": {"candidate": candidate}}}
     with pytest.raises(task.EvidenceError, match="FRESH_CANDIDATE_ATTACHMENT_REQUIRED"):
         task._require_workflow_candidate_attachment(state, mode="standard", candidate_sha=candidate)
+
+
+def test_daily_entrypoints_and_six_heading_task_format():
+    import re
+    for name in ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
+                 "engineering/workflow/README.md",
+                 "engineering/workflow/shared/skill-templates/README.md"):
+        text = (ROOT / name).read_text()
+        assert re.search(r"\[[^\]]*daily[^\]]*\]\([^)]*start-an-issue\.md\)", text)
+    expected = ["Objective", "Source and scope", "Acceptance", "Checks", "Prerequisites",
+                "Handoff and closeout"]
+    for name in ("TEMPLATE.md", "GH-261.md"):
+        text = (ROOT / "engineering/tasks" / name).read_text()
+        assert re.findall(r"^## (.+)$", text, re.MULTILINE) == expected
+        checks = text.split("## Checks\n", 1)[1].split("## Prerequisites", 1)[0]
+        assert "### Check attempts" in checks
+        for field in ("Exact source / diff identity", "Command / environment", "Status / exit code",
+                      "Log location / SHA-256", "Eligibility / disposition"):
+            assert field in checks
+        for rule in ("including", "failure", "skip", "rerun", "untracked", "latest eligible",
+                     "Unknown exit", "source mismatch", "logs"):
+            assert rule in checks
+
+
+def test_all_affected_local_directed_links_and_anchors_resolve():
+    from urllib.parse import unquote, urlsplit
+    spec = importlib.util.spec_from_file_location("workflow_docs", ROOT / "scripts/validate-docs.py")
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    paths = ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
+             "engineering/tasks/TEMPLATE.md", "engineering/tasks/GH-261.md",
+             "engineering/workflow/README.md", "engineering/workflow/shared/SOURCE.md",
+             "engineering/workflow/shared/start-an-issue.md",
+             "engineering/workflow/shared/capsule-controller-workflow.md",
+             "engineering/workflow/shared/skill-templates/README.md",
+             "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md")
+    for name in paths:
+        source = ROOT / name
+        visible, _, errors = validator._scan_document(source)
+        assert not errors
+        for link in validator.LINK_PATTERN.findall(visible):
+            parts = urlsplit(link)
+            if parts.scheme:
+                continue  # Pinned upstream resources are authenticated in external check evidence.
+            target = (source.parent / unquote(parts.path)).resolve() if parts.path else source
+            assert target.is_file(), (name, link)
+            if parts.fragment:
+                assert target.suffix == ".md"
+                assert unquote(parts.fragment) in validator._scan_document(target)[1], (name, link)
+
+
+def test_queue_redirect_retains_complete_pinned_resource_route():
+    from urllib.parse import unquote
+    text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
+    prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
+              "99e0e656f68b3605b7538d691135572ea5a2428c/docs/skill-templates/capsule-queue/")
+    for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
+                     "scripts/run_and_queue.py"):
+        assert prefix + resource in unquote(text)
+    assert "scripts/run%5Fand%5Fqueue.py" in text
+    assert "not an installed executable skill" in text
+    assert "CLI acceptance" in text and "idle wake-up" in text
+
+
+def test_controller_permissions_waiting_and_external_closeout_contract():
+    text = (ROOT / "docs/local_project_map.md").read_text()
+    for rule in ("Only the controller dispatches", "Workers do not recruit", "failed required check",
+                 "authorized", "scope change", "assignee/host inability", "independent scope challenge",
+                 "event-based blocking completion", "idle wake-up", "supported observer",
+                 "without repeated owner prompts", "genuinely reserved actions", "Default configured model",
+                 "no model/effort fallback", "App `4708441`", "paused"):
+        assert rule in text
+    for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
+        text = (ROOT / name).read_text()
+        for rule in ("BEFORE", "historical", "live issue", "external controller checkpoint",
+                     "another candidate solely", "operational records"):
+            assert rule in text
+    task_text = (ROOT / "engineering/tasks/GH-261.md").read_text()
+    assert "Historical preparation snapshot" in task_text
+    assert "controller-state/issue-261.json" in task_text
+    assert "/Users/" not in task_text and "/private/tmp/" not in task_text
+    assert "../evidence/" not in task_text

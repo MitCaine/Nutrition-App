@@ -158,8 +158,10 @@ For dependency-only pull requests:
 ## Task workflow
 
 Start at [the local execution map](docs/local_project_map.md) and deliver its complete
-byte-pinned shared procedure to every role. New tasks use the owner-authorized lightweight
-route: one serial planner, implementor and distinct independent reviewer with native completion,
+byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md) to every role.
+The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional on setup or replacement. New tasks use the owner-authorized lightweight
+route: controller-only dispatch of one serial planner, implementor and distinct independent reviewer,
+using event-based blocking completion unless the exact idle wake-up route is verified,
 bounded Markdown records and ordinary source/diff/test evidence. The sequence is orient →
 capsule → implement → independent review → authorized integration → verify closeout. RI
 requires no cryptographic receipt chain, custom gateway or multiple human operators. Pins

@@ -1,9 +1,19 @@
-# Optional historical evidence helper templates
+# Optional shared workflow templates
 
-The extended RI capsule helpers are retired from current Nutrition dispatch. They are
-optional upstream material for separately justified consumer controls, not current role
-resources. The complete current planner/implementor/reviewer instructions are in the
-[canonical shared procedure](../capsule-controller-workflow.md); use [the local map](../../../../docs/local_project_map.md).
-Global skill installation or Work registration is not implied by this integration.
+Use the complete [daily issue procedure](../start-an-issue.md) for established-project
+work and [local map](../../../../docs/local_project_map.md) for Nutrition commands,
+standards and authority. The [adoption guide](../capsule-controller-workflow.md)
+is conditional on setup or explicitly authorized replacement.
 
-[Exact optional upstream source](https://github.com/MitCaine/repository-intelligence/blob/7f096e430d5a436550d0c783c3da9e4051a77b9d/docs/skill-templates/README.md).
+The [conditional queue redirect](capsule-queue/SKILL.md) resolves the daily procedure's
+external-job route to the complete pinned upstream skill. Queue requires a supported
+observer and verified controller delivery; otherwise use blocking completion. Native
+roles use event-based blocking waits unless their idle wake-up is verified.
+
+The other optional upstream template folders remain unadopted. This reconciled local
+entrypoint supplies the selected daily route and only its required conditional queue target;
+it does not copy the upstream setup/installation tree into current dispatch.
+Do not infer five mandatory installations, local/upstream parity, Work registration,
+or new authority from these links. Compare whole folders and verify actual resources
+before any separately authorized installation. Current role handoffs carry the selected
+complete daily instructions directly.
