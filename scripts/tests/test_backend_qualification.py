@@ -1311,6 +1311,59 @@ class BackendQualificationTests(unittest.TestCase):
             config.write_text(original)
             self.assertEqual(helper.source_inventory(source, sha), expected)
 
+    def test_ordinary_workflow_normalizes_only_disabled_sparse_metadata(self):
+        import textwrap
+
+        ordinary = (ROOT / ".github/workflows/ci.yml").read_text()
+        scripts = []
+        for name, following in (("backend", "backend-postgres"), ("backend-postgres", "mobile")):
+            job = ordinary.split(f"  {name}:\n", 1)[1].split(f"\n  {following}:", 1)[0]
+            step = job.split("      - name: Normalize disabled checkout sparse metadata\n", 1)[1].split("\n      - ", 1)[0]
+            self.assertIn("working-directory: ${{ github.workspace }}", step)
+            self.assertLess(job.index("actions/setup-python@v7"), job.index("Normalize disabled checkout sparse metadata"))
+            self.assertLess(job.index("Normalize disabled checkout sparse metadata"), job.index("backend_qualification.py"))
+            shell = textwrap.dedent(step.split("        run: |\n", 1)[1]).rstrip() + "\n"
+            self.assertTrue(shell.startswith("python -I - <<'PYTHON'\n"))
+            self.assertTrue(shell.endswith("PYTHON\n"))
+            scripts.append(shell.split("\n", 1)[1].rsplit("PYTHON\n", 1)[0])
+        self.assertEqual(scripts[0], scripts[1])
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            source, _, _, sha = self.checkout_fixture(Path(directory))
+            expected = helper.source_inventory(source, sha)
+            config = source / ".git/config.worktree"
+            for script in scripts:
+                # Reproduce the exact residue left by checkout's sparse-disable.
+                git(source, "sparse-checkout", "disable")
+                git(source, "config", "--local", "--unset-all", "extensions.worktreeConfig")
+                disabled = config.read_text()
+                with self.assertRaisesRegex(ValueError, "GIT_OBJECT_BOUNDARY_UNSUPPORTED"):
+                    helper.source_inventory(source, sha)
+                completed = subprocess.run([sys.executable, "-I", "-"], input=script,
+                                           cwd=source, capture_output=True, text=True)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertFalse(config.exists())
+                self.assertEqual(helper.source_inventory(source, sha), expected)
+                # The same actual workflow program preserves unsupported metadata.
+                for extra in ("[unknown]\n value = false\n", "[core]\n sparseCheckout = true\n",
+                              '[include]\n path = external-credentials\n'):
+                    with self.subTest(extra=extra):
+                        config.write_text(disabled + extra)
+                        completed = subprocess.run([sys.executable, "-I", "-"], input=script,
+                                                   cwd=source, capture_output=True, text=True)
+                        self.assertNotEqual(completed.returncode, 0)
+                        self.assertEqual(config.read_text(), disabled + extra)
+                        with self.assertRaisesRegex(ValueError, "GIT_OBJECT_BOUNDARY_UNSUPPORTED"):
+                            helper.source_inventory(source, sha)
+                config.write_text(disabled)
+                git(source, "config", "--local", "extensions.worktreeConfig", "true")
+                completed = subprocess.run([sys.executable, "-I", "-"], input=script,
+                                           cwd=source, capture_output=True, text=True)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertEqual(config.read_text(), disabled)
+                git(source, "config", "--local", "--unset-all", "extensions.worktreeConfig")
+                config.unlink()
+
     def test_shared_workflow_source_and_cleanup_order(self):
         ordinary = (ROOT / ".github/workflows/ci.yml").read_text()
         trusted = (ROOT / ".github/workflows/trusted-qualification-execute.yml").read_text()

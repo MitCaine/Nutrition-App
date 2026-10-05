@@ -116,7 +116,10 @@ across checkout ownership. The ordinary CI helper interface remains unchanged.
 
 The two ordinary backend jobs use full-history checkout with
 `persist-credentials: false`. Checkout removes its authentication configuration before
-the shared helper authenticates source. Persisted external Git `include`/`includeIf`
+the shared helper authenticates source. Checkout's disabled sparse metadata is removed
+only when its worktree extension is absent and its worktree config contains exactly the
+three known sparse flags set to false. Enabled, unknown or externally included worktree
+configuration fails closed. Persisted external Git `include`/`includeIf`
 configuration is unsupported and remains rejected before source object reads; do not
 relax that boundary to accommodate checkout credentials.
 

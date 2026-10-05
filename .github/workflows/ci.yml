@@ -29,6 +29,32 @@ jobs:
           python-version-file: .python-version
           cache: pip
           cache-dependency-path: apps/backend/requirements-dev.lock
+      - name: Normalize disabled checkout sparse metadata
+        working-directory: ${{ github.workspace }}
+        run: |
+          python -I - <<'PYTHON'
+          import pathlib
+          import stat
+          import subprocess
+
+          config = pathlib.Path(".git/config.worktree")
+          if config.exists() or config.is_symlink():
+              info = config.lstat()
+              if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 4096:
+                  raise ValueError("Unsupported checkout worktree configuration")
+              extension = subprocess.run(
+                  ["git", "config", "--no-includes", "--file", ".git/config",
+                   "--get", "extensions.worktreeConfig"], capture_output=True, check=False)
+              if extension.returncode != 1:
+                  raise ValueError("Checkout worktree configuration extension remains enabled")
+              records = subprocess.check_output(
+                  ["git", "config", "--no-includes", "--file", str(config), "--null", "--list"])
+              expected = sorted([b"core.sparsecheckout\nfalse", b"core.sparsecheckoutcone\nfalse",
+                                 b"index.sparse\nfalse"])
+              if sorted(records.rstrip(b"\0").split(b"\0")) != expected:
+                  raise ValueError("Unsupported checkout sparse metadata")
+              config.unlink()
+          PYTHON
       - name: Install locked dependencies
         run: |
           python -m pip install -r requirements-dev.lock
@@ -75,6 +101,32 @@ jobs:
           python-version-file: .python-version
           cache: pip
           cache-dependency-path: apps/backend/requirements-dev.lock
+      - name: Normalize disabled checkout sparse metadata
+        working-directory: ${{ github.workspace }}
+        run: |
+          python -I - <<'PYTHON'
+          import pathlib
+          import stat
+          import subprocess
+
+          config = pathlib.Path(".git/config.worktree")
+          if config.exists() or config.is_symlink():
+              info = config.lstat()
+              if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 4096:
+                  raise ValueError("Unsupported checkout worktree configuration")
+              extension = subprocess.run(
+                  ["git", "config", "--no-includes", "--file", ".git/config",
+                   "--get", "extensions.worktreeConfig"], capture_output=True, check=False)
+              if extension.returncode != 1:
+                  raise ValueError("Checkout worktree configuration extension remains enabled")
+              records = subprocess.check_output(
+                  ["git", "config", "--no-includes", "--file", str(config), "--null", "--list"])
+              expected = sorted([b"core.sparsecheckout\nfalse", b"core.sparsecheckoutcone\nfalse",
+                                 b"index.sparse\nfalse"])
+              if sorted(records.rstrip(b"\0").split(b"\0")) != expected:
+                  raise ValueError("Unsupported checkout sparse metadata")
+              config.unlink()
+          PYTHON
       - id: install
         name: Install locked dependencies
         run: |
