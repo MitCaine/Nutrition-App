@@ -45,6 +45,17 @@ they are not an executor or reviewer service. No old STOP or allowance is reset.
 stay paused; any future resumption requires separate owner direction and a concrete migration
 of their existing contracts, not silent conversion to standard mode.
 
+Every checkpoint writer uses the issue-scoped transaction contract: acquire the exclusive
+checkpoint lock, reread the latest record, validate the intended mutation against that
+record, then replace it atomically after flushing the file. Long qualification work runs
+outside that lock after a persisted operation identity binds the candidate, authorization
+and dispatch. Terminal qualification application reauthenticates live authority and the
+candidate under serialization; uncertain launch or cleanup states are retained for an
+exact-operation reconciliation path without redispatch. Integration pending and completion
+also revalidate the current candidate-bound qualification, verification, review and owner
+authority before persisting a transition. Finalize/cancel/cleanup intents use the same
+read-modify-write contract and preserve newer fields, stops and history.
+
 For a previously attached capsule, retain its full nonterminal bytes, legal state/history,
 separate candidate C, full recovery R and terminal T identities. Existing guarded finalizers
 and `task_closeout.py` remain recovery tools. A terminal update has its own authorization,

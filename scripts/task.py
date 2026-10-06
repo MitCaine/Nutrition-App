@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -221,12 +223,19 @@ def persist_governing_issue_replan(
     path: Path,
     candidate_sha: str | None = None,
 ) -> None:
-    state["phase"] = "STOP_REPLAN"
-    state["governing_issue_replan"] = {
-        "reason": GOVERNING_ISSUE_REPLAN_REQUIRED,
-        "candidate_sha": candidate_sha,
-    }
-    atomic_write_json(path, state)
+    issue_number = state.get("issue_number")
+    if type(issue_number) is not int:
+        raise TaskControllerError("CHECKPOINT_ISSUE_NUMBER_INVALID")
+    with checkpoint_lock(path.parent, issue_number):
+        latest = load_state(path.parent, issue_number)
+        latest["phase"] = "STOP_REPLAN"
+        latest["governing_issue_replan"] = {
+            "reason": GOVERNING_ISSUE_REPLAN_REQUIRED,
+            "candidate_sha": candidate_sha,
+        }
+        atomic_write_json(path, latest)
+        state.clear()
+        state.update(latest)
 
 
 def run(
@@ -419,8 +428,89 @@ def atomic_write_json(
         )
 
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
     temporary.replace(path)
+
+
+@contextlib.contextmanager
+def checkpoint_lock(
+    state_dir: Path,
+    issue_number: int,
+):
+    """Serialize one issue checkpoint's complete read-modify-write transaction."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    lock_key = hashlib.sha256(
+        f"{state_dir.resolve()}:{issue_number}".encode("utf-8")
+    ).hexdigest()
+    lock_path = Path(tempfile.gettempdir()) / (
+        f"nutrition-task-checkpoint-{lock_key}.lock"
+    )
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def checkpoint_transaction(
+    state_dir: Path,
+    issue_number: int,
+    mutation: Callable[[dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any]:
+    """Load, validate/mutate, and persist one checkpoint while serialized."""
+    path = state_path(state_dir, issue_number)
+    with checkpoint_lock(state_dir, issue_number):
+        current = load_state(state_dir, issue_number)
+        updated = mutation(current)
+        if not isinstance(updated, dict):
+            raise TaskControllerError("CHECKPOINT_TRANSACTION_RESULT_INVALID")
+        atomic_write_json(path, updated)
+        return updated
+
+
+def checkpoint_intent_transaction(
+    state_dir: Path,
+    issue_number: int,
+    path: Path,
+    mutation: Callable[[dict[str, Any] | None], dict[str, Any]],
+) -> dict[str, Any]:
+    """Persist an issue-scoped intent without overwriting newer fields."""
+    with checkpoint_lock(state_dir, issue_number):
+        current: dict[str, Any] | None = None
+        if path.is_file():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise TaskControllerError("CHECKPOINT_INTENT_INVALID") from exc
+            if not isinstance(loaded, dict):
+                raise TaskControllerError("CHECKPOINT_INTENT_INVALID")
+            current = loaded
+        updated = mutation(current)
+        if not isinstance(updated, dict):
+            raise TaskControllerError("CHECKPOINT_INTENT_RESULT_INVALID")
+        atomic_write_json(path, updated)
+        return updated
+
+
+def load_checkpoint_intent(
+    state_dir: Path,
+    issue_number: int,
+    path: Path,
+) -> dict[str, Any] | None:
+    """Read an intent under its issue lock without normalizing its bytes."""
+    with checkpoint_lock(state_dir, issue_number):
+        if not path.is_file():
+            return None
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise TaskControllerError("CHECKPOINT_INTENT_INVALID") from exc
+        if not isinstance(loaded, dict):
+            raise TaskControllerError("CHECKPOINT_INTENT_INVALID")
+        return loaded
 
 
 def load_state(
@@ -626,7 +716,7 @@ def _require_workflow_candidate_attachment(
     return attached, binding
 
 
-def prepare_task(
+def _prepare_task_unlocked(
     *,
     repo: Path,
     state_dir: Path,
@@ -739,6 +829,42 @@ def prepare_task(
     )
 
     return document
+
+
+def prepare_task(
+    *,
+    repo: Path,
+    state_dir: Path,
+    issue_number: int,
+    task_id: str,
+    trusted_author: str,
+    repository: str,
+    base_sha: str,
+    allowed_paths: list[str],
+    forbidden_paths: list[str],
+    profiles: list[str],
+    revision: int,
+    nonce: str,
+    workflow_mode: str = "standard",
+    compatibility_reason: str | None = None,
+) -> dict[str, Any]:
+    with checkpoint_lock(state_dir, issue_number):
+        return _prepare_task_unlocked(
+            repo=repo,
+            state_dir=state_dir,
+            issue_number=issue_number,
+            task_id=task_id,
+            trusted_author=trusted_author,
+            repository=repository,
+            base_sha=base_sha,
+            allowed_paths=allowed_paths,
+            forbidden_paths=forbidden_paths,
+            profiles=profiles,
+            revision=revision,
+            nonce=nonce,
+            workflow_mode=workflow_mode,
+            compatibility_reason=compatibility_reason,
+        )
 
 
 def authorize_task(
@@ -1840,6 +1966,406 @@ def require_review_preflight(attached: dict, binding: dict, candidate_sha: str, 
     return preflight
 
 
+def _qualification_operation_matches(
+    current: dict[str, Any],
+    operation: dict[str, Any],
+) -> bool:
+    observed = current.get("qualification_operation")
+    if not isinstance(observed, dict):
+        return False
+    for field in (
+        "operation_id",
+        "candidate_sha",
+        "candidate_ref",
+        "dispatch_nonce",
+        "controller_main_sha",
+        "workflow",
+        "expected_app_id",
+        "authorization",
+    ):
+        if observed.get(field) != operation.get(field):
+            return False
+    return True
+
+
+def _checkpoint_authorization_identity(
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    authorization = state.get("authorization")
+    if not isinstance(authorization, dict):
+        raise TaskControllerError("AUTHORIZATION_STATE_INVALID")
+    return {
+        field: authorization.get(field)
+        for field in (
+            "revision",
+            "nonce",
+            "base_sha",
+            "payload_sha256",
+            "comment_id",
+            "identity_sha256",
+            "author_login",
+        )
+    }
+
+
+def begin_qualification_operation(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist a dispatch identity before any long qualification work starts."""
+    def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if current.get("phase") != "AUTHORIZED":
+            raise TaskControllerError("QUALIFICATION_REQUIRES_AUTHORIZED_STATE")
+        previous = current.get("qualification_operation")
+        if isinstance(previous, dict) and previous.get("status") in {
+            "DISPATCH_PENDING",
+            "RUNNING",
+            "UNKNOWN",
+            "CLEANUP_UNKNOWN",
+        }:
+            raise TaskControllerError("QUALIFICATION_OPERATION_ALREADY_ACTIVE")
+        if operation.get("authorization") != _checkpoint_authorization_identity(current):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+        updated = json.loads(json.dumps(current))
+        updated["qualification_operation"] = {
+            **operation,
+            "status": "DISPATCH_PENDING",
+            "candidate_ref_published": False,
+            "terminal_result": None,
+            "cleanup_error": None,
+        }
+        return updated
+
+    return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def mark_qualification_ref_published(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+) -> dict[str, Any]:
+    def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if current.get("phase") == "STOP_REPLAN":
+            raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        if not _qualification_operation_matches(current, operation):
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        updated = json.loads(json.dumps(current))
+        updated["qualification_operation"]["status"] = "RUNNING"
+        updated["qualification_operation"]["candidate_ref_published"] = True
+        return updated
+
+    return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def record_qualification_operation_failure(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+    error: str,
+) -> dict[str, Any]:
+    def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if current.get("phase") == "STOP_REPLAN":
+            raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        if not _qualification_operation_matches(current, operation):
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        updated = json.loads(json.dumps(current))
+        updated["qualification_operation"].update({
+            "status": "UNKNOWN",
+            "error": error,
+        })
+        return updated
+
+    return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def apply_qualification_terminal_result(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+    result_document: dict[str, Any],
+    transport: QualificationTransport,
+    candidate_repo: Path | None = None,
+) -> dict[str, Any]:
+    """Apply a terminal qualification result only after serialized live reauth."""
+    def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if current.get("phase") == "STOP_REPLAN":
+            raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+        if current.get("phase") != "AUTHORIZED":
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        if not _qualification_operation_matches(current, operation):
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        current_operation = current["qualification_operation"]
+        if current_operation.get("status") not in {
+            "RUNNING",
+            "DISPATCH_PENDING",
+            "UNKNOWN",
+        }:
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        if candidate_repo is not None:
+            observed_candidate = git(candidate_repo, "rev-parse", "HEAD")
+            if observed_candidate != operation.get("candidate_sha"):
+                raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+            if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+                raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+        authorization = resolve_current_authorization(current, transport)
+        if authorization.base_sha != operation.get("controller_main_sha"):
+            raise TaskControllerError("QUALIFICATION_BASE_CHANGED")
+        if authorization.to_dict() != operation.get("resolved_authorization"):
+            raise TaskControllerError("QUALIFICATION_AUTHORITY_CHANGED")
+        qualification = result_document.get("qualification")
+        if not isinstance(qualification, dict) or qualification.get("candidate_sha") != operation.get("candidate_sha"):
+            raise TaskControllerError("QUALIFICATION_OPERATION_CANDIDATE_CHANGED")
+        updated = json.loads(json.dumps(current))
+        updated["qualification"] = qualification
+        updated["phase"] = result_document["phase"]
+        updated["qualification_operation"].update({
+            "status": "TERMINAL",
+            "terminal_result": qualification.get("result"),
+            "cleanup_error": None,
+        })
+        return updated
+
+    return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def record_qualification_cleanup(
+    state_dir: Path,
+    issue_number: int,
+    operation: dict[str, Any],
+    *,
+    removed: bool,
+    error: str | None = None,
+) -> dict[str, Any]:
+    def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if not _qualification_operation_matches(current, operation):
+            raise TaskControllerError("QUALIFICATION_OPERATION_STALE")
+        qualification = current.get("qualification")
+        if not isinstance(qualification, dict):
+            raise TaskControllerError("QUALIFICATION_RESULT_MISSING")
+        updated = json.loads(json.dumps(current))
+        updated["qualification"]["candidate_ref_removed"] = removed
+        updated["qualification_operation"].update({
+            "status": "COMPLETE" if removed else "CLEANUP_UNKNOWN",
+            "cleanup_error": error,
+        })
+        return updated
+
+    return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def _qualification_terminal_result(
+    operation: dict[str, Any],
+    run_document: dict[str, Any],
+    check: dict[str, Any] | None,
+    expected_app_id: int,
+) -> dict[str, Any]:
+    workflow_conclusion = run_document.get("conclusion")
+    if check is None:
+        if workflow_conclusion == "success":
+            raise TaskControllerError("AUTHORITATIVE_CHECK_MISSING")
+        check_id = None
+        check_conclusion = None
+        check_external_id = None
+    else:
+        check_id = check.get("id")
+        if type(check_id) is not int:
+            raise TaskControllerError("AUTHORITATIVE_CHECK_ID_INVALID")
+        check_conclusion = check.get("conclusion")
+        check_external_id = check.get("external_id")
+        if check_conclusion == "success" and workflow_conclusion != "success":
+            raise TaskControllerError("QUALIFICATION_EVIDENCE_INCONSISTENT")
+
+    result = (
+        "PASS"
+        if workflow_conclusion == "success"
+        and check_conclusion == "success"
+        else "FAIL"
+    )
+    return {
+        "qualification": {
+            "candidate_sha": operation["candidate_sha"],
+            "controller_main_sha": operation["controller_main_sha"],
+            "candidate_ref": operation["candidate_ref"],
+            "candidate_ref_removed": False,
+            "dispatch_nonce": operation["dispatch_nonce"],
+            "workflow": operation["workflow"],
+            "workflow_run_id": run_document["id"],
+            "workflow_run_url": run_document.get("html_url"),
+            "workflow_conclusion": workflow_conclusion,
+            "check_id": check_id,
+            "check_app_id": expected_app_id if check is not None else None,
+            "check_conclusion": check_conclusion,
+            "check_external_id": check_external_id,
+            "result": result,
+        },
+        "phase": "QUALIFIED" if result == "PASS" else "QUALIFICATION_FAILED",
+    }
+
+
+def reconcile_qualification_operation(
+    state_dir: Path,
+    issue_number: int,
+    *,
+    transport: QualificationTransport,
+    ref_transport: CandidateRefTransport,
+    expected_app_id: int,
+    candidate_repo: Path | None = None,
+) -> dict[str, Any]:
+    """Reconcile one persisted qualification attempt without dispatching again."""
+    with checkpoint_lock(state_dir, issue_number):
+        state = load_state(state_dir, issue_number)
+
+    operation = state.get("qualification_operation")
+    if not isinstance(operation, dict):
+        raise TaskControllerError("QUALIFICATION_OPERATION_MISSING")
+    if state.get("phase") == "STOP_REPLAN":
+        raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+
+    status = operation.get("status")
+    if status == "COMPLETE":
+        return state
+    if status not in {"UNKNOWN", "TERMINAL", "CLEANUP_UNKNOWN"}:
+        raise TaskControllerError("QUALIFICATION_OPERATION_NOT_RECONCILABLE")
+    if candidate_repo is not None:
+        if git(candidate_repo, "rev-parse", "HEAD") != operation.get("candidate_sha"):
+            raise TaskControllerError("QUALIFICATION_CANDIDATE_CHANGED")
+        if git(candidate_repo, "status", "--porcelain=v1", "-uall"):
+            raise TaskControllerError("CANDIDATE_WORKTREE_DIRTY")
+
+    if status in {"TERMINAL", "CLEANUP_UNKNOWN"}:
+        try:
+            ref_transport.delete_candidate_ref(operation["candidate_ref"])
+        except Exception as exc:
+            record_qualification_cleanup(
+                state_dir,
+                issue_number,
+                operation,
+                removed=False,
+                error=str(exc),
+            )
+            raise
+        return record_qualification_cleanup(
+            state_dir,
+            issue_number,
+            operation,
+            removed=True,
+        )
+
+    workflow = operation.get("workflow")
+    dispatch_nonce = operation.get("dispatch_nonce")
+    candidate_sha = operation.get("candidate_sha")
+    controller_main_sha = operation.get("controller_main_sha")
+    if not all(
+        isinstance(value, str) and value
+        for value in (workflow, dispatch_nonce, candidate_sha, controller_main_sha)
+    ):
+        raise TaskControllerError("QUALIFICATION_OPERATION_INVALID")
+
+    matches = [
+        item
+        for item in transport.list_workflow_runs(state["repository"], workflow)
+        if item.get("display_title")
+        == _workflow_title(state, dispatch_nonce, candidate_sha)
+    ]
+    if len(matches) > 1:
+        raise TaskControllerError("WORKFLOW_RUN_AMBIGUOUS")
+    if not matches:
+        return state
+
+    run_id = matches[0].get("id")
+    if type(run_id) is not int:
+        raise TaskControllerError("WORKFLOW_RUN_ID_INVALID")
+    run_document = transport.get_workflow_run(state["repository"], run_id)
+    _validate_workflow_identity(
+        run_document,
+        expected_title=_workflow_title(state, dispatch_nonce, candidate_sha),
+        controller_main_sha=controller_main_sha,
+    )
+    if run_document.get("status") != "completed":
+        return state
+
+    resolved_app_id = operation.get("expected_app_id", expected_app_id)
+    if type(resolved_app_id) is not int:
+        raise TaskControllerError("QUALIFICATION_APP_ID_INVALID")
+    authorization = operation.get("resolved_authorization")
+    if not isinstance(authorization, dict):
+        raise TaskControllerError("QUALIFICATION_OPERATION_AUTHORITY_INVALID")
+    expected_external_id = (
+        "nutrition-task:"
+        f"{state['issue_number']}:"
+        f"{authorization.get('identity_sha256')}:"
+        f"{candidate_sha}"
+    )
+    check = _wait_for_authoritative_check(
+        transport,
+        repository=state["repository"],
+        candidate_sha=candidate_sha,
+        expected_app_id=resolved_app_id,
+        expected_external_id=expected_external_id,
+        poll_attempts=1,
+        sleep_seconds=0,
+        sleep_fn=lambda _: None,
+    )
+    try:
+        terminal_result = _qualification_terminal_result(
+            operation,
+            run_document,
+            check,
+            resolved_app_id,
+        )
+    except Exception as exc:
+        try:
+            record_qualification_operation_failure(
+                state_dir,
+                issue_number,
+                operation,
+                str(exc),
+            )
+        except TaskControllerError:
+            pass
+        raise
+
+    try:
+        apply_qualification_terminal_result(
+            state_dir,
+            issue_number,
+            operation,
+            terminal_result,
+            transport,
+            candidate_repo=candidate_repo,
+        )
+    except Exception as exc:
+        try:
+            record_qualification_operation_failure(
+                state_dir,
+                issue_number,
+                operation,
+                str(exc),
+            )
+        except TaskControllerError:
+            pass
+        raise
+
+    try:
+        ref_transport.delete_candidate_ref(operation["candidate_ref"])
+    except Exception as exc:
+        record_qualification_cleanup(
+            state_dir,
+            issue_number,
+            operation,
+            removed=False,
+            error=str(exc),
+        )
+        raise
+    return record_qualification_cleanup(
+        state_dir,
+        issue_number,
+        operation,
+        removed=True,
+    )
+
+
 def qualify_task(
     state: dict[str, Any],
     *,
@@ -1853,6 +2379,11 @@ def qualify_task(
     sleep_seconds: float = 5.0,
     sleep_fn: Callable[[float], None] = time.sleep,
     dispatch_nonce: str | None = None,
+    operation_writer: Callable[[dict[str, Any]], None] | None = None,
+    ref_published_writer: Callable[[dict[str, Any]], None] | None = None,
+    terminal_writer: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
+    cleanup_writer: Callable[[dict[str, Any], bool, str | None], None] | None = None,
+    failure_writer: Callable[[dict[str, Any], str], None] | None = None,
 ) -> dict[str, Any]:
     if state.get("phase") != "AUTHORIZED":
         raise TaskControllerError(
@@ -1964,6 +2495,21 @@ def qualify_task(
         "dispatch_nonce": nonce,
     }
 
+    operation = {
+        "operation_id": nonce,
+        "candidate_sha": candidate_sha,
+        "candidate_ref": ref_name,
+        "dispatch_nonce": nonce,
+        "controller_main_sha": controller_main_sha,
+        "workflow": workflow,
+        "expected_app_id": expected_app_id,
+        "authorization": _checkpoint_authorization_identity(state),
+        "resolved_authorization": authorization.to_dict(),
+    }
+
+    if operation_writer is not None:
+        operation_writer(operation)
+
     published = False
     updated: dict[str, Any] | None = None
 
@@ -1974,6 +2520,9 @@ def qualify_task(
         )
 
         published = True
+
+        if ref_published_writer is not None:
+            ref_published_writer(operation)
 
         dispatch_response = (
             transport.dispatch_workflow(
@@ -2016,113 +2565,63 @@ def qualify_task(
             sleep_fn=sleep_fn,
         )
 
-        workflow_conclusion = (
-            run_document.get("conclusion")
+        terminal_result = _qualification_terminal_result(
+            operation,
+            run_document,
+            check,
+            expected_app_id,
         )
 
-        if check is None:
-            if workflow_conclusion == "success":
-                raise TaskControllerError(
-                    "AUTHORITATIVE_CHECK_MISSING"
-                )
-
-            result = "FAIL"
-            check_id = None
-            check_conclusion = None
-            check_external_id = None
+        if terminal_writer is not None:
+            updated = terminal_writer(terminal_result, operation)
         else:
-            check_id = check.get("id")
+            updated = json.loads(json.dumps(state))
+            updated["qualification"] = terminal_result["qualification"]
+            updated["phase"] = terminal_result["phase"]
 
-            if type(check_id) is not int:
-                raise TaskControllerError(
-                    "AUTHORITATIVE_CHECK_ID_INVALID"
-                )
-
-            check_conclusion = check.get(
-                "conclusion"
-            )
-
-            check_external_id = check.get(
-                "external_id"
-            )
-
-            if (
-                check_conclusion == "success"
-                and workflow_conclusion
-                != "success"
-            ):
-                raise TaskControllerError(
-                    "QUALIFICATION_EVIDENCE_INCONSISTENT"
-                )
-
-            result = (
-                "PASS"
-                if (
-                    workflow_conclusion
-                    == "success"
-                    and check_conclusion
-                    == "success"
-                )
-                else "FAIL"
-            )
-
-        updated = json.loads(
-            json.dumps(state)
-        )
-
-        updated["qualification"] = {
-            "candidate_sha": candidate_sha,
-            "controller_main_sha": (
-                controller_main_sha
-            ),
-            "candidate_ref": ref_name,
-            "candidate_ref_removed": False,
-            "dispatch_nonce": nonce,
-            "workflow": workflow,
-            "workflow_run_id": run_id,
-            "workflow_run_url": (
-                run_document.get("html_url")
-            ),
-            "workflow_conclusion": (
-                workflow_conclusion
-            ),
-            "check_id": check_id,
-            "check_app_id": (
-                expected_app_id
-                if check is not None
-                else None
-            ),
-            "check_conclusion": (
-                check_conclusion
-            ),
-            "check_external_id": (
-                check_external_id
-            ),
-            "result": result,
-        }
-
-        updated["phase"] = (
-            "QUALIFIED"
-            if result == "PASS"
-            else "QUALIFICATION_FAILED"
-        )
+    except Exception as exc:
+        if failure_writer is not None:
+            failure_writer(operation, str(exc))
+        raise
 
     finally:
         if published:
-            ref_transport.delete_candidate_ref(
-                ref_name
-            )
+            try:
+                ref_transport.delete_candidate_ref(ref_name)
+            except Exception as exc:
+                if cleanup_writer is not None:
+                    cleanup_writer(operation, False, str(exc))
+                raise
+            else:
+                if cleanup_writer is not None:
+                    cleanup_writer(operation, True, None)
 
     if updated is None:
         raise TaskControllerError(
             "QUALIFICATION_RESULT_MISSING"
         )
 
-    updated["qualification"][
-        "candidate_ref_removed"
-    ] = True
+    if cleanup_writer is None:
+        updated["qualification"]["candidate_ref_removed"] = True
 
     return updated
+
+
+def _integration_state_binding_digest(
+    state: dict[str, Any],
+    authorization: ResolvedAuthorization,
+    candidate_sha: str,
+) -> str:
+    binding = {
+        "authorization": authorization.to_dict(),
+        "candidate_sha": candidate_sha,
+        "qualification": state.get("qualification"),
+        "verification": state.get("verification"),
+        "review": state.get("review"),
+    }
+    return hashlib.sha256(
+        canonical_json(binding).encode("utf-8")
+    ).hexdigest()
 
 
 def integrate_task(
@@ -2308,6 +2807,11 @@ def integrate_task(
         "controller_main_sha": (
             controller_main_sha
         ),
+        "state_binding_sha256": _integration_state_binding_digest(
+            state,
+            authorization,
+            candidate_sha,
+        ),
         "check_id": check_id,
         "check_app_id": expected_app_id,
         "human_owner_authorized": True,
@@ -2440,6 +2944,75 @@ def revalidate_integration_state(
     )
     if revalidated["integration"] != {**integration, "origin_main_after": None}:
         raise TaskControllerError("INTEGRATION_RECOVERY_REVALIDATION_CHANGED")
+
+
+def persist_integration_pending(
+    state_dir: Path,
+    issue_number: int,
+    pending: dict[str, Any],
+    *,
+    candidate_repo: Path,
+    controller_main_sha: str,
+    expected_app_id: int,
+    transport: QualificationTransport,
+    ref_transport: CandidateRefTransport,
+    human_owner_authorized: bool,
+) -> dict[str, Any]:
+    """Persist pending integration only after revalidating the latest gates."""
+    def mutate(current: dict[str, Any]) -> dict[str, Any]:
+        if current.get("phase") != "REVIEWED_APPROVED":
+            raise TaskControllerError("INTEGRATION_STATE_STALE")
+        if current.get("task_id") != pending.get("task_id"):
+            raise TaskControllerError("INTEGRATION_STATE_STALE")
+        latest = integrate_task(
+            current,
+            candidate_repo=candidate_repo,
+            controller_main_sha=controller_main_sha,
+            expected_app_id=expected_app_id,
+            transport=transport,
+            ref_transport=ref_transport,
+            human_owner_authorized=human_owner_authorized,
+        )
+        if latest["integration"] != pending.get("integration"):
+            raise TaskControllerError("INTEGRATION_STATE_STALE")
+        updated = json.loads(json.dumps(current))
+        updated["integration"] = latest["integration"]
+        updated["phase"] = latest["phase"]
+        return updated
+
+    return checkpoint_transaction(state_dir, issue_number, mutate)
+
+
+def reconcile_integration_completion(
+    state: dict[str, Any],
+    *,
+    candidate_repo: Path,
+    candidate_sha: str,
+    expected_app_id: int,
+    transport: QualificationTransport,
+    ref_transport: CandidateRefTransport,
+) -> dict[str, Any]:
+    """Revalidate current authority/gates before and after remote reconciliation."""
+    revalidate_integration_state(
+        state,
+        candidate_repo=candidate_repo,
+        expected_app_id=expected_app_id,
+        transport=transport,
+        ref_transport=ref_transport,
+    )
+    updated = reconcile_integration(
+        state,
+        candidate_sha=candidate_sha,
+        ref_transport=ref_transport,
+    )
+    revalidate_integration_state(
+        updated,
+        candidate_repo=candidate_repo,
+        expected_app_id=expected_app_id,
+        transport=transport,
+        ref_transport=ref_transport,
+    )
+    return updated
 
 def record_qualification(
     state: dict[str, Any],
@@ -2768,19 +3341,13 @@ def command_authorize(
         ],
     )
 
-    updated = authorize_task(
-        state,
-        transport=(
-            GhIssueAuthorizationTransport()
+    updated = checkpoint_transaction(
+        args.state_dir,
+        args.issue_number,
+        lambda current: authorize_task(
+            current,
+            transport=GhIssueAuthorizationTransport(),
         ),
-    )
-
-    atomic_write_json(
-        state_path(
-            args.state_dir,
-            args.issue_number,
-        ),
-        updated,
     )
 
     authorization = updated[
@@ -2863,6 +3430,62 @@ def command_qualify(
         configured_qualification_app_id()
     )
 
+    def begin_operation(operation: dict[str, Any]) -> None:
+        begin_qualification_operation(
+            args.state_dir,
+            args.issue_number,
+            operation,
+        )
+
+    def mark_ref_published(operation: dict[str, Any]) -> None:
+        mark_qualification_ref_published(
+            args.state_dir,
+            args.issue_number,
+            operation,
+        )
+
+    def apply_terminal(
+        result_document: dict[str, Any],
+        operation: dict[str, Any],
+    ) -> dict[str, Any]:
+        return apply_qualification_terminal_result(
+            args.state_dir,
+            args.issue_number,
+            operation,
+            result_document,
+            GhQualificationTransport(),
+            candidate_repo=candidate_repo,
+        )
+
+    def mark_cleanup(
+        operation: dict[str, Any],
+        removed: bool,
+        error: str | None,
+    ) -> None:
+        try:
+            record_qualification_cleanup(
+                args.state_dir,
+                args.issue_number,
+                operation,
+                removed=removed,
+                error=error,
+            )
+        except TaskControllerError:
+            # A newer stop or operation owns the checkpoint; retain it intact.
+            pass
+
+    def mark_failure(operation: dict[str, Any], error: str) -> None:
+        try:
+            record_qualification_operation_failure(
+                args.state_dir,
+                args.issue_number,
+                operation,
+                error,
+            )
+        except TaskControllerError:
+            # Preserve a newer terminal state or STOP_REPLAN outcome.
+            pass
+
     updated = qualify_task(
         state,
         candidate_repo=candidate_repo,
@@ -2880,15 +3503,14 @@ def command_qualify(
                 candidate_repo
             )
         ),
+        operation_writer=begin_operation,
+        ref_published_writer=mark_ref_published,
+        terminal_writer=apply_terminal,
+        cleanup_writer=mark_cleanup,
+        failure_writer=mark_failure,
     )
-
-    atomic_write_json(
-        state_path(
-            args.state_dir,
-            args.issue_number,
-        ),
-        updated,
-    )
+    if updated.get("qualification", {}).get("candidate_ref_removed") is not True:
+        updated = load_state(args.state_dir, args.issue_number)
 
     qualification = updated[
         "qualification"
@@ -2951,6 +3573,43 @@ def command_qualify(
     )
 
 
+def command_qualify_reconcile(
+    args: argparse.Namespace,
+) -> int:
+    state = load_state(args.state_dir, args.issue_number)
+    candidate_repo = resolve_repo_root(args.candidate_root)
+    require_candidate_repository(
+        candidate_repo,
+        expected_repository=state["repository"],
+    )
+    status = (state.get("qualification_operation") or {}).get("status")
+    updated = reconcile_qualification_operation(
+        args.state_dir,
+        args.issue_number,
+        transport=GhQualificationTransport(),
+        ref_transport=GitCandidateRefTransport(candidate_repo),
+        expected_app_id=configured_qualification_app_id(),
+        candidate_repo=candidate_repo,
+    )
+    operation = updated.get("qualification_operation") or {}
+    emit({
+        "task": updated["task_id"],
+        "issue": updated["issue_number"],
+        "phase": updated["phase"],
+        "qualification_operation_status": operation.get("status", status),
+        "candidate_ref_removed": (updated.get("qualification") or {}).get(
+            "candidate_ref_removed"
+        ),
+        "next": (
+            "verify"
+            if operation.get("status") == "COMPLETE"
+            and (updated.get("qualification") or {}).get("result") == "PASS"
+            else "reconcile"
+        ),
+    })
+    return 0 if operation.get("status") == "COMPLETE" else 1
+
+
 def command_status(
     args: argparse.Namespace,
 ) -> int:
@@ -2988,27 +3647,23 @@ def command_verify(
             "repository"
         ],
     )
-    resolve_current_authorization(
-        state,
-        GhQualificationTransport(),
-    )
 
-    updated = record_verification(
-        state,
-        candidate_sha=args.candidate_sha,
-        actor=args.actor,
-        decision=args.decision,
-        evidence=args.evidence,
+    def apply_verification(current: dict[str, Any]) -> dict[str, Any]:
+        resolve_current_authorization(current, GhQualificationTransport())
+        return record_verification(
+            current,
+            candidate_sha=args.candidate_sha,
+            actor=args.actor,
+            decision=args.decision,
+            evidence=args.evidence,
+        )
+
+    updated = checkpoint_transaction(
+        args.state_dir,
+        args.issue_number,
+        apply_verification,
     )
     mode = workflow_mode_for_state(updated)
-
-    atomic_write_json(
-        state_path(
-            args.state_dir,
-            args.issue_number,
-        ),
-        updated,
-    )
 
     emit(
         {
@@ -3061,27 +3716,23 @@ def command_review(
             "repository"
         ],
     )
-    resolve_current_authorization(
-        state,
-        GhQualificationTransport(),
-    )
 
-    updated = record_review(
-        state,
-        candidate_sha=args.candidate_sha,
-        actor=args.actor,
-        decision=args.decision,
-        summary=args.summary,
+    def apply_review(current: dict[str, Any]) -> dict[str, Any]:
+        resolve_current_authorization(current, GhQualificationTransport())
+        return record_review(
+            current,
+            candidate_sha=args.candidate_sha,
+            actor=args.actor,
+            decision=args.decision,
+            summary=args.summary,
+        )
+
+    updated = checkpoint_transaction(
+        args.state_dir,
+        args.issue_number,
+        apply_review,
     )
     mode = workflow_mode_for_state(updated)
-
-    atomic_write_json(
-        state_path(
-            args.state_dir,
-            args.issue_number,
-        ),
-        updated,
-    )
 
     emit(
         {
@@ -3189,14 +3840,19 @@ def command_integrate(
                     state, state_file, candidate_sha)
             raise
 
-        # Durably record integration intent and all
-        # revalidated authority before mutating remote main.
-        atomic_write_json(
-            state_file,
+        # Durably record integration intent and revalidate the latest
+        # candidate-bound gates before mutating remote main.
+        state = persist_integration_pending(
+            args.state_dir,
+            args.issue_number,
             pending,
+            candidate_repo=candidate_repo,
+            controller_main_sha=controller_main_sha,
+            expected_app_id=expected_app_id,
+            transport=GhQualificationTransport(),
+            ref_transport=GitCandidateRefTransport(candidate_repo),
+            human_owner_authorized=args.human_owner_authorized,
         )
-
-        state = pending
 
     elif phase in {
         "INTEGRATION_PENDING",
@@ -3285,18 +3941,20 @@ def command_integrate(
         )
     )
 
-    updated = reconcile_integration(
-        state,
-        candidate_sha=candidate_sha,
-        ref_transport=ref_transport,
-    )
-
-    # Persist completion immediately after remote-main
-    # reconciliation. A rerun from either pending or
-    # integrated state is idempotent.
-    atomic_write_json(
-        state_file,
-        updated,
+    # Persist completion immediately after current authority/gate revalidation
+    # and remote-main reconciliation. The latest checkpoint is reread under the
+    # same issue lock, making recovery idempotent without losing newer fields.
+    updated = checkpoint_transaction(
+        args.state_dir,
+        args.issue_number,
+        lambda current: reconcile_integration_completion(
+            current,
+            candidate_repo=candidate_repo,
+            candidate_sha=candidate_sha,
+            expected_app_id=expected_app_id,
+            transport=GhQualificationTransport(),
+            ref_transport=ref_transport,
+        ),
     )
 
     git(
@@ -3409,14 +4067,21 @@ def command_finalize(args: argparse.Namespace) -> int:
     intent = {"schema_version": 1, "issue_number": args.issue_number,
               "repository": state["repository"], "implementation": implementation,
               "terminal_state_dir": str(args.terminal_state_dir.resolve())}
-    if intent_path.exists():
-        previous = json.loads(intent_path.read_text())
-        if any(previous.get(key) != value for key, value in intent.items()):
-            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
-    else:
+    def establish_finalize_intent(previous: dict[str, Any] | None) -> dict[str, Any]:
+        if previous is not None:
+            if any(previous.get(key) != value for key, value in intent.items()):
+                raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+            return previous
         if state["phase"] not in {"REVIEWED_APPROVED", "INTEGRATION_PENDING", "INTEGRATED"}:
             raise TaskControllerError("FINALIZE_IMPLEMENTATION_NOT_REVIEWED")
-        atomic_write_json(intent_path, {**intent, "phase": "IMPLEMENTATION_PENDING"})
+        return {**intent, "phase": "IMPLEMENTATION_PENDING"}
+
+    existing = checkpoint_intent_transaction(
+        state_dir,
+        args.issue_number,
+        intent_path,
+        establish_finalize_intent,
+    )
 
     terminal_state_path = state_path(args.terminal_state_dir, args.issue_number)
     terminal_inputs = terminal_state_path.is_file() and args.terminal_root is not None and args.recovery_sha is not None
@@ -3456,9 +4121,26 @@ def command_finalize(args: argparse.Namespace) -> int:
             raise
     if state["phase"] != "INTEGRATED" or state["integration"]["origin_main_after"] != implementation:
         raise TaskControllerError("FINALIZE_IMPLEMENTATION_NOT_INTEGRATED")
-    existing = json.loads(intent_path.read_text())
-    if existing["phase"] == "IMPLEMENTATION_PENDING":
-        atomic_write_json(intent_path, {**intent, "phase": "IMPLEMENTATION_INTEGRATED"})
+    def mark_implementation_integrated(previous: dict[str, Any] | None) -> dict[str, Any]:
+        if previous is None or any(previous.get(key) != value for key, value in intent.items()):
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        if previous.get("phase") in {
+            "IMPLEMENTATION_INTEGRATED",
+            "TERMINAL_PENDING",
+            "TERMINAL_INTEGRATED",
+            "COMPLETE",
+        }:
+            return previous
+        if previous["phase"] == "IMPLEMENTATION_PENDING":
+            return {**previous, **intent, "phase": "IMPLEMENTATION_INTEGRATED"}
+        raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+
+    existing = checkpoint_intent_transaction(
+        state_dir,
+        args.issue_number,
+        intent_path,
+        mark_implementation_integrated,
+    )
 
     git(repo, "fetch", "origin", "main")
     observed_main = git(repo, "rev-parse", "refs/remotes/origin/main")
@@ -3477,14 +4159,27 @@ def command_finalize(args: argparse.Namespace) -> int:
         terminal_context = validated_finalize_terminal(state, args, implementation)
     terminal_state, terminal_repo, terminal, recovery, _ = terminal_context
     attached_binding = (state.get("capsule_evidence") or {}).get("binding") or {}
-    previous = json.loads(intent_path.read_text())
-    if previous.get("terminal") not in (None, terminal) or previous.get("recovery") not in (None, recovery):
-        raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
-    if previous.get("terminal_root") not in (None, str(terminal_repo)):
-        raise TaskControllerError("FINALIZE_TERMINAL_ROOT_CHANGED")
-    atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_PENDING",
-                                    "terminal": terminal, "recovery": recovery,
-                                    "terminal_root": str(terminal_repo)})
+    def mark_terminal_pending(previous: dict[str, Any] | None) -> dict[str, Any]:
+        if previous is None or any(previous.get(key) != value for key, value in intent.items()):
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        if previous.get("terminal") not in (None, terminal) or previous.get("recovery") not in (None, recovery):
+            raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
+        if previous.get("terminal_root") not in (None, str(terminal_repo)):
+            raise TaskControllerError("FINALIZE_TERMINAL_ROOT_CHANGED")
+        if previous.get("phase") in {"TERMINAL_PENDING", "TERMINAL_INTEGRATED", "COMPLETE"}:
+            return previous
+        if previous.get("phase") != "IMPLEMENTATION_INTEGRATED":
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        return {**previous, **intent, "phase": "TERMINAL_PENDING",
+                "terminal": terminal, "recovery": recovery,
+                "terminal_root": str(terminal_repo)}
+
+    checkpoint_intent_transaction(
+        state_dir,
+        args.issue_number,
+        intent_path,
+        mark_terminal_pending,
+    )
     if terminal_state["phase"] != "INTEGRATED":
         command_integrate(argparse.Namespace(
             state_dir=args.terminal_state_dir, issue_number=args.issue_number,
@@ -3516,17 +4211,55 @@ def command_finalize(args: argparse.Namespace) -> int:
                            recovery=args.recovery_sha,
                            expected_contract_sha256=attached_binding.get("contract_sha256"),
                            task_id=state["task_id"])
-    atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_INTEGRATED",
-                                    "terminal": terminal, "recovery": recovery,
-                                    "terminal_root": str(terminal_repo)})
+
+    def mark_terminal_integrated(previous: dict[str, Any] | None) -> dict[str, Any]:
+        if previous is None or any(previous.get(key) != value for key, value in intent.items()):
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        if (previous.get("terminal") != terminal
+                or previous.get("recovery") != recovery
+                or previous.get("terminal_root") != str(terminal_repo)):
+            raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
+        if previous.get("phase") in {"TERMINAL_INTEGRATED", "COMPLETE"}:
+            return previous
+        if previous.get("phase") != "TERMINAL_PENDING":
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        return {**previous, **intent, "phase": "TERMINAL_INTEGRATED",
+                "terminal": terminal, "recovery": recovery,
+                "terminal_root": str(terminal_repo)}
+
+    checkpoint_intent_transaction(
+        state_dir,
+        args.issue_number,
+        intent_path,
+        mark_terminal_integrated,
+    )
     issue = GhIssueAuthorizationTransport()._api(
         method="PATCH", path=f"/repos/{state['repository']}/issues/{args.issue_number}",
         payload={"state": "closed", "state_reason": "completed"})
     if issue.get("state") != "closed":
         raise TaskControllerError("FINALIZE_ISSUE_CLOSE_NOT_CONFIRMED")
-    atomic_write_json(intent_path, {**intent, "phase": "COMPLETE",
-                                    "terminal": terminal, "recovery": recovery,
-                                    "terminal_root": str(terminal_repo)})
+
+    def mark_finalize_complete(previous: dict[str, Any] | None) -> dict[str, Any]:
+        if previous is None or any(previous.get(key) != value for key, value in intent.items()):
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        if (previous.get("terminal") != terminal
+                or previous.get("recovery") != recovery
+                or previous.get("terminal_root") != str(terminal_repo)):
+            raise TaskControllerError("FINALIZE_TERMINAL_INTENT_CHANGED")
+        if previous.get("phase") == "COMPLETE":
+            return previous
+        if previous.get("phase") != "TERMINAL_INTEGRATED":
+            raise TaskControllerError("FINALIZE_INTENT_CHANGED")
+        return {**previous, **intent, "phase": "COMPLETE",
+                "terminal": terminal, "recovery": recovery,
+                "terminal_root": str(terminal_repo)}
+
+    checkpoint_intent_transaction(
+        state_dir,
+        args.issue_number,
+        intent_path,
+        mark_finalize_complete,
+    )
     emit({"task": state["task_id"], "phase": "COMPLETE", "origin_main": terminal,
           "recovery": recovery, "issue_closed": True})
     return 0
@@ -3536,9 +4269,13 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
     """Remove only an exact clean disposable terminal checkout after completion."""
     repo = resolve_repo_root(args.repo_root)
     intent_path = args.state_dir / f"issue-{args.issue_number}-finalize.json"
-    if not intent_path.is_file():
+    intent = load_checkpoint_intent(
+        args.state_dir,
+        args.issue_number,
+        intent_path,
+    )
+    if intent is None:
         raise TaskControllerError("FINALIZE_INTENT_MISSING")
-    intent = json.loads(intent_path.read_text())
     if intent.get("phase") not in {"COMPLETE", "CLEANUP_PENDING"} or intent.get("issue_number") != args.issue_number:
         raise TaskControllerError("FINALIZE_NOT_COMPLETE")
     terminal = intent["terminal"]
@@ -3560,7 +4297,27 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
                                      terminal=terminal)
     elif intent["phase"] != "CLEANUP_PENDING" or f"worktree {root}\n" in git(repo, "worktree", "list", "--porcelain"):
         raise TaskControllerError("FINALIZE_CLEANUP_TARGET_MISSING")
-    atomic_write_json(intent_path, {**intent, "phase": "CLEANUP_PENDING", "cleanup": target})
+    def mark_cleanup_pending(current: dict[str, Any] | None) -> dict[str, Any]:
+        if current is None:
+            raise TaskControllerError("FINALIZE_INTENT_MISSING")
+        if (current.get("terminal") != terminal
+                or current.get("terminal_root") != str(root)
+                or current.get("issue_number") != args.issue_number):
+            raise TaskControllerError("FINALIZE_CLEANUP_INTENT_CHANGED")
+        if current.get("phase") not in {"COMPLETE", "CLEANUP_PENDING"}:
+            raise TaskControllerError("FINALIZE_NOT_COMPLETE")
+        if current.get("cleanup") not in (None, target):
+            raise TaskControllerError("FINALIZE_CLEANUP_INTENT_CHANGED")
+        if current.get("phase") == "COMPLETE" and current.get("cleanup") == target:
+            return current
+        return {**current, "phase": "CLEANUP_PENDING", "cleanup": target}
+
+    checkpoint_intent_transaction(
+        args.state_dir,
+        args.issue_number,
+        intent_path,
+        mark_cleanup_pending,
+    )
     if root.exists():
         git(repo, "worktree", "remove", str(root))
     branch_ref = f"refs/heads/{args.cleanup_branch}"
@@ -3568,9 +4325,25 @@ def command_finalize_cleanup(args: argparse.Namespace) -> int:
         if git(repo, "rev-parse", branch_ref) != terminal:
             raise TaskControllerError("FINALIZE_CLEANUP_BRANCH_CHANGED")
         git(repo, "branch", "-d", args.cleanup_branch)
-    intent["phase"] = "COMPLETE"
-    intent["cleanup"] = target
-    atomic_write_json(intent_path, intent)
+    def mark_cleanup_complete(current: dict[str, Any] | None) -> dict[str, Any]:
+        if current is None:
+            raise TaskControllerError("FINALIZE_INTENT_MISSING")
+        if (current.get("terminal") != terminal
+                or current.get("terminal_root") != str(root)
+                or current.get("cleanup") != target):
+            raise TaskControllerError("FINALIZE_CLEANUP_INTENT_CHANGED")
+        if current.get("phase") == "COMPLETE":
+            return current
+        if current.get("phase") != "CLEANUP_PENDING":
+            raise TaskControllerError("FINALIZE_NOT_COMPLETE")
+        return {**current, "phase": "COMPLETE", "cleanup": target}
+
+    checkpoint_intent_transaction(
+        args.state_dir,
+        args.issue_number,
+        intent_path,
+        mark_cleanup_complete,
+    )
     emit({"task": f"GH-{args.issue_number}", "cleanup": "complete",
           "root": str(root), "branch": args.cleanup_branch})
     return 0
@@ -3599,12 +4372,19 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
     intent = {"schema_version": 1, "issue_number": args.issue_number,
               "terminal": terminal, "base": authorization.base_sha,
               "recovery": recovery, "terminal_root": str(terminal_repo)}
-    if intent_path.exists():
-        prior = json.loads(intent_path.read_text())
-        if any(prior.get(key) != value for key, value in intent.items()):
-            raise TaskControllerError("FINALIZE_CANCEL_INTENT_CHANGED")
-    else:
-        atomic_write_json(intent_path, {**intent, "phase": "TERMINAL_PENDING"})
+    def establish_cancel_intent(prior: dict[str, Any] | None) -> dict[str, Any]:
+        if prior is not None:
+            if any(prior.get(key) != value for key, value in intent.items()):
+                raise TaskControllerError("FINALIZE_CANCEL_INTENT_CHANGED")
+            return prior
+        return {**intent, "phase": "TERMINAL_PENDING"}
+
+    checkpoint_intent_transaction(
+        args.state_dir,
+        args.issue_number,
+        intent_path,
+        establish_cancel_intent,
+    )
     if state["phase"] != "INTEGRATED":
         command_integrate(argparse.Namespace(
             state_dir=args.terminal_state_dir, issue_number=args.issue_number,
@@ -3639,7 +4419,22 @@ def command_finalize_cancel(args: argparse.Namespace) -> int:
         payload={"state": "closed", "state_reason": "not_planned"})
     if issue.get("state") != "closed":
         raise TaskControllerError("FINALIZE_CANCEL_ISSUE_CLOSE_NOT_CONFIRMED")
-    atomic_write_json(intent_path, {**intent, "phase": "COMPLETE"})
+
+    def mark_cancel_complete(current: dict[str, Any] | None) -> dict[str, Any]:
+        if current is None or any(current.get(key) != value for key, value in intent.items()):
+            raise TaskControllerError("FINALIZE_CANCEL_INTENT_CHANGED")
+        if (current.get("terminal") != terminal
+                or current.get("recovery") != recovery
+                or current.get("terminal_root") != str(terminal_repo)):
+            raise TaskControllerError("FINALIZE_CANCEL_INTENT_CHANGED")
+        return {**current, **intent, "phase": "COMPLETE"}
+
+    checkpoint_intent_transaction(
+        args.state_dir,
+        args.issue_number,
+        intent_path,
+        mark_cancel_complete,
+    )
     emit({"task": state["task_id"], "phase": "CANCELLED", "origin_main": terminal,
           "recovery": recovery, "issue_closed": True})
     return 0
@@ -3759,6 +4554,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     qualify.set_defaults(
         handler=command_qualify
+    )
+
+    qualify_reconcile = subparsers.add_parser(
+        "qualify-reconcile",
+        help="Reconcile a persisted qualification attempt without dispatching again.",
+    )
+    qualify_reconcile.add_argument(
+        "issue_number",
+        type=int,
+    )
+    qualify_reconcile.add_argument(
+        "--candidate-root",
+        type=Path,
+        required=True,
+    )
+    qualify_reconcile.set_defaults(
+        handler=command_qualify_reconcile,
     )
 
     status = subparsers.add_parser(

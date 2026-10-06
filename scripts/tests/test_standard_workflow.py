@@ -1,11 +1,14 @@
 """Current standard workflow and retirement boundaries; no live model dispatch."""
+import contextlib
 from pathlib import Path
 import importlib.util
+import json
 import sys
+import threading
 import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-import task
+import task  # noqa: E402
 
 def test_standard_mode_has_no_attachment_requirement_but_rejects_injected_attachment():
     assert task._require_workflow_candidate_attachment({}, mode="standard", candidate_sha="a"*40) == (None, None)
@@ -32,14 +35,16 @@ def test_retired_model_evidence_cli_cannot_dispatch():
     assert importlib.util.find_spec("lib.independent_review") is None
 
 def test_complete_shared_role_resources_and_separate_compatible_runtime_pin():
-    import hashlib, json
+    import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (15243, "43cacf4b2cbb2ad12a180402efa341287e4146dc7f5a08352e74bfc95247dd13"),
+        "start-an-issue.md": (17374, "cc5f69f8c8dd3f508feda911dbf93f1558e31c1ba4b9bd480b107ac81e136779"),
         "capsule-controller-workflow.md": (14131, "64e3b311c5a9524c8b14708d1805c3676425347d3ba498fb101274ea946f1179"),
     }
     provenance = (shared / "SOURCE.md").read_text()
-    assert "99e0e656f68b3605b7538d691135572ea5a2428c" in provenance
+    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" in provenance
+    assert "RI `docs/start-an-issue.md` → [local `engineering/workflow/shared/start-an-issue.md`](start-an-issue.md)" in provenance
+    assert "RI `docs/capsule-controller-workflow.md` → [local `engineering/workflow/shared/capsule-controller-workflow.md`](capsule-controller-workflow.md)" in provenance
     for name, (size, digest) in identities.items():
         data = (shared / name).read_bytes()
         assert len(data) == size
@@ -82,6 +87,166 @@ def test_sticky_stop_cannot_be_cleared_by_later_success():
         with pytest.raises(task.TaskControllerError, match="STOP_REPLAN_PRESERVE_ATTEMPT"):
             action(stopped, **kwargs)
         assert stopped == original
+
+
+def test_checkpoint_transaction_serializes_real_overlapping_updates(tmp_path, monkeypatch):
+    state_dir = tmp_path / "checkpoint"
+    state_dir.mkdir()
+    state_path = task.state_path(state_dir, 264)
+    state_path.write_text(json.dumps({
+        "issue_number": 264,
+        "phase": "AUTHORIZED",
+        "attempt_history": [],
+        "unrelated": {"preserve": True},
+    }) + "\n")
+    first_inside = threading.Event()
+    first_finished = threading.Event()
+    second_ready = threading.Event()
+    release_first = threading.Event()
+    second_lock_attempted = threading.Event()
+    errors = []
+
+    production_lock = task.checkpoint_lock
+
+    @contextlib.contextmanager
+    def observed_lock(state_dir, issue_number):
+        if threading.current_thread().name == "second-checkpoint-actor":
+            second_lock_attempted.set()
+        with production_lock(state_dir, issue_number):
+            yield
+
+    monkeypatch.setattr(task, "checkpoint_lock", observed_lock)
+
+    def first_actor():
+        try:
+            def apply_first(current):
+                first_inside.set()
+                assert release_first.wait(5)
+                current["attempt_history"].append("first")
+                current["first"] = True
+                return current
+
+            task.checkpoint_transaction(state_dir, 264, apply_first)
+            first_finished.set()
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    def second_actor():
+        try:
+            second_ready.set()
+
+            def apply_second(current):
+                assert first_finished.is_set()
+                current["attempt_history"].append("second")
+                current["second"] = True
+                return current
+
+            task.checkpoint_transaction(state_dir, 264, apply_second)
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    first = threading.Thread(target=first_actor)
+    second = threading.Thread(target=second_actor, name="second-checkpoint-actor")
+    first.start()
+    assert first_inside.wait(5)
+    second.start()
+    assert second_ready.wait(5)
+    assert second_lock_attempted.wait(5)
+    assert not first_finished.is_set()
+    release_first.set()
+    first.join(5)
+    second.join(5)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert errors == []
+    persisted = task.load_state(state_dir, 264)
+    assert persisted["attempt_history"] == ["first", "second"]
+    assert persisted["first"] is True and persisted["second"] is True
+    assert persisted["unrelated"] == {"preserve": True}
+
+    stale_barrier = threading.Barrier(3)
+
+    def unsafe_actor(key):
+        current = task.load_state(state_dir, 264)
+        stale_barrier.wait()
+        current[key] = True
+        task.atomic_write_json(task.state_path(state_dir, 264), current)
+
+    unsafe_first = threading.Thread(target=unsafe_actor, args=("unsafe_first",))
+    unsafe_second = threading.Thread(target=unsafe_actor, args=("unsafe_second",))
+    unsafe_first.start()
+    unsafe_second.start()
+    stale_barrier.wait()
+    unsafe_first.join(5)
+    unsafe_second.join(5)
+    stale_result = task.load_state(state_dir, 264)
+    assert stale_result.get("unsafe_first", False) ^ stale_result.get("unsafe_second", False)
+
+
+def test_terminal_qualification_rejects_intervening_stop_without_resurrection(tmp_path):
+    state_dir = tmp_path / "qualification"
+    state_dir.mkdir()
+    state = {
+        "issue_number": 264,
+        "task_id": "GH-264",
+        "phase": "AUTHORIZED",
+        "authorization": {
+            "revision": 1,
+            "nonce": "authorization-nonce",
+            "base_sha": "a" * 40,
+            "payload_sha256": "b" * 64,
+            "comment_id": 42,
+            "identity_sha256": "c" * 64,
+            "author_login": "owner",
+        },
+        "attempt_history": ["previous"],
+        "unrelated": {"keep": "me"},
+    }
+    task.state_path(state_dir, 264).write_text(json.dumps(state) + "\n")
+    operation = {
+        "operation_id": "dispatch-nonce",
+        "candidate_sha": "d" * 40,
+        "candidate_ref": "task-candidate/264/dispatch-nonce/dddddddddddd",
+        "dispatch_nonce": "dispatch-nonce",
+        "controller_main_sha": "a" * 40,
+        "workflow": "trusted-qualification.yml",
+        "authorization": task._checkpoint_authorization_identity(state),
+        "resolved_authorization": {
+            **task._checkpoint_authorization_identity(state),
+            "task_id": "GH-264",
+            "issue_number": 264,
+            "repository": "owner/repo",
+            "allowed_paths": [],
+            "forbidden_paths": [],
+            "profiles": ["repository"],
+            "schema_version": 2,
+        },
+    }
+    task.begin_qualification_operation(state_dir, 264, operation)
+    task.checkpoint_transaction(
+        state_dir,
+        264,
+        lambda current: {
+            **current,
+            "phase": "STOP_REPLAN",
+            "stop_reason": "intervening terminal stop",
+        },
+    )
+
+    with pytest.raises(task.TaskControllerError, match="STOP_REPLAN_PRESERVE_ATTEMPT"):
+        task.apply_qualification_terminal_result(
+            state_dir,
+            264,
+            operation,
+            {"phase": "QUALIFIED", "qualification": {"candidate_sha": "d" * 40}},
+            object(),
+        )
+
+    persisted = task.load_state(state_dir, 264)
+    assert persisted["phase"] == "STOP_REPLAN"
+    assert "qualification" not in persisted
+    assert persisted["attempt_history"] == ["previous"]
+    assert persisted["unrelated"] == {"keep": "me"}
 
 
 def test_standard_startup_does_not_import_historical_runtime():
@@ -153,7 +318,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "99e0e656f68b3605b7538d691135572ea5a2428c/docs/skill-templates/capsule-queue/")
+              "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -167,9 +332,11 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     for rule in ("Only the controller dispatches", "Workers do not recruit", "failed required check",
                  "authorized", "scope change", "assignee/host inability", "independent scope challenge",
                  "event-based blocking completion", "idle wake-up", "supported observer",
-                 "without repeated owner prompts", "genuinely reserved actions", "Default configured model",
+                 "without repeated owner prompts", "genuinely reserved actions", "selected role pairs",
                  "no model/effort fallback", "App `4708441`", "paused"):
         assert rule in text
+    assert "gpt-6.1-sol`/`low" in text
+    assert "gpt-5.6-luna`/`max" in text
     for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
         text = (ROOT / name).read_text()
         for rule in ("BEFORE", "historical", "live issue", "external controller checkpoint",

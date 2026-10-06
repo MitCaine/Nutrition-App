@@ -1,8 +1,8 @@
 # Nutrition local project map
 
 Established-project work uses the complete [daily issue procedure](../engineering/workflow/shared/start-an-issue.md)
-from RI commit `99e0e656f68b3605b7538d691135572ea5a2428c`: 15243 bytes,
-SHA-256 `43cacf4b2cbb2ad12a180402efa341287e4146dc7f5a08352e74bfc95247dd13`.
+from RI commit `cdf64f5d27ef43e7e58e7b11f371a81d15687bdd`: 17374 bytes,
+SHA-256 `cc5f69f8c8dd3f508feda911dbf93f1558e31c1ba4b9bd480b107ac81e136779`.
 Read this map, the complete daily procedure, live issue/required linked decisions and
 applicable standards before acting. The [adoption guide](../engineering/workflow/shared/capsule-controller-workflow.md)
 is conditional on setup or owner-authorized replacement. [SOURCE](../engineering/workflow/shared/SOURCE.md)
@@ -30,8 +30,11 @@ scope change, confirmed assignee/host inability, or a concrete independent scope
 permitted by the daily plan-check step. First try the controller's plan check for a scope
 finding; record the reason and bounded objective in the existing checkpoint before dispatch.
 Clarification stays within the current assignment. Routine verification/bookkeeping/closeout
-does not justify another assignment. Default configured model and effort remain selected;
-no model/effort fallback is authorized by this map.
+does not justify another assignment. The selected role pairs below are authoritative;
+no model/effort fallback is authorized by this map. The selected role pairs are
+controller, builder and reviewer `gpt-6.1-sol`/`low`, and implementor
+`gpt-5.6-luna`/`max`; the controller records host-effective settings before each
+dependent dispatch.
 
 Give every role the complete selected procedure, task, relevant standards, original issue
 and actual source/evidence locations; verify access before dispatch. Controller is the

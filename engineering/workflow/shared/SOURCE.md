@@ -1,14 +1,14 @@
 # Shared instruction identity
 
 The complete owner-selected Repository Intelligence instructions are pinned at
-commit `99e0e656f68b3605b7538d691135572ea5a2428c` independently of the compatible
+commit `cdf64f5d27ef43e7e58e7b11f371a81d15687bdd` independently of the compatible
 producer runtime. These files retain exact authenticated upstream Git blob bytes.
 Instruction updates require an explicit reviewed pin change.
 
 | Local file / upstream source | Role | Bytes | SHA-256 |
 | --- | --- | --- | --- |
-| [start-an-issue.md](start-an-issue.md), RI `docs/start-an-issue.md` | Daily execution in established projects | 15243 | `43cacf4b2cbb2ad12a180402efa341287e4146dc7f5a08352e74bfc95247dd13` |
-| [capsule-controller-workflow.md](capsule-controller-workflow.md), RI `docs/capsule-controller-workflow.md` | Conditional adoption and replacement | 14131 | `64e3b311c5a9524c8b14708d1805c3676425347d3ba498fb101274ea946f1179` |
+| RI `docs/start-an-issue.md` → [local `engineering/workflow/shared/start-an-issue.md`](start-an-issue.md) | Daily execution in established projects | 17374 | `cc5f69f8c8dd3f508feda911dbf93f1558e31c1ba4b9bd480b107ac81e136779` |
+| RI `docs/capsule-controller-workflow.md` → [local `engineering/workflow/shared/capsule-controller-workflow.md`](capsule-controller-workflow.md) | Conditional adoption and replacement | 14131 | `64e3b311c5a9524c8b14708d1805c3676425347d3ba498fb101274ea946f1179` |
 
 The [local map](../../../docs/local_project_map.md) supplies Nutrition values,
 commands, standards and permission boundaries. The [template entrypoint](skill-templates/README.md)

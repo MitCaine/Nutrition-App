@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -2295,6 +2296,7 @@ class FakeQualificationTransport:
         )
         self.check_count = check_count
         self.dispatch_inputs: dict | None = None
+        self.dispatch_calls = 0
 
     def list_issue_comments(
         self,
@@ -2321,6 +2323,7 @@ class FakeQualificationTransport:
         )
         assert ref == "main"
 
+        self.dispatch_calls += 1
         self.dispatch_inputs = dict(inputs)
 
         if self.dispatch_returns_id:
@@ -2424,13 +2427,14 @@ class FakeQualificationTransport:
 
 
 class FakeCandidateRefTransport:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_delete_count: int = 0) -> None:
         self.published: list[
             tuple[str, str]
         ] = []
         self.deleted: list[str] = []
         self.main_pushes: list[str] = []
         self.main_sha: str | None = None
+        self.fail_delete_count = fail_delete_count
 
     def publish_candidate_ref(
         self,
@@ -2448,6 +2452,9 @@ class FakeCandidateRefTransport:
         self,
         ref_name: str,
     ) -> None:
+        if self.fail_delete_count:
+            self.fail_delete_count -= 1
+            raise TASK.TaskControllerError("CANDIDATE_REF_CLEANUP_FAILED")
         self.deleted.append(ref_name)
 
     def push_main(
@@ -2902,6 +2909,447 @@ def test_qualify_binds_exact_run_check_and_cleans_ref(
     ] is True
     assert len(refs.published) == 1
     assert len(refs.deleted) == 1
+
+
+def test_qualification_terminal_rejects_real_writer_stop_during_long_run(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    state["attempt_history"] = ["prior-attempt"]
+    state["unrelated"] = {"preserve": "during-long-run"}
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    entered_dispatch = threading.Event()
+    release_dispatch = threading.Event()
+
+    class BlockingQualificationTransport(FakeQualificationTransport):
+        def dispatch_workflow(self, repository, workflow, ref, inputs):
+            entered_dispatch.set()
+            assert release_dispatch.wait(5)
+            return super().dispatch_workflow(repository, workflow, ref, inputs)
+
+    transport = BlockingQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    refs = FakeCandidateRefTransport()
+    errors: list[BaseException] = []
+
+    def run_qualification() -> None:
+        def operation_writer(operation):
+            TASK.begin_qualification_operation(state_dir, 999, operation)
+
+        def ref_writer(operation):
+            TASK.mark_qualification_ref_published(state_dir, 999, operation)
+
+        def terminal_writer(result, operation):
+            return TASK.apply_qualification_terminal_result(
+                state_dir, 999, operation, result, transport,
+                candidate_repo=repo)
+
+        def cleanup_writer(operation, removed, error):
+            try:
+                TASK.record_qualification_cleanup(
+                    state_dir, 999, operation, removed=removed, error=error)
+            except TASK.TaskControllerError:
+                pass
+
+        try:
+            TASK.qualify_task(
+                state,
+                candidate_repo=repo,
+                controller_main_sha=base,
+                expected_app_id=424242,
+                transport=transport,
+                ref_transport=refs,
+                poll_attempts=2,
+                sleep_seconds=0,
+                sleep_fn=lambda _: None,
+                dispatch_nonce="dispatch-1234567890",
+                operation_writer=operation_writer,
+                ref_published_writer=ref_writer,
+                terminal_writer=terminal_writer,
+                cleanup_writer=cleanup_writer,
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    worker = threading.Thread(target=run_qualification)
+    worker.start()
+    assert entered_dispatch.wait(5)
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "phase": "STOP_REPLAN",
+            "stop_reason": "intervening terminal stop",
+        },
+    )
+    release_dispatch.set()
+    worker.join(5)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], TASK.TaskControllerError)
+    assert str(errors[0]) == "STOP_REPLAN_PRESERVE_ATTEMPT"
+    persisted = TASK.load_state(state_dir, 999)
+    assert persisted["phase"] == "STOP_REPLAN"
+    assert persisted["stop_reason"] == "intervening terminal stop"
+    assert persisted["attempt_history"] == ["prior-attempt"]
+    assert persisted["unrelated"] == {"preserve": "during-long-run"}
+    assert persisted["qualification"] is None
+    assert persisted["qualification_operation"]["status"] == "RUNNING"
+    assert len(refs.deleted) == 1
+
+
+def test_qualification_terminal_rejects_changed_live_authority(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    state["attempt_history"] = ["prior-attempt"]
+    state["unrelated"] = {"preserve": "during-long-run"}
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    resolved = TASK.resolve_current_authorization(state, transport)
+    operation = {
+        "operation_id": "dispatch-1234567890",
+        "candidate_sha": candidate,
+        "candidate_ref": f"task-candidate/999/dispatch-1234567890/{candidate[:12]}",
+        "dispatch_nonce": "dispatch-1234567890",
+        "controller_main_sha": base,
+        "workflow": "trusted-qualification.yml",
+        "authorization": TASK._checkpoint_authorization_identity(state),
+        "resolved_authorization": resolved.to_dict(),
+    }
+    TASK.begin_qualification_operation(state_dir, 999, operation)
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "authorization": {
+                **current["authorization"],
+                "identity_sha256": "f" * 64,
+            },
+        },
+    )
+
+    with pytest.raises(
+        TASK.TaskControllerError,
+        match="WORKFLOW_AUTHORITY_MISMATCH|AUTHORIZATION_CURRENT_IDENTITY_MISMATCH",
+    ):
+        TASK.apply_qualification_terminal_result(
+            state_dir,
+            999,
+            operation,
+            {
+                "phase": "QUALIFIED",
+                "qualification": {"candidate_sha": candidate},
+            },
+            transport,
+        )
+
+    persisted = TASK.load_state(state_dir, 999)
+    assert persisted["phase"] == "AUTHORIZED"
+    assert persisted["qualification"] is None
+    assert persisted["authorization"]["identity_sha256"] == "f" * 64
+
+
+@pytest.mark.parametrize("stale_kind", ["operation", "candidate"])
+def test_qualification_terminal_rejects_stale_operation_or_candidate(
+    tmp_path: Path,
+    stale_kind: str,
+) -> None:
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    operation = {
+        "operation_id": "dispatch-1234567890",
+        "candidate_sha": candidate,
+        "candidate_ref": f"task-candidate/999/dispatch-1234567890/{candidate[:12]}",
+        "dispatch_nonce": "dispatch-1234567890",
+        "controller_main_sha": base,
+        "workflow": "trusted-qualification.yml",
+        "expected_app_id": 424242,
+        "authorization": TASK._checkpoint_authorization_identity(state),
+        "resolved_authorization": TASK.resolve_current_authorization(state, transport).to_dict(),
+    }
+    TASK.begin_qualification_operation(state_dir, 999, operation)
+    if stale_kind == "operation":
+        TASK.checkpoint_transaction(
+            state_dir,
+            999,
+            lambda current: {
+                **current,
+                "qualification_operation": {
+                    **current["qualification_operation"],
+                    "operation_id": "different-dispatch",
+                },
+            },
+        )
+        expected_error = "QUALIFICATION_OPERATION_STALE"
+    else:
+        commit_paths(repo, {"src/changed.py": "CHANGED = True\n"}, message="candidate drift")
+        expected_error = "QUALIFICATION_CANDIDATE_CHANGED"
+
+    with pytest.raises(TASK.TaskControllerError, match=expected_error):
+        TASK.apply_qualification_terminal_result(
+            state_dir,
+            999,
+            operation,
+            {
+                "phase": "QUALIFIED",
+                "qualification": {
+                    "candidate_sha": candidate,
+                    "result": "PASS",
+                },
+            },
+            transport,
+            candidate_repo=repo,
+        )
+
+    persisted = TASK.load_state(state_dir, 999)
+    assert persisted["phase"] == "AUTHORIZED"
+    assert persisted["qualification"] is None
+
+
+def test_qualification_cleanup_unknown_is_reconciled_without_redispatch(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    operation = {
+        "operation_id": "dispatch-1234567890",
+        "candidate_sha": candidate,
+        "candidate_ref": f"task-candidate/999/dispatch-1234567890/{candidate[:12]}",
+        "dispatch_nonce": "dispatch-1234567890",
+        "controller_main_sha": base,
+        "workflow": "trusted-qualification.yml",
+        "expected_app_id": 424242,
+        "authorization": TASK._checkpoint_authorization_identity(state),
+        "resolved_authorization": TASK.resolve_current_authorization(state, transport).to_dict(),
+    }
+    TASK.begin_qualification_operation(state_dir, 999, operation)
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "phase": "QUALIFIED",
+            "qualification": {
+                "candidate_sha": candidate,
+                "candidate_ref": operation["candidate_ref"],
+                "candidate_ref_removed": False,
+                "result": "PASS",
+            },
+            "qualification_operation": {
+                **current["qualification_operation"],
+                "status": "TERMINAL",
+            },
+        },
+    )
+    refs = FakeCandidateRefTransport(fail_delete_count=1)
+
+    with pytest.raises(TASK.TaskControllerError, match="CANDIDATE_REF_CLEANUP_FAILED"):
+        TASK.reconcile_qualification_operation(
+            state_dir,
+            999,
+            transport=transport,
+            ref_transport=refs,
+            expected_app_id=424242,
+            candidate_repo=repo,
+        )
+    uncertain = TASK.load_state(state_dir, 999)
+    assert uncertain["qualification_operation"]["status"] == "CLEANUP_UNKNOWN"
+    assert uncertain["qualification"]["candidate_ref_removed"] is False
+
+    reconciled = TASK.reconcile_qualification_operation(
+        state_dir,
+        999,
+        transport=transport,
+        ref_transport=refs,
+        expected_app_id=424242,
+        candidate_repo=repo,
+    )
+    assert reconciled["qualification_operation"]["status"] == "COMPLETE"
+    assert reconciled["qualification"]["candidate_ref_removed"] is True
+    assert transport.dispatch_calls == 0
+    assert len(refs.deleted) == 1
+
+
+def test_unknown_qualification_reconciles_completed_run_without_redispatch(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+    )
+    operation = {
+        "operation_id": "dispatch-1234567890",
+        "candidate_sha": candidate,
+        "candidate_ref": f"task-candidate/999/dispatch-1234567890/{candidate[:12]}",
+        "dispatch_nonce": "dispatch-1234567890",
+        "controller_main_sha": base,
+        "workflow": "trusted-qualification.yml",
+        "expected_app_id": 424242,
+        "authorization": TASK._checkpoint_authorization_identity(state),
+        "resolved_authorization": TASK.resolve_current_authorization(state, transport).to_dict(),
+    }
+    TASK.begin_qualification_operation(state_dir, 999, operation)
+    TASK.checkpoint_transaction(
+        state_dir,
+        999,
+        lambda current: {
+            **current,
+            "qualification_operation": {
+                **current["qualification_operation"],
+                "status": "UNKNOWN",
+            },
+        },
+    )
+    transport.dispatch_inputs = {
+        "task_id": state["task_id"],
+        "dispatch_nonce": operation["dispatch_nonce"],
+        "candidate_sha": candidate,
+    }
+    refs = FakeCandidateRefTransport()
+
+    reconciled = TASK.reconcile_qualification_operation(
+        state_dir,
+        999,
+        transport=transport,
+        ref_transport=refs,
+        expected_app_id=424242,
+        candidate_repo=repo,
+    )
+
+    assert reconciled["phase"] == "QUALIFIED"
+    assert reconciled["qualification"]["result"] == "PASS"
+    assert reconciled["qualification_operation"]["status"] == "COMPLETE"
+    assert reconciled["qualification"]["candidate_ref_removed"] is True
+    assert transport.dispatch_calls == 0
+    assert len(refs.deleted) == 1
+
+
+@pytest.mark.parametrize(
+    ("run_conclusion", "check_conclusion", "expected_phase", "expected_result"),
+    [("success", "success", "QUALIFIED", "PASS"),
+     ("failure", "failure", "QUALIFICATION_FAILED", "FAIL")],
+)
+def test_qualification_operation_persists_terminal_result_and_ref_cleanup(
+    tmp_path: Path,
+    run_conclusion: str,
+    check_conclusion: str,
+    expected_phase: str,
+    expected_result: str,
+) -> None:
+    repo, base, candidate, state, comment = authorized_repo_state(
+        tmp_path,
+        workflow_mode="standard",
+        compatibility_reason=None,
+    )
+    state_dir = tmp_path / "state"
+    state["attempt_history"] = ["prior-attempt"]
+    state["unrelated"] = {"preserve": "during-long-run"}
+    TASK.state_path(state_dir, 999).write_text(json.dumps(state) + "\n")
+    transport = FakeQualificationTransport(
+        comment=comment,
+        controller_sha=base,
+        candidate_sha=candidate,
+        identity_sha256=state["authorization"]["identity_sha256"],
+        run_conclusion=run_conclusion,
+        check_conclusion=check_conclusion,
+    )
+    refs = FakeCandidateRefTransport()
+
+    def operation_writer(operation):
+        TASK.begin_qualification_operation(state_dir, 999, operation)
+
+    def ref_writer(operation):
+        TASK.mark_qualification_ref_published(state_dir, 999, operation)
+
+    def terminal_writer(result, operation):
+        return TASK.apply_qualification_terminal_result(
+            state_dir, 999, operation, result, transport, candidate_repo=repo)
+
+    def cleanup_writer(operation, removed, error):
+        TASK.record_qualification_cleanup(
+            state_dir, 999, operation, removed=removed, error=error)
+
+    updated = TASK.qualify_task(
+        state,
+        candidate_repo=repo,
+        controller_main_sha=base,
+        expected_app_id=424242,
+        transport=transport,
+        ref_transport=refs,
+        poll_attempts=2,
+        sleep_seconds=0,
+        sleep_fn=lambda _: None,
+        dispatch_nonce="dispatch-1234567890",
+        operation_writer=operation_writer,
+        ref_published_writer=ref_writer,
+        terminal_writer=terminal_writer,
+        cleanup_writer=cleanup_writer,
+    )
+
+    persisted = TASK.load_state(state_dir, 999)
+    assert updated["phase"] == expected_phase
+    assert persisted["phase"] == expected_phase
+    assert persisted["qualification"]["result"] == expected_result
+    assert persisted["attempt_history"] == ["prior-attempt"]
+    assert persisted["unrelated"] == {"preserve": "during-long-run"}
+    assert persisted["qualification"]["candidate_ref_removed"] is True
+    assert persisted["qualification_operation"]["status"] == "COMPLETE"
+    assert persisted["qualification_operation"]["terminal_result"] == expected_result
+    assert len(refs.published) == len(refs.deleted) == 1
 
 
 def test_public_qualification_rejects_restored_forbidden_commit(
@@ -3623,6 +4071,94 @@ def test_integrate_revalidates_check_and_persists_pending_before_push(
         ]
         == candidate
     )
+
+
+@pytest.mark.parametrize("changed_field", ["authority", "review", "verification"])
+def test_pending_integration_revalidates_same_phase_current_gates(
+    tmp_path: Path,
+    changed_field: str,
+) -> None:
+    repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(
+        tmp_path
+    )
+    pending = TASK.integrate_task(
+        reviewed,
+        candidate_repo=repo,
+        controller_main_sha=base,
+        expected_app_id=424242,
+        transport=transport,
+        ref_transport=refs,
+        human_owner_authorized=True,
+    )
+    state_dir = tmp_path / "controller-state"
+    state_dir.mkdir()
+    TASK.state_path(state_dir, 999).write_text(json.dumps(reviewed) + "\n")
+
+    def change(current):
+        updated = json.loads(json.dumps(current))
+        if changed_field == "authority":
+            updated["authorization"]["identity_sha256"] = "f" * 64
+        elif changed_field == "review":
+            updated["review"]["summary"] = "changed after approval"
+        else:
+            updated["verification"]["evidence"] = "changed after verification"
+        return updated
+
+    TASK.checkpoint_transaction(state_dir, 999, change)
+    expected_error = (
+        "AUTHORIZATION_CURRENT_IDENTITY_MISMATCH|WORKFLOW_AUTHORITY_CURRENT_IDENTITY_MISMATCH|WORKFLOW_AUTHORITY_MISMATCH"
+        if changed_field == "authority"
+        else "INTEGRATION_STATE_STALE"
+    )
+    with pytest.raises(TASK.TaskControllerError, match=expected_error):
+        TASK.persist_integration_pending(
+            state_dir,
+            999,
+            pending,
+            candidate_repo=repo,
+            controller_main_sha=base,
+            expected_app_id=424242,
+            transport=transport,
+            ref_transport=refs,
+            human_owner_authorized=True,
+        )
+    persisted = TASK.load_state(state_dir, 999)
+    assert persisted["phase"] == "REVIEWED_APPROVED"
+    assert persisted.get("integration") is None
+    assert refs.main_pushes == []
+
+
+def test_integration_completion_revalidates_current_review_before_remote_push(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(
+        tmp_path
+    )
+    pending = TASK.integrate_task(
+        reviewed,
+        candidate_repo=repo,
+        controller_main_sha=base,
+        expected_app_id=424242,
+        transport=transport,
+        ref_transport=refs,
+        human_owner_authorized=True,
+    )
+    pending["review"]["summary"] = "changed after pending intent"
+    refs.main_sha = base
+
+    with pytest.raises(
+        TASK.TaskControllerError,
+        match="INTEGRATION_RECOVERY_REVALIDATION_CHANGED",
+    ):
+        TASK.reconcile_integration_completion(
+            pending,
+            candidate_repo=repo,
+            candidate_sha=candidate,
+            expected_app_id=424242,
+            transport=transport,
+            ref_transport=refs,
+        )
+    assert refs.main_pushes == []
 
 
 def test_integrate_reconciles_crash_after_remote_push_without_duplicate_push(

@@ -1,10 +1,10 @@
 # Conditional capsule queue redirect
 
-Read the complete [pinned upstream queue skill](https://github.com/MitCaine/repository-intelligence/blob/99e0e656f68b3605b7538d691135572ea5a2428c/docs/skill-templates/capsule-queue/SKILL.md)
+Read the complete [pinned upstream queue skill](https://github.com/MitCaine/repository-intelligence/blob/cdf64f5d27ef43e7e58e7b11f371a81d15687bdd/docs/skill-templates/capsule-queue/SKILL.md)
 only for an external job without reliable native completion. Its required resources are
-the [project procedure locator](https://github.com/MitCaine/repository-intelligence/blob/99e0e656f68b3605b7538d691135572ea5a2428c/docs/skill-templates/capsule-queue/references/project-procedure.md#waiting-and-recovery)
-and [queue helper](https://github.com/MitCaine/repository-intelligence/blob/99e0e656f68b3605b7538d691135572ea5a2428c/docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py).
-All are selected from RI commit `99e0e656f68b3605b7538d691135572ea5a2428c`.
+the [project procedure locator](https://github.com/MitCaine/repository-intelligence/blob/cdf64f5d27ef43e7e58e7b11f371a81d15687bdd/docs/skill-templates/capsule-queue/references/project-procedure.md#waiting-and-recovery)
+and [queue helper](https://github.com/MitCaine/repository-intelligence/blob/cdf64f5d27ef43e7e58e7b11f371a81d15687bdd/docs/skill-templates/capsule-queue/scripts/run%5Fand%5Fqueue.py).
+All are selected from RI commit `cdf64f5d27ef43e7e58e7b11f371a81d15687bdd`.
 
 The helper URL uses percent-encoded underscores so repository executable discovery
 does not mistake that external resource for a locally installed script.
