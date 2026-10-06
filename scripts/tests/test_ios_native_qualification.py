@@ -208,6 +208,44 @@ class IosNativeQualificationTests(
         )
         self.assertIn("cache-operations.json", text)
 
+    def test_runner_context_is_not_used_in_job_level_env(self):
+        for relative_path in (
+            ".github/workflows/ios-native.yml",
+            ".github/workflows/trusted-qualification-execute.yml",
+        ):
+            text = (ROOT / relative_path).read_text(encoding="utf-8")
+            job_env_lines = []
+            in_jobs = False
+            job_env_indent = None
+            for raw_line in text.splitlines():
+                stripped = raw_line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                indent = len(raw_line) - len(raw_line.lstrip())
+                if indent == 0 and stripped == "jobs:":
+                    in_jobs = True
+                    continue
+                if not in_jobs:
+                    continue
+                if job_env_indent is not None:
+                    if indent <= job_env_indent:
+                        job_env_indent = None
+                    else:
+                        job_env_lines.append(raw_line)
+                        continue
+                if indent == 4 and stripped == "env:":
+                    job_env_indent = indent
+
+            with self.subTest(path=relative_path):
+                self.assertFalse(
+                    any("runner.temp" in line for line in job_env_lines),
+                    "runner context is unavailable in jobs.<id>.env",
+                )
+                self.assertIn('echo "npm_config_cache=${npm_cache}"', text)
+                self.assertIn('echo "NPM_CONFIG_CACHE=${npm_cache}"', text)
+                self.assertIn('echo "CP_CACHE_DIR=${cocoapods_cache}"', text)
+                self.assertIn('} >> "$GITHUB_ENV"', text)
+
     def test_cache_key_invalidates_relevant_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = Path(temporary) / "fixture"
