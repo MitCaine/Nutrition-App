@@ -656,31 +656,27 @@ def validate_artifacts(record: dict) -> None:
 
 
 def _historical_review_obligations(binding: dict) -> dict:
-    """Refuse unsupported retained shapes without reconstructing authority."""
+    """Validate only fields the passive packet reader consumes."""
     obligations = binding.get("review_obligations")
     reason = "missing" if obligations is None else "malformed"
     valid = (isinstance(obligations, dict)
-             and isinstance(obligations.get("outcomes"), list)
-             and isinstance(obligations.get("standards"), list))
+             and isinstance(obligations.get("outcomes"), list))
     if valid:
         for outcome in obligations["outcomes"]:
-            if not isinstance(outcome, dict) or not isinstance(outcome.get("id"), str):
+            if not isinstance(outcome, dict):
                 valid = False
                 break
             mapping = outcome.get("mapping")
-            if (not isinstance(mapping, dict) or not isinstance(mapping.get("type"), str)
-                    or mapping["type"] not in {"criteria", "deferred", "unresolved"}):
+            if not isinstance(mapping, dict) or not isinstance(mapping.get("type"), str):
                 valid = False
                 break
             if mapping["type"] == "deferred" and (
-                    not isinstance(mapping.get("manual_check"), str)
+                    not isinstance(outcome.get("id"), str)
+                    or not isinstance(mapping.get("manual_check"), str)
                     or type(mapping.get("comment_id")) is not int
                     or not isinstance(mapping.get("reason"), str)):
                 valid = False
                 break
-        if any(not isinstance(item, dict) or not isinstance(item.get("id"), str)
-               for item in obligations["standards"]):
-            valid = False
     if not valid:
         raise EvidenceError(
             "UNSUPPORTED_HISTORICAL_RECOVERY: " + reason + " review_obligations; "

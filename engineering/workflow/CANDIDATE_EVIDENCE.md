@@ -23,7 +23,8 @@ for current standard work; #246/#256 remain paused. Public RI report execution/e
 
 Retained pre-#232 schema-version-1 bindings can lack `review_obligations`.
 The public historical `lib.legacy_ri.candidate_evidence.gate` and packet reader
-refuse missing or malformed obligations with `UNSUPPORTED_HISTORICAL_RECOVERY`,
+refuse missing obligations or malformed packet-consumed fields with
+`UNSUPPORTED_HISTORICAL_RECOVERY`,
 including when review is not requested. No supported older reader supplies that
 missing contract. Request an explicit owner recovery decision for the original
 retained contract before continuation; a separately authorized recovery must
@@ -31,3 +32,8 @@ preserve the original binding, sealed receipts, source/attempt identities and
 failure history. Reading never derives obligations from current expectations,
 reinterprets sealed evidence, creates replacement authority, rewrites state or
 consumes allowances. This does not add a public evidence or review dispatch command.
+
+Passive packet construction consumes outcomes and any deferral fields, preserving
+existing outcomes-only verification bindings without adding `standards` or other
+missing fields. Approval still follows the existing stronger verdict validation
+and signed receipt path; a usable verification packet is not independent approval.

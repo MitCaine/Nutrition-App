@@ -147,10 +147,11 @@ def _supported_attachment():
 
 @pytest.mark.parametrize("review_required", [False, True])
 @pytest.mark.parametrize("shape", ["missing", None, [], {}, {"outcomes": None, "standards": []},
-    {"outcomes": [], "standards": {}}, {"outcomes": [None], "standards": []},
+    {"outcomes": [None], "standards": []},
     {"outcomes": [{"id": "OUT-1", "mapping": {"type": []}}], "standards": []},
     {"outcomes": [{"id": "OUT-1", "mapping": {"type": "deferred"}}], "standards": []},
-    {"outcomes": [], "standards": [None]}])
+    {"outcomes": [{"mapping": {"type": "deferred", "manual_check": "manual",
+        "comment_id": 1, "reason": "retained reason"}}]}])
 def test_unsupported_historical_gate_preserves_records(tmp_path, monkeypatch, review_required, shape):
     import copy
     import json
@@ -185,3 +186,28 @@ def test_supported_packet_preserves_expected_shape():
     attached = _supported_attachment()
     assert legacy.evidence_packet(attached) == {"qualification": attached["qualified"], "commands": {}}
     legacy.gate({"capsule_evidence": attached}, attached["binding"]["candidate"])
+
+
+
+def test_supported_outcomes_only_packet_preserves_original_record(tmp_path, monkeypatch):
+    """Retain the existing task-controller verification shape without standards."""
+    import copy
+    import json
+    from lib.legacy_ri import candidate_evidence as legacy
+    candidate = "a" * 40
+    binding_sha256 = "b" * 64
+    attached = {"binding": {"candidate": candidate, "binding_sha256": binding_sha256,
+        "requirements": [], "review_obligations": {"outcomes": []}},
+        "commands": {}, "qualified": {"binding_sha256": binding_sha256}}
+    state = {"capsule_evidence": attached}
+    original = copy.deepcopy(state)
+    record = tmp_path / "sealed-state.json"
+    record.write_text(json.dumps(state, sort_keys=True))
+    original_bytes = record.read_bytes()
+    for mutator in ("attach", "qualify", "correction", "create_key", "sign_receipt"):
+        monkeypatch.setattr(legacy, mutator, lambda *_a, **_k: pytest.fail("read invoked mutator"))
+    assert legacy.evidence_packet(attached) == {"qualification": attached["qualified"], "commands": {}}
+    legacy.gate(state, candidate)
+    assert state == original
+    assert record.read_bytes() == original_bytes
+    assert "standards" not in attached["binding"]["review_obligations"]
