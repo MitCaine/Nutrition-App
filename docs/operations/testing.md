@@ -331,6 +331,16 @@ SQLite qualification when the change affects backup copy coherence, schema compa
 replacement/rollback, or restart-time activation. A mocked filesystem/database test alone cannot
 prove safe replacement of the real local authority.
 
+The local backup Jest suites are lifecycle fixtures: they deliberately inject SQLite/file deletion
+failures, no-op deletion, rename failures, replacement rollback, and retained consumed paths to
+prove control flow and UI state. Cancellation is a success only when the pending file is absent;
+activation first moves the pending file to a verified consumed path, so disposable consumed-path
+cleanup may fail without making a later startup replay the restore. A verified consumption-boundary
+failure must fail closed before local runtime opening. These fixtures do not establish native
+filesystem or process-restart behavior. That claim requires retained file-backed SQLite and native
+app termination/relaunch evidence with exact candidate, instrumentation, simulator, and command
+identities; generated compilation or OCR host results do not substitute for it.
+
 For OCR native changes, select the `ios-native` profile in addition to affected TypeScript OCR
 tests. The profile compiles the real generated application and runs the standalone Swift programs
 under `modules/nutrition-ocr/ios-tests`; those programs are not XCTest. Image-quality inspection is

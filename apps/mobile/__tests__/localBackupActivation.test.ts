@@ -19,6 +19,11 @@ const mockFiles = new Set<string>();
 const mockDatabases =
   new Map<string, MockDatabase>();
 
+const mockFileDelete =
+  jest.fn<Promise<void>, [string]>();
+const mockFileMove =
+  jest.fn<Promise<void>, [string, string]>();
+
 const mockSetItem =
   jest.fn<Promise<void>, [string, string]>();
 
@@ -114,7 +119,7 @@ jest.mock("expo-file-system", () => ({
   __esModule: true,
 
   File: class MockFile {
-    readonly uri: string;
+    uri: string;
 
     constructor(...parts: string[]) {
       this.uri =
@@ -128,7 +133,7 @@ jest.mock("expo-file-system", () => ({
     }
 
     async delete(): Promise<void> {
-      mockFiles.delete(this.uri);
+      await mockFileDelete(this.uri);
     }
 
     async copy(
@@ -146,14 +151,11 @@ jest.mock("expo-file-system", () => ({
     async move(
       destination: { uri: string },
     ): Promise<void> {
-      if (!this.exists) {
-        throw new Error(
-          "source file missing",
-        );
-      }
-
-      mockFiles.delete(this.uri);
-      mockFiles.add(destination.uri);
+      await mockFileMove(
+        this.uri,
+        destination.uri,
+      );
+      this.uri = destination.uri;
     }
   },
 }));
@@ -208,9 +210,11 @@ jest.mock(
 
 import {
   activatePendingLocalRestore,
+  cancelPendingLocalRestore,
   createLocalBackupArtifact,
   deleteLocalBackupArtifact,
   hasPendingLocalRestore,
+  LocalBackupActivationFatalError,
 } from "../src/storage/backup/localBackup";
 
 const SUMMARY = Object.freeze({
@@ -232,6 +236,9 @@ const ACTIVE_DATABASE =
 const PENDING_DATABASE =
   "nutrition-restore-pending-v1.db";
 
+const CONSUMED_PREFIX =
+  `${mockDatabaseDirectory}/nutrition-restore-consumed-`;
+
 function lastWrittenEvidence():
 Record<string, unknown> {
   const calls =
@@ -251,6 +258,12 @@ Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
+function consumedUris(): string[] {
+  return [...mockFiles].filter((uri) =>
+    uri.startsWith(CONSUMED_PREFIX),
+  );
+}
+
 beforeEach(() => {
   // Reset implementations as well as call history.
   // This prevents an unconsumed *Once implementation
@@ -261,6 +274,8 @@ beforeEach(() => {
   mockOpenDatabaseAsync.mockReset();
   mockDeleteDatabaseAsync.mockReset();
   mockBackupDatabaseAsync.mockReset();
+  mockFileDelete.mockReset();
+  mockFileMove.mockReset();
 
   mockFiles.clear();
   mockDatabases.clear();
@@ -298,6 +313,49 @@ beforeEach(() => {
     }) => {
       destDatabase.marker =
         sourceDatabase.marker;
+    },
+  );
+
+  mockFileDelete.mockImplementation(
+    async (uri: string) => {
+      mockFiles.delete(uri);
+    },
+  );
+
+  mockFileMove.mockImplementation(
+    async (
+      sourceUri: string,
+      destinationUri: string,
+    ) => {
+      if (!mockFiles.has(sourceUri)) {
+        throw new Error(
+          "source file missing",
+        );
+      }
+
+      mockFiles.delete(sourceUri);
+      mockFiles.add(destinationUri);
+
+      const sourceName =
+        sourceUri.split("/").pop();
+      const destinationName =
+        destinationUri.split("/").pop();
+      const sourceDatabase = sourceName
+        ? mockDatabases.get(sourceName)
+        : undefined;
+
+      if (
+        sourceName &&
+        sourceDatabase &&
+        destinationName
+      ) {
+        mockDatabases.delete(sourceName);
+        sourceDatabase.name = destinationName;
+        mockDatabases.set(
+          destinationName,
+          sourceDatabase,
+        );
+      }
     },
   );
 });
@@ -347,6 +405,8 @@ test(
       hasPendingLocalRestore(),
     ).toBe(false);
 
+    expect(consumedUris()).toEqual([]);
+
     expect(
       lastWrittenEvidence(),
     ).toMatchObject({
@@ -355,6 +415,168 @@ test(
       schemaVersion: 4,
       totalRows: 73,
     });
+  },
+);
+
+test(
+  "cancellation falls back to File deletion when SQLite deletion fails",
+  async () => {
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    mockDeleteDatabaseAsync.mockRejectedValueOnce(
+      new Error("SQLite deletion failed"),
+    );
+
+    await cancelPendingLocalRestore();
+
+    expect(mockFileDelete).toHaveBeenCalledWith(
+      databaseUri(PENDING_DATABASE),
+    );
+    expect(hasPendingLocalRestore()).toBe(false);
+  },
+);
+
+test(
+  "cancellation rejects when both deletion routes fail and keeps pending state",
+  async () => {
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    mockDeleteDatabaseAsync.mockRejectedValueOnce(
+      new Error("SQLite deletion failed"),
+    );
+    mockFileDelete.mockRejectedValueOnce(
+      new Error("File deletion failed"),
+    );
+
+    await expect(
+      cancelPendingLocalRestore(),
+    ).rejects.toThrow(
+      "staged restore remains",
+    );
+
+    expect(hasPendingLocalRestore()).toBe(true);
+  },
+);
+
+test(
+  "cancellation verifies a misleading SQLite success before reporting success",
+  async () => {
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    // The SQLite route resolves but leaves the file in place; the File route
+    // must still remove it before cancellation can report success.
+    mockDeleteDatabaseAsync.mockImplementationOnce(
+      async () => undefined,
+    );
+
+    await cancelPendingLocalRestore();
+
+    expect(mockFileDelete).toHaveBeenCalledWith(
+      databaseUri(PENDING_DATABASE),
+    );
+    expect(hasPendingLocalRestore()).toBe(false);
+  },
+);
+
+test(
+  "cancellation rejects when both deletion routes report success but retain the file",
+  async () => {
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    mockDeleteDatabaseAsync.mockImplementationOnce(
+      async () => undefined,
+    );
+    mockFileDelete.mockImplementationOnce(
+      async () => undefined,
+    );
+
+    await expect(
+      cancelPendingLocalRestore(),
+    ).rejects.toThrow(
+      "staged restore remains",
+    );
+
+    expect(hasPendingLocalRestore()).toBe(true);
+  },
+);
+
+test(
+  "cancellation is idempotent when no staged restore exists",
+  async () => {
+    await expect(
+      cancelPendingLocalRestore(),
+    ).resolves.toBeUndefined();
+
+    expect(hasPendingLocalRestore()).toBe(false);
+  },
+);
+
+test(
+  "failed cancellation leaves the staged restore activatable on a later startup",
+  async () => {
+    const active = seedDatabase(
+      ACTIVE_DATABASE,
+      "current-state",
+    );
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    mockDeleteDatabaseAsync.mockRejectedValueOnce(
+      new Error("SQLite deletion failed"),
+    );
+    mockFileDelete.mockRejectedValueOnce(
+      new Error("File deletion failed"),
+    );
+
+    await expect(
+      cancelPendingLocalRestore(),
+    ).rejects.toThrow();
+    expect(hasPendingLocalRestore()).toBe(true);
+
+    const evidence =
+      await activatePendingLocalRestore();
+
+    expect(evidence).toMatchObject({
+      status: "success",
+    });
+    expect(active.marker).toBe("backup-state");
+    expect(hasPendingLocalRestore()).toBe(false);
+  },
+);
+
+test(
+  "successful cancellation leaves current data intact on a later startup",
+  async () => {
+    const active = seedDatabase(
+      ACTIVE_DATABASE,
+      "current-state",
+    );
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    await cancelPendingLocalRestore();
+    const evidence =
+      await activatePendingLocalRestore();
+
+    expect(evidence).toBeNull();
+    expect(active.marker).toBe("current-state");
+    expect(mockBackupDatabaseAsync).not.toHaveBeenCalled();
   },
 );
 
@@ -466,6 +688,120 @@ test(
     ).toMatchObject({
       status: "failure",
     });
+  },
+);
+
+test(
+  "a cleanup failure after activation cannot replay the consumed restore",
+  async () => {
+    const active = seedDatabase(
+      ACTIVE_DATABASE,
+      "current-state",
+    );
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    mockDeleteDatabaseAsync.mockImplementation(
+      async (
+        name: string,
+        directory = mockDatabaseDirectory,
+      ) => {
+        if (
+          name.startsWith("nutrition-restore-consumed-")
+        ) {
+          throw new Error(
+            "consumed cleanup failed",
+          );
+        }
+
+        mockFiles.delete(
+          `${directory.replace(/\/$/, "")}/${name}`,
+        );
+        if (name !== ACTIVE_DATABASE) {
+          mockDatabases.delete(name);
+        }
+      },
+    );
+    mockFileDelete.mockImplementation(
+      async (uri: string) => {
+        if (uri.includes("nutrition-restore-consumed-")) {
+          throw new Error(
+            "consumed file cleanup failed",
+          );
+        }
+        mockFiles.delete(uri);
+      },
+    );
+
+    const firstEvidence =
+      await activatePendingLocalRestore();
+
+    expect(firstEvidence).toMatchObject({
+      status: "success",
+    });
+    expect(active.marker).toBe("backup-state");
+    expect(hasPendingLocalRestore()).toBe(false);
+    expect(consumedUris()).toHaveLength(1);
+
+    active.marker = "mutated-after-restore";
+
+    const secondEvidence =
+      await activatePendingLocalRestore();
+
+    expect(secondEvidence).toBeNull();
+    expect(active.marker).toBe(
+      "mutated-after-restore",
+    );
+    expect(mockBackupDatabaseAsync).toHaveBeenCalledTimes(2);
+
+    // A later explicit staging may reuse the fixed pending namespace even
+    // while the disposable consumed artifact from the first restore remains.
+    seedDatabase(
+      PENDING_DATABASE,
+      "new-backup-state",
+    );
+
+    const thirdEvidence =
+      await activatePendingLocalRestore();
+
+    expect(thirdEvidence).toMatchObject({
+      status: "success",
+    });
+    expect(active.marker).toBe("new-backup-state");
+    expect(hasPendingLocalRestore()).toBe(false);
+  },
+);
+
+test(
+  "a durable consumption boundary failure fails closed before replacement",
+  async () => {
+    const active = seedDatabase(
+      ACTIVE_DATABASE,
+      "current-state",
+    );
+    seedDatabase(
+      PENDING_DATABASE,
+      "backup-state",
+    );
+
+    // A platform no-op must not be accepted as a one-use rename.
+    mockFileMove.mockImplementationOnce(
+      async () => undefined,
+    );
+
+    await expect(
+      activatePendingLocalRestore(),
+    ).rejects.toBeInstanceOf(
+      LocalBackupActivationFatalError,
+    );
+
+    expect(active.marker).toBe("current-state");
+    expect(hasPendingLocalRestore()).toBe(true);
+    // The only copy was the rollback snapshot; the active authority was not
+    // replaced while the consumption boundary was uncertain.
+    expect(mockBackupDatabaseAsync).toHaveBeenCalledTimes(1);
   },
 );
 

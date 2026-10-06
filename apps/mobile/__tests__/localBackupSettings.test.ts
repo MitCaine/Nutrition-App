@@ -303,6 +303,31 @@ test("a pending restore can be canceled before restart", async () => {
   await act(async () => renderer.unmount());
 });
 
+test("failed cancellation keeps the pending affordance and reports failure", async () => {
+  mockHasPendingRestore.mockReturnValue(true);
+  mockCancelRestore.mockRejectedValue(
+    new Error("The staged restore remains; it was not canceled."),
+  );
+
+  const renderer =
+    await renderBackupSettings();
+
+  await act(async () => {
+    button(
+      renderer,
+      "Cancel pending local restore",
+    ).props.onPress();
+  });
+
+  const text = visibleText(renderer);
+  expect(text).toContain("Restore pending restart");
+  expect(text).toContain("Local backup operation failed");
+  expect(text).toContain("staged restore remains");
+  expect(text).not.toContain("Pending restore canceled");
+
+  await act(async () => renderer.unmount());
+});
+
 test("invalid selected backup fails closed without staging", async () => {
   mockInspectBackup.mockRejectedValue(
     new Error("This file is not a supported Nutrition App backup."),

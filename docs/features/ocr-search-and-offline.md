@@ -175,6 +175,9 @@ A selected file is copied to a temporary candidate and validated without modifyi
 database. Settings shows the validated candidate for explicit review. Confirming restore creates and
 revalidates a staged standalone copy, then moves that copy into the pending-restore namespace.
 Staging alone does not replace the open application database and can be canceled before restart.
+Cancellation reports success only after the pending path is gone; if both the SQLite and file
+cleanup routes fail, Settings keeps the pending affordance and reports the failure so the staged
+backup remains truthfully eligible for activation.
 
 ### Restart-time activation and rollback
 
@@ -182,6 +185,13 @@ Pending restore activation occurs at the local-runtime bootstrap boundary before
 SQLite connection is opened. The pending artifact is validated again. If an active database already
 exists, the app first creates a rollback snapshot. The pending database is then copied into the
 active database and validated in active mode.
+
+Before replacement, the pending file is moved to a unique consumed-restore path and both source
+and destination identities are checked. This filesystem boundary makes the restore one-use across
+process restart. Cleanup of the consumed path and rollback snapshot is disposable; if consumed
+cleanup fails, the active replacement remains authoritative and a later startup sees no pending
+restore to replay. If the move cannot be verified, activation fails closed before the local runtime
+opens.
 
 A failed replacement restores the prior database from the rollback snapshot when one exists; a
 failed restore on a previously empty installation removes the unsuccessful active database. If the

@@ -90,7 +90,6 @@ async function deleteDatabaseQuietly(
       databaseName,
       defaultDatabaseDirectory,
     );
-    return;
   } catch {
     // Fall back to the file API for malformed/incomplete temporary files.
   }
@@ -102,6 +101,52 @@ async function deleteDatabaseQuietly(
     }
   } catch {
     // Temporary cleanup is best effort.
+  }
+}
+
+async function deleteDatabaseVerified(
+  databaseName: string,
+): Promise<void> {
+  await deleteDatabaseQuietly(databaseName);
+
+  if (databaseFile(databaseName).exists) {
+    throw new Error(
+      `The staged restore remains at ${databaseName}; it was not canceled.`,
+    );
+  }
+}
+
+async function consumePendingRestore(
+  pendingName: string,
+  consumedName: string,
+): Promise<void> {
+  const pendingFile = databaseFile(pendingName);
+  const consumedFile = databaseFile(consumedName);
+
+  if (consumedFile.exists) {
+    throw new LocalBackupActivationFatalError(
+      "Restore activation could not establish a unique consumed path.",
+    );
+  }
+
+  try {
+    await pendingFile.move(consumedFile);
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : String(error);
+    throw new LocalBackupActivationFatalError(
+      `Restore activation could not durably consume the staged restore: ${detail}`,
+    );
+  }
+
+  // File.move is the one-use boundary. Verify both sides before opening the
+  // consumed database so a platform no-op cannot leave an activatable pending
+  // file behind. File.move mutates its source handle to the destination on
+  // native platforms, so the pending check must use a fresh handle.
+  if (databaseFile(pendingName).exists || !consumedFile.exists) {
+    throw new LocalBackupActivationFatalError(
+      "Restore activation could not durably consume the staged restore.",
+    );
   }
 }
 
@@ -207,7 +252,7 @@ export function hasPendingLocalRestore(): boolean {
 
 export async function cancelPendingLocalRestore():
 Promise<void> {
-  await deleteDatabaseQuietly(
+  await deleteDatabaseVerified(
     PENDING_RESTORE_DATABASE_NAME,
   );
 }
@@ -413,6 +458,8 @@ Promise<LocalRestoreEvidence | null> {
 
   const pendingName =
     PENDING_RESTORE_DATABASE_NAME;
+  const consumedName =
+    `nutrition-restore-consumed-${uniqueSuffix()}.db`;
   const rollbackName =
     `nutrition-restore-rollback-${uniqueSuffix()}.db`;
   const activeExisted =
@@ -468,6 +515,50 @@ Promise<LocalRestoreEvidence | null> {
       }
     }
 
+    // Close the fixed-name handle before moving the file. A successful move
+    // removes the only activatable pending path and survives process restart;
+    // cleanup of the consumed path can remain best effort after replacement.
+    await closeQuietly(pending);
+    pending = null;
+
+    try {
+      await consumePendingRestore(
+        pendingName,
+        consumedName,
+      );
+    } catch (error) {
+      const fatal =
+        error instanceof LocalBackupActivationFatalError
+          ? error
+          : new LocalBackupActivationFatalError(
+              `Restore activation could not durably consume the staged restore: ${error instanceof Error ? error.message : String(error)}`,
+            );
+
+      await deleteDatabaseQuietly(consumedName);
+      await deleteDatabaseQuietly(rollbackName);
+      await writeRestoreEvidence(failureEvidence(fatal));
+      throw fatal;
+    }
+
+    try {
+      pending = await openMaintenanceDatabase(
+        consumedName,
+      );
+      await validateLocalBackupDatabase(
+        pending,
+        "artifact",
+      );
+    } catch (error) {
+      await closeQuietly(pending);
+      pending = null;
+      await deleteDatabaseQuietly(consumedName);
+      await deleteDatabaseQuietly(rollbackName);
+      const evidence =
+        failureEvidence(error);
+      await writeRestoreEvidence(evidence);
+      return evidence;
+    }
+
     try {
       active = await openMaintenanceDatabase(
         SQLITE_DATABASE_NAME,
@@ -498,7 +589,7 @@ Promise<LocalRestoreEvidence | null> {
       await closeQuietly(pending);
       pending = null;
 
-      await deleteDatabaseQuietly(pendingName);
+      await deleteDatabaseQuietly(consumedName);
       if (rollbackCreated) {
         await deleteDatabaseQuietly(rollbackName);
       }
@@ -551,7 +642,7 @@ Promise<LocalRestoreEvidence | null> {
       const evidence =
         failureEvidence(replacementError);
 
-      await deleteDatabaseQuietly(pendingName);
+      await deleteDatabaseQuietly(consumedName);
       await deleteDatabaseQuietly(rollbackName);
       await writeRestoreEvidence(evidence);
       return evidence;
