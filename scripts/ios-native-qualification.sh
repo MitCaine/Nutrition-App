@@ -66,13 +66,22 @@ then
   exit 1
 fi
 
-start_epoch="$(date +%s)"
+if ! start_epoch="$(date +%s)"
+then
+  echo "IOS_NATIVE_START_TIME_UNAVAILABLE" >&2
+  exit 1
+fi
 worktree_created=0
 cleanup_done=0
 signal_status=0
 qualifier_exit_status=0
+evidence_retention_failure=0
 
-: > "$timings_file"
+if ! : > "$timings_file"
+then
+  echo "IOS_NATIVE_TIMING_FILE_INITIALIZATION_FAILED" >&2
+  exit 1
+fi
 
 on_signal() {
   signal_status="$2"
@@ -88,13 +97,18 @@ record_stage() {
   local status="$3"
   local exit_code="$4"
 
-  printf \
-    '{"stage":"%s","elapsed_seconds":%s,"status":"%s","exit_code":%s}\n' \
-    "$name" \
-    "$elapsed" \
-    "$status" \
-    "$exit_code" \
-    >> "$timings_file"
+  if ! printf \
+      '{"stage":"%s","elapsed_seconds":%s,"status":"%s","exit_code":%s}\n' \
+      "$name" \
+      "$elapsed" \
+      "$status" \
+      "$exit_code" \
+      >> "$timings_file"
+  then
+    evidence_retention_failure=1
+    echo "IOS_NATIVE_TIMING_WRITE_FAILED:$name" >&2
+    return 1
+  fi
 }
 
 run_stage() {
@@ -106,8 +120,15 @@ run_stage() {
   local elapsed
   local exit_code
   local status
+  local timing_exit=0
 
-  stage_start="$(date +%s)"
+  if ! stage_start="$(date +%s)"
+  then
+    stage_start=0
+    timing_exit=1
+    evidence_retention_failure=1
+    echo "IOS_NATIVE_STAGE_START_TIME_FAILED:$name" >&2
+  fi
 
   if test "$signal_status" -ne 0 &&
     test "$run_when_signaled" -ne 1
@@ -128,8 +149,22 @@ run_stage() {
     exit_code="$signal_status"
   fi
 
-  stage_end="$(date +%s)"
+  if ! stage_end="$(date +%s)"
+  then
+    stage_end="$stage_start"
+    timing_exit=1
+    echo "IOS_NATIVE_STAGE_END_TIME_FAILED:$name" >&2
+  fi
   elapsed="$((stage_end - stage_start))"
+
+  if test "$timing_exit" -ne 0
+  then
+    evidence_retention_failure=1
+    if test "$exit_code" -eq 0
+    then
+      exit_code=1
+    fi
+  fi
 
   if test "$exit_code" -eq 0
   then
@@ -141,7 +176,13 @@ run_stage() {
     status="FAILURE"
   fi
 
-  record_stage "$name" "$elapsed" "$status" "$exit_code"
+  if ! record_stage "$name" "$elapsed" "$status" "$exit_code"
+  then
+    if test "$exit_code" -eq 0
+    then
+      exit_code=1
+    fi
+  fi
   return "$exit_code"
 }
 
@@ -194,11 +235,22 @@ write_manifest() {
   local total_end
   local total_elapsed
 
-  total_end="$(date +%s)"
+  if ! total_end="$(date +%s)"
+  then
+    total_end="$start_epoch"
+    evidence_retention_failure=1
+    if test "$qualifier_exit_status" -eq 0
+    then
+      qualifier_exit_status=1
+    fi
+    final_exit="$qualifier_exit_status"
+    echo "IOS_NATIVE_TOTAL_TIME_FAILED" >&2
+  fi
   total_elapsed="$((total_end - start_epoch))"
 
   IOS_NATIVE_FINAL_EXIT="$final_exit" \
   IOS_NATIVE_SIGNAL_STATUS="$signal_status" \
+  IOS_NATIVE_EVIDENCE_RETENTION_FAILURE="$evidence_retention_failure" \
   IOS_NATIVE_TOTAL_ELAPSED="$total_elapsed" \
   IOS_NATIVE_TIMING_BOUNDARY="toolchain preflight through cleanup completion" \
   python3 - "$timings_file" "$manifest" <<'PY'
@@ -292,6 +344,7 @@ manifest = {
     "commit": text("IOS_NATIVE_COMMIT"),
     "result": result,
     "failure_kind": failure_kind,
+    "evidence_retention_failure": text("IOS_NATIVE_EVIDENCE_RETENTION_FAILURE") == "1",
     "exit_code": final_exit,
     "runner": text("IOS_NATIVE_RUNNER"),
     "macos": text("IOS_NATIVE_MACOS"),
@@ -436,8 +489,46 @@ on_exit() {
     fi
   fi
 
+  if test "$evidence_retention_failure" -ne 0 &&
+    test "$qualifier_exit_status" -eq 0
+  then
+    qualifier_exit_status=1
+  fi
+
   write_manifest "$qualifier_exit_status"
-  cat "$manifest"
+  manifest_exit="$?"
+  if test "$manifest_exit" -ne 0
+  then
+    evidence_retention_failure=1
+    echo "IOS_NATIVE_MANIFEST_WRITE_FAILED" >&2
+    if test "$qualifier_exit_status" -eq 0
+    then
+      qualifier_exit_status=1
+    fi
+  fi
+
+  if test -f "$manifest"
+  then
+    cat "$manifest"
+    manifest_read_exit="$?"
+    if test "$manifest_read_exit" -ne 0
+    then
+      evidence_retention_failure=1
+      echo "IOS_NATIVE_MANIFEST_READ_FAILED" >&2
+      if test "$qualifier_exit_status" -eq 0
+      then
+        qualifier_exit_status=1
+      fi
+    fi
+  else
+    evidence_retention_failure=1
+    echo "IOS_NATIVE_MANIFEST_RETENTION_FAILED" >&2
+    if test "$qualifier_exit_status" -eq 0
+    then
+      qualifier_exit_status=1
+    fi
+  fi
+
   if test "$qualifier_exit_status" -eq 0
   then
     echo "IOS_NATIVE_QUALIFICATION=PASS"

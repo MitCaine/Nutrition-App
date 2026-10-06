@@ -485,6 +485,57 @@ class IosNativeQualificationTests(
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
 
+    def test_qualifier_fails_closed_on_timing_write_failure(self):
+        result, evidence = self._run_fixture_qualification(
+            "timing-write-failure"
+        )
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("IOS_NATIVE_QUALIFICATION=PASS", result.stdout)
+        self.assertIn("IOS_NATIVE_QUALIFICATION=FAILURE", result.stderr)
+        self.assertIn("IOS_NATIVE_TIMING_WRITE_FAILED:npm_install", result.stderr)
+        self.assertTrue((evidence / "stages.jsonl").is_dir())
+        self.assertFalse((evidence / "Nutrition App Native").exists())
+
+    def test_qualifier_fails_closed_on_manifest_write_failure(self):
+        result, evidence = self._run_fixture_qualification(
+            "success",
+            manifest_directory=True,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("IOS_NATIVE_QUALIFICATION=PASS", result.stdout)
+        self.assertIn("IOS_NATIVE_QUALIFICATION=FAILURE", result.stderr)
+        self.assertIn("IOS_NATIVE_MANIFEST_WRITE_FAILED", result.stderr)
+        self.assertTrue((evidence / "manifest.json").is_dir())
+        timing_entries = [
+            json.loads(line)
+            for line in (evidence / "stages.jsonl").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(
+            [entry["stage"] for entry in timing_entries],
+            [
+                "npm_install",
+                "prebuild_plugins",
+                "autolinking",
+                "pods",
+                "xcode_build",
+                "swift_harnesses",
+                "cleanup",
+            ],
+        )
+        self.assertTrue(all(entry["status"] == "PASS" for entry in timing_entries))
+        self.assertFalse((evidence / "Nutrition App Native").exists())
+
+        failed_stage, failed_stage_evidence = self._run_fixture_qualification(
+            "failure",
+            manifest_directory=True,
+        )
+        self.assertEqual(failed_stage.returncode, 17, failed_stage.stderr)
+        self.assertNotIn("IOS_NATIVE_QUALIFICATION=PASS", failed_stage.stdout)
+        self.assertTrue((failed_stage_evidence / "manifest.json").is_dir())
+
     @staticmethod
     def _write_fake_tools(fake_bin: Path):
         def write(name: str, body: str):
@@ -499,27 +550,91 @@ class IosNativeQualificationTests(
 case "${1-}" in
   --version) echo 11.0.0 ;;
   config) echo /tmp/fixture-npm-cache ;;
-  ci) mkdir -p "$(pwd)/node_modules/expo" "$(pwd)/node_modules/react-native"; echo '{"version":"57.0.27"}' > "$(pwd)/node_modules/expo/package.json"; echo '{"version":"0.86.3"}' > "$(pwd)/node_modules/react-native/package.json"; if [ "${IOS_NATIVE_FIXTURE_MODE-}" = parent-signal ]; then mkdir -p "$(pwd)/ios" "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/DerivedData"; : > "${IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY:?}"; sleep 1; fi ;;
+  ci)
+    mkdir -p "$(pwd)/node_modules/expo" "$(pwd)/node_modules/react-native" "$(pwd)/node_modules/.bin"
+    echo '{"version":"57.0.27"}' > "$(pwd)/node_modules/expo/package.json"
+    echo '{"version":"0.86.3"}' > "$(pwd)/node_modules/react-native/package.json"
+    cat > "$(pwd)/node_modules/.bin/expo-modules-autolinking" <<'EOF'
+#!/bin/sh
+printf '%s\\n' '{"modules":[{"packageName":"nutrition-ocr","pods":[{"podName":"NutritionOcr"}],"swiftModuleNames":["NutritionOcr"],"modules":[{"class":"NutritionOcrModule"}]}]}'
+EOF
+    chmod +x "$(pwd)/node_modules/.bin/expo-modules-autolinking"
+    case "${IOS_NATIVE_FIXTURE_MODE-}" in
+      parent-signal)
+        mkdir -p "$(pwd)/ios" "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/DerivedData"
+        : > "${IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY:?}"
+        sleep 1
+        ;;
+      timing-write-failure)
+        rm -f "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/stages.jsonl"
+        mkdir "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR}/stages.jsonl"
+        ;;
+    esac
+    ;;
   exec) mkdir -p "$(pwd)/ios/Nutrition App.xcodeproj"; printf '%s\n' 'Expo Constants generates a CocoaPods script phase through' 'Nutrition App iOS path portability: React Native Info.plist discovery' 'Nutrition App iOS path portability: CocoaPods XCFramework diagnostics' 'Find.find(project_folder_path)' '::NewArchitectureHelper.define_singleton_method' 'basename "$basepath"' > "$(pwd)/ios/Podfile"; echo 'REACT_NATIVE_XCODE_SCRIPT=' > "$(pwd)/ios/Nutrition App.xcodeproj/project.pbxproj"; case "${IOS_NATIVE_FIXTURE_MODE-}" in failure) exit 17 ;; signal) kill -TERM $$ ;; esac ;;
 esac
 """)
         write("ruby", 'echo ruby 3.4.0\n')
-        write("pod", 'case "${1-}" in --version) echo 1.16.0 ;; env) echo CocoaPods fixture ;; install) : ;; esac\n')
-        write("xcodebuild", 'if [ "${1-}" = "-version" ]; then printf "Xcode 27.0\\nBuild version 17A100\\n"; else :; fi\n')
-        write("xcrun", 'if [ "${1-}" = "--sdk" ]; then echo 18.0; else echo "Apple Swift version 6.0"; fi\n')
+        write("pod", 'case "${1-}" in --version) echo 1.16.0 ;; env) echo CocoaPods fixture ;; install) printf "PODS:\\n  - ExpoModulesCore\\n  - NutritionOcr\\n" > "Podfile.lock"; mkdir -p "Nutrition App.xcworkspace" ;; esac\n')
+        write("xcodebuild", """
+if [ "${1-}" = "-version" ]; then
+  printf "Xcode 27.0\\nBuild version 17A100\\n"
+elif printf "%s\\n" "$*" | grep -Fq -- "-list"; then
+  printf '%s\\n' '{"workspace":{"schemes":["Nutrition App"]}}'
+else
+  printf "BUILD SUCCEEDED\\nNutritionOcrModule.swift\\nNutritionOcrGeometry.swift\\nNutritionImageQuality.swift\\n"
+fi
+""")
+        write("xcrun", """
+if [ "${1-}" = "--sdk" ]; then
+  echo 18.0
+elif [ "${1-}" = "swiftc" ] && [ "${2-}" = "--version" ]; then
+  echo "Apple Swift version 6.0"
+elif [ "${1-}" = "swiftc" ]; then
+  output=""
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "-o" ]; then
+      output="$2"
+      shift 2
+    else
+      shift
+    fi
+  done
+  cat > "$output" <<'EOF'
+#!/bin/sh
+case "$0" in
+  *geometry) echo "NutritionOcrGeometryTests passed" ;;
+  *image-quality) echo "NutritionImageQualityTests passed" ;;
+  *vision-runtime) echo "NutritionOcrVisionRuntimeTests passed" ;;
+esac
+EOF
+  chmod +x "$output"
+else
+  echo "Apple Swift version 6.0"
+fi
+""")
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
         write("python3", 'if [ "${1-}" = "-" ]; then exec "$REAL_PYTHON" "$@"; fi; exit 0\n')
 
-    def _run_fixture_qualification(self, mode: str):
+    def _run_fixture_qualification(
+        self,
+        mode: str,
+        *,
+        manifest_directory: bool = False,
+    ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
         fake_bin = evidence_parent / "bin"
         fake_bin.mkdir()
+        evidence.mkdir()
+        if manifest_directory:
+            (evidence / "manifest.json").mkdir()
         self._write_fake_tools(fake_bin)
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
         environment["REAL_PYTHON"] = shutil.which("python3") or sys.executable
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
+        environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
         environment["NPM_CONFIG_CACHE"] = str(evidence_parent / "npm-cache")
         environment["CP_CACHE_DIR"] = str(evidence_parent / "pods-cache")
         fixture_root = evidence_parent / "repository"
