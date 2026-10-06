@@ -70,6 +70,62 @@
         "owner": "repository owner",
         "source_issue": 252
       },
+      "current_re_evaluation": {
+        "actual_source": {
+          "location": "node_modules/@expo/config-plugins",
+          "name": "@expo/config-plugins",
+          "source_field": "dependencies.@expo/config-plugins",
+          "source_package": "node_modules/expo-sharing/package.json",
+          "version": "57.0.10"
+        },
+        "dependency_path": [
+          {
+            "location": "",
+            "name": "nutrition-mobile",
+            "requested": null,
+            "version": "2.1.0"
+          },
+          {
+            "location": "node_modules/expo-sharing",
+            "name": "expo-sharing",
+            "requested": "~57.0.22",
+            "version": "57.0.22"
+          },
+          {
+            "location": "node_modules/@expo/config-plugins",
+            "name": "@expo/config-plugins",
+            "requested": "^57.0.9",
+            "version": "57.0.10"
+          },
+          {
+            "location": "node_modules/xcode",
+            "name": "xcode",
+            "requested": "^3.0.1",
+            "version": "3.0.1"
+          },
+          {
+            "location": "node_modules/uuid",
+            "name": "uuid",
+            "requested": "^7.0.3",
+            "version": "11.1.1"
+          }
+        ],
+        "manifest_path": "apps/mobile/package-lock.json",
+        "reason": "Issue #282 re-evaluates the current Expo SDK-57 owner path: expo-sharing's requested ^57.0.9 edge resolves @expo/config-plugins 57.0.10 in the 57.0.27 lock; historical alert 2 assessment, owner authority, and UUID replacement remain immutable.",
+        "requested_edge": {
+          "from": {
+            "location": "node_modules/expo-sharing",
+            "name": "expo-sharing",
+            "version": "57.0.22"
+          },
+          "package": "@expo/config-plugins",
+          "requested": "^57.0.9"
+        },
+        "reviewed_at": "2026-10-06",
+        "reviewed_commit": "8fb94af05063276ce5404df5bb00e0e4161be775",
+        "scope": "issue-282 current @expo/config-plugins compatibility re-evaluation",
+        "source_issue": 282
+      },
       "disposition": "fixed by owner-authorized tested compatibility override",
       "historical_assessment": {
         "advisory_id": "GHSA-w5hq-g745-h8pq",

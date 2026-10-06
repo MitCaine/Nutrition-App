@@ -37,6 +37,70 @@ TRACKED_ALERTS = {
 }
 
 
+CURRENT_REEVALUATION_SCOPE = (
+    "issue-282 current @expo/config-plugins compatibility re-evaluation"
+)
+
+CURRENT_REEVALUATION_REASON = (
+    "Issue #282 re-evaluates the current Expo SDK-57 owner path: "
+    "expo-sharing's requested ^57.0.9 edge resolves "
+    "@expo/config-plugins 57.0.10 in the 57.0.27 lock; historical "
+    "alert 2 assessment, owner authority, and UUID replacement remain "
+    "immutable."
+)
+
+CURRENT_REEVALUATION_PATH = [
+    {
+        "location": "",
+        "name": "nutrition-mobile",
+        "requested": None,
+        "version": "2.1.0",
+    },
+    {
+        "location": "node_modules/expo-sharing",
+        "name": "expo-sharing",
+        "requested": "~57.0.22",
+        "version": "57.0.22",
+    },
+    {
+        "location": "node_modules/@expo/config-plugins",
+        "name": "@expo/config-plugins",
+        "requested": "^57.0.9",
+        "version": "57.0.10",
+    },
+    {
+        "location": "node_modules/xcode",
+        "name": "xcode",
+        "requested": "^3.0.1",
+        "version": "3.0.1",
+    },
+    {
+        "location": "node_modules/uuid",
+        "name": "uuid",
+        "requested": "^7.0.3",
+        "version": "11.1.1",
+    },
+]
+
+CURRENT_REEVALUATION_REQUESTED_EDGE = {
+    "from": {
+        "location": "node_modules/expo-sharing",
+        "name": "expo-sharing",
+        "version": "57.0.22",
+    },
+    "package": "@expo/config-plugins",
+    "requested": "^57.0.9",
+}
+
+CURRENT_REEVALUATION_ACTUAL_SOURCE = {
+    "location": "node_modules/@expo/config-plugins",
+    "name": "@expo/config-plugins",
+    "source_field": "dependencies.@expo/config-plugins",
+    "source_package": "node_modules/expo-sharing/package.json",
+    "version": "57.0.10",
+}
+
+
 class DependencyRiskError(RuntimeError):
     pass
 
@@ -88,6 +152,71 @@ def dependency_map(
                     result[name] = requested
 
     return result
+
+
+def validate_current_re_evaluation_schema(
+    current: dict[str, Any],
+) -> None:
+    require(
+        current.get("scope")
+        == CURRENT_REEVALUATION_SCOPE,
+        "current re-evaluation scope drift",
+    )
+
+    require(
+        current.get("source_issue") == 282,
+        "current re-evaluation source issue drift",
+    )
+
+    require(
+        current.get("manifest_path")
+        == "apps/mobile/package-lock.json",
+        "current re-evaluation manifest path drift",
+    )
+
+    require(
+        current.get("reason")
+        == CURRENT_REEVALUATION_REASON,
+        "current re-evaluation reason drift",
+    )
+
+    reviewed_at = current.get("reviewed_at")
+    require(
+        isinstance(reviewed_at, str)
+        and re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}",
+            reviewed_at,
+        ) is not None,
+        "current re-evaluation reviewed_at invalid",
+    )
+
+    reviewed_commit = current.get("reviewed_commit")
+    require(
+        isinstance(reviewed_commit, str)
+        and re.fullmatch(
+            r"[0-9a-f]{40}",
+            reviewed_commit,
+        ) is not None,
+        "current re-evaluation reviewed_commit invalid",
+    )
+
+    require(
+        current.get("dependency_path")
+        == CURRENT_REEVALUATION_PATH,
+        "current re-evaluation dependency path drift",
+    )
+
+    require(
+        current.get("requested_edge")
+        == CURRENT_REEVALUATION_REQUESTED_EDGE,
+        "current re-evaluation requested edge drift",
+    )
+
+    require(
+        current.get("actual_source")
+        == CURRENT_REEVALUATION_ACTUAL_SOURCE,
+        "current re-evaluation actual source drift",
+    )
 
 
 def validate_register_schema(
@@ -483,6 +612,12 @@ def validate_register_schema(
             retired.get("risk_id") == historical["risk_id"],
             "retired risk identity drift",
         )
+        current = retired.get("current_re_evaluation")
+        require(
+            isinstance(current, dict),
+            "current re-evaluation missing",
+        )
+        validate_current_re_evaluation_schema(current)
         require(
             retired.get("disposition")
             == "fixed by owner-authorized tested compatibility override",
@@ -676,29 +811,106 @@ def replacement_record(
     }
 
 
-def validate_retired_replacement(
+def current_replacement_record(
+    retired: dict[str, Any],
+) -> dict[str, Any]:
+    current = retired["current_re_evaluation"]
+    return {
+        **retired["historical_assessment"],
+        "installed_version": current[
+            "dependency_path"
+        ][-1]["version"],
+        "dependency_path": current[
+            "dependency_path"
+        ],
+    }
+
+
+def validate_current_re_evaluation(
     retired: dict[str, Any],
     lock_document: dict[str, Any],
     manifest: dict[str, Any],
 ) -> None:
+    current = retired.get("current_re_evaluation")
+    require(
+        isinstance(current, dict),
+        "current re-evaluation missing",
+    )
+    validate_current_re_evaluation_schema(current)
+
     require(
         manifest.get("overrides")
-        == retired["replacement"]["override"],
+        == {"xcode": {"uuid": "11.1.1"}},
         "owner-authorized xcode-only override missing or changed",
     )
+
+    current_record = current_replacement_record(retired)
     validate_lock_path(
-        replacement_record(retired), lock_document
+        current_record,
+        lock_document,
     )
+
+    packages = lock_document.get("packages")
+    require(
+        isinstance(packages, dict),
+        "package-lock packages map missing",
+    )
+
+    edge = current["requested_edge"]
+    parent = packages.get(edge["from"]["location"])
+    require(
+        isinstance(parent, dict),
+        "current re-evaluation edge parent disappeared",
+    )
+    require(
+        parent.get("name") is None
+        or parent.get("name") == edge["from"]["name"],
+        "current re-evaluation edge parent name drift",
+    )
+    require(
+        parent.get("version") == edge["from"]["version"],
+        "current re-evaluation edge parent version drift",
+    )
+    require(
+        dependency_map(parent).get(edge["package"])
+        == edge["requested"],
+        "current re-evaluation requested edge drift",
+    )
+
+    actual = current["actual_source"]
+    actual_node = packages.get(actual["location"])
+    require(
+        isinstance(actual_node, dict),
+        "current re-evaluation actual package disappeared",
+    )
+    require(
+        actual_node.get("version") == actual["version"],
+        "current re-evaluation actual version drift",
+    )
+
     uuid_locations = {
         location
-        for location, node in lock_document[
-            "packages"
-        ].items()
+        for location in packages
         if location.endswith("node_modules/uuid")
     }
     require(
         uuid_locations == {"node_modules/uuid"},
         "unreviewed UUID install location",
+    )
+
+
+def validate_retired_replacement(
+    retired: dict[str, Any],
+    lock_document: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    # The historical replacement is checked immutably by the register schema.
+    # This runtime check follows the narrowly recorded current path instead of
+    # treating the frozen historical @expo/config-plugins@57.0.9 path as current.
+    validate_current_re_evaluation(
+        retired,
+        lock_document,
+        manifest,
     )
 
 
@@ -889,6 +1101,16 @@ def validate_offline(
         "package-lock root invalid",
     )
 
+    manifest = read_json(
+        repo_root
+        / MOBILE_RELATIVE
+        / "package.json"
+    )
+    require(
+        isinstance(manifest, dict),
+        "package manifest root invalid",
+    )
+
     for record in register[
         "records"
     ]:
@@ -898,8 +1120,11 @@ def validate_offline(
         )
 
     for retired in register.get("retired_records", []):
-        validate_retired_replacement(retired, lock_document,
-                                    read_json(repo_root / MOBILE_RELATIVE / "package.json"))
+        validate_retired_replacement(
+            retired,
+            lock_document,
+            manifest,
+        )
 
     validate_reachability_boundary(
         repo_root
@@ -1196,7 +1421,7 @@ def validate_installed(
     ] = {}
 
     current_records = register["records"] + [
-        replacement_record(item)
+        current_replacement_record(item)
         for item in register.get("retired_records", [])
     ]
     for record in current_records:

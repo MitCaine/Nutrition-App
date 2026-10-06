@@ -74,6 +74,7 @@ class DependencyRiskTests(unittest.TestCase):
             "historical_assessment",
             "replacement",
             "required_evidence",
+            "current_re_evaluation",
         ):
             with self.subTest(field=field):
                 register = self.load_register()
@@ -149,7 +150,7 @@ class DependencyRiskTests(unittest.TestCase):
         self,
     ):
         register = self.load_register()
-        record = dependency_risk.replacement_record(
+        record = dependency_risk.current_replacement_record(
             register["retired_records"][0]
         )
         identities = [
@@ -295,6 +296,58 @@ class DependencyRiskTests(unittest.TestCase):
         dependency_risk.validate_register_schema(
             self.load_register()
         )
+
+    def test_current_re_evaluation_accepts_compatible_requested_edge(self):
+        retired = self.load_register()["retired_records"][0]
+        current = retired["current_re_evaluation"]
+
+        self.assertEqual(
+            current["requested_edge"]["requested"],
+            "^57.0.9",
+        )
+        self.assertEqual(
+            current["actual_source"]["version"],
+            "57.0.10",
+        )
+
+        dependency_risk.validate_current_re_evaluation(
+            retired,
+            self.load_lock(),
+            {"overrides": {"xcode": {"uuid": "11.1.1"}}},
+        )
+
+    def test_current_re_evaluation_rejects_historical_path(self):
+        retired = self.load_register()["retired_records"][0]
+        retired["current_re_evaluation"]["dependency_path"][2][
+            "version"
+        ] = "57.0.9"
+
+        with self.assertRaises(
+            dependency_risk.DependencyRiskError
+        ):
+            dependency_risk.validate_current_re_evaluation(
+                retired,
+                self.load_lock(),
+                {"overrides": {"xcode": {"uuid": "11.1.1"}}},
+            )
+
+    def test_current_re_evaluation_rejects_requested_or_actual_drift(self):
+        retired = self.load_register()["retired_records"][0]
+        for section, key, value in (
+            ("requested_edge", "requested", "~57.0.10"),
+            ("actual_source", "version", "57.0.9"),
+        ):
+            changed = copy.deepcopy(retired)
+            changed["current_re_evaluation"][section][key] = value
+            with self.subTest(section=section):
+                with self.assertRaises(
+                    dependency_risk.DependencyRiskError
+                ):
+                    dependency_risk.validate_current_re_evaluation(
+                        changed,
+                        self.load_lock(),
+                        {"overrides": {"xcode": {"uuid": "11.1.1"}}},
+                    )
 
     def test_current_offline_contract(self):
         result = dependency_risk.validate_offline(
