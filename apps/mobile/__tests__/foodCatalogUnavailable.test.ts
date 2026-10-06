@@ -87,6 +87,15 @@ const persistedFoodInput: FoodCreateInput = {
   ],
 };
 
+const sameBasisPersistedFoodInput: FoodCreateInput = {
+  ...persistedFoodInput,
+  nutrients: [
+    ...persistedFoodInput.nutrients.filter((nutrient) => nutrient.nutrient_id !== "protein"),
+    { nutrient_id: "protein", amount: "1.234567", unit: "g", basis: "per_serving", data_status: "known" },
+    { nutrient_id: "protein", amount: "1.234568", unit: "g", basis: "per_100g", data_status: "known" },
+  ],
+};
+
 function noCatalogState(kind: "loading" | "error"): NutrientQueryState {
   return {
     data: undefined,
@@ -120,10 +129,18 @@ function nutrientTuples(food: Pick<Food, "nutrients"> | FoodMutationInput) {
       basis,
       data_status,
     }))
-    .sort((left, right) => left.nutrient_id.localeCompare(right.nutrient_id));
+    .sort((left, right) => (
+      left.nutrient_id.localeCompare(right.nutrient_id)
+      || left.basis.localeCompare(right.basis)
+    ));
 }
 
-async function createPersistedFood() {
+const distinctProteinTuples = [
+  { nutrient_id: "protein", amount: "1.234568", unit: "g", basis: "per_100g", data_status: "known" },
+  { nutrient_id: "protein", amount: "1.234567", unit: "g", basis: "per_serving", data_status: "known" },
+];
+
+async function createPersistedFood(input: FoodCreateInput = persistedFoodInput) {
   const database = new LocalSQLiteTestDatabase();
   openDatabases.add(database);
   await database.initialize();
@@ -131,7 +148,7 @@ async function createPersistedFood() {
   await seedLocalOwner(database, OWNER);
   const runtime = createLocalFoodsRuntime(database.asExpoDatabase(), OWNER);
   const food = await runtime.create({
-    ...persistedFoodInput,
+    ...input,
     client_request_id: "00000000-0000-4000-8000-000000000268",
   });
   return { database, runtime, food };
@@ -236,6 +253,35 @@ test.each([
   { name: "unresolved", query: noCatalogState("loading") },
   { name: "failed", query: noCatalogState("error") },
 ])(
+  "ordinary Edit Food retains same-ID nutrients at distinct bases through a $name catalog query",
+  async ({ query }) => {
+    mockNutrientQuery = query;
+    const { runtime, food } = await createPersistedFood(sameBasisPersistedFoodInput);
+    const payloads: FoodMutationInput[] = [];
+    mockUpdateFood.mockImplementation(async ({ foodId, input }: { foodId: string; input: FoodMutationInput }) => {
+      payloads.push(input);
+      return runtime.update(foodId, input);
+    });
+
+    const renderer = renderFood(food);
+    await changeServing(renderer);
+    await save(renderer, "Save food");
+
+    expect(payloads).toHaveLength(1);
+    expect(nutrientTuples(payloads[0]!).filter(({ nutrient_id }) => nutrient_id === "protein"))
+      .toEqual(distinctProteinTuples);
+    const saved = await runtime.get(food.id);
+    expect(nutrientTuples(saved).filter(({ nutrient_id }) => nutrient_id === "protein"))
+      .toEqual(distinctProteinTuples);
+    expect(saved.serving_definitions.find((serving) => serving.unit === "scoop"))
+      .toEqual(expect.objectContaining({ quantity: "2.000000", gram_weight: "30.000000" }));
+  },
+);
+
+test.each([
+  { name: "unresolved", query: noCatalogState("loading") },
+  { name: "failed", query: noCatalogState("error") },
+])(
   "ordinary Edit Food recovers from a $name catalog query without losing serving or nutrient edits",
   async ({ query }) => {
     mockNutrientQuery = query;
@@ -320,6 +366,59 @@ test.each([
     );
   },
 );
+
+test.each([
+  { name: "unresolved", query: noCatalogState("loading") },
+  { name: "failed", query: noCatalogState("error") },
+])(
+  "Recipe serving management retains same-ID nutrients at distinct bases through a $name catalog query",
+  async ({ query }) => {
+    mockNutrientQuery = query;
+    const { runtime, food } = await createPersistedFood(sameBasisPersistedFoodInput);
+    const payloads: FoodMutationInput[] = [];
+    const onSavedFood = jest.fn();
+    const onSaved = jest.fn();
+    mockUpdateFood.mockImplementation(async ({ foodId, input }: { foodId: string; input: FoodMutationInput }) => {
+      payloads.push(input);
+      return runtime.update(foodId, input);
+    });
+
+    const renderer = renderFood(food, { servingManagementOnly: true, onSavedFood, onSaved });
+    await changeServing(renderer);
+    await save(renderer, "Save serving sizes");
+
+    expect(payloads).toHaveLength(1);
+    expect(nutrientTuples(payloads[0]!).filter(({ nutrient_id }) => nutrient_id === "protein"))
+      .toEqual(distinctProteinTuples);
+    const saved = await runtime.get(food.id);
+    expect(nutrientTuples(saved).filter(({ nutrient_id }) => nutrient_id === "protein"))
+      .toEqual(distinctProteinTuples);
+    expect(onSavedFood).toHaveBeenCalledWith(saved);
+    expect(onSaved).toHaveBeenCalledWith(food.id);
+  },
+);
+
+test("loaded catalog ordinary Edit Food keeps exact same-ID bases behind the rounded display", async () => {
+  mockNutrientQuery = loadedCatalogState();
+  const { runtime, food } = await createPersistedFood(sameBasisPersistedFoodInput);
+  const payloads: FoodMutationInput[] = [];
+  mockUpdateFood.mockImplementation(async ({ foodId, input }: { foodId: string; input: FoodMutationInput }) => {
+    payloads.push(input);
+    return runtime.update(foodId, input);
+  });
+
+  const renderer = renderFood(food);
+  expect(renderer.root.findByProps({ accessibilityLabel: "Protein amount" }).props.value).toBe("1.23");
+  await changeServing(renderer);
+  await save(renderer, "Save food");
+
+  expect(payloads).toHaveLength(1);
+  expect(nutrientTuples(payloads[0]!).filter(({ nutrient_id }) => nutrient_id === "protein"))
+    .toEqual(distinctProteinTuples);
+  const saved = await runtime.get(food.id);
+  expect(nutrientTuples(saved).filter(({ nutrient_id }) => nutrient_id === "protein"))
+    .toEqual(distinctProteinTuples);
+});
 
 test("recovery starts with a loaded catalog, then a failed reload preserves edits", async () => {
   mockNutrientQuery = loadedCatalogState();

@@ -241,6 +241,12 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
   }
 
   function buildPayload(): FoodPayloadValidationResult {
+    const originalAmountsByIdentity = new Map(
+      (food?.nutrients ?? []).map((original) => [
+        JSON.stringify([original.nutrient_id, original.basis]),
+        original.amount,
+      ] as const),
+    );
     const input: FoodMutationInput = {
       name,
       brand: brand || null,
@@ -286,7 +292,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
         ...nutrient,
         amount: nutrientPayloadNumber(
           nutrient.amount,
-          food?.nutrients.find((original) => original.nutrient_id === nutrient.nutrient_id)?.amount,
+          originalAmountsByIdentity.get(JSON.stringify([nutrient.nutrient_id, nutrient.basis])),
         ),
       })),
     };

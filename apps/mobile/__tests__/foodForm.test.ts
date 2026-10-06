@@ -116,9 +116,17 @@ test("nutrient form preserves stored precision unless the displayed value change
   expect(nutrientPayloadNumber(null, "28.349523")).toBeNull();
 });
 
+test("nutrient form exposes the same rounded display for distinct precise basis values", () => {
+  expect(formatNutrientFormNumber("1.234567")).toBe("1.23");
+  expect(formatNutrientFormNumber("1.234568")).toBe("1.23");
+  expect(nutrientPayloadNumber("1.23", "1.234567")).toBe("1.234567");
+  expect(nutrientPayloadNumber("1.23", "1.234568")).toBe("1.234568");
+});
+
 test("nutrient form retains stored rows while the catalog is unavailable or partial", () => {
   const existing: FoodNutrientInput[] = [
     { nutrient_id: "protein", amount: "28.349523", unit: "g", basis: "per_100g", data_status: "known" },
+    { nutrient_id: "protein", amount: "1.234568", unit: "g", basis: "per_serving", data_status: "known" },
     { nutrient_id: "calcium", amount: "0", unit: "mg", basis: "per_serving", data_status: "zero" },
     { nutrient_id: "chloride", amount: null, unit: "mg", basis: "per_serving", data_status: "unknown" },
   ];
@@ -129,6 +137,7 @@ test("nutrient form retains stored rows while the catalog is unavailable or part
     existing[0],
     existing[1],
     existing[2],
+    existing[3],
   ]);
   expect(mergeFoodNutrientValues([], definitions)).toEqual([
     expect.objectContaining({ nutrient_id: "protein", amount: null, data_status: "unknown" }),
