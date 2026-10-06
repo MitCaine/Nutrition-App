@@ -571,7 +571,12 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
+    env:
+      npm_config_cache: ${{ runner.temp }}/nutrition-npm-download-cache
+      NPM_CONFIG_CACHE: ${{ runner.temp }}/nutrition-npm-download-cache
+      CP_CACHE_DIR: ${{ runner.temp }}/nutrition-cocoapods-download-cache
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -584,11 +589,85 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      - name: Compute exact native download cache keys
+        id: native-cache-key
+        run: |
+          echo "npm=$(bash scripts/ios-native-cache-key.sh --cache npm)" >> "$GITHUB_OUTPUT"
+          echo "cocoapods=$(bash scripts/ios-native-cache-key.sh --cache cocoapods)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare isolated native download cache locations
+        run: |
+          mkdir -p "$NPM_CONFIG_CACHE" "$CP_CACHE_DIR"
+
+      - name: Restore npm download cache (trusted read only)
+        id: npm-download-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/nutrition-npm-download-cache
+          key: ${{ steps.native-cache-key.outputs.npm }}
+
+      - name: Restore CocoaPods download cache (trusted read only)
+        id: cocoapods-download-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/nutrition-cocoapods-download-cache
+          key: ${{ steps.native-cache-key.outputs.cocoapods }}
+
       - name: Run repository-owned native qualifier
+        id: native-qualification
+        env:
+          IOS_NATIVE_NPM_CACHE_KEY: ${{ steps.native-cache-key.outputs.npm }}
+          IOS_NATIVE_NPM_CACHE_OUTCOME: ${{ steps.npm-download-cache.outcome }}
+          IOS_NATIVE_NPM_CACHE_HIT: ${{ steps.npm-download-cache.outputs.cache-hit }}
+          IOS_NATIVE_NPM_CACHE_RESTORED_KEY: ${{ steps.npm-download-cache.outputs.cache-matched-key }}
+          IOS_NATIVE_COCOAPODS_CACHE_KEY: ${{ steps.native-cache-key.outputs.cocoapods }}
+          IOS_NATIVE_COCOAPODS_CACHE_OUTCOME: ${{ steps.cocoapods-download-cache.outcome }}
+          IOS_NATIVE_COCOAPODS_CACHE_HIT: ${{ steps.cocoapods-download-cache.outputs.cache-hit }}
+          IOS_NATIVE_COCOAPODS_CACHE_RESTORED_KEY: ${{ steps.cocoapods-download-cache.outputs.cache-matched-key }}
         run: >-
           bash scripts/ios-native-qualification.sh
           --evidence-dir "${RUNNER_TEMP}/ios-native-evidence"
           --runner macos-26
+
+      - name: Retain trusted cache operation outcomes
+        if: always()
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/ios-native-evidence
+          NPM_RESTORE_OUTCOME: ${{ steps.npm-download-cache.outcome }}
+          NPM_CACHE_HIT: ${{ steps.npm-download-cache.outputs.cache-hit }}
+          NPM_RESTORED_KEY: ${{ steps.npm-download-cache.outputs.cache-matched-key }}
+          COCOAPODS_RESTORE_OUTCOME: ${{ steps.cocoapods-download-cache.outcome }}
+          COCOAPODS_CACHE_HIT: ${{ steps.cocoapods-download-cache.outputs.cache-hit }}
+          COCOAPODS_RESTORED_KEY: ${{ steps.cocoapods-download-cache.outputs.cache-matched-key }}
+          NPM_CACHE_KEY: ${{ steps.native-cache-key.outputs.npm }}
+          COCOAPODS_CACHE_KEY: ${{ steps.native-cache-key.outputs.cocoapods }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def operation(prefix):
+              return {
+                  "key": os.environ.get(f"{prefix}_CACHE_KEY") or None,
+                  "restore_outcome": os.environ.get(f"{prefix}_RESTORE_OUTCOME") or None,
+                  "cache_hit": os.environ.get(f"{prefix}_CACHE_HIT") or None,
+                  "restored_key": os.environ.get(f"{prefix}_RESTORED_KEY") or None,
+                  "save_outcome": "not_attempted",
+              }
+
+          evidence_dir = Path(os.environ["EVIDENCE_DIR"])
+          evidence_dir.mkdir(parents=True, exist_ok=True)
+          (evidence_dir / "cache-operations.json").write_text(
+              json.dumps({
+                  "npm": operation("NPM"),
+                  "cocoapods": operation("COCOAPODS"),
+              }, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
       - name: Retain trusted native evidence
         if: always()

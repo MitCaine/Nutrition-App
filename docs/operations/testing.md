@@ -587,10 +587,26 @@ short-retention `trusted-qualification-dispatch` artifact.
 entrypoint through `workflow_run`. It requires the triggering run to be a same-repository
 `workflow_dispatch` on `main`, requires the executor/default-branch SHA to equal the triggering
 controller SHA, downloads and validates the exact handoff artifact, then performs trusted planning
-and selected candidate qualification. Candidate jobs retain read-only repository permissions and do
-not enable dependency caching. GitHub also gives `workflow_run` executions read-only access to the
-default branch cache scope, preventing candidate code from creating or overwriting default-branch
-cache entries.
+and selected candidate qualification. The iOS candidate job restores only exact-key npm and
+CocoaPods download caches into runner-temporary locations, then still runs `npm ci`, clean Expo
+prebuild, autolinking, `pod install`, the simulator build, and all three Swift harnesses. It has
+read-only Actions permission and never saves a cache. The ordinary iOS workflow uses the same
+input-derived keys and locations and may save download caches after a successful qualification;
+fork or unavailable-cache runs continue as fresh installs. Neither route caches `node_modules`,
+generated `ios/`, `Pods`, `DerivedData`, compiled products, harness binaries, or worktrees. GitHub
+also gives `workflow_run` executions read-only access to the default branch cache scope, preventing
+candidate code from creating or overwriting default-branch cache entries.
+
+The qualifier retains an explicit status and restored identity for each cache, plus elapsed seconds
+and status for npm installation, clean prebuild/plugin checks, autolinking, Pods, Xcode build, Swift
+harnesses, cleanup, and the total boundary. To measure download caching, run two fresh exact-
+candidate qualifications with isolated empty npm and CocoaPods cache directories: the cold run
+must record misses, and the warm run must restore the same exact keys and record hits while still
+performing every substantive check. Compare the stage timings, cache restore/save operations, and
+workflow overhead separately; a cache miss or unavailable cache is valid execution but does not
+provide warm-run evidence. The retained baseline's compilation time remains outside this download
+cache claim, and network, hosted-runner, toolchain, and cache-service variability limit any measured
+gain.
 
 The `trusted-qualification` GitHub environment is reserved for the privileged finalizer. The
 dedicated qualification App private key must be stored only as the environment secret
@@ -704,8 +720,9 @@ and requirements-dev.lock (pytest 9.1.1), and executes the fixed project-control
 selection in scripts/lib/tooling_qualification.py. Candidate configuration,
 selectors, credentials and native opt-in environment cannot select weaker tests.
 The runner uses --noconftest, an empty pytest configuration, verbose skip details
-and no pytest cache. The job has read-only contents permission, no App secret and
-no cache; the finalizer alone publishes the dedicated-App result.
+and no pytest cache. The job has read-only contents permission, no App secret, and
+no dependency cache beyond the explicit read-only cache restores in the trusted iOS
+job; the finalizer alone publishes the dedicated-App result.
 
 The sixteen-file pre-dispatch diagnostic took about 39 seconds: 296 passed,
 17 explicitly skipped native fixtures, and seven stale iOS composition assertions
