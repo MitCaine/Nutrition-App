@@ -118,6 +118,15 @@ authoring tool.
 Food views omit unresolved/unknown nutrient rows from ordinary presentation where no meaningful
 amount is available while preserving explicit zero and other authoritative statuses in the model.
 
+When the canonical nutrient catalog is loading or reports a retryable failure, Edit Food keeps the
+Food's stored nutrient rows in the mutation payload even if the catalog cannot provide form fields.
+Serving-size-only edits use the same full replacement payload, so changing a serving cannot clear
+nutrition while catalog discovery is unavailable. A recovered or partial catalog supplies editable
+fields without turning catalog membership into deletion authority: rows outside the returned subset
+remain intact. Intentional edits, explicit zero values, and clearing a value to unknown continue to
+follow the normal form rules. The nutrient status remains retryable and the user can retry catalog
+loading while preserving the current Food values.
+
 ### USDA FoodData Central
 
 USDA access follows the explicitly selected runtime:

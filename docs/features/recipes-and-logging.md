@@ -267,6 +267,9 @@ Cross-cutting UI work now applies to Recipe and Log routes as well as other feat
 - unsaved draft guards block accidental exit from dirty Recipe authoring and other guarded forms;
 - busy mutation state prevents normal discard/navigation actions from racing an in-flight write;
 - recovery/success messaging is explicit and accessible rather than relying on visual-only state.
+- Recipe serving management preserves the authoritative Food nutrient rows when nutrient catalog
+  discovery is loading or failed, then passes the saved Food to the Recipe draft before returning
+  to the editor; catalog recovery does not discard serving or nutrient edits.
 
 These are presentation/navigation guarantees. They do not change Recipe revision authority or Log
 snapshot semantics.

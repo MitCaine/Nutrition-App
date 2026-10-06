@@ -2,6 +2,7 @@ import {
   createClientServingKey,
   formatNutrientFormNumber,
   formatServingFormNumber,
+  mergeFoodNutrientValues,
   nutrientPayloadNumber,
   servingPayloadNumber,
   updateServingValues,
@@ -113,6 +114,25 @@ test("nutrient form preserves stored precision unless the displayed value change
   expect(nutrientPayloadNumber("28.35", "28.349523")).toBe("28.349523");
   expect(nutrientPayloadNumber("28.4", "28.349523")).toBe("28.4");
   expect(nutrientPayloadNumber(null, "28.349523")).toBeNull();
+});
+
+test("nutrient form retains stored rows while the catalog is unavailable or partial", () => {
+  const existing: FoodNutrientInput[] = [
+    { nutrient_id: "protein", amount: "28.349523", unit: "g", basis: "per_100g", data_status: "known" },
+    { nutrient_id: "calcium", amount: "0", unit: "mg", basis: "per_serving", data_status: "zero" },
+    { nutrient_id: "chloride", amount: null, unit: "mg", basis: "per_serving", data_status: "unknown" },
+  ];
+  const definitions: NutrientDefinition[] = [NUTRIENT_CATALOG_BY_ID.get("protein")!];
+
+  expect(mergeFoodNutrientValues(existing, [])).toEqual(existing);
+  expect(mergeFoodNutrientValues(existing, definitions)).toEqual([
+    existing[0],
+    existing[1],
+    existing[2],
+  ]);
+  expect(mergeFoodNutrientValues([], definitions)).toEqual([
+    expect.objectContaining({ nutrient_id: "protein", amount: null, data_status: "unknown" }),
+  ]);
 });
 
 const servings: ServingFormValue[] = [

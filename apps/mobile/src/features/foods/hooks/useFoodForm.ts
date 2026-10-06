@@ -110,6 +110,27 @@ export function nutrientPayloadNumber(displayValue: string | null | undefined, o
   return displayValue === formatNutrientFormNumber(originalValue) ? String(originalValue) : displayValue;
 }
 
+export function mergeFoodNutrientValues(
+  values: readonly FoodNutrientInput[],
+  nutrients: readonly NutrientDefinition[],
+): FoodNutrientInput[] {
+  const existingIds = new Set(values.map((value) => value.nutrient_id));
+  const catalogOnly = nutrients.filter((nutrient) => !existingIds.has(nutrient.id)).map((nutrient) => {
+    const emptyValue: FoodNutrientInput = {
+      nutrient_id: nutrient.id,
+      amount: null,
+      unit: nutrient.default_unit,
+      basis: "per_serving",
+      data_status: "unknown",
+    };
+    return emptyValue;
+  });
+  return [
+    ...values,
+    ...catalogOnly,
+  ];
+}
+
 export function createServingFormValues(food: Food | undefined): ServingFormValue[] {
   const source: InitialServing[] = food?.serving_definitions.length ? food.serving_definitions : [];
   let mapped: ServingFormValue[] = source.map((serving) => {
@@ -172,17 +193,7 @@ export function useFoodForm(food: Food | undefined, nutrients: NutrientDefinitio
   const isDirty = currentDirtyFingerprint !== initialDirtyFingerprintRef.current;
 
   const mergedValues = useMemo<FoodNutrientInput[]>(() => {
-    const existing = new Map(values.map((value) => [value.nutrient_id, value]));
-    return nutrients.map((nutrient) => {
-      const emptyValue: FoodNutrientInput = {
-        nutrient_id: nutrient.id,
-        amount: null,
-        unit: nutrient.default_unit,
-        basis: "per_serving",
-        data_status: "unknown",
-      };
-      return existing.get(nutrient.id) ?? emptyValue;
-    });
+    return mergeFoodNutrientValues(values, nutrients);
   }, [nutrients, values]);
 
   function updateServing(key: string, patch: Partial<ServingFormValue>) {
