@@ -136,7 +136,8 @@ def test_checkpoint_transaction_serializes_real_overlapping_updates(tmp_path, mo
             second_ready.set()
 
             def apply_second(current):
-                assert first_finished.is_set()
+                assert current["attempt_history"] == ["first"]
+                assert current["first"] is True
                 current["attempt_history"].append("second")
                 current["second"] = True
                 return current
