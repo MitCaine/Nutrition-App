@@ -4331,6 +4331,71 @@ def test_recovery_revalidates_live_check_review_and_owner(
             transport=transport, ref_transport=refs)
 
 
+def test_recovery_accepts_legacy_pending_without_state_binding(
+    tmp_path: Path,
+) -> None:
+    repo, base, _candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
+    pending = TASK.integrate_task(
+        reviewed, candidate_repo=repo, controller_main_sha=base,
+        expected_app_id=424242, transport=transport, ref_transport=refs,
+        human_owner_authorized=True)
+    pending["integration"].pop("state_binding_sha256")
+
+    TASK.revalidate_integration_state(
+        pending, candidate_repo=repo, expected_app_id=424242,
+        transport=transport, ref_transport=refs)
+
+    assert "state_binding_sha256" not in pending["integration"]
+
+
+def test_recovery_accepts_legacy_integrated_without_state_binding(
+    tmp_path: Path,
+) -> None:
+    repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
+    pending = TASK.integrate_task(
+        reviewed, candidate_repo=repo, controller_main_sha=base,
+        expected_app_id=424242, transport=transport, ref_transport=refs,
+        human_owner_authorized=True)
+    refs.main_sha = base
+    integrated = TASK.reconcile_integration(
+        pending, candidate_sha=candidate, ref_transport=refs)
+    integrated["integration"].pop("state_binding_sha256")
+
+    TASK.revalidate_integration_state(
+        integrated, candidate_repo=repo, expected_app_id=424242,
+        transport=transport, ref_transport=refs)
+
+    assert "state_binding_sha256" not in integrated["integration"]
+
+
+@pytest.mark.parametrize("integrated", [False, True])
+@pytest.mark.parametrize("binding", ["0" * 64, "not-a-sha256"])
+def test_recovery_rejects_tampered_or_malformed_state_binding(
+    tmp_path: Path, integrated: bool, binding: str,
+) -> None:
+    repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
+    pending = TASK.integrate_task(
+        reviewed, candidate_repo=repo, controller_main_sha=base,
+        expected_app_id=424242, transport=transport, ref_transport=refs,
+        human_owner_authorized=True)
+    state = pending
+    if integrated:
+        refs.main_sha = base
+        state = TASK.reconcile_integration(
+            pending, candidate_sha=candidate, ref_transport=refs)
+    state["integration"]["state_binding_sha256"] = binding
+
+    expected_error = (
+        "INTEGRATION_RECOVERY_BINDING_INVALID"
+        if binding == "not-a-sha256"
+        else "INTEGRATION_RECOVERY_REVALIDATION_CHANGED"
+    )
+    with pytest.raises(TASK.TaskControllerError, match=expected_error):
+        TASK.revalidate_integration_state(
+            state, candidate_repo=repo, expected_app_id=424242,
+            transport=transport, ref_transport=refs)
+
+
 def test_attached_revalidation_allows_only_receipted_main_fetch(tmp_path: Path, monkeypatch) -> None:
     repo, base, candidate, reviewed, transport, refs = reviewed_qualified_fixture(tmp_path)
     original = {"candidate": candidate, "branch": "task/fixture", "source_sha256": "source",

@@ -2942,7 +2942,14 @@ def revalidate_integration_state(
         ref_transport=ref_transport, human_owner_authorized=True,
         source_main_after=source_main_after, source_added_refs=source_added_refs,
     )
-    if revalidated["integration"] != {**integration, "origin_main_after": None}:
+    if "state_binding_sha256" in integration:
+        binding = integration["state_binding_sha256"]
+        if not isinstance(binding, str) or not re.fullmatch(r"[0-9a-f]{64}", binding):
+            raise TaskControllerError("INTEGRATION_RECOVERY_BINDING_INVALID")
+    revalidated_integration = dict(revalidated["integration"])
+    if "state_binding_sha256" not in integration:
+        revalidated_integration.pop("state_binding_sha256", None)
+    if revalidated_integration != {**integration, "origin_main_after": None}:
         raise TaskControllerError("INTEGRATION_RECOVERY_REVALIDATION_CHANGED")
 
 
