@@ -157,8 +157,9 @@ For dependency-only pull requests:
 
 ## Task workflow
 
-Start at [the local execution map](docs/local_project_map.md) and deliver its complete
-byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md) to every role.
+Start at [the local execution map](docs/local_project_map.md). The controller reads its complete
+byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md); each worker
+receives the selected role document and shared rules from the same pin.
 The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional on setup or replacement. New tasks use the owner-authorized lightweight
 route: controller-only dispatch of one serial planner, implementor and distinct independent reviewer,
 using event-based blocking completion unless the exact idle wake-up route is verified,

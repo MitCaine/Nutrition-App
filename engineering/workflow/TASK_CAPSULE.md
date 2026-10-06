@@ -3,7 +3,8 @@
 For current work use the bounded [Markdown template](../tasks/TEMPLATE.md), stored under
 `engineering/tasks/`, with objective/issue, exact base/branch, owner authority, allowed and
 forbidden scope, checkable criteria, actual commands, results and gaps. Deliver it with
-[local project map](../../docs/local_project_map.md), the complete shared procedure and AGENTS to each serial role.
+[local project map](../../docs/local_project_map.md), the controller's complete shared procedure,
+and each worker's selected role document/shared rules and AGENTS inputs.
 No RI JSON schema, qualification of a capsule-only planning overlay or frozen launcher
 is required for these new records.
 

@@ -1,4 +1,4 @@
-# Start an issue in an established project
+# Start an issue in an established project — controller
 
 **Read all directed orientation before acting:** this procedure, project-root
 `docs/local_project_map.md`, the complete live issue and required linked
@@ -7,7 +7,8 @@ or missing inputs before dependent decisions, edits or dispatch; summaries do
 not replace unread requirements. Read in bounded sections and recover truncated
 portions before reliance. Select the checkpoint's active object, not its history.
 
-This is the complete daily entrypoint, not whole-repository orientation. Read
+This is the controller’s complete daily entrypoint. Workers use their own
+[role documents](roles/README.md), not this whole procedure. Read
 relevant source/standards as needed; RI architecture, setup and adoption history
 are conditional. The project README/AGENTS points to the exact map above. If it
 is missing, report and resolve that adoption input rather than substitute another
@@ -103,14 +104,18 @@ bookkeeping and closeout do not justify another assignment.
 
 Retain and authenticate each completed agent's terminal handoff before closing
 it through the host's supported operation to free capacity. Do not close running
-agents. Give each role this selected procedure, its bounded task, relevant map,
-standards and source locations, and the actual evidence it needs. Reading all RI
-documentation is not required.
+agents. Give each worker its selected [role document](roles/README.md), bounded
+task, original required specifications/decisions, applicable standards, source
+locations, commands, authority limits and actual evidence. Supply the relevant
+project-map requirements and their original locations; workers do not repeat
+controller intake or workflow selection. Do not supply the whole controller
+procedure as mandatory worker reading. Authenticate role resources from the same
+adopted RI revision; record their locations in the existing handoff.
 
 Before builder dispatch, supply it with the original issue and required
 orientation sources, their selected identities/locations, confirmed requirements
 and unresolved questions. A controller summary alone is insufficient. Each role
-reads its directed orientation before acting; inaccessible required material is
+reads its complete directed role/task inputs before acting; inaccessible material is
 a reported gap, not permission to guess.
 
 ### Publish the task branch and handoffs

@@ -38,11 +38,17 @@ def test_complete_shared_role_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (17374, "cc5f69f8c8dd3f508feda911dbf93f1558e31c1ba4b9bd480b107ac81e136779"),
-        "capsule-controller-workflow.md": (14131, "64e3b311c5a9524c8b14708d1805c3676425347d3ba498fb101274ea946f1179"),
+        "start-an-issue.md": (17807, "2e828c4b5fb657dc1f8db84889db5177980bbaae2cb6406a16bed82b42c1ea15"),
+        "capsule-controller-workflow.md": (14205, "1472330ab29885faf41c397a2ebb23d71aeefdae47ca703b6879498ff8f7b691"),
+        "roles/README.md": (1034, "94d7c852cd5e54065ec2687a96f4b4a6bf3961e3492f4882cdeadb17d79eb30b"),
+        "roles/capsule-builder.md": (1241, "d5ce88828336036d5f9389b6dc2f0b06a1a1bc90cbda0c122bf1421a2d9de402"),
+        "roles/implementor.md": (1454, "f190b26662b7332484885537039063c3d001b576336229481d5879c48bdae5ad"),
+        "roles/reviewer.md": (1492, "f778d52573f9aaaacbb339e0cfb5cd4f7d448526812951f2bee7ab5e8f8cec0f"),
+        "roles/shared-rules.md": (1595, "487b1a23118560dd20fc28bb5f4f536810ab957ed8ceeb87609e078622e9b679"),
     }
     provenance = (shared / "SOURCE.md").read_text()
-    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" in provenance
+    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" in provenance
+    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
     assert "RI `docs/start-an-issue.md` → [local `engineering/workflow/shared/start-an-issue.md`](start-an-issue.md)" in provenance
     assert "RI `docs/capsule-controller-workflow.md` → [local `engineering/workflow/shared/capsule-controller-workflow.md`](capsule-controller-workflow.md)" in provenance
     for name, (size, digest) in identities.items():
@@ -55,6 +61,37 @@ def test_complete_shared_role_resources_and_separate_compatible_runtime_pin():
     assert lock["contracts"]["navigation"] == 6
     assert lock["contracts"]["inventory"] == 13
     assert lock["contracts"]["adapter"] == 10
+
+
+def test_current_handoffs_route_controller_and_assigned_worker_roles():
+    current = {
+        "AGENTS.md": ("role document", "complete\nbyte-pinned"),
+        "docs/local_project_map.md": ("selected role document and shared rules", "Controllers read this map"),
+        "engineering/tasks/TEMPLATE.md": ("selected role document and shared rules", "complete selected daily procedure"),
+        "engineering/workflow/TASK_CAPSULE.md": ("selected role document/shared rules", "controller's complete shared procedure"),
+        "engineering/workflow/EXECUTION.md": ("selected implementor role", "selected\nreviewer role"),
+        "engineering/workflow/AUTHORITY.md": ("selected role document/shared rules", "complete\npinned shared procedure"),
+        "engineering/workflow/README.md": ("selected role document and shared rules", "controller's complete"),
+        "engineering/README.md": ("selected role document and shared rules", "daily issue procedure"),
+        "engineering/workflow/shared/skill-templates/README.md": ("role document and shared rules", "only the controller"),
+    }
+    old_pin = "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd"
+    for name, required in current.items():
+        text = (ROOT / name).read_text()
+        normalized = " ".join(text.split())
+        assert old_pin not in text, name
+        assert " ".join(required[0].split()) in normalized, name
+        assert " ".join(required[1].split()) in normalized, name
+    for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
+        text = (ROOT / "engineering/workflow" / name).read_text()
+        assert "selected role document" in text
+        assert "shared rules" in text
+    roles = (ROOT / "engineering/workflow/shared/roles/README.md").read_text()
+    for role in ("capsule-builder.md", "implementor.md", "reviewer.md", "shared-rules.md"):
+        if role == "shared-rules.md":
+            continue
+        assert f"]({role})" in roles
+        assert "[shared assignment rules](shared-rules.md)" in (ROOT / "engineering/workflow/shared/roles" / role).read_text()
 
 
 
@@ -295,9 +332,18 @@ def test_all_affected_local_directed_links_and_anchors_resolve():
     spec.loader.exec_module(validator)
     paths = ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
              "engineering/tasks/TEMPLATE.md", "engineering/tasks/GH-261.md",
-             "engineering/workflow/README.md", "engineering/workflow/shared/SOURCE.md",
+             "engineering/workflow/TASK_CAPSULE.md", "engineering/workflow/AUTHORITY.md",
+             "engineering/workflow/EXECUTION.md", "engineering/workflow/WORKFLOW.md",
+             "engineering/workflow/ROUTING.md", "engineering/workflow/EVIDENCE.md",
+             "engineering/workflow/FAILURE_TAXONOMY.md", "engineering/workflow/README.md",
+             "engineering/workflow/shared/SOURCE.md",
              "engineering/workflow/shared/start-an-issue.md",
              "engineering/workflow/shared/capsule-controller-workflow.md",
+             "engineering/workflow/shared/roles/README.md",
+             "engineering/workflow/shared/roles/capsule-builder.md",
+             "engineering/workflow/shared/roles/implementor.md",
+             "engineering/workflow/shared/roles/reviewer.md",
+             "engineering/workflow/shared/roles/shared-rules.md",
              "engineering/workflow/shared/skill-templates/README.md",
              "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md")
     for name in paths:
@@ -319,11 +365,12 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd/docs/skill-templates/capsule-queue/")
+              "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
     assert "scripts/run%5Fand%5Fqueue.py" in text
+    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in text
     assert "not an installed executable skill" in text
     assert "CLI acceptance" in text and "idle wake-up" in text
 

@@ -16,4 +16,5 @@ it does not copy the upstream setup/installation tree into current dispatch.
 Do not infer five mandatory installations, local/upstream parity, Work registration,
 or new authority from these links. Compare whole folders and verify actual resources
 before any separately authorized installation. Current role handoffs carry the selected
-complete daily instructions directly.
+role document and shared rules directly; only the controller receives the complete daily
+procedure.

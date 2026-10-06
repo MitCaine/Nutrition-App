@@ -52,7 +52,8 @@ the existing verification evidence field and does not replace qualification or r
 
 ## Handoff and closeout
 
-Provide the complete selected daily procedure, local map, task, applicable standards,
+Provide the controller with the complete selected daily procedure. Provide each worker with its
+selected role document and shared rules, local map sections it needs, task, applicable standards,
 exact source/diff and real evidence. Return changed paths, tested source/commands/environment,
 results/skips, unresolved findings and next permitted action. Only the controller dispatches;
 workers do not recruit. Use native event-based blocking completion unless the actual idle

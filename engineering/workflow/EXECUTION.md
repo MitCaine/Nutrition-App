@@ -1,8 +1,9 @@
 # Execution permissions and recovery
 
-Use [local project map](../../docs/local_project_map.md) and its complete shared procedure. Implementation uses one
-ordinary subagent in the bounded checkout; independent review uses a different read-only
-subagent. Ordinary source, Git diff and real logs are the handoff. `task execution` and its
+Use [local project map](../../docs/local_project_map.md). The controller uses its complete shared
+procedure; implementation uses one ordinary subagent with the selected implementor role in the
+bounded checkout; independent review uses a different read-only subagent with the selected
+reviewer role. Ordinary source, Git diff and real logs are the handoff. `task execution` and its
 frozen local launcher are retired from current dispatch. No RI-only sandbox, serialized
 planning packet, launch budget or model gateway is a prerequisite for this route.
 

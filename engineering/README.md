@@ -38,7 +38,8 @@
 ## Repository-owned task workflow
 
 Use [local project map](../docs/local_project_map.md), the sole current local map, and its complete
-pinned [daily issue procedure](workflow/shared/start-an-issue.md).
+pinned [daily issue procedure](workflow/shared/start-an-issue.md) for controller intake. Workers receive
+their selected role document and shared rules through the controller handoff.
 The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work uses bounded Markdown tasks under `engineering/tasks/`,
 serial native planner/implementor/independent reviewer returns, ordinary source/diff/log
 review and the trusted standard controller. RI-only SDK/report/structural gates are retired.

@@ -1,7 +1,8 @@
 # Nutrition workflow
 
 Start at [local project map](../../docs/local_project_map.md), the sole current local execution map, with the
-complete [daily issue procedure](shared/start-an-issue.md) and [identity](shared/SOURCE.md).
+controller's complete [daily issue procedure](shared/start-an-issue.md) and [identity](shared/SOURCE.md).
+Workers use their selected role document and shared rules from that identity through the controller handoff.
 The [adoption guide](shared/capsule-controller-workflow.md) is conditional on setup or replacement.
 Project controls: [AUTHORITY](AUTHORITY.md), [EXECUTION](EXECUTION.md) and
 [CANDIDATE_EVIDENCE](CANDIDATE_EVIDENCE.md). Paused capsule recovery:

@@ -1,10 +1,12 @@
 # Nutrition local project map
 
 Established-project work uses the complete [daily issue procedure](../engineering/workflow/shared/start-an-issue.md)
-from RI commit `cdf64f5d27ef43e7e58e7b11f371a81d15687bdd`: 17374 bytes,
-SHA-256 `cc5f69f8c8dd3f508feda911dbf93f1558e31c1ba4b9bd480b107ac81e136779`.
-Read this map, the complete daily procedure, live issue/required linked decisions and
-applicable standards before acting. The [adoption guide](../engineering/workflow/shared/capsule-controller-workflow.md)
+from RI commit `6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0`: 17807 bytes,
+SHA-256 `2e828c4b5fb657dc1f8db84889db5177980bbaae2cb6406a16bed82b42c1ea15`.
+Controllers read this map, the complete daily procedure, live issue/required linked decisions
+and applicable standards before acting. Workers read their assigned complete role document,
+shared rules, task, original requirements and applicable standards; they do not repeat controller
+intake. The [adoption guide](../engineering/workflow/shared/capsule-controller-workflow.md)
 is conditional on setup or owner-authorized replacement. [SOURCE](../engineering/workflow/shared/SOURCE.md)
 records both exact instruction identities separately from the compatible runtime.
 This is the sole authoritative local map at project-root `docs/local_project_map.md`.
@@ -17,8 +19,8 @@ paths and authority. Pins record provenance, not a cryptographic receipt chain.
 | --- | --- | --- |
 | Orient / controller | Authenticate live issue, checkout/base, current owner authorization, active task/checkpoint and selected instructions; use `./scripts/ri query` when useful | Preserve unrelated edits and paused states; create/publish the authorized dedicated non-main GitHub branch before planner dispatch |
 | Capsule / planner | One native subagent with originals, this map, standards and [six-heading template](../engineering/tasks/TEMPLATE.md) | Bounded Markdown task, base/branch/scope/criteria/checks/gaps; controller checks full plan, commits/pushes capsule-only plan and verifies remote identity before implementation |
-| Implement / implementor | One native subagent with published plan, complete daily instructions, AGENTS, checkout and actual command environment | Authorized edits, full source/diff and check-attempt/log inventory; controller checks full handoff and commits/pushes exact candidate on the same branch, verifies remote C before review |
-| Independent review / reviewer | Fresh distinct native subagent; exact published C and full base-to-C diff, original requirements, task/standards and all relevant results/logs | Read-only evidence-backed disposition of every criterion and applicable standard, including docs; no self-review or test-inferred approval |
+| Implement / implementor | One native subagent with its assigned role document and shared rules, published plan, AGENTS, checkout and actual command environment | Authorized edits, full source/diff and check-attempt/log inventory; controller checks full handoff and commits/pushes exact candidate on the same branch, verifies remote C before review |
+| Independent review / reviewer | Fresh distinct native subagent with its assigned role document and shared rules; exact published C and full base-to-C diff, original requirements, task/standards and all relevant results/logs | Read-only evidence-backed disposition of every criterion and applicable standard, including docs; no self-review or test-inferred approval |
 | Authorized integration / controller | Exact reviewed/qualified/verified C, live owner authorization and actual supported `./scripts/task` interfaces | Protected expected-main integration only under current owner permission and project checks; retain actual resulting source identity |
 | Verify closeout / controller | Installed source, all original outcomes, remaining installed obligations, current references and authorized issue actions | Record actual proof externally; close only after outcomes pass, verify closure and safe verified merged local/remote branch cleanup; report partial results honestly |
 
@@ -36,9 +38,11 @@ controller, builder and reviewer `gpt-6.1-sol`/`low`, and implementor
 `gpt-5.6-luna`/`max`; the controller records host-effective settings before each
 dependent dispatch.
 
-Give every role the complete selected procedure, task, relevant standards, original issue
-and actual source/evidence locations; verify access before dispatch. Controller is the
-sole Git actor for the normal route: workers return edits and do not commit/push.
+Give the controller the complete selected procedure. Give each worker its selected role
+document and shared rules, task, relevant standards, original issue and actual source/evidence
+locations; verify access before dispatch. Workers need only the procedure sections their role
+calls for. Controller is the sole Git actor for the normal route: workers return edits and do
+not commit/push.
 Task-branch publication within the existing explicit task grant is separate from protected
 main acceptance. This map grants no blanket Git permission, issue transition or settings
 change. Resolve an actual permission conflict before dependent work; do not fabricate
