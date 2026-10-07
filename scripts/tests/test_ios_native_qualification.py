@@ -49,6 +49,8 @@ class IosNativeQualificationTests(
             "apps/mobile/modules/nutrition-ocr/ios/NutritionOcrModule.swift",
             "apps/mobile/modules/nutrition-ocr/ios-tests/NutritionOcrGeometryTests.swift",
             "scripts/ios-native-qualification.sh",
+            "scripts/ios-native-cache-key.sh",
+            "scripts/lib/ios_native_incremental.py",
             ".github/workflows/ios-native.yml",
             ".github/workflows/trusted-qualification-execute.yml",
         ]
@@ -485,6 +487,176 @@ class IosNativeQualificationTests(
         self.assertFalse((evidence / "Nutrition App Native").exists())
         self.assertFalse((evidence / "DerivedData").exists())
 
+    def test_incremental_cache_is_exact_and_retains_only_derived_data(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-cache-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+
+        cold, cold_evidence = self._run_fixture_qualification(
+            "success",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertEqual(cold.returncode, 0, cold.stderr)
+        cold_manifest = json.loads(
+            (cold_evidence / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(cold_manifest["compilation"]["mode"], "incremental")
+        self.assertEqual(
+            cold_manifest["compilation"]["restore"]["status"],
+            "miss",
+        )
+        self.assertEqual(
+            cold_manifest["compilation"]["save"]["status"],
+            "saved",
+        )
+        self.assertTrue((cache_dir / "DerivedData").is_dir())
+        self.assertFalse((cache_dir / "Nutrition App Native").exists())
+        self.assertTrue((cold_evidence / "module-evidence.json").is_file())
+        self.assertTrue(
+            (cold_evidence / "nutrition-ocr-link-map.txt").is_file()
+        )
+        self.assertTrue(
+            (cold_evidence / "nutrition-ocr-provider-registration.swift").is_file()
+        )
+        self.assertTrue(
+            (cold_evidence / "nutrition-ocr-source-evidence").is_dir()
+        )
+        self.assertEqual(
+            cold_manifest["module_evidence"]["provider_registration"]["provider_class"],
+            "ExpoModulesProvider",
+        )
+
+        warm, warm_evidence = self._run_fixture_qualification(
+            "success",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertEqual(warm.returncode, 0, warm.stderr)
+        warm_manifest = json.loads(
+            (warm_evidence / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            warm_manifest["compilation"]["restore"]["status"],
+            "hit",
+        )
+        self.assertEqual(
+            warm_manifest["module_evidence"]["status"],
+            "PASS",
+        )
+        self.assertFalse((cache_dir / "Nutrition App Native").exists())
+
+    def test_incremental_failure_discards_uncommitted_derived_data(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "failure",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertEqual(result.returncode, 17, result.stderr)
+        manifest = json.loads(
+            (evidence / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["result"], "PARTIAL_FAILURE")
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_incremental_xcode_failure_discards_started_build(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-xcode-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "xcode-failure",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertEqual(result.returncode, 17, result.stderr)
+        discard = json.loads(
+            (evidence / "compilation-discard.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(discard["status"], "discarded")
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_incremental_harness_failure_does_not_save_cache(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-harness-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "harness-failure",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(
+            json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))[
+                "compilation"
+            ]["save"],
+            None,
+        )
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_incremental_cleanup_failure_does_not_save_cache(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-cleanup-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "cleanup-failure",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((evidence / "compilation-discard.json").is_file())
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_incremental_manifest_failure_does_not_save_cache(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-manifest-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "success",
+            manifest_directory=True,
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((evidence / "compilation-discard.json").is_file())
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_missing_module_membership_fails_native_evidence(self):
+        result, evidence = self._run_fixture_qualification("missing-module")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (evidence / "manifest.json").read_text(encoding="utf-8")
+        )
+        statuses = {entry["stage"]: entry["status"] for entry in manifest["stages"]}
+        self.assertEqual(statuses["xcode_build"], "FAILURE")
+        self.assertNotIn("IOS_NATIVE_QUALIFICATION=PASS", result.stdout)
+
+    def test_unlinked_module_fails_final_application_evidence(self):
+        result, evidence = self._run_fixture_qualification("unlinked-module")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        module_evidence = evidence / "module-evidence.json"
+        self.assertFalse(module_evidence.exists())
+        self.assertIn(
+            "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR",
+            result.stderr,
+        )
+
+    def test_missing_provider_registration_fails_native_evidence(self):
+        result, evidence = self._run_fixture_qualification("missing-provider")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "IOS_NATIVE_MODULE_PROVIDER_REGISTRATION_MISSING",
+            result.stderr,
+        )
+        self.assertFalse((evidence / "module-evidence.json").exists())
+
     def test_qualifier_fails_closed_on_timing_write_failure(self):
         result, evidence = self._run_fixture_qualification(
             "timing-write-failure"
@@ -575,14 +747,86 @@ EOF
 esac
 """)
         write("ruby", 'echo ruby 3.4.0\n')
-        write("pod", 'case "${1-}" in --version) echo 1.16.0 ;; env) echo CocoaPods fixture ;; install) printf "PODS:\\n  - ExpoModulesCore\\n  - NutritionOcr\\n" > "Podfile.lock"; mkdir -p "Nutrition App.xcworkspace" ;; esac\n')
+        write("pod", '''
+case "${1-}" in
+  --version) echo 1.16.0 ;;
+  env) echo CocoaPods fixture ;;
+  install)
+    printf "PODS:\\n  - ExpoModulesCore\\n  - NutritionOcr\\n" > "Podfile.lock"
+    mkdir -p "Nutrition App.xcworkspace" \
+      "Pods/Pods.xcodeproj" \
+      "Pods/Target Support Files/NutritionOcr" \
+      "Pods/Target Support Files/Pods-Nutrition App"
+    printf '%s\\n' \
+      NutritionOcr \
+      NutritionOcrModule.swift \
+      NutritionOcrGeometry.swift \
+      NutritionImageQuality.swift \
+      > "Pods/Pods.xcodeproj/project.pbxproj"
+    printf '%s\\n' \
+      NutritionOcrModule.swift \
+      NutritionOcrGeometry.swift \
+      NutritionImageQuality.swift \
+      > "Pods/Target Support Files/NutritionOcr/NutritionOcr-input-files.xcfilelist"
+    printf '%s\\n' NutritionOcr > "Pods/Target Support Files/Pods-Nutrition App/Pods-Nutrition App.debug.xcconfig"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "missing-provider" ]; then
+      printf '%s\\n' \
+        'import ExpoModulesCore' \
+        'public class OtherProvider {}' \
+        > "Pods/Target Support Files/Pods-Nutrition App/ExpoModulesProvider.swift"
+    else
+      printf '%s\\n' \
+        'import ExpoModulesCore' \
+        'import NutritionOcr' \
+        'public class ExpoModulesProvider {' \
+        '  public let module = NutritionOcrModule.self' \
+        '}' \
+        > "Pods/Target Support Files/Pods-Nutrition App/ExpoModulesProvider.swift"
+    fi
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "missing-module" ]; then
+      : > "Pods/Target Support Files/NutritionOcr/NutritionOcr-input-files.xcfilelist"
+      printf '%s\\n' NutritionOcr > "Pods/Pods.xcodeproj/project.pbxproj"
+    fi
+    ;;
+esac
+''')
         write("xcodebuild", """
 if [ "${1-}" = "-version" ]; then
   printf "Xcode 27.0\\nBuild version 17A100\\n"
 elif printf "%s\\n" "$*" | grep -Fq -- "-list"; then
   printf '%s\\n' '{"workspace":{"schemes":["Nutrition App"]}}'
 else
-  printf "BUILD SUCCEEDED\\nNutritionOcrModule.swift\\nNutritionOcrGeometry.swift\\nNutritionImageQuality.swift\\n"
+  derived=""
+  previous=""
+  for argument in "$@"; do
+    if [ "$previous" = "-derivedDataPath" ]; then
+      derived="$argument"
+    fi
+    previous="$argument"
+  done
+  mkdir -p \
+    "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr" \
+    "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64" \
+    "$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build" \
+    "$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app"
+  : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/libNutritionOcr.a"
+  : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/NutritionOcr.swiftmodule"
+  : > "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64/NutritionOcrModule.o"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "unlinked-module" ]; then
+    printf '%s\\n' 'Unrelated libOther.a' > "$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/NutritionApp-LinkMap-normal-undefined_arch.txt"
+  else
+    printf '%s\\n' 'NutritionOcr libNutritionOcr.a' > "$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/NutritionApp-LinkMap-normal-undefined_arch.txt"
+  fi
+  : > "$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/NutritionApp"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "xcode-failure" ]; then
+    printf "BUILD FAILED\n"
+    exit 17
+  fi
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "unlinked-module" ]; then
+    printf "Ld NutritionApp -lOther\\nBUILD SUCCEEDED\\n"
+  else
+    printf "Ld NutritionApp -lNutritionOcr\\nBUILD SUCCEEDED\\n"
+  fi
 fi
 """)
         write("xcrun", """
@@ -603,7 +847,9 @@ elif [ "${1-}" = "swiftc" ]; then
   cat > "$output" <<'EOF'
 #!/bin/sh
 case "$0" in
-  *geometry) echo "NutritionOcrGeometryTests passed" ;;
+  *geometry)
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "harness-failure" ]; then exit 17; fi
+    echo "NutritionOcrGeometryTests passed" ;;
   *image-quality) echo "NutritionImageQualityTests passed" ;;
   *vision-runtime) echo "NutritionOcrVisionRuntimeTests passed" ;;
 esac
@@ -614,13 +860,16 @@ else
 fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
-        write("python3", 'if [ "${1-}" = "-" ]; then exec "$REAL_PYTHON" "$@"; fi; exit 0\n')
+        write("python3", 'case "${1-}" in -|*ios_native_incremental.py) exec "$REAL_PYTHON" "$@" ;; esac; exit 0\n')
+        write("git", 'if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi; exec "${REAL_GIT:-/usr/bin/git}" "$@"\n')
 
     def _run_fixture_qualification(
         self,
         mode: str,
         *,
         manifest_directory: bool = False,
+        compilation_mode: str = "clean",
+        compilation_cache_dir: Path | None = None,
     ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
@@ -632,7 +881,8 @@ fi
         self._write_fake_tools(fake_bin)
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
-        environment["REAL_PYTHON"] = shutil.which("python3") or sys.executable
+        environment["REAL_PYTHON"] = str(Path(sys.executable).resolve())
+        environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
         environment["NPM_CONFIG_CACHE"] = str(evidence_parent / "npm-cache")
@@ -657,17 +907,32 @@ fi
                 "fixture",
             ],
             cwd=fixture_root,
+            env={
+                **os.environ,
+                "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z",
+            },
             check=True,
         )
+        command = [
+            "bash",
+            "scripts/ios-native-qualification.sh",
+            "--evidence-dir",
+            str(evidence),
+            "--runner",
+            "fixture",
+        ]
+        if compilation_mode != "clean":
+            command.extend(
+                [
+                    "--compilation-mode",
+                    compilation_mode,
+                    "--compilation-cache-dir",
+                    str(compilation_cache_dir),
+                ]
+            )
         result = subprocess.run(
-            [
-                "bash",
-                "scripts/ios-native-qualification.sh",
-                "--evidence-dir",
-                str(evidence),
-                "--runner",
-                "fixture",
-            ],
+            command,
             cwd=fixture_root,
             env=environment,
             capture_output=True,
@@ -685,7 +950,7 @@ fi
         ready = evidence_parent / "parent-signal-ready"
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
-        environment["REAL_PYTHON"] = shutil.which("python3") or sys.executable
+        environment["REAL_PYTHON"] = str(Path(sys.executable).resolve())
         environment["IOS_NATIVE_FIXTURE_MODE"] = "parent-signal"
         environment["IOS_NATIVE_FIXTURE_PARENT_SIGNAL_READY"] = str(ready)
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)

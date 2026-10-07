@@ -633,6 +633,7 @@ jobs:
           bash scripts/ios-native-qualification.sh
           --evidence-dir "${RUNNER_TEMP}/ios-native-evidence"
           --runner macos-26
+          --compilation-mode clean
 
       - name: Retain trusted cache operation outcomes
         if: always()

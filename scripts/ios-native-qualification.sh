@@ -4,6 +4,8 @@ set -uo pipefail
 
 evidence_dir=""
 runner="local"
+compilation_mode="clean"
+compilation_cache_dir=""
 
 while test "$#" -gt 0
 do
@@ -18,12 +20,43 @@ do
       runner="$2"
       shift 2
       ;;
+    --compilation-mode)
+      test "$#" -ge 2
+      compilation_mode="$2"
+      shift 2
+      ;;
+    --compilation-cache-dir)
+      test "$#" -ge 2
+      compilation_cache_dir="$2"
+      shift 2
+      ;;
     *)
       echo "IOS_NATIVE_ARGUMENT_INVALID:$1" >&2
       exit 2
       ;;
-  esac
+esac
 done
+
+case "$compilation_mode" in
+  clean|incremental)
+    ;;
+  *)
+    echo "IOS_NATIVE_COMPILATION_MODE_INVALID:$compilation_mode" >&2
+    exit 2
+    ;;
+esac
+
+if test "$compilation_mode" = "incremental" && test -z "$compilation_cache_dir"
+then
+  echo "IOS_NATIVE_COMPILATION_CACHE_DIR_REQUIRED" >&2
+  exit 2
+fi
+
+if test "$compilation_mode" = "clean" && test -n "$compilation_cache_dir"
+then
+  echo "IOS_NATIVE_COMPILATION_CACHE_REQUIRES_INCREMENTAL" >&2
+  exit 2
+fi
 
 if test -z "$evidence_dir"
 then
@@ -38,6 +71,21 @@ then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
+repo_root="$(cd "$repo_root" && pwd -P)"
+
+if test "$compilation_mode" = "incremental"
+then
+  case "$compilation_cache_dir" in
+    /*) cache_dir_input="$compilation_cache_dir" ;;
+    *) cache_dir_input="$(pwd -P)/$compilation_cache_dir" ;;
+  esac
+  case "$cache_dir_input" in
+    "$repo_root"|"$repo_root"/*)
+      echo "IOS_NATIVE_COMPILATION_CACHE_MUST_BE_EXTERNAL" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 if test -n "$(
   git -C "$repo_root" status \
@@ -52,13 +100,45 @@ fi
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd "$evidence_dir" && pwd -P)"
 
-probe_root="$evidence_dir/Nutrition App Native"
-derived_data="$evidence_dir/DerivedData"
+if test "$compilation_mode" = "incremental"
+then
+  mkdir -p "$compilation_cache_dir"
+  compilation_cache_dir="$(cd "$compilation_cache_dir" && pwd -P)"
+  case "$compilation_cache_dir" in
+    "$repo_root"|"$repo_root"/*)
+      echo "IOS_NATIVE_COMPILATION_CACHE_MUST_BE_EXTERNAL" >&2
+      exit 2
+      ;;
+  esac
+fi
+
+if test "$compilation_mode" = "incremental"
+then
+  probe_root="$compilation_cache_dir/Nutrition App Native"
+  derived_data="$compilation_cache_dir/DerivedData"
+  compilation_state="$compilation_cache_dir/compilation-state.json"
+else
+  probe_root="$evidence_dir/Nutrition App Native"
+  derived_data="$evidence_dir/DerivedData"
+  compilation_state=""
+fi
 harness_bin="$evidence_dir/harness-bin"
 manifest="$evidence_dir/manifest.json"
 timings_file="$evidence_dir/stages.jsonl"
 prebuild_paths="$evidence_dir/prebuild-paths.env"
 dependency_versions="$evidence_dir/dependency-versions.env"
+compilation_identity="$evidence_dir/compilation-identity.json"
+compilation_restore="$evidence_dir/compilation-restore.json"
+compilation_save="$evidence_dir/compilation-save.json"
+compilation_discard="$evidence_dir/compilation-discard.json"
+module_evidence="$evidence_dir/module-evidence.json"
+incremental_build_started_marker="$evidence_dir/incremental-build-started"
+incremental_cache_committed_marker="$evidence_dir/incremental-cache-committed"
+incremental_cache_discard_attempted_marker="$evidence_dir/incremental-cache-discard-attempted"
+incremental_helper="$repo_root/scripts/lib/ios_native_incremental.py"
+
+export IOS_NATIVE_COMPILATION_MODE="$compilation_mode"
+export IOS_NATIVE_COMPILATION_CACHE_DIR="$compilation_cache_dir"
 
 if test -e "$probe_root"
 then
@@ -213,9 +293,23 @@ cleanup_stage() {
     fi
   fi
 
-  if ! rm -rf \
-    "$derived_data" \
-    "$harness_bin"
+  if test "$compilation_mode" = "clean"
+  then
+    if ! rm -rf "$derived_data"
+    then
+      cleanup_exit=1
+    fi
+  elif test "$qualifier_exit_status" -ne 0 &&
+    test -e "$incremental_build_started_marker" &&
+    test ! -e "$incremental_cache_committed_marker"
+  then
+    if ! discard_incremental_cache
+    then
+      cleanup_exit=1
+    fi
+  fi
+
+  if ! rm -rf "$harness_bin"
   then
     cleanup_exit=1
   fi
@@ -228,6 +322,33 @@ cleanup_stage() {
   fi
 
   return "$cleanup_exit"
+}
+
+discard_incremental_cache() {
+  if test "$compilation_mode" != "incremental" ||
+    test ! -e "$incremental_build_started_marker" ||
+    test -e "$incremental_cache_discard_attempted_marker"
+  then
+    return 0
+  fi
+
+  if ! : > "$incremental_cache_discard_attempted_marker"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_DISCARD_MARKER_FAILED" >&2
+    return 1
+  fi
+  if ! python3 \
+    "$incremental_helper" \
+    discard \
+    --state "$compilation_state" \
+    --derived-data "$derived_data" \
+    --output "$compilation_discard" \
+    > "$evidence_dir/compilation-discard.log" \
+    2>&1
+  then
+    echo "IOS_NATIVE_INCREMENTAL_DISCARD_FAILED" >&2
+    return 1
+  fi
 }
 
 write_manifest() {
@@ -253,6 +374,14 @@ write_manifest() {
   IOS_NATIVE_EVIDENCE_RETENTION_FAILURE="$evidence_retention_failure" \
   IOS_NATIVE_TOTAL_ELAPSED="$total_elapsed" \
   IOS_NATIVE_TIMING_BOUNDARY="toolchain preflight through cleanup completion" \
+  IOS_NATIVE_COMPILATION_MODE="$compilation_mode" \
+  IOS_NATIVE_COMPILATION_CACHE_DIR="$compilation_cache_dir" \
+  IOS_NATIVE_COMPILATION_STATE="$compilation_state" \
+  IOS_NATIVE_COMPILATION_IDENTITY_FILE="$compilation_identity" \
+  IOS_NATIVE_COMPILATION_RESTORE_FILE="$compilation_restore" \
+  IOS_NATIVE_COMPILATION_SAVE_FILE="$compilation_save" \
+  IOS_NATIVE_COMPILATION_DISCARD_FILE="$compilation_discard" \
+  IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
   python3 - "$timings_file" "$manifest" <<'PY'
 import json
 import os
@@ -312,6 +441,16 @@ def text(name):
     return value if value else None
 
 
+def document(name, default=None):
+    path = text(name)
+    if not path:
+        return default
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
 def cache_entry(prefix, path, source):
     outcome = text(f"{prefix}_CACHE_OUTCOME")
     cache_hit = text(f"{prefix}_CACHE_HIT")
@@ -338,6 +477,16 @@ def cache_entry(prefix, path, source):
 
 
 stage_status = {entry["stage"]: entry["status"] for entry in stages}
+compilation = {
+    "mode": text("IOS_NATIVE_COMPILATION_MODE") or "clean",
+    "cache_dir": text("IOS_NATIVE_COMPILATION_CACHE_DIR"),
+    "state_file": text("IOS_NATIVE_COMPILATION_STATE"),
+    "identity_file": text("IOS_NATIVE_COMPILATION_IDENTITY_FILE"),
+    "restore": document("IOS_NATIVE_COMPILATION_RESTORE_FILE"),
+    "save": document("IOS_NATIVE_COMPILATION_SAVE_FILE"),
+    "discard": document("IOS_NATIVE_COMPILATION_DISCARD_FILE"),
+}
+module_document = document("IOS_NATIVE_MODULE_EVIDENCE_FILE", {})
 manifest = {
     "schema_version": 1,
     "profile": "ios-native",
@@ -380,6 +529,8 @@ manifest = {
     },
     "space_path_regression": stage_status["prebuild_plugins"],
     "generated_cleanup": stage_status["cleanup"],
+    "compilation": compilation,
+    "module_evidence": module_document,
     "stages": stages,
     "total": {
         "elapsed_seconds": int(os.environ["IOS_NATIVE_TOTAL_ELAPSED"]),
@@ -457,16 +608,16 @@ on_exit() {
 
   trap - EXIT INT TERM
 
+  if test "$qualifier_exit_status" -eq 0
+  then
+    qualifier_exit_status="$observed_exit"
+  fi
+
   if test "$cleanup_done" -eq 0
   then
     run_stage cleanup cleanup_stage 1
     cleanup_exit="$?"
     cleanup_done=1
-  fi
-
-  if test "$qualifier_exit_status" -eq 0
-  then
-    qualifier_exit_status="$observed_exit"
   fi
 
   if test "$qualifier_exit_status" -eq 0 &&
@@ -493,6 +644,32 @@ on_exit() {
     test "$qualifier_exit_status" -eq 0
   then
     qualifier_exit_status=1
+  fi
+
+  if test "$compilation_mode" = "incremental"
+  then
+    if test "$qualifier_exit_status" -eq 0 &&
+      test "$cleanup_exit" -eq 0 &&
+      test "$evidence_retention_failure" -eq 0 &&
+      test -e "$incremental_build_started_marker"
+    then
+      if ! record_incremental_cache
+      then
+        qualifier_exit_status=1
+      elif ! : > "$incremental_cache_committed_marker"
+      then
+        echo "IOS_NATIVE_INCREMENTAL_COMMIT_MARKER_FAILED" >&2
+        qualifier_exit_status=1
+      fi
+    fi
+
+    if test "$qualifier_exit_status" -ne 0
+    then
+      if ! discard_incremental_cache
+      then
+        evidence_retention_failure=1
+      fi
+    fi
   fi
 
   write_manifest "$qualifier_exit_status"
@@ -526,6 +703,15 @@ on_exit() {
     if test "$qualifier_exit_status" -eq 0
     then
       qualifier_exit_status=1
+    fi
+  fi
+
+  if test "$compilation_mode" = "incremental" &&
+    test "$qualifier_exit_status" -ne 0
+  then
+    if ! discard_incremental_cache
+    then
+      evidence_retention_failure=1
     fi
   fi
 
@@ -909,6 +1095,380 @@ pods_stage() {
     >> "$prebuild_paths"
 }
 
+write_clean_compilation_operations() {
+  python3 - \
+    "$compilation_restore" \
+    "$compilation_save" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+document = {
+    "operation": "disabled",
+    "status": "disabled",
+    "reason": "clean compilation mode does not restore or save DerivedData",
+}
+for argument in sys.argv[1:]:
+    Path(argument).write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+PY
+}
+
+prepare_incremental_cache() {
+  local workspace="$1"
+  local scheme="$2"
+  local build_command
+  local prepare_start
+  local prepare_end
+  local prepare_elapsed
+
+  build_command="xcodebuild -workspace $workspace -scheme $scheme -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator -derivedDataPath $derived_data CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO LD_GENERATE_MAP_FILE=YES build"
+  if ! prepare_start="$(date +%s)"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
+    return 1
+  fi
+
+  python3 \
+    "$incremental_helper" \
+    identity \
+    --repo-root "$repo_root" \
+    --mobile "$mobile" \
+    --project-root "$probe_root" \
+    --derived-data "$derived_data" \
+    --candidate "$commit" \
+    --build-command "$build_command" \
+    --toolchain "macos=$macos_version" \
+    --toolchain "architecture=$architecture" \
+    --toolchain "xcode=$xcode_version" \
+    --toolchain "xcode_build=$xcode_build" \
+    --toolchain "iphonesimulator_sdk=$iphonesimulator_sdk" \
+    --toolchain "swift=$swift_version" \
+    --toolchain "node=$node_version" \
+    --toolchain "npm=$npm_version" \
+    --toolchain "ruby=$ruby_version" \
+    --toolchain "cocoapods=$cocoapods_version" \
+    --output "$compilation_identity" \
+    > "$evidence_dir/compilation-identity.log" \
+    2>&1
+
+  python3 \
+    "$incremental_helper" \
+    prepare \
+    --identity "$compilation_identity" \
+    --state "$compilation_state" \
+    --derived-data "$derived_data" \
+    --output "$compilation_restore" \
+    > "$evidence_dir/compilation-restore.log" \
+    2>&1
+
+  if ! prepare_end="$(date +%s)"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
+    return 1
+  fi
+  prepare_elapsed="$((prepare_end - prepare_start))"
+  python3 - "$compilation_restore" "$prepare_elapsed" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+document = json.loads(path.read_text(encoding="utf-8"))
+document["elapsed_seconds"] = int(sys.argv[2])
+path.write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+
+  cat "$compilation_restore"
+}
+
+record_incremental_cache() {
+  local save_start
+  local save_end
+  local save_elapsed
+
+  if ! save_start="$(date +%s)"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
+    return 1
+  fi
+  python3 \
+    "$incremental_helper" \
+    commit \
+    --identity "$compilation_identity" \
+    --state "$compilation_state" \
+    --derived-data "$derived_data" \
+    --output "$compilation_save" \
+    > "$evidence_dir/compilation-save.log" \
+    2>&1
+  if ! save_end="$(date +%s)"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
+    return 1
+  fi
+  save_elapsed="$((save_end - save_start))"
+  python3 - "$compilation_save" "$save_elapsed" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+document = json.loads(path.read_text(encoding="utf-8"))
+document["elapsed_seconds"] = int(sys.argv[2])
+path.write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  cat "$compilation_save"
+}
+
+module_evidence_stage() {
+  local pod_project="$mobile/ios/Pods/Pods.xcodeproj/project.pbxproj"
+  local target_support="$mobile/ios/Pods/Target Support Files/NutritionOcr"
+  local app_support="$mobile/ios/Pods/Target Support Files/Pods-$scheme"
+  local provider_file
+  local source_evidence_dir="$evidence_dir/nutrition-ocr-source-evidence"
+  local products_root="$derived_data/Build/Products/Debug-iphonesimulator"
+  local intermediates_root="$derived_data/Build/Intermediates.noindex"
+  local module_archive
+  local module_swiftmodule
+  local module_object
+  local app_link_map
+  local app_product
+  local scheme_without_spaces
+
+  scheme_without_spaces="${scheme// /}"
+  test -f "$pod_project"
+  test -d "$target_support"
+  test -d "$app_support"
+
+  for source in NutritionOcrModule.swift NutritionOcrGeometry.swift NutritionImageQuality.swift
+  do
+    if ! grep -R -Fq "$source" "$pod_project" "$target_support"
+    then
+      echo "IOS_NATIVE_MODULE_SOURCE_MEMBERSHIP_MISSING:$source" >&2
+      return 1
+    fi
+  done
+
+  provider_file="$(
+    find "$mobile/ios" \
+      -type f \
+      -name 'ExpoModulesProvider.swift' \
+      -print |
+      sed -n '1p'
+  )"
+  if test -z "$provider_file" ||
+    ! grep -Eq \
+      'class[[:space:]]+ExpoModulesProvider([[:space:]:{]|$)' \
+      "$provider_file" ||
+    ! grep -Eq \
+      '^[[:space:]]*import[[:space:]]+NutritionOcr([[:space:]]|$)' \
+      "$provider_file" ||
+    ! grep -Eq 'NutritionOcrModule([.]self)?' "$provider_file"
+  then
+    echo "IOS_NATIVE_MODULE_PROVIDER_REGISTRATION_MISSING" >&2
+    return 1
+  fi
+
+  module_archive="$(
+    find "$products_root/NutritionOcr" \
+      -type f \
+      -name 'libNutritionOcr.a' \
+      -print |
+      sed -n '1p'
+  )"
+  module_swiftmodule="$(
+    find "$products_root" \
+      -type f \
+      -path '*NutritionOcr*.swiftmodule*' \
+      -print |
+      sed -n '1p'
+  )"
+  module_object="$(
+    find "$intermediates_root" \
+      -type f \
+      -path '*NutritionOcr.build*' \
+      \( -name '*NutritionOcr*.o' -o -name 'NutritionOcr.LinkFileList' \) \
+      -print |
+      sed -n '1p'
+  )"
+  app_link_map="$(
+    find "$intermediates_root" \
+      -type f \
+      -path "*${scheme_without_spaces}.build*" \
+      -name '*LinkMap*.txt' \
+      -print |
+      sed -n '1p'
+  )"
+  app_product="$(
+    find "$products_root" \
+      -type f \
+      -path "*${scheme_without_spaces}.app/${scheme_without_spaces}" \
+      -print |
+      sed -n '1p'
+  )"
+
+  test -n "$module_archive"
+  test -n "$module_swiftmodule"
+  test -n "$module_object"
+  test -n "$app_link_map"
+  test -n "$app_product"
+
+  if ! grep -Fq "NutritionOcr" "$app_link_map" ||
+    ! grep -Fq "libNutritionOcr" "$app_link_map"
+  then
+    echo "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR" >&2
+    return 1
+  fi
+  {
+    grep -R -h -F \
+      -e NutritionOcrModule.swift \
+      -e NutritionOcrGeometry.swift \
+      -e NutritionImageQuality.swift \
+      "$pod_project" "$target_support"
+    grep -R -h -F NutritionOcr "$app_support"
+  } > "$evidence_dir/nutrition-ocr-source-membership.txt"
+  {
+    grep -F NutritionOcr "$app_link_map"
+  } > "$evidence_dir/nutrition-ocr-link-evidence.txt"
+
+  mkdir -p "$source_evidence_dir"
+  cp "$pod_project" \
+    "$source_evidence_dir/Pods.xcodeproj-project.pbxproj"
+  cp -R "$target_support" \
+    "$source_evidence_dir/NutritionOcr-target-support"
+  cp -R "$app_support" \
+    "$source_evidence_dir/Pods-target-support"
+  cp "$provider_file" \
+    "$evidence_dir/nutrition-ocr-provider-registration.swift"
+  cp "$app_link_map" \
+    "$evidence_dir/nutrition-ocr-link-map.txt"
+
+  MODULE_EVIDENCE_OUTPUT="$module_evidence" \
+  MODULE_EVIDENCE_COMMIT="$commit" \
+  MODULE_EVIDENCE_AUTOLINKING="$evidence_dir/autolinking.json" \
+  MODULE_EVIDENCE_POD_PROJECT="$pod_project" \
+  MODULE_EVIDENCE_TARGET_SUPPORT="$target_support" \
+  MODULE_EVIDENCE_APP_SUPPORT="$app_support" \
+  MODULE_EVIDENCE_PROVIDER="$provider_file" \
+  MODULE_EVIDENCE_RETAINED_SOURCE="$source_evidence_dir" \
+  MODULE_EVIDENCE_RETAINED_PROVIDER="$evidence_dir/nutrition-ocr-provider-registration.swift" \
+  MODULE_EVIDENCE_RETAINED_LINK_MAP="$evidence_dir/nutrition-ocr-link-map.txt" \
+  MODULE_EVIDENCE_RETAINED_LINK_EVIDENCE="$evidence_dir/nutrition-ocr-link-evidence.txt" \
+  MODULE_EVIDENCE_ARCHIVE="$module_archive" \
+  MODULE_EVIDENCE_SWIFTMODULE="$module_swiftmodule" \
+  MODULE_EVIDENCE_OBJECT="$module_object" \
+  MODULE_EVIDENCE_LINK_MAP="$app_link_map" \
+  MODULE_EVIDENCE_APP_PRODUCT="$app_product" \
+  python3 - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+def digest(path):
+    item = Path(path)
+    sha = hashlib.sha256()
+    with item.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return {
+        "path": str(item),
+        "size_bytes": item.stat().st_size,
+        "sha256": sha.hexdigest(),
+    }
+
+
+def digest_tree(path):
+    root = Path(path)
+    entries = []
+    for item in sorted(root.rglob("*")):
+        if item.is_file():
+            entries.append({
+                "path": item.relative_to(root).as_posix(),
+                "sha256": digest(item)["sha256"],
+            })
+    canonical = json.dumps(
+        entries,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "path": str(root),
+        "files": entries,
+        "sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+
+
+evidence_root = Path(os.environ["MODULE_EVIDENCE_OUTPUT"]).parent
+document = {
+    "schema_version": 1,
+    "status": "PASS",
+    "candidate_sha": os.environ["MODULE_EVIDENCE_COMMIT"],
+    "provider_registration": {
+        "autolinking_json": digest(os.environ["MODULE_EVIDENCE_AUTOLINKING"]),
+        "pod_project": digest(os.environ["MODULE_EVIDENCE_POD_PROJECT"]),
+        "target_support": digest_tree(os.environ["MODULE_EVIDENCE_TARGET_SUPPORT"]),
+        "app_support": digest_tree(os.environ["MODULE_EVIDENCE_APP_SUPPORT"]),
+        "generated_provider": digest(os.environ["MODULE_EVIDENCE_PROVIDER"]),
+        "provider_class": "ExpoModulesProvider",
+        "provider_import": "NutritionOcr",
+        "module_class": "NutritionOcrModule",
+    },
+    "source_membership": [
+        "NutritionOcrModule.swift",
+        "NutritionOcrGeometry.swift",
+        "NutritionImageQuality.swift",
+    ],
+    "built_outputs": {
+        name: digest(os.environ[key])
+        for name, key in (
+            ("archive", "MODULE_EVIDENCE_ARCHIVE"),
+            ("swiftmodule", "MODULE_EVIDENCE_SWIFTMODULE"),
+            ("object_or_link_file_list", "MODULE_EVIDENCE_OBJECT"),
+            ("application_link_map", "MODULE_EVIDENCE_LINK_MAP"),
+            ("application_product", "MODULE_EVIDENCE_APP_PRODUCT"),
+        )
+    },
+    "evidence_files": [
+        {
+            "path": "nutrition-ocr-source-membership.txt",
+            "sha256": digest(evidence_root / "nutrition-ocr-source-membership.txt")["sha256"],
+        },
+        {
+            "path": "nutrition-ocr-source-evidence",
+            "digest": digest_tree(os.environ["MODULE_EVIDENCE_RETAINED_SOURCE"]),
+        },
+        {
+            "path": "nutrition-ocr-provider-registration.swift",
+            "digest": digest(os.environ["MODULE_EVIDENCE_RETAINED_PROVIDER"]),
+        },
+        {
+            "path": "nutrition-ocr-link-map.txt",
+            "digest": digest(os.environ["MODULE_EVIDENCE_RETAINED_LINK_MAP"]),
+        },
+        {
+            "path": "nutrition-ocr-link-evidence.txt",
+            "digest": digest(os.environ["MODULE_EVIDENCE_RETAINED_LINK_EVIDENCE"]),
+        },
+    ],
+}
+Path(os.environ["MODULE_EVIDENCE_OUTPUT"]).write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
 xcode_build_stage() {
   local workspace
   local scheme
@@ -917,6 +1477,13 @@ xcode_build_stage() {
   project="$(sed -n 's/^PROJECT=//p' "$prebuild_paths")"
   workspace="$(sed -n 's/^WORKSPACE=//p' "$prebuild_paths")"
   scheme="$(sed -n 's/^SCHEME=//p' "$prebuild_paths")"
+
+  if test "$compilation_mode" = "incremental"
+  then
+    prepare_incremental_cache "$workspace" "$scheme"
+  else
+    write_clean_compilation_operations
+  fi
 
   xcodebuild \
     -workspace "$workspace" \
@@ -946,6 +1513,7 @@ if (!schemes.includes(scheme)) {
 }
 NODE
 
+  : > "$incremental_build_started_marker"
   NODE_BINARY="$node_binary" \
     xcodebuild \
       -workspace "$workspace" \
@@ -958,6 +1526,7 @@ NODE
       "$derived_data" \
       CODE_SIGNING_ALLOWED=NO \
       CODE_SIGNING_REQUIRED=NO \
+      LD_GENERATE_MAP_FILE=YES \
       build \
       > "$evidence_dir/xcodebuild.log" \
       2>&1
@@ -966,17 +1535,8 @@ NODE
     "BUILD SUCCEEDED" \
     "$evidence_dir/xcodebuild.log"
 
-  grep -Fq \
-    "NutritionOcrModule.swift" \
-    "$evidence_dir/xcodebuild.log"
+  module_evidence_stage
 
-  grep -Fq \
-    "NutritionOcrGeometry.swift" \
-    "$evidence_dir/xcodebuild.log"
-
-  grep -Fq \
-    "NutritionImageQuality.swift" \
-    "$evidence_dir/xcodebuild.log"
 }
 
 swift_harnesses_stage() {
@@ -1163,6 +1723,6 @@ scheme="$(sed -n 's/^SCHEME=//p' "$prebuild_paths")"
 export IOS_NATIVE_EXPO="$(sed -n 's/^expo=//p' "$dependency_versions")"
 export IOS_NATIVE_REACT_NATIVE="$(sed -n 's/^react_native=//p' "$dependency_versions")"
 export IOS_NATIVE_SCHEME="$scheme"
-export IOS_NATIVE_BUILD_COMMAND="xcodebuild -workspace ios/${scheme}.xcworkspace -scheme ${scheme} -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build"
+export IOS_NATIVE_BUILD_COMMAND="xcodebuild -workspace ios/${scheme}.xcworkspace -scheme ${scheme} -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO LD_GENERATE_MAP_FILE=YES build"
 
 exit 0

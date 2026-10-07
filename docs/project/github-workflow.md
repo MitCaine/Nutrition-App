@@ -139,7 +139,10 @@ change crosses the Apple-native boundary. Repository validation enforces a minim
 path floor so obvious mobile dependency, Expo configuration/plugin, local-module iOS, or native
 qualification-tooling changes cannot silently omit that profile. The profile remains an execution
 requirement, not an acceptance or review decision, and documentation/HISTORY bookkeeping alone does
-not imply an expensive native build.
+not imply an expensive native build. The profile's workflows pass `--compilation-mode clean`
+explicitly. Any DerivedData reuse is a separate controller-owned evaluation using an external cache
+directory and the repository qualifier's exact identity and module/link evidence; it is not an
+automatic ordinary-PR or trusted-workflow reuse mechanism.
 
 ### GitHub Milestones
 
