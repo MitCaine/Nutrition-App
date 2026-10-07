@@ -4,6 +4,7 @@ import {
   resetTargetDraftOverride,
   setTargetDraftMode,
   setTargetDraftOverride,
+  setTargetDraftWeight,
   targetDraft,
   targetDraftError,
   targetDraftKeyForNutrient,
@@ -22,9 +23,9 @@ import {
   poundsToKilograms,
 } from "../src/features/targets/targetDisplay";
 
-function configuration(): TargetConfiguration {
+function configuration(weightKg = "60.000"): TargetConfiguration {
   return {
-    profile: { birthDate: "1990-01-01", sexForEquation: "female", heightCm: "165.000", weightKg: "60.000", activityLevel: "active", energyEstimationContext: "general_adult" },
+    profile: { birthDate: "1990-01-01", sexForEquation: "female", heightCm: "165.000", weightKg, activityLevel: "active", energyEstimationContext: "general_adult" },
     estimatedMaintenanceCalories: { availability: "available", amount: "2200", unit: "kcal", authority: "calculated_estimate", reasonCode: null, equation: "mifflin_st_jeor_1990" },
     manualOverrides: [{ nutrientId: "protein", amount: "90", unit: "g", authority: "manual_override", direction: "target", trackingMode: "custom", reasonCode: null, noteCode: null, referenceType: null, sourceVersion: null, sourceId: null, calculationBasis: null }],
     trackingPreferences: {},
@@ -44,11 +45,130 @@ test("target settings map profiles and manual overrides without conflating FDA D
       birth_date: "1990-01-01",
       height_cm: "165.000",
       height_unit: "cm",
-      weight_kg: "60.010",
+      weight_kg: "60.000",
       weight_unit: "kg",
     },
     manual_overrides: { protein: "90", calories: null },
   });
+});
+
+test.each([
+  ["30.000", "66.1"],
+  ["300.000", "661.4"],
+  ["60.000", "132.3"],
+  ["70.123", kilogramsToPounds("70.123")],
+] as const)(
+  "untouched %s kg validates and serializes exactly while displaying %s lb",
+  (weightKg, displayedPounds) => {
+    const draft = targetDraft(
+      configuration(weightKg),
+    );
+
+    expect(draft.weightLb).toBe(
+      displayedPounds,
+    );
+    expect(targetDraftError(draft)).toBeNull();
+
+    const actual = targetInput(draft);
+    const expected = targetInput({
+      ...draft,
+      canonicalWeightKg: null,
+    });
+    expected.profile.weight_kg = weightKg;
+
+    expect(actual).toEqual(expected);
+    expect(actual.profile).toMatchObject({
+      weight_kg: weightKg,
+      weight_unit: "kg",
+    });
+    expect(Object.keys(actual).sort()).toEqual([
+      "manual_overrides",
+      "profile",
+      "tracking_preferences",
+    ]);
+  },
+);
+
+test("editing pounds converts the new value and clearing keeps weight optional", () => {
+  const loaded = targetDraft(
+    configuration("70.123"),
+  );
+  const edited = setTargetDraftWeight(
+    loaded,
+    "140",
+  );
+
+  expect(edited.canonicalWeightKg).toBeNull();
+  expect(targetDraftError(edited)).toBeNull();
+  expect(
+    targetInput(edited).profile.weight_kg,
+  ).toBe("63.503");
+
+  const cleared = setTargetDraftWeight(
+    loaded,
+    "",
+  );
+
+  expect(cleared.canonicalWeightKg).toBeNull();
+  expect(targetDraftError(cleared)).toBeNull();
+  expect(
+    targetInput(cleared).profile.weight_kg,
+  ).toBeNull();
+});
+
+test.each(["66", "662"] as const)(
+  "edited weight %s is converted and rejected outside the existing bounds",
+  (weightLb) => {
+    const draft = setTargetDraftWeight(
+      targetDraft(
+        configuration("30.000"),
+      ),
+      weightLb,
+    );
+
+    expect(draft.canonicalWeightKg).toBeNull();
+    expect(targetDraftError(draft)).toContain(
+      "between 66.14 and 661.39 pounds",
+    );
+    expect(
+      targetInput(draft).profile.weight_kg,
+    ).toBe(poundsToKilograms(weightLb));
+  },
+);
+
+test("edited malformed pounds text is rejected", () => {
+  const draft = setTargetDraftWeight(
+    targetDraft(configuration("60.000")),
+    "1.2.3",
+  );
+
+  expect(draft.canonicalWeightKg).toBeNull();
+  expect(targetDraftError(draft)).toContain(
+    "positive plain decimal",
+  );
+});
+
+test("editing away and back to a rounded boundary display does not restore saved kg provenance", () => {
+  let draft = targetDraft(
+    configuration("30.000"),
+  );
+
+  draft = setTargetDraftWeight(
+    draft,
+    "66.2",
+  );
+  draft = setTargetDraftWeight(
+    draft,
+    "66.1",
+  );
+
+  expect(draft.canonicalWeightKg).toBeNull();
+  expect(targetDraftError(draft)).toContain(
+    "between 66.14 and 661.39 pounds",
+  );
+  expect(
+    targetInput(draft).profile.weight_kg,
+  ).toBe(poundsToKilograms("66.1"));
 });
 
 test("target profile conversion helpers preserve canonical values through representative UI round trips", () => {

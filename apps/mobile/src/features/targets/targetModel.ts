@@ -23,6 +23,8 @@ export type TargetDraft = {
   sexForEquation: "female" | "male" | "";
   heightIn: string;
   weightLb: string;
+  // Exact saved kg remains draft-local while the displayed pounds text is untouched.
+  canonicalWeightKg: string | null;
   activityLevel:
     | "sedentary"
     | "lightly_active"
@@ -62,6 +64,7 @@ export const EMPTY_TARGET_DRAFT: TargetDraft = {
   sexForEquation: "",
   heightIn: "",
   weightLb: "",
+  canonicalWeightKg: null,
   activityLevel: "",
   energyEstimationContext: "general_adult",
   calories: "",
@@ -304,6 +307,9 @@ export function targetDraft(
         configuration.profile
           ?.weightKg ?? null,
       ),
+    canonicalWeightKg:
+      configuration.profile
+        ?.weightKg ?? null,
     activityLevel:
       configuration.profile
         ?.activityLevel ?? "",
@@ -331,6 +337,21 @@ export function targetDraft(
       ),
 
     modeSelections: {},
+  };
+}
+
+export function setTargetDraftWeight(
+  draft: TargetDraft,
+  weightLb: string,
+): TargetDraft {
+  if (draft.weightLb === weightLb) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    weightLb,
+    canonicalWeightKg: null,
   };
 }
 
@@ -659,6 +680,15 @@ function validationBounds(
   ];
 }
 
+function targetDraftWeightKg(
+  draft: TargetDraft,
+): string | null {
+  return (
+    draft.canonicalWeightKg
+    ?? poundsToKilograms(draft.weightLb)
+  );
+}
+
 export function targetDraftError(
   draft: TargetDraft,
 ): string | null {
@@ -711,33 +741,37 @@ export function targetDraftError(
     }
   }
 
+  const profileFields = [
+    {
+      label: "Height",
+      value: draft.heightIn,
+      toCanonical: () =>
+        inchesToCentimeters(draft.heightIn),
+      minimum: "100.000",
+      maximum: "250.000",
+      range: "39.37 and 98.43 inches",
+    },
+    {
+      label: "Weight",
+      value: draft.weightLb,
+      toCanonical: () =>
+        targetDraftWeightKg(draft),
+      minimum: "30.000",
+      maximum: "300.000",
+      range: "66.14 and 661.39 pounds",
+    },
+  ] as const;
+
   for (
-    const [
+    const {
       label,
       value,
       toCanonical,
       minimum,
       maximum,
       range,
-    ]
-    of [
-      [
-        "Height",
-        draft.heightIn,
-        inchesToCentimeters,
-        "100.000",
-        "250.000",
-        "39.37 and 98.43 inches",
-      ],
-      [
-        "Weight",
-        draft.weightLb,
-        poundsToKilograms,
-        "30.000",
-        "300.000",
-        "66.14 and 661.39 pounds",
-      ],
-    ] as const
+    }
+    of profileFields
   ) {
     if (
       value
@@ -746,15 +780,15 @@ export function targetDraftError(
       )
     ) {
       return (
-        `${label} must be a `
-        + "positive plain decimal."
+        label
+        + " must be a positive plain decimal."
       );
     }
 
     if (value) {
       try {
         const canonical =
-          toCanonical(value);
+          toCanonical();
 
         if (
           !canonical
@@ -765,14 +799,16 @@ export function targetDraftError(
           )
         ) {
           return (
-            `${label} must be between `
-            + `${range}.`
+            label
+            + " must be between "
+            + range
+            + "."
           );
         }
       } catch {
         return (
-          `${label} must be a `
-          + "positive plain decimal."
+          label
+          + " must be a positive plain decimal."
         );
       }
     }
@@ -943,9 +979,7 @@ export function targetInput(
         ),
       height_unit: "cm",
       weight_kg:
-        poundsToKilograms(
-          draft.weightLb,
-        ),
+        targetDraftWeightKg(draft),
       weight_unit: "kg",
       activity_level:
         draft.activityLevel

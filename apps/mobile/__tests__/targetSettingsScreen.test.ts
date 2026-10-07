@@ -2,7 +2,15 @@ import { expectFixedRouteHeader } from "./routeScreenHeaderTestSupport";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
-import type { TargetConfiguration } from "../src/features/targets/api/types";
+import type {
+  TargetConfiguration,
+  TargetConfigurationInput,
+} from "../src/features/targets/api/types";
+import {
+  targetDraft,
+  targetInput,
+} from "../src/features/targets/targetModel";
+import { kilogramsToPounds } from "../src/features/targets/targetDisplay";
 
 const mockUpdate = jest.fn();
 const mockReset = jest.fn();
@@ -18,6 +26,88 @@ function createConfiguration(overrides: Partial<TargetConfiguration> = {}): Targ
     informationalNotice: "General informational estimate, not medical advice.",
     ...overrides,
     trackingPreferences: overrides.trackingPreferences ?? {},
+  };
+}
+
+function configurationWithWeight(
+  weightKg: string | null,
+): TargetConfiguration {
+  const protein: TargetConfiguration["manualOverrides"][number] = {
+    nutrientId: "protein",
+    amount: "90",
+    unit: "g",
+    authority: "manual_override",
+    direction: "target",
+    trackingMode: "custom",
+    reasonCode: null,
+    noteCode: null,
+    referenceType: null,
+    sourceVersion: null,
+    sourceId: null,
+    calculationBasis: null,
+  };
+
+  return createConfiguration({
+    profile: {
+      birthDate: null,
+      sexForEquation: null,
+      heightCm: null,
+      weightKg,
+      activityLevel: null,
+      energyEstimationContext: "general_adult",
+    },
+    manualOverrides: [protein],
+    effectiveTargets: [protein],
+  });
+}
+
+function configurationSavedFromInput(
+  input: TargetConfigurationInput,
+  previous: TargetConfiguration,
+): TargetConfiguration {
+  const previousProtein =
+    previous.manualOverrides.find(
+      (item) => item.nutrientId === "protein",
+    );
+  if (!previousProtein) {
+    throw new Error("Expected saved protein target");
+  }
+
+  const proteinAmount =
+    input.manual_overrides.protein;
+  const manualOverrides =
+    proteinAmount === null
+      ? []
+      : [{
+          ...previousProtein,
+          amount: proteinAmount,
+        }];
+
+  return {
+    ...previous,
+    profile: {
+      birthDate: input.profile.birth_date,
+      sexForEquation:
+        input.profile.sex_for_equation,
+      heightCm: input.profile.height_cm,
+      weightKg: input.profile.weight_kg,
+      activityLevel:
+        input.profile.activity_level,
+      energyEstimationContext:
+        input.profile.energy_estimation_context,
+    },
+    manualOverrides,
+    effectiveTargets:
+      previous.effectiveTargets.map(
+        (target) =>
+          target.nutrientId === "protein"
+          && proteinAmount !== null
+            ? {
+                ...target,
+                amount: proteinAmount,
+              }
+            : target,
+      ),
   };
 }
 
@@ -74,9 +164,28 @@ const receiverSensitiveTargets = {
 };
 const receiverSensitiveRuntime = createNutritionTestRuntime({ targets: receiverSensitiveTargets });
 
-async function render(runtime = testRuntime) {
+async function render(
+  runtime = testRuntime,
+  onDraftStateChange?: jest.Mock,
+) {
   let renderer!: TestRenderer.ReactTestRenderer;
-  await act(async () => { renderer = TestRenderer.create(withNutritionRuntime(React.createElement(TargetSettingsScreen, { onBack: jest.fn() }), runtime)); });
+  await act(async () => {
+    renderer = TestRenderer.create(
+      withNutritionRuntime(
+        React.createElement(
+          TargetSettingsScreen,
+          onDraftStateChange
+            ? {
+                onBack: jest.fn(),
+                draftStateKey: "target-weight-save",
+                onDraftStateChange,
+              }
+            : { onBack: jest.fn() },
+        ),
+        runtime,
+      ),
+    );
+  });
   return renderer;
 }
 function action(root: TestRenderer.ReactTestInstance, label: string) { return root.findAllByType(Pressable).find((item) => item.props.accessibilityLabel === label)!; }
@@ -218,6 +327,295 @@ test("profile inputs display canonical metric and ISO data in one compact US row
   expect(heightFieldStyle).toEqual(weightFieldStyle);
   await act(async () => renderer.unmount());
 });
+
+test.each([
+  ["30.000", "66.1"],
+  ["300.000", "661.4"],
+  ["60.000", "132.3"],
+  ["70.123", kilogramsToPounds("70.123")],
+] as const)(
+  "actual Save and remount preserve %s kg after an unrelated protein edit",
+  async (weightKg, displayedPounds) => {
+    let storedConfiguration =
+      configurationWithWeight(weightKg);
+    mockConfiguration = storedConfiguration;
+    const submitted: TargetConfigurationInput[] =
+      [];
+    mockUpdate.mockImplementation(
+      async (input: TargetConfigurationInput) => {
+        submitted.push(input);
+        storedConfiguration =
+          configurationSavedFromInput(
+            input,
+            storedConfiguration,
+          );
+        return storedConfiguration;
+      },
+    );
+
+    const firstStatus = jest.fn();
+    let renderer = await render(
+      testRuntime,
+      firstStatus,
+    );
+
+    expect(
+      input(renderer.root, "Weight in pounds")
+        .props.value,
+    ).toBe(displayedPounds);
+    firstStatus.mockClear();
+
+    await act(async () =>
+      input(
+        renderer.root,
+        "Protein personal target",
+      ).props.onChangeText("95"),
+    );
+
+    const expectedFirst = targetInput({
+      ...targetDraft(
+        configurationWithWeight(weightKg),
+      ),
+      protein: "95",
+    });
+    expectedFirst.profile.weight_kg = weightKg;
+
+    await act(async () =>
+      action(
+        renderer.root,
+        "Save nutrition targets",
+      ).props.onPress(),
+    );
+
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]).toEqual(expectedFirst);
+    expect(Object.keys(submitted[0]).sort()).toEqual([
+      "manual_overrides",
+      "profile",
+      "tracking_preferences",
+    ]);
+    expect(Object.keys(submitted[0].profile).sort()).toEqual([
+      "activity_level",
+      "birth_date",
+      "energy_estimation_context",
+      "height_cm",
+      "height_unit",
+      "sex_for_equation",
+      "weight_kg",
+      "weight_unit",
+    ]);
+    expect(
+      storedConfiguration.profile?.weightKg,
+    ).toBe(weightKg);
+    expect(
+      storedConfiguration.manualOverrides[0]?.amount,
+    ).toBe("95");
+    expect(
+      firstStatus.mock.calls[
+        firstStatus.mock.calls.length - 1
+      ],
+    ).toEqual([
+      "target-weight-save",
+      { dirty: false, busy: false },
+    ]);
+
+    await act(async () => renderer.unmount());
+    mockConfiguration = storedConfiguration;
+
+    const secondStatus = jest.fn();
+    renderer = await render(
+      testRuntime,
+      secondStatus,
+    );
+
+    expect(
+      input(renderer.root, "Weight in pounds")
+        .props.value,
+    ).toBe(displayedPounds);
+    expect(
+      input(
+        renderer.root,
+        "Protein personal target",
+      ).props.value,
+    ).toBe("95");
+
+    const expectedSecond = targetInput(
+      targetDraft(storedConfiguration),
+    );
+    expectedSecond.profile.weight_kg = weightKg;
+
+    await act(async () =>
+      action(
+        renderer.root,
+        "Save nutrition targets",
+      ).props.onPress(),
+    );
+
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]).toEqual(expectedSecond);
+    expect(
+      storedConfiguration.profile?.weightKg,
+    ).toBe(weightKg);
+    expect(
+      secondStatus.mock.calls[
+        secondStatus.mock.calls.length - 1
+      ],
+    ).toEqual([
+      "target-weight-save",
+      { dirty: false, busy: false },
+    ]);
+
+    await act(async () => renderer.unmount());
+  },
+);
+
+test("editing loaded pounds to a valid value submits converted kg", async () => {
+  mockConfiguration =
+    configurationWithWeight("70.123");
+  mockUpdate.mockResolvedValue(mockConfiguration);
+  const renderer = await render();
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Weight in pounds",
+    ).props.onChangeText("140"),
+  );
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).toHaveBeenCalledTimes(1);
+  expect(mockUpdate.mock.calls[0][0].profile).toMatchObject({
+    weight_kg: "63.503",
+    weight_unit: "kg",
+  });
+
+  await act(async () => renderer.unmount());
+});
+
+test("clearing optional loaded weight submits null", async () => {
+  mockConfiguration =
+    configurationWithWeight("70.123");
+  mockUpdate.mockImplementation(
+    async (input: TargetConfigurationInput) =>
+      configurationSavedFromInput(
+        input,
+        mockConfiguration,
+      ),
+  );
+  const renderer = await render();
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Weight in pounds",
+    ).props.onChangeText(""),
+  );
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).toHaveBeenCalledTimes(1);
+  expect(mockUpdate.mock.calls[0][0].profile).toMatchObject({
+    weight_kg: null,
+    weight_unit: "kg",
+  });
+  expect(
+    input(renderer.root, "Weight in pounds")
+      .props.value,
+  ).toBe("");
+
+  await act(async () => renderer.unmount());
+});
+
+test.each([
+  ["66", "between 66.14 and 661.39 pounds"],
+  ["662", "between 66.14 and 661.39 pounds"],
+  ["1.2.3", "positive plain decimal"],
+] as const)(
+  "invalid edited pounds %s show validation and do not save",
+  async (weightLb, expectedError) => {
+    mockConfiguration =
+      configurationWithWeight("60.000");
+    const renderer = await render();
+
+    await act(async () =>
+      input(
+        renderer.root,
+        "Weight in pounds",
+      ).props.onChangeText(weightLb),
+    );
+    await act(async () =>
+      action(
+        renderer.root,
+        "Save nutrition targets",
+      ).props.onPress(),
+    );
+
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(
+      renderer.root.findAllByType(Text)
+        .some(
+          (item) =>
+            item.props.accessibilityRole
+            === "alert"
+            && textContent(item).includes(
+              expectedError,
+            ),
+        ),
+    ).toBe(true);
+
+    await act(async () => renderer.unmount());
+  },
+);
+
+test("editing away and back to a rounded boundary pound value still fails validation", async () => {
+  mockConfiguration =
+    configurationWithWeight("30.000");
+  const renderer = await render();
+
+  await act(async () =>
+    input(
+      renderer.root,
+      "Weight in pounds",
+    ).props.onChangeText("66.2"),
+  );
+  await act(async () =>
+    input(
+      renderer.root,
+      "Weight in pounds",
+    ).props.onChangeText("66.1"),
+  );
+  await act(async () =>
+    action(
+      renderer.root,
+      "Save nutrition targets",
+    ).props.onPress(),
+  );
+
+  expect(mockUpdate).not.toHaveBeenCalled();
+  expect(
+    renderer.root.findAllByType(Text)
+      .some(
+        (item) =>
+          item.props.accessibilityRole
+          === "alert"
+          && textContent(item).includes(
+            "between 66.14 and 661.39 pounds",
+          ),
+      ),
+  ).toBe(true);
+
+  await act(async () => renderer.unmount());
+});
+
 
 test("editable inputs and selection controls retain distinct theme surfaces", async () => {
   for (const [dark, expectedTheme] of [[false, LIGHT_THEME], [true, DARK_THEME]] as const) {

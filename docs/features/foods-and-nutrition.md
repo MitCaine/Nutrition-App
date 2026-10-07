@@ -200,6 +200,13 @@ Search presentation and network behavior are documented in
 Targets are presentation/configuration state, not historical nutrition data. Current target
 resolution is nutrient-specific and begins with the user's tracking policy:
 
+Target profile weight is stored and submitted in canonical kilograms. Settings displays pounds
+rounded to one decimal place. Saving an untouched pounds field carries the exact loaded kilogram
+value through the draft, so unrelated target or profile edits do not reinterpret a rounded display.
+Changing the pounds text clears that saved value and converts the entered decimal normally. The
+existing inclusive 30–300 kg bounds remain authoritative, and clearing the optional weight still
+saves null.
+
 1. an explicit `ignored` tracking preference removes the nutrient from target comparison;
 2. an explicit `amount_only` preference tracks consumption without a target/reference goal;
 3. a manual override becomes the effective custom target;

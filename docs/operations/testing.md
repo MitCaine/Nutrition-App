@@ -61,6 +61,19 @@ Jest covers pure feature models, explicit authority routing, local-runtime parit
 mappings, cache/recovery scoping, DRI/Target parity, local backup policy/activation, draft guards,
 shared route chrome, OCR quality policy, and rendered flow behavior.
 
+### Target weight editing and storage
+
+The GH-272 model and rendered settings regressions exercise canonical kilogram values at 30.000,
+300.000, 60.000, and 70.123 kg while the form displays one-decimal pounds. The rendered test
+presses the actual Save action, stores the submitted update in its test persistence seam, remounts
+from that saved configuration, and checks a second exact payload. It also covers edited valid,
+invalid, cleared, and edit-away-and-back pounds text. This proves the modeled application flow;
+it does not prove native SQLite restart or physical-device behavior.
+
+Run these suites from apps/mobile:
+
+    npm test -- --runInBand --runTestsByPath __tests__/targetModel.test.ts __tests__/targetSettingsScreen.test.ts
+
 Native/file-backed SQLite qualification is required for claims about `expo-sqlite` lifecycle,
 migrations, transaction visibility, termination, backup/restore activation, and restart semantics
 that mocks cannot establish. Native Apple Vision geometry/recognition/image-quality regressions live under

@@ -35,6 +35,7 @@ import {
   targetUnavailableMessage,
   resetTargetDraftOverride,
   setTargetDraftOverride,
+  setTargetDraftWeight,
 } from "./targetModel";
 import { useNutritionRuntime } from "../../runtime/NutritionRuntimeContext";
 import {
@@ -424,7 +425,12 @@ export function TargetSettingsScreen({
                   accessibilityState={{ disabled: submitting }}
                   value={draft.weightLb}
                   onChangeText={(weightLb) =>
-                    setDraft((current) => ({ ...current, weightLb }))
+                    setDraft((current) =>
+                      setTargetDraftWeight(
+                        current,
+                        weightLb,
+                      ),
+                    )
                   }
                   keyboardType="decimal-pad"
                   placeholderTextColor={theme.colors.placeholder}
