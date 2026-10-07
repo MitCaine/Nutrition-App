@@ -250,27 +250,25 @@ creates the final app executable, the qualifier authenticates those thin maps ag
 application slices before accepting module linkage. Detailed logs and a compact `manifest.json`
 remain as evidence.
 
-The qualifier also has a deliberately opt-in evaluation mode for a controller-owned cold/warm
-comparison:
+Compilation reuse is not supported by the native qualifier. An explicit
+`--compilation-mode incremental` request fails with
+`IOS_NATIVE_INCREMENTAL_COMPILATION_UNSUPPORTED:negative-evaluation`; the removed
+`--compilation-cache-dir` option is rejected. The qualifier never falls back to clean mode while
+claiming a reuse run.
 
-    bash scripts/ios-native-qualification.sh \
-      --evidence-dir /tmp/nutrition-ios-native-cold \
-      --runner local \
-      --compilation-mode incremental \
-      --compilation-cache-dir "/tmp/Nutrition App Native Cache"
-
-Repeat with a different evidence directory and the same stable external cache directory for the
-warm run. Incremental mode still creates a fresh path-with-spaces worktree, runs `npm ci`, clean
-Expo prebuild, autolinking, and `pod install`; only compatible DerivedData is retained outside the
-repository. Successful cold and warm runs retain external `DerivedData`, including `BuildProducts`,
-for reuse. Each run removes generated `ios/`, Pods, `node_modules`, the disposable worktree, and
-harness binaries. Failed cache operations quarantine their DerivedData and state; the controller
-removes the external cache after evaluation. The cache state is an exact identity over candidate and
-qualification/helper/workflow source, generation and dependency inputs, generated Pod/Xcode
-configuration, the captured xcodebuild argv and `NODE_BINARY`, build settings,
-macOS/architecture/Xcode/SDK/Swift/Node/npm/Ruby/CocoaPods, and canonical project/cache paths.
-Missing, malformed, or incompatible state is quarantined with a recorded reason and the run starts
-fresh. A failed application build never saves a cache.
+The historical same-source cold/warm evaluation on candidate
+`591ac008e56219474ddd326c673a8e85b24f9744` was negative. Both runs took 97 seconds overall; Xcode
+took 71 seconds cold and 70 seconds warm. The warm restore missed because clean regeneration
+changed the generated `apps/mobile/ios/NutritionApp.xcodeproj/project.pbxproj` identity (cold
+SHA-256 `d086670f42ec1e9f2b2953ae7a290de794988cbca06163d13d48a121c282ba53`, warm SHA-256
+`5e9fcae69528d9e979d3fff62df9a15850ca282663d7415e04f6870744715b25`). Each retained cache was
+about 3.38 GB; removing the cache took about 1.86 seconds. During those runs, generated `ios/`,
+Pods, `node_modules`, the disposable worktree, and harness binaries were removed, while external
+DerivedData including `BuildProducts` remained between cold and warm runs until the controller
+removed the evaluation cache. The miss produced no measured total benefit. The hosted qualification
+jobs remain necessary because the trusted finalizer has no accepted evidence-adoption interface.
+The complete cold/warm manifests and logs remain historical evidence under
+`issue-285-evidence/native-C3-incremental-cold` and `native-C3-incremental-warm`.
 
 The application/module proof records candidate autolinking, the generated `ExpoModulesProvider`
 class/import/module registration, and Pod target/source membership, built NutritionOcr
@@ -291,9 +289,8 @@ final app executable is accepted directly. Other products, similarly named binar
 search paths never count as application linkage. `application-link-proof.json` records each map's
 classification and object-table evidence, plus hashes and results. For thin maps it also records the
 architecture, lipo extraction, and byte-comparison commands. Missing or unlinked module fixtures
-fail the native stage. GitHub ordinary and
-trusted workflows explicitly select clean mode, so the opt-in route cannot change the #167 clean
-generation contract or silently enable incremental compilation.
+fail the native stage. GitHub ordinary and trusted workflows explicitly select clean mode, matching
+the qualifier's only supported compilation mode and preserving the #167 clean-generation contract.
 
 GitHub uses the explicit `macos-26` runner authority rather than floating `macos-latest`.
 Obviously native-affecting paths fail closed when a Task Capsule omits `ios-native`; this path floor

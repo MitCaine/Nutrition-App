@@ -546,21 +546,20 @@ of the final app:
       --runner local \
       --compilation-mode clean
 
-The script exposes a separate, controller-owned `--compilation-mode incremental` evaluation with an
-explicit external `--compilation-cache-dir`. This mode always regenerates the candidate iOS project,
-installs dependencies, and runs the same application and host-harness checks. It retains only
-DerivedData when its exact candidate, generated configuration, dependency, toolchain, build-option,
-captured xcodebuild argv, and canonical path identity matches. The identity includes
-`ENABLE_DEBUG_DYLIB=NO`, signing flags, the discovered workspace, and the actual DerivedData path.
-Cache misses or incompatible state are visible fresh builds;
-application failures do not populate a cache. Cache publication waits for application/module
-evidence, all three host harnesses, source cleanliness, successful generated cleanup, and retained
-manifest evidence. Eligible incremental runs retain external `DerivedData`, including `BuildProducts`,
-between cold and warm runs. Every run removes generated `ios/`, Pods, the disposable worktree, and
-harness binaries; clean mode also removes its run-local DerivedData before PASS. Failed cache
-operations quarantine their state and DerivedData. The controller removes the external cache after
-evaluation. Keep ordinary automatic and trusted qualification on clean mode until a separately
-reviewed cold/warm result establishes reproducible net benefit.
+The experimental incremental-compilation route was removed after its same-candidate evaluation
+showed no benefit. On source candidate `591ac008e56219474ddd326c673a8e85b24f9744`, cold and warm
+runs both took 97 seconds overall (71 and 70 seconds in Xcode). Clean regeneration changed the
+generated `project.pbxproj` SHA-256 from
+`d086670f42ec1e9f2b2953ae7a290de794988cbca06163d13d48a121c282ba53` to
+`5e9fcae69528d9e979d3fff62df9a15850ca282663d7415e04f6870744715b25`, so the warm restore missed.
+The cold and warm caches retained 3,384,154,759 and 3,384,079,349 bytes respectively (about
+3.38 GB per run); removing the experimental cache took about 1.86 seconds. The experimental runs
+removed generated `ios/`, Pods, the disposable worktree, and harness binaries but retained
+external DerivedData, including `BuildProducts`, between runs. The current qualifier rejects
+incremental requests and accepts only explicit clean compilation; clean runs remove their
+run-local DerivedData with generated outputs before PASS. No hosted qualification builds were
+eliminated because the trusted finalizer has no accepted evidence-adoption interface, so both
+ordinary and trusted qualification remain clean.
 
 Use ordinary `mobile` qualification as well when JavaScript/TypeScript or package behavior is
 affected. `ios-native` supplements the Ubuntu mobile baseline; it does not replace Jest,

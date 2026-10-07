@@ -5,7 +5,6 @@ set -uo pipefail
 evidence_dir=""
 runner="local"
 compilation_mode="clean"
-compilation_cache_dir=""
 
 while test "$#" -gt 0
 do
@@ -25,11 +24,6 @@ do
       compilation_mode="$2"
       shift 2
       ;;
-    --compilation-cache-dir)
-      test "$#" -ge 2
-      compilation_cache_dir="$2"
-      shift 2
-      ;;
     *)
       echo "IOS_NATIVE_ARGUMENT_INVALID:$1" >&2
       exit 2
@@ -38,25 +32,17 @@ esac
 done
 
 case "$compilation_mode" in
-  clean|incremental)
+  clean)
+    ;;
+  incremental)
+    echo "IOS_NATIVE_INCREMENTAL_COMPILATION_UNSUPPORTED:negative-evaluation" >&2
+    exit 2
     ;;
   *)
     echo "IOS_NATIVE_COMPILATION_MODE_INVALID:$compilation_mode" >&2
     exit 2
     ;;
 esac
-
-if test "$compilation_mode" = "incremental" && test -z "$compilation_cache_dir"
-then
-  echo "IOS_NATIVE_COMPILATION_CACHE_DIR_REQUIRED" >&2
-  exit 2
-fi
-
-if test "$compilation_mode" = "clean" && test -n "$compilation_cache_dir"
-then
-  echo "IOS_NATIVE_COMPILATION_CACHE_REQUIRES_INCREMENTAL" >&2
-  exit 2
-fi
 
 if test -z "$evidence_dir"
 then
@@ -73,20 +59,6 @@ fi
 repo_root="$(git rev-parse --show-toplevel)"
 repo_root="$(cd "$repo_root" && pwd -P)"
 
-if test "$compilation_mode" = "incremental"
-then
-  case "$compilation_cache_dir" in
-    /*) cache_dir_input="$compilation_cache_dir" ;;
-    *) cache_dir_input="$(pwd -P)/$compilation_cache_dir" ;;
-  esac
-  case "$cache_dir_input" in
-    "$repo_root"|"$repo_root"/*)
-      echo "IOS_NATIVE_COMPILATION_CACHE_MUST_BE_EXTERNAL" >&2
-      exit 2
-      ;;
-  esac
-fi
-
 if test -n "$(
   git -C "$repo_root" status \
     --porcelain=v1 \
@@ -100,48 +72,19 @@ fi
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd "$evidence_dir" && pwd -P)"
 
-if test "$compilation_mode" = "incremental"
-then
-  mkdir -p "$compilation_cache_dir"
-  compilation_cache_dir="$(cd "$compilation_cache_dir" && pwd -P)"
-  case "$compilation_cache_dir" in
-    "$repo_root"|"$repo_root"/*)
-      echo "IOS_NATIVE_COMPILATION_CACHE_MUST_BE_EXTERNAL" >&2
-      exit 2
-      ;;
-  esac
-fi
-
-if test "$compilation_mode" = "incremental"
-then
-  probe_root="$compilation_cache_dir/Nutrition App Native"
-  derived_data="$compilation_cache_dir/DerivedData"
-  compilation_state="$compilation_cache_dir/compilation-state.json"
-else
-  probe_root="$evidence_dir/Nutrition App Native"
-  derived_data="$evidence_dir/DerivedData"
-  compilation_state=""
-fi
+probe_root="$evidence_dir/Nutrition App Native"
+derived_data="$evidence_dir/DerivedData"
 harness_bin="$evidence_dir/harness-bin"
 manifest="$evidence_dir/manifest.json"
 timings_file="$evidence_dir/stages.jsonl"
 prebuild_paths="$evidence_dir/prebuild-paths.env"
 dependency_versions="$evidence_dir/dependency-versions.env"
-compilation_identity="$evidence_dir/compilation-identity.json"
-compilation_restore="$evidence_dir/compilation-restore.json"
-compilation_save="$evidence_dir/compilation-save.json"
-compilation_discard="$evidence_dir/compilation-discard.json"
 build_invocation_file="$evidence_dir/build-invocation.json"
 module_evidence="$evidence_dir/module-evidence.json"
 candidate_build_evidence="$evidence_dir/candidate-build-evidence.json"
 application_link_proof="$evidence_dir/application-link-proof.json"
-incremental_build_started_marker="$evidence_dir/incremental-build-started"
-incremental_cache_committed_marker="$evidence_dir/incremental-cache-committed"
-incremental_cache_discard_attempted_marker="$evidence_dir/incremental-cache-discard-attempted"
-incremental_helper="$repo_root/scripts/lib/ios_native_incremental.py"
 
 export IOS_NATIVE_COMPILATION_MODE="$compilation_mode"
-export IOS_NATIVE_COMPILATION_CACHE_DIR="$compilation_cache_dir"
 
 if test -e "$probe_root"
 then
@@ -296,20 +239,9 @@ cleanup_stage() {
     fi
   fi
 
-  if test "$compilation_mode" = "clean"
+  if ! rm -rf "$derived_data"
   then
-    if ! rm -rf "$derived_data"
-    then
-      cleanup_exit=1
-    fi
-  elif test "$qualifier_exit_status" -ne 0 &&
-    test -e "$incremental_build_started_marker" &&
-    test ! -e "$incremental_cache_committed_marker"
-  then
-    if ! discard_incremental_cache
-    then
-      cleanup_exit=1
-    fi
+    cleanup_exit=1
   fi
 
   if ! rm -rf "$harness_bin"
@@ -325,33 +257,6 @@ cleanup_stage() {
   fi
 
   return "$cleanup_exit"
-}
-
-discard_incremental_cache() {
-  if test "$compilation_mode" != "incremental" ||
-    test ! -e "$incremental_build_started_marker" ||
-    test -e "$incremental_cache_discard_attempted_marker"
-  then
-    return 0
-  fi
-
-  if ! : > "$incremental_cache_discard_attempted_marker"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_DISCARD_MARKER_FAILED" >&2
-    return 1
-  fi
-  if ! python3 \
-    "$incremental_helper" \
-    discard \
-    --state "$compilation_state" \
-    --derived-data "$derived_data" \
-    --output "$compilation_discard" \
-    > "$evidence_dir/compilation-discard.log" \
-    2>&1
-  then
-    echo "IOS_NATIVE_INCREMENTAL_DISCARD_FAILED" >&2
-    return 1
-  fi
 }
 
 write_manifest() {
@@ -378,12 +283,6 @@ write_manifest() {
   IOS_NATIVE_TOTAL_ELAPSED="$total_elapsed" \
   IOS_NATIVE_TIMING_BOUNDARY="toolchain preflight through cleanup completion" \
   IOS_NATIVE_COMPILATION_MODE="$compilation_mode" \
-  IOS_NATIVE_COMPILATION_CACHE_DIR="$compilation_cache_dir" \
-  IOS_NATIVE_COMPILATION_STATE="$compilation_state" \
-  IOS_NATIVE_COMPILATION_IDENTITY_FILE="$compilation_identity" \
-  IOS_NATIVE_COMPILATION_RESTORE_FILE="$compilation_restore" \
-  IOS_NATIVE_COMPILATION_SAVE_FILE="$compilation_save" \
-  IOS_NATIVE_COMPILATION_DISCARD_FILE="$compilation_discard" \
   IOS_NATIVE_BUILD_INVOCATION_FILE="$build_invocation_file" \
   IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
   IOS_NATIVE_CANDIDATE_BUILD_EVIDENCE_FILE="$candidate_build_evidence" \
@@ -486,12 +385,6 @@ def cache_entry(prefix, path, source):
 stage_status = {entry["stage"]: entry["status"] for entry in stages}
 compilation = {
     "mode": text("IOS_NATIVE_COMPILATION_MODE") or "clean",
-    "cache_dir": text("IOS_NATIVE_COMPILATION_CACHE_DIR"),
-    "state_file": text("IOS_NATIVE_COMPILATION_STATE"),
-    "identity_file": text("IOS_NATIVE_COMPILATION_IDENTITY_FILE"),
-    "restore": document("IOS_NATIVE_COMPILATION_RESTORE_FILE"),
-    "save": document("IOS_NATIVE_COMPILATION_SAVE_FILE"),
-    "discard": document("IOS_NATIVE_COMPILATION_DISCARD_FILE"),
 }
 build_invocation = document("IOS_NATIVE_BUILD_INVOCATION_FILE")
 build_command = None
@@ -680,32 +573,6 @@ on_exit() {
     qualifier_exit_status=1
   fi
 
-  if test "$compilation_mode" = "incremental"
-  then
-    if test "$qualifier_exit_status" -eq 0 &&
-      test "$cleanup_exit" -eq 0 &&
-      test "$evidence_retention_failure" -eq 0 &&
-      test -e "$incremental_build_started_marker"
-    then
-      if ! record_incremental_cache
-      then
-        qualifier_exit_status=1
-      elif ! : > "$incremental_cache_committed_marker"
-      then
-        echo "IOS_NATIVE_INCREMENTAL_COMMIT_MARKER_FAILED" >&2
-        qualifier_exit_status=1
-      fi
-    fi
-
-    if test "$qualifier_exit_status" -ne 0
-    then
-      if ! discard_incremental_cache
-      then
-        evidence_retention_failure=1
-      fi
-    fi
-  fi
-
   write_manifest "$qualifier_exit_status"
   manifest_exit="$?"
   if test "$manifest_exit" -ne 0
@@ -737,15 +604,6 @@ on_exit() {
     if test "$qualifier_exit_status" -eq 0
     then
       qualifier_exit_status=1
-    fi
-  fi
-
-  if test "$compilation_mode" = "incremental" &&
-    test "$qualifier_exit_status" -ne 0
-  then
-    if ! discard_incremental_cache
-    then
-      evidence_retention_failure=1
     fi
   fi
 
@@ -1137,27 +995,6 @@ pods_stage() {
     >> "$prebuild_paths"
 }
 
-write_clean_compilation_operations() {
-  python3 - \
-    "$compilation_restore" \
-    "$compilation_save" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-document = {
-    "operation": "disabled",
-    "status": "disabled",
-    "reason": "clean compilation mode does not restore or save DerivedData",
-}
-for argument in sys.argv[1:]:
-    Path(argument).write_text(
-        json.dumps(document, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-PY
-}
-
 capture_build_invocation() {
   local executable="$1"
   local workspace="$2"
@@ -1267,207 +1104,6 @@ PY
   export IOS_NATIVE_BUILD_DERIVED_DATA
   export IOS_NATIVE_BUILD_INVOCATION_FILE="$build_invocation_file"
   export IOS_NATIVE_SCHEME
-}
-
-prepare_incremental_cache() {
-  local workspace="$1"
-  local scheme="$2"
-  local prepare_start
-  local prepare_end
-  local prepare_elapsed
-
-  if ! prepare_start="$(date +%s)"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
-    return 1
-  fi
-
-  if ! python3 \
-    "$incremental_helper" \
-    identity \
-    --repo-root "$repo_root" \
-    --mobile "$mobile" \
-    --project-root "$probe_root" \
-    --derived-data "$derived_data" \
-    --candidate "$commit" \
-    --build-invocation "$build_invocation_file" \
-    --toolchain "macos=$macos_version" \
-    --toolchain "architecture=$architecture" \
-    --toolchain "xcode=$xcode_version" \
-    --toolchain "xcode_build=$xcode_build" \
-    --toolchain "iphonesimulator_sdk=$iphonesimulator_sdk" \
-    --toolchain "swift=$swift_version" \
-    --toolchain "node=$node_version" \
-    --toolchain "npm=$npm_version" \
-    --toolchain "ruby=$ruby_version" \
-    --toolchain "cocoapods=$cocoapods_version" \
-    --output "$compilation_identity" \
-    > "$evidence_dir/compilation-identity.log" \
-    2>&1
-  then
-    echo "IOS_NATIVE_INCREMENTAL_IDENTITY_FAILED" >&2
-    return 1
-  fi
-
-  if ! python3 \
-    "$incremental_helper" \
-    prepare \
-    --identity "$compilation_identity" \
-    --state "$compilation_state" \
-    --derived-data "$derived_data" \
-    --output "$compilation_restore" \
-    > "$evidence_dir/compilation-restore.log" \
-    2>&1
-  then
-    echo "IOS_NATIVE_INCREMENTAL_PREPARE_FAILED" >&2
-    return 1
-  fi
-
-  if ! prepare_end="$(date +%s)"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
-    return 1
-  fi
-  prepare_elapsed="$((prepare_end - prepare_start))"
-  if ! python3 - "$compilation_restore" "$prepare_elapsed" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-document = json.loads(path.read_text(encoding="utf-8"))
-document["elapsed_seconds"] = int(sys.argv[2])
-path.write_text(
-    json.dumps(document, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-PY
-  then
-    echo "IOS_NATIVE_INCREMENTAL_RESTORE_TIMING_WRITE_FAILED" >&2
-    return 1
-  fi
-
-  if ! cat "$compilation_restore"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_RESTORE_READ_FAILED" >&2
-    return 1
-  fi
-}
-
-validate_incremental_save() {
-  local require_elapsed="$1"
-
-  python3 - \
-    "$compilation_identity" \
-    "$compilation_restore" \
-    "$compilation_save" \
-    "$compilation_state" \
-    "$derived_data" \
-    "$commit" \
-    "$require_elapsed" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-
-identity_path, restore_path, save_path, state_path, derived_data, candidate, require_elapsed = sys.argv[1:]
-identity = json.loads(Path(identity_path).read_text(encoding="utf-8"))
-restore = json.loads(Path(restore_path).read_text(encoding="utf-8"))
-save = json.loads(Path(save_path).read_text(encoding="utf-8"))
-state = json.loads(Path(state_path).read_text(encoding="utf-8"))
-identity_sha = identity.get("identity_sha256")
-expected_derived_data = str(Path(derived_data).resolve())
-
-if identity.get("candidate_sha") != candidate or not identity_sha:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_IDENTITY_INVALID")
-if restore.get("operation") != "restore" or restore.get("status") not in {"hit", "miss"}:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_RESTORE_STATUS_INVALID")
-if restore.get("identity_sha256") != identity_sha:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_RESTORE_IDENTITY_MISMATCH")
-if str(Path(restore.get("derived_data", "")).resolve()) != expected_derived_data:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_RESTORE_PATH_MISMATCH")
-if save.get("operation") != "save" or save.get("status") != "saved":
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_STATUS_INVALID")
-if save.get("identity_sha256") != identity_sha:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_IDENTITY_MISMATCH")
-if str(Path(save.get("derived_data", "")).resolve()) != expected_derived_data:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_PATH_MISMATCH")
-if state.get("identity_sha256") != identity_sha:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_STATE_IDENTITY_MISMATCH")
-if str(Path(state.get("derived_data", "")).resolve()) != expected_derived_data:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_STATE_PATH_MISMATCH")
-if state.get("cache_contents") != ["DerivedData only"]:
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_STATE_CONTENTS_INVALID")
-if require_elapsed == "1" and not isinstance(save.get("elapsed_seconds"), int):
-    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_TIMING_MISSING")
-PY
-}
-
-record_incremental_cache() {
-  local save_start
-  local save_end
-  local save_elapsed
-
-  if ! save_start="$(date +%s)"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
-    return 1
-  fi
-  if ! python3 \
-    "$incremental_helper" \
-    commit \
-    --identity "$compilation_identity" \
-    --state "$compilation_state" \
-    --derived-data "$derived_data" \
-    --candidate "$commit" \
-    --restore "$compilation_restore" \
-    --stages "$timings_file" \
-    --module-evidence "$module_evidence" \
-    --output "$compilation_save" \
-    > "$evidence_dir/compilation-save.log" \
-    2>&1
-  then
-    echo "IOS_NATIVE_INCREMENTAL_CACHE_COMMIT_FAILED" >&2
-    return 1
-  fi
-  if ! validate_incremental_save 0
-  then
-    echo "IOS_NATIVE_INCREMENTAL_CACHE_SAVE_VALIDATION_FAILED" >&2
-    return 1
-  fi
-  if ! save_end="$(date +%s)"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
-    return 1
-  fi
-  save_elapsed="$((save_end - save_start))"
-  if ! python3 - "$compilation_save" "$save_elapsed" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-document = json.loads(path.read_text(encoding="utf-8"))
-document["elapsed_seconds"] = int(sys.argv[2])
-path.write_text(
-    json.dumps(document, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-PY
-  then
-    echo "IOS_NATIVE_INCREMENTAL_SAVE_TIMING_WRITE_FAILED" >&2
-    return 1
-  fi
-  if ! validate_incremental_save 1
-  then
-    echo "IOS_NATIVE_INCREMENTAL_FINAL_SAVE_VALIDATION_FAILED" >&2
-    return 1
-  fi
-  if ! cat "$compilation_save"
-  then
-    echo "IOS_NATIVE_INCREMENTAL_SAVE_READ_FAILED" >&2
-    return 1
-  fi
 }
 
 capture_candidate_build_evidence() {
@@ -2348,13 +1984,6 @@ xcode_build_stage() {
     return 1
   fi
 
-  if test "$compilation_mode" = "incremental"
-  then
-    prepare_incremental_cache "$workspace" "$scheme"
-  else
-    write_clean_compilation_operations
-  fi
-
   "$xcodebuild_binary" \
     -workspace "$workspace" \
     -list \
@@ -2383,7 +2012,6 @@ if (!schemes.includes(scheme)) {
 }
 NODE
 
-  : > "$incremental_build_started_marker"
   xcodebuild_exit=0
   NODE_BINARY="$node_binary" \
     "$xcodebuild_binary" \

@@ -140,14 +140,16 @@ path floor so obvious mobile dependency, Expo configuration/plugin, local-module
 qualification-tooling changes cannot silently omit that profile. The profile remains an execution
 requirement, not an acceptance or review decision, and documentation/HISTORY bookkeeping alone does
 not imply an expensive native build. The profile's workflows pass `--compilation-mode clean`
-explicitly. Any DerivedData reuse is a separate controller-owned evaluation using an external cache
-directory and the repository qualifier's exact identity and module/link evidence. Its recorded
-xcodebuild argv includes `ENABLE_DEBUG_DYLIB=NO` and `LD_GENERATE_MAP_FILE=YES`, and its external
-DerivedData retains `BuildProducts` between eligible cold/warm runs. It is not an automatic
-ordinary-PR or trusted-workflow reuse mechanism. The qualifier retains all candidate application
-link maps and generated provider inputs before validation and cleanup. It accepts either a map
-whose product is the final app executable or a thin architecture map proven byte-identical to a
-`lipo`-extracted final-app slice; foreign products and search paths do not establish module linkage.
+explicitly, which is the qualifier's only supported mode; incremental requests fail instead of
+silently using clean compilation. A historical same-candidate experiment on source
+`591ac008e56219474ddd326c673a8e85b24f9744` produced no measured benefit: both runs took 97 seconds
+overall, Xcode took 71/70 seconds, clean regeneration changed the generated project identity and
+caused a warm-cache miss, and each external DerivedData cache retained about 3.38 GB. No hosted
+qualification builds were eliminated because the trusted finalizer has no accepted
+evidence-adoption interface. The qualifier retains all candidate application link maps and
+generated provider inputs before validation and cleanup. It accepts either a map whose product is
+the final app executable or a thin architecture map proven byte-identical to a `lipo`-extracted
+final-app slice; foreign products and search paths do not establish module linkage.
 
 ### GitHub Milestones
 
