@@ -203,7 +203,10 @@ explicit Complete state without introducing synchronization or inferring it wher
 ## Daily summaries
 
 Daily summaries aggregate `daily_log_nutrient_snapshots` only. They never join current
-`food_nutrients` to recalculate the past. Per nutrient, the response reports:
+`food_nutrients` to recalculate the past. The composite response observes nutrition and Complete
+from one committed generation: local reads occupy the existing SQLite operation-order slot, and the
+backend returns both through one owner/date-scoped SQL statement. Totals-only service callers,
+including target comparison, keep their existing contract. Per nutrient, the response reports:
 
 - known amount;
 - estimated amount;
@@ -211,8 +214,13 @@ Daily summaries aggregate `daily_log_nutrient_snapshots` only. They never join c
 - whether unknown contributors exist;
 - unknown-contributor count.
 
-Target comparison consumes this same summary, which keeps target/profile/tracking-preference changes
-outside the historical record.
+Target comparison consumes the same snapshot-derived totals, which keeps
+target/profile/tracking-preference changes outside the historical record.
+
+Create retries first resolve the owner-scoped request identity and compare its canonical payload
+fingerprint. An exact accepted retry returns its retained response before mutable calendar
+eligibility is checked, so a later calendar revision cannot turn an accepted write into a refusal.
+Fresh creates still validate the current calendar before writing and retain commit-time validation.
 
 ## Nutrition History and Trends
 

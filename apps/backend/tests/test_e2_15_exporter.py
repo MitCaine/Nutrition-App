@@ -82,6 +82,186 @@ def _current_source_schema() -> dict:
     return deepcopy(SOURCE_SCHEMA)
 
 
+_PG16_FENCE_EVENT_MODES = (
+    "(from_mode IS NULL OR (from_mode = ANY (ARRAY["
+    "'closed_prequalification'::text, 'closed_cutover'::text, "
+    "'open_production'::text, 'closed_incident'::text, "
+    "'retired'::text]))) AND (to_mode = ANY (ARRAY["
+    "'closed_prequalification'::text, 'closed_cutover'::text, "
+    "'open_production'::text, 'closed_incident'::text, "
+    "'retired'::text]))"
+)
+_PG16_RECIPE_PUBLICATION_LINKS = (
+    "(published_food_item_id IS NULL) = "
+    "(active_publication_revision_id IS NULL)"
+)
+_REFLECTED_CHECK_RENDERINGS = (
+    (
+        "phase5c_write_fence_events",
+        "ck_phase5c_fence_event_modes",
+        _PG16_FENCE_EVENT_MODES,
+    ),
+    (
+        "recipes",
+        "ck_recipes_publication_links_paired",
+        _PG16_RECIPE_PUBLICATION_LINKS,
+    ),
+)
+
+
+def _find_check(tables: dict, table_name: str, constraint_name: str) -> dict:
+    return next(
+        check
+        for check in tables[table_name]["checks"]
+        if check["name"] == constraint_name
+    )
+
+
+def _source_tables_with_pg16_check_renderings() -> dict:
+    tables = deepcopy(SOURCE_SCHEMA["tables"])
+    for table_name, constraint_name, rendered in _REFLECTED_CHECK_RENDERINGS:
+        check = _find_check(tables, table_name, constraint_name)
+        frozen_expression = check["expression"]
+        normalized = e2_15_exporter.normalize_reflected_check_expression(
+            table_name,
+            constraint_name,
+            rendered,
+            frozen_expression,
+        )
+        assert normalized == frozen_expression
+        check["expression"] = normalized
+    return tables
+
+
+def _assert_reflected_check_change_rejected(
+    table_name: str,
+    constraint_name: str,
+    expression: str,
+) -> None:
+    tables = _source_tables_with_pg16_check_renderings()
+    check = _find_check(tables, table_name, constraint_name)
+    normalized = e2_15_exporter.normalize_reflected_check_expression(
+        table_name,
+        constraint_name,
+        expression,
+        check["expression"],
+    )
+    assert normalized == expression
+    check["expression"] = normalized
+    with pytest.raises(TransferExportError) as failure:
+        validate_source_schema_tables(tables)
+    assert failure.value.code == "source_schema_invalid"
+
+
+def test_source_schema_accepts_only_the_two_exact_pg16_check_renderings() -> None:
+    assert validate_source_schema_tables(
+        _source_tables_with_pg16_check_renderings()
+    ) is False
+
+
+def test_reflected_check_equivalence_requires_exact_table_name_and_frozen_contract() -> None:
+    expected = _find_check(
+        SOURCE_SCHEMA["tables"],
+        "phase5c_write_fence_events",
+        "ck_phase5c_fence_event_modes",
+    )["expression"]
+    assert (
+        e2_15_exporter.normalize_reflected_check_expression(
+            "other_table",
+            "ck_phase5c_fence_event_modes",
+            _PG16_FENCE_EVENT_MODES,
+            expected,
+        )
+        == _PG16_FENCE_EVENT_MODES
+    )
+    assert (
+        e2_15_exporter.normalize_reflected_check_expression(
+            "phase5c_write_fence_events",
+            "ck_other_constraint",
+            _PG16_FENCE_EVENT_MODES,
+            expected,
+        )
+        == _PG16_FENCE_EVENT_MODES
+    )
+    assert (
+        e2_15_exporter.normalize_reflected_check_expression(
+            "phase5c_write_fence_events",
+            "ck_phase5c_fence_event_modes",
+            _PG16_FENCE_EVENT_MODES,
+            "different frozen expression",
+        )
+        == _PG16_FENCE_EVENT_MODES
+    )
+
+
+def test_source_schema_rejects_changed_check_operator() -> None:
+    changed = _PG16_RECIPE_PUBLICATION_LINKS.replace(") = (", ") <> (", 1)
+    _assert_reflected_check_change_rejected(
+        "recipes",
+        "ck_recipes_publication_links_paired",
+        changed,
+    )
+
+
+def test_source_schema_rejects_changed_boolean_grouping() -> None:
+    changed = _PG16_FENCE_EVENT_MODES[1:].replace(
+        "::text]))) AND (to_mode",
+        "::text])) AND (to_mode",
+        1,
+    )
+    _assert_reflected_check_change_rejected(
+        "phase5c_write_fence_events",
+        "ck_phase5c_fence_event_modes",
+        changed,
+    )
+
+
+def test_source_schema_rejects_and_changed_to_or() -> None:
+    changed = _PG16_FENCE_EVENT_MODES.replace(
+        "::text]))) AND (to_mode",
+        "::text]))) OR (to_mode",
+        1,
+    )
+    _assert_reflected_check_change_rejected(
+        "phase5c_write_fence_events",
+        "ck_phase5c_fence_event_modes",
+        changed,
+    )
+
+
+def test_source_schema_rejects_changed_membership_literal() -> None:
+    changed = _PG16_FENCE_EVENT_MODES.replace(
+        "'retired'::text",
+        "'unapproved'::text",
+        1,
+    )
+    _assert_reflected_check_change_rejected(
+        "phase5c_write_fence_events",
+        "ck_phase5c_fence_event_modes",
+        changed,
+    )
+
+
+def test_source_schema_rejects_extra_or_missing_check_constraints() -> None:
+    missing = _source_tables_with_pg16_check_renderings()
+    missing["recipes"]["checks"] = [
+        check
+        for check in missing["recipes"]["checks"]
+        if check["name"] != "ck_recipes_publication_links_paired"
+    ]
+    with pytest.raises(TransferExportError) as missing_failure:
+        validate_source_schema_tables(missing)
+    assert missing_failure.value.code == "source_schema_invalid"
+
+    extra = _source_tables_with_pg16_check_renderings()
+    extra["recipes"]["checks"].append(
+        {"expression": "true", "name": "ck_unapproved_extra"}
+    )
+    with pytest.raises(TransferExportError) as extra_failure:
+        validate_source_schema_tables(extra)
+    assert extra_failure.value.code == "source_schema_invalid"
+
+
 class _SchemaQualificationConnection:
     def scalars(self, _statement):
         return [e2_15_exporter.CURRENT_EXPORT_SOURCE_REVISION]

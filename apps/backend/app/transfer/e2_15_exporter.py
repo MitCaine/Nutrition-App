@@ -218,6 +218,56 @@ def _normalize_space(value: Any) -> str:
     return " ".join(str(value).strip().split())
 
 
+# Exact whole-expression inspector renderings authenticated against the DDL in
+# migrations 0018 and 0019. These aliases are tied to both table and constraint;
+# every other CHECK keeps exact expression comparison.
+_REFLECTED_CHECK_RENDER_EQUIVALENCES: dict[tuple[str, str], tuple[str, str]] = {
+    (
+        "phase5c_write_fence_events",
+        "ck_phase5c_fence_event_modes",
+    ): (
+        "from_mode IS NULL OR (from_mode = ANY (ARRAY['closed_prequalification'::text, "
+        "'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, "
+        "'retired'::text]))) AND (to_mode = ANY (ARRAY['closed_prequalification'::text, "
+        "'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, "
+        "'retired'::text])",
+        "(from_mode IS NULL OR (from_mode = ANY (ARRAY['closed_prequalification'::text, "
+        "'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, "
+        "'retired'::text]))) AND (to_mode = ANY (ARRAY['closed_prequalification'::text, "
+        "'closed_cutover'::text, 'open_production'::text, 'closed_incident'::text, "
+        "'retired'::text]))",
+    ),
+    (
+        "recipes",
+        "ck_recipes_publication_links_paired",
+    ): (
+        "published_food_item_id IS NULL) = (active_publication_revision_id IS NULL",
+        "(published_food_item_id IS NULL) = (active_publication_revision_id IS NULL)",
+    ),
+}
+
+
+def normalize_reflected_check_expression(
+    table_name: str,
+    constraint_name: str | None,
+    value: Any,
+    expected: str | None,
+) -> str:
+    """Accept only the two named, exact PostgreSQL CHECK inspector renderings."""
+
+    rendered = _normalize_space(value)
+    if constraint_name is None:
+        return rendered
+    equivalence = _REFLECTED_CHECK_RENDER_EQUIVALENCES.get(
+        (table_name, constraint_name)
+    )
+    if equivalence is not None:
+        frozen_expression, inspector_expression = equivalence
+        if expected == frozen_expression and rendered == inspector_expression:
+            return frozen_expression
+    return rendered
+
+
 def _type_text(value: Any) -> str:
     if hasattr(value, "compile"):
         value = value.compile(dialect=_POSTGRES_DIALECT)
@@ -324,8 +374,19 @@ def observe_source_schema(connection: Connection) -> dict[str, Any]:
             columns_value = list(item["column_names"])
             matched = next((candidate for candidate in expected_uniques if candidate["columns"] == columns_value), None)
             unique_constraints.append({"columns": columns_value, "name": matched["name"] if matched is not None else item.get("name")})
+        expected_checks = {
+            item["name"]: item["expression"] for item in expected.get("checks", [])
+        }
         checks = [
-            {"expression": _normalize_space(item["sqltext"]), "name": item.get("name")}
+            {
+                "expression": normalize_reflected_check_expression(
+                    name,
+                    item.get("name"),
+                    item["sqltext"],
+                    expected_checks.get(item.get("name")),
+                ),
+                "name": item.get("name"),
+            }
             for item in inspector.get_check_constraints(name, schema="public")
         ]
         expected_indexes = {item["name"]: item for item in expected.get("indexes", [])}

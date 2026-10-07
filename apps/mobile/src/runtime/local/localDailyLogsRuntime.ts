@@ -2065,7 +2065,6 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
     const requestFingerprint = await creationFingerprint(normalized);
     try {
       return await withLocalWriteTransaction(this.database, async (transaction) => {
-        await validateCreateCalendar(transaction, this.ownerId, normalized, this.now());
         const existingReceipt = await transaction.getFirstAsync<ReceiptRow>(
           `SELECT "request_fingerprint", "resource_id", "response_snapshot"
            FROM "create_operation_idempotency"
@@ -2099,6 +2098,7 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
           return logResponse(transaction, this.ownerId, existingLog);
         }
 
+        await validateCreateCalendar(transaction, this.ownerId, normalized, this.now());
         const food = await loadFood(transaction, normalized.foodId, this.ownerId);
         if (!food || food.deleted_at !== null) {
           if (sourcePreconditionSupplied(normalized)) throw sourceUnavailable();
@@ -2684,73 +2684,75 @@ export class LocalDailyLogsRuntime implements DailyLogsRuntime {
   async getDailySummary(date: string): Promise<DailySummary> {
     const loggedDate = readDate(date);
     try {
-      const rows = await this.database.getAllAsync<{
-        nutrient_id: string;
-        amount: string | null;
-        unit: string;
-        data_status: string;
-        default_unit: string | null;
-      }>(
-        `SELECT "snapshot"."nutrient_id", "snapshot"."amount", "snapshot"."unit", "snapshot"."data_status",
-                "nutrient"."default_unit"
-         FROM "daily_log_nutrient_snapshots" AS "snapshot"
-         JOIN "daily_logs" AS "log" ON "log"."id" = "snapshot"."daily_log_id"
-         LEFT JOIN "nutrients" AS "nutrient" ON "nutrient"."id" = "snapshot"."nutrient_id"
-         WHERE "log"."user_id" = ? AND "log"."logged_date" = ?
-         ORDER BY "snapshot"."nutrient_id", "snapshot"."id"`,
-        [this.ownerId, loggedDate],
-      );
-      const totals = new Map<string, { known: ResponseDecimal; estimated: ResponseDecimal; unit: NutrientUnit; unknown: number }>();
-      for (const row of rows) {
-        const status = row.data_status as NutrientDataStatus;
-        if (!NUTRIENT_STATUSES.has(status)) throw invalidStored();
-        const sourceUnit = normalizeNutrientUnit(row.unit);
-        const unit = normalizeNutrientUnit(row.default_unit ?? DEFAULT_NUTRIENT_UNITS.get(row.nutrient_id) ?? row.unit);
-        const current = totals.get(row.nutrient_id) ?? {
-          known: parseResponseDecimal("0"),
-          estimated: parseResponseDecimal("0"),
-          unit,
-          unknown: 0,
-        };
-        if (!sameUnitFamily(sourceUnit, current.unit)) throw invalidStored();
-        if (status === "unknown") {
-          if (row.amount !== null) throw invalidStored();
-          current.unknown += 1;
-        } else {
-          const amount = parsePersistedDecimal(row.amount, false);
-          const converted = compareDecimals(amount as ExactDecimal, "0", NUMERIC_14_6) === 0
-            ? parseResponseDecimal("0")
-            : convertNutritionAmount(amount as ExactDecimal, sourceUnit, current.unit);
-          if (status === "estimated") current.estimated = addResponseDecimals(current.estimated, converted);
-          else current.known = addResponseDecimals(current.known, converted);
+      return await withLocalOrderedRead(this.database, async () => {
+        const rows = await this.database.getAllAsync<{
+          nutrient_id: string;
+          amount: string | null;
+          unit: string;
+          data_status: string;
+          default_unit: string | null;
+        }>(
+          `SELECT "snapshot"."nutrient_id", "snapshot"."amount", "snapshot"."unit", "snapshot"."data_status",
+                  "nutrient"."default_unit"
+           FROM "daily_log_nutrient_snapshots" AS "snapshot"
+           JOIN "daily_logs" AS "log" ON "log"."id" = "snapshot"."daily_log_id"
+           LEFT JOIN "nutrients" AS "nutrient" ON "nutrient"."id" = "snapshot"."nutrient_id"
+           WHERE "log"."user_id" = ? AND "log"."logged_date" = ?
+           ORDER BY "snapshot"."nutrient_id", "snapshot"."id"`,
+          [this.ownerId, loggedDate],
+        );
+        const totals = new Map<string, { known: ResponseDecimal; estimated: ResponseDecimal; unit: NutrientUnit; unknown: number }>();
+        for (const row of rows) {
+          const status = row.data_status as NutrientDataStatus;
+          if (!NUTRIENT_STATUSES.has(status)) throw invalidStored();
+          const sourceUnit = normalizeNutrientUnit(row.unit);
+          const unit = normalizeNutrientUnit(row.default_unit ?? DEFAULT_NUTRIENT_UNITS.get(row.nutrient_id) ?? row.unit);
+          const current = totals.get(row.nutrient_id) ?? {
+            known: parseResponseDecimal("0"),
+            estimated: parseResponseDecimal("0"),
+            unit,
+            unknown: 0,
+          };
+          if (!sameUnitFamily(sourceUnit, current.unit)) throw invalidStored();
+          if (status === "unknown") {
+            if (row.amount !== null) throw invalidStored();
+            current.unknown += 1;
+          } else {
+            const amount = parsePersistedDecimal(row.amount, false);
+            const converted = compareDecimals(amount as ExactDecimal, "0", NUMERIC_14_6) === 0
+              ? parseResponseDecimal("0")
+              : convertNutritionAmount(amount as ExactDecimal, sourceUnit, current.unit);
+            if (status === "estimated") current.estimated = addResponseDecimals(current.estimated, converted);
+            else current.known = addResponseDecimals(current.known, converted);
+          }
+          totals.set(row.nutrient_id, current);
         }
-        totals.set(row.nutrient_id, current);
-      }
-      const completion = await this.database.getFirstAsync<{
-        completed_at: string;
-      }>(
-        `SELECT "completed_at"
-         FROM "daily_log_day_completions"
-         WHERE "logged_date" = ?`,
-        [loggedDate],
-      );
+        const completion = await this.database.getFirstAsync<{
+          completed_at: string;
+        }>(
+          `SELECT "completed_at"
+           FROM "daily_log_day_completions"
+           WHERE "logged_date" = ?`,
+          [loggedDate],
+        );
 
-      if (completion !== null) {
-        parsePersistedInstant(completion.completed_at);
-      }
+        if (completion !== null) {
+          parsePersistedInstant(completion.completed_at);
+        }
 
-      return {
-        logged_date: loggedDate,
-        is_complete: completion !== null,
-        totals: [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([nutrientId, total]) => ({
-          nutrientId,
-          amountKnown: total.known,
-          amountEstimated: total.estimated,
-          unit: total.unit,
-          hasUnknownContributors: total.unknown > 0,
-          unknownContributorCount: total.unknown,
-        })),
-      };
+        return {
+          logged_date: loggedDate,
+          is_complete: completion !== null,
+          totals: [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([nutrientId, total]) => ({
+            nutrientId,
+            amountKnown: total.known,
+            amountEstimated: total.estimated,
+            unit: total.unit,
+            hasUnknownContributors: total.unknown > 0,
+            unknownContributorCount: total.unknown,
+          })),
+        };
+      });
     } catch (error) {
       if (error instanceof LocalRuntimeError) throw error;
       throw readFailure();

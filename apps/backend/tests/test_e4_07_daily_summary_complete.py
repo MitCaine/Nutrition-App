@@ -31,11 +31,18 @@ def test_daily_summary_projects_authoritative_complete_state(
     initial = _summary(client)
     assert initial["logged_date"] == SOURCE_DATE.isoformat()
     assert initial["is_complete"] is False
+    initial_totals = {row["nutrient_id"]: row for row in initial["totals"]}
+    assert initial_totals["calories"]["amount_known"] == "120.000000"
+    assert initial_totals["protein"]["amount_known"] == "20.000000"
 
     _set_complete(db_session, SOURCE_DATE)
 
     completed = _summary(client)
     assert completed["is_complete"] is True
+    completed_totals = {row["nutrient_id"]: row for row in completed["totals"]}
+    assert completed_totals["calories"]["amount_known"] == "120.000000"
+    assert completed_totals["protein"]["amount_known"] == "20.000000"
+    assert completed_totals["added_sugars"]["amount_known"] == "0"
 
     changed = _patch_log(
         client,
@@ -48,3 +55,6 @@ def test_daily_summary_projects_authoritative_complete_state(
 
     invalidated = _summary(client)
     assert invalidated["is_complete"] is False
+    invalidated_totals = {row["nutrient_id"]: row for row in invalidated["totals"]}
+    assert invalidated_totals["calories"]["amount_known"] == "240.000000"
+    assert invalidated_totals["protein"]["amount_known"] == "40.000000"

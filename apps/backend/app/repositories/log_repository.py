@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, inspect, or_, select, text
+from sqlalchemy import and_, delete, func, inspect, literal, or_, select, text, true
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.food import FoodItem, ServingDefinition
@@ -91,6 +91,15 @@ class LogRepository:
         for key, value in pending_values.items():
             setattr(log, key, value)
         return log
+
+    def lock_owner_for_update(self, user_id: UUID) -> None:
+        """Acquire the owner lock used by calendar mutations before a replay recheck."""
+
+        locked_user_id = self.db.scalar(
+            select(User.id).where(User.id == user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise LookupError("Daily log owner not found")
 
     def lock_owner_shared(self, user_id: UUID) -> None:
         """Serialize legacy Log mutations with exclusive calendar/Complete owner locks.
@@ -305,6 +314,41 @@ class LogRepository:
         if limit is not None:
             statement = statement.limit(limit)
         return list(self.db.scalars(statement).all())
+
+    def daily_summary_projection(self, user_id: UUID, logged_date: date):
+        """Read completion and immutable snapshot evidence in one SQL statement."""
+
+        snapshots = (
+            select(
+                DailyLogNutrientSnapshot.nutrient_id.label("nutrient_id"),
+                DailyLogNutrientSnapshot.amount.label("amount"),
+                DailyLogNutrientSnapshot.unit.label("unit"),
+                DailyLogNutrientSnapshot.data_status.label("data_status"),
+            )
+            .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)
+            .where(DailyLog.user_id == user_id, DailyLog.logged_date == logged_date)
+            .subquery()
+        )
+        completed_at = (
+            select(DailyLogDayCompletion.completed_at)
+            .where(
+                DailyLogDayCompletion.user_id == user_id,
+                DailyLogDayCompletion.logged_date == logged_date,
+            )
+            .scalar_subquery()
+        )
+        anchor = select(literal(1).label("anchor")).subquery()
+        statement = (
+            select(
+                completed_at.label("completed_at"),
+                snapshots.c.nutrient_id,
+                snapshots.c.amount,
+                snapshots.c.unit,
+                snapshots.c.data_status,
+            )
+            .select_from(anchor.outerjoin(snapshots, true()))
+        )
+        return list(self.db.execute(statement))
 
     def snapshots_for_date(
         self, user_id: UUID, logged_date: date

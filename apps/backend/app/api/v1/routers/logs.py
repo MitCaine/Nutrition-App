@@ -202,10 +202,11 @@ def daily_summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DailySummaryResponse:
+    is_complete, totals = _service(db).daily_summary_with_completion(user.id, date)
     return DailySummaryResponse(
         logged_date=date,
-        is_complete=_complete_service(db).get_completion(user.id, date) is not None,
-        totals=_service(db).daily_summary(user.id, date),
+        is_complete=is_complete,
+        totals=totals,
     )
 
 

@@ -12,10 +12,11 @@ const { mkdtempSync, readFileSync, rmSync } = require("node:fs") as {
 const { tmpdir } = require("node:os") as { tmpdir(): string };
 const { join } = require("node:path") as { join(...paths: string[]): string };
 
-import { LocalSQLiteTestDatabase } from "./localSQLiteTestSupport";
+import { ExpoIsolatedSQLiteTestDatabase, LocalSQLiteTestDatabase } from "./localSQLiteTestSupport";
 import { migrateNutritionDatabase } from "../src/storage/sqlite/migrations";
 import { SQLITE_NUTRIENT_SEED_ROWS } from "../src/storage/sqlite/schema";
 import { bootstrapLocalRuntimeFoundation } from "../src/runtime/local/localRuntimeFoundation";
+import { createLocalDailyLogsRuntime } from "../src/runtime/local/localDailyLogsRuntime";
 import {
   buildTransferSection,
   canonicalTransferJson,
@@ -647,6 +648,100 @@ test("representative package preserves full owner graph, history, receipts, and 
     });
   } finally {
     try { database.close(); } catch { /* already closed during reopen */ }
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("qualifies transfer totals on the supplied isolated transaction and rolls back a failed qualification", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "e2-15-gh271-"));
+  const successPath = join(directory, "success.sqlite");
+  const failedPath = join(directory, "failed.sqlite");
+  const successful = new ExpoIsolatedSQLiteTestDatabase(successPath);
+  let successfulReopen: LocalSQLiteTestDatabase | undefined;
+  const failed = new ExpoIsolatedSQLiteTestDatabase(failedPath);
+  let failedReopen: LocalSQLiteTestDatabase | undefined;
+  try {
+    await migrateNutritionDatabase(successful.asExpoDatabase());
+    const transactionsBeforeImport = successful.exclusiveTransactionCount;
+    await importPersonalTransfer(
+      successful.asExpoDatabase(),
+      canonicalTransferJson(representativePackage),
+    );
+    expect(successful.exclusiveTransactionCount).toBe(transactionsBeforeImport + 1);
+
+    successful.close();
+    successfulReopen = new LocalSQLiteTestDatabase(successPath);
+    const runtime = createLocalDailyLogsRuntime(successfulReopen.asExpoDatabase(), OWNER);
+    const expectedRows = (
+      representativePackage as unknown as {
+        qualification: {
+          daily_totals: {
+            records: Array<{
+              logged_date: string;
+              nutrient_id: string;
+              amount_known: string;
+              amount_estimated: string;
+              unit: string;
+              has_unknown_contributors: boolean;
+              unknown_contributor_count: number;
+            }>;
+          };
+        };
+      }
+    ).qualification.daily_totals.records;
+    for (const loggedDate of [...new Set(expectedRows.map((row) => row.logged_date))]) {
+      const summary = await runtime.getDailySummary(loggedDate);
+      expect(summary.totals.map((total) => ({
+        logged_date: loggedDate,
+        nutrient_id: total.nutrientId,
+        amount_known: total.amountKnown,
+        amount_estimated: total.amountEstimated,
+        unit: total.unit,
+        has_unknown_contributors: total.hasUnknownContributors,
+        unknown_contributor_count: total.unknownContributorCount,
+      }))).toEqual(expectedRows.filter((row) => row.logged_date === loggedDate));
+      if (loggedDate === "2026-08-18") expect(summary.is_complete).toBe(true);
+    }
+    expect(await successfulReopen.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions"`,
+    )).toEqual({ count: 1 });
+
+    const mismatchedPackage = JSON.parse(JSON.stringify(representativePackage));
+    const incorrectRows = mismatchedPackage.qualification.daily_totals.records;
+    incorrectRows[0] = { ...incorrectRows[0], amount_known: "999.000000" };
+    const incorrectTotalsPreimage = {
+      count: incorrectRows.length,
+      name: "daily_totals",
+      records: incorrectRows,
+    };
+    mismatchedPackage.qualification.daily_totals = {
+      ...incorrectTotalsPreimage,
+      digest: await sha256CanonicalValue(incorrectTotalsPreimage),
+    };
+    const invalidDocument = canonicalTransferJson(await withOverallDigest(mismatchedPackage));
+
+    await migrateNutritionDatabase(failed.asExpoDatabase());
+    const failedTransactionsBeforeImport = failed.exclusiveTransactionCount;
+    await expect(importPersonalTransfer(failed.asExpoDatabase(), invalidDocument))
+      .rejects.toMatchObject({ code: "target_qualification_failed" });
+    expect(failed.exclusiveTransactionCount).toBe(failedTransactionsBeforeImport + 1);
+
+    failed.close();
+    failedReopen = new LocalSQLiteTestDatabase(failedPath);
+    await expect(failedReopen.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "users"`,
+    )).resolves.toEqual({ count: 0 });
+    await expect(failedReopen.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_logs"`,
+    )).resolves.toEqual({ count: 0 });
+    await expect(failedReopen.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_log_day_completions"`,
+    )).resolves.toEqual({ count: 0 });
+  } finally {
+    try { successful.close(); } catch { /* already closed for reopen */ }
+    try { successfulReopen?.close(); } catch { /* already closed */ }
+    try { failed.close(); } catch { /* already closed for reopen */ }
+    try { failedReopen?.close(); } catch { /* already closed */ }
     rmSync(directory, { recursive: true, force: true });
   }
 });

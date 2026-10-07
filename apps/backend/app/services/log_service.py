@@ -371,6 +371,39 @@ class LogService:
         """Test seam after Complete deletion and before the surrounding commit."""
 
     def create_log(self, user_id: UUID, payload: DailyLogCreateRequest) -> DailyLog:
+        # Revalidate at the authoritative service boundary for callers that do
+        # not arrive through Pydantic request parsing before consulting mutable
+        # calendar state. Calendar revision is deliberately absent from the
+        # create fingerprint, so exact accepted retries remain replayable.
+        try:
+            normalize_meal(payload.meal_type)
+            normalize_note(payload.notes)
+            fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
+        except Exception:
+            self.db.rollback()
+            raise
+        if payload.client_request_id is not None:
+            existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
+            if existing is not None:
+                return _matching_idempotent_log(existing, fingerprint)
+
+            if payload.calendar_revision is not None:
+                try:
+                    # Serialize the identity recheck with the same owner row
+                    # lock used by calendar changes. A request that waited
+                    # behind an accepted create can then replay its committed
+                    # result before stale calendar eligibility is evaluated.
+                    self.logs.lock_owner_for_update(user_id)
+                except Exception:
+                    self.db.rollback()
+                    raise
+                existing = self.logs.get_by_client_request_id(
+                    user_id,
+                    payload.client_request_id,
+                )
+                if existing is not None:
+                    return _matching_idempotent_log(existing, fingerprint)
+
         if payload.calendar_revision is None:
             require_authoritative_time_zone(self.db, user_id)
         else:
@@ -383,20 +416,7 @@ class LogService:
             except Exception:
                 self.db.rollback()
                 raise
-        # Revalidate at the authoritative service boundary for callers that do
-        # not arrive through Pydantic request parsing.  A revision check may
-        # have opened a transaction, so contract failures must roll it back.
-        try:
-            normalize_meal(payload.meal_type)
-            normalize_note(payload.notes)
-            fingerprint = _creation_fingerprint(payload) if payload.client_request_id else None
-        except Exception:
-            self.db.rollback()
-            raise
-        if payload.client_request_id is not None:
-            existing = self.logs.get_by_client_request_id(user_id, payload.client_request_id)
-            if existing is not None:
-                return _matching_idempotent_log(existing, fingerprint)
+
         try:
             # E4-02 mark-Complete serializes through the first Log on a date.
             # Take that same anchor before source locks so a create and a
@@ -1930,6 +1950,26 @@ class LogService:
             first_logged_date=first_logged_date,
             days=days,
         )
+
+    def daily_summary_with_completion(self, user_id: UUID, logged_date: date):
+        """Return Complete and snapshot totals observed by one SQL statement."""
+
+        rows = self.logs.daily_summary_projection(user_id, logged_date)
+        completed = False
+        snapshots = []
+        for row in rows:
+            completed = completed or row.completed_at is not None
+            if row.nutrient_id is None:
+                continue
+            snapshots.append(
+                NutrientSnapshot(
+                    nutrient_id=row.nutrient_id,
+                    amount=row.amount,
+                    unit=row.unit,
+                    data_status=NutrientDataStatus(row.data_status),
+                )
+            )
+        return completed, aggregate_snapshots(snapshots)
 
     def daily_summary(self, user_id: UUID, logged_date: date):
         snapshots = [

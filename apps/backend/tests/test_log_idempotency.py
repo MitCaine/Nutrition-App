@@ -14,11 +14,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.types import GUID
-from app.dependencies.user import ensure_dev_user
+from app.dependencies.user import TEST_USER_ID, ensure_dev_user
 from app.models.food import FoodItem, FoodNutrient, ServingDefinition
-from app.models.log import DailyLog, DailyLogNutrientSnapshot
+from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
 from app.models.user import User
 from app.schemas.log import DailyLogCreateRequest
+from app.services.calendar_service import CalendarService
 from app.services.log_service import LogService
 from tests.support.recipes import published_recipe as _published
 from tests.support.recipes import publish_recipe as _publish
@@ -62,6 +63,87 @@ def test_identical_retry_returns_original_log_and_snapshot_set(
         .select_from(DailyLogNutrientSnapshot)
         .where(DailyLogNutrientSnapshot.daily_log_id == log_id)
     ) == len(first.json()["snapshots"])
+
+
+def test_retry_replays_before_changed_calendar_and_fresh_stale_write_refuses(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fixed_today(time_zone: str, _now: datetime | None = None) -> date:
+        return date(2026, 7, 14) if time_zone == "UTC" else date(2026, 7, 13)
+
+    monkeypatch.setattr(CalendarService, "today_in_zone", staticmethod(fixed_today))
+    food = create_food(client, "Calendar Replay Food")
+    calendar = client.get("/api/v1/settings/calendar").json()
+    request_id = uuid4()
+    payload = {
+        **_payload(food, request_id),
+        "calendar_revision": calendar["calendar_revision"],
+    }
+    first = client.post("/api/v1/logs", json=payload)
+    assert first.status_code == 201, first.text
+    original = first.json()
+
+    complete = client.post(
+        "/api/v1/logs/complete",
+        json={
+            "client_request_id": str(uuid4()),
+            "calendar_revision": calendar["calendar_revision"],
+            "logged_date": "2026-07-14",
+        },
+    )
+    assert complete.status_code == 200, complete.text
+
+    preview = client.post(
+        "/api/v1/settings/calendar/preview",
+        json={"time_zone": "Pacific/Pago_Pago"},
+    )
+    assert preview.status_code == 200, preview.text
+    confirmed = client.post(
+        "/api/v1/settings/calendar/confirm",
+        json={
+            "time_zone": "Pacific/Pago_Pago",
+            "calendar_revision": calendar["calendar_revision"],
+            "confirm_impacts": True,
+            "preview_token": preview.json()["preview_token"],
+        },
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["calendar_revision"] == calendar["calendar_revision"] + 1
+
+    replay = client.post("/api/v1/logs", json=payload)
+    assert replay.status_code == 201, replay.text
+    assert replay.json() == original
+    assert client.get(
+        "/api/v1/logs/daily-summary",
+        params={"date": "2026-07-14"},
+    ).json()["is_complete"] is True
+
+    changed = client.post(
+        "/api/v1/logs",
+        json={**payload, "amount_quantity": "2"},
+    )
+    assert changed.status_code == 409
+    assert changed.json()["detail"]["code"] == "log_idempotency_payload_conflict"
+
+    stale_fresh = client.post(
+        "/api/v1/logs",
+        json={**payload, "client_request_id": str(uuid4())},
+    )
+    assert stale_fresh.status_code == 409
+    assert stale_fresh.json()["detail"]["code"] == "calendar_context_changed"
+
+    db_session.expire_all()
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(DailyLog)
+        .where(DailyLog.user_id == TEST_USER_ID)
+    ) == 1
+    assert db_session.get(
+        DailyLogDayCompletion,
+        (TEST_USER_ID, date(2026, 7, 14)),
+    ) is not None
 
 
 def test_retry_returns_original_after_manual_mutation_and_source_deletion(

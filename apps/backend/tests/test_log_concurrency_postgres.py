@@ -4,20 +4,21 @@ from datetime import date
 from decimal import Decimal
 from importlib import import_module
 import os
-from threading import Event, Thread
+import time
+from threading import Event, Thread, get_ident
 from uuid import uuid4
 
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import func, inspect, select
+from sqlalchemy import event, func, inspect, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app import models  # noqa: F401
 from app.models.food import FoodFavorite, FoodItem, FoodNutrient, ServingDefinition
 from app.models.create_idempotency import CreateOperationIdempotency
 from app.models.food import OcrNutritionConfirmationTrace
-from app.models.log import DailyLog, DailyLogNutrientSnapshot
+from app.models.log import DailyLog, DailyLogDayCompletion, DailyLogNutrientSnapshot
 from app.models.recipe import Recipe, RecipeIngredient
 from app.models.recipe_publication import RecipePublicationRevision
 from app.models.user import User, UserProfile
@@ -31,11 +32,25 @@ from app.publication.recipe_revision import (
 )
 from app.ocr.confirmation_schemas import OcrNutritionConfirmationRequest
 from app.ocr.confirmation_service import OcrConfirmationService
-from app.schemas.log import DailyLogCreateRequest, DailyLogDeleteRequest, DailyLogUpdateRequest
-from app.schemas.food import FoodCreateRequest, FoodUpdateRequest, ServingDefinitionInput
+from app.schemas.log import (
+    DailyLogCompleteRequest,
+    DailyLogCreateRequest,
+    DailyLogDeleteRequest,
+    DailyLogUpdateRequest,
+)
+from app.schemas.food import (
+    FoodCreateRequest,
+    FoodNutrientInput,
+    FoodUpdateRequest,
+    ServingDefinitionInput,
+)
 from app.schemas.recipe import RecipeCreateRequest, RecipeUpdateRequest
 from app.schemas.target import TargetConfigurationUpdate
+from app.api.v1.routers.logs import daily_summary as route_daily_summary
+from app.services.calendar_service import CalendarDomainError, CalendarService
+from app.services.log_day_completion_service import LogDayCompletionService
 from app.services.log_service import (
+    LogIdempotencyConflictError,
     LogMutationReplay,
     LogService,
     LogSourceAmountChangedError,
@@ -101,6 +116,40 @@ def postgres_sessions():
         schema_prefix="test_phase3n",
     ) as factory:
         yield factory
+
+
+def _gh271_daily_log_target(factory, label: str) -> tuple:
+    with factory() as db:
+        user_id = uuid4()
+        db.add(User(id=user_id, email=f"gh271-{user_id}@example.test"))
+        db.flush()
+        establish_test_time_zone(db, user_id, "UTC")
+        food = FoodService(db).create_manual_food(
+            user_id,
+            FoodCreateRequest(
+                name=label,
+                serving_definitions=[
+                    ServingDefinitionInput(
+                        label="1 serving",
+                        quantity=Decimal("1"),
+                        unit="serving",
+                        gram_weight=Decimal("100"),
+                        is_default=True,
+                    )
+                ],
+                nutrients=[
+                    FoodNutrientInput(
+                        nutrient_id="protein",
+                        amount=Decimal("10"),
+                        unit="g",
+                        basis="per_serving",
+                        data_status="known",
+                    )
+                ],
+            ),
+        )
+        serving_id = food.serving_definitions[0].id
+        return user_id, food.id, serving_id
 
 
 def _recipe_create_target(factory) -> tuple:
@@ -3708,3 +3757,316 @@ def test_concurrent_update_and_delete_use_one_generation_precondition(
         assert log is not None
         assert log.notes == "update wins"
         assert len(log.snapshots) == 1
+
+def test_postgres_create_retry_controls_after_calendar_change(
+    postgres_sessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    factory = postgres_sessions
+    logged_date = date(2026, 7, 14)
+    now_date = date(2026, 7, 14)
+    monkeypatch.setattr(
+        CalendarService,
+        "today_in_zone",
+        staticmethod(
+            lambda time_zone, _now=None: now_date
+            if time_zone == "UTC"
+            else date(2026, 7, 13)
+        ),
+    )
+    user_id, food_id, serving_id = _gh271_daily_log_target(
+        factory,
+        "GH-271 Calendar Replay",
+    )
+    request_id = uuid4()
+
+    def payload(client_request_id=request_id, quantity: str = "1") -> DailyLogCreateRequest:
+        return DailyLogCreateRequest(
+            client_request_id=client_request_id,
+            calendar_revision=0,
+            food_item_id=food_id,
+            logged_date=logged_date,
+            amount_quantity=Decimal(quantity),
+            amount_unit="serving",
+            serving_definition_id=serving_id,
+        )
+
+    with factory() as db:
+        original = LogService(db).create_log(user_id, payload())
+        original_result = (
+            original.id,
+            tuple(
+                (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
+                for snapshot in original.snapshots
+            ),
+        )
+        LogDayCompletionService(db).mark_complete(
+            user_id,
+            DailyLogCompleteRequest(
+                client_request_id=uuid4(),
+                calendar_revision=0,
+                logged_date=logged_date,
+            ),
+        )
+        calendar = CalendarService(db)
+        preview = calendar.preview_change(user_id, "Pacific/Pago_Pago")
+        changed = calendar.confirm_change(
+            user_id,
+            "Pacific/Pago_Pago",
+            preview.calendar_revision,
+            preview.preview_token,
+        )
+        assert changed.calendar_revision == 1
+
+    with factory() as db:
+        replay = LogService(db).create_log(user_id, payload())
+        replay_result = (
+            replay.id,
+            tuple(
+                (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
+                for snapshot in replay.snapshots
+            ),
+        )
+        assert replay_result == original_result
+        assert db.get(DailyLogDayCompletion, (user_id, logged_date)) is not None
+
+        with pytest.raises(LogIdempotencyConflictError):
+            LogService(db).create_log(user_id, payload(quantity="2"))
+        with pytest.raises(CalendarDomainError) as stale_fresh:
+            LogService(db).create_log(user_id, payload(client_request_id=uuid4()))
+        assert stale_fresh.value.code == "calendar_context_changed"
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(DailyLog.user_id == user_id)
+        ) == 1
+        assert db.scalar(
+            select(func.count())
+            .select_from(DailyLogNutrientSnapshot)
+            .join(DailyLog, DailyLog.id == DailyLogNutrientSnapshot.daily_log_id)
+            .where(DailyLog.user_id == user_id)
+        ) == len(original_result[1])
+        assert db.get(DailyLogDayCompletion, (user_id, logged_date)) is not None
+
+
+def test_postgres_daily_summary_reads_complete_and_snapshots_from_one_statement(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    logged_date = date(2026, 7, 13)
+    with factory() as db:
+        assert int(db.scalar(text("SHOW server_version_num"))) // 10000 == 16
+        user_id, food_id, serving_id = _gh271_daily_log_target(
+            factory,
+            "GH-271 Coherent Summary",
+        )
+        created = LogService(db).create_log(
+            user_id,
+            DailyLogCreateRequest(
+                client_request_id=uuid4(),
+                calendar_revision=0,
+                food_item_id=food_id,
+                logged_date=logged_date,
+                amount_quantity=Decimal("1"),
+                amount_unit="serving",
+                serving_definition_id=serving_id,
+            ),
+        )
+        log_id = created.id
+        LogDayCompletionService(db).mark_complete(
+            user_id,
+            DailyLogCompleteRequest(
+                client_request_id=uuid4(),
+                calendar_revision=0,
+                logged_date=logged_date,
+            ),
+        )
+        engine = db.get_bind()
+
+    query_arrived = Event()
+    release_query = Event()
+    summary_thread_id: list[int] = []
+    summary_statements: list[str] = []
+    summary_results = []
+    summary_errors: list[BaseException] = []
+
+    def pause_summary_read(connection, cursor, statement, parameters, context, executemany):
+        if (
+            summary_thread_id
+            and get_ident() == summary_thread_id[0]
+            and "daily_log_day_completions" in statement.lower()
+        ):
+            summary_statements.append(statement)
+            if len(summary_statements) == 1:
+                query_arrived.set()
+                if not release_query.wait(timeout=10):
+                    raise AssertionError("summary statement barrier was not released")
+
+    def read_summary() -> None:
+        summary_thread_id.append(get_ident())
+        try:
+            with factory() as summary_db:
+                user = summary_db.get(User, user_id)
+                assert user is not None
+                summary_results.append(
+                    route_daily_summary(logged_date, summary_db, user)
+                )
+        except BaseException as exc:
+            summary_errors.append(exc)
+
+    worker = Thread(target=read_summary)
+    event.listen(engine, "after_cursor_execute", pause_summary_read)
+    try:
+        worker.start()
+        assert query_arrived.wait(timeout=10), "summary did not reach its statement barrier"
+
+        with factory() as writer:
+            log = writer.get(DailyLog, log_id)
+            assert log is not None
+            LogService(writer).update_log(
+                user_id,
+                log_id,
+                DailyLogUpdateRequest(
+                    client_request_id=uuid4(),
+                    calendar_revision=0,
+                    expected_updated_at=log.updated_at,
+                    amount_quantity=Decimal("2"),
+                ),
+            )
+    finally:
+        release_query.set()
+        if worker.ident is not None:
+            worker.join(timeout=10)
+        event.remove(engine, "after_cursor_execute", pause_summary_read)
+
+    assert not worker.is_alive(), "summary worker did not settle after release"
+    assert not summary_errors, summary_errors
+    assert len(summary_results) == 1
+    assert len(summary_statements) == 1
+    assert "daily_log_nutrient_snapshots" in summary_statements[0].lower()
+
+    observed = summary_results[0]
+    observed_totals = {item.nutrient_id: item.amount_known for item in observed.totals}
+    before_pair = (True, Decimal("10"))
+    after_pair = (False, Decimal("20"))
+    assert (observed.is_complete, observed_totals.get("protein")) in {
+        before_pair,
+        after_pair,
+    }
+
+
+def test_postgres_create_retry_waits_for_accepted_calendar_boundary_then_rechecks(
+    postgres_sessions,
+) -> None:
+    factory = postgres_sessions
+    user_id, food_id, serving_id = _gh271_daily_log_target(
+        factory,
+        "GH-271 Create Replay",
+    )
+    request_id = uuid4()
+    logged_date = date(2026, 7, 13)
+
+    def payload() -> DailyLogCreateRequest:
+        return DailyLogCreateRequest(
+            client_request_id=request_id,
+            calendar_revision=0,
+            food_item_id=food_id,
+            logged_date=logged_date,
+            amount_quantity=Decimal("1"),
+            amount_unit="serving",
+            serving_definition_id=serving_id,
+        )
+
+    original_snapshot_ready = Event()
+    release_original = Event()
+    retry_started = Event()
+    retry_result = []
+    original_result = []
+    worker_errors: list[BaseException] = []
+    retry_food_loaded = Event()
+    retry_pid: list[int] = []
+
+    def original_create() -> None:
+        try:
+            with factory() as db:
+                service = LogService(db)
+
+                def pause_before_commit(_created) -> None:
+                    original_snapshot_ready.set()
+                    if not release_original.wait(timeout=10):
+                        raise AssertionError("original create barrier was not released")
+
+                service._after_snapshot_creation = pause_before_commit
+                created = service.create_log(user_id, payload())
+                original_result.append({
+                    "id": created.id,
+                    "snapshots": tuple(
+                        (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
+                        for snapshot in created.snapshots
+                    ),
+                })
+        except BaseException as exc:
+            worker_errors.append(exc)
+
+    def retry_create() -> None:
+        try:
+            with factory() as db:
+                retry_pid.append(int(db.scalar(text("SELECT pg_backend_pid()"))))
+                retry_started.set()
+                service = LogService(db)
+                service._after_mutable_food_lock = lambda _food: retry_food_loaded.set()
+                created = service.create_log(user_id, payload())
+                retry_result.append({
+                    "id": created.id,
+                    "snapshots": tuple(
+                        (snapshot.id, snapshot.nutrient_id, snapshot.amount, snapshot.unit)
+                        for snapshot in created.snapshots
+                    ),
+                })
+        except BaseException as exc:
+            worker_errors.append(exc)
+
+    first_worker = Thread(target=original_create)
+    retry_worker = Thread(target=retry_create)
+    first_worker.start()
+    assert original_snapshot_ready.wait(timeout=10), "original create did not reach its commit barrier"
+    retry_worker.start()
+    try:
+        assert retry_started.wait(timeout=10), "retry worker did not start"
+
+        deadline = time.monotonic() + 10
+        waiting_on_owner_lock = False
+        while time.monotonic() < deadline:
+            with factory() as observer:
+                waiting_on_owner_lock = bool(
+                    observer.scalar(
+                        text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                        {"pid": retry_pid[0]},
+                    )
+                )
+            if waiting_on_owner_lock:
+                break
+            time.sleep(0.01)
+        assert waiting_on_owner_lock, "retry did not wait behind the original owner/calendar lock"
+    finally:
+        release_original.set()
+        first_worker.join(timeout=10)
+        retry_worker.join(timeout=10)
+
+    assert not first_worker.is_alive()
+    assert not retry_worker.is_alive()
+    assert not worker_errors, worker_errors
+    assert len(original_result) == len(retry_result) == 1
+    assert retry_result[0] == original_result[0]
+    assert not retry_food_loaded.is_set()
+
+    with factory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(DailyLog).where(
+                DailyLog.user_id == user_id,
+                DailyLog.client_request_id == request_id,
+            )
+        ) == 1
+        assert db.scalar(
+            select(func.count())
+            .select_from(DailyLogNutrientSnapshot)
+            .where(DailyLogNutrientSnapshot.daily_log_id == original_result[0]["id"])
+        ) == len(original_result[0]["snapshots"])

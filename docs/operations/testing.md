@@ -411,6 +411,44 @@ release-state authority and does not replace affected baseline or focused
 tests. Historical device/release evidence is retained in
 `engineering/capsules/HISTORY.md` and the historical Epic 4 package.
 
+## GH-271 Daily Log summary and create replay
+
+The focused GH-271 regressions exercise both local and remote authorities:
+
+```bash
+cd apps/mobile
+npm test -- --runInBand --runTestsByPath \
+  __tests__/localDailyLogsRuntime.test.ts \
+  __tests__/e2_15TransferImporter.test.ts
+
+cd ../backend
+.venv/bin/python -m pytest -q --strict-markers \
+  tests/test_log_idempotency.py \
+  tests/test_e4_07_daily_summary_complete.py \
+  tests/test_issue_138_target_calendar_authority.py
+
+REQUIRE_POSTGRES_TESTS=1 \
+NUTRITION_TEST_POSTGRES_URL='postgresql+psycopg://nutrition_app:nutrition_app@localhost:5432/nutrition_app' \
+.venv/bin/python -m pytest -q --strict-markers \
+  tests/test_log_concurrency_postgres.py
+```
+
+The local summary tests use a temporary file with native `node:sqlite`, separate WAL reader and
+writer connections, and explicit barriers around the two reads. They prove the production runtime
+and coordinator behavior for bounded file-backed SQLite visibility; they do not prove physical
+Expo lifecycle, app termination, or device behavior. Transfer-import coverage runs summary through
+the supplied transaction handle without a nested transaction and verifies rollback when totals
+qualification fails.
+
+The ordinary backend endpoint tests verify projection and replay behavior against their configured
+test database. The PostgreSQL concurrency tests assert server major version 16 and use multiple
+sessions to force the former gap between Complete and snapshot reads and the create/calendar lock
+wait. The summary statement includes owner/date-scoped snapshot evidence and the matching
+owner/date Complete assertion. PostgreSQL execution, not an ordinary backend or SQLite result, is
+the evidence for this SQL and lock behavior. The totals-only `LogService.daily_summary` remains
+covered for target comparison. The retained E4-16 script complements these regressions but does not
+replace them.
+
 ## Issue 17 isolated Phase 5C clone
 
 This retained workflow exists for historical/application-path qualification that specifically needs
@@ -576,7 +614,7 @@ shared or production object store.
 | OCR camera/quality | Scan/accessibility + quality policy + native Swift tests when native metrics/capture change |
 | Route header/draft guard/accessibility | Shared header/draft/Dynamic Type tests plus each affected screen flow |
 | Complete/History semantics or UI | Relevant E4 focused suites plus `scripts/run-e4-16-qualification.sh`; repeat physical device evidence when the changed claim is physical |
-| E2 transfer contract | Backend/mobile E2-15 tests + versioned shared-contract fixtures |
+| E2 transfer contract | Backend `tests/test_e2_15_exporter.py` and `tests/test_e2_15_exporter_postgres.py` on disposable PostgreSQL 16 + mobile E2-15 tests + versioned shared-contract fixtures |
 | Control contract | Python canonical/tamper tests and cross-language PostgreSQL parity |
 | Control routine/grant | Complete control PostgreSQL, role, qualification, replay, concurrency, downgrade suites |
 | MinIO behavior | Unit adapter tests plus disposable integration and restart persistence |

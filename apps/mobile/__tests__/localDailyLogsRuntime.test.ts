@@ -343,6 +343,27 @@ function selectBreakdown(operations: readonly LocalSQLiteObservedOperation[]) {
   };
 }
 
+async function prepareIsolatedCompletedDailyLog(path: string, requestId: string) {
+  const isolated = new ExpoIsolatedSQLiteTestDatabase(path);
+  await isolated.initialize();
+  await seedLocalOwner(isolated, OWNER);
+  await isolated.runAsync(
+    `INSERT INTO "user_profiles" ("user_id", "authoritative_time_zone", "calendar_revision")
+     VALUES (?, 'UTC', 0)`,
+    [OWNER],
+  );
+  await ensureLocalNutrientCatalog(isolated.asExpoDatabase());
+  await seedProteinFood(isolated);
+  const runtime = createLocalDailyLogsRuntime(isolated.asExpoDatabase(), OWNER, { now: NOW });
+  const created = await runtime.create(createInput(requestId));
+  await isolated.runAsync(
+    `INSERT INTO "daily_log_day_completions" ("logged_date", "completed_at")
+     VALUES (?, ?)`,
+    ["2026-08-09", "2026-08-09T12:00:00.000000Z"],
+  );
+  return { isolated, runtime, created };
+}
+
 describe("E2-09 local Daily Logs", () => {
   let database: LocalSQLiteTestDatabase;
   const temporaryDirectories = new Set<string>();
@@ -920,6 +941,162 @@ describe("E2-09 local Daily Logs", () => {
       calendar_revision: 0,
       notes: "file-backed receipt",
     })).resolves.toEqual(updated);
+  });
+
+  test("keeps nutrition and Complete on one committed generation in both SQLite queue orders", async () => {
+    for (const order of ["reader-first", "writer-first"] as const) {
+      const directory = mkdtempSync(join(tmpdir(), `nutrition-gh271-${order}-`));
+      temporaryDirectories.add(directory);
+      const { isolated, runtime, created } = await prepareIsolatedCompletedDailyLog(
+        join(directory, "nutrition.sqlite"),
+        order === "reader-first"
+          ? "00000000-0000-4000-8000-000000000421"
+          : "00000000-0000-4000-8000-000000000422",
+      );
+      let releaseRead!: () => void;
+      let releaseWriter!: () => void;
+      const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+      const writerGate = new Promise<void>((resolve) => { releaseWriter = resolve; });
+      let mutation: Promise<unknown> | undefined;
+      let summary: Promise<unknown> | undefined;
+      const transactionCount = isolated.exclusiveTransactionCount;
+      (Crypto.randomUUID as jest.Mock).mockReturnValue(order === "reader-first"
+        ? "00000000-0000-4000-8000-000000000427"
+        : "00000000-0000-4000-8000-000000000428");
+      const mutationInput = {
+        client_request_id: order === "reader-first"
+          ? "00000000-0000-4000-8000-000000000423"
+          : "00000000-0000-4000-8000-000000000424",
+        calendar_revision: 0,
+        expected_updated_at: created.updated_at,
+        amount_quantity: "3",
+      };
+
+      try {
+        if (order === "reader-first") {
+          let markReadArrived!: () => void;
+          const readArrived = new Promise<void>((resolve) => { markReadArrived = resolve; });
+          isolated.beforeGetFirstAsync = async (source) => {
+            if (source.includes('FROM "daily_log_day_completions"')) {
+              isolated.beforeGetFirstAsync = undefined;
+              markReadArrived();
+              await readGate;
+            }
+          };
+          let mutationSettled = false;
+          summary = runtime.getDailySummary("2026-08-09");
+          await readArrived;
+          mutation = runtime.update(created.id, mutationInput).then((result) => {
+            mutationSettled = true;
+            return result;
+          });
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(mutationSettled).toBe(false);
+          expect(isolated.exclusiveTransactionCount).toBe(transactionCount);
+
+          releaseRead();
+          await expect(summary).resolves.toMatchObject({
+            logged_date: "2026-08-09",
+            is_complete: true,
+            totals: [{ nutrientId: "protein", amountKnown: "20.000000" }],
+          });
+          await mutation;
+        } else {
+          let markWriterArrived!: () => void;
+          const writerArrived = new Promise<void>((resolve) => { markWriterArrived = resolve; });
+          isolated.beforeNextExclusiveTransaction = async () => {
+            markWriterArrived();
+            await writerGate;
+          };
+          let summarySettled = false;
+          mutation = runtime.update(created.id, mutationInput);
+          await writerArrived;
+          summary = runtime.getDailySummary("2026-08-09").then((result) => {
+            summarySettled = true;
+            return result;
+          });
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(summarySettled).toBe(false);
+          expect(isolated.exclusiveTransactionCount).toBe(transactionCount);
+
+          releaseWriter();
+          await mutation;
+          await expect(summary).resolves.toMatchObject({
+            logged_date: "2026-08-09",
+            is_complete: false,
+            totals: [{ nutrientId: "protein", amountKnown: "30.000000" }],
+          });
+        }
+      } finally {
+        releaseRead();
+        releaseWriter();
+        await Promise.allSettled([...(mutation ? [mutation] : []), ...(summary ? [summary] : [])]);
+        isolated.close();
+      }
+    }
+  });
+
+  test("replays an accepted create before stale calendar checks after a file-backed reopen", async () => {
+    database.close();
+    const directory = mkdtempSync(join(tmpdir(), "nutrition-gh271-replay-"));
+    temporaryDirectories.add(directory);
+    const databasePath = join(directory, "nutrition.sqlite");
+    database = await prepareDatabase(databasePath);
+    await seedProteinFood(database);
+    const now = () => new Date("2026-08-10T00:30:00.000Z");
+    const requestId = "00000000-0000-4000-8000-000000000425";
+    const input = createInput(requestId, { logged_date: "2026-08-10" });
+    const runtime = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now });
+    const created = await runtime.create(input);
+    const originalSnapshots = await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots"
+       WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    );
+    await database.runAsync(
+      `INSERT INTO "daily_log_day_completions" ("logged_date", "completed_at")
+       VALUES (?, ?)`,
+      ["2026-08-10", "2026-08-10T00:31:00.000000Z"],
+    );
+    await database.runAsync(
+      `UPDATE "user_profiles"
+       SET "authoritative_time_zone" = 'America/Los_Angeles', "calendar_revision" = 1
+       WHERE "user_id" = ?`,
+      [OWNER],
+    );
+
+    database.close();
+    database = new LocalSQLiteTestDatabase(databasePath);
+    await database.initialize();
+    const reopened = createLocalDailyLogsRuntime(database.asExpoDatabase(), OWNER, { now });
+
+    await expect(reopened.create({ ...input, amount_quantity: "3" })).rejects.toMatchObject({
+      code: "log_idempotency_payload_conflict",
+      mutationOutcome: "confirmed_non_commit",
+    });
+    await expect(reopened.create(createInput(
+      "00000000-0000-4000-8000-000000000426",
+      { logged_date: "2026-08-10" },
+    ))).rejects.toMatchObject({
+      code: "calendar_context_changed",
+      mutationOutcome: "confirmed_non_commit",
+    });
+
+    const replay = await reopened.create(input);
+    expect(replay).toEqual(created);
+    expect(await database.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS "count" FROM "daily_logs" WHERE "user_id" = ?`,
+      [OWNER],
+    )).toEqual({ count: 1 });
+    expect(await database.getAllAsync<Record<string, unknown>>(
+      `SELECT * FROM "daily_log_nutrient_snapshots"
+       WHERE "daily_log_id" = ? ORDER BY "id"`,
+      [created.id],
+    )).toEqual(originalSnapshots);
+    await expect(reopened.getDailySummary("2026-08-10")).resolves.toMatchObject({
+      is_complete: true,
+      totals: [{ nutrientId: "protein", amountKnown: "20.000000" }],
+    });
   });
 
   test("orders create and update status behind already-running isolated-connection writes", async () => {

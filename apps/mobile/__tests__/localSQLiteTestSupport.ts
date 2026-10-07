@@ -87,8 +87,17 @@ export class LocalSQLiteTestDatabase {
       await before?.();
       this.exclusiveTransactionCount += 1;
       this.native.exec("BEGIN");
+      const transaction = {
+        execAsync: async (source: string) => this.execAsync(source),
+        getFirstAsync: async <T>(source: string, params: readonly unknown[] = []) =>
+          this.getFirstAsync<T>(source, params),
+        getAllAsync: async <T>(source: string, params: readonly unknown[] = []) =>
+          this.getAllAsync<T>(source, params),
+        runAsync: async (source: string, params: readonly unknown[] = []) =>
+          this.runAsync(source, params),
+      } as unknown as SQLiteDatabase;
       try {
-        await operation(this as unknown as SQLiteDatabase);
+        await operation(transaction);
         this.native.exec("COMMIT");
       } catch (error) {
         try { this.native.exec("ROLLBACK"); } catch { /* transaction setup may already have failed */ }
@@ -110,6 +119,9 @@ export class LocalSQLiteTestDatabase {
  */
 export class ExpoIsolatedSQLiteTestDatabase implements LocalSQLiteFixtureDatabase {
   private readonly reader: SqliteDatabaseSync;
+  beforeNextExclusiveTransaction?: () => Promise<void> | void;
+  beforeGetFirstAsync?: (source: string) => Promise<void> | void;
+  exclusiveTransactionCount = 0;
 
   constructor(private readonly path: string) {
     this.reader = new DatabaseSync(path);
@@ -134,6 +146,7 @@ export class ExpoIsolatedSQLiteTestDatabase implements LocalSQLiteFixtureDatabas
   }
 
   async getFirstAsync<T>(source: string, params: readonly unknown[] = []): Promise<T | null> {
+    await this.beforeGetFirstAsync?.(source);
     return (this.reader.prepare(source).get(...params) as T | undefined) ?? null;
   }
 
@@ -148,6 +161,10 @@ export class ExpoIsolatedSQLiteTestDatabase implements LocalSQLiteFixtureDatabas
   async withExclusiveTransactionAsync(
     operation: (transaction: SQLiteDatabase) => Promise<void>,
   ): Promise<void> {
+    const before = this.beforeNextExclusiveTransaction;
+    this.beforeNextExclusiveTransaction = undefined;
+    await before?.();
+    this.exclusiveTransactionCount += 1;
     const writer = new DatabaseSync(this.path);
     writer.exec("BEGIN");
     const transaction = {
