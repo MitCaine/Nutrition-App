@@ -1,14 +1,17 @@
 # Nutrition local project map
 
 Established-project work uses the complete [daily issue procedure](../engineering/workflow/shared/start-an-issue.md)
-from RI commit `6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0`: 17807 bytes,
-SHA-256 `2e828c4b5fb657dc1f8db84889db5177980bbaae2cb6406a16bed82b42c1ea15`.
+from RI commit `fd982035de66e23d5d924e2c437f844803f399ec`: 21690 bytes,
+SHA-256 `0bb501fd64843e6b35683ea5bda6ca1f9175e9bfe550fc1fc8ad8e0b0f3fb666`.
 Controllers read this map, the complete daily procedure, live issue/required linked decisions
-and applicable standards before acting. Workers read their assigned complete role document,
-shared rules, task, original requirements and applicable standards; they do not repeat controller
-intake. The [adoption guide](../engineering/workflow/shared/capsule-controller-workflow.md)
+and applicable standards before acting. Workers read the complete `Shared worker rules` and
+their assigned unique level-two section of the pinned [worker instructions](../engineering/workflow/shared/worker-instructions.md#role-index),
+through the next level-two heading or end of file. Links are navigation, not bounded reads;
+recover truncated sections and use stable headings, not line numbers. Initial capsule builders
+receive the objective, base and original required inputs without a future capsule; implementors
+and reviewers receive the accepted capsule. The [adoption guide](../engineering/workflow/shared/capsule-controller-workflow.md)
 is conditional on setup or owner-authorized replacement. [SOURCE](../engineering/workflow/shared/SOURCE.md)
-records both exact instruction identities separately from the compatible runtime.
+records all three exact instruction identities separately from the compatible runtime.
 This is the sole authoritative local map at project-root `docs/local_project_map.md`.
 Shared instructions govern the procedure; this map supplies local actors, commands,
 paths and authority. Pins record provenance, not a cryptographic receipt chain.
@@ -17,32 +20,37 @@ paths and authority. Pins record provenance, not a cryptographic receipt chain.
 
 | Stage / actor | Nutrition interface and inputs | Returned result / authority |
 | --- | --- | --- |
-| Orient / controller | Authenticate live issue, checkout/base, current owner authorization, active task/checkpoint and selected instructions; use `./scripts/ri query` when useful | Preserve unrelated edits and paused states; create/publish the authorized dedicated non-main GitHub branch before planner dispatch |
-| Capsule / planner | One native subagent with originals, this map, standards and [six-heading template](../engineering/tasks/TEMPLATE.md) | Bounded Markdown task, base/branch/scope/criteria/checks/gaps; controller checks full plan, commits/pushes capsule-only plan and verifies remote identity before implementation |
-| Implement / implementor | One native subagent with its assigned role document and shared rules, published plan, AGENTS, checkout and actual command environment | Authorized edits, full source/diff and check-attempt/log inventory; controller checks full handoff and commits/pushes exact candidate on the same branch, verifies remote C before review |
-| Independent review / reviewer | Fresh distinct native subagent with its assigned role document and shared rules; exact published C and full base-to-C diff, original requirements, task/standards and all relevant results/logs | Read-only evidence-backed disposition of every criterion and applicable standard, including docs; no self-review or test-inferred approval |
+| Orient / controller | Authenticate live issue, checkout/base, current owner authorization, active task/checkpoint and selected instructions; use `./scripts/ri query` when useful | Preserve unrelated edits and paused states; create/publish the authorized dedicated non-main GitHub branch before builder dispatch |
+| Capsule / builder | One serial builder with objective, authenticated base, original issue/specifications, this map, standards and [six-heading template](../engineering/tasks/TEMPLATE.md); no future capsule | Bounded Markdown task, base/branch/scope/criteria/checks/gaps; controller checks full plan, commits/pushes capsule-only plan and verifies remote identity before implementation |
+| Implement / implementor | One serial implementor with Shared worker rules and its assigned worker-instructions section, accepted capsule, AGENTS, checkout and actual command environment | Authorized edits, full source/diff and check-attempt/log inventory; controller checks full handoff and commits/pushes exact candidate on the same branch, verifies remote C before review |
+| Independent review / reviewer | Fresh distinct reviewer with Shared worker rules and its assigned worker-instructions section; accepted capsule, exact published C and full base-to-C diff, original requirements, task/standards and all relevant results/logs | Read-only evidence-backed disposition of every criterion and applicable standard, including docs; no self-review or test-inferred approval |
 | Authorized integration / controller | Exact reviewed/qualified/verified C, live owner authorization and actual supported `./scripts/task` interfaces | Protected expected-main integration only under current owner permission and project checks; retain actual resulting source identity |
 | Verify closeout / controller | Installed source, all original outcomes, remaining installed obligations, current references and authorized issue actions | Record actual proof externally; close only after outcomes pass, verify closure and safe verified merged local/remote branch cleanup; report partial results honestly |
 
 Only the controller dispatches, using `collaboration.spawn_agent`, one assignment at a
-time with fresh contexts by default. The normal path has one planner, one implementor
+time with fresh contexts by default. The normal path has one builder, one implementor
 and one distinct independent reviewer. Workers do not recruit. Additional substantive
 assignments require a specific rejected deliverable/failed required check, an authorized
 scope change, confirmed assignee/host inability, or a concrete independent scope challenge
 permitted by the daily plan-check step. First try the controller's plan check for a scope
 finding; record the reason and bounded objective in the existing checkpoint before dispatch.
 Clarification stays within the current assignment. Routine verification/bookkeeping/closeout
-does not justify another assignment. The selected role pairs below are authoritative;
-no model/effort fallback is authorized by this map. The selected role pairs are
-controller, builder and reviewer `gpt-6.1-sol`/`low`, and implementor
-`gpt-5.6-luna`/`max`; the controller records host-effective settings before each
-dependent dispatch.
+does not justify another assignment. The task-neutral model/effort defaults are controller,
+builder and reviewer on Work at `gpt-6.1-sol` / `low`, and implementor on Codex at
+`gpt-6-luna` / `max`; verify actual settings before each dispatch, with no fallback.
+These defaults do not enable cross-host routing. Work-to-Codex messaging, consumption and
+result recovery remain pending until the owner explicitly authorizes messaging in both
+directions and a harmless route check verifies consumption and recovery. Do not claim
+automatic delivery or idle wake-up, or infer authority from dispatcher waiting instructions.
 
-Give the controller the complete selected procedure. Give each worker its selected role
-document and shared rules, task, relevant standards, original issue and actual source/evidence
-locations; verify access before dispatch. Workers need only the procedure sections their role
-calls for. Controller is the sole Git actor for the normal route: workers return edits and do
-not commit/push.
+Give the controller the complete selected procedure. Give each worker Shared worker rules
+and only its assigned unique level-two section of `worker-instructions.md`, plus the task,
+relevant standards, original issue and actual source/evidence locations; verify access before
+dispatch. Read from the stable heading through the next level-two heading or end of file and
+recover truncation. Builders receive the original objective/base/specifications without a
+future capsule; implementors and reviewers receive the accepted capsule. Workers do not need
+the complete controller procedure. The controller is the sole Git actor for the normal route:
+workers return edits and do not commit/push.
 Task-branch publication within the existing explicit task grant is separate from protected
 main acceptance. This map grants no blanket Git permission, issue transition or settings
 change. Resolve an actual permission conflict before dependent work; do not fabricate

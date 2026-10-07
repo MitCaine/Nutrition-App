@@ -8,13 +8,17 @@ not replace unread requirements. Read in bounded sections and recover truncated
 portions before reliance. Select the checkpoint's active object, not its history.
 
 This is the controller’s complete daily entrypoint. Workers use their own
-[role documents](roles/README.md), not this whole procedure. Read
+[worker instructions](worker-instructions.md#role-index), not this whole procedure. Read
 relevant source/standards as needed; RI architecture, setup and adoption history
 are conditional. The project README/AGENTS points to the exact map above. If it
 is missing, report and resolve that adoption input rather than substitute another
 map or guess.
 
 ## Intake
+
+Start each new issue with a fresh controller context. A replacement during an
+active issue recovers its authenticated checkpoint and existing assignment;
+replacement is not a new attempt or permission to duplicate dispatch.
 
 - Check the map's selected instruction identity, compatible runtime, role/model
   settings, commands, standards and permitted Git/issue actions. Use the adopted
@@ -62,29 +66,72 @@ Controller -> capsule builder -> controller checks plan
 
 ### Assign roles and supply inputs
 
-Only the controller dispatches assignments. Run them one at a time, using fresh
+The controller owns assignment dispatch, including the bounded Codex dispatch
+delegation below. Run assignments one at a time, using fresh
 contexts by default. The normal path uses one capsule builder, one implementor
 and one independent reviewer; already-satisfied work may use the no-change route
 below. Workers do not recruit other workers.
 
-### Default models and efforts
+### Execution routing, models and efforts
 
-| Role | Model | Reasoning effort | Selector label |
-| --- | --- | --- | --- |
-| Controller | `gpt-6.1-sol` | `low` | Sol Light |
-| Capsule builder | `gpt-6.1-sol` | `low` | Sol Light |
-| Implementor | `gpt-5.6-luna` | `max` | Luna Max |
-| Independent reviewer | `gpt-6.1-sol` | `low` | Sol Light |
+| Role | Execution environment | Model | Reasoning effort | Selector label |
+| --- | --- | --- | --- | --- |
+| Controller | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
+| Capsule builder | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
+| Implementor | Codex | `gpt-6-luna` | `max` | Luna 6 Max |
+| Independent reviewer | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
+
+Environment, model and effort are separate settings. Verify the actual supported
+dispatch route and effective environment; model selection or access to local
+files/GitHub does not establish routing. Report an unavailable route instead of
+silently substituting environments. The selected map names the supported route;
+these defaults do not require a new launcher or service.
 
 Use these defaults unless the owner or selected project map authorizes a
 task-specific override. Record the exact model and effort before dispatch;
 explicitly configure each worker rather than inheriting the controller's pair.
+Match the full model ID: Sol 5.6/6 and Luna 5.6 do not satisfy these defaults.
 Verify the host's effective settings and retain them with the handoff. A role
 label alone does not establish configuration. For a controller the host cannot
 configure, report a mismatch before dispatching dependent work. Unsupported or
 unavailable pairs follow the model-capacity recovery rule; do not silently
 substitute a model or effort. These settings do not reduce any role's checks or
 responsibilities.
+
+When an owner asks a particular model to personally audit or review, that model
+must perform the substantive inspection unless delegation is authorized. A
+delegated review plus controller sign-off is not equivalent. Identify the actual
+reviewer, environment, model/effort, controller's own inspection and evidence
+limits; distinguish requested settings from verified settings.
+
+### Work-to-Codex implementation handoff
+
+Native subagents stay within their host; changing a model does not switch Work
+and Codex. For mixed routing, use an existing Codex chat as a bounded implementation
+dispatcher:
+
+```text
+Work controller -> Work capsule builder -> controller checks/publishes plan
+                -> Codex chat -> one Codex implementor -> Codex terminal handoff
+                -> Work controller verifies -> Work reviewer -> controller closeout
+```
+
+The owner creates the Codex chat, or explicitly authorizes its creation, and
+authorizes messaging in both directions. Before implementation, verify both chats'
+actual messaging and result-recovery capabilities with a small harmless handoff.
+Reuse the established route until it changes or fails; sent-message acceptance
+does not prove consumption or idle wake-up. Apply the existing waiting/recovery
+rules, without polling loops or another transport framework.
+
+Use one reusable Codex dispatcher chat per project with the selected
+[dispatcher section](worker-instructions.md#codex-dispatcher). For each issue, give it the
+implementation handoff location: exact task/attempt, published capsule/branch/SHA,
+selected role instructions and original requirement pointers, permissions/checks,
+evidence locations, Git ownership and return destination. The dispatcher launches
+a fresh implementor and relays its terminal result; it does not repeat controller
+orientation, replan, review or integrate. Only the assigned actor edits/publishes;
+prevent simultaneous edits. Work authenticates the result before independent
+review. Unavailable routing requires an explicit decision, not substitution.
 
 ### Additional assignments and orientation
 
@@ -104,13 +151,20 @@ bookkeeping and closeout do not justify another assignment.
 
 Retain and authenticate each completed agent's terminal handoff before closing
 it through the host's supported operation to free capacity. Do not close running
-agents. Give each worker its selected [role document](roles/README.md), bounded
+agents. Give each worker its selected [worker instructions](worker-instructions.md#role-index), bounded
 task, original required specifications/decisions, applicable standards, source
 locations, commands, authority limits and actual evidence. Supply the relevant
 project-map requirements and their original locations; workers do not repeat
 controller intake or workflow selection. Do not supply the whole controller
 procedure as mandatory worker reading. Authenticate role resources from the same
 adopted RI revision; record their locations in the existing handoff.
+
+For example: “Your role is Implementor. At the selected RI revision, read
+`docs/worker-instructions.md` sections Shared worker rules and Implementor in full.
+Then read the published capsule, original requirements and applicable project
+instructions linked in this handoff.” Name stable headings, not line numbers;
+use a section-bounded read where supported, since an anchor alone does not limit
+loaded context.
 
 Before builder dispatch, supply it with the original issue and required
 orientation sources, their selected identities/locations, confirmed requirements
@@ -250,6 +304,14 @@ correction and reuse valid work. Report confirmed blockers promptly; never bypas
 required checks. STOP_REPLAN is not opening progress. Preserve terminal stops;
 a diagnostic-only follow-up may explain one but cannot resume it. Request new
 authority only for uncovered scope, permission, disclosure or reserved actions.
+
+After roughly three rejection/correction rounds in the same stage, use a fresh
+diagnostic reviewer under the additional-assignment rule. Supply original
+requirements, relevant source, capsule and retained rejection history. Ask it to
+identify missing decisions, a misstated capsule, missed implementation requirements
+or incorrect workflow execution, and return one bounded correction. Preserve valid
+completed phases; this conditional recovery is not another normal review or an
+automatic increase in effort. Record the trigger and scope in the checkpoint.
 
 Corrections start from authenticated recovery source, not necessarily the original
 planning HEAD. Reuse evidence only under the project's accepted equivalence policy;

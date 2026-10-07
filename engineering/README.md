@@ -38,10 +38,13 @@
 ## Repository-owned task workflow
 
 Use [local project map](../docs/local_project_map.md), the sole current local map, and its complete
-pinned [daily issue procedure](workflow/shared/start-an-issue.md) for controller intake. Workers receive
-their selected role document and shared rules through the controller handoff.
+pinned [daily issue procedure](workflow/shared/start-an-issue.md) for controller intake. Workers read
+Shared worker rules and their assigned unique level-two section of the pinned
+[worker instructions](workflow/shared/worker-instructions.md#role-index) through the next level-two
+heading or end of file. Initial builders receive original objective/base and requirements without
+a future capsule; implementors and reviewers receive the accepted capsule.
 The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work uses bounded Markdown tasks under `engineering/tasks/`,
-serial native planner/implementor/independent reviewer returns, ordinary source/diff/log
+serial native capsule builder/implementor/independent reviewer returns, ordinary source/diff/log
 review and the trusted standard controller. RI-only SDK/report/structural gates are retired.
 Protected main, authenticated owner authority, required profile checks, domain/security
 contracts and independent review remain. #246/#256 and their original capsules remain paused.

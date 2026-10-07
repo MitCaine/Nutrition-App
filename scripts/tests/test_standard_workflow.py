@@ -34,64 +34,103 @@ def test_retired_model_evidence_cli_cannot_dispatch():
     assert result.value.code == 2
     assert importlib.util.find_spec("lib.independent_review") is None
 
-def test_complete_shared_role_resources_and_separate_compatible_runtime_pin():
+def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (17807, "2e828c4b5fb657dc1f8db84889db5177980bbaae2cb6406a16bed82b42c1ea15"),
-        "capsule-controller-workflow.md": (14205, "1472330ab29885faf41c397a2ebb23d71aeefdae47ca703b6879498ff8f7b691"),
-        "roles/README.md": (1034, "94d7c852cd5e54065ec2687a96f4b4a6bf3961e3492f4882cdeadb17d79eb30b"),
-        "roles/capsule-builder.md": (1241, "d5ce88828336036d5f9389b6dc2f0b06a1a1bc90cbda0c122bf1421a2d9de402"),
-        "roles/implementor.md": (1454, "f190b26662b7332484885537039063c3d001b576336229481d5879c48bdae5ad"),
-        "roles/reviewer.md": (1492, "f778d52573f9aaaacbb339e0cfb5cd4f7d448526812951f2bee7ab5e8f8cec0f"),
-        "roles/shared-rules.md": (1595, "487b1a23118560dd20fc28bb5f4f536810ab957ed8ceeb87609e078622e9b679"),
+        "start-an-issue.md": (21690, "0bb501fd64843e6b35683ea5bda6ca1f9175e9bfe550fc1fc8ad8e0b0f3fb666"),
+        "worker-instructions.md": (10862, "21ddbbbf72c7c679f0845dc0da11a7a197f3a35a7e0c618ed37d714bcb151db3"),
+        "capsule-controller-workflow.md": (14229, "3e2b4904cc134846c0814dc25ba6df6b359d7b53c58078e007f603628b36fe77"),
     }
     provenance = (shared / "SOURCE.md").read_text()
-    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" in provenance
+    assert "fd982035de66e23d5d924e2c437f844803f399ec" in provenance
+    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
     assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
     assert "RI `docs/start-an-issue.md` → [local `engineering/workflow/shared/start-an-issue.md`](start-an-issue.md)" in provenance
+    assert "RI `docs/worker-instructions.md` → [local `engineering/workflow/shared/worker-instructions.md`](worker-instructions.md)" in provenance
     assert "RI `docs/capsule-controller-workflow.md` → [local `engineering/workflow/shared/capsule-controller-workflow.md`](capsule-controller-workflow.md)" in provenance
     for name, (size, digest) in identities.items():
         data = (shared / name).read_bytes()
         assert len(data) == size
         assert hashlib.sha256(data).hexdigest() == digest
         assert name in provenance and str(size) in provenance and digest in provenance
+    for retired in ("README.md", "capsule-builder.md", "implementor.md", "reviewer.md", "shared-rules.md"):
+        assert not (shared / "roles" / retired).exists()
+    queue_identities = (
+        ("a6c43878adf55b2b148daaa47e4e61bfbd7f66cd", 8485,
+         "73cf2fb82b03e374e0b8f7dfe26ffb057094eaddc03a0954e21fa2427fabe1aa"),
+        ("74f082ff91bbe32dd7be0b1ac1c0d36f0143a54f", 1523,
+         "44d314b860eb51a8c7a5df8baf43570403af6a697ba0b3f9d6d2070997e6dce0"),
+        ("acbaf960cff25c71fd1bdb1488b8e70dc34062b2", 11872,
+         "b7912b3d614ad9a69776c62c1557b0896aa7878f4583f6cddebc2777997fc5de"),
+    )
+    for blob, size, digest in queue_identities:
+        assert blob in provenance and str(size) in provenance and digest in provenance
     lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
     assert lock["revision"] == "2f28da4d326ff12da5dc9270eb57910303e4a737"
     assert lock["contracts"]["navigation"] == 6
     assert lock["contracts"]["inventory"] == 13
     assert lock["contracts"]["adapter"] == 10
+    assert lock["contracts"]["mapping"].endswith("v10")
 
 
-def test_current_handoffs_route_controller_and_assigned_worker_roles():
+def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intake():
+    import re
+    worker = (ROOT / "engineering/workflow/shared/worker-instructions.md").read_text()
+    headings = re.findall(r"^## (.+)$", worker, re.MULTILINE)
+    assert headings == ["Role index", "Shared worker rules", "Capsule builder", "Implementor",
+                        "Independent reviewer", "Codex dispatcher"]
+    assert len(headings) == len(set(headings))
+    worker_normalized = " ".join(worker.split())
+    for rule in ("These links navigate one document", "the next level-two heading or end of file",
+                 "Recover truncated sections", "stable headings, not line-number pointers"):
+        assert rule.lower() in worker_normalized.lower()
+    implementor = worker.split("## Implementor\n", 1)[1].split("\n## ", 1)[0]
+    reviewer = worker.split("## Independent reviewer\n", 1)[1].split("\n## ", 1)[0]
+    dispatcher = worker.split("## Codex dispatcher\n", 1)[1]
+    assert "objective/base and original inputs, not an existing capsule" in worker
+    assert "complete accepted capsule" in implementor
+    assert "complete task and original" in reviewer
+    assert "both directions" in dispatcher
+
+
+def test_current_handoffs_route_controller_and_assigned_worker_sections():
     current = {
-        "AGENTS.md": ("role document", "complete\nbyte-pinned"),
-        "docs/local_project_map.md": ("selected role document and shared rules", "Controllers read this map"),
-        "engineering/tasks/TEMPLATE.md": ("selected role document and shared rules", "complete selected daily procedure"),
-        "engineering/workflow/TASK_CAPSULE.md": ("selected role document/shared rules", "controller's complete shared procedure"),
-        "engineering/workflow/EXECUTION.md": ("selected implementor role", "selected\nreviewer role"),
-        "engineering/workflow/AUTHORITY.md": ("selected role document/shared rules", "complete\npinned shared procedure"),
-        "engineering/workflow/README.md": ("selected role document and shared rules", "controller's complete"),
-        "engineering/README.md": ("selected role document and shared rules", "daily issue procedure"),
-        "engineering/workflow/shared/skill-templates/README.md": ("role document and shared rules", "only the controller"),
+        "AGENTS.md": ("Shared worker rules", "future capsule"),
+        "docs/local_project_map.md": ("assigned unique level-two section", "result recovery remain pending"),
+        "engineering/tasks/TEMPLATE.md": ("Shared worker rules", "Initial builder"),
+        "engineering/workflow/TASK_CAPSULE.md": ("Shared worker rules", "future capsule"),
+        "engineering/workflow/EXECUTION.md": ("Shared worker rules", "next level-two heading"),
+        "engineering/workflow/AUTHORITY.md": ("Shared worker rules", "level-two section"),
+        "engineering/workflow/README.md": ("Shared worker rules", "Initial builders"),
+        "engineering/README.md": ("Shared worker rules", "Initial builders"),
+        "engineering/workflow/shared/skill-templates/README.md": ("Shared worker rules", "Only the controller"),
     }
     old_pin = "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd"
     for name, required in current.items():
         text = (ROOT / name).read_text()
         normalized = " ".join(text.split())
+        normalized_lower = normalized.lower()
         assert old_pin not in text, name
-        assert " ".join(required[0].split()) in normalized, name
-        assert " ".join(required[1].split()) in normalized, name
+        assert " ".join(required[0].split()).lower() in normalized_lower, name
+        assert " ".join(required[1].split()).lower() in normalized_lower, name
+        assert "assigned unique level-two section" in normalized_lower, name
+        assert ("worker instructions" in normalized_lower or "worker-instructions.md" in normalized_lower), name
     for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
         text = (ROOT / "engineering/workflow" / name).read_text()
-        assert "selected role document" in text
-        assert "shared rules" in text
-    roles = (ROOT / "engineering/workflow/shared/roles/README.md").read_text()
-    for role in ("capsule-builder.md", "implementor.md", "reviewer.md", "shared-rules.md"):
-        if role == "shared-rules.md":
-            continue
-        assert f"]({role})" in roles
-        assert "[shared assignment rules](shared-rules.md)" in (ROOT / "engineering/workflow/shared/roles" / role).read_text()
+        assert "Shared worker rules" in text
+        assert "assigned unique level-two section" in text
+        assert "next level-two heading or end of file" in " ".join(text.split())
+    map_text = (ROOT / "docs/local_project_map.md").read_text()
+    normalized_map = " ".join(map_text.split())
+    assert "controller, builder and reviewer on Work at `gpt-6.1-sol` / `low`" in normalized_map
+    assert "implementor on Codex at `gpt-6-luna` / `max`" in normalized_map
+    assert "Do not claim automatic delivery or idle wake-up" in normalized_map
+    assert "Work-to-Codex messaging, consumption and result recovery remain pending" in normalized_map
+    assert "gpt-5.6-luna" not in map_text
+    capsule = (ROOT / "engineering/tasks/GH-290.md").read_text()
+    assert "task-specific environment override for GH-290 only" in " ".join(capsule.split())
+    assert "GH-290" not in map_text
 
 
 
@@ -312,7 +351,7 @@ def test_daily_entrypoints_and_six_heading_task_format():
         assert re.search(r"\[[^\]]*daily[^\]]*\]\([^)]*start-an-issue\.md\)", text)
     expected = ["Objective", "Source and scope", "Acceptance", "Checks", "Prerequisites",
                 "Handoff and closeout"]
-    for name in ("TEMPLATE.md", "GH-261.md"):
+    for name in ("TEMPLATE.md", "GH-261.md", "GH-290.md"):
         text = (ROOT / "engineering/tasks" / name).read_text()
         assert re.findall(r"^## (.+)$", text, re.MULTILINE) == expected
         checks = text.split("## Checks\n", 1)[1].split("## Prerequisites", 1)[0]
@@ -331,19 +370,15 @@ def test_all_affected_local_directed_links_and_anchors_resolve():
     validator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(validator)
     paths = ("AGENTS.md", "docs/local_project_map.md", "engineering/README.md",
-             "engineering/tasks/TEMPLATE.md", "engineering/tasks/GH-261.md",
+             "engineering/tasks/TEMPLATE.md", "engineering/tasks/GH-261.md", "engineering/tasks/GH-290.md",
              "engineering/workflow/TASK_CAPSULE.md", "engineering/workflow/AUTHORITY.md",
              "engineering/workflow/EXECUTION.md", "engineering/workflow/WORKFLOW.md",
              "engineering/workflow/ROUTING.md", "engineering/workflow/EVIDENCE.md",
              "engineering/workflow/FAILURE_TAXONOMY.md", "engineering/workflow/README.md",
              "engineering/workflow/shared/SOURCE.md",
              "engineering/workflow/shared/start-an-issue.md",
+             "engineering/workflow/shared/worker-instructions.md",
              "engineering/workflow/shared/capsule-controller-workflow.md",
-             "engineering/workflow/shared/roles/README.md",
-             "engineering/workflow/shared/roles/capsule-builder.md",
-             "engineering/workflow/shared/roles/implementor.md",
-             "engineering/workflow/shared/roles/reviewer.md",
-             "engineering/workflow/shared/roles/shared-rules.md",
              "engineering/workflow/shared/skill-templates/README.md",
              "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md")
     for name in paths:
@@ -365,26 +400,30 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0/docs/skill-templates/capsule-queue/")
+              "fd982035de66e23d5d924e2c437f844803f399ec/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
     assert "scripts/run%5Fand%5Fqueue.py" in text
-    assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in text
+    assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in text
     assert "not an installed executable skill" in text
     assert "CLI acceptance" in text and "idle wake-up" in text
+    assert not (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/scripts/run_and_queue.py").exists()
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():
     text = (ROOT / "docs/local_project_map.md").read_text()
+    normalized = " ".join(text.split())
     for rule in ("Only the controller dispatches", "Workers do not recruit", "failed required check",
                  "authorized", "scope change", "assignee/host inability", "independent scope challenge",
                  "event-based blocking completion", "idle wake-up", "supported observer",
-                 "without repeated owner prompts", "genuinely reserved actions", "selected role pairs",
-                 "no model/effort fallback", "App `4708441`", "paused"):
-        assert rule in text
-    assert "gpt-6.1-sol`/`low" in text
-    assert "gpt-5.6-luna`/`max" in text
+                 "without repeated owner prompts", "genuinely reserved actions", "task-neutral model/effort defaults",
+                 "with no fallback", "Work-to-Codex messaging, consumption and result recovery remain pending",
+                 "owner explicitly authorizes messaging in both directions", "harmless route check",
+                 "Do not claim automatic delivery or idle wake-up", "App `4708441`", "paused"):
+        assert rule in normalized
+    assert "gpt-6.1-sol` / `low" in normalized
+    assert "gpt-6-luna` / `max" in normalized
     for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
         text = (ROOT / name).read_text()
         for rule in ("BEFORE", "historical", "live issue", "external controller checkpoint",

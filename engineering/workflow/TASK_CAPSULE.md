@@ -4,7 +4,11 @@ For current work use the bounded [Markdown template](../tasks/TEMPLATE.md), stor
 `engineering/tasks/`, with objective/issue, exact base/branch, owner authority, allowed and
 forbidden scope, checkable criteria, actual commands, results and gaps. Deliver it with
 [local project map](../../docs/local_project_map.md), the controller's complete shared procedure,
-and each worker's selected role document/shared rules and AGENTS inputs.
+and each worker's complete Shared worker rules plus assigned unique level-two section from the
+pinned [`worker-instructions.md`](shared/worker-instructions.md#role-index), with applicable AGENTS
+inputs. Initial builders receive original objective/base/requirements without a future capsule;
+implementors and reviewers receive the accepted capsule. Links navigate; read through the next
+level-two heading or end of file.
 No RI JSON schema, qualification of a capsule-only planning overlay or frozen launcher
 is required for these new records.
 

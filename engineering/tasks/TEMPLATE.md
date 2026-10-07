@@ -13,7 +13,7 @@ with the [local map](../../docs/local_project_map.md). Store new records under
 
 - Authenticated exact base, dedicated task branch and published planning identity:
 - Owner authorization and permitted Git/issue actions:
-- Controller, planner, implementor and distinct independent reviewer:
+- Controller, capsule builder, implementor and distinct independent reviewer:
 - Allowed/forbidden paths and affected current documentation:
 - Relevant standards/domain/security boundaries; unrelated work preserved:
 
@@ -52,9 +52,13 @@ the existing verification evidence field and does not replace qualification or r
 
 ## Handoff and closeout
 
-Provide the controller with the complete selected daily procedure. Provide each worker with its
-selected role document and shared rules, local map sections it needs, task, applicable standards,
-exact source/diff and real evidence. Return changed paths, tested source/commands/environment,
+Provide the controller with the complete selected daily procedure. Provide each worker with
+Shared worker rules and its assigned unique level-two section of
+[`worker-instructions.md`](../workflow/shared/worker-instructions.md#role-index), read
+through the next level-two heading or end of file, plus the needed map sections, task, applicable
+standards, exact source/diff and real evidence. Give an initial builder the original objective/base
+and requirements without a future capsule; implementors and reviewers receive the accepted capsule.
+Return changed paths, tested source/commands/environment,
 results/skips, unresolved findings and next permitted action. Only the controller dispatches;
 workers do not recruit. Use native event-based blocking completion unless the actual idle
 wake-up route is verified; queue is conditional on a supported observer and verified delivery.

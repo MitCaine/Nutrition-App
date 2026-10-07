@@ -11,10 +11,14 @@ observer and verified controller delivery; otherwise use blocking completion. Na
 roles use event-based blocking waits unless their idle wake-up is verified.
 
 The other optional upstream template folders remain unadopted. This reconciled local
-entrypoint supplies the selected daily route and only its required conditional queue target;
-it does not copy the upstream setup/installation tree into current dispatch.
+entrypoint supplies the selected daily route, the single pinned worker-instructions document,
+and its required conditional queue target; it does not copy the upstream setup/installation tree
+into current dispatch.
 Do not infer five mandatory installations, local/upstream parity, Work registration,
 or new authority from these links. Compare whole folders and verify actual resources
-before any separately authorized installation. Current role handoffs carry the selected
-role document and shared rules directly; only the controller receives the complete daily
-procedure.
+before any separately authorized installation. Current worker handoffs carry complete Shared
+worker rules and only the assigned unique level-two section of
+[`worker-instructions.md`](../worker-instructions.md#role-index) through
+the next level-two heading or end of file. Initial builders receive original objective/base and
+requirements without a future capsule; implementors and reviewers receive the accepted capsule.
+Only the controller receives the complete daily procedure.

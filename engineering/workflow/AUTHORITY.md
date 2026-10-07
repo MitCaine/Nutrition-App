@@ -65,7 +65,9 @@ or rewrite failed history to force a gate. [STATES](STATES.md) describes retaine
 ## Host and transport
 
 [local project map](../../docs/local_project_map.md) is the local route. The controller receives the complete
-pinned shared procedure; each serial worker receives its selected role document/shared rules,
-task and standards. Ordinary read-only independent source/diff review is sufficient for RI.
+pinned daily procedure; each serial worker receives Shared worker rules and its assigned unique
+level-two section of the pinned [worker instructions](shared/worker-instructions.md#role-index),
+through the next level-two heading or end of file, with the task and standards. Ordinary read-only
+independent source/diff review is sufficient for RI.
 Actual host permissions, confidentiality, secret scanning and protected Git/issue authority
 remain enforced. No private source or diagnostic export is implied.

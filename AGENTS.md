@@ -158,10 +158,14 @@ For dependency-only pull requests:
 ## Task workflow
 
 Start at [the local execution map](docs/local_project_map.md). The controller reads its complete
-byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md); each worker
-receives the selected role document and shared rules from the same pin.
+byte-pinned [daily issue procedure](engineering/workflow/shared/start-an-issue.md). Each worker
+reads `Shared worker rules` and its assigned unique level-two section of the pinned
+[worker instructions](engineering/workflow/shared/worker-instructions.md#role-index), through the next
+level-two heading or end of file; links are navigation, not bounded reads. Builders receive
+original objective/base/specifications without a future capsule; implementors and reviewers
+receive the accepted capsule.
 The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional on setup or replacement. New tasks use the owner-authorized lightweight
-route: controller-only dispatch of one serial planner, implementor and distinct independent reviewer,
+route: controller-only dispatch of one serial capsule builder, implementor and distinct independent reviewer,
 using event-based blocking completion unless the exact idle wake-up route is verified,
 bounded Markdown records and ordinary source/diff/test evidence. The sequence is orient →
 capsule → implement → independent review → authorized integration → verify closeout. RI

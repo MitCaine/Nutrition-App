@@ -115,7 +115,7 @@ additional report or gate file is needed:
   prove an omitted required case. Explain any required proof left unexecuted.
 - At each handoff, return the source/branch identity, completed work, actual
   results, unresolved findings and next permitted action. Supply each role with
-  its selected [role document](roles/README.md), task inputs and relevant project
+  its selected [worker instructions](worker-instructions.md#role-index), task inputs and relevant project
   requirements; workers do not repeat controller orientation. Controller
   checks returned scope and evidence before dispatching the next role; it does
   not implement or self-review the assigned source changes.
