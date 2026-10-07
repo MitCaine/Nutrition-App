@@ -144,7 +144,10 @@ explicitly. Any DerivedData reuse is a separate controller-owned evaluation usin
 directory and the repository qualifier's exact identity and module/link evidence. Its recorded
 xcodebuild argv includes `ENABLE_DEBUG_DYLIB=NO` and `LD_GENERATE_MAP_FILE=YES`, and its external
 DerivedData retains `BuildProducts` between eligible cold/warm runs. It is not an automatic
-ordinary-PR or trusted-workflow reuse mechanism.
+ordinary-PR or trusted-workflow reuse mechanism. The qualifier retains all candidate application
+link maps and generated provider inputs before validation and cleanup. It accepts either a map
+whose product is the final app executable or a thin architecture map proven byte-identical to a
+`lipo`-extracted final-app slice; foreign products and search paths do not establish module linkage.
 
 ### GitHub Milestones
 

@@ -801,6 +801,18 @@ class IosNativeQualificationTests(
             "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR",
             result.stderr,
         )
+        proof = json.loads(
+            (evidence / "application-link-proof.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(proof["candidate_maps"][0]["status"], "FAILURE")
+        self.assertEqual(proof["candidate_maps"][0]["nutrition_ocr_objects"], [])
+        self.assertTrue(
+            Path(
+                proof["candidate_maps"][0]["retained_map"]["retained_path"]
+            ).is_file()
+        )
 
     def test_library_search_path_does_not_count_as_application_link(self):
         result, evidence = self._run_fixture_qualification("search-path-only")
@@ -810,6 +822,105 @@ class IosNativeQualificationTests(
             "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR",
             result.stderr,
         )
+
+    def test_universal_thin_link_maps_match_final_application_slices(self):
+        result, evidence = self._run_fixture_qualification("thin-universal")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        proof = json.loads(
+            (evidence / "application-link-proof.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(proof["status"], "PASS")
+        self.assertEqual(proof["lipo"]["architectures"], ["arm64", "x86_64"])
+        self.assertEqual(len(proof["candidate_maps"]), 2)
+        self.assertEqual(
+            {entry["architecture"] for entry in proof["candidate_maps"]},
+            {"arm64", "x86_64"},
+        )
+        for entry in proof["candidate_maps"]:
+            self.assertEqual(
+                entry["classification"],
+                "thin_application_architecture",
+            )
+            self.assertEqual(entry["status"], "PASS")
+            self.assertTrue(entry["nutrition_ocr_objects"])
+            self.assertTrue(entry["slice_comparison"]["byte_identical"])
+            self.assertTrue(Path(entry["slice_extraction"]["retained_slice"]).is_file())
+            self.assertTrue(Path(entry["linked_product"]["retained_path"]).is_file())
+        retained_maps = sorted((evidence / "candidate-native-evidence" / "link-maps").glob("*.txt"))
+        self.assertEqual(len(retained_maps), 2)
+        self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
+        self.assertFalse((evidence / "DerivedData").exists())
+
+    def test_thin_link_map_with_mismatched_final_app_slice_fails(self):
+        result, evidence = self._run_fixture_qualification("thin-slice-mismatch")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "IOS_NATIVE_APPLICATION_LINK_MAP_THIN_SLICE_MISMATCH:arm64",
+            result.stderr,
+        )
+        proof = json.loads(
+            (evidence / "application-link-proof.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(proof["status"], "FAILURE")
+        mismatch = [
+            entry
+            for entry in proof["candidate_maps"]
+            if entry.get("architecture") == "arm64"
+        ]
+        self.assertEqual(len(mismatch), 1)
+        self.assertFalse(mismatch[0]["slice_comparison"]["byte_identical"])
+        self.assertEqual(len(list((evidence / "candidate-native-evidence" / "link-maps").glob("*.txt"))), 2)
+        self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
+
+    def test_foreign_application_link_map_is_retained_but_rejected(self):
+        result, evidence = self._run_fixture_qualification("foreign-map")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "IOS_NATIVE_APPLICATION_LINK_MAP_NOT_FINAL_APP",
+            result.stderr,
+        )
+        proof = json.loads(
+            (evidence / "application-link-proof.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(proof["candidate_maps"][0]["classification"], "foreign_product")
+        self.assertEqual(
+            proof["candidate_maps"][0]["status"],
+            "IGNORED_FOREIGN_PRODUCT",
+        )
+        self.assertTrue(
+            (evidence / "candidate-native-evidence" / "link-maps" / "001-NutritionApp-LinkMap-normal-undefined_arch.txt").is_file()
+        )
+        self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
+        self.assertTrue((evidence / "nutrition-ocr-source-evidence" / "Pods.xcodeproj-project.pbxproj").is_file())
+
+    def test_failed_xcode_build_retains_all_candidate_maps_and_provider(self):
+        result, evidence = self._run_fixture_qualification(
+            "thin-universal-xcode-failure"
+        )
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(
+            json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))["stages"][4]["status"],
+            "FAILURE",
+        )
+        candidate = json.loads(
+            (evidence / "candidate-build-evidence.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(len(candidate["candidate_link_maps"]), 2)
+        for entry in candidate["candidate_link_maps"]:
+            self.assertTrue(Path(entry["retained_map"]["retained_path"]).is_file())
+        self.assertTrue((evidence / "nutrition-ocr-provider-registration.swift").is_file())
+        self.assertTrue(
+            (evidence / "nutrition-ocr-source-evidence" / "Pods.xcodeproj-project.pbxproj").is_file()
+        )
+        self.assertFalse((evidence / "Nutrition App Native").exists())
 
     def test_missing_provider_registration_fails_native_evidence(self):
         result, evidence = self._run_fixture_qualification("missing-provider")
@@ -1040,6 +1151,9 @@ else
     fi
     previous="$argument"
   done
+  products="$derived/Build/Products/Debug-iphonesimulator"
+  intermediates="$derived/Build/Intermediates.noindex"
+  normal_root="$intermediates/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/Objects-normal"
   mkdir -p \
     "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr" \
     "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64" \
@@ -1048,26 +1162,58 @@ else
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/libNutritionOcr.a"
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/NutritionOcr.swiftmodule"
   : > "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64/NutritionOcrModule.o"
-  : > "$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/NutritionApp"
-  app_product="$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/NutritionApp"
-  link_map="$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/NutritionApp-LinkMap-normal-undefined_arch.txt"
+  app_product="$products/NutritionApp.app/NutritionApp"
+  arm64_slice="arm64-linked-product-slice"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "thin-slice-mismatch" ]; then
+    app_arm64_slice="different-arm64-final-app-slice"
+  else
+    app_arm64_slice="$arm64_slice"
+  fi
+  printf '%s\\n' "arm64=$app_arm64_slice" "x86_64=x86_64-linked-product-slice" > "$app_product"
   object_path="$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64/NutritionOcrModule.o"
   if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "unlinked-module" ] || [ "${IOS_NATIVE_FIXTURE_MODE-}" = "search-path-only" ]; then
     object_path="$derived/Build/Intermediates.noindex/Other.build/OtherModule.o"
   fi
-  printf '%s\\n' \
-    "# Path: $app_product" \
-    '# Object files:' \
-    "[  0] $object_path" \
-    '# Sections:' \
-    > "$link_map"
-  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "search-path-only" ]; then
+  link_map_root="$intermediates/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "thin-universal" ] || [ "${IOS_NATIVE_FIXTURE_MODE-}" = "thin-slice-mismatch" ] || [ "${IOS_NATIVE_FIXTURE_MODE-}" = "thin-universal-xcode-failure" ]; then
+    for architecture in arm64 x86_64; do
+      binary_dir="$normal_root/$architecture/Binary"
+      mkdir -p "$binary_dir"
+      thin_product="$binary_dir/NutritionApp"
+      if [ "$architecture" = "arm64" ]; then
+        printf '%s\\n' "$arm64_slice" > "$thin_product"
+      else
+        printf '%s\\n' "x86_64-linked-product-slice" > "$thin_product"
+      fi
+      link_map="$link_map_root/NutritionApp-LinkMap-normal-$architecture.txt"
+      printf '%s\\n' \
+        "# Path: $thin_product" \
+        '# Object files:' \
+        "[  0] $object_path" \
+        '# Sections:' \
+        > "$link_map"
+    done
+  else
+    link_map="$link_map_root/NutritionApp-LinkMap-normal-undefined_arch.txt"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "foreign-map" ]; then
+      map_product="/tmp/Foreign-NutritionApp"
+    else
+      map_product="$app_product"
+    fi
     printf '%s\\n' \
-      '# Search paths:' \
-      '-L/tmp/NutritionOcr/libNutritionOcr.a' \
-      >> "$link_map"
+      "# Path: $map_product" \
+      '# Object files:' \
+      "[  0] $object_path" \
+      '# Sections:' \
+      > "$link_map"
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "search-path-only" ]; then
+      printf '%s\\n' \
+        '# Search paths:' \
+        '-L/tmp/NutritionOcr/libNutritionOcr.a' \
+        >> "$link_map"
+    fi
   fi
-  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "xcode-failure" ]; then
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "xcode-failure" ] || [ "${IOS_NATIVE_FIXTURE_MODE-}" = "thin-universal-xcode-failure" ]; then
     printf "BUILD FAILED\n"
     exit 17
   fi
@@ -1081,6 +1227,8 @@ fi
         write("xcrun", """
 if [ "${1-}" = "--sdk" ]; then
   echo 18.0
+elif [ "${1-}" = "-f" ] && [ "${2-}" = "lipo" ]; then
+  echo "${IOS_NATIVE_FIXTURE_LIPO:?}"
 elif [ "${1-}" = "swiftc" ] && [ "${2-}" = "--version" ]; then
   echo "Apple Swift version 6.0"
 elif [ "${1-}" = "swiftc" ]; then
@@ -1106,6 +1254,22 @@ EOF
   chmod +x "$output"
 else
   echo "Apple Swift version 6.0"
+fi
+""")
+        write("lipo", """
+if [ "${1-}" = "-archs" ]; then
+  echo "arm64 x86_64"
+elif [ "${1-}" = "-thin" ]; then
+  architecture="$2"
+  application="$3"
+  shift 3
+  [ "${1-}" = "-output" ]
+  output="$2"
+  slice="$(sed -n "s/^${architecture}=//p" "$application")"
+  [ -n "$slice" ]
+  printf '%s\\n' "$slice" > "$output"
+else
+  exit 2
 fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
@@ -1155,6 +1319,7 @@ exit 0
         environment["REAL_GIT"] = shutil.which("git") or "/usr/bin/git"
         environment["IOS_NATIVE_FIXTURE_MODE"] = mode
         environment["IOS_NATIVE_FIXTURE_EVIDENCE_DIR"] = str(evidence)
+        environment["IOS_NATIVE_FIXTURE_LIPO"] = str(fake_bin / "lipo")
         environment["NPM_CONFIG_CACHE"] = str(evidence_parent / "npm-cache")
         environment["CP_CACHE_DIR"] = str(evidence_parent / "pods-cache")
         fixture_root = evidence_parent / "repository"

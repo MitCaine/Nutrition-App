@@ -133,6 +133,8 @@ compilation_save="$evidence_dir/compilation-save.json"
 compilation_discard="$evidence_dir/compilation-discard.json"
 build_invocation_file="$evidence_dir/build-invocation.json"
 module_evidence="$evidence_dir/module-evidence.json"
+candidate_build_evidence="$evidence_dir/candidate-build-evidence.json"
+application_link_proof="$evidence_dir/application-link-proof.json"
 incremental_build_started_marker="$evidence_dir/incremental-build-started"
 incremental_cache_committed_marker="$evidence_dir/incremental-cache-committed"
 incremental_cache_discard_attempted_marker="$evidence_dir/incremental-cache-discard-attempted"
@@ -384,6 +386,8 @@ write_manifest() {
   IOS_NATIVE_COMPILATION_DISCARD_FILE="$compilation_discard" \
   IOS_NATIVE_BUILD_INVOCATION_FILE="$build_invocation_file" \
   IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
+  IOS_NATIVE_CANDIDATE_BUILD_EVIDENCE_FILE="$candidate_build_evidence" \
+  IOS_NATIVE_APPLICATION_LINK_PROOF_FILE="$application_link_proof" \
   python3 - "$timings_file" "$manifest" <<'PY'
 import json
 import os
@@ -501,6 +505,14 @@ if build_invocation:
         )
     )
 module_document = document("IOS_NATIVE_MODULE_EVIDENCE_FILE", {})
+candidate_build_document = document(
+    "IOS_NATIVE_CANDIDATE_BUILD_EVIDENCE_FILE",
+    {},
+)
+application_link_document = document(
+    "IOS_NATIVE_APPLICATION_LINK_PROOF_FILE",
+    {},
+)
 manifest = {
     "schema_version": 1,
     "profile": "ios-native",
@@ -551,6 +563,8 @@ manifest = {
     "generated_cleanup": stage_status["cleanup"],
     "compilation": compilation,
     "module_evidence": module_document,
+    "candidate_build_evidence": candidate_build_document,
+    "application_link_proof": application_link_document,
     "stages": stages,
     "total": {
         "elapsed_seconds": int(os.environ["IOS_NATIVE_TOTAL_ELAPSED"]),
@@ -1456,6 +1470,271 @@ PY
   fi
 }
 
+capture_candidate_build_evidence() {
+  local target_support="$mobile/ios/Pods/Target Support Files/NutritionOcr"
+  local app_support="$mobile/ios/Pods/Target Support Files/Pods-$scheme"
+  local pod_project="$mobile/ios/Pods/Pods.xcodeproj/project.pbxproj"
+  local products_root="$derived_data/Build/Products/Debug-iphonesimulator"
+  local intermediates_root="$derived_data/Build/Intermediates.noindex"
+  local provider_file
+  local app_product
+  local candidate_link_map
+  local scheme_without_spaces
+  local -a candidate_link_maps
+  candidate_link_maps=()
+
+  scheme_without_spaces="${scheme// /}"
+  provider_file=""
+  if test -d "$mobile/ios"
+  then
+    provider_file="$(
+      find "$mobile/ios" \
+        -type f \
+        -name 'ExpoModulesProvider.swift' \
+        -print |
+        sed -n '1p'
+    )"
+  fi
+  app_product=""
+  if test -d "$products_root"
+  then
+    app_product="$(
+      find "$products_root" \
+        -type f \
+        -path "*${scheme_without_spaces}.app/${scheme_without_spaces}" \
+        -print |
+        sed -n '1p'
+    )"
+  fi
+  if test -d "$intermediates_root"
+  then
+    while IFS= read -r -d '' candidate_link_map
+    do
+      candidate_link_maps+=("$candidate_link_map")
+    done < <(
+      find "$intermediates_root" \
+        -type f \
+        -path "*${scheme_without_spaces}.build*" \
+        -name '*LinkMap*.txt' \
+        -print0
+    )
+  fi
+
+  if ! python3 - \
+    "$evidence_dir" \
+    "$app_product" \
+    "$provider_file" \
+    "$pod_project" \
+    "$target_support" \
+    "$app_support" \
+    "${candidate_link_maps[@]}" <<'PY'
+import hashlib
+import json
+import shutil
+import sys
+from pathlib import Path
+
+
+evidence_root = Path(sys.argv[1])
+app_product, provider_file, pod_project, target_support, app_support = sys.argv[2:7]
+link_map_sources = sorted(Path(value) for value in sys.argv[7:])
+scheme_without_spaces = Path(app_product).name if app_product else ""
+candidate_root = evidence_root / "candidate-native-evidence"
+maps_root = candidate_root / "link-maps"
+products_root = candidate_root / "linked-products"
+app_root = candidate_root / "final-application"
+source_root = evidence_root / "nutrition-ocr-source-evidence"
+maps_root.mkdir(parents=True, exist_ok=True)
+products_root.mkdir(parents=True, exist_ok=True)
+app_root.mkdir(parents=True, exist_ok=True)
+source_root.mkdir(parents=True, exist_ok=True)
+errors = []
+expected_app = Path(app_product).resolve() if app_product else None
+intermediates_root = None
+if app_product:
+    derived_root = Path(app_product).parents[4]
+    intermediates_root = (derived_root / "Build" / "Intermediates.noindex").resolve()
+expected_normal_root = (
+    intermediates_root
+    / f"{scheme_without_spaces}.build"
+    / "Debug-iphonesimulator"
+    / f"{scheme_without_spaces}.build"
+    / "Objects-normal"
+    if intermediates_root
+    else None
+)
+
+
+def digest(path):
+    item = Path(path)
+    checksum = hashlib.sha256()
+    with item.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            checksum.update(chunk)
+    return {
+        "path": str(item),
+        "size_bytes": item.stat().st_size,
+        "sha256": checksum.hexdigest(),
+    }
+
+
+def retain_file(source, destination):
+    if not source:
+        return None
+    source_path = Path(source)
+    if not source_path.is_file():
+        return None
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(source_path, destination)
+    except OSError as error:
+        errors.append(f"copy failed for {source_path}: {error}")
+        return None
+    return {
+        "source_path": str(source_path),
+        "source_realpath": str(source_path.resolve()),
+        "retained_path": str(destination),
+        "retained": digest(destination),
+    }
+
+
+def retain_tree(source, destination):
+    if not source or not Path(source).is_dir():
+        return None
+    try:
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+    except OSError as error:
+        errors.append(f"tree copy failed for {source}: {error}")
+        return None
+    entries = []
+    for item in sorted(Path(destination).rglob("*")):
+        if item.is_file():
+            entries.append({
+                "path": item.relative_to(destination).as_posix(),
+                "sha256": digest(item)["sha256"],
+            })
+    canonical = json.dumps(
+        entries,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "source_path": str(Path(source)),
+        "retained_path": str(destination),
+        "files": entries,
+        "sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+
+
+provider = retain_file(
+    provider_file,
+    evidence_root / "nutrition-ocr-provider-registration.swift",
+)
+pod_project_copy = retain_file(
+    pod_project,
+    source_root / "Pods.xcodeproj-project.pbxproj",
+)
+target_support_copy = retain_tree(
+    target_support,
+    source_root / "NutritionOcr-target-support",
+)
+app_support_copy = retain_tree(
+    app_support,
+    source_root / "Pods-target-support",
+)
+autolinking_copy = retain_file(
+    evidence_root / "autolinking.json",
+    source_root / "autolinking.json",
+)
+final_application = retain_file(
+    app_product,
+    app_root / "NutritionApp",
+)
+link_maps = []
+for index, source in enumerate(link_map_sources, start=1):
+    retained_map = retain_file(
+        str(source),
+        maps_root / f"{index:03d}-{source.name}",
+    )
+    if retained_map is None:
+        continue
+    lines = Path(retained_map["retained_path"]).read_text(
+        encoding="utf-8",
+        errors="replace",
+    ).splitlines()
+    path_line = next(
+        (line for line in lines if line.startswith("# Path:")),
+        None,
+    )
+    linked_product = path_line.partition(":")[2].strip() if path_line else ""
+    product_candidate = "foreign_product"
+    product_architecture = None
+    retained_product = None
+    if linked_product and expected_app and Path(linked_product).resolve() == expected_app:
+        product_candidate = "direct_final_application"
+        retained_product = retain_file(
+            linked_product,
+            products_root / f"{index:03d}-{Path(linked_product).name}",
+        )
+    elif linked_product and expected_normal_root:
+        try:
+            relative = Path(linked_product).resolve().relative_to(
+                expected_normal_root.resolve()
+            )
+        except ValueError:
+            relative = None
+        if (
+            relative
+            and len(relative.parts) == 3
+            and relative.parts[1] == "Binary"
+            and relative.parts[2] == scheme_without_spaces
+        ):
+            product_candidate = "thin_app_target_output"
+            product_architecture = relative.parts[0]
+            retained_product = retain_file(
+                linked_product,
+                products_root / f"{index:03d}-{Path(linked_product).name}",
+            )
+    link_maps.append({
+        "index": index,
+        "source_path": str(source),
+        "retained_map": retained_map,
+        "path_line": path_line,
+        "linked_product_source_path": linked_product or None,
+        "linked_product_candidate": product_candidate,
+        "linked_product_architecture": product_architecture,
+        "retained_linked_product": retained_product,
+    })
+
+document = {
+    "schema_version": 1,
+    "status": "PARTIAL" if errors else "CAPTURED",
+    "final_application": final_application,
+    "provider_registration_file": provider,
+    "generated_source_evidence": {
+        "pod_project": pod_project_copy,
+        "nutrition_ocr_target_support": target_support_copy,
+        "application_target_support": app_support_copy,
+        "autolinking": autolinking_copy,
+    },
+    "candidate_link_maps": link_maps,
+    "errors": errors,
+}
+(evidence_root / "candidate-build-evidence.json").write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+if errors:
+    raise SystemExit("IOS_NATIVE_CANDIDATE_EVIDENCE_RETENTION_FAILED")
+PY
+  then
+    evidence_retention_failure=1
+    echo "IOS_NATIVE_CANDIDATE_EVIDENCE_RETENTION_FAILED" >&2
+    return 1
+  fi
+}
+
 module_evidence_stage() {
   local pod_project="$mobile/ios/Pods/Pods.xcodeproj/project.pbxproj"
   local target_support="$mobile/ios/Pods/Target Support Files/NutritionOcr"
@@ -1468,11 +1747,8 @@ module_evidence_stage() {
   local module_swiftmodule
   local module_object
   local app_link_map
-  local candidate_link_map
   local app_product
   local scheme_without_spaces
-  local -a app_link_maps
-  app_link_maps=()
 
   scheme_without_spaces="${scheme// /}"
   test -f "$pod_project"
@@ -1552,16 +1828,6 @@ PY
       -print |
       sed -n '1p'
   )"
-  while IFS= read -r -d '' candidate_link_map
-  do
-    app_link_maps+=("$candidate_link_map")
-  done < <(
-    find "$intermediates_root" \
-      -type f \
-      -path "*${scheme_without_spaces}.build*" \
-      -name '*LinkMap*.txt' \
-      -print0
-  )
   app_product="$(
     find "$products_root" \
       -type f \
@@ -1575,51 +1841,326 @@ PY
   test -n "$module_object"
   test -n "$app_product"
 
-  if ! app_link_map="$(python3 - "$app_product" "${app_link_maps[@]}" <<'PY'
+  if ! app_link_map="$(python3 - \
+    "$candidate_build_evidence" \
+    "$app_product" \
+    "$intermediates_root" \
+    "$scheme_without_spaces" \
+    "$evidence_dir/application-link-proof" <<'PY'
+import hashlib
+import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 
-expected_product = os.path.realpath(sys.argv[1])
-link_maps = sys.argv[2:]
-matching_app_maps = []
-linked_module_maps = []
-for raw_path in link_maps:
-    path = Path(raw_path)
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+inventory_path = Path(sys.argv[1])
+expected_app = Path(sys.argv[2]).resolve()
+intermediates_root = Path(sys.argv[3]).resolve()
+scheme = sys.argv[4]
+proof_root = Path(sys.argv[5])
+proof_root.mkdir(parents=True, exist_ok=True)
+document = json.loads(inventory_path.read_text(encoding="utf-8"))
+normal_root = (
+    intermediates_root
+    / f"{scheme}.build"
+    / "Debug-iphonesimulator"
+    / f"{scheme}.build"
+    / "Objects-normal"
+).resolve()
+final_record = document.get("final_application")
+final_binary = (
+    Path(final_record["retained_path"])
+    if final_record and final_record.get("retained_path")
+    else None
+)
+errors = []
+proof_maps = []
+accepted_maps = []
+architectures = []
+lipo_binary = None
+lipo_lookup_result = None
+lipo_arch_result = None
+
+
+def file_sha(path):
+    checksum = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            checksum.update(chunk)
+    return checksum.hexdigest()
+
+
+def object_lines(lines):
+    try:
+        start = lines.index("# Object files:") + 1
+    except ValueError:
+        return []
+    result = []
+    for line in lines[start:]:
+        if line.startswith("# "):
+            break
+        result.append(line)
+    return result
+
+
+if not final_record or not final_binary or not final_binary.is_file():
+    errors.append("IOS_NATIVE_APPLICATION_LINK_FINAL_APP_BINARY_MISSING")
+elif os.path.realpath(final_record["source_path"]) != str(expected_app):
+    errors.append("IOS_NATIVE_APPLICATION_LINK_FINAL_APP_PATH_MISMATCH")
+elif file_sha(final_binary) != final_record["retained"]["sha256"]:
+    errors.append("IOS_NATIVE_APPLICATION_LINK_FINAL_APP_DIGEST_MISMATCH")
+
+for candidate in document.get("candidate_link_maps", []):
+    retained_map = candidate.get("retained_map") or {}
+    map_path = Path(retained_map["retained_path"])
+    entry = {
+        "source_path": candidate.get("source_path"),
+        "retained_map": retained_map,
+        "path_line": candidate.get("path_line"),
+        "retained_product_candidate": candidate.get("linked_product_candidate"),
+        "classification": "unclassified",
+        "status": "FAILURE",
+        "object_table_entry_count": None,
+        "nutrition_ocr_objects": [],
+    }
+    proof_maps.append(entry)
+    if not map_path.is_file():
+        errors.append("IOS_NATIVE_APPLICATION_LINK_RETAINED_MAP_MISSING")
+        entry["reason"] = "retained link map is missing"
+        continue
+    if file_sha(map_path) != retained_map.get("retained", {}).get("sha256"):
+        errors.append("IOS_NATIVE_APPLICATION_LINK_RETAINED_MAP_DIGEST_MISMATCH")
+        entry["reason"] = "retained link map digest changed"
+        continue
+
+    lines = map_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    object_table = object_lines(lines)
+    entry["object_table_entry_count"] = len(object_table)
+    entry["nutrition_ocr_objects"] = [
+        line
+        for line in object_table
+        if "NutritionOcr" in line
+        and re.search(r"(?:\.o(?:$|[)\] \t])|\.a(?:\[|\())", line)
+    ]
     path_line = next(
         (line for line in lines if line.startswith("# Path:")),
         None,
     )
+    entry["path_line"] = path_line
     if path_line is None:
+        entry["reason"] = "link map has no # Path entry"
+        entry["status"] = "IGNORED_NO_PRODUCT_PATH"
         continue
-    linked_product = os.path.realpath(path_line.partition(":")[2].strip())
-    if linked_product != expected_product:
-        continue
-    matching_app_maps.append(path)
-    try:
-        start = lines.index("# Object files:") + 1
-    except ValueError:
-        continue
-    object_lines = []
-    for line in lines[start:]:
-        if line.startswith("# "):
-            break
-        object_lines.append(line)
-    if any(
-        "NutritionOcr" in line
-        and re.search(r"(?:\.o(?:$|[)\] \t])|\.a(?:\[|\())", line)
-        for line in object_lines
-    ):
-        linked_module_maps.append(path)
+    linked_product = Path(path_line.partition(":")[2].strip()).resolve()
+    entry["linked_product_source_path"] = str(linked_product)
+    linked_record = candidate.get("retained_linked_product")
+    linked_binary = (
+        Path(linked_record["retained_path"])
+        if linked_record and linked_record.get("retained_path")
+        else None
+    )
+    if linked_binary and linked_binary.is_file():
+        entry["linked_product"] = {
+            "source_path": linked_record["source_realpath"],
+            "retained_path": str(linked_binary),
+            "sha256": file_sha(linked_binary),
+        }
 
-if not matching_app_maps:
-    raise SystemExit("IOS_NATIVE_APPLICATION_LINK_MAP_NOT_FINAL_APP")
-if not linked_module_maps:
-    raise SystemExit("IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR")
-print(linked_module_maps[0])
+    if linked_product == expected_app:
+        entry["classification"] = "direct_final_application"
+        if candidate.get("linked_product_candidate") != "direct_final_application":
+            entry["reason"] = "captured product was not classified as the final app executable"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_PRODUCT_CAPTURE_MISMATCH")
+            continue
+        if (
+            not linked_binary
+            or not linked_binary.is_file()
+            or not final_binary
+            or not final_binary.is_file()
+        ):
+            entry["reason"] = "direct final application binary was not retained"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_FINAL_APP_BINARY_MISSING")
+            continue
+        if file_sha(linked_binary) != file_sha(final_binary):
+            entry["reason"] = "link-map target differs from retained final application"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_FINAL_APP_DIGEST_MISMATCH")
+            continue
+        entry["status"] = "PASS"
+    else:
+        try:
+            relative = linked_product.relative_to(normal_root)
+        except ValueError:
+            entry["classification"] = "foreign_product"
+            entry["status"] = "IGNORED_FOREIGN_PRODUCT"
+            entry["reason"] = "link-map product is outside the app target architecture output"
+            continue
+        if (
+            len(relative.parts) != 3
+            or relative.parts[1] != "Binary"
+            or relative.parts[2] != scheme
+        ):
+            entry["classification"] = "unrecognized_target_output"
+            entry["reason"] = "link-map product does not match Objects-normal/<arch>/Binary/<app>"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_MAP_PRODUCT_TOPOLOGY_INVALID")
+            continue
+        architecture = relative.parts[0]
+        entry["classification"] = "thin_application_architecture"
+        entry["architecture"] = architecture
+        if (
+            candidate.get("linked_product_candidate") != "thin_app_target_output"
+            or candidate.get("linked_product_architecture") != architecture
+        ):
+            entry["reason"] = "captured product does not match the authenticated thin target path"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_PRODUCT_CAPTURE_MISMATCH")
+            continue
+        if not lipo_binary:
+            try:
+                lipo_lookup_result = subprocess.run(
+                    ["xcrun", "-f", "lipo"],
+                    capture_output=True,
+                    text=True,
+                )
+                if lipo_lookup_result.returncode == 0:
+                    lipo_binary = lipo_lookup_result.stdout.strip()
+                if not lipo_binary:
+                    raise RuntimeError("xcrun returned an empty lipo path")
+            except (OSError, RuntimeError) as error:
+                entry["reason"] = f"lipo is unavailable: {error}"
+                errors.append(
+                    f"IOS_NATIVE_APPLICATION_LINK_LIPO_UNAVAILABLE:{error}"
+                )
+                continue
+            if lipo_lookup_result.returncode != 0:
+                entry["reason"] = "xcrun could not locate lipo"
+                errors.append("IOS_NATIVE_APPLICATION_LINK_LIPO_UNAVAILABLE")
+                continue
+        if lipo_arch_result is None and final_binary and final_binary.is_file():
+            lipo_arch_result = subprocess.run(
+                [lipo_binary, "-archs", str(final_binary)],
+                capture_output=True,
+                text=True,
+            )
+            if lipo_arch_result.returncode == 0:
+                architectures = lipo_arch_result.stdout.strip().split()
+            else:
+                errors.append("IOS_NATIVE_APPLICATION_LINK_LIPO_ARCHS_FAILED")
+        if architecture not in architectures:
+            entry["reason"] = "thin architecture is absent from the final application"
+            errors.append(
+                f"IOS_NATIVE_APPLICATION_LINK_MAP_ARCHITECTURE_NOT_IN_FINAL_APP:{architecture}"
+            )
+            continue
+        if not linked_binary or not linked_binary.is_file():
+            entry["reason"] = "thin linker output was not retained"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_MAP_THIN_PRODUCT_MISSING")
+            continue
+
+        extracted_slice = proof_root / "slices" / (
+            f"{candidate['index']:03d}-{architecture}-{scheme}"
+        )
+        extracted_slice.parent.mkdir(parents=True, exist_ok=True)
+        extract_command = [
+            lipo_binary,
+            "-thin",
+            architecture,
+            str(final_binary),
+            "-output",
+            str(extracted_slice),
+        ]
+        extracted = subprocess.run(
+            extract_command,
+            capture_output=True,
+            text=True,
+        )
+        entry["slice_extraction"] = {
+            "command": extract_command,
+            "exit_code": extracted.returncode,
+            "stdout": extracted.stdout,
+            "stderr": extracted.stderr,
+        }
+        if extracted.returncode != 0 or not extracted_slice.is_file():
+            entry["reason"] = "lipo could not extract the final application architecture"
+            errors.append(
+                f"IOS_NATIVE_APPLICATION_LINK_MAP_THIN_SLICE_EXTRACTION_FAILED:{architecture}"
+            )
+            continue
+        entry["slice_extraction"]["retained_slice"] = str(extracted_slice)
+        entry["slice_extraction"]["sha256"] = file_sha(extracted_slice)
+        entry["linked_product"]["sha256"] = file_sha(linked_binary)
+        compare_command = ["cmp", "-s", str(linked_binary), str(extracted_slice)]
+        comparison = subprocess.run(
+            compare_command,
+            capture_output=True,
+            text=True,
+        )
+        entry["slice_comparison"] = {
+            "command": compare_command,
+            "exit_code": comparison.returncode,
+            "stdout": comparison.stdout,
+            "stderr": comparison.stderr,
+            "byte_identical": comparison.returncode == 0,
+        }
+        if comparison.returncode != 0:
+            entry["reason"] = "thin linker output differs from the final app architecture slice"
+            errors.append(
+                f"IOS_NATIVE_APPLICATION_LINK_MAP_THIN_SLICE_MISMATCH:{architecture}"
+            )
+            continue
+        entry["status"] = "PASS"
+
+    if entry["status"] == "PASS":
+        if not entry["nutrition_ocr_objects"]:
+            entry["status"] = "FAILURE"
+            entry["reason"] = "final-app link map has no NutritionOcr object or archive member"
+            errors.append("IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR")
+        else:
+            accepted_maps.append(str(map_path))
+
+if not accepted_maps and not errors:
+    errors.append("IOS_NATIVE_APPLICATION_LINK_MAP_NOT_FINAL_APP")
+elif not any(
+    entry["status"] == "PASS" and entry["nutrition_ocr_objects"]
+    for entry in proof_maps
+):
+    if "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR" not in errors:
+        errors.append("IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR")
+
+proof = {
+    "schema_version": 1,
+    "status": "PASS" if not errors else "FAILURE",
+    "final_application": final_record,
+    "expected_final_application_path": str(expected_app),
+    "expected_architecture_output_root": str(normal_root),
+    "lipo": {
+        "executable": lipo_binary,
+        "lookup_command": ["xcrun", "-f", "lipo"] if lipo_lookup_result else None,
+        "lookup_exit_code": (
+            lipo_lookup_result.returncode if lipo_lookup_result else None
+        ),
+        "lookup_stdout": lipo_lookup_result.stdout if lipo_lookup_result else None,
+        "lookup_stderr": lipo_lookup_result.stderr if lipo_lookup_result else None,
+        "archs_command": (
+            [lipo_binary, "-archs", str(final_binary)]
+            if lipo_binary and final_binary
+            else None
+        ),
+        "archs_exit_code": lipo_arch_result.returncode if lipo_arch_result else None,
+        "archs_stdout": lipo_arch_result.stdout if lipo_arch_result else None,
+        "archs_stderr": lipo_arch_result.stderr if lipo_arch_result else None,
+        "architectures": architectures,
+    },
+    "candidate_maps": proof_maps,
+    "accepted_link_maps": accepted_maps,
+    "errors": errors,
+}
+proof_path = proof_root.parent / "application-link-proof.json"
+proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+if errors:
+    raise SystemExit(errors[0])
+print(accepted_maps[0])
 PY
   )"
   then
@@ -1637,13 +2178,6 @@ PY
     grep -F NutritionOcr "$app_link_map"
   } > "$evidence_dir/nutrition-ocr-link-evidence.txt"
 
-  mkdir -p "$source_evidence_dir"
-  cp "$pod_project" \
-    "$source_evidence_dir/Pods.xcodeproj-project.pbxproj"
-  cp -R "$target_support" \
-    "$source_evidence_dir/NutritionOcr-target-support"
-  cp -R "$app_support" \
-    "$source_evidence_dir/Pods-target-support"
   cp "$provider_file" \
     "$evidence_dir/nutrition-ocr-provider-registration.swift"
   cp "$app_link_map" \
@@ -1660,6 +2194,8 @@ PY
   MODULE_EVIDENCE_RETAINED_PROVIDER="$evidence_dir/nutrition-ocr-provider-registration.swift" \
   MODULE_EVIDENCE_RETAINED_LINK_MAP="$evidence_dir/nutrition-ocr-link-map.txt" \
   MODULE_EVIDENCE_RETAINED_LINK_EVIDENCE="$evidence_dir/nutrition-ocr-link-evidence.txt" \
+  MODULE_EVIDENCE_CANDIDATE_BUILD="$candidate_build_evidence" \
+  MODULE_EVIDENCE_APPLICATION_LINK_PROOF="$application_link_proof" \
   MODULE_EVIDENCE_ARCHIVE="$module_archive" \
   MODULE_EVIDENCE_SWIFTMODULE="$module_swiftmodule" \
   MODULE_EVIDENCE_OBJECT="$module_object" \
@@ -1738,7 +2274,18 @@ document = {
             ("application_product", "MODULE_EVIDENCE_APP_PRODUCT"),
         )
     },
+    "application_link_proof": digest(
+        os.environ["MODULE_EVIDENCE_APPLICATION_LINK_PROOF"]
+    ),
     "evidence_files": [
+        {
+            "path": "candidate-build-evidence.json",
+            "digest": digest(os.environ["MODULE_EVIDENCE_CANDIDATE_BUILD"]),
+        },
+        {
+            "path": "application-link-proof.json",
+            "digest": digest(os.environ["MODULE_EVIDENCE_APPLICATION_LINK_PROOF"]),
+        },
         {
             "path": "nutrition-ocr-source-membership.txt",
             "sha256": digest(evidence_root / "nutrition-ocr-source-membership.txt")["sha256"],
@@ -1772,6 +2319,7 @@ xcode_build_stage() {
   local workspace
   local scheme
   local project
+  local xcodebuild_exit
   local -a build_args
 
   project="$(sed -n 's/^PROJECT=//p' "$prebuild_paths")"
@@ -1836,15 +2384,30 @@ if (!schemes.includes(scheme)) {
 NODE
 
   : > "$incremental_build_started_marker"
+  xcodebuild_exit=0
   NODE_BINARY="$node_binary" \
     "$xcodebuild_binary" \
       "${build_args[@]}" \
       > "$evidence_dir/xcodebuild.log" \
-      2>&1
+      2>&1 || xcodebuild_exit="$?"
 
-  grep -Fq \
+  if ! capture_candidate_build_evidence
+  then
+    return 1
+  fi
+
+  if test "$xcodebuild_exit" -ne 0
+  then
+    return "$xcodebuild_exit"
+  fi
+
+  if ! grep -Fq \
     "BUILD SUCCEEDED" \
     "$evidence_dir/xcodebuild.log"
+  then
+    echo "IOS_NATIVE_XCODE_BUILD_SUCCEEDED_MARKER_MISSING" >&2
+    return 1
+  fi
 
   module_evidence_stage
 

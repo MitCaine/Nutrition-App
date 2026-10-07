@@ -535,8 +535,11 @@ builds the actual application for a generic simulator with signing disabled, pro
 `NutritionOcr` module compiles, and executes the retained host Swift regressions. Generated native
 products are disposable and must not be committed. Its default and trusted workflow contract is
 explicit clean compilation. The native build uses `ENABLE_DEBUG_DYLIB=NO` and
-`LD_GENERATE_MAP_FILE=YES` so the retained map describes the final application link even when a
-warm build does not emit a fresh linker command:
+`LD_GENERATE_MAP_FILE=YES` to retain application linker maps even when a warm build does not emit a
+fresh linker command. A universal simulator map may name an architecture-specific intermediate;
+the qualifier accepts that map only after authenticating its exact app-target output path and
+proving with `lipo -thin` and `cmp -s` that the linker output matches the same architecture slice
+of the final app:
 
     bash scripts/ios-native-qualification.sh \
       --evidence-dir /tmp/nutrition-ios-native-evidence \

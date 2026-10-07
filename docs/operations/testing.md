@@ -244,8 +244,11 @@ validates `NutritionOcr` autolinking, installs CocoaPods, compiles the generated
 generic iOS Simulator without distribution signing, and runs the three retained standalone Swift
 regression programs. Generated `ios/`, Pods, DerivedData, harness binaries, and the disposable
 worktree are removed before PASS in clean mode. The simulator build records its literal argv and
-uses `ENABLE_DEBUG_DYLIB=NO` with `LD_GENERATE_MAP_FILE=YES`, giving Xcode one final-application
-link-map topology to validate. Detailed logs and a compact `manifest.json` remain as evidence.
+uses `ENABLE_DEBUG_DYLIB=NO` with `LD_GENERATE_MAP_FILE=YES` so Xcode emits application link maps.
+Because universal simulator builds may map architecture-specific linker outputs before `lipo`
+creates the final app executable, the qualifier authenticates those thin maps against the final
+application slices before accepting module linkage. Detailed logs and a compact `manifest.json`
+remain as evidence.
 
 The qualifier also has a deliberately opt-in evaluation mode for a controller-owned cold/warm
 comparison:
@@ -271,14 +274,24 @@ fresh. A failed application build never saves a cache.
 
 The application/module proof records candidate autolinking, the generated `ExpoModulesProvider`
 class/import/module registration, and Pod target/source membership, built NutritionOcr
-module/archive/object outputs, and NutritionOcr's presence in the final application link map. The
-build explicitly uses `ENABLE_DEBUG_DYLIB=NO` and `LD_GENERATE_MAP_FILE=YES`; both flags appear in
-the captured invocation and exact compilation identity. The check selects a map whose `# Path:`
-names the built application executable and requires a NutritionOcr object in its `# Object files:`
-section. A library search path does not count as a linked module. The qualifier retains the complete
-generated provider, source-membership and link-map files before cleanup. It does not infer module
-inclusion from `Podfile.lock`, an old product, a relink log line, or `BUILD SUCCEEDED`; missing or
-unlinked module fixtures fail the native stage. GitHub ordinary and
+module/archive/object outputs, and NutritionOcr's presence in the final application link. The build
+explicitly uses `ENABLE_DEBUG_DYLIB=NO` and `LD_GENERATE_MAP_FILE=YES`; both flags appear in the
+captured invocation and exact compilation identity. Before link-map validation or generated-output
+cleanup, the qualifier retains every app-scheme candidate map, the generated provider and source
+membership inputs, the final application executable, and each map's direct or exact app-target thin
+linker output when available. This capture also runs when `xcodebuild` fails, so diagnostics survive
+cleanup.
+
+Xcode's universal simulator build may write architecture-specific maps whose `# Path:` points to
+`Objects-normal/<architecture>/Binary/<app>` before `lipo` assembles the final application. Such a
+map is accepted only when its path matches that exact app-target output layout, its architecture is
+present in the final app according to `lipo -archs`, and `lipo -thin` plus `cmp -s` proves that the
+retained linker output is byte-identical to the extracted final-app slice. A direct map naming the
+final app executable is accepted directly. Other products, similarly named binaries, and library
+search paths never count as application linkage. `application-link-proof.json` records each map's
+classification and object-table evidence, plus hashes and results. For thin maps it also records the
+architecture, lipo extraction, and byte-comparison commands. Missing or unlinked module fixtures
+fail the native stage. GitHub ordinary and
 trusted workflows explicitly select clean mode, so the opt-in route cannot change the #167 clean
 generation contract or silently enable incremental compilation.
 
