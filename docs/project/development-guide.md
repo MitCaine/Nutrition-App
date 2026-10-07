@@ -534,8 +534,9 @@ the iOS project from repository authority in a disposable path containing spaces
 builds the actual application for a generic simulator with signing disabled, proves the local
 `NutritionOcr` module compiles, and executes the retained host Swift regressions. Generated native
 products are disposable and must not be committed. Its default and trusted workflow contract is
-explicit clean compilation. The native build enables `LD_GENERATE_MAP_FILE=YES` so final
-application linking is inspectable even when a warm build does not emit a fresh linker command:
+explicit clean compilation. The native build uses `ENABLE_DEBUG_DYLIB=NO` and
+`LD_GENERATE_MAP_FILE=YES` so the retained map describes the final application link even when a
+warm build does not emit a fresh linker command:
 
     bash scripts/ios-native-qualification.sh \
       --evidence-dir /tmp/nutrition-ios-native-evidence \
@@ -546,12 +547,17 @@ The script exposes a separate, controller-owned `--compilation-mode incremental`
 explicit external `--compilation-cache-dir`. This mode always regenerates the candidate iOS project,
 installs dependencies, and runs the same application and host-harness checks. It retains only
 DerivedData when its exact candidate, generated configuration, dependency, toolchain, build-option,
-and canonical path identity matches. Cache misses or incompatible state are visible fresh builds;
+captured xcodebuild argv, and canonical path identity matches. The identity includes
+`ENABLE_DEBUG_DYLIB=NO`, signing flags, the discovered workspace, and the actual DerivedData path.
+Cache misses or incompatible state are visible fresh builds;
 application failures do not populate a cache. Cache publication waits for application/module
 evidence, all three host harnesses, source cleanliness, successful generated cleanup, and retained
-manifest evidence. Generated `ios/`, Pods, worktrees, harness binaries,
-and products are removed every run. Keep ordinary automatic and trusted qualification on clean mode
-until a separately reviewed cold/warm result establishes reproducible net benefit.
+manifest evidence. Eligible incremental runs retain external `DerivedData`, including `BuildProducts`,
+between cold and warm runs. Every run removes generated `ios/`, Pods, the disposable worktree, and
+harness binaries; clean mode also removes its run-local DerivedData before PASS. Failed cache
+operations quarantine their state and DerivedData. The controller removes the external cache after
+evaluation. Keep ordinary automatic and trusted qualification on clean mode until a separately
+reviewed cold/warm result establishes reproducible net benefit.
 
 Use ordinary `mobile` qualification as well when JavaScript/TypeScript or package behavior is
 affected. `ios-native` supplements the Ubuntu mobile baseline; it does not replace Jest,

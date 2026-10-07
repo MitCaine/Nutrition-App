@@ -131,6 +131,7 @@ compilation_identity="$evidence_dir/compilation-identity.json"
 compilation_restore="$evidence_dir/compilation-restore.json"
 compilation_save="$evidence_dir/compilation-save.json"
 compilation_discard="$evidence_dir/compilation-discard.json"
+build_invocation_file="$evidence_dir/build-invocation.json"
 module_evidence="$evidence_dir/module-evidence.json"
 incremental_build_started_marker="$evidence_dir/incremental-build-started"
 incremental_cache_committed_marker="$evidence_dir/incremental-cache-committed"
@@ -381,10 +382,12 @@ write_manifest() {
   IOS_NATIVE_COMPILATION_RESTORE_FILE="$compilation_restore" \
   IOS_NATIVE_COMPILATION_SAVE_FILE="$compilation_save" \
   IOS_NATIVE_COMPILATION_DISCARD_FILE="$compilation_discard" \
+  IOS_NATIVE_BUILD_INVOCATION_FILE="$build_invocation_file" \
   IOS_NATIVE_MODULE_EVIDENCE_FILE="$module_evidence" \
   python3 - "$timings_file" "$manifest" <<'PY'
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -486,6 +489,17 @@ compilation = {
     "save": document("IOS_NATIVE_COMPILATION_SAVE_FILE"),
     "discard": document("IOS_NATIVE_COMPILATION_DISCARD_FILE"),
 }
+build_invocation = document("IOS_NATIVE_BUILD_INVOCATION_FILE")
+build_command = None
+if build_invocation:
+    build_command = (
+        "NODE_BINARY="
+        + shlex.quote(build_invocation["environment"]["NODE_BINARY"])
+        + " "
+        + shlex.join(
+            [build_invocation["executable"], *build_invocation["argv"]]
+        )
+    )
 module_document = document("IOS_NATIVE_MODULE_EVIDENCE_FILE", {})
 manifest = {
     "schema_version": 1,
@@ -510,8 +524,14 @@ manifest = {
     "expo": text("IOS_NATIVE_EXPO"),
     "react_native": text("IOS_NATIVE_REACT_NATIVE"),
     "cocoapods": text("IOS_NATIVE_COCOAPODS"),
-    "generated_scheme": text("IOS_NATIVE_SCHEME"),
-    "generated_build_command": text("IOS_NATIVE_BUILD_COMMAND"),
+    "generated_scheme": (build_invocation or {}).get("scheme"),
+    "generated_build_command": build_command,
+    "generated_build_argv": (build_invocation or {}).get("argv"),
+    "generated_build_executable": (build_invocation or {}).get("executable"),
+    "generated_build_environment": (build_invocation or {}).get("environment"),
+    "generated_workspace": (build_invocation or {}).get("workspace"),
+    "derived_data_path": (build_invocation or {}).get("derived_data_path"),
+    "build_invocation": build_invocation,
     "prebuild": stage_status["prebuild_plugins"],
     "config_plugins": stage_status["prebuild_plugins"],
     "autolinking": stage_status["autolinking"],
@@ -756,6 +776,13 @@ capture_toolchain() {
     return 1
   fi
 
+  if ! xcodebuild_binary="$(command -v xcodebuild)" ||
+    test -z "$xcodebuild_binary"
+  then
+    echo "IOS_NATIVE_XCODEBUILD_BINARY_UNAVAILABLE" >&2
+    return 1
+  fi
+
   if ! node_version="$(node --version)" ||
     test -z "$node_version"
   then
@@ -791,7 +818,7 @@ capture_toolchain() {
     return 1
   fi
 
-  if ! xcode_info="$(xcodebuild -version)" ||
+  if ! xcode_info="$("$xcodebuild_binary" -version)" ||
     test -z "$xcode_info"
   then
     echo "IOS_NATIVE_XCODE_VERSION_UNAVAILABLE" >&2
@@ -888,6 +915,7 @@ capture_toolchain() {
 
   export IOS_NATIVE_NODE_BINARY="$node_binary"
   export IOS_NATIVE_RUBY_BINARY="$ruby_binary"
+  export IOS_NATIVE_XCODEBUILD_BINARY="$xcodebuild_binary"
   export IOS_NATIVE_NODE="$node_version"
   export IOS_NATIVE_NPM="$npm_version"
   export IOS_NATIVE_RUBY="$ruby_version"
@@ -1116,22 +1144,131 @@ for argument in sys.argv[1:]:
 PY
 }
 
+capture_build_invocation() {
+  local executable="$1"
+  local workspace="$2"
+  local scheme="$3"
+  local build_command
+  shift 3
+
+  if ! build_command="$(
+    IOS_NATIVE_BUILD_INVOCATION_FILE="$build_invocation_file" \
+    IOS_NATIVE_BUILD_WORKSPACE="$workspace" \
+    IOS_NATIVE_BUILD_DERIVED_DATA="$derived_data" \
+    IOS_NATIVE_BUILD_NODE_BINARY="$node_binary" \
+    python3 - "$executable" "$workspace" "$scheme" "$derived_data" "$node_binary" "$@" <<'PY'
+import json
+import os
+import shlex
+import sys
+from pathlib import Path
+
+
+executable, workspace, scheme, derived_data, node_binary = sys.argv[1:6]
+argv = sys.argv[6:]
+
+
+def option_value(option):
+    matches = [
+        argv[index + 1]
+        for index, value in enumerate(argv[:-1])
+        if value == option
+    ]
+    if len(matches) != 1:
+        raise SystemExit(f"IOS_NATIVE_BUILD_OPTION_INVALID:{option}")
+    return matches[0]
+
+
+def assignment_value(name):
+    prefix = f"{name}="
+    matches = [value[len(prefix):] for value in argv if value.startswith(prefix)]
+    if len(matches) != 1:
+        raise SystemExit(f"IOS_NATIVE_BUILD_SETTING_INVALID:{name}")
+    return matches[0]
+
+
+document = {
+    "schema_version": 1,
+    "executable": executable,
+    "argv": argv,
+    "environment": {"NODE_BINARY": node_binary},
+    "workspace": workspace,
+    "scheme": scheme,
+    "derived_data_path": derived_data,
+    "configuration": option_value("-configuration"),
+    "sdk": option_value("-sdk"),
+    "destination": option_value("-destination"),
+    "signing": {
+        "CODE_SIGNING_ALLOWED": assignment_value("CODE_SIGNING_ALLOWED"),
+        "CODE_SIGNING_REQUIRED": assignment_value("CODE_SIGNING_REQUIRED"),
+    },
+    "debug": {
+        "ENABLE_DEBUG_DYLIB": assignment_value("ENABLE_DEBUG_DYLIB"),
+    },
+    "link_map": {
+        "LD_GENERATE_MAP_FILE": assignment_value("LD_GENERATE_MAP_FILE"),
+    },
+}
+if option_value("-workspace") != workspace:
+    raise SystemExit("IOS_NATIVE_BUILD_WORKSPACE_MISMATCH")
+if option_value("-scheme") != scheme:
+    raise SystemExit("IOS_NATIVE_BUILD_SCHEME_MISMATCH")
+if option_value("-derivedDataPath") != derived_data:
+    raise SystemExit("IOS_NATIVE_BUILD_DERIVED_DATA_MISMATCH")
+if document["signing"] != {
+    "CODE_SIGNING_ALLOWED": "NO",
+    "CODE_SIGNING_REQUIRED": "NO",
+}:
+    raise SystemExit("IOS_NATIVE_BUILD_SIGNING_OPTIONS_INVALID")
+if document["debug"]["ENABLE_DEBUG_DYLIB"] != "NO":
+    raise SystemExit("IOS_NATIVE_BUILD_DEBUG_DYLIB_MUST_BE_DISABLED")
+if document["link_map"]["LD_GENERATE_MAP_FILE"] != "YES":
+    raise SystemExit("IOS_NATIVE_BUILD_LINK_MAP_MUST_BE_ENABLED")
+if not argv or argv[-1] != "build":
+    raise SystemExit("IOS_NATIVE_BUILD_ACTION_INVALID")
+
+Path(os.environ["IOS_NATIVE_BUILD_INVOCATION_FILE"]).write_text(
+    json.dumps(document, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+print(
+    "NODE_BINARY="
+    + shlex.quote(node_binary)
+    + " "
+    + shlex.join([executable, *argv])
+)
+PY
+  )"
+  then
+    echo "IOS_NATIVE_BUILD_INVOCATION_CAPTURE_FAILED" >&2
+    return 1
+  fi
+
+  IOS_NATIVE_BUILD_COMMAND="$build_command"
+  IOS_NATIVE_BUILD_WORKSPACE="$workspace"
+  IOS_NATIVE_BUILD_DERIVED_DATA="$derived_data"
+  IOS_NATIVE_SCHEME="$scheme"
+  export IOS_NATIVE_BUILD_COMMAND
+  export IOS_NATIVE_BUILD_WORKSPACE
+  export IOS_NATIVE_BUILD_DERIVED_DATA
+  export IOS_NATIVE_BUILD_INVOCATION_FILE="$build_invocation_file"
+  export IOS_NATIVE_SCHEME
+}
+
 prepare_incremental_cache() {
   local workspace="$1"
   local scheme="$2"
-  local build_command
   local prepare_start
   local prepare_end
   local prepare_elapsed
 
-  build_command="xcodebuild -workspace $workspace -scheme $scheme -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator -derivedDataPath $derived_data CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO LD_GENERATE_MAP_FILE=YES build"
   if ! prepare_start="$(date +%s)"
   then
     echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
     return 1
   fi
 
-  python3 \
+  if ! python3 \
     "$incremental_helper" \
     identity \
     --repo-root "$repo_root" \
@@ -1139,7 +1276,7 @@ prepare_incremental_cache() {
     --project-root "$probe_root" \
     --derived-data "$derived_data" \
     --candidate "$commit" \
-    --build-command "$build_command" \
+    --build-invocation "$build_invocation_file" \
     --toolchain "macos=$macos_version" \
     --toolchain "architecture=$architecture" \
     --toolchain "xcode=$xcode_version" \
@@ -1153,8 +1290,12 @@ prepare_incremental_cache() {
     --output "$compilation_identity" \
     > "$evidence_dir/compilation-identity.log" \
     2>&1
+  then
+    echo "IOS_NATIVE_INCREMENTAL_IDENTITY_FAILED" >&2
+    return 1
+  fi
 
-  python3 \
+  if ! python3 \
     "$incremental_helper" \
     prepare \
     --identity "$compilation_identity" \
@@ -1163,6 +1304,10 @@ prepare_incremental_cache() {
     --output "$compilation_restore" \
     > "$evidence_dir/compilation-restore.log" \
     2>&1
+  then
+    echo "IOS_NATIVE_INCREMENTAL_PREPARE_FAILED" >&2
+    return 1
+  fi
 
   if ! prepare_end="$(date +%s)"
   then
@@ -1170,7 +1315,7 @@ prepare_incremental_cache() {
     return 1
   fi
   prepare_elapsed="$((prepare_end - prepare_start))"
-  python3 - "$compilation_restore" "$prepare_elapsed" <<'PY'
+  if ! python3 - "$compilation_restore" "$prepare_elapsed" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -1183,8 +1328,65 @@ path.write_text(
     encoding="utf-8",
 )
 PY
+  then
+    echo "IOS_NATIVE_INCREMENTAL_RESTORE_TIMING_WRITE_FAILED" >&2
+    return 1
+  fi
 
-  cat "$compilation_restore"
+  if ! cat "$compilation_restore"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_RESTORE_READ_FAILED" >&2
+    return 1
+  fi
+}
+
+validate_incremental_save() {
+  local require_elapsed="$1"
+
+  python3 - \
+    "$compilation_identity" \
+    "$compilation_restore" \
+    "$compilation_save" \
+    "$compilation_state" \
+    "$derived_data" \
+    "$commit" \
+    "$require_elapsed" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+identity_path, restore_path, save_path, state_path, derived_data, candidate, require_elapsed = sys.argv[1:]
+identity = json.loads(Path(identity_path).read_text(encoding="utf-8"))
+restore = json.loads(Path(restore_path).read_text(encoding="utf-8"))
+save = json.loads(Path(save_path).read_text(encoding="utf-8"))
+state = json.loads(Path(state_path).read_text(encoding="utf-8"))
+identity_sha = identity.get("identity_sha256")
+expected_derived_data = str(Path(derived_data).resolve())
+
+if identity.get("candidate_sha") != candidate or not identity_sha:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_IDENTITY_INVALID")
+if restore.get("operation") != "restore" or restore.get("status") not in {"hit", "miss"}:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_RESTORE_STATUS_INVALID")
+if restore.get("identity_sha256") != identity_sha:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_RESTORE_IDENTITY_MISMATCH")
+if str(Path(restore.get("derived_data", "")).resolve()) != expected_derived_data:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_CURRENT_RESTORE_PATH_MISMATCH")
+if save.get("operation") != "save" or save.get("status") != "saved":
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_STATUS_INVALID")
+if save.get("identity_sha256") != identity_sha:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_IDENTITY_MISMATCH")
+if str(Path(save.get("derived_data", "")).resolve()) != expected_derived_data:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_PATH_MISMATCH")
+if state.get("identity_sha256") != identity_sha:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_STATE_IDENTITY_MISMATCH")
+if str(Path(state.get("derived_data", "")).resolve()) != expected_derived_data:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_STATE_PATH_MISMATCH")
+if state.get("cache_contents") != ["DerivedData only"]:
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_STATE_CONTENTS_INVALID")
+if require_elapsed == "1" and not isinstance(save.get("elapsed_seconds"), int):
+    raise SystemExit("IOS_NATIVE_INCREMENTAL_SAVE_TIMING_MISSING")
+PY
 }
 
 record_incremental_cache() {
@@ -1197,22 +1399,35 @@ record_incremental_cache() {
     echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
     return 1
   fi
-  python3 \
+  if ! python3 \
     "$incremental_helper" \
     commit \
     --identity "$compilation_identity" \
     --state "$compilation_state" \
     --derived-data "$derived_data" \
+    --candidate "$commit" \
+    --restore "$compilation_restore" \
+    --stages "$timings_file" \
+    --module-evidence "$module_evidence" \
     --output "$compilation_save" \
     > "$evidence_dir/compilation-save.log" \
     2>&1
+  then
+    echo "IOS_NATIVE_INCREMENTAL_CACHE_COMMIT_FAILED" >&2
+    return 1
+  fi
+  if ! validate_incremental_save 0
+  then
+    echo "IOS_NATIVE_INCREMENTAL_CACHE_SAVE_VALIDATION_FAILED" >&2
+    return 1
+  fi
   if ! save_end="$(date +%s)"
   then
     echo "IOS_NATIVE_INCREMENTAL_CACHE_TIMER_UNAVAILABLE" >&2
     return 1
   fi
   save_elapsed="$((save_end - save_start))"
-  python3 - "$compilation_save" "$save_elapsed" <<'PY'
+  if ! python3 - "$compilation_save" "$save_elapsed" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -1225,7 +1440,20 @@ path.write_text(
     encoding="utf-8",
 )
 PY
-  cat "$compilation_save"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_SAVE_TIMING_WRITE_FAILED" >&2
+    return 1
+  fi
+  if ! validate_incremental_save 1
+  then
+    echo "IOS_NATIVE_INCREMENTAL_FINAL_SAVE_VALIDATION_FAILED" >&2
+    return 1
+  fi
+  if ! cat "$compilation_save"
+  then
+    echo "IOS_NATIVE_INCREMENTAL_SAVE_READ_FAILED" >&2
+    return 1
+  fi
 }
 
 module_evidence_stage() {
@@ -1240,8 +1468,11 @@ module_evidence_stage() {
   local module_swiftmodule
   local module_object
   local app_link_map
+  local candidate_link_map
   local app_product
   local scheme_without_spaces
+  local -a app_link_maps
+  app_link_maps=()
 
   scheme_without_spaces="${scheme// /}"
   test -f "$pod_project"
@@ -1265,13 +1496,35 @@ module_evidence_stage() {
       sed -n '1p'
   )"
   if test -z "$provider_file" ||
-    ! grep -Eq \
-      'class[[:space:]]+ExpoModulesProvider([[:space:]:{]|$)' \
-      "$provider_file" ||
-    ! grep -Eq \
-      '^[[:space:]]*import[[:space:]]+NutritionOcr([[:space:]]|$)' \
-      "$provider_file" ||
-    ! grep -Eq 'NutritionOcrModule([.]self)?' "$provider_file"
+    ! python3 - "$provider_file" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+provider_class = re.search(
+    r"\bclass\s+ExpoModulesProvider(?=\s|:|\{)",
+    source,
+)
+module_import = re.search(
+    r"^[ \t]*(?:internal[ \t]+)?import[ \t]+NutritionOcr(?:[ \t]|$)",
+    source,
+    re.MULTILINE,
+)
+module_method = re.search(
+    r"\bgetModuleClasses\s*\([^)]*\)[^{]*\{(?P<body>.*?)(?:\n[ \t]*\})",
+    source,
+    re.DOTALL,
+)
+module_tuple = module_method and re.search(
+    r"\(\s*module\s*:\s*NutritionOcrModule\.self\s*,\s*name\s*:\s*nil\s*\)",
+    module_method.group("body"),
+    re.DOTALL,
+)
+if not (provider_class and module_import and module_tuple):
+    raise SystemExit(1)
+PY
   then
     echo "IOS_NATIVE_MODULE_PROVIDER_REGISTRATION_MISSING" >&2
     return 1
@@ -1299,14 +1552,16 @@ module_evidence_stage() {
       -print |
       sed -n '1p'
   )"
-  app_link_map="$(
+  while IFS= read -r -d '' candidate_link_map
+  do
+    app_link_maps+=("$candidate_link_map")
+  done < <(
     find "$intermediates_root" \
       -type f \
       -path "*${scheme_without_spaces}.build*" \
       -name '*LinkMap*.txt' \
-      -print |
-      sed -n '1p'
-  )"
+      -print0
+  )
   app_product="$(
     find "$products_root" \
       -type f \
@@ -1318,13 +1573,56 @@ module_evidence_stage() {
   test -n "$module_archive"
   test -n "$module_swiftmodule"
   test -n "$module_object"
-  test -n "$app_link_map"
   test -n "$app_product"
 
-  if ! grep -Fq "NutritionOcr" "$app_link_map" ||
-    ! grep -Fq "libNutritionOcr" "$app_link_map"
+  if ! app_link_map="$(python3 - "$app_product" "${app_link_maps[@]}" <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
+
+
+expected_product = os.path.realpath(sys.argv[1])
+link_maps = sys.argv[2:]
+matching_app_maps = []
+linked_module_maps = []
+for raw_path in link_maps:
+    path = Path(raw_path)
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    path_line = next(
+        (line for line in lines if line.startswith("# Path:")),
+        None,
+    )
+    if path_line is None:
+        continue
+    linked_product = os.path.realpath(path_line.partition(":")[2].strip())
+    if linked_product != expected_product:
+        continue
+    matching_app_maps.append(path)
+    try:
+        start = lines.index("# Object files:") + 1
+    except ValueError:
+        continue
+    object_lines = []
+    for line in lines[start:]:
+        if line.startswith("# "):
+            break
+        object_lines.append(line)
+    if any(
+        "NutritionOcr" in line
+        and re.search(r"(?:\.o(?:$|[)\] \t])|\.a(?:\[|\())", line)
+        for line in object_lines
+    ):
+        linked_module_maps.append(path)
+
+if not matching_app_maps:
+    raise SystemExit("IOS_NATIVE_APPLICATION_LINK_MAP_NOT_FINAL_APP")
+if not linked_module_maps:
+    raise SystemExit("IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR")
+print(linked_module_maps[0])
+PY
+  )"
   then
-    echo "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR" >&2
     return 1
   fi
   {
@@ -1423,6 +1721,7 @@ document = {
         "provider_class": "ExpoModulesProvider",
         "provider_import": "NutritionOcr",
         "module_class": "NutritionOcrModule",
+        "module_tuple": "(module: NutritionOcrModule.self, name: nil)",
     },
     "source_membership": [
         "NutritionOcrModule.swift",
@@ -1473,10 +1772,33 @@ xcode_build_stage() {
   local workspace
   local scheme
   local project
+  local -a build_args
 
   project="$(sed -n 's/^PROJECT=//p' "$prebuild_paths")"
   workspace="$(sed -n 's/^WORKSPACE=//p' "$prebuild_paths")"
   scheme="$(sed -n 's/^SCHEME=//p' "$prebuild_paths")"
+  build_args=(
+    -workspace "$workspace"
+    -scheme "$scheme"
+    -configuration Debug
+    -sdk iphonesimulator
+    -destination "generic/platform=iOS Simulator"
+    -derivedDataPath "$derived_data"
+    CODE_SIGNING_ALLOWED=NO
+    CODE_SIGNING_REQUIRED=NO
+    ENABLE_DEBUG_DYLIB=NO
+    LD_GENERATE_MAP_FILE=YES
+    build
+  )
+
+  if ! capture_build_invocation \
+    "$xcodebuild_binary" \
+    "$workspace" \
+    "$scheme" \
+    "${build_args[@]}"
+  then
+    return 1
+  fi
 
   if test "$compilation_mode" = "incremental"
   then
@@ -1485,7 +1807,7 @@ xcode_build_stage() {
     write_clean_compilation_operations
   fi
 
-  xcodebuild \
+  "$xcodebuild_binary" \
     -workspace "$workspace" \
     -list \
     -json \
@@ -1515,19 +1837,8 @@ NODE
 
   : > "$incremental_build_started_marker"
   NODE_BINARY="$node_binary" \
-    xcodebuild \
-      -workspace "$workspace" \
-      -scheme "$scheme" \
-      -configuration Debug \
-      -sdk iphonesimulator \
-      -destination \
-      "generic/platform=iOS Simulator" \
-      -derivedDataPath \
-      "$derived_data" \
-      CODE_SIGNING_ALLOWED=NO \
-      CODE_SIGNING_REQUIRED=NO \
-      LD_GENERATE_MAP_FILE=YES \
-      build \
+    "$xcodebuild_binary" \
+      "${build_args[@]}" \
       > "$evidence_dir/xcodebuild.log" \
       2>&1
 
@@ -1719,10 +2030,7 @@ then
   exit 1
 fi
 
-scheme="$(sed -n 's/^SCHEME=//p' "$prebuild_paths")"
 export IOS_NATIVE_EXPO="$(sed -n 's/^expo=//p' "$dependency_versions")"
 export IOS_NATIVE_REACT_NATIVE="$(sed -n 's/^react_native=//p' "$dependency_versions")"
-export IOS_NATIVE_SCHEME="$scheme"
-export IOS_NATIVE_BUILD_COMMAND="xcodebuild -workspace ios/${scheme}.xcworkspace -scheme ${scheme} -configuration Debug -sdk iphonesimulator -destination generic/platform=iOS Simulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO LD_GENERATE_MAP_FILE=YES build"
 
 exit 0

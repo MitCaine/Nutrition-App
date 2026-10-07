@@ -141,8 +141,10 @@ qualification-tooling changes cannot silently omit that profile. The profile rem
 requirement, not an acceptance or review decision, and documentation/HISTORY bookkeeping alone does
 not imply an expensive native build. The profile's workflows pass `--compilation-mode clean`
 explicitly. Any DerivedData reuse is a separate controller-owned evaluation using an external cache
-directory and the repository qualifier's exact identity and module/link evidence; it is not an
-automatic ordinary-PR or trusted-workflow reuse mechanism.
+directory and the repository qualifier's exact identity and module/link evidence. Its recorded
+xcodebuild argv includes `ENABLE_DEBUG_DYLIB=NO` and `LD_GENERATE_MAP_FILE=YES`, and its external
+DerivedData retains `BuildProducts` between eligible cold/warm runs. It is not an automatic
+ordinary-PR or trusted-workflow reuse mechanism.
 
 ### GitHub Milestones
 

@@ -130,6 +130,58 @@ def _generated_inputs(mobile: Path) -> list[dict[str, str]]:
     ]
 
 
+def _read_build_invocation(path: Path) -> dict[str, Any]:
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError("build invocation is not an object")
+    executable = document.get("executable")
+    argv = document.get("argv")
+    environment = document.get("environment")
+    workspace = document.get("workspace")
+    derived_data = document.get("derived_data_path")
+    if not isinstance(executable, str) or not executable:
+        raise ValueError("build invocation executable is missing")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("build invocation argv is invalid")
+    if not isinstance(environment, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in environment.items()
+    ):
+        raise ValueError("build invocation environment is invalid")
+    if not isinstance(workspace, str) or not workspace:
+        raise ValueError("build invocation workspace is missing")
+    if not isinstance(derived_data, str) or not derived_data:
+        raise ValueError("build invocation DerivedData path is missing")
+
+    def option_value(option: str) -> str | None:
+        matches = [
+            argv[index + 1]
+            for index, value in enumerate(argv[:-1])
+            if value == option
+        ]
+        if len(matches) != 1:
+            return None
+        return matches[0]
+
+    assignments = set(argv)
+    if option_value("-workspace") != workspace:
+        raise ValueError("build invocation workspace does not match argv")
+    if option_value("-derivedDataPath") != derived_data:
+        raise ValueError("build invocation DerivedData does not match argv")
+    required = {
+        "CODE_SIGNING_ALLOWED=NO",
+        "CODE_SIGNING_REQUIRED=NO",
+        "ENABLE_DEBUG_DYLIB=NO",
+        "LD_GENERATE_MAP_FILE=YES",
+        "build",
+    }
+    if not required.issubset(assignments):
+        raise ValueError("build invocation is missing required native build options")
+    if not environment.get("NODE_BINARY"):
+        raise ValueError("build invocation NODE_BINARY is missing")
+    return document
+
+
 def build_identity(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = Path(args.repo_root).resolve()
     mobile = Path(args.mobile).resolve()
@@ -141,6 +193,11 @@ def build_identity(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError(f"invalid toolchain item: {item}")
         name, value = item.split("=", 1)
         toolchain[name] = value
+    build_invocation = _read_build_invocation(
+        Path(args.build_invocation).resolve()
+    )
+    if Path(build_invocation["derived_data_path"]).resolve() != derived_data:
+        raise ValueError("build invocation DerivedData path does not match identity")
 
     tracked_inputs = [
         {
@@ -164,12 +221,7 @@ def build_identity(args: argparse.Namespace) -> dict[str, Any]:
         "toolchain": toolchain,
         "build": {
             "mode": "incremental",
-            "configuration": "Debug",
-            "sdk": "iphonesimulator",
-            "destination": "generic/platform=iOS Simulator",
-            "code_signing_allowed": False,
-            "code_signing_required": False,
-            "command": args.build_command,
+            "invocation": build_invocation,
         },
         "paths": {
             "canonical_project_root": str(project_root),
@@ -304,6 +356,52 @@ def commit(args: argparse.Namespace) -> dict[str, Any]:
     identity = _read_identity(Path(args.identity).resolve())
     state_path = Path(args.state).resolve()
     derived_data = Path(args.derived_data).resolve()
+    if identity.get("candidate_sha") != args.candidate:
+        raise ValueError("current candidate does not match compilation identity")
+
+    restore = json.loads(Path(args.restore).read_text(encoding="utf-8"))
+    if not isinstance(restore, dict):
+        raise ValueError("current restore record is not an object")
+    if restore.get("operation") != "restore":
+        raise ValueError("current restore operation is invalid")
+    if restore.get("status") not in {"hit", "miss"}:
+        raise ValueError("current restore status is not eligible for cache save")
+    if restore.get("identity_sha256") != identity["identity_sha256"]:
+        raise ValueError("current restore identity does not match compilation identity")
+    if Path(restore.get("derived_data", "")).resolve() != derived_data:
+        raise ValueError("current restore DerivedData path does not match")
+
+    stages: dict[str, str] = {}
+    for line in Path(args.stages).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        stage = json.loads(line)
+        name = stage.get("stage")
+        if not isinstance(name, str) or name in stages:
+            raise ValueError("current stage status inventory is invalid")
+        stages[name] = stage.get("status")
+    required_stages = (
+        "npm_install",
+        "prebuild_plugins",
+        "autolinking",
+        "pods",
+        "xcode_build",
+        "swift_harnesses",
+        "cleanup",
+    )
+    if any(stages.get(name) != "PASS" for name in required_stages):
+        raise ValueError("current stage status inventory is not fully successful")
+
+    module_evidence = json.loads(
+        Path(args.module_evidence).read_text(encoding="utf-8")
+    )
+    if not isinstance(module_evidence, dict):
+        raise ValueError("current module evidence is not an object")
+    if (
+        module_evidence.get("status") != "PASS"
+        or module_evidence.get("candidate_sha") != args.candidate
+    ):
+        raise ValueError("current module evidence does not match candidate")
     if not derived_data.is_dir():
         raise ValueError("successful compilation cache requires DerivedData")
     size, files = _tree_stats(derived_data)
@@ -360,7 +458,7 @@ def _parser() -> argparse.ArgumentParser:
     identity.add_argument("--project-root", required=True)
     identity.add_argument("--derived-data", required=True)
     identity.add_argument("--candidate", required=True)
-    identity.add_argument("--build-command", required=True)
+    identity.add_argument("--build-invocation", required=True)
     identity.add_argument("--toolchain", action="append", default=[])
     identity.add_argument("--output", required=True)
 
@@ -371,6 +469,11 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--derived-data", required=True)
         command.add_argument("--elapsed-seconds")
         command.add_argument("--output", required=True)
+        if name == "commit":
+            command.add_argument("--candidate", required=True)
+            command.add_argument("--restore", required=True)
+            command.add_argument("--stages", required=True)
+            command.add_argument("--module-evidence", required=True)
 
     discard_parser = subparsers.add_parser("discard")
     discard_parser.add_argument("--state", required=True)

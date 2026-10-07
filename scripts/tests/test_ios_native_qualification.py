@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import sys
+import hashlib
 import json
 import os
 import signal
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -490,12 +491,14 @@ class IosNativeQualificationTests(
     def test_incremental_cache_is_exact_and_retains_only_derived_data(self):
         cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-cache-"))
         cache_dir = cache_parent / "stable Cache"
+        fake_bin = cache_parent / "fake tools"
         self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
 
         cold, cold_evidence = self._run_fixture_qualification(
             "success",
             compilation_mode="incremental",
             compilation_cache_dir=cache_dir,
+            fake_bin_dir=fake_bin,
         )
         self.assertEqual(cold.returncode, 0, cold.stderr)
         cold_manifest = json.loads(
@@ -526,11 +529,13 @@ class IosNativeQualificationTests(
             cold_manifest["module_evidence"]["provider_registration"]["provider_class"],
             "ExpoModulesProvider",
         )
+        self._assert_build_invocation(cold_evidence, cold_manifest)
 
         warm, warm_evidence = self._run_fixture_qualification(
             "success",
             compilation_mode="incremental",
             compilation_cache_dir=cache_dir,
+            fake_bin_dir=fake_bin,
         )
         self.assertEqual(warm.returncode, 0, warm.stderr)
         warm_manifest = json.loads(
@@ -544,7 +549,12 @@ class IosNativeQualificationTests(
             warm_manifest["module_evidence"]["status"],
             "PASS",
         )
+        self.assertEqual(
+            warm_manifest["compilation"]["save"]["identity_sha256"],
+            warm_manifest["compilation"]["restore"]["identity_sha256"],
+        )
         self.assertFalse((cache_dir / "Nutrition App Native").exists())
+        self._assert_build_invocation(warm_evidence, warm_manifest)
 
     def test_incremental_failure_discards_uncommitted_derived_data(self):
         cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-failure-"))
@@ -573,6 +583,10 @@ class IosNativeQualificationTests(
             compilation_cache_dir=cache_dir,
         )
         self.assertEqual(result.returncode, 17, result.stderr)
+        manifest = json.loads(
+            (evidence / "manifest.json").read_text(encoding="utf-8")
+        )
+        self._assert_build_invocation(evidence, manifest)
         discard = json.loads(
             (evidence / "compilation-discard.json").read_text(encoding="utf-8")
         )
@@ -613,6 +627,146 @@ class IosNativeQualificationTests(
         self.assertFalse((cache_dir / "DerivedData").exists())
         self.assertFalse((cache_dir / "compilation-state.json").exists())
 
+    def test_incremental_commit_failure_discards_side_effects(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-commit-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "incremental-commit-failure",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn("IOS_NATIVE_INCREMENTAL_CACHE_COMMIT_FAILED", result.stderr)
+        self.assertTrue((evidence / "compilation-discard.json").is_file())
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_incremental_save_timing_failure_discards_committed_state(self):
+        cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-save-timing-failure-"))
+        cache_dir = cache_parent / "stable Cache"
+        self.addCleanup(shutil.rmtree, cache_parent, ignore_errors=True)
+        result, evidence = self._run_fixture_qualification(
+            "incremental-save-timing-failure",
+            compilation_mode="incremental",
+            compilation_cache_dir=cache_dir,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn("IOS_NATIVE_INCREMENTAL_SAVE_TIMING_WRITE_FAILED", result.stderr)
+        self.assertTrue((evidence / "compilation-discard.json").is_file())
+        self.assertFalse((cache_dir / "DerivedData").exists())
+        self.assertFalse((cache_dir / "compilation-state.json").exists())
+
+    def test_incremental_save_rejects_stale_identity_or_failed_stage_status(self):
+        helper = SCRIPTS / "lib" / "ios_native_incremental.py"
+        for invalid_case in ("restore-identity", "stage-status"):
+            with self.subTest(invalid_case=invalid_case), tempfile.TemporaryDirectory(
+                prefix="ios-native-invalid-save-"
+            ) as temporary:
+                root = Path(temporary)
+                derived_data = root / "DerivedData"
+                derived_data.mkdir()
+                (derived_data / "BuildProducts").mkdir()
+                identity_without_digest = {
+                    "schema_version": 1,
+                    "candidate_sha": "fixture-candidate",
+                }
+                identity_sha = hashlib.sha256(
+                    json.dumps(
+                        identity_without_digest,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                identity = {
+                    **identity_without_digest,
+                    "identity_sha256": identity_sha,
+                }
+                restore = {
+                    "operation": "restore",
+                    "status": "miss",
+                    "identity_sha256": identity_sha,
+                    "derived_data": str(derived_data.resolve()),
+                }
+                if invalid_case == "restore-identity":
+                    restore["identity_sha256"] = "stale-identity"
+
+                stage_names = [
+                    "npm_install",
+                    "prebuild_plugins",
+                    "autolinking",
+                    "pods",
+                    "xcode_build",
+                    "swift_harnesses",
+                    "cleanup",
+                ]
+                stages = [
+                    {
+                        "stage": name,
+                        "status": (
+                            "FAILURE"
+                            if invalid_case == "stage-status" and name == "xcode_build"
+                            else "PASS"
+                        ),
+                    }
+                    for name in stage_names
+                ]
+                module_evidence = {
+                    "status": "PASS",
+                    "candidate_sha": "fixture-candidate",
+                }
+                inputs = {
+                    "identity": identity,
+                    "restore": restore,
+                    "module-evidence": module_evidence,
+                }
+                input_paths = {}
+                for name, value in inputs.items():
+                    input_path = root / f"{name}.json"
+                    input_path.write_text(
+                        json.dumps(value) + "\n",
+                        encoding="utf-8",
+                    )
+                    input_paths[name] = input_path
+                stage_path = root / "stages.jsonl"
+                stage_path.write_text(
+                    "".join(json.dumps(stage) + "\n" for stage in stages),
+                    encoding="utf-8",
+                )
+                input_paths["stages"] = stage_path
+                output = root / "save.json"
+                state = root / "compilation-state.json"
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(helper),
+                        "commit",
+                        "--identity",
+                        str(input_paths["identity"]),
+                        "--state",
+                        str(state),
+                        "--derived-data",
+                        str(derived_data),
+                        "--candidate",
+                        "fixture-candidate",
+                        "--restore",
+                        str(input_paths["restore"]),
+                        "--stages",
+                        str(input_paths["stages"]),
+                        "--module-evidence",
+                        str(input_paths["module-evidence"]),
+                        "--output",
+                        str(output),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn("IOS_NATIVE_INCREMENTAL_ERROR:", result.stderr)
+                self.assertFalse(state.exists())
+                self.assertFalse(output.exists())
+
     def test_incremental_manifest_failure_does_not_save_cache(self):
         cache_parent = Path(tempfile.mkdtemp(prefix="ios-native-incremental-manifest-failure-"))
         cache_dir = cache_parent / "stable Cache"
@@ -648,6 +802,15 @@ class IosNativeQualificationTests(
             result.stderr,
         )
 
+    def test_library_search_path_does_not_count_as_application_link(self):
+        result, evidence = self._run_fixture_qualification("search-path-only")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((evidence / "module-evidence.json").exists())
+        self.assertIn(
+            "IOS_NATIVE_APPLICATION_LINK_MISSING_NUTRITION_OCR",
+            result.stderr,
+        )
+
     def test_missing_provider_registration_fails_native_evidence(self):
         result, evidence = self._run_fixture_qualification("missing-provider")
         self.assertNotEqual(result.returncode, 0, result.stderr)
@@ -656,6 +819,54 @@ class IosNativeQualificationTests(
             result.stderr,
         )
         self.assertFalse((evidence / "module-evidence.json").exists())
+
+    def test_internal_import_without_module_tuple_fails_provider_evidence(self):
+        result, evidence = self._run_fixture_qualification("provider-import-only")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "IOS_NATIVE_MODULE_PROVIDER_REGISTRATION_MISSING",
+            result.stderr,
+        )
+        self.assertFalse((evidence / "module-evidence.json").exists())
+
+    def test_module_tuple_without_import_fails_provider_evidence(self):
+        result, evidence = self._run_fixture_qualification("provider-tuple-only")
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "IOS_NATIVE_MODULE_PROVIDER_REGISTRATION_MISSING",
+            result.stderr,
+        )
+        self.assertFalse((evidence / "module-evidence.json").exists())
+
+    def _assert_build_invocation(self, evidence: Path, manifest: dict):
+        invocation = manifest["build_invocation"]
+        actual_argv = (evidence / "xcodebuild-argv.nul").read_bytes().split(b"\0")
+        if actual_argv[-1] == b"":
+            actual_argv.pop()
+        actual_argv = [value.decode("utf-8") for value in actual_argv]
+        self.assertEqual(actual_argv, invocation["argv"])
+        self.assertEqual(manifest["generated_build_argv"], actual_argv)
+
+        def option_value(option: str) -> str:
+            index = actual_argv.index(option)
+            return actual_argv[index + 1]
+
+        self.assertEqual(invocation["workspace"], option_value("-workspace"))
+        self.assertEqual(manifest["generated_workspace"], invocation["workspace"])
+        self.assertEqual(
+            invocation["derived_data_path"],
+            option_value("-derivedDataPath"),
+        )
+        self.assertEqual(manifest["derived_data_path"], invocation["derived_data_path"])
+        self.assertIn("CODE_SIGNING_ALLOWED=NO", actual_argv)
+        self.assertIn("CODE_SIGNING_REQUIRED=NO", actual_argv)
+        self.assertIn("ENABLE_DEBUG_DYLIB=NO", actual_argv)
+        self.assertIn("LD_GENERATE_MAP_FILE=YES", actual_argv)
+        self.assertEqual(
+            invocation["environment"]["NODE_BINARY"],
+            manifest["node_binary"],
+        )
+        self.assertTrue(manifest["generated_build_command"].startswith("NODE_BINARY="))
 
     def test_qualifier_fails_closed_on_timing_write_failure(self):
         result, evidence = self._run_fixture_qualification(
@@ -774,12 +985,36 @@ case "${1-}" in
         'import ExpoModulesCore' \
         'public class OtherProvider {}' \
         > "Pods/Target Support Files/Pods-Nutrition App/ExpoModulesProvider.swift"
+    elif [ "${IOS_NATIVE_FIXTURE_MODE-}" = "provider-import-only" ]; then
+      printf '%s\\n' \
+        'internal import ExpoModulesCore' \
+        'internal import NutritionOcr' \
+        'internal class ExpoModulesProvider: ModulesProvider {' \
+        '  public override func getModuleClasses() -> [ExpoModuleTupleType] {' \
+        '    return [(module: OtherModule.self, name: nil)]' \
+        '  }' \
+        '}' \
+        > "Pods/Target Support Files/Pods-Nutrition App/ExpoModulesProvider.swift"
+    elif [ "${IOS_NATIVE_FIXTURE_MODE-}" = "provider-tuple-only" ]; then
+      printf '%s\\n' \
+        'internal import ExpoModulesCore' \
+        'internal class ExpoModulesProvider: ModulesProvider {' \
+        '  public override func getModuleClasses() -> [ExpoModuleTupleType] {' \
+        '    return [(module: NutritionOcrModule.self, name: nil)]' \
+        '  }' \
+        '}' \
+        > "Pods/Target Support Files/Pods-Nutrition App/ExpoModulesProvider.swift"
     else
       printf '%s\\n' \
-        'import ExpoModulesCore' \
-        'import NutritionOcr' \
-        'public class ExpoModulesProvider {' \
-        '  public let module = NutritionOcrModule.self' \
+        'internal import ExpoModulesCore' \
+        'internal import NutritionOcr' \
+        '@objc(ExpoModulesProvider)' \
+        'internal class ExpoModulesProvider: ModulesProvider {' \
+        '  public override func getModuleClasses() -> [ExpoModuleTupleType] {' \
+        '    return [' \
+        '      (module: NutritionOcrModule.self, name: nil)' \
+        '    ]' \
+        '  }' \
         '}' \
         > "Pods/Target Support Files/Pods-Nutrition App/ExpoModulesProvider.swift"
     fi
@@ -796,6 +1031,7 @@ if [ "${1-}" = "-version" ]; then
 elif printf "%s\\n" "$*" | grep -Fq -- "-list"; then
   printf '%s\\n' '{"workspace":{"schemes":["Nutrition App"]}}'
 else
+  printf '%s\\0' "$@" > "${IOS_NATIVE_FIXTURE_EVIDENCE_DIR:?}/xcodebuild-argv.nul"
   derived=""
   previous=""
   for argument in "$@"; do
@@ -812,12 +1048,25 @@ else
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/libNutritionOcr.a"
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionOcr/NutritionOcr.swiftmodule"
   : > "$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64/NutritionOcrModule.o"
-  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "unlinked-module" ]; then
-    printf '%s\\n' 'Unrelated libOther.a' > "$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/NutritionApp-LinkMap-normal-undefined_arch.txt"
-  else
-    printf '%s\\n' 'NutritionOcr libNutritionOcr.a' > "$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/NutritionApp-LinkMap-normal-undefined_arch.txt"
-  fi
   : > "$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/NutritionApp"
+  app_product="$derived/Build/Products/Debug-iphonesimulator/NutritionApp.app/NutritionApp"
+  link_map="$derived/Build/Intermediates.noindex/NutritionApp.build/Debug-iphonesimulator/NutritionApp.build/NutritionApp-LinkMap-normal-undefined_arch.txt"
+  object_path="$derived/Build/Intermediates.noindex/Pods.build/Debug-iphonesimulator/NutritionOcr.build/Objects-normal/arm64/NutritionOcrModule.o"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "unlinked-module" ] || [ "${IOS_NATIVE_FIXTURE_MODE-}" = "search-path-only" ]; then
+    object_path="$derived/Build/Intermediates.noindex/Other.build/OtherModule.o"
+  fi
+  printf '%s\\n' \
+    "# Path: $app_product" \
+    '# Object files:' \
+    "[  0] $object_path" \
+    '# Sections:' \
+    > "$link_map"
+  if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "search-path-only" ]; then
+    printf '%s\\n' \
+      '# Search paths:' \
+      '-L/tmp/NutritionOcr/libNutritionOcr.a' \
+      >> "$link_map"
+  fi
   if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "xcode-failure" ]; then
     printf "BUILD FAILED\n"
     exit 17
@@ -860,7 +1109,27 @@ else
 fi
 """)
         write("shasum", 'exec /usr/bin/shasum "$@"\n')
-        write("python3", 'case "${1-}" in -|*ios_native_incremental.py) exec "$REAL_PYTHON" "$@" ;; esac; exit 0\n')
+        write("python3", '''
+case "${1-}" in
+  *ios_native_incremental.py)
+    if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "incremental-commit-failure" ] && [ "${2-}" = "commit" ]; then
+      if "$REAL_PYTHON" "$@"; then exit 17; else exit "$?"; fi
+    fi
+    exec "$REAL_PYTHON" "$@"
+    ;;
+  -)
+    case "${2-}" in
+      */compilation-save.json)
+        if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "incremental-save-timing-failure" ]; then
+          exit 17
+        fi
+        ;;
+    esac
+    exec "$REAL_PYTHON" "$@"
+    ;;
+esac
+exit 0
+''')
         write("git", 'if [ "${IOS_NATIVE_FIXTURE_MODE-}" = "cleanup-failure" ] && printf "%s\\n" "$*" | grep -Fq "worktree remove"; then exit 17; fi; exec "${REAL_GIT:-/usr/bin/git}" "$@"\n')
 
     def _run_fixture_qualification(
@@ -870,11 +1139,12 @@ fi
         manifest_directory: bool = False,
         compilation_mode: str = "clean",
         compilation_cache_dir: Path | None = None,
+        fake_bin_dir: Path | None = None,
     ):
         evidence_parent = Path(tempfile.mkdtemp(prefix="ios-native-fixture-"))
         evidence = evidence_parent / "evidence"
-        fake_bin = evidence_parent / "bin"
-        fake_bin.mkdir()
+        fake_bin = fake_bin_dir or evidence_parent / "bin"
+        fake_bin.mkdir(parents=True, exist_ok=True)
         evidence.mkdir()
         if manifest_directory:
             (evidence / "manifest.json").mkdir()
