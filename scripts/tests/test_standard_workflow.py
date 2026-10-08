@@ -541,6 +541,12 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     assert "controller-state/issue-261.json" in task_text
     assert "/Users/" not in task_text and "/private/tmp/" not in task_text
     assert "../evidence/" not in task_text
+    engineering = " ".join((ROOT / "engineering/README.md").read_text().split()).lower()
+    assert ("for fresh lightweight `standard` tasks, obtain ordinary ci through a pull request "
+            "from the published task branch to `main`") in engineering
+    assert "../docs/operations/testing.md#main-qualification-profiles" in engineering
+    assert "this ordinary-ci requirement is separate from the controller-owned guarded integration" in engineering
+    assert "a pull request is optional when the controller's guarded integration is used" not in engineering
 
 
 def test_historical_issue_wording_tracks_attempts_not_live_issue_state():

@@ -24,8 +24,10 @@
 5. **Close the session.** Run `./scripts/session-end.sh`. A failure blocks completion; report
    opt-in suites as passed, failed, or not run.
 6. **Review and integrate.** Present the exact committed candidate, required
-   qualification and independent review through the trusted controller. A pull
-   request is optional when the controller's guarded integration is used.
+   qualification and independent review through the trusted controller. For fresh lightweight
+   `standard` tasks, obtain ordinary CI through a pull request from the published task branch to
+   `main`, as required by the [Testing Guide](../docs/operations/testing.md#main-qualification-profiles).
+   This ordinary-CI requirement is separate from the controller-owned guarded integration.
 7. **Close out and release deliberately.** Freeze the tracked preparation/check ledger before
    candidate C is frozen for exact-candidate qualification and review. Label it historical and
    point current status to the live issue and existing external controller checkpoint. After C is
