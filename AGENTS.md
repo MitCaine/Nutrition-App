@@ -35,17 +35,14 @@ Treat failures from these scripts as blocking unless the task explicitly concern
 
 ## Repository authority
 
-When instructions conflict, use this order:
+Authority depends on the question being decided:
 
-1. Current migrations, database constraints, and executable tests
-2. Current repository scripts and validation tooling
-3. Active task capsule and current phase document
-4. Current engineering guides and runbooks
-5. Historical phase documents and archived material
-6. This file
-7. Agent assumptions
+- Authenticated current owner decisions and external controller state establish product intent, permissions, accepted risk, and integration authorization. Existing repository behavior cannot grant permission or defeat an owner-authorized intended correction.
+- The accepted task capsule records authorized scope and acceptance criteria; it does not create owner authorization.
+- Current migrations, database constraints, repository scripts, and executable tests establish and validate current behavior. Preserve those observations as evidence; they do not alone define product policy or grant permission.
+- Current engineering guides and runbooks govern procedures within that authority. Historical and archived material is evidence, not current instruction.
 
-Do not infer authority from file modification time alone. Prefer current executable contracts over prose.
+When sources conflict, preserve executable facts and resolve the intended correction against authenticated owner authority and accepted task criteria. Report unresolved conflicts to the controller. Do not infer authority from modification time. Do not treat a defect as policy or silently weaken validation.
 
 ## Working rules
 
@@ -165,12 +162,14 @@ on setup or replacement. New tasks use bounded Markdown records and the current 
 controller. The Work controller directly dispatches the capsule builder and distinct independent
 reviewer. For implementation, the owner-designated Codex dispatcher authenticates the complete
 accepted-capsule handoff and launches one implementor; the implementor returns there for relay to
-Work. Workers do not recruit. Use blocking completion while an assignment is active unless its
-exact idle-wake route is verified; consume a terminal result already delivered without requiring
-idle-wake proof. The sequence is orient → capsule → implement → independent review → authorized
-integration → verify closeout. RI pins record instruction/runtime provenance and do not create
-permission. The trusted task controller owns authenticated external authorization, required
-qualification and protected integration.
+Work. Apply the [local map's per-worker launch settings and confirmation policy](docs/local_project_map.md#nutrition-permissions-and-routing)
+separately to each role; do not infer configuration from tool names, backing metadata or another
+worker's confirmation. Workers do not recruit. Use blocking completion while an assignment is
+active unless its exact idle-wake route is verified; consume a terminal result already delivered
+without requiring idle-wake proof. The sequence is orient → capsule → implement → independent
+review → authorized integration → verify closeout. RI pins record instruction/runtime provenance
+and do not create permission. The trusted task controller owns authenticated external
+authorization, required qualification and protected integration.
 No RI SDK transport, mandatory declaration report, frozen launcher or timed model gateway applies.
 
 Preserve existing active capsule contracts, state/history, branches, evidence, pending decisions,

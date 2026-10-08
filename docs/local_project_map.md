@@ -63,31 +63,44 @@ accepted-capsule handoff and launches exactly one implementor. The implementor r
 relay to the Work controller. Tool or agent-spawn capability alone does not authorize an
 implementation route; workers do not recruit.
 
-The selected role settings are:
+The selected role settings are owner-authorized requests:
 
 | Role | Environment | Model / effort |
 | --- | --- | --- |
 | Controller, capsule builder and independent reviewer | Work | `gpt-6.1-sol` / `low` |
 | Implementor | Codex | `gpt-6-luna` / `max` |
 
-Record requested environment/model/effort separately from host-confirmed settings. Dispatch
-options establish only the request. Retain the existing owner-confirmed selection of the
-identified Work controller chat without asking for that selection again. That owner confirmation
-establishes the selected Work chat settings; it does not replace authenticated external Nutrition
-task authorization. The trusted Work owner record confirms selected Work configuration, not
-provider-effective telemetry. Record the selection in the existing external task checkpoint
-before dependent work.
-When effective telemetry is unavailable, record it as unverified: missing telemetry proves
-neither compliance nor mismatch and is not a capacity failure. Do not infer mode, model or effort
-from tools, a selector, app name or backing metadata.
+The table records the owner-selected requested settings. Dispatch options establish only the
+request; they do not establish a worker's launch or effective settings. Retain the existing
+owner-confirmed selection of the identified Work controller chat without asking for that selection
+again. That owner confirmation establishes the selected Work chat settings; it does not replace
+authenticated external Nutrition task authorization. The trusted Work owner record confirms
+selected Work configuration, not provider-effective telemetry. Record the selection in the
+existing external task checkpoint before dependent work.
 
-Configure and confirm each worker separately. Before dependent work, persist each worker's
-requested settings, available host-confirmed settings and any unverified effective-telemetry
-disposition in the existing external checkpoint. Under the accepted owner policy, the selected
-controller settings may proceed with effective telemetry recorded as unverified. If host
-confirmation is genuinely mandatory for a worker and remains unresolved, return to the controller
-before that dependent dispatch. No fallback is selected here. Do not silently substitute an
-environment, model or effort.
+Configure and confirm each worker separately through its supported role-appropriate launch
+route. For each separately configured builder, implementor, and reviewer, proceed when the
+supported role-appropriate launch route accepts the requested environment/model/effort and reports
+no mismatch or substitution.
+
+Record requested environment/model/effort separately from host-confirmed settings. Record
+requested settings and launch evidence separately from owner selection, available host-confirmed
+settings, and provider-effective telemetry. Before dependent work, persist each worker's requested
+settings, launch evidence, available host-confirmed settings, and any unverified telemetry
+disposition in the existing external checkpoint.
+
+When effective telemetry is unavailable, record it as unverified: missing telemetry proves neither
+compliance nor mismatch and is not a capacity failure. Unavailable host confirmation or effective
+telemetry remains unverified; it is not evidence of verified compliance. Do not infer mode, model
+or effort from tools, a selector, app name or backing metadata, or inherit confirmation from the
+controller or another worker.
+
+If host confirmation is genuinely mandatory for a worker under its authenticated task requirements
+and remains unresolved, return to the controller before dependent work; do not infer that
+requirement from telemetry availability. A rejected configuration, confirmed mismatch or
+substitution, or unavailable required route blocks dependent work and returns to the controller.
+No fallback is selected here. Do not silently substitute an environment, model or effort. Reuse an
+accepted route only while its route and configuration remain unchanged.
 
 For an owner-authorized cross-host assignment, verify the selected host route's messaging and
 result-recovery capability before relying on it. Keep the route identity in the existing

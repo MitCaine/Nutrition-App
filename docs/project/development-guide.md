@@ -78,8 +78,16 @@ line declared by `.python-version`, and sets the matching Ruff target. `requirem
 dependency lock.
 
 `pyproject.toml` remains the dependency declaration. `requirements-dev.lock` pins the reproducible
-Python development and CI environment. At the start of work in either a VS Code or
-Codex desktop integrated **zsh** terminal, run one command from the repository root:
+Python development and CI environment. For source or documentation maintenance
+that leaves dependency inputs unchanged, run the standalone session report from the
+repository root:
+
+```bash
+./scripts/session-start.sh
+```
+
+For a task authorized to change dependencies, source the update route from the
+repository root in the integrated **zsh** terminal:
 
 ```zsh
 source ./scripts/start-work.zsh

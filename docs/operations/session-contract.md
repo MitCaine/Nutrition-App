@@ -7,9 +7,13 @@ agent interpretation. These tools do not replace architectural review. They esta
 state, identify mechanical boundary violations, inventory the Phase 5C4 control plane, and compare
 PostgreSQL privilege manifests.
 
-For an authorized task, orient from current remote main, issue authorization,
-active capsule and HISTORY using the [workflow entrypoint](../local_project_map.md).
-The [combined pilot record](../../engineering/workflow/PILOT_2026-09-26.md) describes
+For standard Markdown task intake, the controller authenticates the current remote
+main and live issue, reads the accepted task, and reconciles them with authenticated
+external controller state through the [workflow entrypoint](../local_project_map.md).
+Read historical TOML capsules and HISTORY only when the current attempt or a directed
+recovery dependency uses them.
+Repository history-integrity validation remains required. The
+[combined pilot record](../../engineering/workflow/PILOT_2026-09-26.md) describes
 observed recovery cases; its old SHAs are evidence, not reusable authority.
 
 ## Repository session contract
@@ -53,11 +57,13 @@ inside the checkout:
 ./scripts/session-start.sh
 ```
 
-The human-readable preflight first reports the active Python and Node versions against the
-repository-owned `.python-version` and `.nvmrc` contracts. A mismatch is surfaced explicitly before
-implementation begins but is not itself a repository-wide blocker because some backend-only or
-documentation work does not require Node. Mobile qualification and CI must use the matching Node
-version.
+The human-readable preflight reports Python and Node versions against their separate
+repository contracts. Eligibility is command-specific: a missing or mismatched tool blocks checks
+that require that tool and version, while independent checks may continue only when their own
+prerequisites are satisfied. Python tests, validators, and qualification checks require the matching
+Python line. Documentation work that does not require Node still requires suitable Python for its
+Python checks. Results from unsuitable tooling are diagnostic only and cannot qualify a candidate.
+Mobile qualification and CI require the matching Node line.
 
 The session report then includes the Git branch and dirty files when `.git` metadata is available,
 application and control migration heads, the latest Production Hardening phase document, whether

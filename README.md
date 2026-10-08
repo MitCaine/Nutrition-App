@@ -110,10 +110,14 @@ on-device SQLite without FastAPI or PostgreSQL. USDA requires upstream network
 access and a configured personal credential. Native Apple Vision OCR requires
 an iOS native development or Release build and is not provided by Expo Go.
 
-At the beginning of a VS Code or Codex desktop zsh session in a working checkout,
-run `source ./scripts/start-work.zsh`. It selects the toolchain lines declared by
-`.nvmrc` and `.python-version`, checks compatible updates, and runs the session
-report. Follow the [session contract](docs/operations/session-contract.md) and
+For source or documentation maintenance that leaves dependency inputs unchanged,
+run `./scripts/session-start.sh` from the repository root. For a task authorized
+to change dependencies, source `./scripts/start-work.zsh` in the integrated zsh
+terminal; it selects the toolchain lines declared by `.nvmrc` and `.python-version`,
+checks compatible updates, and runs `./scripts/session-start.sh` even when an update
+fails. Review any partial update and failed status before proceeding. Follow the
+[session contract](docs/operations/session-contract.md) for readiness, failure
+handling and session-end requirements, and the
 [local project map](docs/local_project_map.md) for qualification.
 
 Use the Node line in `.nvmrc` for the mobile project. On a fresh checkout, or whenever the locked

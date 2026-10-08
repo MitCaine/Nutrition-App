@@ -573,6 +573,8 @@ def test_task_local_startup_and_backend_baseline_routes():
     agents = (ROOT / "AGENTS.md").read_text()
     session = (ROOT / "docs/operations/session-contract.md").read_text()
     engineering = (ROOT / "engineering/README.md").read_text()
+    readme = (ROOT / "README.md").read_text()
+    development = (ROOT / "docs/project/development-guide.md").read_text()
     for name, text in (("AGENTS.md", agents),
                        ("session-contract.md", session),
                        ("engineering/README.md", engineering)):
@@ -580,6 +582,30 @@ def test_task_local_startup_and_backend_baseline_routes():
         assert "session-start.sh" in normalized, name
         assert "start-work.zsh" in normalized, name
         assert "authorized" in normalized and "dependency" in normalized, name
+
+    def has_conditional_startup_routes(text):
+        normalized = " ".join(text.replace("`", "").split()).lower()
+        maintenance = "source or documentation maintenance that leaves dependency inputs unchanged"
+        dependency_work = "for a task authorized to change dependencies"
+        if maintenance not in normalized or dependency_work not in normalized:
+            return False
+        maintenance_route = normalized.split(maintenance, 1)[1].split(dependency_work, 1)[0]
+        dependency_route = normalized.split(dependency_work, 1)[1]
+        return (
+            "./scripts/session-start.sh" in maintenance_route
+            and "source ./scripts/start-work.zsh" in dependency_route
+            and "./scripts/session-start.sh" in dependency_route
+        )
+
+    for name, text in (("README.md", readme),
+                       ("development-guide.md", development)):
+        assert has_conditional_startup_routes(text), name
+    stale_unconditional_wording = (
+        "At the beginning of a VS Code or Codex session, "
+        "run source ./scripts/start-work.zsh."
+    )
+    assert not has_conditional_startup_routes(stale_unconditional_wording)
+
     baseline = agents.split("PostgreSQL runtime contract selection:", 1)[0]
     assert "./scripts/run-backend-baseline.sh" in baseline
     assert "python -m pytest -q --strict-markers" not in baseline
@@ -589,6 +615,83 @@ def test_task_local_startup_and_backend_baseline_routes():
     assert "../../scripts/run-backend-baseline.sh" in guide
     assert "--print-marker-expression" in guide and "--print-marker-expression" in runner
     assert "NUTRITION_BACKEND_PYTHON" in runner
+
+
+def test_task_authority_session_intake_and_toolchain_rules_are_explicit():
+    agents = (ROOT / "AGENTS.md").read_text()
+    authority = " ".join(
+        agents.split("## Repository authority\n", 1)[1]
+        .split("\n## Working rules", 1)[0]
+        .lower()
+        .split()
+    )
+    for phrase in (
+        "authority depends on the question being decided",
+        "authenticated current owner decisions",
+        "existing repository behavior cannot grant permission",
+        "owner-authorized intended correction",
+        "current migrations, database constraints, repository scripts, and executable tests",
+        "preserve those observations as evidence",
+        "do not treat a defect as policy",
+        "silently weaken validation",
+    ):
+        assert phrase in authority
+
+    session = (ROOT / "docs/operations/session-contract.md").read_text().lower()
+    intake = " ".join(
+        session.split("for standard markdown task intake", 1)[1]
+        .split("\n## repository session contract", 1)[0]
+        .split()
+    )
+    for phrase in (
+        "current remote main",
+        "live issue",
+        "accepted task",
+        "authenticated external controller state",
+        "historical toml capsules and history only when the current attempt or a directed recovery dependency uses them",
+        "repository history-integrity validation remains required",
+    ):
+        assert phrase in intake
+    assert "active capsule and history" not in intake
+
+    session_start = " ".join(
+        session.split("## session start", 1)[1]
+        .split("\n## session end", 1)[0]
+        .split()
+    )
+    for phrase in (
+        "a missing or mismatched tool blocks checks that require that tool and version",
+        "independent checks may continue only when their own prerequisites are satisfied",
+        "python tests, validators, and qualification checks require the matching python line",
+        "documentation work that does not require node still requires suitable python",
+        "results from unsuitable tooling are diagnostic only and cannot qualify a candidate",
+        "mobile qualification and ci require the matching node line",
+    ):
+        assert phrase in session_start
+
+
+def test_project_map_records_per_worker_launch_disposition():
+    text = (ROOT / "docs/local_project_map.md").read_text()
+    routing = " ".join(
+        text.split("## Nutrition permissions and routing\n", 1)[1]
+        .split("\n## ", 1)[0]
+        .split()
+    ).lower()
+    for phrase in (
+        "for each separately configured builder, implementor, and reviewer",
+        "supported role-appropriate launch route accepts the requested environment/model/effort",
+        "reports no mismatch or substitution",
+        "inherit confirmation from the controller or another worker",
+        "record requested settings and launch evidence separately",
+        "unavailable host confirmation or effective telemetry remains unverified",
+        "a rejected configuration, confirmed mismatch or substitution, or unavailable required route blocks",
+        "reuse an accepted route only while its route and configuration remain unchanged",
+    ):
+        assert phrase in routing
+
+    agents = (ROOT / "AGENTS.md").read_text().lower()
+    assert "local map's per-worker launch settings and confirmation policy" in agents
+    assert "docs/local_project_map.md#nutrition-permissions-and-routing" in agents
 
 
 def test_project_map_records_role_correct_nutrition_dispatch():
