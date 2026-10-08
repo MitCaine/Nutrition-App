@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -4674,3 +4676,790 @@ def test_prepare_preserves_active_state_and_all_retained_artifacts(tmp_path, pha
     assert recovered == state
     assert recovered["launches_used"] == 1
     assert {p.name: p.read_bytes() for p in state_dir.iterdir()} == before
+
+
+def public_standard_rework_fixture(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    workflow_mode: str = "standard",
+    allowed_paths: list[str] | None = None,
+    profiles: list[str] | None = None,
+    extra_c2_files: dict[str, str] | None = None,
+):
+    """Create a disposable C1 checkpoint through the public parser and handlers."""
+    issue_number = 999
+    task_id = "GH-999-P1"
+    repository = "owner/repo"
+    controller_parent = tmp_path / "controller-parent"
+    controller_parent.mkdir(parents=True)
+    repo, base = init_repo(controller_parent)
+    git(repo, "branch", "-M", "main")
+    git(repo, "remote", "add", "origin", "https://github.com/owner/repo.git")
+    git(repo, "update-ref", "refs/remotes/origin/main", base)
+
+    candidate_repo = tmp_path / "candidate-repo"
+    git(repo, "clone", "--quiet", "--no-hardlinks", str(repo), str(candidate_repo))
+    git(candidate_repo, "config", "user.name", "Task Controller Test")
+    git(candidate_repo, "config", "user.email", "task-test@example.invalid")
+    git(candidate_repo, "remote", "set-url", "origin", "https://github.com/owner/repo.git")
+    git(candidate_repo, "update-ref", "refs/remotes/origin/main", base)
+
+    real_task_git = TASK.git
+
+    def fixture_task_git(root: Path, *args: str) -> str:
+        if args == ("fetch", "origin", "main"):
+            return ""
+        return real_task_git(root, *args)
+
+    monkeypatch.setattr(TASK, "git", fixture_task_git)
+    monkeypatch.setattr(TASK, "configured_qualification_app_id", lambda: 424242)
+    monkeypatch.setenv("NUTRITION_TASK_TRUSTED_AUTHOR", "owner")
+    issue_transport = FakeIssueAuthorizationTransport(author="owner")
+    monkeypatch.setattr(TASK, "GhIssueAuthorizationTransport", lambda: issue_transport)
+    ref_transport = FakeCandidateRefTransport()
+    monkeypatch.setattr(TASK, "GitCandidateRefTransport", lambda _repo: ref_transport)
+
+    tokens = iter(("a" * 24, "b" * 24, "c" * 24))
+    monkeypatch.setattr(TASK.secrets, "token_hex", lambda _size: next(tokens))
+    transports: dict[str, FakeQualificationTransport] = {}
+
+    class SequencedQualificationTransport(FakeQualificationTransport):
+        def __init__(self, *, run_id: int, check_id: int, **kwargs) -> None:
+            self.run_id = run_id
+            self.check_id = check_id
+            super().__init__(**kwargs)
+
+        def dispatch_workflow(self, repository, workflow, ref, inputs):
+            super().dispatch_workflow(repository, workflow, ref, inputs)
+            return {"workflow_run_id": self.run_id}
+
+        def _run(self):
+            run = super()._run()
+            run["id"] = self.run_id
+            return run
+
+        def get_workflow_run(self, repository, run_id):
+            assert run_id == self.run_id
+            return self._run()
+
+        def _check(self):
+            check = super()._check()
+            check["id"] = self.check_id
+            return check
+
+        def list_check_runs(self, repository, candidate_sha, app_id):
+            assert candidate_sha == self.candidate_sha
+            check = self._check()
+            return [dict(check)]
+
+        def get_check_run(self, repository, check_id):
+            assert check_id == self.check_id
+            return self._check()
+
+    def qualification_transport():
+        state = TASK.load_state(state_dir, issue_number)
+        candidate_sha = git(candidate_repo, "rev-parse", "HEAD")
+        if candidate_sha not in transports:
+            sequence = len(transports) + 1
+            transports[candidate_sha] = SequencedQualificationTransport(
+                comment=next(iter(issue_transport.comments.values())),
+                controller_sha=base,
+                candidate_sha=candidate_sha,
+                identity_sha256=state["authorization"]["identity_sha256"],
+                issue_number=issue_number,
+                run_id=8800 + sequence,
+                check_id=9900 + sequence,
+            )
+        return transports[candidate_sha]
+
+    monkeypatch.setattr(TASK, "GhQualificationTransport", qualification_transport)
+    state_dir = tmp_path / "controller-state"
+    common = ["--repo-root", str(repo), "--state-dir", str(state_dir)]
+
+    def run(*args: str):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = TASK.main([*common, *args])
+        output = stdout.getvalue().strip()
+        return code, json.loads(output), output, stderr.getvalue()
+
+    prepare_args = [
+        "prepare", str(issue_number), "--task-id", task_id,
+        "--base-sha", base, "--nonce", "fixture-owner-auth-0001",
+        "--allowed-path", *(allowed_paths or ["src/**"]),
+        "--forbidden-path", "src/forbidden/**",
+        "--profile", *(profiles or ["repository"]),
+    ]
+    if workflow_mode == "compatibility":
+        prepare_args.extend(("--workflow-mode", "compatibility", "--compatibility-reason", "disposable legacy fixture"))
+    assert run(*prepare_args)[0] == 0
+    assert run("authorize", str(issue_number))[0] == 0
+
+    c1 = commit_paths(candidate_repo, {"src/food.py": "VALUE = 1\n"}, message="C1 candidate")
+    assert run("qualify", str(issue_number), "--candidate-root", str(candidate_repo))[0] == 0
+    assert run(
+        "verify", str(issue_number), "--candidate-sha", c1,
+        "--actor", "fixture-controller", "--decision", "pass",
+        "--evidence", "fixture exact-candidate verification",
+    )[0] == 0
+    assert run(
+        "review", str(issue_number), "--candidate-sha", c1,
+        "--actor", "fixture-independent-reviewer", "--decision", "changes-requested",
+        "--summary", "fixture correction required",
+    )[0] == 0
+
+    c2_files = {"src/food.py": "VALUE = 2\n"}
+    c2_files.update(extra_c2_files or {})
+    c2 = commit_paths(candidate_repo, c2_files, message="C2 corrected candidate")
+    assert c1 != c2
+
+    c1_repo_cache: list[Path] = []
+
+    def candidate_c1_repo() -> Path:
+        if not c1_repo_cache:
+            c1_repo = tmp_path / "candidate-c1-repo"
+            git(candidate_repo, "clone", "--quiet", "--no-hardlinks", str(candidate_repo), str(c1_repo))
+            git(c1_repo, "remote", "set-url", "origin", "https://github.com/owner/repo.git")
+            git(c1_repo, "update-ref", "refs/remotes/origin/main", base)
+            git(c1_repo, "checkout", "--quiet", "--detach", c1)
+            c1_repo_cache.append(c1_repo)
+        return c1_repo_cache[0]
+
+    def rework_argv(
+        *,
+        expected_candidate_sha: str | None = None,
+        candidate_sha: str | None = None,
+        candidate_root: Path | None = None,
+    ) -> list[str]:
+        return [
+            *common,
+            "rework", str(issue_number),
+            "--candidate-root", str(candidate_root or candidate_repo),
+            "--expected-candidate-sha", expected_candidate_sha or c1,
+            "--candidate-sha", candidate_sha or c2,
+        ]
+
+    return {
+        "run": run,
+        "common": common,
+        "rework_argv": rework_argv,
+        "repo": repo,
+        "candidate_repo": candidate_repo,
+        "candidate_c1_repo": candidate_c1_repo,
+        "state_dir": state_dir,
+        "issue_number": issue_number,
+        "task_id": task_id,
+        "repository": repository,
+        "base": base,
+        "c1": c1,
+        "c2": c2,
+        "issue_transport": issue_transport,
+        "transports": transports,
+        "ref_transport": ref_transport,
+        "workflow_mode": workflow_mode,
+    }
+
+
+def test_public_standard_rework_archives_c1_and_requalifies_only_selected_c2(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    issue = fixture["issue_number"]
+    state_path = TASK.state_path(fixture["state_dir"], issue)
+
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], issue,
+        lambda current: {
+            **current,
+            "attempt_history": ["prior-attempt", "C1-reconciled-failure"],
+            "launches_used": 2,
+            "unrelated_checkpoint_field": {"retain": True},
+            "qualification_operation": {
+                **current["qualification_operation"],
+                "error": "earlier failed reconciliation retained",
+            },
+        },
+    )
+    c1_state = TASK.load_state(fixture["state_dir"], issue)
+    c1_sha256 = TASK.checkpoint_state_binding_sha256(c1_state)
+    c1_qualification = json.loads(json.dumps(c1_state["qualification"]))
+    c1_verification = json.loads(json.dumps(c1_state["verification"]))
+    c1_review = json.loads(json.dumps(c1_state["review"]))
+    c1_operation = json.loads(json.dumps(c1_state["qualification_operation"]))
+    c1_transport = fixture["transports"][fixture["c1"]]
+    c1_dispatch_count = c1_transport.dispatch_calls
+    published_before = list(fixture["ref_transport"].published)
+    deleted_before = list(fixture["ref_transport"].deleted)
+
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 0
+    assert result["phase"] == "AUTHORIZED"
+    assert result["expected_candidate_sha"] == fixture["c1"]
+    assert result["candidate_sha"] == fixture["c2"]
+    assert result["next"] == "qualify"
+
+    selected = TASK.load_state(fixture["state_dir"], issue)
+    archived = selected["rework_history"][0]
+    assert archived["checkpoint_sha256"] == c1_sha256
+    assert archived["from_candidate_sha"] == fixture["c1"]
+    assert archived["selected_candidate_sha"] == fixture["c2"]
+    assert archived["qualification"] == c1_qualification
+    assert archived["verification"] == c1_verification
+    assert archived["review"] == c1_review
+    assert archived["qualification_operation"] == c1_operation
+    assert archived["existing_history"]["attempt_history"] == c1_state["attempt_history"]
+    assert archived["previous_rework_binding"] is None
+    assert selected["rework"]["authorization"] == c1_operation["resolved_authorization"]
+
+    # The current C1 authority and unrelated fields survive; only active proof is retired.
+    assert selected["authorization"] == c1_state["authorization"]
+    assert selected["workflow"] == c1_state["workflow"]
+    assert selected["attempt_history"] == c1_state["attempt_history"]
+    assert selected["launches_used"] == 2
+    assert selected["unrelated_checkpoint_field"] == {"retain": True}
+    assert selected["qualification"] is None
+    assert selected["verification"] is None
+    assert selected["review"] is None
+    assert selected["integration"] is None
+    assert selected["qualification_operation"] is None
+    assert c1_transport.dispatch_calls == c1_dispatch_count
+    assert fixture["ref_transport"].published == published_before
+    assert fixture["ref_transport"].deleted == deleted_before
+
+    before_refusals = state_path.read_bytes()
+    repeat_code, repeat, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert repeat_code == 1
+    assert repeat["error"] == "REWORK_ALREADY_APPLIED"
+    assert state_path.read_bytes() == before_refusals
+
+    c1_root = fixture["candidate_c1_repo"]()
+    wrong_head_code, wrong_head, _, _ = fixture["run"](
+        "qualify", str(issue), "--candidate-root", str(c1_root),
+    )
+    assert wrong_head_code == 1
+    assert wrong_head["error"] == "REWORK_CANDIDATE_MISMATCH"
+    assert state_path.read_bytes() == before_refusals
+
+    stale_verify_code, stale_verify, _, _ = fixture["run"](
+        "verify", str(issue), "--candidate-sha", fixture["c1"],
+        "--actor", "fixture-controller", "--decision", "pass", "--evidence", "stale C1 proof",
+    )
+    assert stale_verify_code == 1
+    assert stale_verify["error"] == "VERIFICATION_REQUIRES_EXACT_QUALIFICATION"
+    stale_review_code, stale_review, _, _ = fixture["run"](
+        "review", str(issue), "--candidate-sha", fixture["c1"],
+        "--actor", "fixture-reviewer", "--decision", "approved", "--summary", "stale C1 approval",
+    )
+    assert stale_review_code == 1
+    assert stale_review["error"] == "REVIEW_APPROVAL_REQUIRES_EXACT_VERIFICATION"
+    assert state_path.read_bytes() == before_refusals
+
+    stale_callback = {
+        "phase": "QUALIFIED",
+        "qualification": c1_qualification,
+    }
+    with pytest.raises(TASK.TaskControllerError, match="QUALIFICATION_OPERATION_STALE"):
+        TASK.apply_qualification_terminal_result(
+            fixture["state_dir"], issue, c1_operation, stale_callback,
+            c1_transport, candidate_repo=c1_root,
+        )
+    assert state_path.read_bytes() == before_refusals
+
+    stale_reconcile_code, stale_reconcile, _, _ = fixture["run"](
+        "qualify-reconcile", str(issue), "--candidate-root", str(c1_root),
+    )
+    assert stale_reconcile_code == 1
+    assert stale_reconcile["error"] == "QUALIFICATION_OPERATION_MISSING"
+    assert state_path.read_bytes() == before_refusals
+
+    c2_qualified_code, c2_qualified, _, _ = fixture["run"](
+        "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+    )
+    assert c2_qualified_code == 0
+    assert c2_qualified["candidate_sha"] == fixture["c2"]
+    c2_state = TASK.load_state(fixture["state_dir"], issue)
+    c2_qualification = c2_state["qualification"]
+    c2_operation = c2_state["qualification_operation"]
+    c2_transport = fixture["transports"][fixture["c2"]]
+    assert c2_operation["dispatch_nonce"] != c1_operation["dispatch_nonce"]
+    assert c2_operation["operation_id"] != c1_operation["operation_id"]
+    assert c2_operation["candidate_ref"] != c1_operation["candidate_ref"]
+    assert c2_qualification["workflow_run_id"] != c1_qualification["workflow_run_id"]
+    assert c2_qualification["check_id"] != c1_qualification["check_id"]
+    assert c2_qualification["candidate_sha"] == fixture["c2"]
+    assert c2_qualification["check_app_id"] == 424242
+    assert c2_transport.dispatch_inputs["candidate_sha"] == fixture["c2"]
+    assert c2_transport.dispatch_inputs["dispatch_nonce"] == c2_operation["dispatch_nonce"]
+    assert len(c2_state["rework_history"]) == 1
+
+    before_approval = state_path.read_bytes()
+    early_approval_code, early_approval, _, _ = fixture["run"](
+        "review", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fixture-independent-reviewer", "--decision", "approved",
+        "--summary", "approval before fresh verification",
+    )
+    assert early_approval_code == 1
+    assert early_approval["error"] == "REVIEW_APPROVAL_REQUIRES_EXACT_VERIFICATION"
+    assert state_path.read_bytes() == before_approval
+
+    assert fixture["run"](
+        "verify", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fixture-controller", "--decision", "pass",
+        "--evidence", "fresh exact C2 verification",
+    )[0] == 0
+    assert fixture["run"](
+        "review", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fresh-independent-C2-reviewer", "--decision", "approved",
+        "--summary", "fresh independent C2 source review",
+    )[0] == 0
+    final_state = TASK.load_state(fixture["state_dir"], issue)
+    assert final_state["phase"] == "REVIEWED_APPROVED"
+    assert final_state["qualification"]["candidate_sha"] == fixture["c2"]
+    assert final_state["verification"]["candidate_sha"] == fixture["c2"]
+    assert final_state["review"]["candidate_sha"] == fixture["c2"]
+
+    before_integrity_checks = state_path.read_bytes()
+    c1_integration_code, c1_integration, _, _ = fixture["run"](
+        "integrate", str(issue), "--candidate-root", str(c1_root), "--human-owner-authorized",
+    )
+    assert c1_integration_code == 1
+    assert c1_integration["error"] == "INTEGRATION_QUALIFICATION_MISMATCH"
+    owner_gate_code, owner_gate, _, _ = fixture["run"](
+        "integrate", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+    )
+    assert owner_gate_code == 1
+    assert owner_gate["error"] == "HUMAN_OWNER_AUTHORIZATION_REQUIRED"
+    assert state_path.read_bytes() == before_integrity_checks
+    assert fixture["ref_transport"].main_pushes == []
+
+    pending = TASK.integrate_task(
+        final_state,
+        candidate_repo=fixture["candidate_repo"],
+        controller_main_sha=fixture["base"],
+        expected_app_id=424242,
+        transport=c2_transport,
+        ref_transport=fixture["ref_transport"],
+        human_owner_authorized=True,
+    )
+    assert pending["phase"] == "INTEGRATION_PENDING"
+    assert pending["integration"]["candidate_sha"] == fixture["c2"]
+    assert pending["integration"]["check_id"] == c2_qualification["check_id"]
+    assert TASK.load_state(fixture["state_dir"], issue) == final_state
+
+
+def test_public_rework_parser_requires_full_c1_and_c2_and_explains_limits(capsys, tmp_path):
+    parser = TASK.build_parser()
+    with pytest.raises(SystemExit) as missing:
+        parser.parse_args(["rework", "999", "--candidate-root", str(tmp_path)])
+    assert missing.value.code == 2
+
+    with pytest.raises(SystemExit) as help_result:
+        parser.parse_args(["rework", "--help"])
+    assert help_result.value.code == 0
+    help_text = capsys.readouterr().out
+    for phrase in (
+        "--expected-candidate-sha",
+        "--candidate-sha",
+        "REVIEWED_CHANGES_REQUESTED",
+        "current owner authorization",
+        "proof and operation history are retained",
+        "does not create fresh authority",
+        "does not accept legacy records",
+    ):
+        assert phrase in help_text
+
+    args = parser.parse_args([
+        "rework", "999", "--candidate-root", str(tmp_path),
+        "--expected-candidate-sha", "a" * 40, "--candidate-sha", "b" * 40,
+    ])
+    assert args.handler is TASK.command_rework
+
+
+@pytest.mark.parametrize("case", ["malformed", "same", "wrong-c1", "wrong-c2", "dirty-c2"])
+def test_public_rework_rejects_invalid_candidate_identities_without_mutation(tmp_path, monkeypatch, case):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+    before = state_path.read_bytes()
+    expected = fixture["c1"]
+    candidate = fixture["c2"]
+    root = fixture["candidate_repo"]
+    if case == "malformed":
+        expected = "abc"
+        error = "REWORK_CANDIDATE_SHA_INVALID"
+    elif case == "same":
+        candidate = fixture["c1"]
+        error = "REWORK_CANDIDATES_MUST_DIFFER"
+    elif case == "wrong-c1":
+        expected = "f" * 40
+        error = "REWORK_C1_MISMATCH"
+    elif case == "wrong-c2":
+        candidate = "f" * 40
+        error = "REWORK_CANDIDATE_HEAD_MISMATCH"
+    else:
+        (root / "untracked.txt").write_text("dirty candidate\n", encoding="utf-8")
+        error = "CANDIDATE_WORKTREE_DIRTY"
+
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"](
+        expected_candidate_sha=expected,
+        candidate_sha=candidate,
+        candidate_root=root,
+    )[len(fixture["common"]):])
+    assert code == 1
+    assert error in result["error"]
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == 1
+    assert len(fixture["ref_transport"].published) == 1
+    assert fixture["ref_transport"].main_pushes == []
+
+
+def test_public_rework_rejects_stale_c1_proof_and_unresolved_operation_states(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], fixture["issue_number"],
+        lambda current: {
+            **current,
+            "verification": {**current["verification"], "candidate_sha": "f" * 40},
+        },
+    )
+    before = state_path.read_bytes()
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 1
+    assert result["error"] == "REWORK_C1_PROOF_MISMATCH"
+    assert state_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("status", ["DISPATCH_PENDING", "RUNNING", "UNKNOWN", "TERMINAL", "CLEANUP_UNKNOWN", "UNRECOGNIZED", None])
+def test_public_rework_rejects_each_unresolved_qualification_operation(tmp_path, monkeypatch, status):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], fixture["issue_number"],
+        lambda current: {
+            **current,
+            "qualification_operation": {**current["qualification_operation"], "status": status},
+        },
+    )
+    before = state_path.read_bytes()
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 1
+    assert result["error"] == "REWORK_QUALIFICATION_OPERATION_UNSAFE"
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == 1
+    assert len(fixture["ref_transport"].published) == 1
+
+
+@pytest.mark.parametrize("field", ["cleanup_error", "candidate_ref_removed"])
+def test_public_rework_rejects_unclean_qualification_ref_state(tmp_path, monkeypatch, field):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+
+    def make_unclean(current):
+        updated = json.loads(json.dumps(current))
+        if field == "cleanup_error":
+            updated["qualification_operation"]["cleanup_error"] = "cleanup uncertain"
+        else:
+            updated["qualification"]["candidate_ref_removed"] = False
+        return updated
+
+    TASK.checkpoint_transaction(fixture["state_dir"], fixture["issue_number"], make_unclean)
+    before = state_path.read_bytes()
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 1
+    assert result["error"] in {
+        "REWORK_QUALIFICATION_OPERATION_UNSAFE",
+        "REWORK_QUALIFICATION_PROOF_INVALID",
+    }
+    assert state_path.read_bytes() == before
+
+
+def test_public_rework_rejects_pending_integration_without_mutation(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], fixture["issue_number"],
+        lambda current: {**current, "integration": {"phase": "INTEGRATION_PENDING", "candidate_sha": fixture["c1"]}},
+    )
+    before = state_path.read_bytes()
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 1
+    assert result["error"] == "REWORK_INTEGRATION_UNRESOLVED"
+    assert state_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "edited-authorization",
+        "untrusted-author",
+        "ambiguous-authorization",
+        "stale-base",
+        "unauthorized-path",
+        "missing-profile",
+    ],
+)
+def test_public_rework_revalidates_authority_main_scope_and_profile_floor(tmp_path, monkeypatch, case):
+    allowed_paths = ["**"] if case == "missing-profile" else ["src/**"]
+    profiles = ["repository"]
+    extra = None
+    if case == "unauthorized-path":
+        extra = {"docs/outside-scope.md": "outside\n"}
+    elif case == "missing-profile":
+        extra = {"apps/backend/new_route.py": "ROUTE = True\n"}
+    fixture = public_standard_rework_fixture(
+        tmp_path,
+        monkeypatch,
+        allowed_paths=allowed_paths,
+        profiles=profiles,
+        extra_c2_files=extra,
+    )
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+    if case == "edited-authorization":
+        comment = fixture["issue_transport"].comments[7001]
+        comment["body"] = comment["body"].replace("fixture-owner-auth-0001", "fixture-owner-auth-edited")
+        expected_error = "AUTHORIZATION_DIGEST_MISMATCH"
+    elif case == "untrusted-author":
+        fixture["transports"][fixture["c1"]].comments[0]["user"]["login"] = "attacker"
+        expected_error = "AUTHORIZATION_AUTHOR_UNTRUSTED"
+    elif case == "ambiguous-authorization":
+        transport = TASK.GhQualificationTransport()
+        transport.comments.append({**transport.comments[0], "id": 7002})
+        expected_error = "AUTHORIZATION_AMBIGUOUS"
+    elif case == "stale-base":
+        (fixture["repo"] / "README.md").write_text("advanced main\n", encoding="utf-8")
+        git(fixture["repo"], "add", "README.md")
+        git(fixture["repo"], "commit", "--quiet", "-m", "advance fixture main")
+        advanced = git(fixture["repo"], "rev-parse", "HEAD")
+        git(fixture["repo"], "update-ref", "refs/remotes/origin/main", advanced)
+        expected_error = "REWORK_BASE_AUTHORITY_STALE"
+    elif case == "unauthorized-path":
+        expected_error = "SCOPE_UNEXPECTED"
+    else:
+        expected_error = "QUALIFICATION_PROFILE_REQUIRED"
+    before = state_path.read_bytes()
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 1
+    assert expected_error in result["error"]
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == 1
+    assert fixture["ref_transport"].main_pushes == []
+
+
+def test_public_rework_rejects_compatibility_implicit_legacy_and_injected_bindings(tmp_path, monkeypatch):
+    compatibility = public_standard_rework_fixture(tmp_path / "compat", monkeypatch, workflow_mode="compatibility")
+    state_path = TASK.state_path(compatibility["state_dir"], compatibility["issue_number"])
+    before = state_path.read_bytes()
+    code, result, _, _ = compatibility["run"](*compatibility["rework_argv"]()[len(compatibility["common"]):])
+    assert code == 1
+    assert result["error"] == "REWORK_STANDARD_WORKFLOW_REQUIRED"
+    assert state_path.read_bytes() == before
+
+    standard = public_standard_rework_fixture(tmp_path / "injected", monkeypatch)
+    state_path = TASK.state_path(standard["state_dir"], standard["issue_number"])
+    TASK.checkpoint_transaction(
+        standard["state_dir"], standard["issue_number"],
+        lambda current: {**current, "capsule_evidence": {"binding": {"candidate": standard["c1"]}}},
+    )
+    before = state_path.read_bytes()
+    code, result, _, _ = standard["run"](*standard["rework_argv"]()[len(standard["common"]):])
+    assert code == 1
+    assert result["error"] == "REWORK_HISTORICAL_BINDING_UNSUPPORTED"
+    assert state_path.read_bytes() == before
+
+    legacy_root = tmp_path / "legacy"
+    legacy_root.mkdir()
+    legacy_repo, _ = init_repo(legacy_root)
+    legacy_state_dir = tmp_path / "implicit-legacy-state"
+    legacy_state = {
+        "phase": "REVIEWED_CHANGES_REQUESTED",
+        "issue_number": 999,
+        "task_id": "GH-999-P1",
+        "authorization": {"revision": 1},
+    }
+    TASK.atomic_write_json(TASK.state_path(legacy_state_dir, 999), legacy_state)
+    legacy_path = TASK.state_path(legacy_state_dir, 999)
+    legacy_before = legacy_path.read_bytes()
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        code = TASK.main([
+            "--repo-root", str(legacy_repo), "--state-dir", str(legacy_state_dir),
+            "rework", "999", "--candidate-root", str(legacy_repo),
+            "--expected-candidate-sha", "a" * 40, "--candidate-sha", "b" * 40,
+        ])
+    assert code == 1
+    assert json.loads(output.getvalue())["error"] == "REWORK_STANDARD_WORKFLOW_REQUIRED"
+    assert legacy_path.read_bytes() == legacy_before
+
+
+@pytest.mark.parametrize(
+    ("phase", "stop_reason", "expected_error"),
+    [
+        ("STOP_REPLAN", "owner-directed stop", "STOP_REPLAN_PRESERVE_ATTEMPT"),
+        ("AUTHORIZED", None, "REWORK_REQUIRES_CHANGES_REQUESTED_REVIEW"),
+        ("QUALIFICATION_FAILED", None, "REWORK_REQUIRES_CHANGES_REQUESTED_REVIEW"),
+        ("INTEGRATED", None, "REWORK_REQUIRES_CHANGES_REQUESTED_REVIEW"),
+        ("UNSUPPORTED_PHASE", None, "REWORK_REQUIRES_CHANGES_REQUESTED_REVIEW"),
+    ],
+)
+def test_public_rework_preserves_stops_and_rejects_unsupported_phase(
+    tmp_path, monkeypatch, phase, stop_reason, expected_error,
+):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+
+    def select_phase(current):
+        updated = {**current, "phase": phase, "launches_used": 2}
+        if stop_reason is not None:
+            updated["stop_reason"] = stop_reason
+        return updated
+
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], fixture["issue_number"],
+        select_phase,
+    )
+    before = state_path.read_bytes()
+    dispatch_calls = sum(item.dispatch_calls for item in fixture["transports"].values())
+    published = list(fixture["ref_transport"].published)
+    deleted = list(fixture["ref_transport"].deleted)
+    main_pushes = list(fixture["ref_transport"].main_pushes)
+
+    code, result, _, _ = fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])
+    assert code == 1
+    assert result["error"] == expected_error
+    assert state_path.read_bytes() == before
+    state = TASK.load_state(fixture["state_dir"], fixture["issue_number"])
+    assert state["phase"] == phase
+    assert state["launches_used"] == 2
+    assert state.get("rework_history", []) == []
+    if stop_reason is not None:
+        assert state["stop_reason"] == stop_reason
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == dispatch_calls
+    assert fixture["ref_transport"].published == published
+    assert fixture["ref_transport"].deleted == deleted
+    assert fixture["ref_transport"].main_pushes == main_pushes
+
+
+def test_overlapping_rework_calls_use_issue_lock_and_write_one_archive(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    barrier = threading.Barrier(2)
+    local = threading.local()
+    original_resolve = TASK.resolve_current_authorization
+    original_transaction = TASK.checkpoint_transaction
+    transaction_calls: list[int] = []
+
+    def barrier_resolve(state, transport):
+        if not getattr(local, "passed_barrier", False):
+            local.passed_barrier = True
+            barrier.wait(timeout=10)
+        return original_resolve(state, transport)
+
+    def tracked_transaction(state_dir, issue_number, mutation):
+        transaction_calls.append(issue_number)
+        return original_transaction(state_dir, issue_number, mutation)
+
+    monkeypatch.setattr(TASK, "resolve_current_authorization", barrier_resolve)
+    monkeypatch.setattr(TASK, "checkpoint_transaction", tracked_transaction)
+    outcomes: list[tuple[str, object]] = []
+
+    def run_rework():
+        args = TASK.build_parser().parse_args(fixture["rework_argv"]())
+        try:
+            outcomes.append(("return", args.handler(args)))
+        except BaseException as exc:  # captured for assertion in the parent test
+            outcomes.append(("error", str(exc)))
+
+    workers = [threading.Thread(target=run_rework) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(10)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert sorted(outcomes, key=lambda item: item[0]) == sorted(
+        [("return", 0), ("error", "REWORK_STATE_CHANGED")],
+        key=lambda item: item[0],
+    )
+    assert transaction_calls == [999, 999]
+    state = TASK.load_state(fixture["state_dir"], fixture["issue_number"])
+    assert state["phase"] == "AUTHORIZED"
+    assert len(state["rework_history"]) == 1
+    assert state["rework_history"][0]["from_candidate_sha"] == fixture["c1"]
+    assert state["qualification_operation"] is None
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == 1
+    assert len(fixture["ref_transport"].published) == 1
+    assert fixture["ref_transport"].main_pushes == []
+
+
+@pytest.mark.parametrize("intervening_change", ["review", "owner-stop"])
+def test_stale_rework_caller_preserves_intervening_decision_under_issue_lock(
+    tmp_path, monkeypatch, intervening_change,
+):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    entered_authorization = threading.Event()
+    release_authorization = threading.Event()
+    local = threading.local()
+    original_resolve = TASK.resolve_current_authorization
+    original_transaction = TASK.checkpoint_transaction
+    transaction_calls: list[int] = []
+
+    def blocking_resolve(state, transport):
+        if not getattr(local, "blocked_once", False):
+            local.blocked_once = True
+            entered_authorization.set()
+            assert release_authorization.wait(10)
+        return original_resolve(state, transport)
+
+    def tracked_transaction(state_dir, issue_number, mutation):
+        transaction_calls.append(issue_number)
+        return original_transaction(state_dir, issue_number, mutation)
+
+    monkeypatch.setattr(TASK, "resolve_current_authorization", blocking_resolve)
+    monkeypatch.setattr(TASK, "checkpoint_transaction", tracked_transaction)
+    outcome: list[str] = []
+
+    def run_rework():
+        args = TASK.build_parser().parse_args(fixture["rework_argv"]())
+        try:
+            args.handler(args)
+            outcome.append("unexpected success")
+        except BaseException as exc:  # captured for assertion in the parent test
+            outcome.append(str(exc))
+
+    worker = threading.Thread(target=run_rework)
+    worker.start()
+    assert entered_authorization.wait(10)
+
+    def record_intervening_decision(current):
+        if intervening_change == "review":
+            return {
+                **current,
+                "review": {**current["review"], "summary": "newer concurrent review decision"},
+            }
+        return {
+            **current,
+            "phase": "STOP_REPLAN",
+            "stop_reason": "owner-directed stop during rework",
+            "launches_used": 2,
+        }
+
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], fixture["issue_number"],
+        record_intervening_decision,
+    )
+    newer_bytes = TASK.state_path(fixture["state_dir"], fixture["issue_number"]).read_bytes()
+    release_authorization.set()
+    worker.join(10)
+
+    assert not worker.is_alive()
+    assert outcome == ["REWORK_STATE_CHANGED"]
+    assert transaction_calls == [999, 999]
+    current = TASK.load_state(fixture["state_dir"], fixture["issue_number"])
+    if intervening_change == "review":
+        assert current["review"]["summary"] == "newer concurrent review decision"
+        assert current["phase"] == "REVIEWED_CHANGES_REQUESTED"
+    else:
+        assert current["phase"] == "STOP_REPLAN"
+        assert current["stop_reason"] == "owner-directed stop during rework"
+        assert current["launches_used"] == 2
+    assert current.get("rework_history", []) == []
+    assert TASK.state_path(fixture["state_dir"], fixture["issue_number"]).read_bytes() == newer_bytes

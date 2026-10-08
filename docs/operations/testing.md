@@ -817,6 +817,21 @@ Use [local project map](../local_project_map.md) for the normal standard workflo
 The owner-bound task controller prepares/authorizes, runs selected qualification, records
 explicit verification and independent source/diff review, then performs owner-authorized
 protected integration. Attached RI SDK preflight/evidence commands are retired.
+After a standard `REVIEWED_CHANGES_REQUESTED`, the supported correction route is
+`./scripts/task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`.
+The controller requires C1 to match its current qualified, verified, rejected review and C2 to
+be the clean candidate HEAD. It reauthenticates the same owner authorization, base, scope and
+profiles, and accepts C1's qualification operation only after terminal result and candidate-ref
+cleanup are reconciled. Uncertain qualification or integration state blocks the transition.
+C1 proof and operation history remain archived; C2 begins without transferred checks, approval
+or review and must pass fresh qualification, verification and independent review. Rework does
+not create authority or convert legacy records.
+Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
+qualification/integration operations are refused without checkpoint mutation. An owner pause is
+a controller hold outside checkpoint state, not a serialized phase; the controller must not
+invoke rework until the owner explicitly continues. The separate fresh-authorized-attempt route
+uses `prepare` with current matching owner authorization and a separately selected state
+location, preserving the existing checkpoint and its consumed allowances.
 
 `Main qualification` is valid only when its exact SHA, name, conclusion, authorization identity,
 and producing App match the controller's trusted configuration.

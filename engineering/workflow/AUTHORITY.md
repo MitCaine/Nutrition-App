@@ -18,6 +18,18 @@ fabricate that authenticated comment or a passed check.
 - `task verify` and `task review` retain explicit candidate-bound decisions. The reviewer
   must be independent of implementation. The controller records actual evidence and actor;
   an asserted actor string alone is not evidence that independent review occurred.
+- `task rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2`
+  supports a corrected candidate only after an authenticated standard changes-requested review.
+  It rechecks the current owner authorization, base, full C2 scope and profile floor; retains
+  C1's proof and operation history; and clears active C1 proof before C2 starts fresh. It does
+  not grant new authority or accept compatibility, attached, implicit-legacy or injected
+  historical bindings. Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or
+  unresolved qualification/integration operations are refused without checkpoint mutation. An
+  owner pause is a controller hold outside checkpoint state, not a serialized phase; the
+  controller must not invoke rework until the owner explicitly continues. The separate
+  fresh-authorized-attempt route uses `prepare` with current matching owner authorization and a
+  separately selected state location, preserving the existing checkpoint and its consumed
+  allowances.
 - `task integrate` requires owner authorization, live exact check/authority, clean candidate,
   and protected expected-main update. Ruleset `21357860` remains protected; no routine bypass.
   Ref compare-and-swap, stale-main rejection and interrupted-push reconciliation remain.
@@ -36,7 +48,15 @@ work without resetting historical decisions or consumed allowances.
 Current standard tasks use a bounded Markdown record and controller state, without a
 mandatory RI JSON packet or capsule-only planning history. Changing base/scope/profiles or
 external authority requires fresh matching authorization. Changed C requires candidate-bound
-qualification, verification and review. A closed issue or remembered PASS is not live proof.
+qualification, verification and review. The explicit same-checkpoint `task rework` transition
+is limited to `REVIEWED_CHANGES_REQUESTED`; it binds exact C1 and clean C2 identities under the
+issue lock, preserves C1 history and requires fresh C2 qualification, verification and review.
+Repeated calls, `STOP_REPLAN`, unsupported phases, overlapping or unresolved qualification and
+integration operations block it without checkpoint mutation. An owner pause is a controller
+hold outside checkpoint state, not a serialized phase; the controller must not invoke rework
+until the owner explicitly continues. A separate fresh-authorized-attempt `prepare` uses current
+matching owner authorization and a separately selected state location, preserving the existing
+checkpoint and its consumed allowances. A closed issue or remembered PASS is not live proof.
 
 Existing attached and compatibility records remain readable with their original identities;
 new CLI preparation cannot select attached RI. Public `task evidence` and `task execution`

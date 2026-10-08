@@ -142,8 +142,19 @@ The controller uses the actual `./scripts/task` interfaces: `prepare ISSUE` with
 task ID, base, paths and profiles; `authorize ISSUE`; `qualify ISSUE --candidate-root PATH`;
 `verify ISSUE` with candidate SHA, actor, decision and evidence; `review ISSUE` with candidate
 SHA, actor, decision and summary; and
+`rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2` after a
+standard `REVIEWED_CHANGES_REQUESTED`; and
 `integrate ISSUE --candidate-root PATH --human-owner-authorized`. The executable controller owns their exact argument validation and
-must reauthenticate live owner authority at dependent gates.
+must reauthenticate live owner authority at dependent gates. Rework keeps the same authorized
+base, paths and profiles, retains C1's qualification/verification/review/operation history, and
+clears active proof before C2 is qualified, verified and independently reviewed from scratch.
+It grants no new authority and does not convert compatibility or historical records.
+Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
+qualification/integration operations are refused without checkpoint mutation. An owner pause is
+a controller hold outside checkpoint state, not a serialized phase; the controller must not
+invoke rework until the owner explicitly continues. The separate fresh-authorized-attempt route
+uses `prepare` with current matching owner authorization and a separately selected state
+location, preserving the existing checkpoint and its consumed allowances.
 
 Qualification uses the dedicated App `4708441`'s successful exact-candidate-SHA `Main qualification`
 check. Select the required profiles from the complete rename-aware changed-path

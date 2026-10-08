@@ -2407,6 +2407,10 @@ def qualify_task(
     )
     mode = workflow_mode_for_state(state)
 
+    selected_rework = state.get("rework")
+    if "rework" in state and not isinstance(selected_rework, dict):
+        raise TaskControllerError("REWORK_BINDING_INVALID")
+
     if controller_main_sha != authorization.base_sha:
         raise TaskControllerError(
             (
@@ -2432,12 +2436,30 @@ def qualify_task(
             "CANDIDATE_WORKTREE_DIRTY"
         )
 
-    validate_candidate_scope(
+    candidate_paths = validate_candidate_scope(
         candidate_repo,
         authorization,
         candidate_sha=candidate_sha,
         observed_main_sha=controller_main_sha,
     )
+
+    if selected_rework is not None:
+        scope = selected_rework.get("candidate_scope")
+        expected_scope = {
+            "base_sha": authorization.base_sha,
+            "allowed_paths": list(authorization.allowed_paths),
+            "forbidden_paths": list(authorization.forbidden_paths),
+            "profiles": list(authorization.profiles),
+            "changed_paths": candidate_paths,
+        }
+        if (
+            selected_rework.get("candidate_sha") != candidate_sha
+            or selected_rework.get("base_sha") != controller_main_sha
+            or selected_rework.get("authorization") != authorization.to_dict()
+            or selected_rework.get("workflow") != state.get("workflow")
+            or scope != expected_scope
+        ):
+            raise TaskControllerError("REWORK_CANDIDATE_MISMATCH")
 
     attached, binding = _require_workflow_candidate_attachment(
         state,
@@ -2455,6 +2477,23 @@ def qualify_task(
         dispatch_nonce
         or secrets.token_hex(12)
     )
+
+    if selected_rework is not None:
+        history = state.get("rework_history")
+        if not isinstance(history, list) or not history:
+            raise TaskControllerError("REWORK_HISTORY_INVALID")
+        previous = history[-1]
+        if not isinstance(previous, dict):
+            raise TaskControllerError("REWORK_HISTORY_INVALID")
+        previous_operation = previous.get("qualification_operation")
+        if (
+            not isinstance(previous_operation, dict)
+            or not isinstance(previous_operation.get("dispatch_nonce"), str)
+            or not previous_operation["dispatch_nonce"]
+        ):
+            raise TaskControllerError("REWORK_HISTORY_INVALID")
+        if nonce == previous_operation["dispatch_nonce"]:
+            raise TaskControllerError("QUALIFICATION_OPERATION_ID_REUSED")
 
     ref_name = (
         f"task-candidate/"
@@ -3219,6 +3258,197 @@ def record_review(
     return updated
 
 
+def checkpoint_state_binding_sha256(state: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        canonical_json(state).encode("utf-8")
+    ).hexdigest()
+
+
+def rework_task(
+    state: dict[str, Any],
+    *,
+    expected_candidate_sha: str,
+    candidate_sha: str,
+    authorization: ResolvedAuthorization,
+    controller_main_sha: str,
+    candidate_paths: list[str],
+    expected_app_id: int,
+) -> dict[str, Any]:
+    """Select one corrected standard candidate while retaining the rejected attempt."""
+    for value in (expected_candidate_sha, candidate_sha):
+        if not re.fullmatch(r"[0-9a-f]{40}", value):
+            raise TaskControllerError("REWORK_CANDIDATE_SHA_INVALID")
+    if expected_candidate_sha == candidate_sha:
+        raise TaskControllerError("REWORK_CANDIDATES_MUST_DIFFER")
+
+    if state.get("phase") == "STOP_REPLAN":
+        raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+    existing_rework = state.get("rework")
+    if (
+        state.get("phase") == "AUTHORIZED"
+        and isinstance(existing_rework, dict)
+        and existing_rework.get("from_candidate_sha") == expected_candidate_sha
+        and existing_rework.get("candidate_sha") == candidate_sha
+    ):
+        raise TaskControllerError("REWORK_ALREADY_APPLIED")
+    if state.get("phase") != "REVIEWED_CHANGES_REQUESTED":
+        raise TaskControllerError("REWORK_REQUIRES_CHANGES_REQUESTED_REVIEW")
+    if workflow_mode_for_state(state) != "standard":
+        raise TaskControllerError("REWORK_STANDARD_WORKFLOW_REQUIRED")
+    if "capsule_evidence" in state:
+        raise TaskControllerError("REWORK_HISTORICAL_BINDING_UNSUPPORTED")
+
+    if authorization.base_sha != controller_main_sha:
+        raise TaskControllerError("REWORK_BASE_AUTHORITY_STALE")
+
+    if "integration" not in state or state.get("integration") is not None:
+        raise TaskControllerError("REWORK_INTEGRATION_UNRESOLVED")
+
+    history = state.get("rework_history", [])
+    if not isinstance(history, list) or any(not isinstance(item, dict) for item in history):
+        raise TaskControllerError("REWORK_HISTORY_INVALID")
+    if "rework" in state and not isinstance(existing_rework, dict):
+        raise TaskControllerError("REWORK_BINDING_INVALID")
+    if isinstance(existing_rework, dict):
+        if existing_rework.get("candidate_sha") != expected_candidate_sha:
+            raise TaskControllerError("REWORK_C1_MISMATCH")
+        if (
+            existing_rework.get("authorization") != authorization.to_dict()
+            or existing_rework.get("base_sha") != controller_main_sha
+            or existing_rework.get("workflow") != state.get("workflow")
+        ):
+            raise TaskControllerError("REWORK_AUTHORITY_CHANGED")
+
+    qualification = state.get("qualification")
+    verification = state.get("verification")
+    review = state.get("review")
+    operation = state.get("qualification_operation")
+    if not all(isinstance(value, dict) for value in (qualification, verification, review, operation)):
+        raise TaskControllerError("REWORK_C1_PROOF_INVALID")
+    if review.get("candidate_sha") != expected_candidate_sha:
+        raise TaskControllerError("REWORK_C1_MISMATCH")
+    if (
+        qualification.get("candidate_sha") != expected_candidate_sha
+        or verification.get("candidate_sha") != expected_candidate_sha
+        or review.get("candidate_sha") != expected_candidate_sha
+        or review.get("decision") != "changes-requested"
+        or verification.get("decision") not in {"pass", "fail"}
+        or qualification.get("result") not in {"PASS", "FAIL"}
+        or not isinstance(review.get("actor"), str)
+        or not review["actor"].strip()
+        or not isinstance(review.get("summary"), str)
+        or not review["summary"].strip()
+        or not isinstance(verification.get("actor"), str)
+        or not verification["actor"].strip()
+        or not isinstance(verification.get("evidence"), str)
+        or not verification["evidence"].strip()
+    ):
+        raise TaskControllerError("REWORK_C1_PROOF_MISMATCH")
+
+    if (
+        operation.get("status") != "COMPLETE"
+        or operation.get("terminal_result") != qualification.get("result")
+        or operation.get("candidate_sha") != expected_candidate_sha
+        or operation.get("candidate_ref_published") is not True
+        or operation.get("cleanup_error") is not None
+        or operation.get("authorization") != _checkpoint_authorization_identity(state)
+        or operation.get("resolved_authorization") != authorization.to_dict()
+        or operation.get("controller_main_sha") != controller_main_sha
+        or operation.get("expected_app_id") != expected_app_id
+        or operation.get("workflow") != "trusted-qualification.yml"
+        or not isinstance(operation.get("operation_id"), str)
+        or not operation["operation_id"]
+        or operation.get("dispatch_nonce") != operation.get("operation_id")
+        or not isinstance(operation.get("candidate_ref"), str)
+        or not operation["candidate_ref"]
+    ):
+        raise TaskControllerError("REWORK_QUALIFICATION_OPERATION_UNSAFE")
+
+    expected_external_id = (
+        "nutrition-task:"
+        f"{state['issue_number']}:"
+        f"{authorization.identity_sha256}:"
+        f"{expected_candidate_sha}"
+    )
+    check_id = qualification.get("check_id")
+    if (
+        qualification.get("controller_main_sha") != controller_main_sha
+        or qualification.get("workflow") != operation.get("workflow")
+        or qualification.get("dispatch_nonce") != operation.get("dispatch_nonce")
+        or qualification.get("candidate_ref") != operation.get("candidate_ref")
+        or qualification.get("candidate_ref_removed") is not True
+        or type(qualification.get("workflow_run_id")) is not int
+        or qualification.get("workflow_run_id") < 1
+        or operation.get("terminal_result") not in {"PASS", "FAIL"}
+    ):
+        raise TaskControllerError("REWORK_QUALIFICATION_PROOF_INVALID")
+    if check_id is None:
+        if (
+            qualification.get("check_app_id") is not None
+            or qualification.get("check_external_id") is not None
+            or qualification.get("result") == "PASS"
+        ):
+            raise TaskControllerError("REWORK_QUALIFICATION_PROOF_INVALID")
+    elif (
+        type(check_id) is not int
+        or check_id < 1
+        or qualification.get("check_app_id") != expected_app_id
+        or qualification.get("check_external_id") != expected_external_id
+    ):
+        raise TaskControllerError("REWORK_QUALIFICATION_PROOF_INVALID")
+    if qualification.get("result") == "PASS" and (
+        qualification.get("workflow_conclusion") != "success"
+        or qualification.get("check_conclusion") != "success"
+    ):
+        raise TaskControllerError("REWORK_QUALIFICATION_PROOF_INVALID")
+
+    candidate_scope = {
+        "base_sha": authorization.base_sha,
+        "allowed_paths": list(authorization.allowed_paths),
+        "forbidden_paths": list(authorization.forbidden_paths),
+        "profiles": list(authorization.profiles),
+        "changed_paths": list(candidate_paths),
+    }
+    previous_history = {
+        key: json.loads(json.dumps(value))
+        for key, value in state.items()
+        if key != "rework_history"
+        and ("history" in key.lower() or "failure" in key.lower())
+    }
+    archive = {
+        "from_candidate_sha": expected_candidate_sha,
+        "selected_candidate_sha": candidate_sha,
+        "checkpoint_sha256": checkpoint_state_binding_sha256(state),
+        "qualification": json.loads(json.dumps(qualification)),
+        "verification": json.loads(json.dumps(verification)),
+        "review": json.loads(json.dumps(review)),
+        "qualification_operation": json.loads(json.dumps(operation)),
+        "previous_rework_binding": (
+            json.loads(json.dumps(existing_rework))
+            if isinstance(existing_rework, dict)
+            else None
+        ),
+        "existing_history": previous_history,
+    }
+    updated = json.loads(json.dumps(state))
+    updated["rework_history"] = [*history, archive]
+    updated["rework"] = {
+        "from_candidate_sha": expected_candidate_sha,
+        "candidate_sha": candidate_sha,
+        "base_sha": authorization.base_sha,
+        "authorization": authorization.to_dict(),
+        "workflow": json.loads(json.dumps(state["workflow"])),
+        "candidate_scope": candidate_scope,
+    }
+    updated["qualification"] = None
+    updated["verification"] = None
+    updated["review"] = None
+    updated["integration"] = None
+    updated["qualification_operation"] = None
+    updated["phase"] = "AUTHORIZED"
+    return updated
+
+
 def command_prepare(
     args: argparse.Namespace,
 ) -> int:
@@ -3761,6 +3991,125 @@ def command_review(
         }
     )
 
+    return 0
+
+
+def command_rework(
+    args: argparse.Namespace,
+) -> int:
+    expected_candidate_sha = args.expected_candidate_sha
+    candidate_sha = args.candidate_sha
+    for value in (expected_candidate_sha, candidate_sha):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+            raise TaskControllerError("REWORK_CANDIDATE_SHA_INVALID")
+    if expected_candidate_sha == candidate_sha:
+        raise TaskControllerError("REWORK_CANDIDATES_MUST_DIFFER")
+
+    state = load_state(args.state_dir, args.issue_number)
+    existing_rework = state.get("rework")
+    if (
+        state.get("phase") == "AUTHORIZED"
+        and isinstance(existing_rework, dict)
+        and existing_rework.get("from_candidate_sha") == expected_candidate_sha
+        and existing_rework.get("candidate_sha") == candidate_sha
+    ):
+        raise TaskControllerError("REWORK_ALREADY_APPLIED")
+    if state.get("phase") == "STOP_REPLAN":
+        raise TaskControllerError("STOP_REPLAN_PRESERVE_ATTEMPT")
+    if state.get("phase") != "REVIEWED_CHANGES_REQUESTED":
+        raise TaskControllerError("REWORK_REQUIRES_CHANGES_REQUESTED_REVIEW")
+    if workflow_mode_for_state(state) != "standard":
+        raise TaskControllerError("REWORK_STANDARD_WORKFLOW_REQUIRED")
+    if "capsule_evidence" in state:
+        raise TaskControllerError("REWORK_HISTORICAL_BINDING_UNSUPPORTED")
+
+    expected_state_sha256 = checkpoint_state_binding_sha256(state)
+    repo = resolve_repo_root(args.repo_root)
+    git(repo, "fetch", "origin", "main")
+    controller_main_sha = require_trusted_main_controller(
+        repo,
+        expected_repository=state["repository"],
+    )
+    candidate_repo = resolve_repo_root(args.candidate_root)
+    observed_candidate_sha = require_candidate_repository(
+        candidate_repo,
+        expected_repository=state["repository"],
+    )
+    if observed_candidate_sha != candidate_sha:
+        raise TaskControllerError("REWORK_CANDIDATE_HEAD_MISMATCH")
+
+    expected_app_id = configured_qualification_app_id()
+    transport = GhQualificationTransport()
+    authorization = resolve_current_authorization(state, transport)
+    if authorization.base_sha != controller_main_sha:
+        raise TaskControllerError("REWORK_BASE_AUTHORITY_STALE")
+    candidate_paths = validate_candidate_scope(
+        candidate_repo,
+        authorization,
+        candidate_sha=candidate_sha,
+        observed_main_sha=controller_main_sha,
+    )
+    rework_task(
+        state,
+        expected_candidate_sha=expected_candidate_sha,
+        candidate_sha=candidate_sha,
+        authorization=authorization,
+        controller_main_sha=controller_main_sha,
+        candidate_paths=candidate_paths,
+        expected_app_id=expected_app_id,
+    )
+
+    def apply_rework(current: dict[str, Any]) -> dict[str, Any]:
+        if checkpoint_state_binding_sha256(current) != expected_state_sha256:
+            raise TaskControllerError("REWORK_STATE_CHANGED")
+        current_main_sha = require_trusted_main_controller(
+            repo,
+            expected_repository=current["repository"],
+        )
+        if current_main_sha != controller_main_sha:
+            raise TaskControllerError("REWORK_BASE_AUTHORITY_STALE")
+        locked_candidate_sha = require_candidate_repository(
+            candidate_repo,
+            expected_repository=current["repository"],
+        )
+        if locked_candidate_sha != candidate_sha:
+            raise TaskControllerError("REWORK_CANDIDATE_HEAD_MISMATCH")
+        locked_authorization = resolve_current_authorization(current, transport)
+        if locked_authorization.to_dict() != authorization.to_dict():
+            raise TaskControllerError("REWORK_AUTHORITY_CHANGED")
+        locked_paths = validate_candidate_scope(
+            candidate_repo,
+            locked_authorization,
+            candidate_sha=candidate_sha,
+            observed_main_sha=current_main_sha,
+        )
+        if locked_paths != candidate_paths:
+            raise TaskControllerError("REWORK_CANDIDATE_SCOPE_CHANGED")
+        return rework_task(
+            current,
+            expected_candidate_sha=expected_candidate_sha,
+            candidate_sha=candidate_sha,
+            authorization=locked_authorization,
+            controller_main_sha=current_main_sha,
+            candidate_paths=locked_paths,
+            expected_app_id=expected_app_id,
+        )
+
+    updated = checkpoint_transaction(
+        args.state_dir,
+        args.issue_number,
+        apply_rework,
+    )
+    emit({
+        "task": updated["task_id"],
+        "issue": updated["issue_number"],
+        "phase": updated["phase"],
+        "expected_candidate_sha": expected_candidate_sha,
+        "candidate_sha": candidate_sha,
+        "workflow_mode": "standard",
+        "rework_history_count": len(updated["rework_history"]),
+        "next": "qualify",
+    })
     return 0
 
 
@@ -4651,6 +5000,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     review.set_defaults(
         handler=command_review
+    )
+
+    rework = subparsers.add_parser(
+        "rework",
+        help="Select a corrected candidate after a standard changes-requested review.",
+        description=(
+            "Select a clean C2 for the existing standard checkpoint after C1 reaches "
+            "REVIEWED_CHANGES_REQUESTED. The current owner authorization, base, scope, "
+            "and profiles must still match. C1 proof and operation history are retained; "
+            "C2 receives no qualification, verification, review, or integration proof. "
+            "This does not create fresh authority and does not accept legacy records."
+        ),
+    )
+    rework.add_argument(
+        "issue_number",
+        type=int,
+    )
+    rework.add_argument(
+        "--candidate-root",
+        type=Path,
+        required=True,
+        help="Clean candidate repository whose HEAD is the exact C2 commit.",
+    )
+    rework.add_argument(
+        "--expected-candidate-sha",
+        required=True,
+        help="Exact full C1 SHA bound to the current qualification, verification, and changes-requested review.",
+    )
+    rework.add_argument(
+        "--candidate-sha",
+        required=True,
+        help="Exact full C2 SHA at candidate-root HEAD; it must differ from C1.",
+    )
+    rework.set_defaults(
+        handler=command_rework
     )
 
     integrate = subparsers.add_parser(

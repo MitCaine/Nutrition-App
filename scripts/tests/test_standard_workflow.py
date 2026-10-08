@@ -28,6 +28,48 @@ def test_standard_review_still_requires_exact_verified_candidate():
     assert approved["review"]["candidate_sha"] == "a"*40
     assert "capsule_evidence" not in approved
 
+def test_standard_rework_cli_and_guides_describe_same_checkpoint_limits(capsys, tmp_path):
+    parser = task.build_parser()
+    with pytest.raises(SystemExit) as missing:
+        parser.parse_args(["rework", "302", "--candidate-root", str(tmp_path)])
+    assert missing.value.code == 2
+
+    with pytest.raises(SystemExit) as help_result:
+        parser.parse_args(["rework", "--help"])
+    assert help_result.value.code == 0
+    help_text = capsys.readouterr().out
+    for phrase in (
+        "--expected-candidate-sha",
+        "--candidate-sha",
+        "REVIEWED_CHANGES_REQUESTED",
+        "current owner authorization",
+        "C1 proof and operation history are retained",
+        "does not create fresh authority",
+        "does not accept legacy records",
+    ):
+        assert phrase in help_text
+
+    args = parser.parse_args([
+        "--repo-root", str(ROOT), "--state-dir", str(tmp_path), "rework", "302",
+        "--candidate-root", str(tmp_path), "--expected-candidate-sha", "a" * 40,
+        "--candidate-sha", "b" * 40,
+    ])
+    assert args.handler is task.command_rework
+
+    map_text = (ROOT / "docs/local_project_map.md").read_text()
+    authority_text = (ROOT / "engineering/workflow/AUTHORITY.md").read_text()
+    testing_text = (ROOT / "docs/operations/testing.md").read_text()
+    assert "rework ISSUE --candidate-root PATH --expected-candidate-sha C1 --candidate-sha C2" in map_text
+    assert "only after an authenticated standard changes-requested review" in authority_text
+    assert "qualification operation only after terminal result and candidate-ref" in testing_text
+    assert "C2 begins without transferred checks, approval" in testing_text
+    for guide in (map_text, authority_text, testing_text):
+        guide_text = " ".join(guide.split())
+        assert "Repeated calls, `STOP_REPLAN`, unsupported phases" in guide_text
+        assert "An owner pause is a controller hold outside checkpoint state, not a serialized phase" in guide_text
+        assert "separate fresh-authorized-attempt route" in guide_text
+        assert "separately selected state location" in guide_text
+
 def test_retired_model_evidence_cli_cannot_dispatch():
     with pytest.raises(SystemExit) as result:
         task.build_parser().parse_args(["evidence", "999", "review", "--candidate-root", str(ROOT)])
