@@ -2482,17 +2482,26 @@ def qualify_task(
         history = state.get("rework_history")
         if not isinstance(history, list) or not history:
             raise TaskControllerError("REWORK_HISTORY_INVALID")
-        previous = history[-1]
-        if not isinstance(previous, dict):
-            raise TaskControllerError("REWORK_HISTORY_INVALID")
-        previous_operation = previous.get("qualification_operation")
-        if (
-            not isinstance(previous_operation, dict)
-            or not isinstance(previous_operation.get("dispatch_nonce"), str)
-            or not previous_operation["dispatch_nonce"]
-        ):
-            raise TaskControllerError("REWORK_HISTORY_INVALID")
-        if nonce == previous_operation["dispatch_nonce"]:
+        previous_operation_ids: set[str] = set()
+        for previous in history:
+            if not isinstance(previous, dict):
+                raise TaskControllerError("REWORK_HISTORY_INVALID")
+            previous_operation = previous.get("qualification_operation")
+            if not isinstance(previous_operation, dict):
+                raise TaskControllerError("REWORK_HISTORY_INVALID")
+            previous_operation_id = previous_operation.get("operation_id")
+            previous_nonce = previous_operation.get("dispatch_nonce")
+            if (
+                not isinstance(previous_operation_id, str)
+                or not previous_operation_id
+                or not isinstance(previous_nonce, str)
+                or not previous_nonce
+                or previous_operation_id != previous_nonce
+                or previous_operation_id in previous_operation_ids
+            ):
+                raise TaskControllerError("REWORK_HISTORY_INVALID")
+            previous_operation_ids.add(previous_operation_id)
+        if nonce in previous_operation_ids:
             raise TaskControllerError("QUALIFICATION_OPERATION_ID_REUSED")
 
     ref_name = (
@@ -3334,6 +3343,10 @@ def rework_task(
         or review.get("decision") != "changes-requested"
         or verification.get("decision") not in {"pass", "fail"}
         or qualification.get("result") not in {"PASS", "FAIL"}
+        or (
+            qualification.get("result") == "FAIL"
+            and verification.get("decision") == "pass"
+        )
         or not isinstance(review.get("actor"), str)
         or not review["actor"].strip()
         or not isinstance(review.get("summary"), str)

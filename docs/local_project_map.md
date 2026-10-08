@@ -148,7 +148,10 @@ standard `REVIEWED_CHANGES_REQUESTED`; and
 must reauthenticate live owner authority at dependent gates. Rework keeps the same authorized
 base, paths and profiles, retains C1's qualification/verification/review/operation history, and
 clears active proof before C2 is qualified, verified and independently reviewed from scratch.
-It grants no new authority and does not convert compatibility or historical records.
+Each rework qualification checks its operation ID against every retained correction archive and
+refuses reuse before publishing a candidate ref or dispatching. A C1 qualification failure may be
+archived only with a failed exact-C1 verification; a passing verification cannot validate a failed
+qualification. Rework grants no new authority and does not convert compatibility or historical records.
 Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
 qualification/integration operations are refused without checkpoint mutation. An owner pause is
 a controller hold outside checkpoint state, not a serialized phase; the controller must not

@@ -4686,6 +4686,7 @@ def public_standard_rework_fixture(
     allowed_paths: list[str] | None = None,
     profiles: list[str] | None = None,
     extra_c2_files: dict[str, str] | None = None,
+    c1_qualification_failure: bool = False,
 ):
     """Create a disposable C1 checkpoint through the public parser and handlers."""
     issue_number = 999
@@ -4762,6 +4763,7 @@ def public_standard_rework_fixture(
         candidate_sha = git(candidate_repo, "rev-parse", "HEAD")
         if candidate_sha not in transports:
             sequence = len(transports) + 1
+            is_failed_c1 = c1_qualification_failure and sequence == 1
             transports[candidate_sha] = SequencedQualificationTransport(
                 comment=next(iter(issue_transport.comments.values())),
                 controller_sha=base,
@@ -4770,6 +4772,8 @@ def public_standard_rework_fixture(
                 issue_number=issue_number,
                 run_id=8800 + sequence,
                 check_id=9900 + sequence,
+                run_conclusion="failure" if is_failed_c1 else "success",
+                check_conclusion="failure" if is_failed_c1 else "success",
             )
         return transports[candidate_sha]
 
@@ -4798,10 +4802,12 @@ def public_standard_rework_fixture(
     assert run("authorize", str(issue_number))[0] == 0
 
     c1 = commit_paths(candidate_repo, {"src/food.py": "VALUE = 1\n"}, message="C1 candidate")
-    assert run("qualify", str(issue_number), "--candidate-root", str(candidate_repo))[0] == 0
+    qualification_code = run("qualify", str(issue_number), "--candidate-root", str(candidate_repo))[0]
+    assert qualification_code == (1 if c1_qualification_failure else 0)
     assert run(
         "verify", str(issue_number), "--candidate-sha", c1,
-        "--actor", "fixture-controller", "--decision", "pass",
+        "--actor", "fixture-controller",
+        "--decision", "fail" if c1_qualification_failure else "pass",
         "--evidence", "fixture exact-candidate verification",
     )[0] == 0
     assert run(
@@ -5045,6 +5051,120 @@ def test_public_standard_rework_archives_c1_and_requalifies_only_selected_c2(tmp
     assert pending["integration"]["candidate_sha"] == fixture["c2"]
     assert pending["integration"]["check_id"] == c2_qualification["check_id"]
     assert TASK.load_state(fixture["state_dir"], issue) == final_state
+
+
+def test_public_rework_rejects_failed_qualification_with_passing_verification_without_mutation(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+
+    def make_contradictory(current):
+        updated = json.loads(json.dumps(current))
+        updated["qualification"]["result"] = "FAIL"
+        updated["qualification"]["check_conclusion"] = "failure"
+        updated["qualification_operation"]["terminal_result"] = "FAIL"
+        return updated
+
+    TASK.checkpoint_transaction(fixture["state_dir"], fixture["issue_number"], make_contradictory)
+    before = state_path.read_bytes()
+    dispatches = sum(item.dispatch_calls for item in fixture["transports"].values())
+    published = list(fixture["ref_transport"].published)
+    code, result, _, _ = fixture["run"](
+        *fixture["rework_argv"]()[len(fixture["common"]):],
+    )
+
+    assert code == 1
+    assert result["error"] == "REWORK_C1_PROOF_MISMATCH"
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == dispatches
+    assert fixture["ref_transport"].published == published
+    assert fixture["ref_transport"].main_pushes == []
+
+
+def test_public_rework_archives_coherent_failed_c1_proof(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(
+        tmp_path,
+        monkeypatch,
+        c1_qualification_failure=True,
+    )
+    c1_state = TASK.load_state(fixture["state_dir"], fixture["issue_number"])
+    assert c1_state["phase"] == "REVIEWED_CHANGES_REQUESTED"
+    assert c1_state["qualification"]["result"] == "FAIL"
+    assert c1_state["qualification"]["workflow_conclusion"] == "failure"
+    assert c1_state["qualification"]["check_conclusion"] == "failure"
+    assert c1_state["verification"]["decision"] == "fail"
+
+    code, result, _, _ = fixture["run"](
+        *fixture["rework_argv"]()[len(fixture["common"]):],
+    )
+
+    assert code == 0
+    assert result["phase"] == "AUTHORIZED"
+    selected = TASK.load_state(fixture["state_dir"], fixture["issue_number"])
+    archived = selected["rework_history"][0]
+    assert archived["checkpoint_sha256"] == TASK.checkpoint_state_binding_sha256(c1_state)
+    assert archived["qualification"] == c1_state["qualification"]
+    assert archived["verification"] == c1_state["verification"]
+    assert archived["qualification_operation"] == c1_state["qualification_operation"]
+    assert archived["qualification"]["result"] == "FAIL"
+    assert archived["verification"]["decision"] == "fail"
+    assert archived["qualification_operation"]["terminal_result"] == "FAIL"
+    assert selected["qualification"] is None
+    assert selected["verification"] is None
+    assert selected["review"] is None
+    assert selected["qualification_operation"] is None
+
+
+def test_public_qualification_refuses_nonce_reused_from_older_rework_round_without_mutation(
+    tmp_path, monkeypatch,
+):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    issue = fixture["issue_number"]
+    state_path = TASK.state_path(fixture["state_dir"], issue)
+    run = fixture["run"]
+    common = fixture["common"]
+
+    assert run(*fixture["rework_argv"]()[len(common):])[0] == 0
+    assert run("qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]))[0] == 0
+    assert run(
+        "verify", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fixture-controller", "--decision", "pass", "--evidence", "fresh C2",
+    )[0] == 0
+    assert run(
+        "review", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fresh-independent-C2-reviewer", "--decision", "changes-requested",
+        "--summary", "second correction required",
+    )[0] == 0
+
+    c3 = commit_paths(
+        fixture["candidate_repo"],
+        {"src/food.py": "VALUE = 3\n"},
+        message="C3 corrected candidate",
+    )
+    assert run(*fixture["rework_argv"](
+        expected_candidate_sha=fixture["c2"],
+        candidate_sha=c3,
+    )[len(common):])[0] == 0
+    before = state_path.read_bytes()
+    state = TASK.load_state(fixture["state_dir"], issue)
+    archived_ids = [
+        item["qualification_operation"]["operation_id"]
+        for item in state["rework_history"]
+    ]
+    assert len(archived_ids) == 2
+    assert len(set(archived_ids)) == 2
+    monkeypatch.setattr(TASK.secrets, "token_hex", lambda _size: archived_ids[0])
+    dispatches = sum(item.dispatch_calls for item in fixture["transports"].values())
+    published = list(fixture["ref_transport"].published)
+
+    code, result, _, _ = run("qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]))
+
+    assert code == 1
+    assert result["error"] == "QUALIFICATION_OPERATION_ID_REUSED"
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == dispatches
+    assert fixture["ref_transport"].published == published
+    assert fixture["ref_transport"].main_pushes == []
+    assert TASK.load_state(fixture["state_dir"], issue)["qualification_operation"] is None
 
 
 def test_public_rework_parser_requires_full_c1_and_c2_and_explains_limits(capsys, tmp_path):
