@@ -56,6 +56,9 @@ alone owns Git and task-stage decisions. Preserve unrelated edits and paused his
 branch or other action requires its current explicit grant; this map is not blanket Git, issue
 or settings permission.
 
+The Nutrition controller's concrete dispatch binding is `collaboration.spawn_agent`; the
+adopted serial role rules govern assignment order, and workers do not recruit.
+
 The selected role settings are:
 
 | Role | Environment | Model / effort |

@@ -520,3 +520,11 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     assert "controller-state/issue-261.json" in task_text
     assert "/Users/" not in task_text and "/private/tmp/" not in task_text
     assert "../evidence/" not in task_text
+
+
+def test_project_map_records_actual_nutrition_dispatch_tool():
+    text = (ROOT / "docs/local_project_map.md").read_text()
+    routing = text.split("## Nutrition permissions and routing\n", 1)[1].split("\n## ", 1)[0]
+    assert "`collaboration.spawn_agent`" in routing, (
+        "serial-worker prose does not identify the concrete controller dispatch tool"
+    )
