@@ -23,6 +23,7 @@ from lib.task_authorization import (
     render_authorization_comment,
     resolve_comment,
     resolve_comments,
+    required_profiles_for_paths,
     validate_candidate_scope,
 )
 
@@ -30,7 +31,7 @@ from lib.trusted_qualification import CHECK_NAME
 from lib.capsule_contract import (ExecutionError, EvidenceError,
     GOVERNING_ISSUE_REPLAN_REQUIRED, GOVERNING_ISSUE_REVALIDATION_UNAVAILABLE,
     GOVERNING_ISSUE_REVALIDATION_INVALID)
-from lib import task_closeout
+from lib import path_scope, task_closeout
 from lib.ri_consumer import RIError
 
 
@@ -3321,15 +3322,39 @@ def _rework_binding_matches(
     if not isinstance(scope, dict):
         return False
     changed_paths = scope.get("changed_paths")
-    return (
-        scope.get("base_sha") == authorization.get("base_sha")
-        and scope.get("allowed_paths") == authorization.get("allowed_paths")
-        and scope.get("forbidden_paths") == authorization.get("forbidden_paths")
-        and scope.get("profiles") == authorization.get("profiles")
-        and isinstance(changed_paths, list)
-        and all(isinstance(path, str) and path for path in changed_paths)
-        and len(changed_paths) == len(set(changed_paths))
-    )
+    allowed_paths = scope.get("allowed_paths")
+    forbidden_paths = scope.get("forbidden_paths")
+    profiles = scope.get("profiles")
+    schema_version = authorization.get("schema_version", path_scope.V1)
+    if (
+        scope.get("base_sha") != authorization.get("base_sha")
+        or allowed_paths != authorization.get("allowed_paths")
+        or forbidden_paths != authorization.get("forbidden_paths")
+        or profiles != authorization.get("profiles")
+        or not isinstance(changed_paths, list)
+        or not all(isinstance(path, str) and path for path in changed_paths)
+        or len(changed_paths) != len(set(changed_paths))
+        or type(schema_version) is not int
+        or schema_version not in path_scope.SUPPORTED_VERSIONS
+    ):
+        return False
+
+    try:
+        if not all(
+            path_scope.permitted(
+                path,
+                allowed_paths,
+                forbidden_paths,
+                schema_version,
+            )
+            for path in changed_paths
+        ):
+            return False
+        required_profiles = required_profiles_for_paths(changed_paths)
+    except (path_scope.PathPatternError, TypeError, ValueError):
+        return False
+
+    return required_profiles.issubset(set(profiles))
 
 
 def _rework_archive_proof_matches(

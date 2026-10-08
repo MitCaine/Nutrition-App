@@ -5379,6 +5379,84 @@ def test_public_routes_reject_malformed_rework_archives_before_effects(
     assert fixture["ref_transport"].main_pushes == []
 
 
+@pytest.mark.parametrize(
+    ("binding_location", "scope_case", "route"),
+    [
+        (location, scope_case, route)
+        for location in ("current", "previous")
+        for scope_case in ("outside_allowed", "inside_forbidden", "missing_profile_floor")
+        for route in ("rework", "qualify")
+    ],
+)
+def test_public_routes_reject_rework_binding_paths_outside_retained_scope(
+    tmp_path, monkeypatch, binding_location, scope_case, route,
+):
+    allowed_paths = ["**"] if scope_case == "missing_profile_floor" else ["src/**"]
+    fixture = public_standard_rework_fixture(
+        tmp_path,
+        monkeypatch,
+        allowed_paths=allowed_paths,
+        profiles=["repository"],
+    )
+    issue = fixture["issue_number"]
+    state_path = TASK.state_path(fixture["state_dir"], issue)
+
+    if route == "qualify":
+        if binding_location == "current":
+            assert fixture["run"](
+                *fixture["rework_argv"]()[len(fixture["common"]):],
+            )[0] == 0
+        else:
+            public_second_rework_round(fixture)
+        expected_candidate_sha = None
+        candidate_sha = None
+    elif binding_location == "current":
+        expected_candidate_sha = fixture["c2"]
+        candidate_sha = public_c2_reviewed_next_candidate(fixture)
+    else:
+        expected_candidate_sha, candidate_sha = public_c3_reviewed_next_candidate(fixture)
+
+    invalid_path = {
+        "outside_allowed": "outside/unauthorized.py",
+        "inside_forbidden": "src/forbidden/blocked.py",
+        "missing_profile_floor": "apps/backend/new_route.py",
+    }[scope_case]
+
+    def corrupt_binding(current):
+        updated = json.loads(json.dumps(current))
+        if binding_location == "current":
+            binding = updated["rework"]
+        else:
+            binding = updated["rework_history"][1]["previous_rework_binding"]
+        binding["candidate_scope"]["changed_paths"] = [invalid_path]
+        return updated
+
+    TASK.checkpoint_transaction(fixture["state_dir"], issue, corrupt_binding)
+    before = state_path.read_bytes()
+    dispatches = sum(item.dispatch_calls for item in fixture["transports"].values())
+    published = list(fixture["ref_transport"].published)
+    deleted = list(fixture["ref_transport"].deleted)
+    main_pushes = list(fixture["ref_transport"].main_pushes)
+
+    if route == "qualify":
+        code, result, _, _ = fixture["run"](
+            "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+        )
+    else:
+        code, result, _, _ = fixture["run"](*fixture["rework_argv"](
+            expected_candidate_sha=expected_candidate_sha,
+            candidate_sha=candidate_sha,
+        )[len(fixture["common"]):])
+
+    assert code == 1
+    assert result["error"] == "REWORK_HISTORY_INVALID"
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == dispatches
+    assert fixture["ref_transport"].published == published
+    assert fixture["ref_transport"].deleted == deleted
+    assert fixture["ref_transport"].main_pushes == main_pushes
+
+
 def test_public_multiple_rework_rounds_preserve_coherent_failure_and_unknown_evidence(
     tmp_path, monkeypatch,
 ):
