@@ -825,7 +825,11 @@ profiles, and accepts C1's qualification operation only after terminal result an
 cleanup are reconciled. Uncertain qualification or integration state blocks the transition.
 C1 proof and operation history remain archived; C2 begins without transferred checks, approval
 or review and must pass fresh qualification, verification and independent review. Rework does
-not create authority or convert legacy records.
+not create authority or convert legacy records. Before rework or qualification, the controller
+validates generated archive proof and operation identities, terminal cleanup, adjacent candidate
+links and retained authority/scope bindings. Archived checkpoint digests are checked by format
+without reconstructing historical checkpoint contents; opaque unrelated history and failure
+evidence remain intact.
 Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
 qualification/integration operations are refused without checkpoint mutation. An owner pause is
 a controller hold outside checkpoint state, not a serialized phase; the controller must not

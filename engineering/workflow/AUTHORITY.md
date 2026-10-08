@@ -29,7 +29,10 @@ fabricate that authenticated comment or a passed check.
   controller must not invoke rework until the owner explicitly continues. The separate
   fresh-authorized-attempt route uses `prepare` with current matching owner authorization and a
   separately selected state location, preserving the existing checkpoint and its consumed
-  allowances.
+  allowances. Before rework or qualification, the controller validates generated archive proof
+  identities, terminal cleanup, adjacent candidate links and retained authority/scope bindings.
+  It checks archived checkpoint digests by format without reconstructing historical checkpoint
+  contents, and preserves opaque unrelated history and failure evidence.
 - `task integrate` requires owner authorization, live exact check/authority, clean candidate,
   and protected expected-main update. Ruleset `21357860` remains protected; no routine bypass.
   Ref compare-and-swap, stale-main rejection and interrupted-push reconciliation remain.

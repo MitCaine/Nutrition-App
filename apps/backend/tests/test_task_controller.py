@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -4868,6 +4869,63 @@ def public_standard_rework_fixture(
     }
 
 
+def public_c2_reviewed_next_candidate(fixture):
+    """Prepare a rejected C2 and clean C3 through public fixture commands."""
+    issue = fixture["issue_number"]
+    run = fixture["run"]
+    common = fixture["common"]
+    assert run(*fixture["rework_argv"]()[len(common):])[0] == 0
+    assert run("qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]))[0] == 0
+    assert run(
+        "verify", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fixture-controller", "--decision", "pass", "--evidence", "fresh C2",
+    )[0] == 0
+    assert run(
+        "review", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fresh-independent-C2-reviewer", "--decision", "changes-requested",
+        "--summary", "second correction required",
+    )[0] == 0
+    c3 = commit_paths(
+        fixture["candidate_repo"],
+        {"src/food.py": "VALUE = 3\n"},
+        message="C3 corrected candidate",
+    )
+    return c3
+
+
+def public_second_rework_round(fixture):
+    """Advance disposable C1 proof through the public C2-to-C3 rework route."""
+    c3 = public_c2_reviewed_next_candidate(fixture)
+    run = fixture["run"]
+    assert run(*fixture["rework_argv"](
+        expected_candidate_sha=fixture["c2"], candidate_sha=c3,
+    )[len(fixture["common"]):])[0] == 0
+    return c3
+
+
+def public_c3_reviewed_next_candidate(fixture):
+    """Prepare a rejected C3 and clean C4 after two valid retained archives."""
+    c3 = public_second_rework_round(fixture)
+    issue = fixture["issue_number"]
+    run = fixture["run"]
+    candidate_root = str(fixture["candidate_repo"])
+    assert run("qualify", str(issue), "--candidate-root", candidate_root)[0] == 0
+    assert run(
+        "verify", str(issue), "--candidate-sha", c3,
+        "--actor", "fixture-controller", "--decision", "pass", "--evidence", "fresh C3",
+    )[0] == 0
+    assert run(
+        "review", str(issue), "--candidate-sha", c3,
+        "--actor", "fresh-independent-C3-reviewer", "--decision", "changes-requested",
+        "--summary", "third correction required",
+    )[0] == 0
+    c4 = commit_paths(
+        fixture["candidate_repo"], {"src/food.py": "VALUE = 4\n"},
+        message="C4 corrected candidate",
+    )
+    return c3, c4
+
+
 def test_public_standard_rework_archives_c1_and_requalifies_only_selected_c2(tmp_path, monkeypatch):
     fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
     issue = fixture["issue_number"]
@@ -5112,6 +5170,338 @@ def test_public_rework_archives_coherent_failed_c1_proof(tmp_path, monkeypatch):
     assert selected["verification"] is None
     assert selected["review"] is None
     assert selected["qualification_operation"] is None
+
+
+def corrupt_public_rework_history(current, case, issue_number):
+    updated = json.loads(json.dumps(current))
+    if case == "unrecognized_archive":
+        updated["rework_history"] = [{}]
+    elif case == "missing_qualification":
+        updated["rework_history"][0].pop("qualification")
+    elif case == "missing_verification":
+        updated["rework_history"][0].pop("verification")
+    elif case == "missing_review":
+        updated["rework_history"][0].pop("review")
+    elif case == "missing_operation":
+        updated["rework_history"][0].pop("qualification_operation")
+    elif case == "missing_previous_binding":
+        updated["rework_history"][0].pop("previous_rework_binding")
+    elif case == "missing_existing_history":
+        updated["rework_history"][0].pop("existing_history")
+    elif case == "operation_nonce_mismatch":
+        updated["rework_history"][0]["qualification_operation"]["dispatch_nonce"] = "different-operation"
+    elif case == "selected_candidate_mismatch":
+        updated["rework_history"][0]["selected_candidate_sha"] = "f" * 40
+    elif case == "qualification_candidate_mismatch":
+        updated["rework_history"][0]["qualification"]["candidate_sha"] = "f" * 40
+    elif case == "fabricated_initial_binding":
+        updated["rework_history"][0]["previous_rework_binding"] = {"candidate_sha": "f" * 40}
+    elif case == "checkpoint_digest_shape":
+        updated["rework_history"][0]["checkpoint_sha256"] = "not-a-sha256"
+    elif case == "source_candidate_sha_shape":
+        updated["rework_history"][0]["from_candidate_sha"] = "not-a-commit"
+    elif case == "selected_candidate_sha_shape":
+        updated["rework_history"][0]["selected_candidate_sha"] = "not-a-commit"
+    elif case == "existing_history_type":
+        updated["rework_history"][0]["existing_history"] = ["opaque"]
+    elif case == "archive_verification_candidate_mismatch":
+        updated["rework_history"][0]["verification"]["candidate_sha"] = "f" * 40
+    elif case == "archive_review_candidate_mismatch":
+        updated["rework_history"][0]["review"]["candidate_sha"] = "f" * 40
+    elif case == "archive_operation_authority_mismatch":
+        updated["rework_history"][0]["qualification_operation"]["resolved_authorization"]["identity_sha256"] = "f" * 64
+    elif case == "archive_operation_candidate_mismatch":
+        updated["rework_history"][0]["qualification_operation"]["candidate_sha"] = "f" * 40
+    elif case == "archive_operation_candidate_ref_mismatch":
+        updated["rework_history"][0]["qualification_operation"]["candidate_ref"] = "task-candidate/999/other/ffffffffffff"
+    elif case == "archive_operation_terminal_mismatch":
+        updated["rework_history"][0]["qualification_operation"]["terminal_result"] = "FAIL"
+    elif case == "archive_operation_cleanup_mismatch":
+        updated["rework_history"][0]["qualification_operation"]["cleanup_error"] = "cleanup uncertain"
+    elif case == "archive_operation_not_published":
+        updated["rework_history"][0]["qualification_operation"]["candidate_ref_published"] = False
+    elif case == "current_binding_authority_mismatch":
+        updated["rework"]["authorization"]["identity_sha256"] = "f" * 64
+    elif case == "current_binding_base_mismatch":
+        updated["rework"]["base_sha"] = "f" * 40
+    elif case == "current_binding_workflow_mismatch":
+        updated["rework"]["workflow"]["mode"] = "compatibility"
+    elif case == "current_binding_scope_mismatch":
+        updated["rework"]["candidate_scope"]["allowed_paths"] = ["src/other/**"]
+    elif case == "duplicate_archive":
+        updated["rework_history"][1] = json.loads(
+            json.dumps(updated["rework_history"][0])
+        )
+    elif case == "adjacent_candidate_chain_mismatch":
+        updated["rework_history"][1]["from_candidate_sha"] = "f" * 40
+    elif case == "duplicate_operation_identity":
+        first = updated["rework_history"][0]["qualification_operation"]
+        second_archive = updated["rework_history"][1]
+        second_operation = second_archive["qualification_operation"]
+        duplicate_id = first["operation_id"]
+        second_ref = (
+            f"task-candidate/{issue_number}/{duplicate_id}/"
+            f"{second_archive['from_candidate_sha'][:12]}"
+        )
+        second_operation["operation_id"] = duplicate_id
+        second_operation["dispatch_nonce"] = duplicate_id
+        second_operation["candidate_ref"] = second_ref
+        second_archive["qualification"]["dispatch_nonce"] = duplicate_id
+        second_archive["qualification"]["candidate_ref"] = second_ref
+    elif case == "previous_binding_mismatch":
+        updated["rework_history"][1]["previous_rework_binding"]["candidate_sha"] = "f" * 40
+    elif case == "previous_binding_authority_mismatch":
+        updated["rework_history"][1]["previous_rework_binding"]["authorization"]["identity_sha256"] = "f" * 64
+    elif case == "previous_binding_base_mismatch":
+        updated["rework_history"][1]["previous_rework_binding"]["base_sha"] = "f" * 40
+    elif case == "previous_binding_workflow_mismatch":
+        updated["rework_history"][1]["previous_rework_binding"]["workflow"]["mode"] = "compatibility"
+    elif case == "previous_binding_scope_mismatch":
+        updated["rework_history"][1]["previous_rework_binding"]["candidate_scope"]["profiles"] = ["backend"]
+    elif case == "current_binding_from_mismatch":
+        updated["rework"]["from_candidate_sha"] = "f" * 40
+    elif case == "current_binding_candidate_mismatch":
+        updated["rework"]["candidate_sha"] = "f" * 40
+    else:
+        raise AssertionError(case)
+    return updated
+
+
+@pytest.mark.parametrize(
+    ("case", "two_rounds", "route"),
+    [
+        ("unrecognized_archive", False, "rework"),
+        ("missing_qualification", False, "qualify"),
+        ("missing_verification", False, "rework"),
+        ("missing_review", False, "qualify"),
+        ("missing_operation", False, "qualify"),
+        ("missing_operation", False, "rework"),
+        ("missing_previous_binding", False, "qualify"),
+        ("missing_previous_binding", False, "rework"),
+        ("missing_existing_history", False, "qualify"),
+        ("missing_existing_history", False, "rework"),
+        ("operation_nonce_mismatch", False, "qualify"),
+        ("operation_nonce_mismatch", False, "rework"),
+        ("selected_candidate_mismatch", False, "qualify"),
+        ("selected_candidate_mismatch", False, "rework"),
+        ("qualification_candidate_mismatch", False, "qualify"),
+        ("qualification_candidate_mismatch", False, "rework"),
+        ("fabricated_initial_binding", False, "qualify"),
+        ("fabricated_initial_binding", False, "rework"),
+        ("checkpoint_digest_shape", False, "qualify"),
+        ("checkpoint_digest_shape", False, "rework"),
+        ("source_candidate_sha_shape", False, "qualify"),
+        ("selected_candidate_sha_shape", False, "rework"),
+        ("existing_history_type", False, "qualify"),
+        ("archive_verification_candidate_mismatch", False, "qualify"),
+        ("archive_review_candidate_mismatch", False, "rework"),
+        ("archive_operation_authority_mismatch", False, "qualify"),
+        ("archive_operation_candidate_mismatch", False, "rework"),
+        ("archive_operation_candidate_ref_mismatch", False, "qualify"),
+        ("archive_operation_terminal_mismatch", False, "qualify"),
+        ("archive_operation_cleanup_mismatch", False, "rework"),
+        ("archive_operation_not_published", False, "qualify"),
+        ("current_binding_authority_mismatch", False, "qualify"),
+        ("current_binding_base_mismatch", False, "rework"),
+        ("current_binding_workflow_mismatch", False, "qualify"),
+        ("current_binding_scope_mismatch", False, "rework"),
+        ("duplicate_archive", True, "qualify"),
+        ("duplicate_archive", True, "rework"),
+        ("adjacent_candidate_chain_mismatch", True, "qualify"),
+        ("adjacent_candidate_chain_mismatch", True, "rework"),
+        ("duplicate_operation_identity", True, "qualify"),
+        ("duplicate_operation_identity", True, "rework"),
+        ("previous_binding_mismatch", True, "qualify"),
+        ("previous_binding_mismatch", True, "rework"),
+        ("previous_binding_authority_mismatch", True, "qualify"),
+        ("previous_binding_base_mismatch", True, "rework"),
+        ("previous_binding_workflow_mismatch", True, "qualify"),
+        ("previous_binding_scope_mismatch", True, "rework"),
+        ("current_binding_from_mismatch", True, "qualify"),
+        ("current_binding_from_mismatch", True, "rework"),
+        ("current_binding_candidate_mismatch", True, "qualify"),
+        ("current_binding_candidate_mismatch", True, "rework"),
+    ],
+)
+def test_public_routes_reject_malformed_rework_archives_before_effects(
+    tmp_path, monkeypatch, case, two_rounds, route,
+):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    issue = fixture["issue_number"]
+    state_path = TASK.state_path(fixture["state_dir"], issue)
+
+    if case == "unrecognized_archive":
+        TASK.checkpoint_transaction(
+            fixture["state_dir"], issue,
+            lambda current: corrupt_public_rework_history(current, case, issue),
+        )
+        expected_candidate_sha = fixture["c1"]
+        candidate_sha = fixture["c2"]
+    elif two_rounds and route == "rework":
+        expected_candidate_sha, candidate_sha = public_c3_reviewed_next_candidate(fixture)
+    elif two_rounds:
+        candidate_sha = public_second_rework_round(fixture)
+    elif route == "rework":
+        candidate_sha = public_c2_reviewed_next_candidate(fixture)
+        expected_candidate_sha = fixture["c2"]
+    else:
+        assert fixture["run"](
+            *fixture["rework_argv"]()[len(fixture["common"]):],
+        )[0] == 0
+        candidate_sha = fixture["c2"]
+
+    if case != "unrecognized_archive":
+        TASK.checkpoint_transaction(
+            fixture["state_dir"], issue,
+            lambda current: corrupt_public_rework_history(current, case, issue),
+        )
+    before = state_path.read_bytes()
+    dispatches = sum(item.dispatch_calls for item in fixture["transports"].values())
+    published = list(fixture["ref_transport"].published)
+    deleted = list(fixture["ref_transport"].deleted)
+
+    if route == "qualify":
+        code, result, _, _ = fixture["run"](
+            "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+        )
+    else:
+        code, result, _, _ = fixture["run"](*fixture["rework_argv"](
+            expected_candidate_sha=expected_candidate_sha,
+            candidate_sha=candidate_sha,
+        )[len(fixture["common"]):])
+
+    assert code == 1
+    assert result["error"] == "REWORK_HISTORY_INVALID"
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == dispatches
+    assert fixture["ref_transport"].published == published
+    assert fixture["ref_transport"].deleted == deleted
+    assert fixture["ref_transport"].main_pushes == []
+
+
+def test_public_multiple_rework_rounds_preserve_coherent_failure_and_unknown_evidence(
+    tmp_path, monkeypatch,
+):
+    fixture = public_standard_rework_fixture(
+        tmp_path, monkeypatch, c1_qualification_failure=True,
+    )
+    issue = fixture["issue_number"]
+    opaque_history = {"opaque": ["prior", {"keep": True}]}
+    opaque_failure = {"opaque": {"provider": [3, 1, 4]}}
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], issue,
+        lambda current: {
+            **current,
+            "attempt_history": opaque_history,
+            "failure_payload": opaque_failure,
+        },
+    )
+    assert fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])[0] == 0
+
+    def retain_unknown_fields(current):
+        updated = json.loads(json.dumps(current))
+        updated["rework_history"][0]["future_archive_field"] = {"opaque": ["archive"]}
+        updated["rework"]["future_binding_field"] = {"opaque": ["binding"]}
+        return updated
+
+    TASK.checkpoint_transaction(fixture["state_dir"], issue, retain_unknown_fields)
+    selected = TASK.load_state(fixture["state_dir"], issue)
+    assert selected["rework_history"][0]["qualification"]["result"] == "FAIL"
+    assert selected["rework_history"][0]["existing_history"] == {
+        "attempt_history": opaque_history,
+        "failure_payload": opaque_failure,
+    }
+    assert fixture["run"](
+        "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+    )[0] == 0
+    assert fixture["run"](
+        "verify", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fixture-controller", "--decision", "pass", "--evidence", "fresh C2",
+    )[0] == 0
+    assert fixture["run"](
+        "review", str(issue), "--candidate-sha", fixture["c2"],
+        "--actor", "fresh-independent-C2-reviewer", "--decision", "changes-requested",
+        "--summary", "second correction required",
+    )[0] == 0
+    c3 = commit_paths(
+        fixture["candidate_repo"], {"src/food.py": "VALUE = 3\n"},
+        message="C3 corrected candidate",
+    )
+    assert fixture["run"](*fixture["rework_argv"](
+        expected_candidate_sha=fixture["c2"], candidate_sha=c3,
+    )[len(fixture["common"]):])[0] == 0
+    state = TASK.load_state(fixture["state_dir"], issue)
+    assert len(state["rework_history"]) == 2
+    assert state["rework_history"][0]["future_archive_field"] == {"opaque": ["archive"]}
+    assert state["rework_history"][1]["previous_rework_binding"]["future_binding_field"] == {
+        "opaque": ["binding"],
+    }
+    assert state["rework_history"][0]["existing_history"] == {
+        "attempt_history": opaque_history,
+        "failure_payload": opaque_failure,
+    }
+    assert state["rework_history"][1]["from_candidate_sha"] == fixture["c2"]
+    assert state["rework_history"][0]["selected_candidate_sha"] == fixture["c2"]
+    assert state["rework"]["from_candidate_sha"] == fixture["c2"]
+    assert state["rework"]["candidate_sha"] == c3
+    assert fixture["run"](
+        "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+    )[0] == 0
+    final_state = TASK.load_state(fixture["state_dir"], issue)
+    assert final_state["qualification"]["candidate_sha"] == c3
+    assert final_state["qualification"]["result"] == "PASS"
+
+
+def test_public_qualification_rechecks_rework_lineage_under_issue_lock(tmp_path, monkeypatch):
+    fixture = public_standard_rework_fixture(tmp_path, monkeypatch)
+    assert fixture["run"](*fixture["rework_argv"]()[len(fixture["common"]):])[0] == 0
+    state_path = TASK.state_path(fixture["state_dir"], fixture["issue_number"])
+    entered_authorization = threading.Event()
+    release_authorization = threading.Event()
+    local = threading.local()
+    original_resolve = TASK.resolve_current_authorization
+    outcome: list[tuple[int, dict[str, Any]]] = []
+
+    def blocking_resolve(state, transport):
+        if not getattr(local, "blocked_once", False):
+            local.blocked_once = True
+            entered_authorization.set()
+            assert release_authorization.wait(10)
+        return original_resolve(state, transport)
+
+    monkeypatch.setattr(TASK, "resolve_current_authorization", blocking_resolve)
+
+    def run_qualification():
+        code, result, _, _ = fixture["run"](
+            "qualify", str(fixture["issue_number"]),
+            "--candidate-root", str(fixture["candidate_repo"]),
+        )
+        outcome.append((code, result))
+
+    worker = threading.Thread(target=run_qualification)
+    worker.start()
+    assert entered_authorization.wait(10)
+
+    def corrupt_intervening_archive(current):
+        updated = json.loads(json.dumps(current))
+        updated["rework_history"][0]["qualification_operation"]["terminal_result"] = "FAIL"
+        return updated
+
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], fixture["issue_number"], corrupt_intervening_archive,
+    )
+    newer_bytes = state_path.read_bytes()
+    release_authorization.set()
+    worker.join(10)
+
+    assert not worker.is_alive()
+    assert outcome == [(1, {"error": "REWORK_STATE_CHANGED", "result": "FAIL"})]
+    assert state_path.read_bytes() == newer_bytes
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == 1
+    assert fixture["ref_transport"].published == [
+        (f"task-candidate/{fixture['issue_number']}/{'a' * 24}/{fixture['c1'][:12]}", fixture["c1"]),
+    ]
+    assert fixture["ref_transport"].main_pushes == []
 
 
 def test_public_qualification_refuses_nonce_reused_from_older_rework_round_without_mutation(

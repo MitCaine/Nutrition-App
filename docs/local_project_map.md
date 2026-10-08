@@ -152,6 +152,10 @@ Each rework qualification checks its operation ID against every retained correct
 refuses reuse before publishing a candidate ref or dispatching. A C1 qualification failure may be
 archived only with a failed exact-C1 verification; a passing verification cannot validate a failed
 qualification. Rework grants no new authority and does not convert compatibility or historical records.
+Before a transition or qualification, the controller checks generated archive identities, terminal
+operation cleanup, adjacent candidate links, and retained authority/scope bindings. It checks stored
+checkpoint digests by format without reconstructing historical checkpoint contents and preserves
+opaque unrelated history and failure evidence.
 Repeated calls, `STOP_REPLAN`, unsupported phases, and overlapping or unresolved
 qualification/integration operations are refused without checkpoint mutation. An owner pause is
 a controller hold outside checkpoint state, not a serialized phase; the controller must not
