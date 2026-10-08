@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -53,6 +54,7 @@ class SourceFixture(unittest.TestCase):
             "relative_path": relative,
             "raw_sha256": ri.sha256(data),
             "byte_count": len(data),
+            "git_blob": None,
         }
         parser = {
             "adapter_version": self.lock["contracts"]["adapter"],
@@ -74,6 +76,7 @@ class SourceFixture(unittest.TestCase):
                     "qualified_name": "calculate_total",
                     "line": 1,
                     "end_line": 2,
+                    "git_blob_sha1": ri.legacy_git_blob_sha1(data),
                     "byte_range": {"start": 0, "end": len(data)},
                     "declaration_sha256": ri.sha256(data),
                 }
@@ -144,6 +147,9 @@ class SelectionTests(SourceFixture):
         self.assertEqual(scope["unsupported_or_other"], ["backend/schema.sql"])
         self.assertEqual(scope["selection_status"], "unsupported-only")
 
+    def test_markdown_remains_unsupported_by_nutrition_navigation(self):
+        self.assertEqual(ri.source_classification("docs/guide.md"), "unsupported")
+
     def test_committed_uppercase_excluded_and_mixed_selection(self):
         upper = self.repo / "backend/Upper.PY"
         upper.write_bytes(b"def upper():\n    return 1\n")
@@ -211,6 +217,7 @@ class PacketTests(SourceFixture):
         packet = self.packet(raw, selected, scope)
         match = packet["matches"][0]
         self.assertEqual(match["path"], "backend/service.py")
+        self.assertEqual(match["git_blob"], selected["backend/service.py"]["git_blob"])
         self.assertIn("return sum(items)", match["excerpt"])
         self.assertEqual(match["parser"]["adapter_version"], self.lock["contracts"]["adapter"])
         self.assertEqual(
@@ -234,6 +241,18 @@ class PacketTests(SourceFixture):
         variants.append(wrong)
         wrong = copy.deepcopy(raw)
         next(iter(wrong["files"].values()))["source_identity"]["raw_sha256"] = "0" * 64
+        variants.append(wrong)
+        wrong = copy.deepcopy(raw)
+        del next(iter(wrong["files"].values()))["source_identity"]["git_blob"]
+        variants.append(wrong)
+        wrong = copy.deepcopy(raw)
+        next(iter(wrong["files"].values()))["source_identity"]["git_blob"] = {
+            "algorithm": "sha1", "object_id": "0" * 40,
+            "meaning": "computed from bytes; not checkout attestation",
+        }
+        variants.append(wrong)
+        wrong = copy.deepcopy(raw)
+        wrong["matches"][0]["git_blob_sha1"] = "0" * 40
         variants.append(wrong)
         wrong = copy.deepcopy(raw)
         wrong["matches"][0]["byte_range"]["end"] = 999
@@ -276,13 +295,23 @@ class PacketTests(SourceFixture):
 class RuntimeTests(SourceFixture):
     def test_lock_contains_exact_contracts_source_and_hashed_dependency_closure(self):
         self.assertEqual(
-            self.lock["revision"], "2f28da4d326ff12da5dc9270eb57910303e4a737"
+            self.lock["revision"], "20a5039e7731eaa1303443b782caa81a383a0af1"
         )
-        self.assertEqual(self.lock["contracts"]["navigation"], 6)
-        self.assertEqual(self.lock["contracts"]["inventory"], 13)
-        self.assertEqual(self.lock["contracts"]["adapter"], 10)
-        self.assertEqual(len(self.lock["wheels"]), 14)
-        self.assertEqual(len(self.lock["source_files"]), 19)
+        self.assertEqual(self.lock["source_archive_sha256"], "dbe424d6fa816c7ab96ab849800fd6f3a8c959f05786edfe706b1d8bba7db54d")
+        self.assertEqual(self.lock["contracts"]["navigation"], 7)
+        self.assertEqual(self.lock["contracts"]["inventory"], 16)
+        self.assertEqual(self.lock["contracts"]["adapter"], 13)
+        self.assertEqual(self.lock["contracts"]["mapping"], "python-rust-javascript-typescript-java-go-csharp-c-cpp-markdown-source-units-v13")
+        self.assertEqual(len(self.lock["wheels"]), 15)
+        self.assertEqual(len(self.lock["source_files"]), 21)
+        self.assertIn("repository_intelligence/markdown_tree_index.py", self.lock["source_files"])
+        self.assertIn("repository_intelligence/review_bundle.py", self.lock["source_files"])
+        versions = {wheel["name"]: wheel["version"] for wheel in self.lock["wheels"]}
+        self.assertEqual(versions["tree-sitter"], "0.25.1")
+        self.assertEqual(versions["tree-sitter-markdown"], "0.5.1")
+        self.assertEqual(versions["setuptools"], "84.0.0")
+        self.assertEqual(versions["wheel"], "0.48.0")
+        self.assertNotIn("0.26.0", versions.values())
         for wheel in self.lock["wheels"]:
             self.assertRegex(wheel["sha256"], r"^[0-9a-f]{64}$")
             self.assertIn(
@@ -375,6 +404,19 @@ class RuntimeTests(SourceFixture):
 
 
 class ActualRuntimeTests(SourceFixture):
+    def setUp(self):
+        super().setUp()
+        evidence = os.environ.get("NUTRITION_RI_TEST_EVIDENCE_DIR")
+        if evidence:
+            self.addCleanup(self.retain_evidence, Path(evidence))
+
+    def retain_evidence(self, evidence: Path):
+        evidence.mkdir(parents=True, exist_ok=True)
+        destination = evidence / self._testMethodName
+        if destination.exists():
+            raise AssertionError("RI test evidence destination already exists")
+        shutil.copytree(self.root, destination)
+
     def test_pinned_runtime_navigates_committed_uppercase_python(self):
         runtime = os.environ.get("NUTRITION_RI_RUNTIME")
         if not runtime:
@@ -388,6 +430,15 @@ class ActualRuntimeTests(SourceFixture):
         self.assertEqual(packet["selection_status"], "supported-only")
         self.assertEqual(packet["mapping_status"], "navigation_only")
         self.assertEqual([item["name"] for item in packet["matches"]], ["upper"])
+        raw = json.loads(Path(packet["raw_evidence"]["path"]).read_text())
+        identity = next(iter(raw["files"].values()))["source_identity"]
+        declaration = raw["matches"][0]
+        self.assertIsNone(identity["git_blob"])
+        self.assertEqual(declaration["git_blob_sha1"],
+                         ri.legacy_git_blob_sha1(path.read_bytes()))
+        selected, _ = ri.selected_source(self.repo, self.git("rev-parse", "HEAD"),
+                                         ["backend/Upper.PY"])
+        self.assertEqual(packet["matches"][0]["git_blob"], selected["backend/Upper.PY"]["git_blob"])
 
     def test_real_pinned_package_navigation_failure_cases_and_source_slices(self):
         runtime = os.environ.get("NUTRITION_RI_RUNTIME")
@@ -395,6 +446,7 @@ class ActualRuntimeTests(SourceFixture):
             self.skipTest("Explicit qualified private RI runtime required")
         manifest, _ = ri.verify_runtime(Path(runtime))
         self.assertEqual(manifest["revision"], self.lock["revision"])
+        self.assertEqual(manifest["probe"]["contracts"], self.lock["contracts"])
         packet = ri.navigate(
             self.repo,
             self.revision,
@@ -419,11 +471,21 @@ class ActualRuntimeTests(SourceFixture):
         self.assertEqual(len(raw_matches), len(expected))
         by_path = {item["source_identity"]["relative_path"]: item for item in raw_matches}
         self.assertEqual(set(by_path), set(expected))
+        selected, _ = ri.selected_source(
+            self.repo,
+            self.revision,
+            ["backend/service.py", "mobile/View.tsx", "scripts/check.js", "scripts/check.ts"],
+        )
+        raw_files = json.loads(raw_evidence)["files"]
+        for record in raw_files.values():
+            self.assertIsNone(record["source_identity"]["git_blob"])
         for match in packet["matches"]:
             raw = self.sources[match["path"]]
             name, grammar, literal = expected[match["path"]]
             start = raw.index(literal)
             declaration = by_path[match["path"]]
+            self.assertIsNone(declaration["source_identity"]["git_blob"])
+            self.assertEqual(declaration["git_blob_sha1"], ri.legacy_git_blob_sha1(raw))
             self.assertEqual(declaration["qualified_name"], name)
             self.assertEqual(declaration["declaration_kind"], "function")
             self.assertEqual(declaration["source_identity"]["raw_sha256"], ri.sha256(raw))
@@ -433,6 +495,7 @@ class ActualRuntimeTests(SourceFixture):
             self.assertEqual(match["parser"]["grammar"], grammar)
             self.assertEqual(match["parser"]["adapter_version"], self.lock["contracts"]["adapter"])
             self.assertEqual(match["source_sha256"], ri.sha256(raw))
+            self.assertEqual(match["git_blob"], selected[match["path"]]["git_blob"])
             self.assertEqual(match["byte_range"], {"start": start, "end": start + len(literal)})
             self.assertEqual(raw[start : start + len(literal)], literal)
             self.assertEqual(match["declaration_sha256"], ri.sha256(literal))
@@ -459,6 +522,21 @@ class ActualRuntimeTests(SourceFixture):
             self.root / "unsupported",
         )
         self.assertEqual(unsupported["mapping_status"], "unsupported")
+        markdown = self.repo / "backend/guide.md"
+        markdown.write_text("# Markdown stays unsupported here.\n")
+        self.git("add", "backend/guide.md")
+        self.git("commit", "-qm", "markdown source")
+        markdown_result = ri.navigate(
+            self.repo,
+            self.git("rev-parse", "HEAD"),
+            ["backend/guide.md"],
+            "Markdown",
+            8,
+            Path(runtime),
+            self.root / "unsupported-markdown",
+        )
+        self.assertEqual(markdown_result["selection_status"], "unsupported-only")
+        self.assertEqual(markdown_result["mapping_status"], "unsupported")
         (self.repo / "backend/broken.py").write_text("def broken(:\n")
         self.git("add", ".")
         self.git("commit", "-qm", "malformed source")

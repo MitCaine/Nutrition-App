@@ -56,6 +56,12 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def legacy_git_blob_sha1(data: bytes) -> str:
+    """Recompute RI's compatibility Git blob field without treating it as proof."""
+    header = f"blob {len(data)}\0".encode()
+    return hashlib.sha1(header + data, usedforsecurity=False).hexdigest()
+
+
 def digest(value: object) -> str:
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
 
@@ -371,17 +377,27 @@ def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, direc
         raise RIError("RI_FILE_RECORDS_INVALID")
     seen = set()
     by_path = {}
+    identity_by_path = {}
     for _, record in files.items():
+        if not isinstance(record, dict):
+            raise RIError("RI_FILE_RECORDS_INVALID")
         identity = record.get("source_identity")
         if identity is None:
             if raw["mapping_status"] != "incomplete":
                 raise RIError("RI_MISSING_SOURCE_IDENTITY")
             continue
+        if not isinstance(identity, dict):
+            raise RIError("RI_SOURCE_IDENTITY_INVALID")
+        # RI scans a private materialization without Nutrition's .git directory.
+        # Its computed blob identity is therefore not a committed Git object ID.
+        if "git_blob" not in identity or identity["git_blob"] is not None:
+            raise RIError("RI_MATERIALIZED_GIT_IDENTITY_INVALID")
         path = identity["relative_path"]
         if path not in selected or path in seen or identity["raw_sha256"] != selected[path]["sha256"] or identity["byte_count"] != len(selected[path]["bytes"]):
             raise RIError("RI_RETURNED_SOURCE_MISMATCH")
         seen.add(path)
         by_path[path] = record
+        identity_by_path[path] = identity
         parser = record.get("parser")
         if parser and (parser.get("adapter_version") != lock["contracts"]["adapter"]
                        or parser.get("runtime_version") != next(w["version"] for w in lock["wheels"] if w["name"] == "tree-sitter")):
@@ -394,9 +410,12 @@ def bounded_packet(raw: dict, selected: dict, scope: dict, manifest: dict, direc
     for item in raw.get("matches", []):
         identity = item["source_identity"]
         path = identity["relative_path"]
-        if path not in seen or identity["raw_sha256"] != selected[path]["sha256"]:
+        if (path not in seen or identity != identity_by_path.get(path)
+                or identity["raw_sha256"] != selected[path]["sha256"]):
             raise RIError("RI_MATCH_SOURCE_MISMATCH")
         data = selected[path]["bytes"]
+        if item.get("git_blob_sha1") != legacy_git_blob_sha1(data):
+            raise RIError("RI_COMPUTED_GIT_IDENTITY_MISMATCH")
         start, end = item["byte_range"]["start"], item["byte_range"]["end"]
         if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(data):
             raise RIError("RI_DECLARATION_RANGE_INVALID")

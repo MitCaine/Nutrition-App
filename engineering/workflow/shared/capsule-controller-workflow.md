@@ -166,8 +166,8 @@ Set any required finite deadline according to the actual task size and host
 limits. Do not impose an arbitrary 300-second model-review cap. Validate the
 timeout before dispatch, allowing for instruction/source
 reading and producing the verdict. Preserve genuine historical timeout receipts;
-they are not current configuration. If a timeout occurs, reconcile completion
-and cleanup before an authorized recovery rather than repeatedly launching the
+they are not current configuration. If a task deadline expires or delivery fails,
+reconcile completion and cleanup before an authorized recovery rather than repeatedly launching the
 same full review under a known inadequate limit. Host-enforced hard limits must
 be reported and handled through a supported route, not bypassed.
 

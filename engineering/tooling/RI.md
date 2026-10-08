@@ -11,11 +11,14 @@ required runtime checks. Missing coverage requires direct source inspection, not
 ## Pinned installation and private access
 
 [ri-lock.json](ri-lock.json) pins private repository `MitCaine/repository-intelligence`
-at `2f28da4d326ff12da5dc9270eb57910303e4a737`: navigation6, inventory13, adapter10 and
-`python-rust-javascript-typescript-java-go-csharp-c-cpp-source-callables-v10`. Package
-version0.1.0 alone is insufficient. Later upstream commits and dirty checkout files are
-not part of this installation. The pin records the archive digest, all19 installed RI
-source-file hashes, and14 public parser/build/installer wheels with versions and hashes.
+at `20a5039e7731eaa1303443b782caa81a383a0af1`: navigation 7, inventory 16, adapter 13 and
+`python-rust-javascript-typescript-java-go-csharp-c-cpp-markdown-source-units-v13`. Package
+version 0.1.0 alone is insufficient. Later upstream commits and dirty checkout files are
+not part of this installation. The pin records the archive digest, all 21 installed RI
+source-file hashes, and 15 public parser/build/installer wheels with versions and hashes.
+The new producer build contract requires setuptools 84.0.0, wheel 0.48.0 and
+tree-sitter-markdown 0.5.1; compatible pip, packaging, Tree-sitter 0.25.1 and grammar pins
+remain exact. Rejected Tree-sitter 0.26.0 stays excluded.
 The [requirements file](ri-requirements.txt) is controller tooling, not an app dependency.
 
 The qualified installation target is **macOS arm64 with Python3.14**. This wheel lock is
@@ -49,11 +52,11 @@ checkout. This reads committed objects only; it does not copy dirty files or mut
 
 ```bash
 git -C /absolute/private-ri-checkout -c tar.umask=0002 archive --format=tar \
-  2f28da4d326ff12da5dc9270eb57910303e4a737 > /absolute/private-tooling/ri-source.tar
+  20a5039e7731eaa1303443b782caa81a383a0af1 > /absolute/private-tooling/ri-source.tar
 ```
 
-The expected archive SHA256 is
-`1191956e867256c6e7ad20ff5f74588a9f13f7a26b108b8c2ac08ee799f2a918`.
+The expected archive SHA-256 is
+`dbe424d6fa816c7ab96ab849800fd6f3a8c959f05786edfe706b1d8bba7db54d`.
 The repository URL and archive pin identify the selected dependency; merely writing that
 revision into a local manifest does not establish an installation.
 
@@ -184,8 +187,10 @@ Focused deterministic tests cover identity/contract/dependency drift, private-st
 Git membership, path/size/range limits, materialization mutation, aliases and honest result
 semantics. Set `NUTRITION_RI_RUNTIME` to the actual private manifest to require the real-package
 oracle in `scripts/tests/test_ri_consumer.py`; otherwise its explicit skip is not package proof.
-The real oracle covers Python/TSX/JS source slices, zero matches, malformed source and SQL-only
-input. Actual Nutrition examples and offline installation evidence are also required locally;
+The real oracle covers Python/TSX/JS/TS source slices, uppercase Python, zero matches, malformed
+source and SQL-only input. Markdown remains explicitly unsupported by Nutrition navigation;
+the upstream producer's Markdown parser does not widen this consumer's suffix set. Actual
+Nutrition examples and offline installation evidence are also required locally;
 public CI does not need private source access to run deterministic consumer tests.
 
 An upgrade needs a new explicit revision/contract/wheel lock, a clean external installation,
@@ -201,22 +206,24 @@ Both the requirements file and wheel lock must change together; a requirements-o
 Dependabot patch is not an installable RI lock update. Existing installation manifests
 intentionally fail verification after a lock change. Bootstrap a fresh external environment
 from the updated wheelhouse and requalify navigation before using it. Preserve previous
-environments as historical evidence, not the selected runtime. RI source and parser
-contracts are unchanged. Setuptools alert 23 is tracked separately by PR #196.
+environments as historical evidence, not the selected runtime. At that update, RI source
+and parser contracts were unchanged. Setuptools alert 23 is tracked separately by PR #196.
 
-### Setuptools security refresh (2026-09-26)
+### Setuptools security refresh (2026-09-26, previous lock)
 
-The companion update selects setuptools 83.0.0 for Dependabot alert 23
+The earlier companion update selected setuptools 83.0.0 for Dependabot alert 23
 ([GHSA-h35f-9h28-mq5c](https://github.com/advisories/GHSA-h35f-9h28-mq5c)),
 while retaining pip 26.2 and the existing RI/parser pins. The alert concerns Unicode
 normalization when applying source-distribution exclusions on macOS. The fixed wheel
 and its hash are synchronized in both lock files. As with the pip refresh, bootstrap
 a new external runtime and requalify it; do not edit an accepted manifest or environment
-in place. No private source distribution is published by this workflow.
+in place. The selected 20a5039 runtime uses setuptools 84.0.0 to match its committed build
+requirements. No private source distribution is published by this workflow.
 
 ## Comparison and review
 
 Use ordinary `git diff BASE CANDIDATE` and direct source inspection alongside navigation.
 There is no mandatory callable inventory, declaration disposition or signed RI report.
-The separate runtime pin is unchanged; dependency updates remain proposals until the
-consumer contract and actual installed bytes are verified. Do not upload private RI source.
+The runtime pin is recorded separately from shared instructions. Dependency updates remain
+proposals until the consumer contract and actual installed bytes are verified. Do not upload
+private RI source.

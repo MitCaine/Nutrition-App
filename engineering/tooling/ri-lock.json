@@ -1,9 +1,9 @@
 {
   "contracts": {
-    "adapter": 10,
-    "inventory": 13,
-    "mapping": "python-rust-javascript-typescript-java-go-csharp-c-cpp-source-callables-v10",
-    "navigation": 6
+    "adapter": 13,
+    "inventory": 16,
+    "mapping": "python-rust-javascript-typescript-java-go-csharp-c-cpp-markdown-source-units-v13",
+    "navigation": 7
   },
   "machine": "arm64",
   "package_version": "0.1.0",
@@ -13,29 +13,31 @@
     14
   ],
   "repository": "MitCaine/repository-intelligence",
-  "revision": "2f28da4d326ff12da5dc9270eb57910303e4a737",
+  "revision": "20a5039e7731eaa1303443b782caa81a383a0af1",
   "schema_version": 1,
-  "source_archive_sha256": "1191956e867256c6e7ad20ff5f74588a9f13f7a26b108b8c2ac08ee799f2a918",
+  "source_archive_sha256": "dbe424d6fa816c7ab96ab849800fd6f3a8c959f05786edfe706b1d8bba7db54d",
   "source_files": {
     "repository_intelligence/__init__.py": "5ba708c807e59fb3bdd807d6cc2b3b7f143a324c7ba6afa2e49bb4ccb2ade203",
-    "repository_intelligence/adapters.py": "4682bcaae9d5036ca979e2767d0f16717da01aad6efed7fc44ffae46482df97d",
+    "repository_intelligence/adapters.py": "d3f4050285a785848b5f937613c74f5b180363e70721a03a19aee758b786cd08",
     "repository_intelligence/c_family_tree_index.py": "bd616bbee43ec0e47793f21cb50a89dd8eee316fbdf63eba42fc9e9cbffff6c1",
     "repository_intelligence/csharp_tree_index.py": "355b7e85067df4327b65fae4ed7bf12882bfd94fdb186567f14f04de760f9854",
     "repository_intelligence/declarations.py": "26dec086a4c7bc35e5f4176ecea297276eba8421bf6fe80de008210d5059e7c1",
     "repository_intelligence/go_tree_index.py": "a6800ceecbce20e1f03435cecd8c0da547c79dbfc99af6fc113eb4773ea8b7dd",
-    "repository_intelligence/inventory.py": "2fcd6023e49f41bcc796e4b93825d497e5cd50de722a028164775e8a792bccca",
+    "repository_intelligence/inventory.py": "b33e6c6c17e28a0f6237cf324a0f283fbac1869bbcd748d79cdc76ae9ee7df6d",
     "repository_intelligence/java_tree_index.py": "a063dac2ee5b796b27fd91d1ccd98bba61bce3d40fbd9e5cdd4195acca606fe7",
     "repository_intelligence/js_tree_index.py": "58e6303c51c19f21d009fee14a48eff980f947e688c2162a4f1bc1bb33e1802e",
     "repository_intelligence/locator.py": "ebfe53ff4b02aecf77733052c85884c6c95a8919b811b91e42c7ba00e01cb2da",
+    "repository_intelligence/markdown_tree_index.py": "4ea152d3921e8f2e26b1327a1a0870208e65c01cf06e1eab1af159794eb360e4",
     "repository_intelligence/python_index.py": "f86a0e75a50cc334de1004c3ffdc45753b181f40504122649a3d1c21123f9b34",
     "repository_intelligence/python_tree_index.py": "cc66b55f0bb53fb6978184ce0e2670a3513c3a7b1dbaecf14957723dea0a4174",
+    "repository_intelligence/review_bundle.py": "2d6ee6f6135aec5af01fbd911d75121fab2721ca3ca814794d26fffb8b7324d1",
     "repository_intelligence/rust_index.py": "e5527c16bb3d4bba4329ce7bd2ffc0cb001faf5f6caee0daa007bbabef07aaba",
     "repository_intelligence/rust_semantic.py": "0e3e0ce7faaa84467610cc9677a7aa0415de607bd684978c701395b1e52e0772",
     "repository_intelligence/rust_tree_index.py": "b3e42a41764dd1df229b8194bcabeee85a2f8591bb84ea1d2292a99a3a56420d",
-    "repository_intelligence/scan.py": "5fe3dcfebf71d41349c99f4b6aba1c8d95f2cebe908e891bfd7e66e10ef236db",
+    "repository_intelligence/scan.py": "dd3caadc1727052a5d0188e114bb662b6fa82e79d91b53f02ae2064b10107cad",
     "repository_intelligence/search.py": "c59930ff73bfb3f21ff3bc2ea91e727d77cea871c548fe4f51db6d69e5cfb181",
-    "repository_intelligence/source.py": "765cb661ae9fa934ccab9adf73fb50f60bffaa6fe7069436382961aa9cb54bad",
-    "repository_intelligence/structural.py": "551651f5d71358190620a7983e777c39c70b063723c9f5976cef075293b00c00"
+    "repository_intelligence/source.py": "7c35ccba31509f84f129a18486d27b0e5140548320357a0b81fd63f28596eff0",
+    "repository_intelligence/structural.py": "b7e1b0f2b006e826400bf8b43ce70d623fb7e8a204fc417ac34599f0f9edfcbb"
   },
   "wheels": [
     {
@@ -51,10 +53,10 @@
       "version": "26.2"
     },
     {
-      "filename": "setuptools-83.0.0-py3-none-any.whl",
+      "filename": "setuptools-84.0.0-py3-none-any.whl",
       "name": "setuptools",
-      "sha256": "29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3",
-      "version": "83.0.0"
+      "sha256": "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670",
+      "version": "84.0.0"
     },
     {
       "filename": "tree_sitter-0.25.1-cp314-cp314-macosx_11_0_arm64.whl",
@@ -99,6 +101,12 @@
       "version": "0.25.0"
     },
     {
+      "filename": "tree_sitter_markdown-0.5.1-cp39-abi3-macosx_11_0_arm64.whl",
+      "name": "tree-sitter-markdown",
+      "sha256": "1ec4cc5d7b0d188bad22247501ab13663bb1bf1a60c2c020a22877fabce8daa9",
+      "version": "0.5.1"
+    },
+    {
       "filename": "tree_sitter_python-0.25.0-cp310-abi3-macosx_11_0_arm64.whl",
       "name": "tree-sitter-python",
       "sha256": "480c21dbd995b7fe44813e741d71fed10ba695e7caab627fb034e3828469d762",
@@ -117,10 +125,10 @@
       "version": "0.23.2"
     },
     {
-      "filename": "wheel-0.47.0-py3-none-any.whl",
+      "filename": "wheel-0.48.0-py3-none-any.whl",
       "name": "wheel",
-      "sha256": "212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced",
-      "version": "0.47.0"
+      "sha256": "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab",
+      "version": "0.48.0"
     }
   ]
 }

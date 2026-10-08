@@ -72,6 +72,12 @@ contexts by default. The normal path uses one capsule builder, one implementor
 and one independent reviewer; already-satisfied work may use the no-change route
 below. Workers do not recruit other workers.
 
+Each assignment names its immediate return destination by concrete identifier and
+the actor responsible for onward relay. Return the terminal handoff through that
+route; the relay actor confirms controller consumption. A local report or send
+acceptance does not establish delivery. Use the selected supported manual route
+when direct messaging is unavailable.
+
 ### Execution routing, models and efforts
 
 | Role | Execution environment | Model | Reasoning effort | Selector label |
@@ -81,22 +87,22 @@ below. Workers do not recruit other workers.
 | Implementor | Codex | `gpt-6-luna` | `max` | Luna 6 Max |
 | Independent reviewer | Work | `gpt-6.1-sol` | `low` | Sol 6.1 Light |
 
-Environment, model and effort are separate settings. Verify the actual supported
-dispatch route and effective environment; model selection or access to local
-files/GitHub does not establish routing. Report an unavailable route instead of
-silently substituting environments. The selected map names the supported route;
-these defaults do not require a new launcher or service.
-
-Use these defaults unless the owner or selected project map authorizes a
-task-specific override. Record the exact model and effort before dispatch;
-explicitly configure each worker rather than inheriting the controller's pair.
-Match the full model ID: Sol 5.6/6 and Luna 5.6 do not satisfy these defaults.
-Verify the host's effective settings and retain them with the handoff. A role
-label alone does not establish configuration. For a controller the host cannot
-configure, report a mismatch before dispatching dependent work. Unsupported or
-unavailable pairs follow the model-capacity recovery rule; do not silently
-substitute a model or effort. These settings do not reduce any role's checks or
-responsibilities.
+Environment, model and effort are separate settings. Use the map's supported
+route and these defaults unless the owner/map authorizes an override; no new
+launcher or service is required. Configure each worker explicitly before dispatch
+and match the full model ID: Sol 5.6/6 and Luna 5.6 do not satisfy these defaults.
+Record requested settings separately from host-confirmed settings. A selected
+host mode or authoritative configuration/session record confirming the setting
+is sufficient evidence; dispatch options establish only what was requested.
+The project map names accepted confirmation for required settings and the
+response when confirmation is unavailable; it may select a shared policy.
+Unknown proves neither compliance nor mismatch. Proceed only under that
+authorization. Do not infer product mode from tool names, backing metadata or
+an agent's self-description.
+Distinguish confirmed configuration mismatch, unavailable routing, unknown
+settings and confirmed provider capacity failure; apply capacity recovery only
+to the last. Diagnose other failures narrowly and never silently substitute
+an environment, model or effort. These settings do not reduce role duties.
 
 When an owner asks a particular model to personally audit or review, that model
 must perform the substantive inspection unless delegation is authorized. A
@@ -128,8 +134,10 @@ Use one reusable Codex dispatcher chat per project with the selected
 implementation handoff location: exact task/attempt, published capsule/branch/SHA,
 selected role instructions and original requirement pointers, permissions/checks,
 evidence locations, Git ownership and return destination. The dispatcher launches
-a fresh implementor and relays its terminal result; it does not repeat controller
-orientation, replan, review or integrate. Only the assigned actor edits/publishes;
+the implementor under the selected
+[context and fallback rules](worker-instructions.md#read-and-dispatch), then relays
+its terminal result; it does not repeat controller orientation, replan, review or
+integrate. Only the assigned actor edits/publishes;
 prevent simultaneous edits. Work authenticates the result before independent
 review. Unavailable routing requires an explicit decision, not substitution.
 
@@ -188,11 +196,29 @@ silently substitute a local-only workflow. No subagent pushes to main.
 
 ### Complete the phases
 
-Before each dependent phase, confirm readiness through its actual selected wrapper,
-configuration and environment: guarded authentication, temporary paths, required
-recovery objects, and intended CI trigger/check identity where applicable. Use
-one small capability check, not a setup investigation or product-suite rehearsal;
-repeat only when relevant inputs change or a capability fails.
+Before establishing or changing inputs to a required downstream gate, verify
+its applicable source, history, authorization and configuration constraints.
+Resolve conflicts before acting. Use bounded prerequisite checks, not premature
+qualification; recheck when relevant inputs change. History constraints and any
+authorized-base reconciliation are defined by the consumer project, not a
+universal RI linear-history requirement.
+
+The actor launching a command verifies its required inputs in the actual
+execution context before expensive or dependent work: command, working directory,
+paths and effective child configuration, not merely the parent's. The controller verifies dispatch prerequisites and may
+rely on authenticated launcher or worker checks. Examples include guarded
+authentication, temporary paths, recovery objects and CI trigger/check identity.
+Use the smallest sufficient checks, not a product-suite rehearsal or unrelated
+setup investigation. Reuse readiness only while relevant inputs remain unchanged;
+recheck affected prerequisites on changes or capability failure, and report
+unresolved prerequisites before proceeding. After setup fails, continue only
+checks whose own prerequisites are satisfied. Results qualify for acceptance only
+when source, dependencies and environment meet the selected requirements;
+otherwise label them diagnostic and report required checks still blocked.
+Where required gate order permits, run inexpensive source-validity checks before
+costly qualification. On failure, report before further expensive checks unless
+the assignment requires collecting independent results. This grants no frozen
+candidate edits or omission of required checks.
 
 1. **Capsule builder:** use the supplied branch and [shared format](#capsule-format).
    Require affected stale docs/examples/maps/links to be corrected, or justify why
@@ -203,19 +229,21 @@ repeat only when relevant inputs change or a capability fails.
    and relevant source, including scope, criteria, documentation and proof routes.
    Resolve scope/specification gaps. An independent scope
    challenge is permitted only for a concrete unresolved scope finding or an
-   explicit project requirement. First check whether the controller's plan check
-   resolves the finding or satisfies that requirement. Follow the additional
+   explicit project requirement. The controller may resolve findings through its
+   plan check, but may satisfy a required review only when that requirement permits
+   controller review. A required separate independent reviewer cannot be replaced
+   by the controller. Follow the additional
    assignment rule above; a scope challenge is not a routine fourth role.
 3. **Implementor:** make only authorized changes, including affected docs, and run
    relevant checks. Return source/branch identity, changes, results/skips and gaps.
    Commit/push only when the map grants that action. Keep useful work for corrections.
-   For new restore paths, compare the complete existing validation path before
-   review, including terminal states, ownership, allocation limits and ordinary
-   application callers; test the applicable requirements within implementation.
+   Follow the worker instructions for alternate execution paths and their tests.
 4. **Controller:** inspect the full diff, scope, documentation and criterion evidence;
    capture/publish the exact candidate when assigned that responsibility and verify
    the remote branch matches it. Supply the reviewer with that source, the full
-   diff, capsule, standards and actual test/log evidence.
+   diff, capsule, standards and actual test/log evidence. Use the project's existing
+   source-capture and evidence route; this instruction does not itself require
+   a new export, manifest, upload or local copy.
    Checks must use a stable, identifiable source snapshot. Verify the tested source
    and actual workflow/check identity; a matching check name alone is insufficient.
 5. **Independent reviewer:** remain read-only and review the full change, not just
@@ -301,8 +329,11 @@ scope expansion and requests for broader authority are last resorts. First verif
 the blocker against exact source, controlling requirements and existing authorized
 routes; distinguish observed failures from assumptions. Prefer bounded in-scope
 correction and reuse valid work. Report confirmed blockers promptly; never bypass
-required checks. STOP_REPLAN is not opening progress. Preserve terminal stops;
-a diagnostic-only follow-up may explain one but cannot resume it. Request new
+required checks. A failed command or terminal worker handoff does not itself stop
+an active task: preserve the result and use authorized in-scope correction.
+An explicit task/attempt stop or owner pause blocks execution until continuation
+is authorized; diagnosis grants no continuation authority. STOP_REPLAN is not
+opening progress, and later success cannot clear a terminal stop. Request new
 authority only for uncovered scope, permission, disclosure or reserved actions.
 
 After roughly three rejection/correction rounds in the same stage, use a fresh
@@ -313,14 +344,30 @@ or incorrect workflow execution, and return one bounded correction. Preserve val
 completed phases; this conditional recovery is not another normal review or an
 automatic increase in effort. Record the trigger and scope in the checkpoint.
 
-Corrections start from authenticated recovery source, not necessarily the original
-planning HEAD. Reuse evidence only under the project's accepted equivalence policy;
-retain its original source/command/environment identities, never label it newly
-executed. Rerun affected checks when equivalence is unknown or relevant inputs
-change, or when project rules require them. Equivalence covers relevant transitive
-inputs and environment changes, not merely an unchanged test file or helper.
-Changed integration source needs affected checks/review. Lost delivery or a timeout
-requires checking actual completion/cleanup before repeating any operation.
+Identify the authenticated correction recovery source separately from the full
+integration baseline. A correction does not reset task scope or narrow acceptance
+to its own diff. Supply the full proposed integration diff and retained findings.
+Keep correction handoffs short: identify the rejected finding, authorized changes,
+recovery source, changed execution inputs, required checks and return destination.
+Reference unchanged instructions/evidence by authenticated accessible location;
+repeat only to resolve ambiguity. Workers still read required original inputs.
+
+After correction, the controller selects reruns from changed inputs and the
+project's accepted evidence-equivalence policy. Preserve eligible results under
+their original source/command/environment identities; never label them newly
+executed. Run full qualification when required, or record why reuse is insufficient.
+Rerun affected checks when equivalence is unknown. Equivalence covers relevant
+transitive inputs and environment changes, not merely unchanged tests/helpers.
+Workers follow assigned checks and cannot waive them independently.
+When a reported pass conflicts with a later result, compare source, command,
+working directory, toolchain and configuration. Record the demonstrated cause or
+remaining uncertainty; do not reuse the earlier pass without establishing its
+eligibility. A successful repetition alone does not explain the discrepancy.
+Changed integration source needs affected checks/review. An ordinary blocking-wait
+interval expiring means continue waiting. A reported delivery failure or task
+deadline permits bounded reconciliation of authoritative assignment state and
+cleanup before retrying; it does not authorize unfinished-work inspection or a
+monitoring loop.
 
 ### Handle model capacity
 
@@ -344,7 +391,11 @@ The project map names the active checkpoint and standard closeout route. Update
 that checkpoint after each authenticated transition, retaining phase, selected
 instructions, source, active job, results, pending obligations and next action.
 Record unknown or partial outcomes honestly and preserve this state across
-compaction. Authenticate it on resume; do not duplicate dispatch.
+compaction. On recovery, reconcile the checkpoint with authenticated source,
+active-assignment state and retained terminal evidence before selecting the next
+action. Preserve history and record the reconciliation; do not repeat completed
+work merely because the checkpoint is stale. This grants no additional writer
+or dispatch authority.
 
 If fresh agents cannot be created or freed,
 last-resort idle-context reuse is permitted with a complete handoff. The candidate

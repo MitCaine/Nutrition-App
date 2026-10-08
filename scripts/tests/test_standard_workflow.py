@@ -38,12 +38,12 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (21690, "0bb501fd64843e6b35683ea5bda6ca1f9175e9bfe550fc1fc8ad8e0b0f3fb666"),
-        "worker-instructions.md": (10862, "21ddbbbf72c7c679f0845dc0da11a7a197f3a35a7e0c618ed37d714bcb151db3"),
-        "capsule-controller-workflow.md": (14229, "3e2b4904cc134846c0814dc25ba6df6b359d7b53c58078e007f603628b36fe77"),
+        "start-an-issue.md": (25291, "15c71e4b64a328f40e243285e4022cdc370907552ab29fd5d305d2ef4e2f29f8"),
+        "worker-instructions.md": (12325, "7260bf6b463ce33871ff85d9547bded4b3caf3e2b1f7658240a04e713de8cd65"),
+        "capsule-controller-workflow.md": (14254, "4d11d1433756cc333ee966444276555cf733ae67bd8d51af07739bc11e0f8e13"),
     }
     provenance = (shared / "SOURCE.md").read_text()
-    assert "fd982035de66e23d5d924e2c437f844803f399ec" in provenance
+    assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
     assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
     assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
     assert "RI `docs/start-an-issue.md` → [local `engineering/workflow/shared/start-an-issue.md`](start-an-issue.md)" in provenance
@@ -66,12 +66,15 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     )
     for blob, size, digest in queue_identities:
         assert blob in provenance and str(size) in provenance and digest in provenance
+    assert "3874eb0aaad5c653f9ed5d66e827249bf100fbab" in provenance
+    assert "2679cf0fdc5bd4dd370f617e30c729e5965ed7a5dbdd370c1aa259fd138f7086" in provenance
     lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
-    assert lock["revision"] == "2f28da4d326ff12da5dc9270eb57910303e4a737"
-    assert lock["contracts"]["navigation"] == 6
-    assert lock["contracts"]["inventory"] == 13
-    assert lock["contracts"]["adapter"] == 10
-    assert lock["contracts"]["mapping"].endswith("v10")
+    assert lock["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
+    assert lock["contracts"]["navigation"] == 7
+    assert lock["contracts"]["inventory"] == 16
+    assert lock["contracts"]["adapter"] == 13
+    assert lock["contracts"]["mapping"].endswith("markdown-source-units-v13")
+    assert len(lock["source_files"]) == 21
 
 
 def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intake():
@@ -97,7 +100,7 @@ def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intak
 def test_current_handoffs_route_controller_and_assigned_worker_sections():
     current = {
         "AGENTS.md": ("Shared worker rules", "future capsule"),
-        "docs/local_project_map.md": ("assigned unique level-two section", "result recovery remain pending"),
+        "docs/local_project_map.md": ("assigned unique level-two section", "assigned Codex dispatcher"),
         "engineering/tasks/TEMPLATE.md": ("Shared worker rules", "Initial builder"),
         "engineering/workflow/TASK_CAPSULE.md": ("Shared worker rules", "future capsule"),
         "engineering/workflow/EXECUTION.md": ("Shared worker rules", "next level-two heading"),
@@ -125,8 +128,11 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
     normalized_map = " ".join(map_text.split())
     assert "controller, builder and reviewer on Work at `gpt-6.1-sol` / `low`" in normalized_map
     assert "implementor on Codex at `gpt-6-luna` / `max`" in normalized_map
-    assert "Do not claim automatic delivery or idle wake-up" in normalized_map
-    assert "Work-to-Codex messaging, consumption and result recovery remain pending" in normalized_map
+    assert "Record requested environment/model/effort separately from host-confirmed settings" in normalized_map
+    assert "record them as unverified" in normalized_map
+    assert "the dispatcher owns relay to the Work controller" in normalized_map
+    assert "Native child results return to their parent" in normalized_map
+    assert "Sending alone does not prove delivery, consumption or idle wake-up" in normalized_map
     assert "gpt-5.6-luna" not in map_text
     capsule = (ROOT / "engineering/tasks/GH-290.md").read_text()
     assert "task-specific environment override for GH-290 only" in " ".join(capsule.split())
@@ -400,7 +406,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "fd982035de66e23d5d924e2c437f844803f399ec/docs/skill-templates/capsule-queue/")
+              "20a5039e7731eaa1303443b782caa81a383a0af1/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -408,6 +414,8 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in text
     assert "not an installed executable skill" in text
     assert "CLI acceptance" in text and "idle wake-up" in text
+    assert "Work-to-Codex implementor results return to the assigned dispatcher" in text
+    assert "sending alone is not delivery proof" in text
     assert not (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/scripts/run_and_queue.py").exists()
 
 
@@ -417,10 +425,14 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     for rule in ("Only the controller dispatches", "Workers do not recruit", "failed required check",
                  "authorized", "scope change", "assignee/host inability", "independent scope challenge",
                  "event-based blocking completion", "idle wake-up", "supported observer",
-                 "without repeated owner prompts", "genuinely reserved actions", "task-neutral model/effort defaults",
-                 "with no fallback", "Work-to-Codex messaging, consumption and result recovery remain pending",
-                 "owner explicitly authorizes messaging in both directions", "harmless route check",
-                 "Do not claim automatic delivery or idle wake-up", "App `4708441`", "paused"):
+                 "without repeated owner prompts", "genuinely reserved actions",
+                 "task-neutral requested model/effort defaults",
+                 "Record requested environment/model/effort separately from host-confirmed settings",
+                 "record them as unverified", "Cross-host messaging requires explicit owner authorization",
+                 "assigned Codex dispatcher", "the dispatcher owns relay to the Work controller",
+                 "Native child results return to their parent",
+                 "Sending alone does not prove delivery, consumption or idle wake-up",
+                 "Do not publish private conversation identifiers", "App `4708441`", "paused"):
         assert rule in normalized
     assert "gpt-6.1-sol` / `low" in normalized
     assert "gpt-6-luna` / `max" in normalized

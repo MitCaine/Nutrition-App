@@ -1,7 +1,7 @@
 # Controller-only public dependencies; RI source stays private and is installed separately.
 packaging==26.0 --hash=sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529
 pip==26.2 --hash=sha256:931c303696af6fa3417112103b1cad26890e5a07eccb5b99783700e33f2b8aad
-setuptools==83.0.0 --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3
+setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670
 tree-sitter==0.25.1 --hash=sha256:ae024d8ccfef51e61c44a81af7a48670601430701c24f450bea10f4b4effd8d1
 tree-sitter-c==0.24.2 --hash=sha256:97bc80a224d48215d4e6e6376bf30d114f4c317b8145ff1b02afe785d4ba7bdd
 tree-sitter-c-sharp==0.23.5 --hash=sha256:a75994a11f6fed3f5b8c36ad6a00e5dc43205bd912c43af3a2a54fdf649664eb
@@ -9,7 +9,8 @@ tree-sitter-cpp==0.23.4 --hash=sha256:bc3c404d9f0cbd87951213a85440afbf4c31e718f8
 tree-sitter-go==0.25.0 --hash=sha256:503b81a2b4c31e302869a1de3a352ad0912ccab3df9ac9950197b0a9ceeabd8f
 tree-sitter-java==0.23.5 --hash=sha256:24acd59c4720dedad80d548fe4237e43ef2b7a4e94c8549b0ca6e4c4d7bf6e69
 tree-sitter-javascript==0.25.0 --hash=sha256:8264a996b8845cfce06965152a013b5d9cbb7d199bc3503e12b5682e62bb1de1
+tree-sitter-markdown==0.5.1 --hash=sha256:1ec4cc5d7b0d188bad22247501ab13663bb1bf1a60c2c020a22877fabce8daa9
 tree-sitter-python==0.25.0 --hash=sha256:480c21dbd995b7fe44813e741d71fed10ba695e7caab627fb034e3828469d762
 tree-sitter-rust==0.24.2 --hash=sha256:01a46622735498493f29f3e628a90de95c96a07bfbeb88996243eb986b1cee36
 tree-sitter-typescript==0.23.2 --hash=sha256:c7cc1b0ff5d91bac863b0e38b1578d5505e718156c9db577c8baea2557f66de8
-wheel==0.47.0 --hash=sha256:212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced
+wheel==0.48.0 --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab

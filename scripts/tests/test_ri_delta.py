@@ -10,10 +10,11 @@ import task
 def test_complete_shared_role_resources_and_separate_compatible_runtime_pin():
     import hashlib, json
     shared = ROOT / "engineering/workflow/shared/capsule-controller-workflow.md"
-    assert hashlib.sha256(shared.read_bytes()).hexdigest() == "5623e53ef9bc72978b5d78e646966238dae72b55684bf2a51a722b6d00736339"
-    assert shared.stat().st_size == 9024
+    assert hashlib.sha256(shared.read_bytes()).hexdigest() == "4d11d1433756cc333ee966444276555cf733ae67bd8d51af07739bc11e0f8e13"
+    assert shared.stat().st_size == 14254
     lock = json.loads((ROOT / "engineering/tooling/ri-lock.json").read_text())
-    assert lock["revision"] == "2f28da4d326ff12da5dc9270eb57910303e4a737"
-    assert lock["contracts"]["navigation"] == 6
-    assert lock["contracts"]["inventory"] == 13
-    assert lock["contracts"]["adapter"] == 10
+    assert lock["revision"] == "20a5039e7731eaa1303443b782caa81a383a0af1"
+    assert lock["contracts"]["navigation"] == 7
+    assert lock["contracts"]["inventory"] == 16
+    assert lock["contracts"]["adapter"] == 13
+    assert lock["contracts"]["mapping"].endswith("markdown-source-units-v13")
