@@ -3389,6 +3389,37 @@ def _rework_archive_proof_matches(
         f"{authorization.get('identity_sha256')}:"
         f"{candidate_sha}"
     )
+    terminal_check = (
+        None
+        if check_id is None
+        else {
+            "id": check_id,
+            "conclusion": check_conclusion,
+            "external_id": qualification.get("check_external_id"),
+        }
+    )
+    try:
+        constructor_proof = _qualification_terminal_result(
+            operation,
+            {
+                "id": qualification.get("workflow_run_id"),
+                "conclusion": workflow_conclusion,
+                "html_url": qualification.get("workflow_run_url"),
+            },
+            terminal_check,
+            expected_app_id,
+        )["qualification"]
+    except (KeyError, TaskControllerError, TypeError):
+        return False
+
+    # Cleanup changes this field after construction; all other terminal fields
+    # must remain exactly constructor-compatible, including null-check evidence.
+    if any(
+        qualification.get(field) != value
+        for field, value in constructor_proof.items()
+        if field != "candidate_ref_removed"
+    ):
+        return False
 
     return (
         qualification.get("candidate_sha") == candidate_sha
@@ -3448,12 +3479,6 @@ def _rework_archive_proof_matches(
                 and isinstance(check_conclusion, str)
                 and bool(check_conclusion)
             )
-        )
-        and result
-        == (
-            "PASS"
-            if workflow_conclusion == "success" and check_conclusion == "success"
-            else "FAIL"
         )
     )
 

@@ -5457,6 +5457,159 @@ def test_public_routes_reject_rework_binding_paths_outside_retained_scope(
     assert fixture["ref_transport"].main_pushes == main_pushes
 
 
+@pytest.mark.parametrize(
+    ("binding_location", "proof_case", "route"),
+    [
+        ("active", proof_case, "rework")
+        for proof_case in (
+            "check_success_workflow_failure",
+            "check_success_workflow_cancelled",
+            "no_check_success_conclusion",
+            "no_check_failure_conclusion",
+        )
+    ]
+    + [
+        ("archive", proof_case, route)
+        for proof_case in (
+            "check_success_workflow_failure",
+            "check_success_workflow_cancelled",
+            "no_check_success_conclusion",
+            "no_check_failure_conclusion",
+        )
+        for route in ("rework", "qualify")
+    ],
+)
+def test_public_routes_reject_terminal_proofs_the_constructor_cannot_emit(
+    tmp_path, monkeypatch, binding_location, proof_case, route,
+):
+    fixture = public_standard_rework_fixture(
+        tmp_path,
+        monkeypatch,
+        c1_qualification_failure=True,
+    )
+    issue = fixture["issue_number"]
+    state_path = TASK.state_path(fixture["state_dir"], issue)
+
+    if binding_location == "active":
+        expected_candidate_sha = fixture["c1"]
+        candidate_sha = fixture["c2"]
+    elif route == "rework":
+        expected_candidate_sha = fixture["c2"]
+        candidate_sha = public_c2_reviewed_next_candidate(fixture)
+    else:
+        assert fixture["run"](
+            *fixture["rework_argv"]()[len(fixture["common"]):],
+        )[0] == 0
+        expected_candidate_sha = None
+        candidate_sha = None
+
+    def corrupt_terminal_proof(current):
+        updated = json.loads(json.dumps(current))
+        if binding_location == "active":
+            qualification = updated["qualification"]
+        else:
+            qualification = updated["rework_history"][0]["qualification"]
+        if proof_case.startswith("check_success"):
+            qualification["check_conclusion"] = "success"
+            if proof_case.endswith("cancelled"):
+                qualification["workflow_conclusion"] = "cancelled"
+        else:
+            qualification["check_id"] = None
+            qualification["check_app_id"] = None
+            qualification["check_external_id"] = None
+            qualification["check_conclusion"] = (
+                "success" if proof_case == "no_check_success_conclusion" else "failure"
+            )
+        return updated
+
+    TASK.checkpoint_transaction(
+        fixture["state_dir"], issue, corrupt_terminal_proof,
+    )
+    before = state_path.read_bytes()
+    dispatches = sum(item.dispatch_calls for item in fixture["transports"].values())
+    published = list(fixture["ref_transport"].published)
+    deleted = list(fixture["ref_transport"].deleted)
+    main_pushes = list(fixture["ref_transport"].main_pushes)
+
+    if route == "qualify":
+        code, result, _, _ = fixture["run"](
+            "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+        )
+    else:
+        code, result, _, _ = fixture["run"](*fixture["rework_argv"](
+            expected_candidate_sha=expected_candidate_sha,
+            candidate_sha=candidate_sha,
+        )[len(fixture["common"]):])
+
+    assert code == 1
+    assert result["error"] == "REWORK_HISTORY_INVALID"
+    assert state_path.read_bytes() == before
+    assert sum(item.dispatch_calls for item in fixture["transports"].values()) == dispatches
+    assert fixture["ref_transport"].published == published
+    assert fixture["ref_transport"].deleted == deleted
+    assert fixture["ref_transport"].main_pushes == main_pushes
+
+
+@pytest.mark.parametrize("control_case", ["no_check_failure", "check_failure_workflow_success"])
+def test_public_rework_accepts_constructor_compatible_failure_proofs(
+    tmp_path, monkeypatch, control_case,
+):
+    if control_case == "no_check_failure":
+        original_wait = TASK._wait_for_authoritative_check
+        calls = 0
+
+        def omit_first_check(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return None
+            return original_wait(*args, **kwargs)
+
+        monkeypatch.setattr(TASK, "_wait_for_authoritative_check", omit_first_check)
+    else:
+        original_run = FakeQualificationTransport._run
+
+        def successful_workflow(self):
+            document = original_run(self)
+            document["conclusion"] = "success"
+            return document
+
+        monkeypatch.setattr(FakeQualificationTransport, "_run", successful_workflow)
+
+    fixture = public_standard_rework_fixture(
+        tmp_path,
+        monkeypatch,
+        c1_qualification_failure=True,
+    )
+    issue = fixture["issue_number"]
+    c1_state = TASK.load_state(fixture["state_dir"], issue)
+    qualification = c1_state["qualification"]
+    assert qualification["result"] == "FAIL"
+    assert c1_state["verification"]["decision"] == "fail"
+    if control_case == "no_check_failure":
+        assert qualification["check_id"] is None
+        assert qualification["check_app_id"] is None
+        assert qualification["check_external_id"] is None
+        assert qualification["check_conclusion"] is None
+        assert qualification["workflow_conclusion"] == "failure"
+    else:
+        assert qualification["check_id"] > 0
+        assert qualification["check_conclusion"] == "failure"
+        assert qualification["workflow_conclusion"] == "success"
+
+    code, result, _, _ = fixture["run"](
+        *fixture["rework_argv"]()[len(fixture["common"]):],
+    )
+    assert code == 0
+    archived = TASK.load_state(fixture["state_dir"], issue)["rework_history"][0]
+    assert archived["qualification"] == qualification
+    code, result, _, _ = fixture["run"](
+        "qualify", str(issue), "--candidate-root", str(fixture["candidate_repo"]),
+    )
+    assert code == 0
+    assert result["result"] == "PASS"
+
+
 def test_public_multiple_rework_rounds_preserve_coherent_failure_and_unknown_evidence(
     tmp_path, monkeypatch,
 ):
