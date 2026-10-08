@@ -6,9 +6,10 @@
 
 ## Change lifecycle
 
-1. **Start with authoritative state.** In an integrated zsh terminal, run
-   `source ./scripts/start-work.zsh` from the repository root; it refreshes
-   compatible updates and runs the session report. Then use
+1. **Start with authoritative state.** For source or documentation work whose dependency
+   inputs stay unchanged, run `./scripts/session-start.sh` from the repository root. For an
+   authorized dependency task, use `source ./scripts/start-work.zsh` and the
+   [Development Guide](../docs/project/development-guide.md#configuration-and-startup). Then use
    [Project Onboarding](../docs/project/onboarding.md) to load only the context needed for the
    change.
 2. **Establish task authority.** Follow the
@@ -25,11 +26,12 @@
 6. **Review and integrate.** Present the exact committed candidate, required
    qualification and independent review through the trusted controller. A pull
    request is optional when the controller's guarded integration is used.
-7. **Close out and release deliberately.** Finalize tracked preparation snapshots BEFORE
-   final candidate review, label them historical, and point current status to the live issue
-   and existing external controller checkpoint. After review, record qualification,
-   integration, issue closure and safe branch cleanup in those existing operational records.
-   Do not create another candidate solely to append completion evidence. A genuine later
+7. **Close out and release deliberately.** Freeze the tracked preparation/check ledger before
+   candidate C is frozen for exact-candidate qualification and review. Label it historical and
+   point current status to the live issue and existing external controller checkpoint. After C is
+   frozen, record every later attempt, failure, rerun, qualification, review, integration, issue
+   closure and cleanup in those existing operational records. Do not create another candidate
+   solely to append completion evidence. A genuine later
    tracked-document correction requires affected checks, review and authorized publication.
    Existing capsule lifecycles additionally require their separate guarded capsule HISTORY closeout;
    do not create a capsule for an ordinary task. Release from a clean, qualified `main` commit.
@@ -43,15 +45,20 @@ Shared worker rules and their assigned unique level-two section of the pinned
 [worker instructions](workflow/shared/worker-instructions.md#role-index) through the next level-two
 heading or end of file. Initial builders receive original objective/base and requirements without
 a future capsule; implementors and reviewers receive the accepted capsule.
-The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work uses bounded Markdown tasks under `engineering/tasks/`,
-serial native capsule builder/implementor/independent reviewer returns, ordinary source/diff/log
-review and the trusted standard controller. RI-only SDK/report/structural gates are retired.
-Protected main, authenticated owner authority, required profile checks, domain/security
-contracts and independent review remain. #246/#256 and their original capsules remain paused.
+The [adoption guide](workflow/shared/capsule-controller-workflow.md) is conditional. New work
+uses bounded Markdown tasks under `engineering/tasks/`, ordinary source/diff/log review and the
+trusted standard controller. The Work controller dispatches the builder and distinct independent
+reviewer; the owner-designated Codex dispatcher authenticates the accepted implementation handoff,
+launches one implementor and relays its terminal result to Work. RI-only SDK/report/structural
+gates are retired. Protected main, authenticated owner authority, required profile checks,
+domain/security contracts and independent review remain.
 
 [AUTHORITY](workflow/AUTHORITY.md) owns project acceptance; [RI tooling](tooling/RI.md)
-retains the compatible source-navigation runtime. Historical capsule state/history and C/R/T
-recovery remain in [capsules](capsules/README.md), without becoming prerequisites for new tasks.
+retains the compatible source-navigation runtime. The original #246/#256 capsule attempts remain
+stopped under their original authority; the map distinguishes their attempt history from the
+completed fresh #246 attempt and current live issue status. Historical capsule state/history and
+C/R/T recovery remain in [capsules](capsules/README.md), without becoming prerequisites for new
+tasks.
 
 ## Git conventions
 

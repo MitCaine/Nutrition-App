@@ -41,9 +41,11 @@ qualification, verification and review. A closed issue or remembered PASS is not
 Existing attached and compatibility records remain readable with their original identities;
 new CLI preparation cannot select attached RI. Public `task evidence` and `task execution`
 are retired. Historical readers in `scripts/lib/legacy_ri/` preserve old bindings and recovery;
-they are not an executor or reviewer service. No old STOP or allowance is reset. #246/#256
-stay paused; any future resumption requires separate owner direction and a concrete migration
-of their existing contracts, not silent conversion to standard mode.
+they are not an executor or reviewer service. No old STOP or allowance is reset. The original
+#246/#256 capsule attempts remain stopped under their original authority; that historical attempt
+state does not set current issue status. The completed fresh #246 attempt is distinct. See the
+[local map](../../docs/local_project_map.md) for the existing historical record and live issue
+status. Never reset or resume a stopped attempt through silent conversion to standard mode.
 
 Every checkpoint writer uses the issue-scoped transaction contract: acquire the exclusive
 checkpoint lock, reread the latest record, validate the intended mutation against that

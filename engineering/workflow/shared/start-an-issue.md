@@ -132,7 +132,7 @@ rules, without polling loops or another transport framework.
 Use one reusable Codex dispatcher chat per project with the selected
 [dispatcher section](worker-instructions.md#codex-dispatcher). For each issue, give it the
 implementation handoff location: exact task/attempt, published capsule/branch/SHA,
-selected role instructions and original requirement pointers, permissions/checks,
+selected role instructions and bounded implementation inputs, read/edit scopes, checks,
 evidence locations, Git ownership and return destination. The dispatcher launches
 the implementor under the selected
 [context and fallback rules](worker-instructions.md#read-and-dispatch), then relays
@@ -160,8 +160,11 @@ bookkeeping and closeout do not justify another assignment.
 Retain and authenticate each completed agent's terminal handoff before closing
 it through the host's supported operation to free capacity. Do not close running
 agents. Give each worker its selected [worker instructions](worker-instructions.md#role-index), bounded
-task, original required specifications/decisions, applicable standards, source
-locations, commands, authority limits and actual evidence. Supply the relevant
+task inputs appropriate to its role, applicable standards, authorized source-read
+locations, commands, edit limits and actual evidence. Original issues and required
+decision history go to the builder and reviewer; the implementor receives a
+complete accepted capsule and bounded implementation inputs, and the dispatcher
+only authenticates and relays the handoff. Follow the role-specific reading rules. Supply the relevant
 project-map requirements and their original locations; workers do not repeat
 controller intake or workflow selection. Do not supply the whole controller
 procedure as mandatory worker reading. Authenticate role resources from the same
@@ -169,8 +172,9 @@ adopted RI revision; record their locations in the existing handoff.
 
 For example: “Your role is Implementor. At the selected RI revision, read
 `docs/worker-instructions.md` sections Shared worker rules and Implementor in full.
-Then read the published capsule, original requirements and applicable project
-instructions linked in this handoff.” Name stable headings, not line numbers;
+Then read the accepted published capsule, authorized implementation source and
+applicable implementation standards linked in this handoff. Do not retrieve the
+original issue or decision history.” Name stable headings, not line numbers;
 use a section-bounded read where supported, since an anchor alone does not limit
 loaded context.
 
@@ -272,13 +276,14 @@ candidate edits or omission of required checks.
 
 ### Keep completion records external
 
-Before final candidate review, correct tracked task documentation: label preparation
-snapshots historical and point current status to the live issue and external
-controller checkpoint. After review, record authenticated qualification,
-integration, issue closure and cleanup in those existing operational records.
-Do not create another candidate merely to append completion evidence to the
-tracked task. A genuine later tracked-document correction still needs affected
-checks, review and authorized publication; operational bookkeeping does not.
+Finalize tracked preparation records before freezing the candidate for
+exact-candidate qualification and review: label preparation snapshots historical
+and point current status to the live issue and external controller checkpoint.
+Record subsequent check attempts and operational outcomes, including integration,
+issue closure and cleanup, externally in those existing records. Do not create
+another candidate merely to append completion evidence. A necessary tracked
+correction creates a new candidate and follows the existing affected-check,
+review and authorized-publication rules; operational bookkeeping does not.
 
 ### Planning-only and no-change outcomes
 
@@ -350,7 +355,7 @@ to its own diff. Supply the full proposed integration diff and retained findings
 Keep correction handoffs short: identify the rejected finding, authorized changes,
 recovery source, changed execution inputs, required checks and return destination.
 Reference unchanged instructions/evidence by authenticated accessible location;
-repeat only to resolve ambiguity. Workers still read required original inputs.
+repeat only to resolve ambiguity. Workers still read their required role-specific inputs.
 
 After correction, the controller selects reruns from changed inputs and the
 project's accepted evidence-equivalence policy. Preserve eligible results under

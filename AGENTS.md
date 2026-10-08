@@ -10,19 +10,18 @@ Use it as the entry point. Deeper operational authority remains in the linked re
 
 Run all commands from the repository root.
 
-At the start of each session in a VS Code or Codex desktop integrated zsh terminal,
-source the startup command so its selected tool paths remain in this terminal. It
-refreshes compatible dependencies and then runs the authoritative session report;
-independent checks still run if an earlier update fails:
+For source or documentation maintenance that leaves dependency inputs unchanged,
+run the standalone session report from the repository root:
 
-```zsh
-source ./scripts/start-work.zsh
+```bash
+./scripts/session-start.sh
 ```
 
-If zsh or automatic updates are unavailable, run `./scripts/session-start.sh`
-directly and follow the [dependency update guide](docs/project/development-guide.md#configuration-and-startup)
-before dependency work. A startup update failure is not a passing qualification;
-review the reported area and preserve its exact partial output for the task workflow.
+For a task authorized to change dependencies, source `./scripts/start-work.zsh` in
+the integrated zsh terminal and follow the [dependency update guide](docs/project/development-guide.md#configuration-and-startup).
+It refreshes compatible dependencies and then runs the session report; independent
+updates continue after failures. A failed update is not passing qualification. Review
+and preserve its exact partial output for the task workflow.
 
 Before presenting work as complete or asking for commit approval:
 
@@ -120,18 +119,15 @@ The mobile app is React Native, Expo, and TypeScript.
 
 Run the smallest focused test first, then the broader authoritative suite.
 
-Typical backend baseline:
+Use the canonical ordinary backend runner from the repository root:
 
 ```bash
-cd apps/backend
-ruff check .
-python -m pytest -q --strict-markers \
-  -m "not postgres_concurrency and \
-      not phase5c_performance_t0 and \
-      not phase5c4_control_postgres and \
-      not phase5c4_minio and \
-      not phase5c4_docker_integration"
+./scripts/run-backend-baseline.sh
 ```
+
+The [testing guide](docs/operations/testing.md#baseline-validation) owns its interpreter,
+environment/configuration controls, marker exclusions and focused-test guidance. A focused
+pytest selection diagnoses a specific change; it does not replace the canonical baseline.
 
 PostgreSQL runtime contract selection:
 
@@ -164,25 +160,31 @@ reads `Shared worker rules` and its assigned unique level-two section of the pin
 level-two heading or end of file; links are navigation, not bounded reads. Builders receive
 original objective/base/specifications without a future capsule; implementors and reviewers
 receive the accepted capsule.
-The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional on setup or replacement. New tasks use the owner-authorized lightweight
-route: controller-only dispatch of one serial capsule builder, implementor and distinct independent reviewer,
-using event-based blocking completion unless the exact idle wake-up route is verified,
-bounded Markdown records and ordinary source/diff/test evidence. The sequence is orient →
-capsule → implement → independent review → authorized integration → verify closeout. RI
-requires no cryptographic receipt chain, custom gateway or multiple human operators. Pins
-record instruction/runtime provenance. The trusted task controller
-still owns authenticated external authorization, required qualification and protected integration.
+The [adoption guide](engineering/workflow/shared/capsule-controller-workflow.md) is conditional
+on setup or replacement. New tasks use bounded Markdown records and the current standard
+controller. The Work controller directly dispatches the capsule builder and distinct independent
+reviewer. For implementation, the owner-designated Codex dispatcher authenticates the complete
+accepted-capsule handoff and launches one implementor; the implementor returns there for relay to
+Work. Workers do not recruit. Use blocking completion while an assignment is active unless its
+exact idle-wake route is verified; consume a terminal result already delivered without requiring
+idle-wake proof. The sequence is orient → capsule → implement → independent review → authorized
+integration → verify closeout. RI pins record instruction/runtime provenance and do not create
+permission. The trusted task controller owns authenticated external authorization, required
+qualification and protected integration.
 No RI SDK transport, mandatory declaration report, frozen launcher or timed model gateway applies.
 
 Preserve existing active capsule contracts, state/history, branches, evidence, pending decisions,
-C/R/T recovery and consumed allowances. #246 and #256 remain paused. Do not silently convert or
-resume them. Historical attached RI readers are recovery tools, not current dispatch entrypoints.
+C/R/T recovery and consumed allowances. The original #246 and #256 capsule attempts remain stopped
+under their original authority; this does not set their current issue status. The local map
+separates these attempts from completed fresh #246 work and points to live issue status. Preserve
+historical readers as recovery tools; they are not current dispatch entrypoints.
 
-For this owner-authorized bounded replacement, use meaningful focused tooling/document checks
-and independent review; do not run the retired adoption lifecycle or unrelated broad/native
-suites merely because old RI instructions required them. Normal project profile floors,
-secret/permission controls and protected Git acceptance still apply. Automatic dependency updates
-are not required for source/document maintenance that leaves dependency inputs unchanged.
+For bounded work, use the task's focused tooling/document checks and independent review, and meet
+its selected profile floors. Do not run the retired adoption lifecycle or unrelated broad/native
+suites merely because historical RI instructions required them. Secret/permission controls and
+protected Git acceptance still apply. Source/document maintenance with unchanged dependency inputs
+uses the standalone session report above; dependency work follows the authorized update route in
+the development guide.
 
 ## Documentation
 

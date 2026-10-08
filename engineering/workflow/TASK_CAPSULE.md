@@ -20,5 +20,8 @@ blocking/state history, immutable evidence and C/R/T identities stay intact. Ori
 and strict planning contracts remain recoverable from Git baseline
 `8a358139194d42004fbff289a51a1601b7715788` and historical readers/validator.
 Use [STATES](STATES.md) for their legal recovery transitions and [AUTHORITY](AUTHORITY.md)
-for separate guarded terminal acceptance. #246/#256 remain paused; replacing the RI route
-neither changes their attempts nor resumes them. Never synthesize missing historical proof.
+for separate guarded terminal acceptance. The original #246/#256 capsule attempts remain
+stopped under their original authority; that historical state neither determines live issue
+status nor changes their attempts. The completed fresh #246 attempt is distinct; see the
+[local map](../../docs/local_project_map.md). Never synthesize missing historical proof or reset
+an earlier stop.

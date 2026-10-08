@@ -32,6 +32,9 @@ may be selected where the host requires one; there is no inherited 300-second RI
 A corrected launcher must be rehearsed in its actual environment when the changed interface
 requires it; ordinary unrelated native reruns are not RI requirements.
 
-Historical paused capsule execution/checkpoint contracts and receipts remain recoverable
-from Git baseline `8a358139194d42004fbff289a51a1601b7715788` and retained private evidence.
-They are neither a current dispatch route nor grants to resume #246/#256.
+Historical capsule execution/checkpoint contracts and receipts remain recoverable from Git
+baseline `8a358139194d42004fbff289a51a1601b7715788` and retained private evidence. The original
+#246/#256 attempts remain stopped under their original authority; this does not establish current
+issue status or grant resumption. The completed fresh #246 attempt is separate; see the
+[local map](../../docs/local_project_map.md). These historical contracts are not a current dispatch
+route.

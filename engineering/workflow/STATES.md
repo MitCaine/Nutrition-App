@@ -2,7 +2,9 @@
 
 > **Preserved capsule recovery contract.** This state machine applies to existing TOML capsules.
 > Current standard tasks use [local project map](../../docs/local_project_map.md) and bounded Markdown records.
-> #246/#256 remain paused; no historical state or allowance is reset.
+> The original #246/#256 capsule attempts remain stopped under their original authority. This
+> historical attempt state does not set live issue status; the completed fresh #246 attempt is
+> distinct. Preserve all historical states and allowances.
 
 | State | Meaning | Owner |
 | --- | --- | --- |

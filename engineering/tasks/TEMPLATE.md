@@ -2,7 +2,7 @@
 
 Use the [shared six-heading format](../workflow/shared/start-an-issue.md#capsule-format)
 with the [local map](../../docs/local_project_map.md). Store new records under
-`engineering/tasks/`; preserve historical formats and paused capsules unchanged.
+`engineering/tasks/`; preserve historical formats and stopped attempts unchanged.
 
 ## Objective
 
@@ -59,19 +59,24 @@ through the next level-two heading or end of file, plus the needed map sections,
 standards, exact source/diff and real evidence. Give an initial builder the original objective/base
 and requirements without a future capsule; implementors and reviewers receive the accepted capsule.
 Return changed paths, tested source/commands/environment,
-results/skips, unresolved findings and next permitted action. Only the controller dispatches;
-workers do not recruit. Use native event-based blocking completion unless the actual idle
-wake-up route is verified; queue is conditional on a supported observer and verified delivery.
+results/skips, unresolved findings and next permitted action. The Work controller directly
+dispatches the capsule builder and distinct independent reviewer. The owner-designated Codex
+dispatcher authenticates the accepted implementation handoff and launches one implementor;
+workers do not recruit. Use supported blocking completion while an assignment is active unless
+its exact idle-wake route is verified. A terminal result already delivered can be consumed
+immediately without idle-wake proof. Queue is conditional on a supported observer and verified
+delivery.
 
-Finalize this tracked preparation snapshot BEFORE final candidate review and label it
-historical. Point current operational status to the live issue and existing authenticated
-external controller checkpoint (record its portable selected identity). Subsequent
-qualification, integration, issue closure and safe branch cleanup belong in those existing
-operational records, without another candidate solely for completion evidence. A later real
-tracked-document correction needs affected checks/review and authorized publication.
+Freeze this tracked preparation/check ledger before candidate C is frozen for exact-candidate
+qualification and review. Label the snapshot historical and point current status to the live
+issue and existing authenticated external controller checkpoint (record its portable selected
+identity). After C is frozen, keep every later attempt, failure, rerun, qualification, review,
+integration, issue closure and cleanup outcome in those existing operational records. Do not
+create another candidate solely for completion evidence. A later real tracked-document correction
+needs affected checks/review and authorized publication.
 
-Preserve append-only preparation decisions, corrections, stops and failed attempts here;
-never reset paused authority/allowances. Preserve later operational history externally.
+Preserve append-only preparation decisions, corrections, stops and failed attempts here; never
+reset recorded authority or allowances. Preserve later operational history externally.
 Verify all original outcomes and installed obligations before authorized closure; verify
 actual closure and applicable local/remote merged-branch cleanup. Report partial closeout
 honestly. Reserved actions retain their existing owner permission requirements.

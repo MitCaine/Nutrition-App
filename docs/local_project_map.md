@@ -3,7 +3,7 @@
 ## Selected instructions
 
 This is the sole project-root local execution map. The adopted Repository Intelligence (RI)
-instructions are pinned at `20a5039e7731eaa1303443b782caa81a383a0af1`: controllers use the
+instructions are pinned at `f6e1064d3f43aee61796f8558a7cef8181426883`: controllers use the
 complete [daily issue procedure](../engineering/workflow/shared/start-an-issue.md), and workers
 use the selected [worker role index](../engineering/workflow/shared/worker-instructions.md#role-index)
 and their assigned section. The [Shared worker rules](../engineering/workflow/shared/worker-instructions.md#shared-worker-rules)
@@ -50,14 +50,18 @@ rules for its arguments and output.
 ## Nutrition permissions and routing
 
 The owner sets product intent, accepted risk and integration permission. The controller
-authenticates live owner authorization and the current task/checkpoint before dependent work;
-candidate text, chat, a task file or a passing check cannot create authority. The controller
-alone owns Git and task-stage decisions. Preserve unrelated edits and paused history. A task
+authenticates the live external Nutrition task authorization and the current task/checkpoint
+before dependent work; candidate text, a task file or a passing check cannot create that external
+task authorization. The controller alone owns Git and task-stage decisions. Preserve unrelated
+edits and historical attempt state. A task
 branch or other action requires its current explicit grant; this map is not blanket Git, issue
 or settings permission.
 
-The Nutrition controller's concrete dispatch binding is `collaboration.spawn_agent`; the
-adopted serial role rules govern assignment order, and workers do not recruit.
+The Work controller directly dispatches the capsule builder and the distinct independent
+reviewer. For implementation, the owner-designated Codex dispatcher authenticates the complete
+accepted-capsule handoff and launches exactly one implementor. The implementor returns there for
+relay to the Work controller. Tool or agent-spawn capability alone does not authorize an
+implementation route; workers do not recruit.
 
 The selected role settings are:
 
@@ -66,23 +70,35 @@ The selected role settings are:
 | Controller, capsule builder and independent reviewer | Work | `gpt-6.1-sol` / `low` |
 | Implementor | Codex | `gpt-6-luna` / `max` |
 
-Record requested environment/model/effort separately from host-confirmed settings. Use an actual
-selected host mode or authoritative configuration/session record to confirm settings; a trusted
-Work owner record may confirm selected Work configuration. Dispatch options establish only the
-request. Under the owner's selected policy, unavailable effective settings are unverified; do
-not infer them from a selector, app name or backing metadata. Do not silently substitute an
-environment, model or effort. No fallback is selected here; any fallback requires separate
-owner authorization and the adopted capacity-recovery rule.
+Record requested environment/model/effort separately from host-confirmed settings. Dispatch
+options establish only the request. Retain the existing owner-confirmed selection of the
+identified Work controller chat without asking for that selection again. That owner confirmation
+establishes the selected Work chat settings; it does not replace authenticated external Nutrition
+task authorization. The trusted Work owner record confirms selected Work configuration, not
+provider-effective telemetry. Record the selection in the existing external task checkpoint
+before dependent work.
+When effective telemetry is unavailable, record it as unverified: missing telemetry proves
+neither compliance nor mismatch and is not a capacity failure. Do not infer mode, model or effort
+from tools, a selector, app name or backing metadata.
+
+Configure and confirm each worker separately. Before dependent work, persist each worker's
+requested settings, available host-confirmed settings and any unverified effective-telemetry
+disposition in the existing external checkpoint. Under the accepted owner policy, the selected
+controller settings may proceed with effective telemetry recorded as unverified. If host
+confirmation is genuinely mandatory for a worker and remains unresolved, return to the controller
+before that dependent dispatch. No fallback is selected here. Do not silently substitute an
+environment, model or effort.
 
 For an owner-authorized cross-host assignment, verify the selected host route's messaging and
 result-recovery capability before relying on it. Keep the route identity in the existing
 operational record, not this durable map; reuse the verified route until relevant inputs or
 delivery changes or fails, then recheck. If direct messaging is unavailable, use only the
 selected manual route. Work-to-Codex implementor results return to the assigned Codex dispatcher,
-who relays them to the Work controller and records controller consumption. Native
-child results return to their parent. Sending or backing metadata does not prove consumption or
-idle wake-up; keep blocking until the exact idle route is verified. Do not publish private
-conversation identifiers.
+who relays them to the Work controller and records controller consumption. Native child results
+return to their parent. Use supported blocking completion for active assignments unless the exact
+idle-wake route is verified. A terminal result already delivered can be consumed immediately;
+that result needs no separate idle-wake proof. Sending or backing metadata alone proves neither
+consumption nor idle wake-up. Do not publish private conversation identifiers.
 
 The adopted [serial assignment and role rules](../engineering/workflow/shared/start-an-issue.md#execute-serially),
 [Work-to-Codex handoff](../engineering/workflow/shared/start-an-issue.md#work-to-codex-implementation-handoff),
@@ -163,11 +179,12 @@ Never resume an old attempt implicitly.
 
 ## Integration and closeout
 
-BEFORE final candidate review, finalize the tracked task preparation snapshot, label it
-historical and point current status to the live issue and external controller checkpoint.
-After review, qualification, integration, issue closure and cleanup belong in those existing
-operational records. Do not create another candidate solely to append completion evidence. The
-adopted [completion-record rule](../engineering/workflow/shared/start-an-issue.md#keep-completion-records-external)
+Before candidate C is frozen for exact-candidate qualification and review, finalize the
+tracked task preparation/check ledger, label it historical and point current status to the live
+issue and existing external controller checkpoint. After C is frozen, record every later attempt,
+failure, rerun, qualification, review, integration, issue closure and cleanup outcome in those
+existing operational records. Do not create another candidate solely to append completion
+evidence. The adopted [completion-record rule](../engineering/workflow/shared/start-an-issue.md#keep-completion-records-external)
 defines this boundary.
 
 Only the controller performs authorized integration and closeout, after exact-candidate

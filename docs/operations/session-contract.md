@@ -14,21 +14,20 @@ observed recovery cases; its old SHAs are evidence, not reusable authority.
 
 ## Repository session contract
 
-At the beginning of each session in a VS Code or Codex desktop integrated zsh
-terminal, source the single startup command from the checkout root:
+For source or documentation maintenance that leaves dependency inputs unchanged,
+run the standalone read-only session report from the checkout root:
 
-```zsh
-source ./scripts/start-work.zsh
+```bash
+./scripts/session-start.sh
 ```
 
-It selects the repository-declared Node and Python lines, checks and applies
-compatible dependency updates, and always runs `session-start.sh` afterward,
-even if an earlier update fails. Independent update areas continue after a
-failure. Review any partial changes and nonzero status before implementation;
-successful updates still require normal task qualification. When zsh or automatic
-updates are unavailable, use `./scripts/session-start.sh` directly and follow the
-[development guide](../project/development-guide.md#configuration-and-startup)
-for dependency updates.
+For a task authorized to change dependencies, source `./scripts/start-work.zsh` in
+the integrated zsh terminal and follow the
+[development guide](../project/development-guide.md#configuration-and-startup).
+That route selects the repository toolchain, applies compatible dependency updates,
+and always runs `session-start.sh` afterward, even if an update fails. Independent
+update areas continue after a failure. Review partial changes and the exact nonzero
+status before implementation; successful updates still require normal task qualification.
 
 Before claiming completion, run:
 

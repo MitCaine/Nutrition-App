@@ -10,12 +10,9 @@ and your assigned role section in full:
 - [Independent reviewer](#independent-reviewer)
 - [Codex dispatcher](#codex-dispatcher)
 
-Then read original requirements, applicable project instructions and the capsule
-required by your assigned phase, as linked in the handoff. An initial capsule
-builder needs the objective/base and original inputs, not an existing capsule.
-The project map points here; it does not
-reproduce these instructions. Controller intake and end-to-end decisions remain
-in [Start an issue](start-an-issue.md).
+Read only the task inputs assigned to your role below. The project map points
+here rather than reproducing these instructions. Controller intake and end-to-end
+decisions remain in [Start an issue](start-an-issue.md).
 
 These links navigate one document, not separate instruction copies. To limit
 context, find the exact unique level-two heading and read through to the next
@@ -25,12 +22,14 @@ headings, not line-number pointers.
 
 ## Shared worker rules
 
-Read the complete Shared worker rules, your assigned role section, original
-required specifications, applicable project instructions/standards and any capsule
-required by the assigned phase before acting. Initial capsule creation does not
-require an existing capsule. Recover truncated reads. Authenticate the
-assigned source, phase, selected instruction resources and authority; missing or
-conflicting required inputs go to the controller, never guessed replacements.
+Read the complete Shared worker rules, assigned role section and that role's
+supplied inputs before acting. Original issue/decision reading belongs to the
+controller, capsule builder and independent reviewer, not the implementor or
+dispatcher. Initial capsule creation does not require an existing capsule.
+Handoffs identify authorized read scope separately from edit scope; neither
+implies the other. Recover truncated reads and authenticate assigned source,
+phase, instruction resources and authority. Missing or conflicting required
+inputs go to the controller, never guessed replacements.
 
 Stay within the assignment. Reading an instruction grants no additional authority.
 Only the controller owns recruitment and workflow-stage decisions; any delegated
@@ -66,7 +65,9 @@ intake, select a workflow or recruit additional roles.
 
 Write one decision-complete task using the [shared capsule format](start-an-issue.md#capsule-format).
 Inspect relevant callers, tests and documentation to identify bounded edit paths,
-requirements and viable proof routes. Map each acceptance outcome to a concrete
+requirements and viable proof routes. Make the accepted capsule self-contained for
+implementation, carrying required decisions and behavior rather than requiring
+the implementor to retrieve issue or decision history. Map each acceptance outcome to a concrete
 check or inspectable evidence; include literal commands and their required environment.
 Require affected stale docs/examples/links to be corrected, or explain why unaffected.
 Identify unresolved product decisions and prerequisites without inventing parameters.
@@ -79,9 +80,13 @@ turn an advisory scope opinion into independent candidate acceptance.
 
 ## Implementor
 
-Read the [Shared worker rules](#shared-worker-rules), complete accepted capsule,
-original required specifications/decisions, relevant source and applicable standards.
-Use the supplied commands, environment, evidence locations and authority limits.
+Implement the accepted capsule using only supplied implementation inputs,
+authorized source-reading scope and applicable implementation standards. Read the
+[Shared worker rules](#shared-worker-rules) and complete accepted capsule. Do not
+independently retrieve the original issue or linked decision history. If a
+requirement is missing, contradictory or insufficient, report the gap to the
+controller before dependent work; do not reconstruct requirements yourself.
+Use supplied commands, environment, evidence locations and authority limits.
 The controller has already selected the workflow and project route; do not repeat
 its issue-start orientation or dispatch other roles.
 For a Work-to-Codex handoff, return your terminal result to the assigned Codex
@@ -148,10 +153,14 @@ Do not repeat issue-start orientation or independently select newer instructions
 
 Read the complete controller handoff before acting. It names the project,
 controller/return destination, task and attempt, accepted published capsule,
-branch and exact source, selected implementor/shared instructions, original
-requirement pointers, permitted paths/checks, evidence locations and Git ownership.
-Authenticate those inputs and the current assignment; report missing or conflicting
-inputs to Work. A handoff summary does not replace the implementor's original inputs.
+branch and exact source, selected implementor/shared instructions, authorized
+read/edit scopes, checks, evidence locations and Git ownership. Authenticate the
+handoff, capsule/source identities, dispatcher instructions and launch configuration;
+report missing or conflicting dispatch inputs to Work. Relay the supplied
+implementation inputs unchanged. Do not retrieve original issues/decision history,
+inspect product source to reassess requirements or repeat planning. Requirement
+pointers in a capsule are provenance for the controller/reviewer, not dispatcher
+or implementor reading authority.
 
 Use the owner-authorized messaging route in both directions. Its small delivery
 check must establish actual consumption and result recovery; sending alone does

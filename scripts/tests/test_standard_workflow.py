@@ -38,11 +38,12 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     import hashlib
     shared = ROOT / "engineering/workflow/shared"
     identities = {
-        "start-an-issue.md": (25291, "15c71e4b64a328f40e243285e4022cdc370907552ab29fd5d305d2ef4e2f29f8"),
-        "worker-instructions.md": (12325, "7260bf6b463ce33871ff85d9547bded4b3caf3e2b1f7658240a04e713de8cd65"),
-        "capsule-controller-workflow.md": (14254, "4d11d1433756cc333ee966444276555cf733ae67bd8d51af07739bc11e0f8e13"),
+        "start-an-issue.md": (25728, "1e6d4cbe7b92e48ee354bb9c7b9e11a87ccb2643b3e406c51c9c80027e98a473"),
+        "worker-instructions.md": (13008, "c1b0d0f6b2945ff9409e4893af3e2bdcb8c1cd4b299a17f9cb330d42448e349a"),
+        "capsule-controller-workflow.md": (14334, "f24d09a935a4661619b94ec2048d4ad1b6e386101ea32db9ef708717a3b6d148"),
     }
     provenance = (shared / "SOURCE.md").read_text()
+    assert "f6e1064d3f43aee61796f8558a7cef8181426883" in provenance
     assert "20a5039e7731eaa1303443b782caa81a383a0af1" in provenance
     assert "6e4a1622a69bc3f1bd5d3dc85ec29621cd8e3af0" not in provenance
     assert "cdf64f5d27ef43e7e58e7b11f371a81d15687bdd" not in provenance
@@ -59,8 +60,8 @@ def test_complete_shared_worker_resources_and_separate_compatible_runtime_pin():
     queue_identities = (
         ("a6c43878adf55b2b148daaa47e4e61bfbd7f66cd", 8485,
          "73cf2fb82b03e374e0b8f7dfe26ffb057094eaddc03a0954e21fa2427fabe1aa"),
-        ("74f082ff91bbe32dd7be0b1ac1c0d36f0143a54f", 1523,
-         "44d314b860eb51a8c7a5df8baf43570403af6a697ba0b3f9d6d2070997e6dce0"),
+        ("77fb46c51ff48596634b86765b3df7a4e59761aa", 1545,
+         "e99801dc7a2ae26410f3b07572664f283d02add71a5d54809c4a839364412677"),
         ("acbaf960cff25c71fd1bdb1488b8e70dc34062b2", 11872,
          "b7912b3d614ad9a69776c62c1557b0896aa7878f4583f6cddebc2777997fc5de"),
     )
@@ -91,7 +92,10 @@ def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intak
     implementor = worker.split("## Implementor\n", 1)[1].split("\n## ", 1)[0]
     reviewer = worker.split("## Independent reviewer\n", 1)[1].split("\n## ", 1)[0]
     dispatcher = worker.split("## Codex dispatcher\n", 1)[1]
-    assert "objective/base and original inputs, not an existing capsule" in worker
+    shared_rules = worker.split("## Shared worker rules\n", 1)[1].split("\n## ", 1)[0]
+    shared_rules_normalized = " ".join(shared_rules.split())
+    assert ("Original issue/decision reading belongs to the controller, capsule builder and "
+            "independent reviewer, not the implementor or dispatcher.") in shared_rules_normalized
     assert "complete accepted capsule" in implementor
     assert "complete task and original" in reviewer
     assert "both directions" in dispatcher
@@ -131,11 +135,21 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
     assert "implementor | codex" in normalized_map.lower()
     assert "`gpt-6.1-sol` / `low`" in normalized_map
     assert "`gpt-6-luna` / `max`" in normalized_map
-    assert "requested environment/model/effort separately from host-confirmed settings" in normalized_map
-    assert "unavailable effective settings are unverified" in normalized_map
+    normalized_map_lower = normalized_map.lower()
+    assert "requested environment/model/effort separately from host-confirmed settings" in normalized_map_lower
+    assert "existing owner-confirmed selection of the identified work controller chat without asking" in normalized_map_lower
+    assert "missing telemetry proves neither compliance nor mismatch and is not a capacity failure" in normalized_map_lower
+    assert "configure and confirm each worker separately" in normalized_map_lower
+    assert "genuinely mandatory for a worker" in normalized_map_lower
+    assert "persist each worker's requested settings" in normalized_map_lower
+    assert "existing external checkpoint" in normalized_map_lower
     assert "relays them to the Work controller and records controller consumption" in normalized_map
     assert "Native child results return to their parent" in normalized_map
-    assert "Sending or backing metadata does not prove consumption or idle wake-up" in normalized_map
+    assert "a terminal result already delivered can be consumed immediately" in normalized_map_lower
+    assert "sending or backing metadata alone proves neither consumption nor idle wake-up" in normalized_map_lower
+    assert "Work controller directly dispatches the capsule builder" in normalized_map
+    assert "owner-designated codex dispatcher authenticates the complete accepted-capsule handoff" in normalized_map_lower
+    assert "collaboration.spawn_agent" not in normalized_map
     assert "worker-instructions.md#role-index" in normalized_map
     assert "worker-instructions.md#codex-dispatcher" in normalized_map
     assert "start-an-issue.md#execute-serially" in normalized_map
@@ -414,7 +428,7 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
     from urllib.parse import unquote
     text = (ROOT / "engineering/workflow/shared/skill-templates/capsule-queue/SKILL.md").read_text()
     prefix = ("https://github.com/MitCaine/repository-intelligence/blob/"
-              "20a5039e7731eaa1303443b782caa81a383a0af1/docs/skill-templates/capsule-queue/")
+              "f6e1064d3f43aee61796f8558a7cef8181426883/docs/skill-templates/capsule-queue/")
     for resource in ("SKILL.md", "references/project-procedure.md#waiting-and-recovery",
                      "scripts/run_and_queue.py"):
         assert prefix + resource in unquote(text)
@@ -474,13 +488,17 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
         "`--runtime`",
         "nested macOS network-denied sandbox",
         "do not substitute another historical or upstream revision",
-        "unavailable effective settings are unverified",
-        "trusted Work owner record may confirm selected Work configuration",
+        "When effective telemetry is unavailable, record it as unverified",
         "Dispatch options establish only the request",
+        "trusted Work owner record confirms selected Work configuration, not provider-effective telemetry",
+        "candidate text, a task file or a passing check cannot create that external task authorization",
+        "owner confirmation establishes the selected Work chat settings",
+        "it does not replace authenticated external Nutrition task authorization",
         "No fallback is selected here",
         "route identity in the existing operational record",
         "records controller consumption",
         "idle wake-up",
+        "a terminal result already delivered can be consumed immediately",
         "Main qualification",
         "App `4708441`",
         "rename-aware changed-path inventory",
@@ -493,7 +511,7 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
         "Current status belongs to the live",
         "verified merged local/remote branches",
     ):
-        assert nutrition_control in normalized
+        assert nutrition_control.lower() in normalized.lower()
     for rule in ("exact-candidate-SHA", "issues/246", "issues/256",
                  "not blanket Git, issue or settings permission"):
         assert rule in normalized
@@ -511,10 +529,13 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     assert "gpt-6-luna` / `max" in normalized
     assert "NUTRITION_RI_RUNTIME" not in normalized
     for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
-        text = (ROOT / name).read_text()
-        for rule in ("BEFORE", "historical", "live issue", "external controller checkpoint",
+        text = " ".join((ROOT / name).read_text().split())
+        lower = text.lower()
+        for rule in ("historical", "live issue", "external controller checkpoint",
                      "another candidate solely", "operational records"):
-            assert rule in text
+            assert rule in lower
+        assert "before candidate c is frozen" in lower, name
+        assert "after c is frozen" in lower, name
     task_text = (ROOT / "engineering/tasks/GH-261.md").read_text()
     assert "Historical preparation snapshot" in task_text
     assert "controller-state/issue-261.json" in task_text
@@ -522,9 +543,54 @@ def test_controller_permissions_waiting_and_external_closeout_contract():
     assert "../evidence/" not in task_text
 
 
-def test_project_map_records_actual_nutrition_dispatch_tool():
-    text = (ROOT / "docs/local_project_map.md").read_text()
-    routing = text.split("## Nutrition permissions and routing\n", 1)[1].split("\n## ", 1)[0]
-    assert "`collaboration.spawn_agent`" in routing, (
-        "serial-worker prose does not identify the concrete controller dispatch tool"
+def test_historical_issue_wording_tracks_attempts_not_live_issue_state():
+    paths = (
+        "AGENTS.md",
+        "docs/local_project_map.md",
+        "engineering/README.md",
+        "engineering/workflow/AUTHORITY.md",
+        "engineering/workflow/STATES.md",
+        "engineering/workflow/TASK_CAPSULE.md",
+        "engineering/workflow/EXECUTION.md",
     )
+    for name in paths:
+        text = " ".join((ROOT / name).read_text().split()).lower()
+        assert "stopped under their original authority" in text, name
+        assert "#246/#256 remain paused" not in text, name
+        assert "#246/#256 stay paused" not in text, name
+    map_text = " ".join((ROOT / "docs/local_project_map.md").read_text().split())
+    assert "The completed fresh #246 attempt is distinct" in map_text
+    assert "Current status belongs to the live" in map_text
+
+
+def test_task_local_startup_and_backend_baseline_routes():
+    agents = (ROOT / "AGENTS.md").read_text()
+    session = (ROOT / "docs/operations/session-contract.md").read_text()
+    engineering = (ROOT / "engineering/README.md").read_text()
+    for name, text in (("AGENTS.md", agents),
+                       ("session-contract.md", session),
+                       ("engineering/README.md", engineering)):
+        normalized = " ".join(text.split()).lower()
+        assert "session-start.sh" in normalized, name
+        assert "start-work.zsh" in normalized, name
+        assert "authorized" in normalized and "dependency" in normalized, name
+    baseline = agents.split("PostgreSQL runtime contract selection:", 1)[0]
+    assert "./scripts/run-backend-baseline.sh" in baseline
+    assert "python -m pytest -q --strict-markers" not in baseline
+    assert "docs/operations/testing.md#baseline-validation" in baseline
+    guide = (ROOT / "docs/operations/testing.md").read_text()
+    runner = (ROOT / "scripts/run-backend-baseline.sh").read_text()
+    assert "../../scripts/run-backend-baseline.sh" in guide
+    assert "--print-marker-expression" in guide and "--print-marker-expression" in runner
+    assert "NUTRITION_BACKEND_PYTHON" in runner
+
+
+def test_project_map_records_role_correct_nutrition_dispatch():
+    text = (ROOT / "docs/local_project_map.md").read_text()
+    routing = " ".join(text.split("## Nutrition permissions and routing\n", 1)[1].split("\n## ", 1)[0].split())
+    routing_lower = routing.lower()
+    assert "work controller directly dispatches the capsule builder" in routing_lower
+    assert "distinct independent reviewer" in routing_lower
+    assert "owner-designated codex dispatcher authenticates the complete accepted-capsule handoff" in routing_lower
+    assert "launches exactly one implementor" in routing_lower
+    assert "collaboration.spawn_agent" not in routing_lower

@@ -5,7 +5,8 @@ selected execution instructions, local map, complete issue and required linked
 specifications/decisions before task decisions, edits or dispatch. Resolve
 contradictions and identify missing inputs before dependent work. Summaries do
 not substitute for unread requirements; this does not require a whole-repository
-read. Pass original required sources to each role, not only a controller summary.
+read. Supply role-specific inputs under the [worker reading boundaries](worker-instructions.md#shared-worker-rules),
+not the same original sources to every role.
 
 This is the default RI-assisted workflow for projects adopting or explicitly
 replacing an RI workflow. RI supplies source navigation/comparison; it does not
