@@ -108,3 +108,35 @@ def test_parse_endpoint_rejects_non_object_body(client: TestClient) -> None:
     assert_structured_bad_request(
         client.post("/api/v1/ocr/nutrition-label/parse", json=["not", "an", "object"])
     )
+
+def test_parse_endpoint_preserves_comparator_conflicts_and_source_observation_ids(client: TestClient) -> None:
+    payload = valid_payload()
+    payload["full_text"] = (
+        "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\n"
+        "Sodium 1 mg\nSodium <1 mg"
+    )
+    payload["observations"] = [
+        {"id": "obs-header", "text": "Nutrition Facts", "confidence": 0.99},
+        {"id": "obs-serving", "text": "Serving size 1 cup (30g)", "confidence": 0.99},
+        {"id": "obs-calories", "text": "Calories 120", "confidence": 0.99},
+        {"id": "obs-sodium-exact", "text": "Sodium 1 mg", "confidence": 0.99},
+        {"id": "obs-sodium-bounded", "text": "Sodium <1 mg", "confidence": 0.99},
+    ]
+
+    response = client.post("/api/v1/ocr/nutrition-label/parse", json=payload)
+
+    assert response.status_code == 200, response.text
+    nutrients = response.json()["nutrients"]
+    assert [
+        (item["amount"]["value"], item["amount"]["comparison"], item["status"])
+        for item in nutrients
+    ] == [("1", None, "ambiguous"), ("1", "less_than", "ambiguous")]
+    assert [item["source_observation_ids"] for item in nutrients] == [
+        ["obs-sodium-exact"],
+        ["obs-sodium-bounded"],
+    ]
+    conflict = next(
+        warning for warning in response.json()["warnings"]
+        if warning["code"] == "conflicting_nutrient_values"
+    )
+    assert conflict["source_observation_ids"] == ["obs-sodium-exact", "obs-sodium-bounded"]

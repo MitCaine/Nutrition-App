@@ -50,11 +50,21 @@ function canonicalReviewFields(parsed: ParsedNutritionLabel): ConfirmationField[
     const first = candidates[0]!;
     const label = NUTRIENT_LABELS[nutrientId] ?? first.original_name;
     if (candidates.length === 1) {
-      const unit = first.unit.status === "parsed" ? stringValue(first.unit) || null : null;
+      const unitValue = stringValue(first.unit);
+      const unit = first.unit.status === "parsed" && unitValue.trim() ? unitValue : null;
       const reviewField = confirmationField(`nutrient.${nutrientId}`, nutrientId, label, first.amount, unit);
+      const completeCandidate = first.status === "parsed"
+        && first.confidence >= 0.8
+        && first.amount.status === "parsed"
+        && Boolean(stringValue(first.amount).trim())
+        && first.amount.confidence >= 0.8
+        && !first.amount.comparison
+        && first.unit.status === "parsed"
+        && first.unit.confidence >= 0.8
+        && Boolean(unit);
       return {
         ...reviewField,
-        decision: unit && first.status === "parsed" ? reviewField.decision : "unresolved",
+        decision: completeCandidate ? reviewField.decision : "unresolved",
         parseStatus: first.status,
         confidence: first.confidence,
         sourceObservationIds: [...new Set([

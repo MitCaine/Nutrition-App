@@ -42,6 +42,8 @@ jest.mock("../src/shared/accessibility/focus", () => {
 });
 
 import type { NutritionConfirmationDraft } from "../src/features/ocr/api/types";
+import { draftFromParsedLabel } from "../src/features/ocr/confirmation/confirmationModel";
+import { parseLocalNutritionLabel } from "../src/runtime/local/localOcrParser";
 import { NutritionConfirmationScreen } from "../src/features/ocr/screens/NutritionConfirmationScreen";
 import { ApiError } from "../src/shared/api/client";
 import * as focusModule from "../src/shared/accessibility/focus";
@@ -1132,4 +1134,146 @@ test("#108 confirmation keeps Cancel and route title outside the scrolling revie
   await act(async () =>
     renderer.unmount(),
   );
+});
+
+function parsedDraftFromNutrientRows(rows: ReadonlyArray<{ id: string; text: string }>) {
+  const observations = [
+    { id: "parsed-header", text: "Nutrition Facts", confidence: 0.99 },
+    { id: "parsed-serving", text: "Serving size 1 cup (30g)", confidence: 0.99 },
+    { id: "parsed-calories", text: "Calories 120", confidence: 0.99 },
+    ...rows.map((row) => ({ ...row, confidence: 0.99 })),
+  ];
+  const parsed = parseLocalNutritionLabel({
+    full_text: observations.map(({ text }) => text).join("\n"),
+    observations,
+  });
+  return { parsed, draft: draftFromParsedLabel(parsed, "camera") };
+}
+
+test("parser-derived exact high-confidence candidate does not open unnecessary review", async () => {
+  const { parsed, draft: parsedDraft } = parsedDraftFromNutrientRows([
+    { id: "sodium-exact", text: "Sodium 100 mg" },
+  ]);
+  const { renderer } = await render({ ...parsedDraft, name: "Exact Sodium label" });
+
+  expect(parsed.nutrients[0]?.confidence).toBe(0.99);
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  expect(action(renderer.root, "Review 1 item")).toBeUndefined();
+  expect(action(renderer.root, "Create Food")).toBeDefined();
+  await act(async () => renderer.unmount());
+});
+
+test("parser-derived Sodum candidate enters ordinary review and retains its correction trace", async () => {
+  const { parsed, draft: parsedDraft } = parsedDraftFromNutrientRows([
+    { id: "sodium-recovered", text: "Sodum 100 mg" },
+  ]);
+  mockConfirm.mockResolvedValue(foodResponse("food-recovered-sodium"));
+  const { renderer } = await render({ ...parsedDraft, name: "Recovered Sodium label" });
+
+  expect(parsed.nutrients[0]).toMatchObject({
+    nutrient_id: "sodium",
+    confidence: 0.792,
+    amount: { value: "100", confidence: 0.99 },
+    source_observation_ids: ["sodium-recovered"],
+  });
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(directedAmount(renderer.root).props.value).toBe("100");
+  expect(mockConfirm).not.toHaveBeenCalled();
+
+  await act(async () => directedAction(renderer.root, "Use Sodium value").props.onPress());
+  expect(directedReviewVisible(renderer.root)).toBe(false);
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+
+  expect(mockConfirm).toHaveBeenCalledTimes(1);
+  expect(mockConfirm.mock.calls[0][0].field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.sodium",
+    confirmed_value: "100",
+    decision: "accepted",
+    confidence: "0.792",
+    source_text: "Sodum 100 mg",
+    source_observation_ids: ["sodium-recovered"],
+    warning_codes: ["nutrient_name_character_loss_recovered"],
+    resolution: "accepted OCR suggestion after review",
+  }));
+  await act(async () => renderer.unmount());
+});
+
+const comparatorReviewCases: Array<[
+  string,
+  Array<{ id: string; text: string }>,
+  Array<string | null>,
+  string[],
+]> = [
+  [
+    "exact first",
+    [
+      { id: "sodium-exact", text: "Sodium 1 mg" },
+      { id: "sodium-bounded", text: "Sodium <1 mg" },
+    ],
+    [null, "less_than"],
+    ["sodium-exact", "sodium-bounded"],
+  ],
+  [
+    "less-than first",
+    [
+      { id: "sodium-bounded", text: "Sodium <1 mg" },
+      { id: "sodium-exact", text: "Sodium 1 mg" },
+    ],
+    ["less_than", null],
+    ["sodium-bounded", "sodium-exact"],
+  ],
+];
+
+test.each(comparatorReviewCases)("%s exact and bounded candidates use the ordinary directed review", async (
+  _order,
+  rows,
+  expectedComparisons,
+  expectedSourceIds,
+) => {
+  const { parsed, draft: parsedDraft } = parsedDraftFromNutrientRows(rows);
+  mockConfirm.mockResolvedValue(foodResponse("food-comparator-review"));
+  const { renderer } = await render({ ...parsedDraft, name: "Comparator conflict label" });
+
+  expect(parsed.nutrients.map(({ amount }) => amount.comparison)).toEqual(expectedComparisons);
+  expect(parsed.nutrients.map(({ status }) => status)).toEqual(["ambiguous", "ambiguous"]);
+  expect(parsed.warnings).toContainEqual(expect.objectContaining({
+    code: "conflicting_nutrient_values",
+    source_observation_ids: expectedSourceIds,
+  }));
+  expect(parsedDraft.nutrients).toHaveLength(1);
+  expect(parsedDraft.nutrients[0]).toMatchObject({
+    decision: "unresolved",
+    parseStatus: "ambiguous",
+    confidence: 0.495,
+    sourceObservationIds: expectedSourceIds,
+    warningCodes: expect.arrayContaining(["conflicting_nutrient_values"]),
+  });
+  expect(parsedDraft.nutrients[0]?.sourceText).toContain("Sodium 1 mg");
+  expect(parsedDraft.nutrients[0]?.sourceText).toContain("Sodium <1 mg");
+  expect(directedReviewVisible(renderer.root)).toBe(true);
+  expect(action(renderer.root, "Review 1 item")).toBeDefined();
+  expect(directedInput(renderer.root, "Sodium amount").props.value).toBe("");
+  expect(mockConfirm).not.toHaveBeenCalled();
+
+  await act(async () => action(renderer.root, "Review 1 item").props.onPress());
+  expect(mockConfirm).not.toHaveBeenCalled();
+  await act(async () => directedInput(renderer.root, "Sodium amount").props.onChangeText("1.25"));
+  await act(async () => directedAction(renderer.root, "Use Sodium value").props.onPress());
+  expect(action(renderer.root, "Create Food")).toBeDefined();
+  await act(async () => action(renderer.root, "Create Food").props.onPress());
+
+  const sodiumDecision = mockConfirm.mock.calls[0][0].field_decisions.find(
+    (field: { field_key: string }) => field.field_key === "nutrient.sodium",
+  );
+  expect(sodiumDecision).toMatchObject({
+    confirmed_value: "1.25",
+    decision: "edited",
+    source_observation_ids: expectedSourceIds,
+    warning_codes: expect.arrayContaining(["conflicting_nutrient_values"]),
+    resolution: "entered exact value after review",
+  });
+  expect(sodiumDecision.source_text).toContain("Sodium 1 mg");
+  expect(sodiumDecision.source_text).toContain("Sodium <1 mg");
+  await act(async () => renderer.unmount());
 });

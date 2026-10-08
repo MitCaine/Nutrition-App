@@ -874,6 +874,7 @@ function parseNutrients(
       const previousEntry = firstById.get(nutrient.nutrient_id)!;
       const previous = nutrients[previousEntry.index]!;
       const sameValue = previous.amount.value === nutrient.amount.value
+        && previous.amount.comparison === nutrient.amount.comparison
         && previous.unit.value === nutrient.unit.value
         && previous.daily_value_percent?.value === nutrient.daily_value_percent?.value;
       if (sameValue) {

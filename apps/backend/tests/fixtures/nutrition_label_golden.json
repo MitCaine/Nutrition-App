@@ -616,5 +616,444 @@
       ],
       "unparsed": []
     }
+  },
+  {
+    "name": "recovered_sodium_low_row_confidence",
+    "request": {
+      "full_text": "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodum 100 mg",
+      "observations": [
+        {
+          "id": "recovered_sodium_low_row_confidence-header",
+          "text": "Nutrition Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "recovered_sodium_low_row_confidence-serving",
+          "text": "Serving size 1 cup (30g)",
+          "confidence": 0.99
+        },
+        {
+          "id": "recovered_sodium_low_row_confidence-calories",
+          "text": "Calories 120",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-recovered",
+          "text": "Sodum 100 mg",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 cup (30g)",
+        "quantity": "1",
+        "unit": "cup",
+        "grams": "30",
+        "approximate": false
+      },
+      "calories": {
+        "value": "120",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "sodium",
+          "100",
+          "mg",
+          null,
+          "parsed",
+          null
+        ]
+      ],
+      "warnings": [
+        "nutrient_name_character_loss_recovered"
+      ],
+      "unparsed": [],
+      "nutrient_source_ids": [
+        [
+          "sodium-recovered"
+        ]
+      ],
+      "warning_source_ids": [
+        [
+          "sodium-recovered"
+        ]
+      ],
+      "max_nutrient_confidence": 0.792
+    }
+  },
+  {
+    "name": "exact_sodium_high_confidence_control",
+    "request": {
+      "full_text": "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium 100 mg",
+      "observations": [
+        {
+          "id": "exact_sodium_high_confidence_control-header",
+          "text": "Nutrition Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "exact_sodium_high_confidence_control-serving",
+          "text": "Serving size 1 cup (30g)",
+          "confidence": 0.99
+        },
+        {
+          "id": "exact_sodium_high_confidence_control-calories",
+          "text": "Calories 120",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-exact",
+          "text": "Sodium 100 mg",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 cup (30g)",
+        "quantity": "1",
+        "unit": "cup",
+        "grams": "30",
+        "approximate": false
+      },
+      "calories": {
+        "value": "120",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "sodium",
+          "100",
+          "mg",
+          null,
+          "parsed",
+          null
+        ]
+      ],
+      "warnings": [],
+      "unparsed": [],
+      "nutrient_source_ids": [
+        [
+          "sodium-exact"
+        ]
+      ],
+      "warning_source_ids": []
+    }
+  },
+  {
+    "name": "exact_vs_less_than_exact_first",
+    "request": {
+      "full_text": "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium 1 mg\nSodium <1 mg",
+      "observations": [
+        {
+          "id": "exact_vs_less_than_exact_first-header",
+          "text": "Nutrition Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "exact_vs_less_than_exact_first-serving",
+          "text": "Serving size 1 cup (30g)",
+          "confidence": 0.99
+        },
+        {
+          "id": "exact_vs_less_than_exact_first-calories",
+          "text": "Calories 120",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-exact",
+          "text": "Sodium 1 mg",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-bounded",
+          "text": "Sodium <1 mg",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 cup (30g)",
+        "quantity": "1",
+        "unit": "cup",
+        "grams": "30",
+        "approximate": false
+      },
+      "calories": {
+        "value": "120",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "sodium",
+          "1",
+          "mg",
+          null,
+          "ambiguous",
+          null
+        ],
+        [
+          "sodium",
+          "1",
+          "mg",
+          null,
+          "ambiguous",
+          "less_than"
+        ]
+      ],
+      "warnings": [
+        "conflicting_nutrient_values"
+      ],
+      "unparsed": [],
+      "nutrient_source_ids": [
+        [
+          "sodium-exact"
+        ],
+        [
+          "sodium-bounded"
+        ]
+      ],
+      "warning_source_ids": [
+        [
+          "sodium-exact",
+          "sodium-bounded"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "exact_vs_less_than_bounded_first",
+    "request": {
+      "full_text": "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium <1 mg\nSodium 1 mg",
+      "observations": [
+        {
+          "id": "exact_vs_less_than_bounded_first-header",
+          "text": "Nutrition Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "exact_vs_less_than_bounded_first-serving",
+          "text": "Serving size 1 cup (30g)",
+          "confidence": 0.99
+        },
+        {
+          "id": "exact_vs_less_than_bounded_first-calories",
+          "text": "Calories 120",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-bounded",
+          "text": "Sodium <1 mg",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-exact",
+          "text": "Sodium 1 mg",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 cup (30g)",
+        "quantity": "1",
+        "unit": "cup",
+        "grams": "30",
+        "approximate": false
+      },
+      "calories": {
+        "value": "120",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "sodium",
+          "1",
+          "mg",
+          null,
+          "ambiguous",
+          "less_than"
+        ],
+        [
+          "sodium",
+          "1",
+          "mg",
+          null,
+          "ambiguous",
+          null
+        ]
+      ],
+      "warnings": [
+        "conflicting_nutrient_values"
+      ],
+      "unparsed": [],
+      "nutrient_source_ids": [
+        [
+          "sodium-bounded"
+        ],
+        [
+          "sodium-exact"
+        ]
+      ],
+      "warning_source_ids": [
+        [
+          "sodium-bounded",
+          "sodium-exact"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "identical_exact_sodium_duplicate",
+    "request": {
+      "full_text": "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium 1 mg\nSodium 1 mg",
+      "observations": [
+        {
+          "id": "identical_exact_sodium_duplicate-header",
+          "text": "Nutrition Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "identical_exact_sodium_duplicate-serving",
+          "text": "Serving size 1 cup (30g)",
+          "confidence": 0.99
+        },
+        {
+          "id": "identical_exact_sodium_duplicate-calories",
+          "text": "Calories 120",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-exact-first",
+          "text": "Sodium 1 mg",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-exact-duplicate",
+          "text": "Sodium 1 mg",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 cup (30g)",
+        "quantity": "1",
+        "unit": "cup",
+        "grams": "30",
+        "approximate": false
+      },
+      "calories": {
+        "value": "120",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "sodium",
+          "1",
+          "mg",
+          null,
+          "parsed",
+          null
+        ]
+      ],
+      "warnings": [
+        "duplicate_nutrient_row"
+      ],
+      "unparsed": [
+        "Sodium 1 mg"
+      ],
+      "nutrient_source_ids": [
+        [
+          "sodium-exact-first"
+        ]
+      ],
+      "warning_source_ids": [
+        [
+          "sodium-exact-duplicate"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "identical_less_than_sodium_duplicate",
+    "request": {
+      "full_text": "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium <1 mg\nSodium <1 mg",
+      "observations": [
+        {
+          "id": "identical_less_than_sodium_duplicate-header",
+          "text": "Nutrition Facts",
+          "confidence": 0.99
+        },
+        {
+          "id": "identical_less_than_sodium_duplicate-serving",
+          "text": "Serving size 1 cup (30g)",
+          "confidence": 0.99
+        },
+        {
+          "id": "identical_less_than_sodium_duplicate-calories",
+          "text": "Calories 120",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-bounded-first",
+          "text": "Sodium <1 mg",
+          "confidence": 0.99
+        },
+        {
+          "id": "sodium-bounded-duplicate",
+          "text": "Sodium <1 mg",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "expected": {
+      "serving": {
+        "count": null,
+        "display": "1 cup (30g)",
+        "quantity": "1",
+        "unit": "cup",
+        "grams": "30",
+        "approximate": false
+      },
+      "calories": {
+        "value": "120",
+        "status": "parsed"
+      },
+      "nutrients": [
+        [
+          "sodium",
+          "1",
+          "mg",
+          null,
+          "parsed",
+          "less_than"
+        ]
+      ],
+      "warnings": [
+        "duplicate_nutrient_row"
+      ],
+      "unparsed": [
+        "Sodium <1 mg"
+      ],
+      "nutrient_source_ids": [
+        [
+          "sodium-bounded-first"
+        ]
+      ],
+      "warning_source_ids": [
+        [
+          "sodium-bounded-duplicate"
+        ]
+      ]
+    }
   }
 ]

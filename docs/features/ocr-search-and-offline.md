@@ -75,9 +75,12 @@ images to the backend or long-lived local application data.
 The local and backend parsers are parity implementations over normalized OCR input. Observations
 are authoritative when present; `full_text` is fallback-only when observations are absent. Each
 normalizes numbers, maps nutrient labels to the canonical catalog, classifies ambiguous or
-unsupported values, and returns warnings with source observation IDs. The parser and mapping now
-cover the expanded canonical nutrient catalog, including current vitamin/mineral and fatty-acid
-identities. The selected runtime owns confirmation validation, persistence, and idempotent replay.
+unsupported values, and returns warnings with source observation IDs. When multiple rows map to
+one nutrient, duplicate equality includes the amount comparator: identical exact or bounded rows
+retain duplicate diagnostics, while exact and less-than rows with the same number remain separate
+conflicting candidates. The parser and mapping now cover the expanded canonical nutrient catalog,
+including current vitamin/mineral and fatty-acid identities. The selected runtime owns confirmation
+validation, persistence, and idempotent replay.
 
 Parsing does not persist drafts or images. Keeping it pure makes golden label fixtures and parser
 version regressions deterministic. The parser contract is versioned; changes to nutrient matching
@@ -86,7 +89,13 @@ or interpretation require parity/golden-fixture review rather than silent client
 ### Confirmation and provenance
 
 The review screen makes uncertainty visible and lets the user confirm or edit values, serving
-meaning, and recognized nutrient values. Confirmation persists:
+meaning, and recognized nutrient values. A nutrient suggestion is initially accepted only when
+its row identity, amount, and usable unit are parsed and each has confidence of at least 0.8. A
+missing, unusable, ambiguous, or lower-confidence required component stays unresolved. Less-than
+amounts and conflicting comparator facts require review; an unchanged bounded suggestion remains
+unresolved, while an exact replacement or explicit omission records the user's resolution.
+
+Confirmation persists:
 
 - an ordinary Manual Food, nutrients, and serving definitions;
 - parser and trace schema versions;

@@ -20,6 +20,8 @@ type GoldenFixture = Readonly<{
     nutrients: Array<[string | null, string | null, string | null, string | null, string, string | null]>;
     warnings: string[];
     unparsed: string[];
+    nutrient_source_ids?: string[][];
+    warning_source_ids?: string[][];
     max_nutrient_confidence?: number;
   };
 }>;
@@ -52,6 +54,12 @@ describe.each(GOLDEN_FIXTURES)("local nutrition_label_v1 golden fixture: $name",
     ])).toEqual(expected.nutrients);
     expect(result.warnings.map(({ code }) => code)).toEqual(expected.warnings);
     expect(result.unparsed_lines.map(({ text }) => text)).toEqual(expected.unparsed);
+    if (expected.nutrient_source_ids) {
+      expect(result.nutrients.map(({ source_observation_ids }) => source_observation_ids)).toEqual(expected.nutrient_source_ids);
+    }
+    if (expected.warning_source_ids) {
+      expect(result.warnings.map(({ source_observation_ids }) => source_observation_ids)).toEqual(expected.warning_source_ids);
+    }
     if (expected.max_nutrient_confidence !== undefined) {
       expect(Math.max(...result.nutrients.map(({ confidence }) => confidence)))
         .toBeLessThanOrEqual(expected.max_nutrient_confidence);
@@ -496,4 +504,55 @@ test.each([
     kind: "validation",
     mutationOutcome: "not_applicable",
   }));
+});
+
+test("exact and less-than duplicate nutrient facts conflict in either order", () => {
+  const cases: Array<{
+    rows: Array<{ id: string; text: string }>;
+    comparisons: Array<string | null>;
+    sourceIds: string[];
+  }> = [
+    {
+      rows: [
+        { id: "sodium-exact", text: "Sodium 1 mg" },
+        { id: "sodium-bounded", text: "Sodium <1 mg" },
+      ],
+      comparisons: [null, "less_than"],
+      sourceIds: ["sodium-exact", "sodium-bounded"],
+    },
+    {
+      rows: [
+        { id: "sodium-bounded", text: "Sodium <1 mg" },
+        { id: "sodium-exact", text: "Sodium 1 mg" },
+      ],
+      comparisons: ["less_than", null],
+      sourceIds: ["sodium-bounded", "sodium-exact"],
+    },
+  ];
+
+  for (const candidate of cases) {
+    const observations = [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "serving", text: "Serving size 1 cup (30g)", confidence: 0.99 },
+      { id: "calories", text: "Calories 120", confidence: 0.99 },
+      ...candidate.rows.map((row) => ({ ...row, confidence: 0.99 })),
+    ];
+    const result = parseLocalNutritionLabel({
+      full_text: observations.map(({ text }) => text).join("\n"),
+      observations,
+    });
+
+    expect(result.nutrients.map(({ amount, status }) => [amount.comparison, status])).toEqual(
+      candidate.comparisons.map((comparison) => [comparison, "ambiguous"]),
+    );
+    expect(result.nutrients.map(({ source_observation_ids }) => source_observation_ids)).toEqual(
+      candidate.rows.map(({ id }) => [id]),
+    );
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      code: "conflicting_nutrient_values",
+      source_observation_ids: candidate.sourceIds,
+    }));
+    expect(result.warnings.map(({ code }) => code)).not.toContain("duplicate_nutrient_row");
+    expect(result.unparsed_lines).toHaveLength(0);
+  }
 });

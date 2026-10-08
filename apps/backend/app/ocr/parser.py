@@ -642,6 +642,7 @@ def _parse_nutrients(
             previous = nutrients[previous_index]
             same_value = (
                 previous.amount.value == nutrient.amount.value
+                and previous.amount.comparison == nutrient.amount.comparison
                 and previous.unit.value == nutrient.unit.value
                 and (
                     previous.daily_value_percent.value

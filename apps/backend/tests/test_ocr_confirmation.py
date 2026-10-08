@@ -645,3 +645,49 @@ def test_persisted_trace_contains_no_forbidden_raw_material(client, db_session):
     encoded = str(snapshot).lower()
     for forbidden in ("image_uri", "image_path", "image_bytes", "full_text", "file://", "/private/"):
         assert forbidden not in encoded
+
+def test_confirmation_preserves_less_than_comparator_when_explicitly_omitted(client, db_session):
+    payload = confirmation_payload()
+    payload["food"]["nutrients"] = [
+        item for item in payload["food"]["nutrients"]
+        if item["nutrient_id"] != "sodium"
+    ]
+    sodium = next(
+        item for item in payload["field_decisions"]
+        if item["field_key"] == "nutrient.sodium"
+    )
+    sodium.update(
+        suggested_value="1",
+        confirmed_value=None,
+        decision="omitted",
+        parse_status="parsed",
+        comparison="less_than",
+        confidence="0.99",
+        source_text="Sodium <1 mg",
+        source_observation_ids=["sodium-bounded"],
+        resolution="explicitly omitted after review",
+    )
+
+    response = client.post("/api/v1/ocr/nutrition-label/confirm", json=payload)
+
+    assert response.status_code == 201, response.text
+    trace = db_session.get(OcrNutritionConfirmationTrace, UUID(response.json()["trace_id"]))
+    assert trace is not None
+    assert next(
+        item for item in trace.trace_snapshot["field_decisions"]
+        if item["field_key"] == "nutrient.sodium"
+    ) == {
+        "field_key": "nutrient.sodium",
+        "nutrient_id": "sodium",
+        "suggested_value": "1",
+        "confirmed_value": None,
+        "unit": "mg",
+        "decision": "omitted",
+        "parse_status": "parsed",
+        "comparison": "less_than",
+        "confidence": "0.99",
+        "source_text": "Sodium <1 mg",
+        "source_observation_ids": ["sodium-bounded"],
+        "warning_codes": [],
+        "resolution": "explicitly omitted after review",
+    }

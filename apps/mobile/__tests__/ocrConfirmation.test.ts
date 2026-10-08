@@ -11,6 +11,7 @@ import {
 } from "../src/features/ocr/confirmation/confirmationModel";
 import type { ParsedField, ParsedNutritionLabel } from "../src/features/ocr/api/types";
 import { NUTRIENT_CATALOG_BY_ID } from "../src/shared/nutrition/catalog";
+import { parseLocalNutritionLabel } from "../src/runtime/local/localOcrParser";
 
 const nutrientDefinitions = [
   NUTRIENT_CATALOG_BY_ID.get("calories")!,
@@ -656,4 +657,200 @@ test("unchanged less-than suggestion remains unresolved when Use value is reques
   const draft = draftFromParsedLabel(parsed(), "camera");
   const protein = draft.nutrients.find((item) => item.nutrientId === "protein")!;
   expect(updateReview(protein, protein.confirmedValue, "accepted").decision).toBe("unresolved");
+});
+
+function sodiumCandidate(
+  overrides: Partial<ParsedNutritionLabel["nutrients"][number]> = {},
+): ParsedNutritionLabel["nutrients"][number] {
+  return {
+    nutrient_id: "sodium",
+    original_name: "Sodium",
+    amount: field("100"),
+    unit: field("mg"),
+    daily_value_percent: null,
+    source_observation_ids: ["sodium-candidate"],
+    confidence: 0.95,
+    status: "parsed",
+    warning_codes: [],
+    ...overrides,
+  };
+}
+
+function draftForSodiumCandidate(candidate: ParsedNutritionLabel["nutrients"][number]) {
+  const input = parsed();
+  input.nutrients = [candidate];
+  input.warnings = [];
+  return draftFromParsedLabel(input, "camera").nutrients[0]!;
+}
+
+const incompleteSodiumCandidateCases: Array<[
+  string,
+  Partial<ParsedNutritionLabel["nutrients"][number]>,
+]> = [
+  ["row identity confidence below 0.8", { confidence: 0.79 }],
+  ["row identity status is not parsed", { status: "ambiguous" }],
+  ["amount confidence below 0.8", { amount: field("100", "parsed", { confidence: 0.79 }) }],
+  ["amount status is not parsed", { amount: field("100", "ambiguous", { confidence: 0.95 }) }],
+  ["amount value is missing", { amount: field(null, "missing") }],
+  ["amount value is unusable", { amount: field(" ", "parsed", { confidence: 0.95 }) }],
+  ["bounded amount", { amount: field("100", "parsed", { comparison: "less_than" }) }],
+  ["unit confidence below 0.8", { unit: field("mg", "parsed", { confidence: 0.79 }) }],
+  ["unit status is not parsed", { unit: field("mg", "ambiguous", { confidence: 0.95 }) }],
+  ["unit is missing", { unit: field(null, "missing") }],
+  ["unit value is unusable", { unit: field("", "parsed", { confidence: 0.95 }) }],
+];
+
+test.each(incompleteSodiumCandidateCases)("%s keeps an otherwise high-confidence row unresolved", (_case, overrides) => {
+  expect(draftForSodiumCandidate(sodiumCandidate(overrides)).decision).toBe("unresolved");
+});
+
+test("fully parsed exact candidate remains accepted at the 0.8 boundary", () => {
+  const candidate = sodiumCandidate({
+    amount: field("100", "parsed", { confidence: 0.8 }),
+    unit: field("mg", "parsed", { confidence: 0.8 }),
+    confidence: 0.8,
+  });
+
+  expect(draftForSodiumCandidate(candidate)).toMatchObject({
+    confirmedValue: "100",
+    unit: "mg",
+    decision: "accepted",
+    parseStatus: "parsed",
+    confidence: 0.8,
+  });
+});
+
+test("Sodum recovery confidence requires review while exact Sodium remains accepted", () => {
+  const parseSodium = (text: string, id: string) => parseLocalNutritionLabel({
+    full_text: "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\n" + text,
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "serving", text: "Serving size 1 cup (30g)", confidence: 0.99 },
+      { id: "calories", text: "Calories 120", confidence: 0.99 },
+      { id, text, confidence: 0.99 },
+    ],
+  });
+  const recovered = parseSodium("Sodum 100 mg", "sodium-recovered");
+  const exact = parseSodium("Sodium 100 mg", "sodium-exact");
+
+  expect(recovered.nutrients[0]).toMatchObject({
+    nutrient_id: "sodium",
+    confidence: 0.792,
+    status: "parsed",
+    amount: { value: "100", confidence: 0.99 },
+    unit: { value: "mg", confidence: 0.99, status: "parsed" },
+    source_observation_ids: ["sodium-recovered"],
+    warning_codes: expect.arrayContaining(["nutrient_name_character_loss_recovered"]),
+  });
+  expect(draftFromParsedLabel(recovered, "camera").nutrients[0]).toMatchObject({
+    confirmedValue: "100",
+    unit: "mg",
+    decision: "unresolved",
+    confidence: 0.792,
+    sourceObservationIds: ["sodium-recovered"],
+    warningCodes: expect.arrayContaining(["nutrient_name_character_loss_recovered"]),
+  });
+  expect(draftFromParsedLabel(exact, "camera").nutrients[0]).toMatchObject({
+    confirmedValue: "100",
+    decision: "accepted",
+    confidence: 0.99,
+    sourceObservationIds: ["sodium-exact"],
+    warningCodes: [],
+  });
+});
+
+test("parser-derived less-than facts stay unresolved and preserve comparator through explicit omission", () => {
+  const parsedLabel = parseLocalNutritionLabel({
+    full_text: "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium <1 mg",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "serving", text: "Serving size 1 cup (30g)", confidence: 0.99 },
+      { id: "calories", text: "Calories 120", confidence: 0.99 },
+      { id: "sodium-bounded", text: "Sodium <1 mg", confidence: 0.99 },
+    ],
+  });
+  const parsedDraft = draftFromParsedLabel(parsedLabel, "camera");
+  const sodium = parsedDraft.nutrients[0]!;
+
+  expect(sodium).toMatchObject({
+    suggestedValue: "1",
+    comparison: "less_than",
+    decision: "unresolved",
+    sourceObservationIds: ["sodium-bounded"],
+  });
+  expect(updateReview(sodium, sodium.confirmedValue, "accepted").decision).toBe("unresolved");
+
+  const omitted = omitReview(sodium);
+  const payload = confirmationPayload({
+    ...parsedDraft,
+    name: "Bounded label",
+    nutrients: [omitted],
+  }, "00000000-0000-4000-8000-000000000001");
+
+  expect(payload?.field_decisions).toContainEqual(expect.objectContaining({
+    field_key: "nutrient.sodium",
+    suggested_value: "1",
+    confirmed_value: null,
+    decision: "omitted",
+    comparison: "less_than",
+    source_observation_ids: ["sodium-bounded"],
+    resolution: "explicitly omitted after review",
+  }));
+});
+
+test("an identical bounded duplicate remains a single unresolved canonical review item", () => {
+  const parsedLabel = parseLocalNutritionLabel({
+    full_text: "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium <1 mg\nSodium <1 mg",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "serving", text: "Serving size 1 cup (30g)", confidence: 0.99 },
+      { id: "calories", text: "Calories 120", confidence: 0.99 },
+      { id: "sodium-first", text: "Sodium <1 mg", confidence: 0.99 },
+      { id: "sodium-duplicate", text: "Sodium <1 mg", confidence: 0.98 },
+    ],
+  });
+  const parsedDraft = draftFromParsedLabel(parsedLabel, "camera");
+
+  expect(parsedLabel.nutrients).toHaveLength(1);
+  expect(parsedLabel.nutrients[0]?.amount.comparison).toBe("less_than");
+  expect(parsedLabel.warnings).toContainEqual(expect.objectContaining({
+    code: "duplicate_nutrient_row",
+    source_observation_ids: ["sodium-duplicate"],
+  }));
+  expect(parsedDraft.nutrients).toHaveLength(1);
+  expect(parsedDraft.nutrients[0]).toMatchObject({ decision: "unresolved", comparison: "less_than" });
+});
+
+test("an identical exact duplicate remains one accepted parser-derived review candidate", () => {
+  const parsedLabel = parseLocalNutritionLabel({
+    full_text: "Nutrition Facts\nServing size 1 cup (30g)\nCalories 120\nSodium 1 mg\nSodium 1 mg",
+    observations: [
+      { id: "header", text: "Nutrition Facts", confidence: 0.99 },
+      { id: "serving", text: "Serving size 1 cup (30g)", confidence: 0.99 },
+      { id: "calories", text: "Calories 120", confidence: 0.99 },
+      { id: "sodium-first", text: "Sodium 1 mg", confidence: 0.99 },
+      { id: "sodium-duplicate", text: "Sodium 1 mg", confidence: 0.98 },
+    ],
+  });
+  const draft = draftFromParsedLabel(parsedLabel, "camera");
+
+  expect(parsedLabel.nutrients).toHaveLength(1);
+  expect(parsedLabel.nutrients[0]).toMatchObject({
+    amount: { value: "1", comparison: null },
+    status: "parsed",
+    confidence: 0.99,
+    source_observation_ids: ["sodium-first"],
+  });
+  expect(parsedLabel.warnings).toContainEqual(expect.objectContaining({
+    code: "duplicate_nutrient_row",
+    source_observation_ids: ["sodium-duplicate"],
+  }));
+  expect(draft.nutrients).toHaveLength(1);
+  expect(draft.nutrients[0]).toMatchObject({
+    suggestedValue: "1",
+    confirmedValue: "1",
+    decision: "accepted",
+    confidence: 0.99,
+    sourceObservationIds: ["sodium-first"],
+  });
 });

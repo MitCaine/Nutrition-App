@@ -777,3 +777,47 @@ test("every required confirmation failure seam remains registered", () => {
   ];
   expect(new Set(stages).size).toBe(6);
 });
+
+test("explicit less-than omission preserves the comparator in the local confirmation trace", async () => {
+  const value = await database();
+  try {
+    const input = confirmation();
+    input.food.nutrients = input.food.nutrients.filter(({ nutrient_id }) => nutrient_id !== "sodium");
+    input.field_decisions = input.field_decisions.map((field) => field.field_key === "nutrient.sodium"
+      ? {
+        ...field,
+        suggested_value: "1",
+        confirmed_value: null,
+        decision: "omitted",
+        parse_status: "parsed",
+        comparison: "less_than",
+        confidence: "0.99",
+        source_text: "Sodium <1 mg",
+        source_observation_ids: ["sodium-bounded"],
+        warning_codes: [],
+        resolution: "explicitly omitted after review",
+      }
+      : field);
+
+    const created = await createLocalOcrRuntime(value.asExpoDatabase(), OWNER)
+      .confirmNutritionLabel(input);
+    const trace = await value.getFirstAsync<{ trace_snapshot: string }>(
+      "SELECT \"trace_snapshot\" FROM \"ocr_nutrition_confirmation_traces\" WHERE \"food_item_id\" = ?",
+      [created.food.id],
+    );
+
+    expect(JSON.parse(trace!.trace_snapshot).field_decisions).toContainEqual(expect.objectContaining({
+      field_key: "nutrient.sodium",
+      suggested_value: "1",
+      confirmed_value: null,
+      decision: "omitted",
+      parse_status: "parsed",
+      comparison: "less_than",
+      source_text: "Sodium <1 mg",
+      source_observation_ids: ["sodium-bounded"],
+      resolution: "explicitly omitted after review",
+    }));
+  } finally {
+    value.close();
+  }
+});

@@ -51,6 +51,10 @@ def test_nutrition_label_golden_fixture(fixture: dict) -> None:
     assert actual_nutrients == expected["nutrients"]
     assert [warning.code for warning in result.warnings] == expected["warnings"]
     assert [line.text for line in result.unparsed_lines] == expected["unparsed"]
+    if "nutrient_source_ids" in expected:
+        assert [nutrient.source_observation_ids for nutrient in result.nutrients] == expected["nutrient_source_ids"]
+    if "warning_source_ids" in expected:
+        assert [warning.source_observation_ids for warning in result.warnings] == expected["warning_source_ids"]
     if "max_nutrient_confidence" in expected:
         assert max(nutrient.confidence for nutrient in result.nutrients) <= expected["max_nutrient_confidence"]
 

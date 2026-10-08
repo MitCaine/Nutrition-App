@@ -476,3 +476,57 @@ def test_split_serving_gram_observation_preserves_provenance() -> None:
     assert result.serving.serving_unit.value == "cup"
     assert result.serving.gram_weight.value == Decimal("55")
     assert result.serving.gram_weight.source_observation_ids == ["obs-2", "obs-3"]
+
+@pytest.mark.parametrize(
+    ("rows", "comparisons", "source_ids"),
+    [
+        (("Sodium 1 mg", "Sodium <1 mg"), [None, "less_than"], ["obs-4", "obs-5"]),
+        (("Sodium <1 mg", "Sodium 1 mg"), ["less_than", None], ["obs-4", "obs-5"]),
+    ],
+)
+def test_amount_comparator_participates_in_duplicate_equality(rows, comparisons, source_ids) -> None:
+    result = parse_lines(
+        "Nutrition Facts",
+        "Serving size 1 cup (30g)",
+        "Calories 120",
+        *rows,
+    )
+
+    assert [
+        (nutrient.amount.comparison, nutrient.status)
+        for nutrient in result.nutrients
+    ] == [(comparison, "ambiguous") for comparison in comparisons]
+    assert [nutrient.source_observation_ids for nutrient in result.nutrients] == [
+        [source_id] for source_id in source_ids
+    ]
+    conflict = next(
+        warning for warning in result.warnings
+        if warning.code == "conflicting_nutrient_values"
+    )
+    assert conflict.source_observation_ids == source_ids
+    assert all(warning.code != "duplicate_nutrient_row" for warning in result.warnings)
+    assert result.unparsed_lines == []
+
+
+@pytest.mark.parametrize(
+    ("row", "comparison"),
+    [
+        ("Sodium 1 mg", None),
+        ("Sodium <1 mg", "less_than"),
+    ],
+)
+def test_identical_comparator_rows_keep_duplicate_behavior(row, comparison) -> None:
+    result = parse_lines(
+        "Nutrition Facts",
+        "Serving size 1 cup (30g)",
+        "Calories 120",
+        row,
+        row,
+    )
+
+    assert len(result.nutrients) == 1
+    assert result.nutrients[0].amount.comparison == comparison
+    assert result.nutrients[0].status == "parsed"
+    assert [warning.code for warning in result.warnings] == ["duplicate_nutrient_row"]
+    assert result.warnings[0].source_observation_ids == ["obs-5"]
+    assert [line.text for line in result.unparsed_lines] == [row]

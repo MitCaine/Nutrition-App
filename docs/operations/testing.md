@@ -337,6 +337,22 @@ qualification.
 These names are representative, not permission to skip affected neighboring tests. Use the complete
 backend/mobile baseline before declaring a cross-cutting feature change finished.
 
+For OCR parser and confirmation changes, run the shared local/backend parser regressions and the
+ordinary rendered review flow. The golden fixtures should distinguish comparator conflicts from
+identical duplicates, retain warning and observation IDs, and check both input orders. Parser-derived
+drafts should also prove that low-confidence identity or unusable required fields remain unresolved,
+while exact high-confidence controls preserve the established 0.8 boundary. These focused commands
+are a starting point; run the affected suites and full baselines selected for the change:
+
+```bash
+(cd apps/mobile && npm test -- --runInBand --runTestsByPath __tests__/localOcrParser.test.ts __tests__/ocrConfirmation.test.ts __tests__/nutritionConfirmationScreen.test.ts)
+(cd apps/backend && "$NUTRITION_BACKEND_PYTHON" -m pytest -q --strict-markers tests/test_ocr_parser.py tests/test_ocr_parser_golden.py tests/test_ocr_parser_api.py)
+```
+
+Rendered Jest tests exercise screen behavior and confirmation traces; they do not prove native
+compilation, physical-device capture, VoiceOver behavior, or real-camera OCR accuracy. Use the
+separately selected native and device evidence for those claims.
+
 ## What each backend suite proves
 
 | Suite family | Main claim |
