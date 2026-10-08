@@ -100,7 +100,7 @@ def test_pinned_worker_document_has_unique_heading_bounded_roles_and_phase_intak
 def test_current_handoffs_route_controller_and_assigned_worker_sections():
     current = {
         "AGENTS.md": ("Shared worker rules", "future capsule"),
-        "docs/local_project_map.md": ("assigned unique level-two section", "assigned Codex dispatcher"),
+        "docs/local_project_map.md": ("worker role index", "assigned Codex dispatcher"),
         "engineering/tasks/TEMPLATE.md": ("Shared worker rules", "Initial builder"),
         "engineering/workflow/TASK_CAPSULE.md": ("Shared worker rules", "future capsule"),
         "engineering/workflow/EXECUTION.md": ("Shared worker rules", "next level-two heading"),
@@ -117,7 +117,8 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
         assert old_pin not in text, name
         assert " ".join(required[0].split()).lower() in normalized_lower, name
         assert " ".join(required[1].split()).lower() in normalized_lower, name
-        assert "assigned unique level-two section" in normalized_lower, name
+        if name != "docs/local_project_map.md":
+            assert "assigned unique level-two section" in normalized_lower, name
         assert ("worker instructions" in normalized_lower or "worker-instructions.md" in normalized_lower), name
     for name in ("WORKFLOW.md", "ROUTING.md", "EVIDENCE.md", "FAILURE_TAXONOMY.md"):
         text = (ROOT / "engineering/workflow" / name).read_text()
@@ -126,13 +127,20 @@ def test_current_handoffs_route_controller_and_assigned_worker_sections():
         assert "next level-two heading or end of file" in " ".join(text.split())
     map_text = (ROOT / "docs/local_project_map.md").read_text()
     normalized_map = " ".join(map_text.split())
-    assert "controller, builder and reviewer on Work at `gpt-6.1-sol` / `low`" in normalized_map
-    assert "implementor on Codex at `gpt-6-luna` / `max`" in normalized_map
-    assert "Record requested environment/model/effort separately from host-confirmed settings" in normalized_map
-    assert "record them as unverified" in normalized_map
-    assert "the dispatcher owns relay to the Work controller" in normalized_map
+    assert "controller, capsule builder and independent reviewer | work" in normalized_map.lower()
+    assert "implementor | codex" in normalized_map.lower()
+    assert "`gpt-6.1-sol` / `low`" in normalized_map
+    assert "`gpt-6-luna` / `max`" in normalized_map
+    assert "requested environment/model/effort separately from host-confirmed settings" in normalized_map
+    assert "unavailable effective settings are unverified" in normalized_map
+    assert "relays them to the Work controller and records controller consumption" in normalized_map
     assert "Native child results return to their parent" in normalized_map
-    assert "Sending alone does not prove delivery, consumption or idle wake-up" in normalized_map
+    assert "Sending or backing metadata does not prove consumption or idle wake-up" in normalized_map
+    assert "worker-instructions.md#role-index" in normalized_map
+    assert "worker-instructions.md#codex-dispatcher" in normalized_map
+    assert "start-an-issue.md#execute-serially" in normalized_map
+    assert "start-an-issue.md#wait-recover-and-resume" in normalized_map
+    assert "start-an-issue.md#diagnose-blockers-and-recover" in normalized_map
     assert "gpt-5.6-luna" not in map_text
     capsule = (ROOT / "engineering/tasks/GH-290.md").read_text()
     assert "task-specific environment override for GH-290 only" in " ".join(capsule.split())
@@ -420,22 +428,88 @@ def test_queue_redirect_retains_complete_pinned_resource_route():
 
 
 def test_controller_permissions_waiting_and_external_closeout_contract():
+    import re
     text = (ROOT / "docs/local_project_map.md").read_text()
     normalized = " ".join(text.split())
-    for rule in ("Only the controller dispatches", "Workers do not recruit", "failed required check",
-                 "authorized", "scope change", "assignee/host inability", "independent scope challenge",
-                 "event-based blocking completion", "idle wake-up", "supported observer",
-                 "without repeated owner prompts", "genuinely reserved actions",
-                 "task-neutral requested model/effort defaults",
-                 "Record requested environment/model/effort separately from host-confirmed settings",
-                 "record them as unverified", "Cross-host messaging requires explicit owner authorization",
-                 "assigned Codex dispatcher", "the dispatcher owns relay to the Work controller",
-                 "Native child results return to their parent",
-                 "Sending alone does not prove delivery, consumption or idle wake-up",
-                 "Do not publish private conversation identifiers", "App `4708441`", "paused"):
+    headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
+    assert headings == ["Selected instructions", "Runtime", "Nutrition permissions and routing",
+                        "Standards and checks", "Storage and recovery", "Integration and closeout"]
+    for authority in (
+        "engineering/workflow/shared/start-an-issue.md#execute-serially",
+        "engineering/workflow/shared/start-an-issue.md#work-to-codex-implementation-handoff",
+        "engineering/workflow/shared/start-an-issue.md#assign-roles-and-supply-inputs",
+        "engineering/workflow/shared/start-an-issue.md#execution-routing-models-and-efforts",
+        "engineering/workflow/shared/start-an-issue.md#publish-the-task-branch-and-handoffs",
+        "engineering/workflow/shared/start-an-issue.md#capsule-format",
+        "engineering/workflow/shared/start-an-issue.md#complete-the-phases",
+        "engineering/workflow/shared/start-an-issue.md#additional-assignments-and-orientation",
+        "engineering/workflow/shared/start-an-issue.md#wait-recover-and-resume",
+        "engineering/workflow/shared/start-an-issue.md#handle-model-capacity",
+        "engineering/workflow/shared/start-an-issue.md#diagnose-blockers-and-recover",
+        "engineering/workflow/shared/start-an-issue.md#checkpoint-and-resume",
+        "engineering/workflow/shared/start-an-issue.md#keep-completion-records-external",
+        "engineering/workflow/shared/worker-instructions.md#shared-worker-rules",
+        "engineering/workflow/shared/worker-instructions.md#capsule-builder",
+        "engineering/workflow/shared/worker-instructions.md#implementor",
+        "engineering/workflow/shared/worker-instructions.md#independent-reviewer",
+        "engineering/workflow/shared/worker-instructions.md#codex-dispatcher",
+        "engineering/workflow/shared/capsule-controller-workflow.md#replace-an-entangled-adoption",
+        "engineering/workflow/AUTHORITY.md#current-interfaces",
+        "engineering/workflow/AUTHORITY.md#state-concurrency-and-recovery",
+        "operations/testing.md#main-qualification-profiles",
+        "operations/session-contract.md#session-end",
+        "engineering/workflow/shared/SOURCE.md",
+        "engineering/tooling/RI.md#pinned-installation-and-private-access",
+        "engineering/tooling/RI.md#navigate-an-exact-source-selection",
+        "engineering/tooling/RI.md#comparison-and-review",
+        "engineering/workflow/TASK_CAPSULE.md#historical-capsule-contracts",
+        "engineering/workflow/STATES.md#terminal-recording",
+        "engineering/capsules/HISTORY.md",
+    ):
+        assert authority in normalized
+    for nutrition_control in (
+        "The controller alone owns Git",
+        "macOS arm64 with Python 3.14",
+        "controller-owned external manifest",
+        "`--runtime`",
+        "nested macOS network-denied sandbox",
+        "do not substitute another historical or upstream revision",
+        "unavailable effective settings are unverified",
+        "trusted Work owner record may confirm selected Work configuration",
+        "Dispatch options establish only the request",
+        "No fallback is selected here",
+        "route identity in the existing operational record",
+        "records controller consumption",
+        "idle wake-up",
+        "Main qualification",
+        "App `4708441`",
+        "rename-aware changed-path inventory",
+        "Ordinary CI is a separate regression signal",
+        "A changed C requires affected checks and independent review",
+        "~/.nutrition-app/task-controller/issue-N.json",
+        "NUTRITION_TASK_STATE_DIR",
+        "stopped under their original authority",
+        "The completed fresh #246 attempt is distinct",
+        "Current status belongs to the live",
+        "verified merged local/remote branches",
+    ):
+        assert nutrition_control in normalized
+    for rule in ("exact-candidate-SHA", "issues/246", "issues/256",
+                 "not blanket Git, issue or settings permission"):
         assert rule in normalized
+    closeout = normalized.lower()
+    closeout_steps = (
+        "after those checks pass, close the issue",
+        "verify its actual closed state",
+        "then safely clean up the verified merged local/remote branches",
+        "verify the cleanup",
+    )
+    closeout_positions = [closeout.index(step) for step in closeout_steps]
+    assert closeout_positions == sorted(closeout_positions)
+    assert "if a required outcome, issue closure or cleanup is unresolved, preserve state and report partial closeout" in closeout
     assert "gpt-6.1-sol` / `low" in normalized
     assert "gpt-6-luna` / `max" in normalized
+    assert "NUTRITION_RI_RUNTIME" not in normalized
     for name in ("docs/local_project_map.md", "engineering/README.md", "engineering/tasks/TEMPLATE.md"):
         text = (ROOT / name).read_text()
         for rule in ("BEFORE", "historical", "live issue", "external controller checkpoint",
