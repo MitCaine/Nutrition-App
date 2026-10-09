@@ -95,8 +95,10 @@ def test_duplicate_start_preserves_all_prior_session_state(entrypoint, marker, k
 
 def test_duplicate_start_preserves_native_owned_and_unrelated_processes(entrypoint):
     root, env = entrypoint
-    process = subprocess.Popen([sys.executable, '-c',
-                                'import time; marker="expo run:ios"; time.sleep(30)'])
+    # A short Bash command preserves the contract within Linux ps's default
+    # width and avoids macOS Python replacing argv[0] with its executable path.
+    process = subprocess.Popen(['bash', '-c', 'while :; do sleep 1; done', 'expo run:ios'],
+                               start_new_session=True)
     unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
     try:
         helper = shlex.quote(str(root / 'scripts/lib/project-process.sh'))
@@ -111,8 +113,13 @@ def test_duplicate_start_preserves_native_owned_and_unrelated_processes(entrypoi
         assert _snapshot(root) == before
         assert process.poll() is None and unrelated.poll() is None
     finally:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         for child in [process, unrelated]:
-            child.terminate()
+            if child.poll() is None:
+                child.terminate()
             child.wait(timeout=5)
 
 
@@ -172,8 +179,10 @@ def test_actual_stop_caller_stops_only_native_owned_process(entrypoint):
     root, env = entrypoint
     shutil.copy2(ROOT / 'scripts/stop-project.sh', root / 'scripts/stop-project.sh')
     _script(root / 'bin/docker', 'exit 1\n')
-    process = subprocess.Popen([sys.executable, '-c',
-                                'import time; marker="expo run:ios"; time.sleep(30)'])
+    # A short Bash command preserves the contract within Linux ps's default
+    # width and avoids macOS Python replacing argv[0] with its executable path.
+    process = subprocess.Popen(['bash', '-c', 'while :; do sleep 1; done', 'expo run:ios'],
+                               start_new_session=True)
     unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
     try:
         helper = shlex.quote(str(root / 'scripts/lib/project-process.sh'))
@@ -191,6 +200,10 @@ def test_actual_stop_caller_stops_only_native_owned_process(entrypoint):
         assert unrelated.poll() is None
         assert 'Docker is unavailable' in result.stdout
     finally:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         for child in [process, unrelated]:
             if child.poll() is None:
                 child.terminate()
