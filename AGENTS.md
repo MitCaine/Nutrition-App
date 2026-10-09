@@ -17,11 +17,10 @@ run the standalone session report from the repository root:
 ./scripts/session-start.sh
 ```
 
-For a task authorized to change dependencies, source `./scripts/start-work.zsh` in
-the integrated zsh terminal and follow the [dependency update guide](docs/project/development-guide.md#configuration-and-startup).
-It refreshes compatible dependencies and then runs the session report; independent
-updates continue after failures. A failed update is not passing qualification. Review
-and preserve its exact partial output for the task workflow.
+Dependency work must select the bounded authorized route in the canonical
+[session startup scope rule](docs/operations/session-contract.md#startup-update-scope).
+Do not run whole-project refresh for a single-package assignment. Preserve exact
+partial-failure evidence; an update is not passing qualification.
 
 Before presenting work as complete or asking for commit approval:
 

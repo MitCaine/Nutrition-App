@@ -92,11 +92,13 @@ and session-end. Audit children retain that interpreter through `sys.executable`
 A missing Node alone does not block Python-only validation; the standalone report
 is diagnostic. See the [session selection contract](../operations/session-contract.md#session-start).
 
-For a task authorized to change dependencies, source the update route from the
-repository root in the integrated **zsh** terminal:
+Select dependency startup under the canonical [authorized scope rule](../operations/session-contract.md#startup-update-scope).
+Single-package tasks use the inspected targeted commands below, with all resolved
+changes reviewed before apply; they do not run the whole-project startup. Only an
+expressly authorized whole-project toolchain/dependency refresh sources:
 
 ```zsh
-source ./scripts/start-work.zsh
+source ./scripts/start-work.zsh --refresh-all
 ```
 
 It installs a required Node or Python Homebrew formula when no compatible executable is
@@ -126,8 +128,8 @@ dependency steps are separate files under `scripts/dependency-modules/`.
 The master command runs `./scripts/session-start.sh` afterward, even when an update
 fails, and returns nonzero if any step fails. Use it in a working checkout;
 keep the synchronized trusted controller checkout clean for task authorization.
-For a lockfile preview, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh`.
-For a fully read-only update check, also set `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1`
+For a lockfile preview, use `NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh --refresh-all`.
+Lock preview still permits toolchain mutations. To prevent Homebrew installs/upgrades, also set `NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1`
 to skip Homebrew installs and upgrades.
 These environment switches apply to that invocation only.
 
@@ -148,7 +150,8 @@ Expo/React Native/native, and language-runtime changes require a separate migrat
 the relevant tests and native qualification. The bulk mobile refresh retains Expo's
 expected package versions when npm selects newer compatible-range versions that Expo
 does not yet accept. A new apply requires a clean worktree; a recorded partial apply
-may resume only its exact updater-owned changes. Previews are read-only.
+may resume only its exact updater-owned changes. Lock previews do not publish locks; resolver scratch/network work and possible
+compiler bootstrap still require applicable authority.
 If one area or package fails, other independent attempts continue and the command exits
 nonzero after reporting partial success. Fix the cause and rerun the same apply to
 complete pending areas; changed branches, commits or unrelated edits block resume.

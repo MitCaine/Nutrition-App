@@ -1517,31 +1517,17 @@ def test_task_local_startup_and_backend_baseline_routes():
                        ("engineering/README.md", engineering)):
         normalized = " ".join(text.split()).lower()
         assert "session-start.sh" in normalized, name
-        assert "start-work.zsh" in normalized, name
+        assert "start-work.zsh" in normalized or "startup-update-scope" in normalized, name
         assert "authorized" in normalized and "dependency" in normalized, name
 
-    def has_conditional_startup_routes(text):
-        normalized = " ".join(text.replace("`", "").split()).lower()
-        maintenance = "source or documentation maintenance that leaves dependency inputs unchanged"
-        dependency_work = "for a task authorized to change dependencies"
-        if maintenance not in normalized or dependency_work not in normalized:
-            return False
-        maintenance_route = normalized.split(maintenance, 1)[1].split(dependency_work, 1)[0]
-        dependency_route = normalized.split(dependency_work, 1)[1]
-        return (
-            "./scripts/session-start.sh" in maintenance_route
-            and "source ./scripts/start-work.zsh" in dependency_route
-            and "./scripts/session-start.sh" in dependency_route
-        )
-
-    for name, text in (("README.md", readme),
-                       ("development-guide.md", development)):
-        assert has_conditional_startup_routes(text), name
-    stale_unconditional_wording = (
-        "At the beginning of a VS Code or Codex session, "
-        "run source ./scripts/start-work.zsh."
-    )
-    assert not has_conditional_startup_routes(stale_unconditional_wording)
+    for name, text in (("README.md", readme), ("development-guide.md", development)):
+        assert "startup-update-scope" in text, name
+        assert "--refresh-all" in text, name
+        assert "./scripts/session-start.sh" in text, name
+    assert "Startup update scope" in session
+    assert "necessary transitive changes" in session
+    assert "piptools compile --upgrade-package PACKAGE" in session
+    assert "Homebrew updates/installations/upgrades remain possible" in session
 
     baseline = agents.split("PostgreSQL runtime contract selection:", 1)[0]
     assert "./scripts/run-backend-baseline.sh" in baseline

@@ -7,6 +7,16 @@ if [[ "${ZSH_EVAL_CONTEXT:-}" != *:file ]]; then
 fi
 
 typeset -g NUTRITION_APP_ROOT="${${(%):-%x}:A:h:h}"
+# Whole-project tool/dependency refresh requires an explicit scoped invocation.
+# An ordinary source/document session must not enter either update module.
+if (( $# == 0 )); then
+  "$NUTRITION_APP_ROOT/scripts/session-start.sh"
+  return $?
+fi
+if (( $# != 1 )) || [[ "$1" != --refresh-all ]]; then
+  print -u2 'Use source ./scripts/start-work.zsh for a read-only session, or --refresh-all only for an authorized whole-project refresh. For scoped packages use scripts/update-dependencies backend|mobile PACKAGE [--apply].'
+  return 2
+fi
 if source "$NUTRITION_APP_ROOT/scripts/dependency-modules/toolchain.zsh"; then
   _nutrition_start_toolchain_status=0
 else

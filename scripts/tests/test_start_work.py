@@ -191,7 +191,7 @@ class StartWorkTest(unittest.TestCase):
             env = {**os.environ, "NUTRITION_START_WORK_SKIP_TOOL_UPDATES": "1",
                    "NUTRITION_START_WORK_TEST_MARKER": str(marker),
                    "NUTRITION_START_WORK_SESSION_MARKER": str(session_marker)}
-            command = "source ./scripts/start-work.zsh; node -v; $NUTRITION_DEPS_PYTHON --version"
+            command = "source ./scripts/start-work.zsh --refresh-all; node -v; $NUTRITION_DEPS_PYTHON --version"
             clean = subprocess.run(["zsh", "-c", command], cwd=root, env=env,
                                    text=True, capture_output=True, check=True)
             self.assertEqual(marker.read_text().strip(), "all --apply")
@@ -200,7 +200,7 @@ class StartWorkTest(unittest.TestCase):
             self.assertIn("python3.14", session_marker.read_text())
             session_marker.unlink()
             (root / "local-work.txt").write_text("preserve")
-            dirty = subprocess.run(["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
+            dirty = subprocess.run(["zsh", "-c", "source ./scripts/start-work.zsh --refresh-all; result=$?; exit $result"],
                                    cwd=root, env=env, text=True, capture_output=True)
             self.assertEqual(dirty.returncode, 1)
             self.assertEqual(marker.read_text().strip(), "all --apply")
@@ -214,7 +214,7 @@ class StartWorkTest(unittest.TestCase):
             (root / "scripts/dependency-modules/toolchain.zsh").write_text(
                 "print -u2 'simulated toolchain failure'\nreturn 1\n")
             failed = subprocess.run(
-                ["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
+                ["zsh", "-c", "source ./scripts/start-work.zsh --refresh-all; result=$?; exit $result"],
                 cwd=root, env=env, text=True, capture_output=True)
             self.assertEqual(failed.returncode, 1)
             self.assertEqual(marker.read_text().strip(), "all --apply")
@@ -222,12 +222,90 @@ class StartWorkTest(unittest.TestCase):
             self.assertIn("Successful updates remain applied", failed.stderr)
             self.assertTrue(session_marker.exists())
             session_failed = subprocess.run(
-                ["zsh", "-c", "source ./scripts/start-work.zsh; result=$?; exit $result"],
+                ["zsh", "-c", "source ./scripts/start-work.zsh --refresh-all; result=$?; exit $result"],
                 cwd=root, env={**env, "NUTRITION_START_WORK_SESSION_EXIT": "7"},
                 text=True, capture_output=True)
             self.assertEqual(session_failed.returncode, 1)
             self.assertIn("session report status 7", session_failed.stderr)
             self.assertEqual(marker.read_text().strip(), "all --apply")
+
+
+class StartupScopeTest(unittest.TestCase):
+    def test_ordinary_start_and_rejected_args_never_enter_update_modules(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "scripts/dependency-modules").mkdir(parents=True)
+            shutil.copy2(SCRIPTS / "start-work.zsh", root / "scripts/start-work.zsh")
+            marker = root / "unauthorized-update"
+            for name in ("toolchain", "dependencies"):
+                (root / f"scripts/dependency-modules/{name}.zsh").write_text(
+                    f"touch '{marker}'; return 99\n")
+            session = root / "scripts/session-start.sh"
+            session.write_text("#!/bin/sh\necho READ_ONLY_SESSION\n")
+            session.chmod(0o755)
+            for args, code in (("", 0), ("backend fastapi", 2), ("--refresh-all extra", 2)):
+                result = subprocess.run(["zsh", "-c", f"source ./scripts/start-work.zsh {args}"],
+                                        cwd=root, capture_output=True, text=True)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertFalse(marker.exists())
+            self.assertEqual(session.read_text(), "#!/bin/sh\necho READ_ONLY_SESSION\n")
+
+    def test_selected_package_public_updater_does_not_enter_other_areas_or_brew(self):
+        # Public shell updater + actual Python CLI/backend resolver, with only
+        # external compiler execution controlled. Preview publishes no lock.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            shutil.copy2(SCRIPTS / "update-dependencies", scripts / "update-dependencies")
+            shutil.copytree(SCRIPTS / "lib", scripts / "lib")
+            (root / ".nvmrc").write_text("26")
+            (root / ".python-version").write_text("3.14")
+            backend = root / "apps/backend"
+            backend.mkdir(parents=True)
+            (backend / "pyproject.toml").write_text(
+                '[project]\ndependencies=["fastapi>=0.1", "other>=1"]\n'
+                '[project.optional-dependencies]\ndev=["pip-tools>=7"]\n')
+            lock = backend / "requirements-dev.lock"
+            lock.write_text("fastapi==0.1.0\nother==1.0.0\nchild==1.0.0\npip-tools==7.0.0\n")
+            source = (SCRIPTS / "update_dependencies.py").read_text()
+            source = source.replace('raise SystemExit(main())', '''
+    import json
+    from unittest.mock import patch
+    def compile_fixture(args, cwd, **kwargs):
+        if "compile" not in args or "--upgrade-package" not in args:
+            raise AssertionError("unexpected external command " + repr(args))
+        assert args[args.index("--upgrade-package")+1] == "fastapi"
+        assert "--upgrade" not in args
+        (ROOT / "compiler-command.json").write_text(json.dumps(args))
+        path = cwd / "requirements-dev.lock"
+        path.write_text(path.read_text().replace("fastapi==0.1.0", "fastapi==0.2.0").replace("child==1.0.0", "child==1.1.0"))
+    with patch("subprocess.run") as probe, patch(__name__ + ".run", side_effect=compile_fixture):
+        probe.return_value.returncode = 0
+        raise SystemExit(main())
+''')
+            (scripts / "update_dependencies.py").write_text(source)
+            bins = root / "bin"
+            bins.mkdir()
+            for name in ("dirname", "cat", "sh"):
+                (bins / name).symlink_to(shutil.which(name))
+            brew = bins / "brew"
+            brew.write_text(f"#!/bin/sh\nprintf called > '{root / 'brew-called'}'; exit 99\n")
+            brew.chmod(0o755)
+            import sys
+            env = {**os.environ, "PATH": str(bins), "NUTRITION_DEPS_PYTHON": sys.executable}
+            before = lock.read_bytes()
+            result = subprocess.run([str(scripts / "update-dependencies"), "backend", "fastapi"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("backend child: 1.0.0 -> 1.1.0", result.stdout)
+            self.assertIn("backend fastapi: 0.1.0 -> 0.2.0", result.stdout)
+            self.assertNotIn("backend other:", result.stdout)
+            self.assertEqual(lock.read_bytes(), before)
+            self.assertFalse((root / "brew-called").exists())
+            self.assertFalse((root / "apps/mobile").exists())
+            self.assertFalse((root / "engineering/tooling").exists())
+            self.assertTrue((root / "compiler-command.json").exists())
 
 
 if __name__ == "__main__":

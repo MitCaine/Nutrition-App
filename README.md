@@ -111,11 +111,11 @@ access and a configured personal credential. Native Apple Vision OCR requires
 an iOS native development or Release build and is not provided by Expo Go.
 
 For source or documentation maintenance that leaves dependency inputs unchanged,
-run `./scripts/session-start.sh` from the repository root. For a task authorized
-to change dependencies, source `./scripts/start-work.zsh` in the integrated zsh
-terminal; it selects the toolchain lines declared by `.nvmrc` and `.python-version`,
-checks compatible updates, and runs `./scripts/session-start.sh` even when an update
-fails. Review any partial update and failed status before proceeding. Follow the
+run `./scripts/session-start.sh` from the repository root. Dependency work selects
+the bounded authorized route under the [canonical startup scope rule](docs/operations/session-contract.md#startup-update-scope);
+single-package work uses the targeted updater, while expressly authorized whole-project
+refresh uses `source ./scripts/start-work.zsh --refresh-all`. Review partial failures.
+Follow the
 [session contract](docs/operations/session-contract.md) for readiness, failure
 handling and session-end requirements, and the
 [local project map](docs/local_project_map.md) for qualification.

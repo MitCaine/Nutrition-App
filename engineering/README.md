@@ -8,7 +8,8 @@
 
 1. **Start with authoritative state.** For source or documentation work whose dependency
    inputs stay unchanged, run `./scripts/session-start.sh` from the repository root. For an
-   authorized dependency task, use `source ./scripts/start-work.zsh` and the
+   authorized dependency task, select the bounded route under the
+   [canonical startup scope rule](../docs/operations/session-contract.md#startup-update-scope) and the
    [Development Guide](../docs/project/development-guide.md#configuration-and-startup). Then use
    [Project Onboarding](../docs/project/onboarding.md) to load only the context needed for the
    change.

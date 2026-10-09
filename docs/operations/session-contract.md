@@ -28,13 +28,8 @@ run the standalone read-only session report from the checkout root:
 ./scripts/session-start.sh
 ```
 
-For a task authorized to change dependencies, source `./scripts/start-work.zsh` in
-the integrated zsh terminal and follow the
-[development guide](../project/development-guide.md#configuration-and-startup).
-That route selects the repository toolchain, applies compatible dependency updates,
-and always runs `session-start.sh` afterward, even if an update fails. Independent
-update areas continue after a failure. Review partial changes and the exact nonzero
-status before implementation; successful updates still require normal task qualification.
+Dependency startup follows the [scope rule below](#startup-update-scope), not a
+blanket whole-project refresh. Successful updates still require task qualification.
 
 Before claiming completion, run:
 
@@ -50,6 +45,53 @@ identify opt-in infrastructure suites as passed, failed, or not run.
 Agents must not bypass a failure by weakening a validator, adding a broad exclusion, or deleting an
 incomplete test. Future prompts may invoke these requirements with: **“Follow the repository session
 contract.”**
+
+## Startup update scope
+
+This is the canonical local startup scope rule. Ordinary source/document work uses
+`./scripts/session-start.sh`; sourcing `./scripts/start-work.zsh` without arguments
+also runs only that report, entering neither update module. No installation or
+lock update is authorized by starting a session.
+
+For an identified package, use the existing targeted route from the repository root:
+
+```bash
+./scripts/update-dependencies backend fastapi
+./scripts/update-dependencies backend fastapi --apply
+# Or: ./scripts/update-dependencies mobile @tanstack/react-query [--apply]
+```
+
+Choose only the authorized ecosystem/packages. The inspected backend resolver uses
+`piptools compile --upgrade-package PACKAGE` against the existing lock; mobile
+uses `npm update PACKAGE --package-lock-only --ignore-scripts` and validates the
+candidate install/Expo/risk contracts. These routes resolve a full ecosystem lock,
+not isolated bytes: necessary transitive changes can occur. Inspect every proposed
+change before apply; unrelated direct refresh or wider impact requires a controller
+scope decision. No backend/mobile/RI `all` refresh or Homebrew install/upgrade is
+part of the selected package route. The updater may select an installed Node via
+read-only Homebrew prefix queries. It may bootstrap pip-tools in scratch if absent;
+when tools installation is outside authority, verify a compatible prepared compiler
+first or hold that route. Preview does not imply no scratch/network activity.
+
+Only expressly authorized whole-project toolchain/dependency refresh uses:
+
+```zsh
+source ./scripts/start-work.zsh --refresh-all
+```
+
+This preserves the toolchain module followed by `all --apply`, independent update
+attempts and final session report even after failures. Retain exact partial output,
+lock outputs and nonzero statuses; do not treat partial success as acceptance.
+The invocation is a scope selection, not proof of owner permission.
+
+`NUTRITION_START_WORK_PREVIEW=1 source ./scripts/start-work.zsh --refresh-all`
+previews locks (`all` without `--apply`) but still runs the toolchain module first;
+Homebrew updates/installations/upgrades remain possible. Adding
+`NUTRITION_START_WORK_SKIP_TOOL_UPDATES=1` prevents those toolchain mutations but
+still performs tool selection and resolver scratch work. For a package lock preview,
+use the targeted command without `--apply`, with preverified authorized prerequisites.
+No preview flag grants broader authority. Whole-project refresh retains existing
+transaction/resolver behavior; repairs tracked separately are not part of this rule.
 
 ## Session start
 
