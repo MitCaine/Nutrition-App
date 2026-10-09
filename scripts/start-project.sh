@@ -19,6 +19,21 @@ EXPO_LOG="$RUNTIME_DIR/expo.log"
 SIMULATOR_NAME="${SIMULATOR_NAME:-iPhone 17 Pro Max}"
 PORT="${PORT:-8000}"
 
+# Refuse before cleanup is armed: even stale or ambiguous ownership belongs
+# to the prior session, and admission must not mutate it.
+for ownership_record in \
+  "$BACKEND_PID_FILE" \
+  "$EXPO_PID_FILE" \
+  "$SIMULATOR_UDID_FILE" \
+  "$SIMULATOR_STARTED_FILE"
+do
+  if [[ -e "$ownership_record" || -L "$ownership_record" ]]; then
+    echo "Error: Existing project session record: $ownership_record" >&2
+    echo "Run scripts/stop-project.sh and resolve any incomplete cleanup first." >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$RUNTIME_DIR"
 
 process_is_running() {
@@ -26,17 +41,6 @@ process_is_running() {
 
   [[ "$pid" =~ ^[0-9]+$ ]] &&
     kill -0 "$pid" 2>/dev/null
-}
-
-remove_stale_pid_file() {
-  local pid_file="$1"
-  local service="$2"
-  local service_name="$3"
-
-  project_process_prepare_start_record \
-    "$pid_file" \
-    "$service" \
-    "$service_name"
 }
 
 record_started_process() {
@@ -145,9 +149,6 @@ cleanup_failed_start() {
 }
 
 trap cleanup_failed_start ERR
-
-remove_stale_pid_file "$BACKEND_PID_FILE" backend "Backend"
-remove_stale_pid_file "$EXPO_PID_FILE" expo "Expo"
 
 if [[ ! -x "$ROOT_DIR/scripts/start-backend.sh" ]]; then
   echo "Error: scripts/start-backend.sh is missing or not executable."

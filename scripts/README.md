@@ -47,6 +47,11 @@ requires a lower-level audit subcommand.
 
 Process records written by `start-project.sh` are versioned ownership records rather than bare PID files. Each record captures the launched PID, normalized process start identity, service command contract, and observed command. `stop-project.sh` revalidates start identity and command contract before TERM and again before any forced KILL; malformed, legacy, exited, or mismatched records never authorize a signal. Descendant shutdown likewise captures child start identity before signaling. The local project launcher is a macOS/Xcode workflow; its process identity contract uses the `ps` `lstart`, `ppid`, `stat`, and `command` fields, which are covered by disposable-process regression tests.
 
+Startup admission refuses any existing Backend, Expo or simulator ownership marker before arming failure cleanup, starting services or changing prior records. This includes stale, malformed and dangling-link records: run `stop-project.sh` and resolve incomplete cleanup before retrying rather than letting a duplicate startup clean up another invocation's resources. Log files alone do not claim a live session. New-session startup retains its existing partial-failure cleanup through the stop caller.
+
+The admission guard is portable Bash and does not change the Linux process helper contract. Actual-entrypoint tests isolate Xcode, npm and Compose boundaries; disposable native processes separately exercise PID/start/command identity, unrelated-process survival, graceful TERM and bounded KILL. These are not real simulator or Compose shutdown proofs. The stop caller's existing provider limitations remain: simulator shutdown failure can be ignored and unavailable Docker can prevent Compose cleanup. This correction does not introduce concurrent-start locking or a general supervision rewrite; reassess those independently before claiming broader process safety.
+
+
 These scripts are not substitutes for initial environment setup or migration procedures. Ordinary
 development setup is documented in the
 [Development Guide](../docs/project/development-guide.md#configuration-and-startup). Target
