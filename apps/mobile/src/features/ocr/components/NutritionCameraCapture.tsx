@@ -1,5 +1,5 @@
 import { CameraView, type CameraCapturedPicture } from "expo-camera";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -11,6 +11,8 @@ import {
   focusAccessibilityElement,
   useAccessibilityScreenFocus,
 } from "../../../shared/accessibility/focus";
+
+import { deleteCameraCapture } from "../diagnostics/diagnosticsModel";
 
 export type NutritionCameraCaptureResult = Pick<
   CameraCapturedPicture,
@@ -88,8 +90,9 @@ export function NutritionCameraCapture({
         throw new Error("Camera did not return a photo.");
       }
       if (!mounted.current) {
-        await FileSystem.deleteAsync(photo.uri, { idempotent: true }).catch(
-          () => undefined,
+        await deleteCameraCapture(
+          { ...photo, source: "camera" },
+          (uri) => FileSystem.deleteAsync(uri, { idempotent: true }),
         );
         return;
       }

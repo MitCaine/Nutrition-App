@@ -349,6 +349,13 @@ are a starting point; run the affected suites and full baselines selected for th
 (cd apps/backend && "$NUTRITION_BACKEND_PYTHON" -m pytest -q --strict-markers tests/test_ocr_parser.py tests/test_ocr_parser_golden.py tests/test_ocr_parser_api.py)
 ```
 
+OCR temporary camera cleanup uses the explicit `expo-file-system/legacy` API at the
+selected dependency version. `ocrFilesystemBoundary.test.ts` exercises the real installed
+JavaScript entrypoint with only its native bridge substituted and distinguishes the root
+throwing stub. Scan/diagnostics caller tests cover completion, retake, cancellation and late
+camera completion, camera versus photo-library ownership and honest cleanup failure.
+These checks and native compilation do not measure physical-device file removal or cache lifetime.
+
 Rendered Jest tests exercise screen behavior and confirmation traces; they do not prove native
 compilation, physical-device capture, VoiceOver behavior, or real-camera OCR accuracy. Use the
 separately selected native and device evidence for those claims.

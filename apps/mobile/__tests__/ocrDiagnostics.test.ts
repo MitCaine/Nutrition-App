@@ -128,7 +128,13 @@ test("only camera cache captures are explicitly deleted and missing files are to
   deleteFile.mockClear();
   await expect(deleteCameraCapture(photoSelection, deleteFile)).resolves.toBe(false);
   expect(deleteFile).not.toHaveBeenCalled();
-  await expect(deleteCameraCapture(cameraSelection, jest.fn().mockRejectedValue(new Error("missing")))).resolves.toBe(false);
+  const warning = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    await expect(deleteCameraCapture(cameraSelection, jest.fn().mockRejectedValue(new Error("native deletion failed")))).resolves.toBe(false);
+    expect(warning).toHaveBeenCalledWith("Temporary OCR camera image cleanup failed.");
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 test("recognition invokes the bridge with the selected local URI", async () => {

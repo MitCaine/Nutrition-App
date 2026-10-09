@@ -159,7 +159,8 @@ export async function deleteCameraCapture(
     await deleteFile(selection.uri);
     return true;
   } catch {
-    // Cache cleanup is best-effort and must tolerate already-missing files.
+    // Idempotent deletion already tolerates missing files; other failures are not success.
+    console.warn("Temporary OCR camera image cleanup failed.");
     return false;
   }
 }

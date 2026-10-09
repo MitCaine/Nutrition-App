@@ -1,7 +1,7 @@
 import React from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import TestRenderer, { act } from "react-test-renderer";
 
 const mockRequestCameraPermission = jest.fn();
@@ -38,7 +38,7 @@ jest.mock("../src/shared/accessibility/focus", () => {
   };
 });
 
-jest.mock("expo-file-system", () => ({
+jest.mock("expo-file-system/legacy", () => ({
   deleteAsync: jest.fn(),
 }));
 

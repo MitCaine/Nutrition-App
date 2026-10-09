@@ -11,7 +11,7 @@ const mockDeleteAsync = jest.fn();
 const mockRecognizeTextFromImage = jest.fn();
 
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
-jest.mock("expo-file-system", () => ({
+jest.mock("expo-file-system/legacy", () => ({
   deleteAsync: (...args: unknown[]) => mockDeleteAsync(...args),
 }));
 jest.mock("expo-image-picker", () => ({
@@ -254,4 +254,22 @@ test("#108 OCR Diagnostics keeps Back and route title outside diagnostics scroll
   await act(async () =>
     renderer.unmount(),
   );
+});
+
+test("cleanup failure is reported without preventing replacement or deleting a library image", async () => {
+  const warning = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  try {
+    const renderer = await renderScreen();
+    await press(renderer, "Take photo");
+    mockDeleteAsync.mockRejectedValueOnce(new Error("native deletion failed"));
+    await press(renderer, "Choose photo");
+    expect(renderer.root.findByType(Image).props.source).toEqual({ uri: photoAsset.uri });
+    expect(mockDeleteAsync).toHaveBeenCalledWith(cameraAsset.uri, { idempotent: true });
+    expect(warning).toHaveBeenCalledWith("Temporary OCR camera image cleanup failed.");
+    mockDeleteAsync.mockClear();
+    await act(async () => renderer.unmount());
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+  } finally {
+    warning.mockRestore();
+  }
 });
