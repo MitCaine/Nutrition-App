@@ -5191,26 +5191,21 @@ def _task_record_without_comments(text: str) -> str:
     return TASK_RECORD_COMMENT_RE.sub("", text)
 
 
-def _task_record_sections(text: str) -> list[tuple[str, str]]:
-    visible = _task_record_without_comments(text)
-    headings: list[tuple[str, int, int]] = []
+def _task_record_fence_lines(text: str) -> list[tuple[str, bool, bool]]:
+    lines: list[tuple[str, bool, bool]] = []
     fence_character: str | None = None
     fence_length = 0
-    offset = 0
-    for line in visible.splitlines(keepends=True):
+    for line in text.splitlines(keepends=True):
         line_content = line.rstrip("\r\n")
         if fence_character is None:
-            heading = TASK_RECORD_HEADING_RE.match(line_content)
-            if heading is not None and heading.end() == len(line_content):
-                headings.append(
-                    (heading.group(1).strip(), offset, offset + heading.end())
-                )
-
             fence = re.match(r"^[ \t]*(`{3,}|~{3,})(.*)$", line_content)
             if fence is not None:
                 marker = fence.group(1)
                 fence_character = marker[0]
                 fence_length = len(marker)
+                lines.append((line, False, True))
+            else:
+                lines.append((line, False, False))
         else:
             closing = re.match(r"^[ \t]*([`~]+)[ \t]*$", line_content)
             if (
@@ -5218,8 +5213,26 @@ def _task_record_sections(text: str) -> list[tuple[str, str]]:
                 and closing.group(1)[0] == fence_character
                 and len(closing.group(1)) >= fence_length
             ):
+                lines.append((line, True, True))
                 fence_character = None
                 fence_length = 0
+            else:
+                lines.append((line, True, False))
+    return lines
+
+
+def _task_record_sections(text: str) -> list[tuple[str, str]]:
+    visible = _task_record_without_comments(text)
+    headings: list[tuple[str, int, int]] = []
+    offset = 0
+    for line, in_fence, is_fence_marker in _task_record_fence_lines(visible):
+        line_content = line.rstrip("\r\n")
+        if not in_fence and not is_fence_marker:
+            heading = TASK_RECORD_HEADING_RE.match(line_content)
+            if heading is not None and heading.end() == len(line_content):
+                headings.append(
+                    (heading.group(1).strip(), offset, offset + heading.end())
+                )
         offset += len(line)
 
     sections: list[tuple[str, str]] = []
@@ -5230,7 +5243,12 @@ def _task_record_sections(text: str) -> list[tuple[str, str]]:
 
 
 def _task_record_content(body: str) -> str:
-    return _task_record_without_comments(body).strip()
+    visible = _task_record_without_comments(body)
+    content = "".join(
+        line for line, _, is_fence_marker in _task_record_fence_lines(visible)
+        if not is_fence_marker
+    )
+    return content.strip()
 
 
 def _validate_normal_task_record(sections: list[tuple[str, str]]) -> list[str]:

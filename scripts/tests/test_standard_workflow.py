@@ -525,9 +525,13 @@ def test_public_validate_record_rejects_malformed_normal_format(tmp_path):
     assert "blank section `## Checks`" in output["error"]
 
 
-def test_public_validate_record_accepts_fenced_checks_and_ignores_example_headings(tmp_path):
+@pytest.mark.parametrize("fence_character", ("`", "~"))
+def test_public_validate_record_accepts_fenced_checks_and_ignores_example_headings(
+    tmp_path, fence_character
+):
     record = tmp_path / "normal-fenced-checks.md"
-    checks = "```markdown\n## Handoff and closeout\n./scripts/session-end.sh\n```"
+    fence = fence_character * 3
+    checks = f"{fence}markdown\n## Handoff and closeout\n./scripts/session-end.sh\n{fence}"
     record.write_text(_normal_task_record({"Checks": checks}), encoding="utf-8")
 
     result = _run_public_record_validator(record, "normal")
@@ -565,23 +569,28 @@ def test_public_validate_record_accepts_complete_maintenance_handoff(tmp_path):
     assert "live destination, controller eligibility and authority remain external" in output["limitation"]
 
 
+@pytest.mark.parametrize("fence_character", ("`", "~"))
 @pytest.mark.parametrize(
     ("heading", "body"),
     (
         (
             "Exact base",
-            "```text\n0123456789abcdef0123456789abcdef01234567\n```",
+            "0123456789abcdef0123456789abcdef01234567",
         ),
         (
             "Allowed changes",
-            "```markdown\n## Required checks\nUpdate the existing task validator.\n```",
+            "## Required checks\nUpdate the existing task validator.",
         ),
-        ("Required checks", "```bash\n./scripts/session-end.sh\n```"),
+        ("Required checks", "./scripts/session-end.sh"),
     ),
 )
-def test_public_maintenance_validator_accepts_fenced_field_content(tmp_path, heading, body):
+def test_public_maintenance_validator_accepts_fenced_field_content(
+    tmp_path, fence_character, heading, body
+):
     record = tmp_path / f"maintenance-fenced-{heading.lower().replace(' ', '-')}.md"
-    record.write_text(_maintenance_task_record({heading: body}), encoding="utf-8")
+    fence = fence_character * 3
+    fenced_body = f"{fence}text\n{body}\n{fence}"
+    record.write_text(_maintenance_task_record({heading: fenced_body}), encoding="utf-8")
 
     result = _run_public_record_validator(record, "maintenance")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -589,6 +598,50 @@ def test_public_maintenance_validator_accepts_fenced_field_content(tmp_path, hea
     assert output["result"] == "PASS"
     assert output["route"] == "maintenance"
     assert output["validated_fields"] == list(MAINTENANCE_FIELDS)
+
+
+@pytest.mark.parametrize(
+    ("route", "heading"),
+    (
+        ("normal", "Checks"),
+        ("maintenance", "Objective"),
+        ("maintenance", "Allowed changes"),
+        ("maintenance", "Required checks"),
+    ),
+)
+@pytest.mark.parametrize("fence_character", ("`", "~"))
+@pytest.mark.parametrize(
+    ("body_kind", "body_content"),
+    (
+        ("empty", ""),
+        ("whitespace", " \t "),
+        ("comment-only", "<!-- no supplied content -->"),
+    ),
+)
+def test_public_record_validator_rejects_noncontent_fenced_bodies(
+    tmp_path, route, heading, fence_character, body_kind, body_content
+):
+    fence = fence_character * 3
+    fenced_body = f"{fence}bash\n{body_content}\n{fence}"
+    if route == "normal":
+        record_text = _normal_task_record({heading: fenced_body})
+        expected_error = f"blank section `## {heading}`"
+    else:
+        record_text = _maintenance_task_record({heading: fenced_body})
+        expected_error = f"blank maintenance input `## {heading}`"
+    record = tmp_path / (
+        f"{route}-{heading.lower().replace(' ', '-')}-{fence_character}-"
+        f"{body_kind}.md"
+    )
+    record.write_text(record_text, encoding="utf-8")
+
+    result = _run_public_record_validator(record, route)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    output = json.loads(result.stdout)
+    assert output["result"] == "FAIL"
+    assert f"route={route}" in output["error"]
+    assert expected_error in output["error"]
 
 
 def test_public_validate_record_accepts_complete_uuid_return_destination(tmp_path):
